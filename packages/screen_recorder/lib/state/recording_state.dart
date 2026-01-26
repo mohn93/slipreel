@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import '../video_encoder.dart';
+import '../video_encoder_isolate.dart';
 import '../models/cursor_recording.dart';
 
 /// Recording status enum
@@ -23,6 +23,7 @@ class RecordingState {
   final String? videoPath;
   final String? error;
   final String? selectedWindowId;
+  final double progress;
 
   const RecordingState({
     this.status = RecordingStatus.idle,
@@ -31,6 +32,7 @@ class RecordingState {
     this.videoPath,
     this.error,
     this.selectedWindowId,
+    this.progress = 0.0,
   });
 
   RecordingState copyWith({
@@ -40,6 +42,7 @@ class RecordingState {
     String? videoPath,
     String? error,
     String? selectedWindowId,
+    double? progress,
   }) {
     return RecordingState(
       status: status ?? this.status,
@@ -48,6 +51,7 @@ class RecordingState {
       videoPath: videoPath ?? this.videoPath,
       error: error,
       selectedWindowId: selectedWindowId ?? this.selectedWindowId,
+      progress: progress ?? this.progress,
     );
   }
 
@@ -61,7 +65,7 @@ class RecordingState {
 class RecordingController extends StateNotifier<RecordingState> {
   RecordingController() : super(const RecordingState());
 
-  VideoEncoder? _videoEncoder;
+  VideoEncoderIsolate? _videoEncoder;
   StreamSubscription<FrameData>? _frameSubscription;
   StreamSubscription<AudioData>? _audioSubscription;
   StreamSubscription<CursorPosition>? _cursorSubscription;
@@ -88,6 +92,7 @@ class RecordingController extends StateNotifier<RecordingState> {
         duration: Duration.zero,
         videoPath: null,
         error: null,
+        progress: 0.0,
       );
 
       // Create output path
@@ -96,7 +101,12 @@ class RecordingController extends StateNotifier<RecordingState> {
       final outputPath = '${docsDir.path}/recording_$timestamp.mp4';
 
       // Initialize video encoder
-      _videoEncoder = VideoEncoder();
+      _videoEncoder = VideoEncoderIsolate();
+
+      // Set up progress callback
+      _videoEncoder!.onProgress = (p) {
+        state = state.copyWith(progress: p);
+      };
 
       // Subscribe to frame stream
       var firstFrame = true;
@@ -116,7 +126,7 @@ class RecordingController extends StateNotifier<RecordingState> {
 
           // Add frame to encoder
           if (_videoEncoder != null && _videoEncoder!.isInitialized) {
-            await _videoEncoder!.addFrame(frameData);
+            await _videoEncoder!.addFrame(frameData.data, frameData.timestampMicros);
           }
 
           // Update frame count
@@ -131,14 +141,8 @@ class RecordingController extends StateNotifier<RecordingState> {
       _audioSubscription =
           ScreenRecorderPlatform.instance.audioStream.listen(
         (audioData) async {
-          // Add audio sample to encoder
-          if (_videoEncoder != null && _videoEncoder!.isInitialized) {
-            await _videoEncoder!.addAudioSample(
-              audioData.data,
-              audioData.sampleRate,
-              audioData.channels,
-            );
-          }
+          // TODO: Add audio support to VideoEncoderIsolate
+          // For now, audio is not processed in the isolate version
         },
         onError: (error) {
           print('Audio stream error: $error');
@@ -216,8 +220,8 @@ class RecordingController extends StateNotifier<RecordingState> {
         await _cursorRecording!.saveToFile(cursorPath);
         print('Cursor data saved: ${_cursorRecording!.count} positions');
 
-        // Pass cursor data to encoder for rendering
-        await _videoEncoder!.setCursorData(_cursorRecording!);
+        // TODO: Add cursor rendering support to VideoEncoderIsolate
+        // For now, cursor rendering is not supported in the isolate version
       }
 
       // Finalize video encoding
