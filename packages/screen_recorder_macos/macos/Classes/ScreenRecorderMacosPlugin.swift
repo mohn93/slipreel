@@ -6,7 +6,9 @@ import CoreVideo
 public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var recordingChannel: FlutterMethodChannel?
   private var captureManager: ScreenCaptureManager?
+  private var audioCaptureManager: AudioCaptureManager?
   private var frameStreamHandler: FrameStreamHandler?
+  private var audioStreamHandler: AudioStreamHandler?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     // Main method channel for recording control
@@ -27,7 +29,15 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     instance.frameStreamHandler = FrameStreamHandler()
     framesChannel.setStreamHandler(instance.frameStreamHandler)
 
-    // TODO: Event channels for audio and cursor will be set up in later phases
+    // Event channel for audio samples
+    let audioChannel = FlutterEventChannel(
+      name: "com.screenflow_studio.screen_recorder/audio",
+      binaryMessenger: registrar.messenger
+    )
+    instance.audioStreamHandler = AudioStreamHandler()
+    audioChannel.setStreamHandler(instance.audioStreamHandler)
+
+    // TODO: Event channel for cursor will be set up in later phases
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -109,6 +119,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     }
 
     let sourceId = args["sourceId"] as? String
+    let captureAudio = args["captureAudio"] as? Bool ?? false
 
     Task {
       do {
@@ -142,6 +153,37 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
         // Start capture
         try await captureManager?.startCapture(sourceId: finalSourceId, fps: fps, isWindow: isWindow)
+
+        // Start audio capture if requested
+        if captureAudio {
+          if audioCaptureManager == nil {
+            audioCaptureManager = AudioCaptureManager()
+          }
+
+          // Set up error callback
+          audioCaptureManager?.onError = { error in
+            print("[Plugin] Audio capture error: \(error)")
+          }
+
+          // Set up audio callback with error handling
+          audioCaptureManager?.onAudioReceived = { [weak self] data, timestamp in
+            guard let self = self else { return }
+            guard let audioHandler = self.audioStreamHandler else {
+              print("[Plugin] Warning: Audio data but no stream handler")
+              return
+            }
+            guard let audioManager = self.audioCaptureManager else { return }
+            audioHandler.sendAudio(
+              data: data,
+              timestamp: timestamp,
+              sampleRate: Int(audioManager.sampleRate),
+              channels: audioManager.channelCount
+            )
+          }
+
+          // Start microphone capture
+          try audioCaptureManager?.startCapture(includeMicrophone: true, includeSystem: false)
+        }
 
         result(true)
       } catch {
@@ -186,6 +228,17 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
         try await manager.stopCapture()
         captureManager = nil
+
+        // Stop audio capture if active
+        if let audioManager = audioCaptureManager, audioManager.isCaptureActive() {
+          // Clear callbacks first
+          audioManager.onAudioReceived = nil
+          audioManager.onError = nil
+
+          // Then stop
+          audioManager.stopCapture()
+          audioCaptureManager = nil
+        }
 
         // TODO: Return video file path in Phase 1, Batch 2, Task 6
         result(["success": true])
@@ -288,5 +341,54 @@ class FrameStreamHandler: NSObject, FlutterStreamHandler {
     }
 
     frameCount += 1
+  }
+}
+
+// MARK: - Audio Stream Handler
+
+class AudioStreamHandler: NSObject, FlutterStreamHandler {
+  private var eventSink: FlutterEventSink?
+  private var sampleCount: Int = 0
+  private var isListening = false
+
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    self.eventSink = events
+    self.sampleCount = 0
+    self.isListening = true
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    self.eventSink = nil
+    self.isListening = false
+    return nil
+  }
+
+  func sendAudio(data: Data, timestamp: Int64, sampleRate: Int, channels: Int) {
+    guard isListening, let eventSink = eventSink else { return }
+
+    // Validate audio data
+    guard !data.isEmpty, sampleRate > 0, channels > 0 else {
+      print("[AudioStreamHandler] Invalid audio data")
+      return
+    }
+
+    // Create FlutterStandardTypedData with audio data
+    let flutterData = FlutterStandardTypedData(bytes: data)
+
+    // Create audio data dictionary
+    let audioData: [String: Any] = [
+      "data": flutterData,
+      "sampleRate": sampleRate,
+      "channels": channels,
+      "timestampMicros": timestamp
+    ]
+
+    // Send to Flutter on main thread
+    DispatchQueue.main.async {
+      eventSink(audioData)
+    }
+
+    sampleCount += 1
   }
 }

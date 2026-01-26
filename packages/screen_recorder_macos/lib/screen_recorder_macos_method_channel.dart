@@ -104,7 +104,15 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   @override
   Stream<AudioData> get audioStream {
     return _audioChannel.receiveBroadcastStream().map((event) {
-      return AudioData.fromJson(Map<String, dynamic>.from(event as Map));
+      try {
+        final map = event as Map;
+        return AudioData.fromJson(Map<String, dynamic>.from(map));
+      } catch (e) {
+        throw Exception('Failed to parse audio data: $e');
+      }
+    }).handleError((error) {
+      print('[ScreenRecorder] Audio stream error: $error');
+      throw error;
     });
   }
 
