@@ -79,6 +79,15 @@ class VideoEncoder {
       print('Audio format: $sampleRate Hz, $channels channels');
     }
 
+    // Validate audio format hasn't changed
+    if (_audioSampleRate != null &&
+        (sampleRate != _audioSampleRate || channels != _audioChannels)) {
+      throw ArgumentError(
+        'Audio format changed: expected $_audioSampleRate Hz, $_audioChannels ch, '
+        'got $sampleRate Hz, $channels ch'
+      );
+    }
+
     // Save audio sample as individual PCM file
     final audioPath = '$_tempDir/audio_${_audioSampleIndex.toString().padLeft(6, '0')}.pcm';
     final file = File(audioPath);
@@ -115,10 +124,12 @@ class VideoEncoder {
         for (int i = 0; i < _audioSampleIndex; i++) {
           final audioPath = '$_tempDir/audio_${i.toString().padLeft(6, '0')}.pcm';
           final audioFile = File(audioPath);
-          if (await audioFile.exists()) {
-            final audioData = await audioFile.readAsBytes();
-            sink.add(audioData);
+
+          if (!await audioFile.exists()) {
+            throw Exception('Missing audio file $i of $_audioSampleIndex');
           }
+
+          await audioFile.openRead().pipe(sink);  // Stream copy
         }
         await sink.flush();
         await sink.close();
@@ -188,6 +199,12 @@ class VideoEncoder {
 
       if (result.exitCode == 0) {
         print('Video encoding successful!');
+        if (result.stdout.toString().isNotEmpty) {
+          print('FFmpeg output: ${result.stdout}');
+        }
+        if (result.stderr.toString().isNotEmpty) {
+          print('FFmpeg messages: ${result.stderr}');
+        }
         print('Output file: $_outputPath');
 
         // Check file size
