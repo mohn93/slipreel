@@ -62,6 +62,7 @@ class RecordingController extends StateNotifier<RecordingState> {
 
   VideoEncoder? _videoEncoder;
   StreamSubscription<FrameData>? _frameSubscription;
+  StreamSubscription<AudioData>? _audioSubscription;
   Timer? _durationTimer;
   DateTime? _startTime;
 
@@ -123,6 +124,25 @@ class RecordingController extends StateNotifier<RecordingState> {
         },
       );
 
+      // Subscribe to audio stream
+      _audioSubscription =
+          ScreenRecorderPlatform.instance.audioStream.listen(
+        (audioData) async {
+          // Add audio sample to encoder
+          if (_videoEncoder != null && _videoEncoder!.isInitialized) {
+            await _videoEncoder!.addAudioSample(
+              audioData.data,
+              audioData.sampleRate,
+              audioData.channels,
+            );
+          }
+        },
+        onError: (error) {
+          print('Audio stream error: $error');
+          // Don't fail the entire recording if audio fails
+        },
+      );
+
       // Start duration timer
       _startTime = DateTime.now();
       _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -137,7 +157,7 @@ class RecordingController extends StateNotifier<RecordingState> {
         source: RecordingSource.window,
         sourceId: state.selectedWindowId,
         frameRate: 30,
-        captureAudio: false, // TODO: Implement in Phase 2
+        captureAudio: true,
         captureCursor: true,
       );
       await ScreenRecorderPlatform.instance.startRecording(settings);
@@ -162,6 +182,8 @@ class RecordingController extends StateNotifier<RecordingState> {
       // Cancel streams and timers
       await _frameSubscription?.cancel();
       _frameSubscription = null;
+      await _audioSubscription?.cancel();
+      _audioSubscription = null;
       _durationTimer?.cancel();
       _durationTimer = null;
       _startTime = null;
@@ -199,6 +221,8 @@ class RecordingController extends StateNotifier<RecordingState> {
     // Cleanup
     _frameSubscription?.cancel();
     _frameSubscription = null;
+    _audioSubscription?.cancel();
+    _audioSubscription = null;
     _durationTimer?.cancel();
     _durationTimer = null;
     _startTime = null;
@@ -214,6 +238,7 @@ class RecordingController extends StateNotifier<RecordingState> {
   @override
   void dispose() {
     _frameSubscription?.cancel();
+    _audioSubscription?.cancel();
     _durationTimer?.cancel();
     _videoEncoder?.cancel();
     super.dispose();

@@ -11,7 +11,10 @@ class VideoEncoder {
   int _height = 0;
   int _fps = 30;
   int _frameIndex = 0;
+  int _audioSampleIndex = 0;
   bool _isInitialized = false;
+  int? _audioSampleRate;
+  int? _audioChannels;
 
   /// Initialize the encoder with output settings
   Future<void> initialize({
@@ -63,6 +66,31 @@ class VideoEncoder {
     }
   }
 
+  /// Add an audio sample to the recording
+  Future<void> addAudioSample(Uint8List audioData, int sampleRate, int channels) async {
+    if (!_isInitialized) {
+      throw StateError('VideoEncoder not initialized. Call initialize() first.');
+    }
+
+    // Store audio format on first sample
+    if (_audioSampleRate == null) {
+      _audioSampleRate = sampleRate;
+      _audioChannels = channels;
+      print('Audio format: $sampleRate Hz, $channels channels');
+    }
+
+    // Save audio sample as individual PCM file
+    final audioPath = '$_tempDir/audio_${_audioSampleIndex.toString().padLeft(6, '0')}.pcm';
+    final file = File(audioPath);
+    await file.writeAsBytes(audioData);
+
+    _audioSampleIndex++;
+
+    if (_audioSampleIndex % 100 == 0) {
+      print('Saved audio sample $_audioSampleIndex');
+    }
+  }
+
   /// Finalize the video by encoding all frames to MP4
   Future<String> finalize() async {
     if (!_isInitialized) {
@@ -73,23 +101,84 @@ class VideoEncoder {
       throw StateError('No frames to encode');
     }
 
-    print('Finalizing video: $_frameIndex frames');
+    print('Finalizing video: $_frameIndex frames, $_audioSampleIndex audio samples');
 
-    // Build FFmpeg command to convert raw frames to MP4
-    // Using system FFmpeg via Process.run
-    final args = [
-      '-f', 'rawvideo',
-      '-pix_fmt', 'bgra',
-      '-s', '${_width}x$_height',
-      '-r', '$_fps',
-      '-i', '$_tempDir/frame_%06d.bgra',
-      '-c:v', 'libx264',
-      '-preset', 'fast',
-      '-crf', '23',
-      '-pix_fmt', 'yuv420p',
-      '-y',
-      _outputPath!,
-    ];
+    // Concatenate audio samples if we have any
+    String? combinedAudioPath;
+    if (_audioSampleIndex > 0 && _audioSampleRate != null && _audioChannels != null) {
+      print('Concatenating audio samples...');
+      combinedAudioPath = '$_tempDir/audio_combined.pcm';
+      final combinedFile = File(combinedAudioPath);
+      final sink = combinedFile.openWrite();
+
+      try {
+        for (int i = 0; i < _audioSampleIndex; i++) {
+          final audioPath = '$_tempDir/audio_${i.toString().padLeft(6, '0')}.pcm';
+          final audioFile = File(audioPath);
+          if (await audioFile.exists()) {
+            final audioData = await audioFile.readAsBytes();
+            sink.add(audioData);
+          }
+        }
+        await sink.flush();
+        await sink.close();
+        print('Audio concatenation complete');
+      } catch (e) {
+        print('Error concatenating audio: $e');
+        await sink.close();
+        combinedAudioPath = null;
+      }
+    }
+
+    // Build FFmpeg command
+    List<String> args;
+
+    if (combinedAudioPath != null) {
+      // Mux video + audio
+      args = [
+        // Video input
+        '-f', 'rawvideo',
+        '-pix_fmt', 'bgra',
+        '-s', '${_width}x$_height',
+        '-r', '$_fps',
+        '-i', '$_tempDir/frame_%06d.bgra',
+        // Audio input
+        '-f', 's16le',
+        '-ar', '$_audioSampleRate',
+        '-ac', '$_audioChannels',
+        '-i', combinedAudioPath,
+        // Video codec
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '23',
+        '-pix_fmt', 'yuv420p',
+        // Audio codec
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        // Sync options
+        '-vsync', 'cfr',
+        '-async', '1',
+        '-y',
+        _outputPath!,
+      ];
+      print('Encoding with audio and video');
+    } else {
+      // Video only (original behavior)
+      args = [
+        '-f', 'rawvideo',
+        '-pix_fmt', 'bgra',
+        '-s', '${_width}x$_height',
+        '-r', '$_fps',
+        '-i', '$_tempDir/frame_%06d.bgra',
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '23',
+        '-pix_fmt', 'yuv420p',
+        '-y',
+        _outputPath!,
+      ];
+      print('Encoding video only (no audio)');
+    }
 
     print('FFmpeg command: ffmpeg ${args.join(" ")}');
 
