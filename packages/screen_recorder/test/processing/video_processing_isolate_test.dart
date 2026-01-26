@@ -9,5 +9,20 @@ void main() {
       expect(isolate.isInitialized, true);
       await isolate.dispose();
     });
+
+    test('should configure encoder with video settings', () async {
+      final isolate = VideoProcessingIsolate();
+      await isolate.initialize();
+
+      await isolate.configureEncoder(
+        outputPath: '/tmp/test.mp4',
+        width: 1920,
+        height: 1080,
+        fps: 30,
+      );
+
+      expect(isolate.isConfigured, true);
+      await isolate.dispose();
+    });
   });
 }
