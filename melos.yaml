@@ -1,0 +1,21 @@
+name: screenflow_studio
+
+packages:
+  - packages/**
+
+command:
+  bootstrap:
+    runPubGetInParallel: true
+
+scripts:
+  analyze:
+    run: flutter analyze
+    description: Run Flutter analyze in all packages
+
+  test:
+    run: flutter test
+    description: Run tests in all packages
+
+  clean:
+    run: flutter clean
+    description: Clean all packages
