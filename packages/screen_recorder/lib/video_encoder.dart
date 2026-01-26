@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'rendering/cursor_renderer.dart';
+import 'models/cursor_recording.dart';
 
 /// Handles encoding video frames to MP4 using FFmpeg
 class VideoEncoder {
@@ -15,6 +17,9 @@ class VideoEncoder {
   bool _isInitialized = false;
   int? _audioSampleRate;
   int? _audioChannels;
+  CursorRecording? _cursorRecording;
+  CursorRenderer? _cursorRenderer;
+  bool _renderCursor = false;
 
   /// Initialize the encoder with output settings
   Future<void> initialize({
@@ -41,6 +46,18 @@ class VideoEncoder {
     print('Output: $_outputPath');
   }
 
+  /// Set cursor recording data for rendering
+  Future<void> setCursorData(CursorRecording cursorRecording) async {
+    _cursorRecording = cursorRecording;
+    _renderCursor = true;
+
+    // Initialize cursor renderer
+    _cursorRenderer = CursorRenderer();
+    await _cursorRenderer!.initialize();
+
+    print('Cursor renderer initialized with ${cursorRecording.count} positions');
+  }
+
   /// Add a frame to the video
   Future<void> addFrame(FrameData frameData) async {
     if (!_isInitialized) {
@@ -53,11 +70,23 @@ class VideoEncoder {
       _height = frameData.height;
     }
 
-    // Save frame as raw BGRA file
-    // We'll convert these to a video using FFmpeg later
+    Uint8List frameBytes = frameData.data;
+
+    // Render cursor on frame if enabled
+    if (_renderCursor && _cursorRecording != null && _cursorRenderer != null) {
+      frameBytes = await _cursorRenderer!.renderCursorOnFrame(
+        frameData: frameData.data,
+        width: frameData.width,
+        height: frameData.height,
+        timestampMicros: frameData.timestampMicros,
+        cursorRecording: _cursorRecording!,
+      );
+    }
+
+    // Save frame with cursor overlay
     final framePath = '$_tempDir/frame_${_frameIndex.toString().padLeft(6, '0')}.bgra';
     final file = File(framePath);
-    await file.writeAsBytes(frameData.data);
+    await file.writeAsBytes(frameBytes);
 
     _frameIndex++;
 
@@ -250,6 +279,9 @@ class VideoEncoder {
 
   /// Cancel encoding and cleanup
   Future<void> cancel() async {
+    _cursorRenderer?.dispose();
+    _cursorRenderer = null;
+    _cursorRecording = null;
     await _cleanup();
   }
 

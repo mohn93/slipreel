@@ -216,7 +216,8 @@ class RecordingController extends StateNotifier<RecordingState> {
         await _cursorRecording!.saveToFile(cursorPath);
         print('Cursor data saved: ${_cursorRecording!.count} positions');
 
-        // TODO: Pass cursor data to video encoder for rendering
+        // Pass cursor data to encoder for rendering
+        await _videoEncoder!.setCursorData(_cursorRecording!);
       }
 
       // Finalize video encoding
