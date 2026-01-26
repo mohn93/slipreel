@@ -21,8 +21,8 @@ void main() {
         progressUpdates.add(progress);
       };
 
-      // Add a few frames
-      for (int i = 0; i < 3; i++) {
+      // Add frames (need at least 30 to trigger progress update)
+      for (int i = 0; i < 60; i++) {
         final frameData = Uint8List(1920 * 1080 * 4);
         await encoder.addFrame(frameData, i * 33333);
       }
@@ -31,7 +31,7 @@ void main() {
 
       expect(outputPath, isNotEmpty);
       expect(progressUpdates, isNotEmpty);
-      expect(encoder.frameCount, 3);
+      expect(encoder.frameCount, 60);
     });
   });
 }
