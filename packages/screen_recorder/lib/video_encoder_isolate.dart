@@ -62,7 +62,7 @@ class VideoEncoderIsolate {
       throw StateError('Encoder not initialized');
     }
 
-    final outputPath = await _isolate!.finalize();
+    final outputPath = await _isolate!.finalize(_frameCount);
     await _isolate?.dispose();
     _isolate = null;
     _isInitialized = false;

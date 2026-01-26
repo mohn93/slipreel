@@ -45,7 +45,8 @@ class ProcessFrameMessage extends ProcessingMessage {
 }
 
 class FinalizeMessage extends ProcessingMessage {
-  const FinalizeMessage();
+  final int totalFrames;
+  const FinalizeMessage(this.totalFrames);
 }
 
 class DisposeMessage extends ProcessingMessage {
@@ -162,7 +163,7 @@ class VideoProcessingIsolate {
   }
 
   /// Finalize video encoding and return output path
-  Future<String> finalize() async {
+  Future<String> finalize(int totalFrames) async {
     if (!_isConfigured) {
       throw StateError('Encoder not configured');
     }
@@ -173,7 +174,7 @@ class VideoProcessingIsolate {
 
     _sendPort!.send({
       'requestId': requestId,
-      'message': const FinalizeMessage(),
+      'message': FinalizeMessage(totalFrames),
     });
 
     final response = await completer.future;
@@ -299,16 +300,22 @@ class VideoProcessingIsolate {
             }
 
             frameCount++;
-            totalFrames++;
 
-            // Send progress update (no request ID)
-            final progress = frameCount / 100.0;
-            mainSendPort.send({
-              'response': ProgressUpdate(progress),
-            });
+            // Send progress update every 30 frames (no request ID)
+            if (frameCount % 30 == 0) {
+              // Use totalFrames if known, otherwise estimate based on current frame count
+              final total = totalFrames > 0 ? totalFrames : frameCount + 100;
+              final progress = (frameCount / total).clamp(0.0, 1.0);
+              mainSendPort.send({
+                'response': ProgressUpdate(progress),
+              });
+            }
 
             response = const FrameProcessedResponse();
           } else if (processingMessage is FinalizeMessage) {
+            // Store total frames for progress calculation
+            totalFrames = processingMessage.totalFrames;
+
             // Finalize encoding in isolate
             if (useRealEncoder && encoder != null) {
               outputPath = await encoder!.finalize();
