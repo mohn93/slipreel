@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../video_encoder.dart';
+import '../models/cursor_recording.dart';
 
 /// Recording status enum
 enum RecordingStatus {
@@ -63,6 +64,8 @@ class RecordingController extends StateNotifier<RecordingState> {
   VideoEncoder? _videoEncoder;
   StreamSubscription<FrameData>? _frameSubscription;
   StreamSubscription<AudioData>? _audioSubscription;
+  StreamSubscription<CursorPosition>? _cursorSubscription;
+  CursorRecording? _cursorRecording;
   Timer? _durationTimer;
   DateTime? _startTime;
 
@@ -161,6 +164,20 @@ class RecordingController extends StateNotifier<RecordingState> {
         captureCursor: true,
       );
       await ScreenRecorderPlatform.instance.startRecording(settings);
+
+      // Subscribe to cursor stream if cursor capture enabled
+      if (settings.captureCursor) {
+        _cursorRecording = CursorRecording();
+
+        _cursorSubscription = ScreenRecorderPlatform.instance.cursorStream.listen(
+          (cursorData) {
+            _cursorRecording?.addPosition(cursorData);
+          },
+          onError: (error) {
+            print('Cursor stream error: $error');
+          },
+        );
+      }
     } catch (e) {
       _handleError('Failed to start recording: $e');
     }
@@ -187,6 +204,20 @@ class RecordingController extends StateNotifier<RecordingState> {
       _durationTimer?.cancel();
       _durationTimer = null;
       _startTime = null;
+
+      // Cancel cursor subscription and save data
+      await _cursorSubscription?.cancel();
+      _cursorSubscription = null;
+
+      // Save cursor data if captured
+      if (_cursorRecording != null && _cursorRecording!.count > 0) {
+        final docsDir = await getApplicationDocumentsDirectory();
+        final cursorPath = '${docsDir.path}/cursor_${DateTime.now().millisecondsSinceEpoch}.json';
+        await _cursorRecording!.saveToFile(cursorPath);
+        print('Cursor data saved: ${_cursorRecording!.count} positions');
+
+        // TODO: Pass cursor data to video encoder for rendering
+      }
 
       // Finalize video encoding
       if (_videoEncoder != null && _videoEncoder!.frameCount > 0) {
@@ -223,6 +254,9 @@ class RecordingController extends StateNotifier<RecordingState> {
     _frameSubscription = null;
     _audioSubscription?.cancel();
     _audioSubscription = null;
+    _cursorSubscription?.cancel();
+    _cursorSubscription = null;
+    _cursorRecording = null;
     _durationTimer?.cancel();
     _durationTimer = null;
     _startTime = null;
@@ -239,6 +273,7 @@ class RecordingController extends StateNotifier<RecordingState> {
   void dispose() {
     _frameSubscription?.cancel();
     _audioSubscription?.cancel();
+    _cursorSubscription?.cancel();
     _durationTimer?.cancel();
     _videoEncoder?.cancel();
     super.dispose();
