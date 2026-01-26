@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 /// Messages sent to the video processing isolate
 abstract class ProcessingMessage {
@@ -25,6 +26,13 @@ class ConfigureEncoderMessage extends ProcessingMessage {
   });
 }
 
+class ProcessFrameMessage extends ProcessingMessage {
+  final Uint8List frameData;
+  final int timestampMicros;
+
+  const ProcessFrameMessage(this.frameData, this.timestampMicros);
+}
+
 class DisposeMessage extends ProcessingMessage {
   const DisposeMessage();
 }
@@ -42,6 +50,15 @@ class ConfiguredResponse extends ProcessingResponse {
   const ConfiguredResponse();
 }
 
+class FrameProcessedResponse extends ProcessingResponse {
+  const FrameProcessedResponse();
+}
+
+class ProgressUpdate extends ProcessingResponse {
+  final double progress;
+  const ProgressUpdate(this.progress);
+}
+
 class ErrorResponse extends ProcessingResponse {
   final String message;
   final String? stackTrace;
@@ -57,6 +74,7 @@ class VideoProcessingIsolate {
   bool _isConfigured = false;
   final Map<String, Completer<ProcessingResponse>> _pendingRequests = {};
   int _requestId = 0;
+  void Function(double)? onProgress;
 
   bool get isInitialized => _isInitialized;
   bool get isConfigured => _isConfigured;
@@ -79,20 +97,43 @@ class VideoProcessingIsolate {
         completer.complete();
       } else if (message is Map) {
         // Handle response with request ID
-        final requestId = message['requestId'] as String;
+        final requestId = message['requestId'] as String?;
         final response = message['response'] as ProcessingResponse;
 
-        final pending = _pendingRequests.remove(requestId);
-        if (pending != null && !pending.isCompleted) {
-          if (response is ErrorResponse) {
-            pending.completeError(Exception(response.message));
-          } else {
-            pending.complete(response);
+        if (response is ProgressUpdate) {
+          // Progress updates don't have request IDs
+          onProgress?.call(response.progress);
+        } else if (requestId != null) {
+          final pending = _pendingRequests.remove(requestId);
+          if (pending != null && !pending.isCompleted) {
+            if (response is ErrorResponse) {
+              pending.completeError(Exception(response.message));
+            } else {
+              pending.complete(response);
+            }
           }
         }
       } else if (message is ErrorResponse) {
         completer.completeError(Exception(message.message));
       }
+    });
+
+    await completer.future;
+  }
+
+  /// Process a frame in the background isolate
+  Future<void> processFrame(Uint8List frameData, int timestampMicros) async {
+    if (!_isConfigured) {
+      throw StateError('Encoder not configured');
+    }
+
+    final requestId = (_requestId++).toString();
+    final completer = Completer<ProcessingResponse>();
+    _pendingRequests[requestId] = completer;
+
+    _sendPort!.send({
+      'requestId': requestId,
+      'message': ProcessFrameMessage(frameData, timestampMicros),
     });
 
     await completer.future;
@@ -148,6 +189,7 @@ class VideoProcessingIsolate {
   /// Entry point for the background isolate
   static void _isolateEntryPoint(SendPort mainSendPort) {
     final receivePort = ReceivePort();
+    int frameCount = 0;
 
     // Send our SendPort back to main isolate
     mainSendPort.send(receivePort.sendPort);
@@ -163,7 +205,19 @@ class VideoProcessingIsolate {
 
         if (processingMessage is ConfigureEncoderMessage) {
           // TODO: Actually initialize encoder in isolate
+          frameCount = 0;
           response = const ConfiguredResponse();
+        } else if (processingMessage is ProcessFrameMessage) {
+          // TODO: Actually process frame in isolate
+          frameCount++;
+
+          // Send progress update (no request ID)
+          final progress = frameCount / 100.0; // Mock progress
+          mainSendPort.send({
+            'response': ProgressUpdate(progress),
+          });
+
+          response = const FrameProcessedResponse();
         } else {
           response = const ErrorResponse('Unknown message type');
         }
