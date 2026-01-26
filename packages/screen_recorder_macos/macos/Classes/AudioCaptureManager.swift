@@ -9,10 +9,20 @@ class AudioCaptureManager: NSObject {
   private var audioEngine: AVAudioEngine?
   private var inputNode: AVAudioInputNode?
   private var isCapturing = false
+  private var currentFormat: AVAudioFormat?
 
   // Callback for audio data
   var onAudioReceived: ((Data, Int64) -> Void)?
   var onError: ((Error) -> Void)?
+
+  // Audio format properties
+  var sampleRate: Double {
+    return currentFormat?.sampleRate ?? 48000.0
+  }
+
+  var channelCount: Int {
+    return Int(currentFormat?.channelCount ?? 1)
+  }
 
   // MARK: - Permission Handling
 
@@ -79,6 +89,7 @@ class AudioCaptureManager: NSObject {
 
     // Configure format - use hardware format for best compatibility
     let format = input.outputFormat(forBus: 0)
+    currentFormat = format
 
     // Install tap to capture audio
     input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, time in
@@ -132,6 +143,7 @@ class AudioCaptureManager: NSObject {
     audioEngine?.stop()
     audioEngine = nil
     inputNode = nil
+    currentFormat = nil
 
     isCapturing = false
   }

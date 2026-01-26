@@ -9,6 +9,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var audioCaptureManager: AudioCaptureManager?
   private var frameStreamHandler: FrameStreamHandler?
   private var audioStreamHandler: AudioStreamHandler?
+  private var cursorStreamHandler: CursorStreamHandler?
+  private var cursorTracker: CursorTracker?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     // Main method channel for recording control
@@ -37,7 +39,13 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     instance.audioStreamHandler = AudioStreamHandler()
     audioChannel.setStreamHandler(instance.audioStreamHandler)
 
-    // TODO: Event channel for cursor will be set up in later phases
+    // Event channel for cursor tracking
+    let cursorChannel = FlutterEventChannel(
+      name: "com.screenflow_studio.screen_recorder/cursor",
+      binaryMessenger: registrar.messenger
+    )
+    instance.cursorStreamHandler = CursorStreamHandler()
+    cursorChannel.setStreamHandler(instance.cursorStreamHandler)
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -185,6 +193,33 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           try audioCaptureManager?.startCapture(includeMicrophone: true, includeSystem: false)
         }
 
+        // Start cursor tracking if enabled
+        let captureCursor = args["captureCursor"] as? Bool ?? true
+
+        if captureCursor {
+          if cursorTracker == nil {
+            cursorTracker = CursorTracker()
+          }
+
+          // Set up cursor callback
+          cursorTracker?.onCursorUpdate = { [weak self] x, y, timestamp, isClicked in
+            guard let self = self else { return }
+            guard let handler = self.cursorStreamHandler else {
+              print("[Plugin] Warning: Cursor data but no stream handler")
+              return
+            }
+
+            handler.sendCursorPosition(x: x, y: y, timestamp: timestamp, isClicked: isClicked)
+          }
+
+          cursorTracker?.onError = { error in
+            print("[Plugin] Cursor tracking error: \(error)")
+          }
+
+          // Start tracking at 60 Hz
+          try cursorTracker?.startTracking(frequency: 60)
+        }
+
         result(true)
       } catch {
         result(FlutterError(
@@ -238,6 +273,18 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           // Then stop
           audioManager.stopCapture()
           audioCaptureManager = nil
+        }
+
+        // Stop cursor tracking if active
+        if let tracker = cursorTracker {
+          tracker.onCursorUpdate = nil
+          tracker.onError = nil
+
+          if tracker.isCurrentlyTracking() {
+            tracker.stopTracking()
+          }
+
+          cursorTracker = nil
         }
 
         // TODO: Return video file path in Phase 1, Batch 2, Task 6
@@ -387,6 +434,50 @@ class AudioStreamHandler: NSObject, FlutterStreamHandler {
     // Send to Flutter on main thread
     DispatchQueue.main.async {
       eventSink(audioData)
+    }
+
+    sampleCount += 1
+  }
+}
+
+// MARK: - Cursor Stream Handler
+
+class CursorStreamHandler: NSObject, FlutterStreamHandler {
+  private var eventSink: FlutterEventSink?
+  private var isListening = false
+  private var sampleCount: Int = 0
+
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    self.eventSink = events
+    self.isListening = true
+    self.sampleCount = 0
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    self.eventSink = nil
+    self.isListening = false
+    return nil
+  }
+
+  func sendCursorPosition(x: Double, y: Double, timestamp: Int64, isClicked: Bool) {
+    guard isListening, let eventSink = eventSink else { return }
+
+    // Validate data
+    guard x.isFinite, y.isFinite, timestamp >= 0 else {
+      print("[CursorStreamHandler] Invalid cursor data: x=\(x), y=\(y), timestamp=\(timestamp)")
+      return
+    }
+
+    let cursorData: [String: Any] = [
+      "x": x,
+      "y": y,
+      "timestampMicros": timestamp,
+      "isClicked": isClicked
+    ]
+
+    DispatchQueue.main.async {
+      eventSink(cursorData)
     }
 
     sampleCount += 1
