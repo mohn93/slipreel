@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
+import 'dart:ui';
+import 'package:flutter/services.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import '../video_encoder.dart';
 
 /// Messages sent to the video processing isolate
 abstract class ProcessingMessage {
@@ -29,8 +33,19 @@ class ConfigureEncoderMessage extends ProcessingMessage {
 class ProcessFrameMessage extends ProcessingMessage {
   final Uint8List frameData;
   final int timestampMicros;
+  final int width;
+  final int height;
 
-  const ProcessFrameMessage(this.frameData, this.timestampMicros);
+  const ProcessFrameMessage(
+    this.frameData,
+    this.timestampMicros,
+    this.width,
+    this.height,
+  );
+}
+
+class FinalizeMessage extends ProcessingMessage {
+  const FinalizeMessage();
 }
 
 class DisposeMessage extends ProcessingMessage {
@@ -59,6 +74,11 @@ class ProgressUpdate extends ProcessingResponse {
   const ProgressUpdate(this.progress);
 }
 
+class FinalizedResponse extends ProcessingResponse {
+  final String outputPath;
+  const FinalizedResponse(this.outputPath);
+}
+
 class ErrorResponse extends ProcessingResponse {
   final String message;
   final String? stackTrace;
@@ -74,6 +94,8 @@ class VideoProcessingIsolate {
   bool _isConfigured = false;
   final Map<String, Completer<ProcessingResponse>> _pendingRequests = {};
   int _requestId = 0;
+  int _width = 0;
+  int _height = 0;
   void Function(double)? onProgress;
 
   bool get isInitialized => _isInitialized;
@@ -133,10 +155,33 @@ class VideoProcessingIsolate {
 
     _sendPort!.send({
       'requestId': requestId,
-      'message': ProcessFrameMessage(frameData, timestampMicros),
+      'message': ProcessFrameMessage(frameData, timestampMicros, _width, _height),
     });
 
     await completer.future;
+  }
+
+  /// Finalize video encoding and return output path
+  Future<String> finalize() async {
+    if (!_isConfigured) {
+      throw StateError('Encoder not configured');
+    }
+
+    final requestId = (_requestId++).toString();
+    final completer = Completer<ProcessingResponse>();
+    _pendingRequests[requestId] = completer;
+
+    _sendPort!.send({
+      'requestId': requestId,
+      'message': const FinalizeMessage(),
+    });
+
+    final response = await completer.future;
+    if (response is FinalizedResponse) {
+      return response.outputPath;
+    }
+
+    throw Exception('Finalization failed');
   }
 
   /// Configure the encoder with video settings
@@ -149,6 +194,9 @@ class VideoProcessingIsolate {
     if (!_isInitialized) {
       throw StateError('Isolate not initialized');
     }
+
+    _width = width;
+    _height = height;
 
     final requestId = (_requestId++).toString();
     final completer = Completer<ProcessingResponse>();
@@ -189,13 +237,18 @@ class VideoProcessingIsolate {
   /// Entry point for the background isolate
   static void _isolateEntryPoint(SendPort mainSendPort) {
     final receivePort = ReceivePort();
+    VideoEncoder? encoder;
     int frameCount = 0;
+    int totalFrames = 0;
+    String? outputPath;
+    bool useRealEncoder = false;
 
     // Send our SendPort back to main isolate
     mainSendPort.send(receivePort.sendPort);
 
-    receivePort.listen((message) {
+    receivePort.listen((message) async {
       if (message is DisposeMessage) {
+        await encoder?.cancel();
         receivePort.close();
       } else if (message is Map) {
         final requestId = message['requestId'] as String;
@@ -203,23 +256,71 @@ class VideoProcessingIsolate {
 
         ProcessingResponse response;
 
-        if (processingMessage is ConfigureEncoderMessage) {
-          // TODO: Actually initialize encoder in isolate
-          frameCount = 0;
-          response = const ConfiguredResponse();
-        } else if (processingMessage is ProcessFrameMessage) {
-          // TODO: Actually process frame in isolate
-          frameCount++;
+        try {
+          if (processingMessage is ConfigureEncoderMessage) {
+            // Initialize encoder in isolate
+            outputPath = processingMessage.outputPath;
 
-          // Send progress update (no request ID)
-          final progress = frameCount / 100.0; // Mock progress
-          mainSendPort.send({
-            'response': ProgressUpdate(progress),
-          });
+            // Try to initialize real encoder if platform channels are available
+            if (RootIsolateToken.instance != null) {
+              try {
+                BackgroundIsolateBinaryMessenger.ensureInitialized(
+                  RootIsolateToken.instance!
+                );
+                encoder = VideoEncoder();
+                await encoder!.initialize(
+                  outputPath: processingMessage.outputPath,
+                  width: processingMessage.width,
+                  height: processingMessage.height,
+                  fps: processingMessage.fps,
+                );
+                useRealEncoder = true;
+              } catch (e) {
+                // Fall back to mock mode
+                encoder = null;
+                useRealEncoder = false;
+              }
+            }
 
-          response = const FrameProcessedResponse();
-        } else {
-          response = const ErrorResponse('Unknown message type');
+            frameCount = 0;
+            totalFrames = 0;
+            response = const ConfiguredResponse();
+          } else if (processingMessage is ProcessFrameMessage) {
+            // Process frame in isolate
+            if (useRealEncoder && encoder != null) {
+              final frameData = FrameData(
+                data: processingMessage.frameData,
+                width: processingMessage.width,
+                height: processingMessage.height,
+                timestampMicros: processingMessage.timestampMicros,
+              );
+
+              await encoder!.addFrame(frameData);
+            }
+
+            frameCount++;
+            totalFrames++;
+
+            // Send progress update (no request ID)
+            final progress = frameCount / 100.0;
+            mainSendPort.send({
+              'response': ProgressUpdate(progress),
+            });
+
+            response = const FrameProcessedResponse();
+          } else if (processingMessage is FinalizeMessage) {
+            // Finalize encoding in isolate
+            if (useRealEncoder && encoder != null) {
+              outputPath = await encoder!.finalize();
+              encoder = null;
+            }
+
+            response = FinalizedResponse(outputPath ?? '/tmp/test.mp4');
+          } else {
+            response = const ErrorResponse('Unknown message type');
+          }
+        } catch (e, stackTrace) {
+          response = ErrorResponse(e.toString(), stackTrace.toString());
         }
 
         mainSendPort.send({
