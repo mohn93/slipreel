@@ -4,44 +4,48 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 
 /// Stores cursor position data for a recording session
 class CursorRecording {
-  final List<CursorPosition> positions = [];
+  final List<CursorPosition> _positions = [];
+
+  /// Get unmodifiable view of positions
+  List<CursorPosition> get positions => List.unmodifiable(_positions);
 
   /// Add a cursor position to the recording
   void addPosition(CursorPosition position) {
-    positions.add(position);
+    _positions.add(position);
   }
 
   /// Get cursor position at specific timestamp (interpolated if needed)
   CursorPosition? getPositionAt(int timestampMicros) {
-    if (positions.isEmpty) return null;
+    if (_positions.isEmpty) return null;
 
-    // Find two positions surrounding the timestamp
-    CursorPosition? before;
-    CursorPosition? after;
+    // Binary search to find insertion point
+    int low = 0;
+    int high = _positions.length - 1;
 
-    for (final pos in positions) {
-      if (pos.timestampMicros <= timestampMicros) {
-        if (before == null || pos.timestampMicros > before.timestampMicros) {
-          before = pos;
-        }
-      }
-      if (pos.timestampMicros >= timestampMicros) {
-        if (after == null || pos.timestampMicros < after.timestampMicros) {
-          after = pos;
-        }
+    while (low <= high) {
+      int mid = (low + high) ~/ 2;
+      if (_positions[mid].timestampMicros == timestampMicros) {
+        return _positions[mid];
+      } else if (_positions[mid].timestampMicros < timestampMicros) {
+        low = mid + 1;
+      } else {
+        high = mid - 1;
       }
     }
 
-    // If exact match, return it
-    if (before != null && before.timestampMicros == timestampMicros) {
-      return before;
-    }
+    // Now low is the insertion point
+    CursorPosition? after = low < _positions.length ? _positions[low] : null;
+    CursorPosition? before = high >= 0 ? _positions[high] : null;
 
-    // If only one side, return that
     if (before == null) return after;
     if (after == null) return before;
 
-    // Interpolate between before and after
+    // Division by zero check
+    if (before.timestampMicros == after.timestampMicros) {
+      return before;
+    }
+
+    // Interpolate
     final t = (timestampMicros - before.timestampMicros) /
               (after.timestampMicros - before.timestampMicros);
 
@@ -55,30 +59,42 @@ class CursorRecording {
 
   /// Save cursor data to file
   Future<void> saveToFile(String filePath) async {
-    final file = File(filePath);
-    final jsonData = positions.map((p) => p.toJson()).toList();
-    await file.writeAsString(jsonEncode(jsonData));
+    try {
+      final file = File(filePath);
+      final jsonData = _positions.map((p) => p.toJson()).toList();
+      await file.writeAsString(jsonEncode(jsonData));
+    } catch (e) {
+      throw Exception('Failed to save cursor data: $e');
+    }
   }
 
   /// Load cursor data from file
   static Future<CursorRecording> loadFromFile(String filePath) async {
-    final file = File(filePath);
-    final content = await file.readAsString();
-    final jsonData = jsonDecode(content) as List;
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw Exception('Cursor file not found: $filePath');
+      }
 
-    final recording = CursorRecording();
-    for (final item in jsonData) {
-      recording.addPosition(CursorPosition.fromJson(item as Map<String, dynamic>));
+      final content = await file.readAsString();
+      final jsonData = jsonDecode(content) as List;
+
+      final recording = CursorRecording();
+      for (final item in jsonData) {
+        recording.addPosition(CursorPosition.fromJson(item as Map<String, dynamic>));
+      }
+
+      return recording;
+    } catch (e) {
+      throw Exception('Failed to load cursor data: $e');
     }
-
-    return recording;
   }
 
   /// Get total number of positions
-  int get count => positions.length;
+  int get count => _positions.length;
 
   /// Clear all positions
   void clear() {
-    positions.clear();
+    _positions.clear();
   }
 }
