@@ -295,7 +295,35 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
             },
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
+
+          // Undo/Redo buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Undo button
+              IconButton(
+                onPressed: _undoRedoController.canUndo ? _handleUndo : null,
+                icon: const Icon(Icons.undo),
+                tooltip: 'Undo (${Platform.isMacOS ? 'Cmd' : 'Ctrl'}+Z)',
+                color: _undoRedoController.canUndo
+                    ? Colors.white70
+                    : Colors.white24,
+              ),
+
+              // Redo button
+              IconButton(
+                onPressed: _undoRedoController.canRedo ? _handleRedo : null,
+                icon: const Icon(Icons.redo),
+                tooltip: 'Redo (${Platform.isMacOS ? 'Cmd' : 'Ctrl'}+Shift+Z)',
+                color: _undoRedoController.canRedo
+                    ? Colors.white70
+                    : Colors.white24,
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
 
           // Play/Pause and Record Another buttons
           Row(
