@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'rendering/cursor_renderer.dart';
 import 'models/cursor_recording.dart';
+import 'effects/background_effect.dart';
 
 /// Handles encoding video frames to MP4 using FFmpeg
 class VideoEncoder {
@@ -56,6 +57,13 @@ class VideoEncoder {
     await _cursorRenderer!.initialize();
 
     print('Cursor renderer initialized with ${cursorRecording.count} positions');
+  }
+
+  /// Set background effect to apply to frames
+  Future<void> setBackgroundEffect(BackgroundEffect? effect) async {
+    if (_cursorRenderer != null) {
+      await _cursorRenderer!.setBackgroundEffect(effect);
+    }
   }
 
   /// Add a frame to the video
