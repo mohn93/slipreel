@@ -112,7 +112,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                                 : event.logicalKey == LogicalKeyboardKey.control || event.logicalKey == LogicalKeyboardKey.controlLeft || event.logicalKey == LogicalKeyboardKey.controlRight;
 
         // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
-        if (cmdOrCtrl && event.logicalKey == LogicalKeyboardKey.keyZ && !event.isShiftPressed) {
+        if (cmdOrCtrl && event.logicalKey == LogicalKeyboardKey.keyZ && !HardwareKeyboard.instance.isShiftPressed) {
           if (_undoRedo.canUndo) {
             _handleUndo();
             return KeyEventResult.handled;
@@ -121,7 +121,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         }
 
         // Redo: Cmd+Shift+Z (Mac) or Ctrl+Shift+Z (Windows/Linux)
-        if (cmdOrCtrl && event.logicalKey == LogicalKeyboardKey.keyZ && event.isShiftPressed) {
+        if (cmdOrCtrl && event.logicalKey == LogicalKeyboardKey.keyZ && HardwareKeyboard.instance.isShiftPressed) {
           if (_undoRedo.canRedo) {
             _handleRedo();
             return KeyEventResult.handled;
