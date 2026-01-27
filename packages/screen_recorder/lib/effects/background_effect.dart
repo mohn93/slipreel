@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 /// Base interface for background effects
 abstract class BackgroundEffect {

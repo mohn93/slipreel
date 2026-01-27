@@ -28,10 +28,10 @@ class SolidEffect implements BackgroundEffect {
     final result = Uint8List(width * height * 4);
 
     // Extract color components
-    final b = color.blue;
-    final g = color.green;
-    final r = color.red;
-    final a = color.alpha;
+    final b = (color.b * 255.0).round() & 0xff;
+    final g = (color.g * 255.0).round() & 0xff;
+    final r = (color.r * 255.0).round() & 0xff;
+    final a = (color.a * 255.0).round() & 0xff;
 
     // Fill with solid color in BGRA format
     for (int i = 0; i < result.length; i += 4) {

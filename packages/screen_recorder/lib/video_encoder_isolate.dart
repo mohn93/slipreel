@@ -18,6 +18,10 @@ class VideoEncoderIsolate {
   bool get isInitialized => _isInitialized;
   int get frameCount => _frameCount;
 
+  // TODO: Background effects not yet supported in VideoEncoderIsolate
+  // Currently only works with legacy VideoEncoder
+  // Will be integrated in future phase
+
   /// Initialize the encoder with output settings
   Future<void> initialize({
     required String outputPath,

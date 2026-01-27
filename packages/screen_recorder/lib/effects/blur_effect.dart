@@ -12,7 +12,14 @@ class BlurEffect implements BackgroundEffect {
   BlurEffect({
     this.sigmaX = 10.0,
     this.sigmaY = 10.0,
-  });
+  }) {
+    if (sigmaX < 0) {
+      throw ArgumentError('sigmaX must be non-negative');
+    }
+    if (sigmaY < 0) {
+      throw ArgumentError('sigmaY must be non-negative');
+    }
+  }
 
   @override
   Future<void> initialize() async {

@@ -7,14 +7,18 @@ import 'background_effect.dart';
 /// Gradient background effect
 class GradientEffect implements BackgroundEffect {
   final List<Color> colors;
-  final AlignmentGeometry begin;
-  final AlignmentGeometry end;
+  final Alignment begin;
+  final Alignment end;
 
   GradientEffect({
     required this.colors,
     this.begin = Alignment.topLeft,
     this.end = Alignment.bottomRight,
-  });
+  }) {
+    if (colors.isEmpty) {
+      throw ArgumentError('colors must not be empty');
+    }
+  }
 
   @override
   Future<void> initialize() async {
@@ -37,8 +41,8 @@ class GradientEffect implements BackgroundEffect {
     final canvas = ui.Canvas(recorder);
 
     final gradient = LinearGradient(
-      begin: begin as Alignment,
-      end: end as Alignment,
+      begin: begin,
+      end: end,
       colors: colors,
     );
 
