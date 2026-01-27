@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
 import 'timeline_painter.dart';
@@ -29,6 +31,7 @@ class TimelineWidget extends StatefulWidget {
 
 class _TimelineWidgetState extends State<TimelineWidget> {
   DragTarget _dragTarget = DragTarget.none;
+  Timer? _debounceTimer;
 
   @override
   Widget build(BuildContext context) {
@@ -109,6 +112,7 @@ class _TimelineWidgetState extends State<TimelineWidget> {
 
     switch (_dragTarget) {
       case DragTarget.playhead:
+        // Playhead updates immediately (no debounce)
         widget.onPositionChanged(newPosition);
         break;
       case DragTarget.startHandle:
@@ -118,7 +122,12 @@ class _TimelineWidgetState extends State<TimelineWidget> {
             end: widget.trimSelection!.end,
             videoDuration: widget.duration,
           );
-          widget.onTrimChanged!(newTrim);
+
+          // Debounce trim updates
+          _debounceTimer?.cancel();
+          _debounceTimer = Timer(const Duration(milliseconds: 16), () {
+            widget.onTrimChanged!(newTrim);
+          });
         }
         break;
       case DragTarget.endHandle:
@@ -128,11 +137,22 @@ class _TimelineWidgetState extends State<TimelineWidget> {
             end: newPosition,
             videoDuration: widget.duration,
           );
-          widget.onTrimChanged!(newTrim);
+
+          // Debounce trim updates
+          _debounceTimer?.cancel();
+          _debounceTimer = Timer(const Duration(milliseconds: 16), () {
+            widget.onTrimChanged!(newTrim);
+          });
         }
         break;
       case DragTarget.none:
         break;
     }
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
   }
 }

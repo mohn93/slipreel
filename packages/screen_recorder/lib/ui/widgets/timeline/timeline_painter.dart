@@ -23,7 +23,7 @@ class TimelinePainter extends CustomPainter {
     final progressValue = progress.clamp(0.0, 1.0);
 
     // Draw trim selection background if present
-    if (trimSelection != null) {
+    if (trimSelection != null && duration.inMicroseconds > 0) {
       final startX = (trimSelection!.start.inMicroseconds / duration.inMicroseconds) * size.width;
       final endX = (trimSelection!.end.inMicroseconds / duration.inMicroseconds) * size.width;
 
@@ -87,7 +87,7 @@ class TimelinePainter extends CustomPainter {
     );
 
     // Draw trim handles if present
-    if (trimSelection != null) {
+    if (trimSelection != null && duration.inMicroseconds > 0) {
       final startX = (trimSelection!.start.inMicroseconds / duration.inMicroseconds) * size.width;
       final endX = (trimSelection!.end.inMicroseconds / duration.inMicroseconds) * size.width;
 
