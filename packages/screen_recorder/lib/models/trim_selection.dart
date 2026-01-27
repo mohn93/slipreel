@@ -10,24 +10,21 @@ class TrimSelection {
   /// The end position of the trim selection.
   final Duration end;
 
-  /// The total duration of the video being trimmed.
-  final Duration videoDuration;
-
   /// Creates a trim selection with the given start and end positions.
   ///
   /// Automatically swaps [start] and [end] if [start] > [end].
-  /// Constrains both values to be within [0, videoDuration].
+  /// If [videoDuration] is provided, constrains both values to be within [0, videoDuration].
   TrimSelection({
     required Duration start,
     required Duration end,
-    required this.videoDuration,
+    Duration? videoDuration,
   })  : start = _constrain(start < end ? start : end, videoDuration),
         end = _constrain(start < end ? end : start, videoDuration);
 
-  /// Constrains a duration to be within [0, videoDuration].
-  static Duration _constrain(Duration value, Duration max) {
+  /// Constrains a duration to be within [0, max].
+  static Duration _constrain(Duration value, Duration? max) {
     if (value < Duration.zero) return Duration.zero;
-    if (value > max) return max;
+    if (max != null && value > max) return max;
     return value;
   }
 
@@ -48,7 +45,7 @@ class TrimSelection {
     return TrimSelection(
       start: start ?? this.start,
       end: end ?? this.end,
-      videoDuration: videoDuration ?? this.videoDuration,
+      videoDuration: videoDuration,
     );
   }
 
@@ -56,11 +53,11 @@ class TrimSelection {
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is TrimSelection &&
-        other.start == start &&
-        other.end == end &&
-        other.videoDuration == videoDuration;
+        runtimeType == other.runtimeType &&
+        start == other.start &&
+        end == other.end;
   }
 
   @override
-  int get hashCode => Object.hash(start, end, videoDuration);
+  int get hashCode => start.hashCode ^ end.hashCode;
 }

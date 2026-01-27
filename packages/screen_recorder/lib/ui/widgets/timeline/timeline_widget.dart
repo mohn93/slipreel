@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
 import 'timeline_painter.dart';
 
-enum _DragTarget { none, playhead, startHandle, endHandle }
+enum DragTarget { none, playhead, startHandle, endHandle }
 
 /// Timeline widget for video playback control
 class TimelineWidget extends StatefulWidget {
@@ -28,7 +28,7 @@ class TimelineWidget extends StatefulWidget {
 }
 
 class _TimelineWidgetState extends State<TimelineWidget> {
-  _DragTarget _dragTarget = _DragTarget.none;
+  DragTarget _dragTarget = DragTarget.none;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +47,7 @@ class _TimelineWidgetState extends State<TimelineWidget> {
           },
           onHorizontalDragEnd: (_) {
             setState(() {
-              _dragTarget = _DragTarget.none;
+              _dragTarget = DragTarget.none;
             });
           },
           child: Container(
@@ -82,14 +82,14 @@ class _TimelineWidgetState extends State<TimelineWidget> {
 
       if ((localPosition.dx - startX).abs() < hitRadius) {
         setState(() {
-          _dragTarget = _DragTarget.startHandle;
+          _dragTarget = DragTarget.startHandle;
         });
         return;
       }
 
       if ((localPosition.dx - endX).abs() < hitRadius) {
         setState(() {
-          _dragTarget = _DragTarget.endHandle;
+          _dragTarget = DragTarget.endHandle;
         });
         return;
       }
@@ -97,7 +97,7 @@ class _TimelineWidgetState extends State<TimelineWidget> {
 
     // Default to playhead dragging
     setState(() {
-      _dragTarget = _DragTarget.playhead;
+      _dragTarget = DragTarget.playhead;
     });
   }
 
@@ -108,10 +108,10 @@ class _TimelineWidgetState extends State<TimelineWidget> {
     );
 
     switch (_dragTarget) {
-      case _DragTarget.playhead:
+      case DragTarget.playhead:
         widget.onPositionChanged(newPosition);
         break;
-      case _DragTarget.startHandle:
+      case DragTarget.startHandle:
         if (widget.trimSelection != null && widget.onTrimChanged != null) {
           final newTrim = TrimSelection(
             start: newPosition,
@@ -121,7 +121,7 @@ class _TimelineWidgetState extends State<TimelineWidget> {
           widget.onTrimChanged!(newTrim);
         }
         break;
-      case _DragTarget.endHandle:
+      case DragTarget.endHandle:
         if (widget.trimSelection != null && widget.onTrimChanged != null) {
           final newTrim = TrimSelection(
             start: widget.trimSelection!.start,
@@ -131,7 +131,7 @@ class _TimelineWidgetState extends State<TimelineWidget> {
           widget.onTrimChanged!(newTrim);
         }
         break;
-      case _DragTarget.none:
+      case DragTarget.none:
         break;
     }
   }
