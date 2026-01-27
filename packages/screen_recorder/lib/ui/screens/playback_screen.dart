@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
@@ -90,29 +91,68 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF1E1E2E),
-      appBar: AppBar(
-        title: const Text('Playback'),
-        backgroundColor: const Color(0xFF2B2B3D),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: Column(
-        children: [
-          // Video player
-          Expanded(
-            child: Center(
-              child: _buildVideoPlayer(),
+    return Focus(
+      autofocus: true,
+      child: Shortcuts(
+        shortcuts: <ShortcutActivator, Intent>{
+          // Undo - CMD+Z on macOS, Ctrl+Z on Windows/Linux
+          LogicalKeySet(
+            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            LogicalKeyboardKey.keyZ,
+          ): const UndoIntent(),
+          // Redo - CMD+Shift+Z on macOS, Ctrl+Shift+Z on Windows/Linux
+          LogicalKeySet(
+            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            LogicalKeyboardKey.shift,
+            LogicalKeyboardKey.keyZ,
+          ): const RedoIntent(),
+          // Alternative redo - CMD+Y on macOS, Ctrl+Y on Windows/Linux
+          LogicalKeySet(
+            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
+            LogicalKeyboardKey.keyY,
+          ): const RedoIntent(),
+        },
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            UndoIntent: CallbackAction<UndoIntent>(
+              onInvoke: (UndoIntent intent) {
+                _handleUndo();
+                return null;
+              },
+            ),
+            RedoIntent: CallbackAction<RedoIntent>(
+              onInvoke: (RedoIntent intent) {
+                _handleRedo();
+                return null;
+              },
+            ),
+          },
+          child: Scaffold(
+            backgroundColor: const Color(0xFF1E1E2E),
+            appBar: AppBar(
+              title: const Text('Playback'),
+              backgroundColor: const Color(0xFF2B2B3D),
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+            body: Column(
+              children: [
+                // Video player
+                Expanded(
+                  child: Center(
+                    child: _buildVideoPlayer(),
+                  ),
+                ),
+
+                // Controls
+                _buildControls(),
+              ],
             ),
           ),
-
-          // Controls
-          _buildControls(),
-        ],
+        ),
       ),
     );
   }
@@ -307,4 +347,14 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       ),
     );
   }
+}
+
+/// Intent for undo action.
+class UndoIntent extends Intent {
+  const UndoIntent();
+}
+
+/// Intent for redo action.
+class RedoIntent extends Intent {
+  const RedoIntent();
 }
