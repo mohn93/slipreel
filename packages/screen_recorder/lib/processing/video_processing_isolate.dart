@@ -6,6 +6,15 @@ import 'package:flutter/services.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../video_encoder.dart';
 
+/// TimeoutException is used for request timeouts
+class TimeoutException implements Exception {
+  final String message;
+  const TimeoutException(this.message);
+
+  @override
+  String toString() => 'TimeoutException: $message';
+}
+
 /// Messages sent to the video processing isolate
 abstract class ProcessingMessage {
   const ProcessingMessage();
@@ -159,7 +168,14 @@ class VideoProcessingIsolate {
       'message': ProcessFrameMessage(frameData, timestampMicros, _width, _height),
     });
 
-    await completer.future;
+    // Add timeout to prevent hanging if isolate crashes
+    await completer.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        _pendingRequests.remove(requestId);
+        throw TimeoutException('Frame processing timed out after 10 seconds');
+      },
+    );
   }
 
   /// Finalize video encoding and return output path
@@ -177,7 +193,15 @@ class VideoProcessingIsolate {
       'message': FinalizeMessage(totalFrames),
     });
 
-    final response = await completer.future;
+    // Add timeout for finalization (longer timeout as this can take time)
+    final response = await completer.future.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        _pendingRequests.remove(requestId);
+        throw TimeoutException('Finalization timed out after 30 seconds');
+      },
+    );
+
     if (response is FinalizedResponse) {
       return response.outputPath;
     }
@@ -213,7 +237,15 @@ class VideoProcessingIsolate {
       ),
     });
 
-    final response = await completer.future;
+    // Add timeout for configuration
+    final response = await completer.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        _pendingRequests.remove(requestId);
+        throw TimeoutException('Configuration timed out after 10 seconds');
+      },
+    );
+
     if (response is ConfiguredResponse) {
       _isConfigured = true;
     }
@@ -221,6 +253,16 @@ class VideoProcessingIsolate {
 
   /// Dispose the isolate and clean up resources
   Future<void> dispose() async {
+    // Clear all pending requests with an error before disposing
+    for (final completer in _pendingRequests.values) {
+      if (!completer.isCompleted) {
+        completer.completeError(
+          Exception('Isolate disposed while request was pending')
+        );
+      }
+    }
+    _pendingRequests.clear();
+
     if (_sendPort != null) {
       _sendPort!.send(const DisposeMessage());
     }
@@ -232,11 +274,13 @@ class VideoProcessingIsolate {
     _sendPort = null;
     _isInitialized = false;
     _isConfigured = false;
-    _pendingRequests.clear();
   }
 
   /// Entry point for the background isolate
   static void _isolateEntryPoint(SendPort mainSendPort) {
+    // Report progress every N frames
+    const int progressReportInterval = 30;
+
     final receivePort = ReceivePort();
     VideoEncoder? encoder;
     int frameCount = 0;
@@ -301,9 +345,12 @@ class VideoProcessingIsolate {
 
             frameCount++;
 
-            // Send progress update every 30 frames (no request ID)
-            if (frameCount % 30 == 0) {
-              // Use totalFrames if known, otherwise estimate based on current frame count
+            // Send progress update at regular intervals (no request ID)
+            if (frameCount % progressReportInterval == 0) {
+              // PROGRESS ACCURACY NOTE: Progress is only accurate during the finalization phase
+              // when totalFrames is known. During live recording, totalFrames is 0, so we use
+              // an estimate (frameCount + 100) which provides a rough indicator but is not precise.
+              // The progress bar will reach 100% during finalization when actual frame count is used.
               final total = totalFrames > 0 ? totalFrames : frameCount + 100;
               final progress = (frameCount / total).clamp(0.0, 1.0);
               mainSendPort.send({

@@ -75,5 +75,33 @@ void main() {
 
       await isolate.dispose();
     });
+
+    test('should propagate errors from isolate via ErrorResponse', () async {
+      final isolate = VideoProcessingIsolate();
+      await isolate.initialize();
+
+      // Try to process frame before configuring encoder - should throw
+      final frameData = Uint8List(1920 * 1080 * 4);
+
+      expect(
+        () => isolate.processFrame(frameData, 0),
+        throwsStateError,
+      );
+
+      await isolate.dispose();
+    });
+
+    test('should handle errors during finalization', () async {
+      final isolate = VideoProcessingIsolate();
+      await isolate.initialize();
+
+      // Try to finalize without configuring encoder - should throw
+      expect(
+        () => isolate.finalize(0),
+        throwsStateError,
+      );
+
+      await isolate.dispose();
+    });
   });
 }

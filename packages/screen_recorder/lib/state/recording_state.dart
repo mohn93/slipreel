@@ -141,8 +141,11 @@ class RecordingController extends StateNotifier<RecordingState> {
       _audioSubscription =
           ScreenRecorderPlatform.instance.audioStream.listen(
         (audioData) async {
-          // TODO: Add audio support to VideoEncoderIsolate
-          // For now, audio is not processed in the isolate version
+          // PHASE 4 LIMITATION: Audio encoding is not yet supported in the isolate version.
+          // Audio encoding still works on the main thread via VideoEncoder.addAudioSample(),
+          // but VideoEncoderIsolate does not yet process audio samples.
+          // Audio support for the isolate will be added in a future phase.
+          // For now, recordings made with VideoEncoderIsolate will be video-only.
         },
         onError: (error) {
           print('Audio stream error: $error');
@@ -220,8 +223,12 @@ class RecordingController extends StateNotifier<RecordingState> {
         await _cursorRecording!.saveToFile(cursorPath);
         print('Cursor data saved: ${_cursorRecording!.count} positions');
 
-        // TODO: Add cursor rendering support to VideoEncoderIsolate
-        // For now, cursor rendering is not supported in the isolate version
+        // PHASE 4 LIMITATION: Cursor rendering is not yet integrated with the isolate.
+        // Cursor rendering happens in VideoEncoder.addFrame() on the main thread.
+        // Frames are already rendered with the cursor before being sent to the isolate.
+        // In the current implementation, cursor data is captured and saved but not
+        // automatically rendered onto the video frames during isolate processing.
+        // Full cursor rendering integration will be added in a future phase.
       }
 
       // Finalize video encoding
