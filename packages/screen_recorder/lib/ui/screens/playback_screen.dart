@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:screen_recorder/ui/widgets/timeline/timeline_widget.dart';
 
 class PlaybackScreen extends StatefulWidget {
   final String videoPath;
@@ -173,25 +174,13 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                   ),
                   const SizedBox(height: 8),
 
-                  // Progress slider
-                  SliderTheme(
-                    data: SliderThemeData(
-                      activeTrackColor: const Color(0xFF6C63FF),
-                      inactiveTrackColor: Colors.white24,
-                      thumbColor: const Color(0xFF6C63FF),
-                      overlayColor: const Color(0xFF6C63FF).withOpacity(0.2),
-                      trackHeight: 4,
-                    ),
-                    child: Slider(
-                      value: value.position.inMilliseconds.toDouble(),
-                      min: 0,
-                      max: value.duration.inMilliseconds.toDouble(),
-                      onChanged: (newValue) {
-                        _controller.seekTo(
-                          Duration(milliseconds: newValue.toInt()),
-                        );
-                      },
-                    ),
+                  // Timeline widget
+                  TimelineWidget(
+                    duration: value.duration,
+                    position: value.position,
+                    onPositionChanged: (newPosition) {
+                      _controller.seekTo(newPosition);
+                    },
                   ),
                 ],
               );
