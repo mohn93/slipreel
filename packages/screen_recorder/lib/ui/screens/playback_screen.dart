@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
+import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_widget.dart';
 
 class PlaybackScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   bool _isInitialized = false;
   String? _error;
   TrimSelection? _trimSelection;
+  final _undoRedoController = UndoRedoController<TrimSelection>();
 
   @override
   void initState() {
@@ -40,6 +42,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
           end: _controller.value.duration,
           videoDuration: _controller.value.duration,
         );
+        // Push initial state to undo/redo controller
+        _undoRedoController.push(_trimSelection!);
       });
       // Auto-play on load
       _controller.play();
@@ -54,6 +58,28 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  void _handleUndo() {
+    if (_undoRedoController.canUndo) {
+      final previousState = _undoRedoController.undo();
+      if (previousState != null) {
+        setState(() {
+          _trimSelection = previousState;
+        });
+      }
+    }
+  }
+
+  void _handleRedo() {
+    if (_undoRedoController.canRedo) {
+      final nextState = _undoRedoController.redo();
+      if (nextState != null) {
+        setState(() {
+          _trimSelection = nextState;
+        });
+      }
+    }
   }
 
   String _formatDuration(Duration duration) {
@@ -193,6 +219,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                     onTrimChanged: (newTrim) {
                       setState(() {
                         _trimSelection = newTrim;
+                        // Push new state to undo/redo controller
+                        _undoRedoController.push(newTrim);
                       });
                     },
                   ),
