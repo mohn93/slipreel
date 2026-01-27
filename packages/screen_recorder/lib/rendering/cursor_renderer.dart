@@ -2,12 +2,14 @@ import 'dart:ui' as ui;
 import 'dart:async';
 import 'package:flutter/services.dart';
 import '../models/cursor_recording.dart';
+import '../effects/background_effect.dart';
 
 /// Renders cursor overlay on video frames
 class CursorRenderer {
   ui.Image? _defaultCursor;
   ui.Image? _clickCursor;
   bool _isInitialized = false;
+  BackgroundEffect? _backgroundEffect;
 
   /// Initialize cursor images
   Future<void> initialize() async {
@@ -33,6 +35,15 @@ class CursorRenderer {
     return frame.image;
   }
 
+  /// Set background effect to apply before cursor
+  Future<void> setBackgroundEffect(BackgroundEffect? effect) async {
+    _backgroundEffect?.dispose();
+    _backgroundEffect = effect;
+    if (effect != null) {
+      await effect.initialize();
+    }
+  }
+
   /// Draw cursor on frame at specific timestamp
   Future<Uint8List> renderCursorOnFrame({
     required Uint8List frameData,
@@ -46,11 +57,21 @@ class CursorRenderer {
     }
 
     try {
+      // Apply background effect first (if set)
+      Uint8List processedFrame = frameData;
+      if (_backgroundEffect != null) {
+        processedFrame = await _backgroundEffect!.apply(
+          frameData: frameData,
+          width: width,
+          height: height,
+        );
+      }
+
       // Get cursor position at this timestamp
       final cursorPos = cursorRecording.getPositionAt(timestampMicros);
       if (cursorPos == null) {
-        // No cursor data, return original frame
-        return frameData;
+        // No cursor data, return processed frame
+        return processedFrame;
       }
 
       // Validate cursors loaded
@@ -59,7 +80,7 @@ class CursorRenderer {
       }
 
       // Convert BGRA frame data to Image
-      final frameImage = await _createImageFromBGRA(frameData, width, height);
+      final frameImage = await _createImageFromBGRA(processedFrame, width, height);
 
       // Create canvas to draw on
       final recorder = ui.PictureRecorder();
@@ -126,6 +147,8 @@ class CursorRenderer {
   void dispose() {
     _defaultCursor?.dispose();
     _clickCursor?.dispose();
+    _backgroundEffect?.dispose();
+    _backgroundEffect = null;
     _isInitialized = false;
   }
 }
