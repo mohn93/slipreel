@@ -18,35 +18,33 @@ class TimelineWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return GestureDetector(
-          onTapDown: (details) {
-            _handleTap(details.localPosition, constraints.maxWidth);
-          },
-          onHorizontalDragUpdate: (details) {
-            _handleTap(details.localPosition, constraints.maxWidth);
-          },
-          child: Container(
-            height: height,
-            decoration: BoxDecoration(
-              color: const Color(0xFF2B2B3D),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: CustomPaint(
-              painter: TimelinePainter(
-                duration: duration,
-                position: position,
-              ),
-              child: const SizedBox.expand(),
-            ),
-          ),
-        );
+    return GestureDetector(
+      onTapDown: (details) {
+        _handleTap(context, details.localPosition);
       },
+      onHorizontalDragUpdate: (details) {
+        _handleTap(context, details.localPosition);
+      },
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: const Color(0xFF2B2B3D),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: CustomPaint(
+          painter: TimelinePainter(
+            duration: duration,
+            position: position,
+          ),
+          child: const SizedBox.expand(),
+        ),
+      ),
     );
   }
 
-  void _handleTap(Offset localPosition, double width) {
+  void _handleTap(BuildContext context, Offset localPosition) {
+    final RenderBox box = context.findRenderObject() as RenderBox;
+    final width = box.size.width;
     final progress = (localPosition.dx / width).clamp(0.0, 1.0);
     final newPosition = Duration(
       microseconds: (duration.inMicroseconds * progress).round(),
