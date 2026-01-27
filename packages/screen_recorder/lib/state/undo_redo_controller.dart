@@ -5,7 +5,7 @@
 /// Enforces a maximum stack size to prevent memory issues.
 class UndoRedoController<T> {
   /// The maximum number of states to keep in the undo stack.
-  final int maxStackSize;
+  final int maxSize;
 
   /// Stack of previous states for undo operations.
   /// The last item is the current state.
@@ -16,8 +16,8 @@ class UndoRedoController<T> {
 
   /// Creates an undo/redo controller with optional max stack size.
   ///
-  /// [maxStackSize] defaults to 50 states.
-  UndoRedoController({this.maxStackSize = 50});
+  /// [maxSize] defaults to 50 states.
+  UndoRedoController({this.maxSize = 50});
 
   /// Returns true if there are states to undo.
   ///
@@ -37,7 +37,7 @@ class UndoRedoController<T> {
     _redoStack.clear();
 
     // Enforce max stack size
-    while (_undoStack.length > maxStackSize) {
+    while (_undoStack.length > maxSize) {
       _undoStack.removeAt(0);
     }
   }
@@ -81,5 +81,5 @@ class UndoRedoController<T> {
   /// Gets the current state without modifying the stacks.
   ///
   /// Returns null if no state has been pushed yet.
-  T? get currentState => _undoStack.isEmpty ? null : _undoStack.last;
+  T? get current => _undoStack.isEmpty ? null : _undoStack.last;
 }

@@ -23,11 +23,12 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   bool _isInitialized = false;
   String? _error;
   TrimSelection? _trimSelection;
-  final _undoRedoController = UndoRedoController<TrimSelection>();
+  late UndoRedoController<TrimSelection> _undoRedo;
 
   @override
   void initState() {
     super.initState();
+    _undoRedo = UndoRedoController<TrimSelection>();
     _initializeVideo();
   }
 
@@ -44,7 +45,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
           videoDuration: _controller.value.duration,
         );
         // Push initial state to undo/redo controller
-        _undoRedoController.push(_trimSelection!);
+        _undoRedo.push(_trimSelection!);
       });
       // Auto-play on load
       _controller.play();
@@ -62,8 +63,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   }
 
   void _handleUndo() {
-    if (_undoRedoController.canUndo) {
-      final previousState = _undoRedoController.undo();
+    if (_undoRedo.canUndo) {
+      final previousState = _undoRedo.undo();
       if (previousState != null) {
         setState(() {
           _trimSelection = previousState;
@@ -73,14 +74,21 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   }
 
   void _handleRedo() {
-    if (_undoRedoController.canRedo) {
-      final nextState = _undoRedoController.redo();
+    if (_undoRedo.canRedo) {
+      final nextState = _undoRedo.redo();
       if (nextState != null) {
         setState(() {
           _trimSelection = nextState;
         });
       }
     }
+  }
+
+  void _handleTrimChanged(TrimSelection newTrim) {
+    setState(() {
+      _trimSelection = newTrim;
+    });
+    _undoRedo.push(newTrim);
   }
 
   String _formatDuration(Duration duration) {
@@ -93,65 +101,69 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   Widget build(BuildContext context) {
     return Focus(
       autofocus: true,
-      child: Shortcuts(
-        shortcuts: <ShortcutActivator, Intent>{
-          // Undo - CMD+Z on macOS, Ctrl+Z on Windows/Linux
-          LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
-            LogicalKeyboardKey.keyZ,
-          ): const UndoIntent(),
-          // Redo - CMD+Shift+Z on macOS, Ctrl+Shift+Z on Windows/Linux
-          LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
-            LogicalKeyboardKey.shift,
-            LogicalKeyboardKey.keyZ,
-          ): const RedoIntent(),
-          // Alternative redo - CMD+Y on macOS, Ctrl+Y on Windows/Linux
-          LogicalKeySet(
-            Platform.isMacOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control,
-            LogicalKeyboardKey.keyY,
-          ): const RedoIntent(),
-        },
-        child: Actions(
-          actions: <Type, Action<Intent>>{
-            UndoIntent: CallbackAction<UndoIntent>(
-              onInvoke: (UndoIntent intent) {
-                _handleUndo();
-                return null;
-              },
-            ),
-            RedoIntent: CallbackAction<RedoIntent>(
-              onInvoke: (RedoIntent intent) {
-                _handleRedo();
-                return null;
-              },
-            ),
-          },
-          child: Scaffold(
-            backgroundColor: const Color(0xFF1E1E2E),
-            appBar: AppBar(
-              title: const Text('Playback'),
-              backgroundColor: const Color(0xFF2B2B3D),
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.of(context).pop(),
+      onKeyEvent: (node, event) {
+        // Only handle key down events
+        if (event is! KeyDownEvent) {
+          return KeyEventResult.ignored;
+        }
+
+        final isMac = Platform.isMacOS;
+        final cmdOrCtrl = isMac ? event.logicalKey == LogicalKeyboardKey.meta || event.logicalKey == LogicalKeyboardKey.metaLeft || event.logicalKey == LogicalKeyboardKey.metaRight
+                                : event.logicalKey == LogicalKeyboardKey.control || event.logicalKey == LogicalKeyboardKey.controlLeft || event.logicalKey == LogicalKeyboardKey.controlRight;
+
+        // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
+        if (cmdOrCtrl && event.logicalKey == LogicalKeyboardKey.keyZ && !event.isShiftPressed) {
+          if (_undoRedo.canUndo) {
+            _handleUndo();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        }
+
+        // Redo: Cmd+Shift+Z (Mac) or Ctrl+Shift+Z (Windows/Linux)
+        if (cmdOrCtrl && event.logicalKey == LogicalKeyboardKey.keyZ && event.isShiftPressed) {
+          if (_undoRedo.canRedo) {
+            _handleRedo();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        }
+
+        // Space: Play/Pause toggle
+        if (event.logicalKey == LogicalKeyboardKey.space) {
+          if (_controller.value.isPlaying) {
+            _controller.pause();
+          } else {
+            _controller.play();
+          }
+          return KeyEventResult.handled;
+        }
+
+        return KeyEventResult.ignored;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF1E1E2E),
+        appBar: AppBar(
+          title: const Text('Playback'),
+          backgroundColor: const Color(0xFF2B2B3D),
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: Column(
+          children: [
+            // Video player
+            Expanded(
+              child: Center(
+                child: _buildVideoPlayer(),
               ),
             ),
-            body: Column(
-              children: [
-                // Video player
-                Expanded(
-                  child: Center(
-                    child: _buildVideoPlayer(),
-                  ),
-                ),
 
-                // Controls
-                _buildControls(),
-              ],
-            ),
-          ),
+            // Controls
+            _buildControls(),
+          ],
         ),
       ),
     );
@@ -256,13 +268,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                       _controller.seekTo(newPosition);
                     },
                     trimSelection: _trimSelection,
-                    onTrimChanged: (newTrim) {
-                      setState(() {
-                        _trimSelection = newTrim;
-                        // Push new state to undo/redo controller
-                        _undoRedoController.push(newTrim);
-                      });
-                    },
+                    onTrimChanged: _handleTrimChanged,
                   ),
 
                   // Trim info display
@@ -303,22 +309,20 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
             children: [
               // Undo button
               IconButton(
-                onPressed: _undoRedoController.canUndo ? _handleUndo : null,
+                onPressed: _undoRedo.canUndo ? _handleUndo : null,
                 icon: const Icon(Icons.undo),
-                tooltip: 'Undo (${Platform.isMacOS ? 'Cmd' : 'Ctrl'}+Z)',
-                color: _undoRedoController.canUndo
-                    ? Colors.white70
-                    : Colors.white24,
+                tooltip: 'Undo (Cmd+Z)',
+                color: const Color(0xFF6C63FF),
+                disabledColor: Colors.white24,
               ),
 
               // Redo button
               IconButton(
-                onPressed: _undoRedoController.canRedo ? _handleRedo : null,
+                onPressed: _undoRedo.canRedo ? _handleRedo : null,
                 icon: const Icon(Icons.redo),
-                tooltip: 'Redo (${Platform.isMacOS ? 'Cmd' : 'Ctrl'}+Shift+Z)',
-                color: _undoRedoController.canRedo
-                    ? Colors.white70
-                    : Colors.white24,
+                tooltip: 'Redo (Cmd+Shift+Z)',
+                color: const Color(0xFF6C63FF),
+                disabledColor: Colors.white24,
               ),
             ],
           ),
@@ -375,14 +379,4 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       ),
     );
   }
-}
-
-/// Intent for undo action.
-class UndoIntent extends Intent {
-  const UndoIntent();
-}
-
-/// Intent for redo action.
-class RedoIntent extends Intent {
-  const RedoIntent();
 }

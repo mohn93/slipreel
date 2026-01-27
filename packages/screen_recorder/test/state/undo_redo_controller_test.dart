@@ -80,7 +80,7 @@ void main() {
     });
 
     test('max stack size enforcement', () {
-      final controller = UndoRedoController<int>(maxStackSize: 3);
+      final controller = UndoRedoController<int>(maxSize: 3);
 
       // Push 5 states
       for (int i = 1; i <= 5; i++) {
