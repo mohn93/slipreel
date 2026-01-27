@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_widget.dart';
 
 class PlaybackScreen extends StatefulWidget {
@@ -19,6 +20,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   late VideoPlayerController _controller;
   bool _isInitialized = false;
   String? _error;
+  TrimSelection? _trimSelection;
 
   @override
   void initState() {
@@ -32,6 +34,12 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       await _controller.initialize();
       setState(() {
         _isInitialized = true;
+        // Initialize trim selection to full duration
+        _trimSelection = TrimSelection(
+          start: Duration.zero,
+          end: _controller.value.duration,
+          videoDuration: _controller.value.duration,
+        );
       });
       // Auto-play on load
       _controller.play();
@@ -181,7 +189,39 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                     onPositionChanged: (newPosition) {
                       _controller.seekTo(newPosition);
                     },
+                    trimSelection: _trimSelection,
+                    onTrimChanged: (newTrim) {
+                      setState(() {
+                        _trimSelection = newTrim;
+                      });
+                    },
                   ),
+
+                  // Trim info display
+                  if (_trimSelection != null) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Trim: ${_formatDuration(_trimSelection!.start)} - ${_formatDuration(_trimSelection!.end)}',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '(${_formatDuration(_trimSelection!.duration)})',
+                          style: const TextStyle(
+                            color: Color(0xFF6C63FF),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               );
             },
