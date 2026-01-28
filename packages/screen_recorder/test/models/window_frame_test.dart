@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/models/window_frame.dart';
@@ -140,6 +139,154 @@ void main() {
       expect(templates[1].name, 'Rounded');
       expect(templates[2].name, 'Modern');
       expect(templates[3].name, 'Minimal');
+    });
+
+    test('should support equality operator with identical instances', () {
+      final frame = WindowFrame.rounded();
+
+      expect(frame == frame, true);
+    });
+
+    test('should support equality operator with equal instances', () {
+      final frame1 = WindowFrame(
+        name: 'Test',
+        padding: const EdgeInsets.all(10),
+        cornerRadius: 5.0,
+        shadowBlur: 15.0,
+        shadowOffset: const Offset(0, 2),
+        shadowColor: const Color(0x33000000),
+        backgroundColor: const Color(0xFFFFFFFF),
+        borderWidth: 1.0,
+        borderColor: const Color(0xFF000000),
+      );
+
+      final frame2 = WindowFrame(
+        name: 'Test',
+        padding: const EdgeInsets.all(10),
+        cornerRadius: 5.0,
+        shadowBlur: 15.0,
+        shadowOffset: const Offset(0, 2),
+        shadowColor: const Color(0x33000000),
+        backgroundColor: const Color(0xFFFFFFFF),
+        borderWidth: 1.0,
+        borderColor: const Color(0xFF000000),
+      );
+
+      expect(frame1 == frame2, true);
+    });
+
+    test('should support equality operator with different instances', () {
+      final frame1 = WindowFrame.rounded();
+      final frame2 = WindowFrame.modern();
+
+      expect(frame1 == frame2, false);
+    });
+
+    test('should have consistent hashCode for equal instances', () {
+      final frame1 = WindowFrame(
+        name: 'Test',
+        padding: const EdgeInsets.all(10),
+        cornerRadius: 5.0,
+        shadowBlur: 15.0,
+        shadowOffset: const Offset(0, 2),
+        shadowColor: const Color(0x33000000),
+        backgroundColor: const Color(0xFFFFFFFF),
+        borderWidth: 1.0,
+        borderColor: const Color(0xFF000000),
+      );
+
+      final frame2 = WindowFrame(
+        name: 'Test',
+        padding: const EdgeInsets.all(10),
+        cornerRadius: 5.0,
+        shadowBlur: 15.0,
+        shadowOffset: const Offset(0, 2),
+        shadowColor: const Color(0x33000000),
+        backgroundColor: const Color(0xFFFFFFFF),
+        borderWidth: 1.0,
+        borderColor: const Color(0xFF000000),
+      );
+
+      expect(frame1.hashCode == frame2.hashCode, true);
+    });
+
+    test('should have different hashCode for different instances', () {
+      final frame1 = WindowFrame.rounded();
+      final frame2 = WindowFrame.modern();
+
+      expect(frame1.hashCode == frame2.hashCode, false);
+    });
+
+    test('should provide meaningful toString output', () {
+      final frame = WindowFrame(
+        name: 'Test',
+        padding: const EdgeInsets.all(10),
+        cornerRadius: 5.0,
+        shadowBlur: 15.0,
+        shadowOffset: const Offset(0, 2),
+        shadowColor: const Color(0x33000000),
+        backgroundColor: const Color(0xFFFFFFFF),
+        borderWidth: 1.0,
+        borderColor: const Color(0xFF000000),
+      );
+
+      final str = frame.toString();
+
+      expect(str, contains('WindowFrame'));
+      expect(str, contains('name: Test'));
+      expect(str, contains('padding: EdgeInsets.all(10.0)'));
+      expect(str, contains('cornerRadius: 5.0'));
+      expect(str, contains('shadowBlur: 15.0'));
+      expect(str, contains('shadowOffset: Offset(0.0, 2.0)'));
+      expect(str, contains('borderWidth: 1.0'));
+    });
+
+    test('should serialize to JSON with null optional fields', () {
+      final frame = WindowFrame(
+        name: 'Test',
+        padding: const EdgeInsets.all(10),
+        cornerRadius: 5.0,
+        shadowBlur: 15.0,
+        shadowOffset: const Offset(0, 2),
+        shadowColor: const Color(0x33000000),
+        backgroundColor: null,
+        borderWidth: 0.0,
+        borderColor: null,
+      );
+
+      final json = frame.toJson();
+
+      expect(json['name'], 'Test');
+      expect(json['backgroundColor'], null);
+      expect(json['borderColor'], null);
+    });
+
+    test('should deserialize from JSON with null optional fields', () {
+      final json = {
+        'name': 'Test',
+        'padding': {
+          'left': 10.0,
+          'top': 10.0,
+          'right': 10.0,
+          'bottom': 10.0,
+        },
+        'cornerRadius': 5.0,
+        'shadowBlur': 15.0,
+        'shadowOffset': {
+          'dx': 0.0,
+          'dy': 2.0,
+        },
+        'shadowColor': 0x33000000,
+        'backgroundColor': null,
+        'borderWidth': 0.0,
+        'borderColor': null,
+      };
+
+      final frame = WindowFrame.fromJson(json);
+
+      expect(frame.name, 'Test');
+      expect(frame.backgroundColor, null);
+      expect(frame.borderColor, null);
     });
   });
 }

@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/painting.dart';
 
 /// Represents a frame style that can be applied to a window/screen recording.
@@ -154,10 +153,10 @@ class WindowFrame {
         'dx': shadowOffset.dx,
         'dy': shadowOffset.dy,
       },
-      'shadowColor': shadowColor.value,
-      'backgroundColor': backgroundColor?.value,
+      'shadowColor': shadowColor.toARGB32(),
+      'backgroundColor': backgroundColor?.toARGB32(),
       'borderWidth': borderWidth,
-      'borderColor': borderColor?.value,
+      'borderColor': borderColor?.toARGB32(),
     };
   }
 
