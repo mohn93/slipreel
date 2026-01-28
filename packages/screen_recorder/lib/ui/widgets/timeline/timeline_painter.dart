@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
+import 'package:screen_recorder/models/zoom_region.dart';
 
 /// Custom painter for timeline visualization
 class TimelinePainter extends CustomPainter {
   final Duration duration;
   final Duration position;
   final TrimSelection? trimSelection;
+  final List<ZoomRegion> zoomRegions;
 
   TimelinePainter({
     required this.duration,
     required this.position,
     this.trimSelection,
+    this.zoomRegions = const [],
   });
 
   double get progress {
@@ -94,6 +97,13 @@ class TimelinePainter extends CustomPainter {
       _drawTrimHandle(canvas, size, startX);
       _drawTrimHandle(canvas, size, endX);
     }
+
+    // Draw zoom region markers
+    if (zoomRegions.isNotEmpty && duration.inMicroseconds > 0) {
+      for (final zoom in zoomRegions) {
+        _drawZoomMarker(canvas, size, zoom);
+      }
+    }
   }
 
   void _drawTrimHandle(Canvas canvas, Size size, double x) {
@@ -126,10 +136,51 @@ class TimelinePainter extends CustomPainter {
     );
   }
 
+  void _drawZoomMarker(Canvas canvas, Size size, ZoomRegion zoom) {
+    final startX = (zoom.startTime.inMicroseconds / duration.inMicroseconds) * size.width;
+    final endX = (zoom.endTime.inMicroseconds / duration.inMicroseconds) * size.width;
+
+    // Draw zoom region background
+    final zoomPaint = Paint()
+      ..color = const Color(0xFFFFAB00).withValues(alpha: 0.3)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRect(
+      Rect.fromLTRB(startX, 0, endX, size.height),
+      zoomPaint,
+    );
+
+    // Draw zoom icon at start
+    final iconPaint = Paint()
+      ..color = const Color(0xFFFFAB00)
+      ..style = PaintingStyle.fill;
+
+    // Draw simple zoom icon (magnifying glass)
+    canvas.drawCircle(
+      Offset(startX + 10, size.height / 2),
+      6,
+      iconPaint,
+    );
+
+    // Draw handle at start
+    final handlePaint = Paint()
+      ..color = const Color(0xFFFFAB00)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(startX - 2, 0, 4, size.height),
+        const Radius.circular(2),
+      ),
+      handlePaint,
+    );
+  }
+
   @override
   bool shouldRepaint(TimelinePainter oldDelegate) {
     return oldDelegate.duration != duration ||
         oldDelegate.position != position ||
-        oldDelegate.trimSelection != trimSelection;
+        oldDelegate.trimSelection != trimSelection ||
+        oldDelegate.zoomRegions != zoomRegions;
   }
 }
