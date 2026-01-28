@@ -4,12 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_widget.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
+import 'package:screen_recorder/ui/widgets/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
 
 class PlaybackScreen extends StatefulWidget {
@@ -179,6 +181,31 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showExportDialog() async {
+    final preset = await showDialog<ExportPreset>(
+      context: context,
+      builder: (context) => const ExportDialog(),
+    );
+
+    if (preset != null && mounted) {
+      // Show confirmation with preset details
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Export with ${preset.name} (${preset.width}x${preset.height} @ ${preset.fps}fps)',
+          ),
+          backgroundColor: const Color(0xFF4CAF50),
+        ),
+      );
+
+      // TODO: Implement actual video export with FFmpeg
+      // - Apply trim selection
+      // - Apply zoom effects
+      // - Apply frame overlay
+      // - Encode with preset settings
+    }
   }
 
   String _formatDuration(Duration duration) {
@@ -579,6 +606,22 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                 label: const Text('Record Another'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6C63FF),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 16),
+
+              // Export button
+              ElevatedButton.icon(
+                onPressed: _showExportDialog,
+                icon: const Icon(Icons.file_download),
+                label: const Text('Export'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4CAF50),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
                     vertical: 16,
