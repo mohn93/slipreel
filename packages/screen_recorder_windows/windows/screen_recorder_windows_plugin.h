@@ -6,6 +6,7 @@
 #include <flutter/event_channel.h>
 
 #include <memory>
+#include <mutex>
 
 namespace screen_recorder_windows {
 
@@ -33,6 +34,7 @@ class ScreenRecorderWindowsPlugin : public flutter::Plugin {
  private:
   flutter::PluginRegistrarWindows* registrar_;
   std::unique_ptr<GraphicsCaptureManager> capture_manager_;
+  std::mutex frames_sink_mutex_;
 };
 
 }  // namespace screen_recorder_windows

@@ -114,6 +114,7 @@ std::vector<ScreenInfoNative> GraphicsCaptureManager::GetAvailableScreens() {
     try {
         // Enumerate monitors
         int monitor_index = 0;
+        auto pair_data = std::make_pair(&screens, &monitor_index);
         EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR monitor, HDC, LPRECT, LPARAM lparam) -> BOOL {
             auto* data = reinterpret_cast<std::pair<std::vector<ScreenInfoNative>*, int*>*>(lparam);
             auto* screens_list = data->first;
@@ -140,7 +141,7 @@ std::vector<ScreenInfoNative> GraphicsCaptureManager::GetAvailableScreens() {
 
             index++;
             return TRUE;
-        }, reinterpret_cast<LPARAM>(&std::make_pair(&screens, &monitor_index)));
+        }, reinterpret_cast<LPARAM>(&pair_data));
 
     } catch (...) {
         // Return empty list on error

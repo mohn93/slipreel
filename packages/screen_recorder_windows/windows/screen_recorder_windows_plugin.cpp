@@ -44,6 +44,7 @@ void ScreenRecorderWindowsPlugin::RegisterWithRegistrar(
           std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& events)
           -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
 
+          std::lock_guard<std::mutex> lock(plugin_pointer->frames_sink_mutex_);
           plugin_pointer->frames_sink_ = std::move(events);
           return nullptr;
       },
@@ -51,6 +52,7 @@ void ScreenRecorderWindowsPlugin::RegisterWithRegistrar(
           const flutter::EncodableValue* arguments)
           -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
 
+          std::lock_guard<std::mutex> lock(plugin_pointer->frames_sink_mutex_);
           plugin_pointer->frames_sink_ = nullptr;
           return nullptr;
       });
@@ -76,7 +78,12 @@ void ScreenRecorderWindowsPlugin::HandleMethodCall(
   const auto& method = method_call.method_name();
 
   if (method == "requestPermissions") {
-    HWND window = registrar_->GetView()->GetNativeWindow();
+    auto view = registrar_->GetView();
+    if (!view) {
+      result->Error("NO_VIEW", "Flutter view not available");
+      return;
+    }
+    HWND window = view->GetNativeWindow();
     bool granted = capture_manager_->RequestPermission(window);
     result->Success(flutter::EncodableValue(granted));
   }
@@ -144,6 +151,7 @@ void ScreenRecorderWindowsPlugin::HandleMethodCall(
 
     bool success = capture_manager_->StartCapture(source_id, fps,
         [this](const FrameDataNative& frame) {
+            std::lock_guard<std::mutex> lock(frames_sink_mutex_);
             if (frames_sink_) {
               flutter::EncodableMap frame_map;
               frame_map[flutter::EncodableValue("data")] = flutter::EncodableValue(frame.data);
