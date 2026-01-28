@@ -67,11 +67,11 @@ class WindowFrame {
       padding: EdgeInsets.all(40),
       cornerRadius: 16.0,
       shadowBlur: 40.0,
-      shadowOffset: Offset(0, 8),
-      shadowColor: Color(0x26000000), // 15% opacity black
+      shadowOffset: Offset(0, 10),
+      shadowColor: Color(0x4D000000), // 30% opacity black
       backgroundColor: Color(0xFFFFFFFF), // White
-      borderWidth: 1.0,
-      borderColor: Color(0x1A000000), // 10% opacity black
+      borderWidth: 0.0,
+      borderColor: null,
     );
   }
 
@@ -79,14 +79,14 @@ class WindowFrame {
   factory WindowFrame.modern() {
     return const WindowFrame(
       name: 'Modern',
-      padding: EdgeInsets.all(60),
-      cornerRadius: 24.0,
-      shadowBlur: 60.0,
-      shadowOffset: Offset(0, 12),
-      shadowColor: Color(0x33000000), // 20% opacity black
-      backgroundColor: Color(0xFFF5F5F5), // Light gray
-      borderWidth: 0.0,
-      borderColor: null,
+      padding: EdgeInsets.all(24),
+      cornerRadius: 8.0,
+      shadowBlur: 20.0,
+      shadowOffset: Offset(0, 4),
+      shadowColor: Color(0x26000000), // 15% opacity black
+      backgroundColor: Color(0xFFFFFFFF), // White
+      borderWidth: 1.5,
+      borderColor: Color(0xFFE0E0E0), // Grey
     );
   }
 
@@ -94,14 +94,14 @@ class WindowFrame {
   factory WindowFrame.minimal() {
     return const WindowFrame(
       name: 'Minimal',
-      padding: EdgeInsets.all(30),
-      cornerRadius: 8.0,
-      shadowBlur: 20.0,
-      shadowOffset: Offset(0, 4),
-      shadowColor: Color(0x1A000000), // 10% opacity black
+      padding: EdgeInsets.all(16),
+      cornerRadius: 0.0,
+      shadowBlur: 0.0,
+      shadowOffset: Offset.zero,
+      shadowColor: Color(0x00000000), // Transparent
       backgroundColor: null,
-      borderWidth: 1.0,
-      borderColor: Color(0x0D000000), // 5% opacity black
+      borderWidth: 0.0,
+      borderColor: null,
     );
   }
 

@@ -50,39 +50,39 @@ void main() {
       expect(frame.padding, const EdgeInsets.all(40));
       expect(frame.cornerRadius, 16.0);
       expect(frame.shadowBlur, 40.0);
-      expect(frame.shadowOffset, const Offset(0, 8));
-      expect(frame.shadowColor, const Color(0x26000000));
+      expect(frame.shadowOffset, const Offset(0, 10));
+      expect(frame.shadowColor, const Color(0x4D000000));
       expect(frame.backgroundColor, const Color(0xFFFFFFFF));
-      expect(frame.borderWidth, 1.0);
-      expect(frame.borderColor, const Color(0x1A000000));
+      expect(frame.borderWidth, 0.0);
+      expect(frame.borderColor, null);
     });
 
     test('should create modern template', () {
       final frame = WindowFrame.modern();
 
       expect(frame.name, 'Modern');
-      expect(frame.padding, const EdgeInsets.all(60));
-      expect(frame.cornerRadius, 24.0);
-      expect(frame.shadowBlur, 60.0);
-      expect(frame.shadowOffset, const Offset(0, 12));
-      expect(frame.shadowColor, const Color(0x33000000));
-      expect(frame.backgroundColor, const Color(0xFFF5F5F5));
-      expect(frame.borderWidth, 0.0);
-      expect(frame.borderColor, null);
+      expect(frame.padding, const EdgeInsets.all(24));
+      expect(frame.cornerRadius, 8.0);
+      expect(frame.shadowBlur, 20.0);
+      expect(frame.shadowOffset, const Offset(0, 4));
+      expect(frame.shadowColor, const Color(0x26000000));
+      expect(frame.backgroundColor, const Color(0xFFFFFFFF));
+      expect(frame.borderWidth, 1.5);
+      expect(frame.borderColor, const Color(0xFFE0E0E0));
     });
 
     test('should create minimal template', () {
       final frame = WindowFrame.minimal();
 
       expect(frame.name, 'Minimal');
-      expect(frame.padding, const EdgeInsets.all(30));
-      expect(frame.cornerRadius, 8.0);
-      expect(frame.shadowBlur, 20.0);
-      expect(frame.shadowOffset, const Offset(0, 4));
-      expect(frame.shadowColor, const Color(0x1A000000));
+      expect(frame.padding, const EdgeInsets.all(16));
+      expect(frame.cornerRadius, 0.0);
+      expect(frame.shadowBlur, 0.0);
+      expect(frame.shadowOffset, Offset.zero);
+      expect(frame.shadowColor, const Color(0x00000000));
       expect(frame.backgroundColor, null);
-      expect(frame.borderWidth, 1.0);
-      expect(frame.borderColor, const Color(0x0D000000));
+      expect(frame.borderWidth, 0.0);
+      expect(frame.borderColor, null);
     });
 
     test('should support copyWith for customization', () {
