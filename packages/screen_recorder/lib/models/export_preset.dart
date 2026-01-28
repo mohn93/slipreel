@@ -24,14 +24,14 @@ class ExportPreset {
     required this.quality,
   });
 
-  /// 1080p at 30 fps with high quality (0.85)
+  /// 1080p at 30 fps with high quality (0.9)
   factory ExportPreset.hd1080p30() {
     return const ExportPreset(
       name: '1080p 30fps',
       width: 1920,
       height: 1080,
       fps: 30,
-      quality: 0.85,
+      quality: 0.9,
     );
   }
 
@@ -46,14 +46,14 @@ class ExportPreset {
     );
   }
 
-  /// 4K at 30 fps with very high quality (0.90)
+  /// 4K at 30 fps with very high quality (0.95)
   factory ExportPreset.uhd4k30() {
     return const ExportPreset(
       name: '4K 30fps',
       width: 3840,
       height: 2160,
       fps: 30,
-      quality: 0.90,
+      quality: 0.95,
     );
   }
 
@@ -68,14 +68,14 @@ class ExportPreset {
     );
   }
 
-  /// 720p at 30 fps optimized for web (0.75 quality)
+  /// 720p at 30 fps optimized for web (0.8 quality)
   factory ExportPreset.webOptimized() {
     return const ExportPreset(
       name: 'Web Optimized',
       width: 1280,
       height: 720,
       fps: 30,
-      quality: 0.75,
+      quality: 0.8,
     );
   }
 

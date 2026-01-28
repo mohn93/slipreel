@@ -15,7 +15,7 @@ class _ExportDialogState extends State<ExportDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF2C2C2C),
+      backgroundColor: const Color(0xFF2B2B3D),
       title: const Text(
         'Export Video',
         style: TextStyle(color: Colors.white),
