@@ -71,6 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               min: 0,
               max: 100,
               label: '${frame.padding.left.toInt()}px',
+              divisions: 20,
               onChanged: (value) {
                 widget.settingsProvider.updatePadding(value);
               },
@@ -86,6 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               min: 0,
               max: 32,
               label: '${frame.cornerRadius.toInt()}px',
+              divisions: 16,
               onChanged: (value) {
                 widget.settingsProvider.updateCornerRadius(value);
               },
@@ -101,6 +103,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               min: 0,
               max: 80,
               label: '${frame.shadowBlur.toInt()}px',
+              divisions: 16,
               onChanged: (value) {
                 widget.settingsProvider.updateShadowBlur(value);
               },
@@ -166,6 +169,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required double min,
     required double max,
     required String label,
+    required int? divisions,
     required ValueChanged<double> onChanged,
   }) {
     return Container(
@@ -200,6 +204,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: value.clamp(min, max),
             min: min,
             max: max,
+            divisions: divisions,
             activeColor: const Color(0xFF6C63FF),
             inactiveColor: Colors.white24,
             onChanged: onChanged,
