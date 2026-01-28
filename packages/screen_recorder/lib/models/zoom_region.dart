@@ -13,7 +13,8 @@ class ZoomRegion {
     required this.duration,
     required double zoomLevel,
     Size? videoBounds,
-  })  : rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
+  })  : assert(duration > Duration.zero, 'Duration must be positive'),
+        rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
         zoomLevel = zoomLevel.clamp(1.0, 5.0);
 
   /// End time of zoom effect
