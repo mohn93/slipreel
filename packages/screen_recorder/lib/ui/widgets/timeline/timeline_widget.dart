@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
+import 'package:screen_recorder/models/zoom_region.dart';
 import 'timeline_painter.dart';
 
 enum DragTarget { none, playhead, startHandle, endHandle }
@@ -13,6 +14,7 @@ class TimelineWidget extends StatefulWidget {
   final ValueChanged<Duration> onPositionChanged;
   final TrimSelection? trimSelection;
   final ValueChanged<TrimSelection>? onTrimChanged;
+  final List<ZoomRegion> zoomRegions;
   final double height;
 
   const TimelineWidget({
@@ -22,6 +24,7 @@ class TimelineWidget extends StatefulWidget {
     required this.onPositionChanged,
     this.trimSelection,
     this.onTrimChanged,
+    this.zoomRegions = const [],
     this.height = 80,
   });
 
@@ -64,6 +67,7 @@ class _TimelineWidgetState extends State<TimelineWidget> {
                 duration: widget.duration,
                 position: widget.position,
                 trimSelection: widget.trimSelection,
+                zoomRegions: widget.zoomRegions,
               ),
               child: const SizedBox.expand(),
             ),

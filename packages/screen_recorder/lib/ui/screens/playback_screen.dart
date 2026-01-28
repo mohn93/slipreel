@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_widget.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
@@ -28,6 +29,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   late UndoRedoController<TrimSelection> _undoRedo;
   List<ZoomRegion> _zoomRegions = [];
   bool _isSelectingZoom = false;
+  final _zoomTransformer = ZoomTransformer();
 
   @override
   void initState() {
@@ -50,6 +52,12 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         );
         // Push initial state to undo/redo controller
         _undoRedo.push(_trimSelection!);
+      });
+      // Add listener to rebuild during playback for smooth zoom
+      _controller.addListener(() {
+        if (_controller.value.isPlaying) {
+          setState(() {}); // Force rebuild to update zoom transform
+        }
       });
       // Auto-play on load
       _controller.play();
@@ -239,13 +247,44 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       );
     }
 
+    // Get current zoom region if any
+    ZoomRegion? activeZoom;
+    if (_isInitialized) {
+      final currentPosition = _controller.value.position;
+      try {
+        activeZoom = _zoomRegions.firstWhere(
+          (zoom) => zoom.isActive(currentPosition),
+        );
+      } catch (_) {
+        // No active zoom region
+        activeZoom = null;
+      }
+    }
+
+    Widget videoWidget = VideoPlayer(_controller);
+
+    // Apply zoom transform if active
+    if (activeZoom != null) {
+      final transform = _zoomTransformer.getTransform(
+        position: _controller.value.position,
+        zoomRegion: activeZoom,
+        videoSize: _controller.value.size,
+      );
+
+      videoWidget = Transform(
+        transform: transform,
+        alignment: Alignment.center,
+        child: videoWidget,
+      );
+    }
+
     return AspectRatio(
       aspectRatio: _controller.value.aspectRatio,
       child: ZoomSelector(
         enabled: _isSelectingZoom,
         videoSize: _controller.value.size,
         onRegionSelected: _handleZoomRegionSelected,
-        child: VideoPlayer(_controller),
+        child: videoWidget,
       ),
     );
   }
@@ -306,6 +345,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                     },
                     trimSelection: _trimSelection,
                     onTrimChanged: _handleTrimChanged,
+                    zoomRegions: _zoomRegions,
                   ),
 
                   // Trim info display
