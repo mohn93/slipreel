@@ -1,0 +1,145 @@
+import 'dart:ui';
+import 'package:flutter/painting.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder/models/window_frame.dart';
+
+void main() {
+  group('WindowFrame', () {
+    test('should create frame with all properties', () {
+      final frame = WindowFrame(
+        name: 'Custom',
+        padding: const EdgeInsets.all(20),
+        cornerRadius: 12.0,
+        shadowBlur: 30.0,
+        shadowOffset: const Offset(0, 10),
+        shadowColor: const Color(0x33000000),
+        backgroundColor: const Color(0xFFFFFFFF),
+        borderWidth: 2.0,
+        borderColor: const Color(0xFFE0E0E0),
+      );
+
+      expect(frame.name, 'Custom');
+      expect(frame.padding, const EdgeInsets.all(20));
+      expect(frame.cornerRadius, 12.0);
+      expect(frame.shadowBlur, 30.0);
+      expect(frame.shadowOffset, const Offset(0, 10));
+      expect(frame.shadowColor, const Color(0x33000000));
+      expect(frame.backgroundColor, const Color(0xFFFFFFFF));
+      expect(frame.borderWidth, 2.0);
+      expect(frame.borderColor, const Color(0xFFE0E0E0));
+    });
+
+    test('should create none template with no decorations', () {
+      final frame = WindowFrame.none();
+
+      expect(frame.name, 'None');
+      expect(frame.padding, EdgeInsets.zero);
+      expect(frame.cornerRadius, 0.0);
+      expect(frame.shadowBlur, 0.0);
+      expect(frame.shadowOffset, Offset.zero);
+      expect(frame.shadowColor, const Color(0x00000000));
+      expect(frame.backgroundColor, null);
+      expect(frame.borderWidth, 0.0);
+      expect(frame.borderColor, null);
+    });
+
+    test('should create rounded template', () {
+      final frame = WindowFrame.rounded();
+
+      expect(frame.name, 'Rounded');
+      expect(frame.padding, const EdgeInsets.all(40));
+      expect(frame.cornerRadius, 16.0);
+      expect(frame.shadowBlur, 40.0);
+      expect(frame.shadowOffset, const Offset(0, 8));
+      expect(frame.shadowColor, const Color(0x26000000));
+      expect(frame.backgroundColor, const Color(0xFFFFFFFF));
+      expect(frame.borderWidth, 1.0);
+      expect(frame.borderColor, const Color(0x1A000000));
+    });
+
+    test('should create modern template', () {
+      final frame = WindowFrame.modern();
+
+      expect(frame.name, 'Modern');
+      expect(frame.padding, const EdgeInsets.all(60));
+      expect(frame.cornerRadius, 24.0);
+      expect(frame.shadowBlur, 60.0);
+      expect(frame.shadowOffset, const Offset(0, 12));
+      expect(frame.shadowColor, const Color(0x33000000));
+      expect(frame.backgroundColor, const Color(0xFFF5F5F5));
+      expect(frame.borderWidth, 0.0);
+      expect(frame.borderColor, null);
+    });
+
+    test('should create minimal template', () {
+      final frame = WindowFrame.minimal();
+
+      expect(frame.name, 'Minimal');
+      expect(frame.padding, const EdgeInsets.all(30));
+      expect(frame.cornerRadius, 8.0);
+      expect(frame.shadowBlur, 20.0);
+      expect(frame.shadowOffset, const Offset(0, 4));
+      expect(frame.shadowColor, const Color(0x1A000000));
+      expect(frame.backgroundColor, null);
+      expect(frame.borderWidth, 1.0);
+      expect(frame.borderColor, const Color(0x0D000000));
+    });
+
+    test('should support copyWith for customization', () {
+      final original = WindowFrame.rounded();
+      final modified = original.copyWith(
+        name: 'Custom Rounded',
+        padding: const EdgeInsets.all(50),
+        cornerRadius: 20.0,
+      );
+
+      expect(modified.name, 'Custom Rounded');
+      expect(modified.padding, const EdgeInsets.all(50));
+      expect(modified.cornerRadius, 20.0);
+      // Other properties should remain unchanged
+      expect(modified.shadowBlur, original.shadowBlur);
+      expect(modified.shadowOffset, original.shadowOffset);
+      expect(modified.shadowColor, original.shadowColor);
+      expect(modified.backgroundColor, original.backgroundColor);
+      expect(modified.borderWidth, original.borderWidth);
+      expect(modified.borderColor, original.borderColor);
+    });
+
+    test('should serialize to and from JSON', () {
+      final original = WindowFrame(
+        name: 'Test Frame',
+        padding: const EdgeInsets.all(25),
+        cornerRadius: 15.0,
+        shadowBlur: 35.0,
+        shadowOffset: const Offset(0, 5),
+        shadowColor: const Color(0x40000000),
+        backgroundColor: const Color(0xFFF0F0F0),
+        borderWidth: 1.5,
+        borderColor: const Color(0xFFCCCCCC),
+      );
+
+      final json = original.toJson();
+      final restored = WindowFrame.fromJson(json);
+
+      expect(restored.name, original.name);
+      expect(restored.padding, original.padding);
+      expect(restored.cornerRadius, original.cornerRadius);
+      expect(restored.shadowBlur, original.shadowBlur);
+      expect(restored.shadowOffset, original.shadowOffset);
+      expect(restored.shadowColor, original.shadowColor);
+      expect(restored.backgroundColor, original.backgroundColor);
+      expect(restored.borderWidth, original.borderWidth);
+      expect(restored.borderColor, original.borderColor);
+    });
+
+    test('should provide list of all templates', () {
+      final templates = WindowFrame.templates;
+
+      expect(templates.length, 4);
+      expect(templates[0].name, 'None');
+      expect(templates[1].name, 'Rounded');
+      expect(templates[2].name, 'Modern');
+      expect(templates[3].name, 'Minimal');
+    });
+  });
+}
