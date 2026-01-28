@@ -56,7 +56,7 @@ class FramePainter extends CustomPainter {
     }
 
     // 2. Draw background (if backgroundColor is not null and has opacity)
-    if (frame.backgroundColor != null && frame.backgroundColor!.alpha > 0) {
+    if (frame.backgroundColor != null && frame.backgroundColor!.a > 0) {
       final backgroundPaint = Paint()
         ..color = frame.backgroundColor!
         ..style = PaintingStyle.fill;
@@ -67,7 +67,7 @@ class FramePainter extends CustomPainter {
     // 3. Draw border (if borderWidth > 0 and borderColor is not null)
     if (frame.borderWidth > 0 &&
         frame.borderColor != null &&
-        frame.borderColor!.alpha > 0) {
+        frame.borderColor!.a > 0) {
       final borderPaint = Paint()
         ..color = frame.borderColor!
         ..style = PaintingStyle.stroke
