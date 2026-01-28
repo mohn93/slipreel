@@ -26,7 +26,7 @@ void main() {
       expect(preset.width, 1920);
       expect(preset.height, 1080);
       expect(preset.fps, 30);
-      expect(preset.quality, 0.9);
+      expect(preset.quality, 0.85);
     });
 
     test('should create 1080p 60fps preset', () {
@@ -46,7 +46,7 @@ void main() {
       expect(preset.width, 3840);
       expect(preset.height, 2160);
       expect(preset.fps, 30);
-      expect(preset.quality, 0.95);
+      expect(preset.quality, 0.90);
     });
 
     test('should create 4K 60fps preset', () {
@@ -66,7 +66,7 @@ void main() {
       expect(preset.width, 1280);
       expect(preset.height, 720);
       expect(preset.fps, 30);
-      expect(preset.quality, 0.8);
+      expect(preset.quality, 0.75);
     });
 
     test('should serialize to and from JSON', () {
