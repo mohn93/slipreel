@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:screen_recorder/models/window_frame.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
+import 'package:screen_recorder/rendering/frame_painter.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_widget.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
@@ -31,6 +33,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   bool _isSelectingZoom = false;
   final _zoomTransformer = ZoomTransformer();
   int? _selectedZoomIndex;
+  WindowFrame _selectedFrame = WindowFrame.none();
 
   @override
   void initState() {
@@ -156,6 +159,16 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       _trimSelection = newTrim;
     });
     _undoRedo.push(newTrim);
+  }
+
+  void _toggleFrameSelector() {
+    final templates = WindowFrame.templates;
+    final currentIndex = templates.indexWhere((f) => f.name == _selectedFrame.name);
+    final nextIndex = (currentIndex + 1) % templates.length;
+
+    setState(() {
+      _selectedFrame = templates[nextIndex];
+    });
   }
 
   String _formatDuration(Duration duration) {
@@ -305,14 +318,52 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       );
     }
 
-    return AspectRatio(
-      aspectRatio: _controller.value.aspectRatio,
-      child: ZoomSelector(
-        enabled: _isSelectingZoom,
-        videoSize: _controller.value.size,
-        onRegionSelected: _handleZoomRegionSelected,
-        child: videoWidget,
+    // Calculate the total size including frame padding
+    final videoSize = _controller.value.size;
+    final totalSize = FramePainter.calculateTotalSize(
+      frame: _selectedFrame,
+      videoSize: videoSize,
+    );
+
+    // Wrap video with frame using CustomPaint
+    Widget framedVideo = SizedBox(
+      width: totalSize.width,
+      height: totalSize.height,
+      child: Stack(
+        children: [
+          // Frame background and border
+          CustomPaint(
+            size: totalSize,
+            painter: FramePainter(
+              frame: _selectedFrame,
+              videoSize: videoSize,
+            ),
+          ),
+          // Video content with padding and clipping
+          Positioned(
+            left: _selectedFrame.padding.left,
+            top: _selectedFrame.padding.top,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(_selectedFrame.cornerRadius),
+              child: SizedBox(
+                width: videoSize.width,
+                height: videoSize.height,
+                child: ZoomSelector(
+                  enabled: _isSelectingZoom,
+                  videoSize: videoSize,
+                  onRegionSelected: _handleZoomRegionSelected,
+                  child: videoWidget,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
+    );
+
+    return AspectRatio(
+      aspectRatio: totalSize.width / totalSize.height,
+      child: framedVideo,
     );
   }
 
@@ -463,6 +514,16 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                 icon: Icon(_isSelectingZoom ? Icons.zoom_in : Icons.zoom_out_map),
                 color: _isSelectingZoom ? const Color(0xFF6C63FF) : Colors.white70,
                 tooltip: 'Add Zoom Effect',
+              ),
+
+              // Frame button
+              IconButton(
+                onPressed: _toggleFrameSelector,
+                icon: const Icon(Icons.border_outer),
+                color: _selectedFrame.name != 'None'
+                    ? const Color(0xFF6C63FF)
+                    : Colors.white70,
+                tooltip: 'Change Frame: ${_selectedFrame.name}',
               ),
             ],
           ),
