@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
+import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_widget.dart';
+import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
 
 class PlaybackScreen extends StatefulWidget {
   final String videoPath;
@@ -24,6 +26,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   String? _error;
   TrimSelection? _trimSelection;
   late UndoRedoController<TrimSelection> _undoRedo;
+  List<ZoomRegion> _zoomRegions = [];
+  bool _isSelectingZoom = false;
 
   @override
   void initState() {
@@ -82,6 +86,34 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         });
       }
     }
+  }
+
+  void _handleZoomRegionSelected(Rect rect) {
+    if (!_isInitialized) return;
+
+    // Create zoom region at current playback position
+    final currentPosition = _controller.value.position;
+    final zoomRegion = ZoomRegion(
+      rect: rect,
+      startTime: currentPosition,
+      duration: const Duration(seconds: 2), // Default 2 second zoom
+      zoomLevel: 2.0,
+      videoBounds: Size(
+        _controller.value.size.width,
+        _controller.value.size.height,
+      ),
+    );
+
+    setState(() {
+      _zoomRegions = [..._zoomRegions, zoomRegion];
+      _isSelectingZoom = false;
+    });
+  }
+
+  void _toggleZoomSelector() {
+    setState(() {
+      _isSelectingZoom = !_isSelectingZoom;
+    });
   }
 
   void _handleTrimChanged(TrimSelection newTrim) {
@@ -209,7 +241,12 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
 
     return AspectRatio(
       aspectRatio: _controller.value.aspectRatio,
-      child: VideoPlayer(_controller),
+      child: ZoomSelector(
+        enabled: _isSelectingZoom,
+        videoSize: _controller.value.size,
+        onRegionSelected: _handleZoomRegionSelected,
+        child: VideoPlayer(_controller),
+      ),
     );
   }
 
@@ -296,6 +333,18 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                       ],
                     ),
                   ],
+
+                  // Zoom effects count display
+                  if (_zoomRegions.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Zoom effects: ${_zoomRegions.length}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ],
               );
             },
@@ -303,7 +352,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
 
           const SizedBox(height: 8),
 
-          // Undo/Redo buttons
+          // Undo/Redo and Zoom buttons
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -323,6 +372,14 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                 tooltip: 'Redo (Cmd+Shift+Z)',
                 color: const Color(0xFF6C63FF),
                 disabledColor: Colors.white24,
+              ),
+
+              // Zoom button
+              IconButton(
+                onPressed: _toggleZoomSelector,
+                icon: Icon(_isSelectingZoom ? Icons.zoom_in : Icons.zoom_out_map),
+                color: _isSelectingZoom ? const Color(0xFF6C63FF) : Colors.white70,
+                tooltip: 'Add Zoom Effect',
               ),
             ],
           ),
