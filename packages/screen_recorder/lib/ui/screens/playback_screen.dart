@@ -30,6 +30,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   List<ZoomRegion> _zoomRegions = [];
   bool _isSelectingZoom = false;
   final _zoomTransformer = ZoomTransformer();
+  int? _selectedZoomIndex;
 
   @override
   void initState() {
@@ -121,6 +122,32 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   void _toggleZoomSelector() {
     setState(() {
       _isSelectingZoom = !_isSelectingZoom;
+    });
+  }
+
+  void _deleteSelectedZoom() {
+    if (_selectedZoomIndex != null) {
+      setState(() {
+        _zoomRegions = List.from(_zoomRegions)..removeAt(_selectedZoomIndex!);
+        _selectedZoomIndex = null;
+      });
+    }
+  }
+
+  void _checkZoomMarkerClick(Duration position) {
+    // Find zoom region near clicked position (within 0.5 seconds)
+    final tolerance = const Duration(milliseconds: 500);
+    for (var i = 0; i < _zoomRegions.length; i++) {
+      final zoom = _zoomRegions[i];
+      if ((position - zoom.startTime).abs() < tolerance) {
+        setState(() {
+          _selectedZoomIndex = i;
+        });
+        return;
+      }
+    }
+    setState(() {
+      _selectedZoomIndex = null;
     });
   }
 
@@ -342,6 +369,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                     position: value.position,
                     onPositionChanged: (newPosition) {
                       _controller.seekTo(newPosition);
+                      _checkZoomMarkerClick(newPosition);
                     },
                     trimSelection: _trimSelection,
                     onTrimChanged: _handleTrimChanged,
@@ -377,12 +405,27 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                   // Zoom effects count display
                   if (_zoomRegions.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text(
-                      'Zoom effects: ${_zoomRegions.length}',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Zoom effects: ${_zoomRegions.length}',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                        if (_selectedZoomIndex != null) ...[
+                          const SizedBox(width: 16),
+                          IconButton(
+                            onPressed: _deleteSelectedZoom,
+                            icon: const Icon(Icons.delete),
+                            color: Colors.red,
+                            iconSize: 20,
+                            tooltip: 'Delete Zoom Effect',
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ],
