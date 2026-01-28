@@ -1,3 +1,5 @@
+import 'dart:math' show min;
+
 import 'package:flutter/material.dart';
 
 /// Widget for selecting zoom regions via tap or drag
@@ -22,6 +24,8 @@ class ZoomSelector extends StatefulWidget {
 }
 
 class _ZoomSelectorState extends State<ZoomSelector> {
+  static const double _minRegionSize = 10.0;
+
   Rect? _currentRect;
   Offset? _dragStart;
   bool _isDragging = false;
@@ -33,7 +37,7 @@ class _ZoomSelectorState extends State<ZoomSelector> {
     }
 
     return GestureDetector(
-      onTapDown: (details) {
+      onTapUp: (details) {
         if (!_isDragging) {
           _handleTap(details.localPosition);
         }
@@ -61,7 +65,9 @@ class _ZoomSelectorState extends State<ZoomSelector> {
         }
       },
       onPanEnd: (details) {
-        if (_currentRect != null && _currentRect!.width > 10 && _currentRect!.height > 10) {
+        if (_currentRect != null &&
+            _currentRect!.width > _minRegionSize &&
+            _currentRect!.height > _minRegionSize) {
           widget.onRegionSelected(_normalizeRect(_currentRect!));
         }
         setState(() {
@@ -85,12 +91,18 @@ class _ZoomSelectorState extends State<ZoomSelector> {
 
   void _handleTap(Offset position) {
     // Create default sized region centered on tap
-    final halfSize = widget.defaultRegionSize / 2;
+    // Ensure region size doesn't exceed video dimensions
+    final regionSize = min(
+      widget.defaultRegionSize,
+      min(widget.videoSize.width, widget.videoSize.height),
+    );
+    final halfSize = regionSize / 2;
+
     final rect = Rect.fromLTWH(
-      (position.dx - halfSize).clamp(0, widget.videoSize.width - widget.defaultRegionSize),
-      (position.dy - halfSize).clamp(0, widget.videoSize.height - widget.defaultRegionSize),
-      widget.defaultRegionSize,
-      widget.defaultRegionSize,
+      (position.dx - halfSize).clamp(0, widget.videoSize.width - regionSize),
+      (position.dy - halfSize).clamp(0, widget.videoSize.height - regionSize),
+      regionSize,
+      regionSize,
     );
 
     widget.onRegionSelected(rect);
@@ -113,6 +125,8 @@ class _ZoomSelectorState extends State<ZoomSelector> {
 }
 
 class _ZoomSelectorPainter extends CustomPainter {
+  static const double _handleSize = 8.0;
+
   final Rect rect;
 
   _ZoomSelectorPainter(this.rect);
@@ -139,7 +153,6 @@ class _ZoomSelectorPainter extends CustomPainter {
       ..color = Colors.white
       ..style = PaintingStyle.fill;
 
-    const handleSize = 8.0;
     final corners = [
       rect.topLeft,
       rect.topRight,
@@ -148,7 +161,7 @@ class _ZoomSelectorPainter extends CustomPainter {
     ];
 
     for (final corner in corners) {
-      canvas.drawCircle(corner, handleSize, handlePaint);
+      canvas.drawCircle(corner, _handleSize, handlePaint);
     }
   }
 
