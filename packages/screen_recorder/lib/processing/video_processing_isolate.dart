@@ -321,9 +321,10 @@ class VideoProcessingIsolate {
                 );
                 useRealEncoder = true;
               } catch (e) {
-                // Fall back to mock mode
+                // Propagate encoder initialization errors to user
                 encoder = null;
                 useRealEncoder = false;
+                throw Exception('Failed to initialize video encoder: $e');
               }
             }
 
