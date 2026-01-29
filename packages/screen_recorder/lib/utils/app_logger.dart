@@ -1,0 +1,108 @@
+import 'package:logger/logger.dart';
+
+/// Log zones for different parts of the application
+enum LogZone {
+  platform('Platform'),
+  videoEncoder('VideoEncoder'),
+  audioEncoder('AudioEncoder'),
+  cursorRenderer('CursorRenderer'),
+  recording('Recording'),
+  ui('UI'),
+  isolate('Isolate'),
+  ffmpeg('FFmpeg'),
+  permissions('Permissions');
+
+  final String name;
+  const LogZone(this.name);
+}
+
+/// Custom log output that includes zone information
+class ZoneLogOutput extends LogOutput {
+  @override
+  void output(OutputEvent event) {
+    for (var line in event.lines) {
+      // ignore: avoid_print
+      print(line);
+    }
+  }
+}
+
+/// Custom log printer that formats messages with zone and timestamp
+class ZoneLogPrinter extends PrettyPrinter {
+  final LogZone zone;
+
+  ZoneLogPrinter(this.zone)
+      : super(
+          methodCount: 0,
+          errorMethodCount: 5,
+          lineLength: 80,
+          colors: true,
+          printEmojis: true,
+          dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
+        );
+
+  @override
+  List<String> log(LogEvent event) {
+    final color = PrettyPrinter.defaultLevelColors[event.level];
+    final emoji = PrettyPrinter.defaultLevelEmojis[event.level];
+    final message = event.message;
+
+    // Format: [TIME] EMOJI [ZONE] LEVEL: MESSAGE
+    final time = getTime(event.time);
+    final zoneName = '[${zone.name}]'.padRight(18);
+    final levelName = event.level.name.toUpperCase().padRight(7);
+
+    final output = '$time $emoji $zoneName $levelName $message';
+
+    if (event.error != null) {
+      return [
+        color!(output),
+        ...formatStackTrace(event.stackTrace, errorMethodCount)
+            .map((line) => color(line)),
+      ];
+    }
+
+    return [color!(output)];
+  }
+}
+
+/// Application logger with zone-based logging
+class AppLogger {
+  static final Map<LogZone, Logger> _loggers = {};
+  static bool _initialized = false;
+
+  /// Initialize the logging system
+  static void initialize({Level level = Level.debug}) {
+    if (_initialized) return;
+
+    // Create loggers for each zone
+    for (final zone in LogZone.values) {
+      _loggers[zone] = Logger(
+        printer: ZoneLogPrinter(zone),
+        output: ZoneLogOutput(),
+        level: level,
+      );
+    }
+
+    _initialized = true;
+  }
+
+  /// Get logger for a specific zone
+  static Logger zone(LogZone zone) {
+    if (!_initialized) {
+      initialize();
+    }
+    return _loggers[zone]!;
+  }
+
+  /// Convenience getters for common zones
+  static Logger get platform => zone(LogZone.platform);
+  static Logger get videoEncoder => zone(LogZone.videoEncoder);
+  static Logger get audioEncoder => zone(LogZone.audioEncoder);
+  static Logger get cursorRenderer => zone(LogZone.cursorRenderer);
+  static Logger get recording => zone(LogZone.recording);
+  static Logger get ui => zone(LogZone.ui);
+  static Logger get isolate => zone(LogZone.isolate);
+  static Logger get ffmpeg => zone(LogZone.ffmpeg);
+  static Logger get permissions => zone(LogZone.permissions);
+}

@@ -55,6 +55,9 @@ dependencies:
   # Persistence
   shared_preferences: ^2.2.0
 
+  # Logging
+  logger: ^2.5.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

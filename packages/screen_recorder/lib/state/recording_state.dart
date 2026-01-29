@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../video_encoder_isolate.dart';
 import '../models/cursor_recording.dart';
+import '../utils/app_logger.dart';
 
 /// Recording status enum
 enum RecordingStatus {
@@ -148,7 +149,7 @@ class RecordingController extends StateNotifier<RecordingState> {
           // For now, recordings made with VideoEncoderIsolate will be video-only.
         },
         onError: (error) {
-          print('Audio stream error: $error');
+          AppLogger.recording.w('Audio stream error', error: error);
           // Don't fail the entire recording if audio fails
         },
       );
@@ -181,7 +182,7 @@ class RecordingController extends StateNotifier<RecordingState> {
             _cursorRecording?.addPosition(cursorData);
           },
           onError: (error) {
-            print('Cursor stream error: $error');
+            AppLogger.recording.w('Cursor stream error', error: error);
           },
         );
       }
@@ -221,7 +222,7 @@ class RecordingController extends StateNotifier<RecordingState> {
         final docsDir = await getApplicationDocumentsDirectory();
         final cursorPath = '${docsDir.path}/cursor_${DateTime.now().millisecondsSinceEpoch}.json';
         await _cursorRecording!.saveToFile(cursorPath);
-        print('Cursor data saved: ${_cursorRecording!.count} positions');
+        AppLogger.recording.i('Cursor data saved: ${_cursorRecording!.count} positions');
 
         // PHASE 4 LIMITATION: Cursor rendering is not yet integrated with the isolate.
         // Cursor rendering happens in VideoEncoder.addFrame() on the main thread.

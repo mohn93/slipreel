@@ -5,6 +5,7 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import 'rendering/cursor_renderer.dart';
 import 'models/cursor_recording.dart';
 import 'effects/background_effect.dart';
+import 'utils/app_logger.dart';
 
 /// Handles encoding video frames to MP4 using FFmpeg
 class VideoEncoder {
@@ -42,9 +43,9 @@ class VideoEncoder {
     _frameIndex = 0;
     _isInitialized = true;
 
-    print('VideoEncoder initialized: ${_width}x$_height @ ${_fps}fps');
-    print('Temp dir: $_tempDir');
-    print('Output: $_outputPath');
+    AppLogger.videoEncoder.i('Initialized: ${_width}x$_height @ ${_fps}fps');
+    AppLogger.videoEncoder.d('Temp dir: $_tempDir');
+    AppLogger.videoEncoder.d('Output: $_outputPath');
   }
 
   /// Set cursor recording data for rendering
@@ -56,7 +57,7 @@ class VideoEncoder {
     _cursorRenderer = CursorRenderer();
     await _cursorRenderer!.initialize();
 
-    print('Cursor renderer initialized with ${cursorRecording.count} positions');
+    AppLogger.cursorRenderer.i('Initialized with ${cursorRecording.count} positions');
   }
 
   /// Set background effect to apply to frames
@@ -99,7 +100,7 @@ class VideoEncoder {
     _frameIndex++;
 
     if (_frameIndex % 30 == 0) {
-      print('Saved frame $_frameIndex');
+      AppLogger.videoEncoder.d('Saved frame $_frameIndex');
     }
   }
 
@@ -113,7 +114,7 @@ class VideoEncoder {
     if (_audioSampleRate == null) {
       _audioSampleRate = sampleRate;
       _audioChannels = channels;
-      print('Audio format: $sampleRate Hz, $channels channels');
+      AppLogger.audioEncoder.i('Audio format: $sampleRate Hz, $channels channels');
     }
 
     // Validate audio format hasn't changed
@@ -133,7 +134,7 @@ class VideoEncoder {
     _audioSampleIndex++;
 
     if (_audioSampleIndex % 100 == 0) {
-      print('Saved audio sample $_audioSampleIndex');
+      AppLogger.audioEncoder.d('Saved audio sample $_audioSampleIndex');
     }
   }
 
@@ -147,12 +148,12 @@ class VideoEncoder {
       throw StateError('No frames to encode');
     }
 
-    print('Finalizing video: $_frameIndex frames, $_audioSampleIndex audio samples');
+    AppLogger.videoEncoder.i('Finalizing: $_frameIndex frames, $_audioSampleIndex audio samples');
 
     // Concatenate audio samples if we have any
     String? combinedAudioPath;
     if (_audioSampleIndex > 0 && _audioSampleRate != null && _audioChannels != null) {
-      print('Concatenating audio samples...');
+      AppLogger.audioEncoder.d('Concatenating audio samples...');
       combinedAudioPath = '$_tempDir/audio_combined.pcm';
       final combinedFile = File(combinedAudioPath);
       final sink = combinedFile.openWrite();
@@ -170,9 +171,9 @@ class VideoEncoder {
         }
         await sink.flush();
         await sink.close();
-        print('Audio concatenation complete');
+        AppLogger.audioEncoder.i('Audio concatenation complete');
       } catch (e) {
-        print('Error concatenating audio: $e');
+        AppLogger.audioEncoder.e('Error concatenating audio', error: e);
         await sink.close();
         combinedAudioPath = null;
       }
@@ -209,7 +210,7 @@ class VideoEncoder {
         '-y',
         _outputPath!,
       ];
-      print('Encoding with audio and video');
+      AppLogger.ffmpeg.i('Encoding with audio and video');
     } else {
       // Video only (original behavior)
       args = [
@@ -225,40 +226,40 @@ class VideoEncoder {
         '-y',
         _outputPath!,
       ];
-      print('Encoding video only (no audio)');
+      AppLogger.ffmpeg.i('Encoding video only (no audio)');
     }
 
-    print('FFmpeg command: ffmpeg ${args.join(" ")}');
+    AppLogger.ffmpeg.d('Command: ffmpeg ${args.join(" ")}');
 
     try {
       // Execute FFmpeg using system command
       final result = await Process.run('ffmpeg', args);
 
       if (result.exitCode == 0) {
-        print('Video encoding successful!');
+        AppLogger.ffmpeg.i('Encoding successful!');
         if (result.stdout.toString().isNotEmpty) {
-          print('FFmpeg output: ${result.stdout}');
+          AppLogger.ffmpeg.d('stdout: ${result.stdout}');
         }
         if (result.stderr.toString().isNotEmpty) {
-          print('FFmpeg messages: ${result.stderr}');
+          AppLogger.ffmpeg.d('stderr: ${result.stderr}');
         }
-        print('Output file: $_outputPath');
+        AppLogger.ffmpeg.i('Output file: $_outputPath');
 
         // Check file size
         final outputFile = File(_outputPath!);
         if (await outputFile.exists()) {
           final sizeBytes = await outputFile.length();
           final sizeMB = sizeBytes / (1024 * 1024);
-          print('File size: ${sizeMB.toStringAsFixed(2)} MB');
+          AppLogger.ffmpeg.i('File size: ${sizeMB.toStringAsFixed(2)} MB');
         }
       } else {
-        print('FFmpeg failed with exit code ${result.exitCode}');
-        print('stdout: ${result.stdout}');
-        print('stderr: ${result.stderr}');
+        AppLogger.ffmpeg.e('FFmpeg failed with exit code ${result.exitCode}');
+        AppLogger.ffmpeg.d('stdout: ${result.stdout}');
+        AppLogger.ffmpeg.e('stderr: ${result.stderr}');
         throw Exception('Failed to encode video: exit code ${result.exitCode}');
       }
     } on ProcessException catch (e) {
-      print('FFmpeg not found or failed to run: $e');
+      AppLogger.ffmpeg.e('FFmpeg not found or failed to run', error: e);
       throw Exception('FFmpeg is not installed or not in PATH. Please install FFmpeg.');
     }
 
@@ -275,10 +276,10 @@ class VideoEncoder {
         final dir = Directory(_tempDir!);
         if (await dir.exists()) {
           await dir.delete(recursive: true);
-          print('Cleaned up temporary files');
+          AppLogger.videoEncoder.d('Cleaned up temporary files');
         }
       } catch (e) {
-        print('Error cleaning up temp files: $e');
+        AppLogger.videoEncoder.w('Error cleaning up temp files', error: e);
       }
     }
 

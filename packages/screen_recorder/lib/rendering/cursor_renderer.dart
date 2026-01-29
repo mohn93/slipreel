@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import '../models/cursor_recording.dart';
 import '../effects/background_effect.dart';
+import '../utils/app_logger.dart';
 
 /// Renders cursor overlay on video frames
 class CursorRenderer {
@@ -115,7 +116,7 @@ class CursorRenderer {
 
       return bgraBytes;
     } catch (e) {
-      print('Error rendering cursor on frame: $e');
+      AppLogger.cursorRenderer.e('Error rendering cursor on frame', error: e);
       return frameData; // Return original frame to avoid breaking encoding
     }
   }

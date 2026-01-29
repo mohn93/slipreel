@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import 'package:screen_recorder_macos/screen_recorder_macos.dart';
 import 'ui/screens/recording_screen.dart';
+import 'utils/app_logger.dart';
 
 void main() {
+  // Initialize logging system
+  AppLogger.initialize(level: Level.debug);
+
   // Explicitly register the macOS platform implementation
   ScreenRecorderMacos.registerWith();
+  AppLogger.platform.i('macOS platform registered');
 
   runApp(
     const ProviderScope(
