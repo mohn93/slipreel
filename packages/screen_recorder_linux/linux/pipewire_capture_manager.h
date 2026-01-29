@@ -8,6 +8,8 @@
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <atomic>
+#include <mutex>
 
 namespace screen_recorder_linux {
 
@@ -73,8 +75,9 @@ private:
 
     void ProcessFrame(struct pw_buffer* buffer);
 
-    bool is_capturing_;
+    std::atomic<bool> is_capturing_;
     FrameCallback frame_callback_;
+    std::mutex callback_mutex_;
 
     struct pw_thread_loop* loop_;
     struct pw_stream* stream_;

@@ -72,6 +72,7 @@ std::vector<ScreenInfoNative> PipeWireCaptureManager::GetAvailableScreens() {
 
     // Query displays via PipeWire registry
     // For now, return single default display
+    // TODO (Task 32): Query actual display resolution instead of hardcoded 1920x1080
     ScreenInfoNative screen;
     screen.id = "0";
     screen.name = "Default Display";
@@ -88,7 +89,10 @@ bool PipeWireCaptureManager::StartCapture(const std::string& source_id, int fps,
         return false;
     }
 
-    frame_callback_ = callback;
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        frame_callback_ = callback;
+    }
 
     pw_thread_loop_lock(loop_);
 
@@ -110,6 +114,7 @@ bool PipeWireCaptureManager::StartCapture(const std::string& source_id, int fps,
     }
 
     // Build format parameters
+    // TODO (Task 32): Fix buffer overflow risk in SPA pod builder
     uint8_t buffer[1024];
     struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
 
@@ -233,8 +238,11 @@ void PipeWireCaptureManager::ProcessFrame(struct pw_buffer* buffer) {
     native_frame.height = frame_height_;
     native_frame.timestamp_micros = micros;
 
-    if (frame_callback_) {
-        frame_callback_(native_frame);
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        if (frame_callback_) {
+            frame_callback_(native_frame);
+        }
     }
 }
 

@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 #include <atomic>
+#include <mutex>
 #include <cstdint>
 
 namespace screen_recorder_linux {
@@ -44,6 +45,7 @@ private:
     std::atomic<bool> is_capturing_;
     int target_fps_;
     FrameCallback frame_callback_;
+    std::mutex callback_mutex_;
     std::thread capture_thread_;
 };
 

@@ -1,7 +1,9 @@
 #include "include/screen_recorder_linux/screen_recorder_linux_plugin.h"
+#include "screen_recorder_linux_plugin_private.h"
 
 #include <flutter_linux/flutter_linux.h>
 #include <gtk/gtk.h>
+#include <sys/utsname.h>
 
 #include <cstring>
 #include <memory>
@@ -106,6 +108,15 @@ static FlValue* screen_info_to_fl_value(const screen_recorder_linux::ScreenInfoN
   fl_value_set_string_take(map, "height", fl_value_new_int(screen.height));
   fl_value_set_string_take(map, "isPrimary", fl_value_new_bool(screen.is_primary));
   return fl_value_ref(map);
+}
+
+// Implementation of get_platform_version for unit testing
+FlMethodResponse* get_platform_version() {
+  struct utsname uname_data = {};
+  uname(&uname_data);
+  g_autofree gchar* version = g_strdup_printf("Linux %s", uname_data.version);
+  g_autoptr(FlValue) result = fl_value_new_string(version);
+  return FL_METHOD_RESPONSE(fl_method_success_response_new(result));
 }
 
 // Called when a method call is received from Flutter.
@@ -219,6 +230,7 @@ static void screen_recorder_linux_plugin_init(ScreenRecorderLinuxPlugin* self) {
 #else
   self->capture_manager = std::make_unique<screen_recorder_linux::X11CaptureManager>();
 #endif
+  // TODO (Task 32): Add initialization check before using capture_manager
   self->capture_manager->Initialize();
   self->frames_sink = nullptr;
 }

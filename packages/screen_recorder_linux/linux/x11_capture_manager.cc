@@ -123,7 +123,10 @@ bool X11CaptureManager::StartCapture(const std::string& source_id, int fps, Fram
         return false;
     }
 
-    frame_callback_ = callback;
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        frame_callback_ = callback;
+    }
     target_fps_ = fps;
 
     // Parse source_id - could be window ID or screen ID
@@ -183,6 +186,7 @@ void X11CaptureManager::CaptureLoop() {
         int height = image->height;
         std::vector<uint8_t> frame_data(width * height * 4);
 
+        // TODO (Task 32): Optimize X11 pixel conversion - use direct buffer access instead of XGetPixel
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 unsigned long pixel = XGetPixel(image, x, y);
@@ -209,8 +213,11 @@ void X11CaptureManager::CaptureLoop() {
         native_frame.height = height;
         native_frame.timestamp_micros = micros;
 
-        if (frame_callback_) {
-            frame_callback_(native_frame);
+        {
+            std::lock_guard<std::mutex> lock(callback_mutex_);
+            if (frame_callback_) {
+                frame_callback_(native_frame);
+            }
         }
 
         // Maintain target FPS
