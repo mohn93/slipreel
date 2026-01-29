@@ -25,6 +25,8 @@ struct _ScreenRecorderLinuxPlugin {
 #endif
   FlEventChannel* frames_channel;
   FlEventSink* frames_sink;
+  FlEventChannel* audio_channel;
+  FlEventChannel* cursor_channel;
 };
 
 G_DEFINE_TYPE(ScreenRecorderLinuxPlugin, screen_recorder_linux_plugin, g_object_get_type())
@@ -45,6 +47,40 @@ static FlMethodErrorResponse* frames_cancel_cb(
     gpointer user_data) {
   ScreenRecorderLinuxPlugin* self = SCREEN_RECORDER_LINUX_PLUGIN(user_data);
   self->frames_sink = nullptr;
+  return nullptr;
+}
+
+// Audio event channel handlers (stubs for now - Task 31+ will implement)
+static FlMethodErrorResponse* audio_listen_cb(
+    FlEventChannel* channel,
+    FlValue* args,
+    gpointer user_data) {
+  // Will be implemented in Task 31+
+  return nullptr;
+}
+
+static FlMethodErrorResponse* audio_cancel_cb(
+    FlEventChannel* channel,
+    FlValue* args,
+    gpointer user_data) {
+  // Will be implemented in Task 31+
+  return nullptr;
+}
+
+// Cursor event channel handlers (stubs for now - Task 31 will implement)
+static FlMethodErrorResponse* cursor_listen_cb(
+    FlEventChannel* channel,
+    FlValue* args,
+    gpointer user_data) {
+  // Will be implemented in Task 31
+  return nullptr;
+}
+
+static FlMethodErrorResponse* cursor_cancel_cb(
+    FlEventChannel* channel,
+    FlValue* args,
+    gpointer user_data) {
+  // Will be implemented in Task 31
   return nullptr;
 }
 
@@ -166,6 +202,10 @@ static void screen_recorder_linux_plugin_dispose(GObject* object) {
     self->capture_manager.reset();
   }
 
+  g_clear_object(&self->frames_channel);
+  g_clear_object(&self->audio_channel);
+  g_clear_object(&self->cursor_channel);
+
   G_OBJECT_CLASS(screen_recorder_linux_plugin_parent_class)->dispose(object);
 }
 
@@ -211,6 +251,30 @@ void screen_recorder_linux_plugin_register_with_registrar(FlPluginRegistrar* reg
       plugin->frames_channel,
       frames_listen_cb,
       frames_cancel_cb,
+      g_object_ref(plugin),
+      g_object_unref);
+
+  // Register audio event channel
+  plugin->audio_channel = fl_event_channel_new(
+      fl_plugin_registrar_get_messenger(registrar),
+      "com.screenflow_studio.screen_recorder/audio",
+      FL_METHOD_CODEC(codec));
+  fl_event_channel_set_stream_handlers(
+      plugin->audio_channel,
+      audio_listen_cb,
+      audio_cancel_cb,
+      g_object_ref(plugin),
+      g_object_unref);
+
+  // Register cursor event channel
+  plugin->cursor_channel = fl_event_channel_new(
+      fl_plugin_registrar_get_messenger(registrar),
+      "com.screenflow_studio.screen_recorder/cursor",
+      FL_METHOD_CODEC(codec));
+  fl_event_channel_set_stream_handlers(
+      plugin->cursor_channel,
+      cursor_listen_cb,
+      cursor_cancel_cb,
       g_object_ref(plugin),
       g_object_unref);
 
