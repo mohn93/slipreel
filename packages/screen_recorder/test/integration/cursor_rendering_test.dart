@@ -1,9 +1,29 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
+/// Cursor rendering integration tests
+///
+/// These tests verify cursor tracking functionality across platforms.
+/// They require a platform implementation to be registered and will be
+/// skipped if run outside an integration_test context.
 void main() {
+  // Check if platform is available
+  bool platformAvailable = false;
+  try {
+    ScreenRecorderPlatform.instance;
+    platformAvailable = true;
+  } catch (e) {
+    // Platform not registered - tests will be skipped
+  }
+
   group('Cross-platform cursor rendering', () {
     test('should provide cursor stream on all platforms', () async {
+      if (!platformAvailable) {
+        markTestSkipped('Platform implementation not registered. '
+            'Run this test from an integration_test context.');
+        return;
+      }
+
       final platform = ScreenRecorderPlatform.instance;
 
       // All platforms should implement cursor stream
@@ -11,6 +31,11 @@ void main() {
     });
 
     test('should emit cursor positions during recording', () async {
+      if (!platformAvailable) {
+        markTestSkipped('Platform implementation not registered.');
+        return;
+      }
+
       final platform = ScreenRecorderPlatform.instance;
 
       final cursorData = <CursorPosition>[];
@@ -33,6 +58,11 @@ void main() {
     });
 
     test('should detect clicks on all platforms', () async {
+      if (!platformAvailable) {
+        markTestSkipped('Platform implementation not registered.');
+        return;
+      }
+
       final platform = ScreenRecorderPlatform.instance;
 
       final clicks = <CursorPosition>[];

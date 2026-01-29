@@ -1,0 +1,406 @@
+# Manual Testing Checklist
+
+This checklist should be completed when testing ScreenFlow Studio on each platform (macOS, Windows, Linux) to ensure feature parity and proper functionality.
+
+## Pre-Testing Setup
+
+### macOS
+- [ ] Running macOS 12.3 or later
+- [ ] Screen recording permission granted in System Preferences
+- [ ] Audio recording permission granted (if testing audio)
+- [ ] Multiple displays available (if testing multi-monitor)
+
+### Windows
+- [ ] Running Windows 10 Build 17134 (1803) or later
+- [ ] DirectX 11 capable GPU
+- [ ] Latest graphics drivers installed
+- [ ] Multiple displays available (if testing multi-monitor)
+
+### Linux
+- [ ] PipeWire 0.3+ installed and running OR X11 display server
+- [ ] xdg-desktop-portal installed and running (for Wayland)
+- [ ] `pipewire --version` shows 0.3 or higher
+- [ ] `systemctl --user status xdg-desktop-portal` shows active
+- [ ] Multiple displays available (if testing multi-monitor)
+
+---
+
+## Core Functionality Tests
+
+### Launch and Initialization
+- [ ] App launches without errors
+- [ ] No crash on startup
+- [ ] Permission dialogs appear as expected (macOS/Wayland)
+- [ ] Main window renders correctly
+- [ ] UI is responsive
+
+### Display/Screen Enumeration
+- [ ] Screen list populates with available displays
+- [ ] Screen names are descriptive and accurate
+- [ ] Screen dimensions are correct
+- [ ] Primary display is marked correctly
+- [ ] Multi-monitor setups show all displays
+
+**Platform Notes:**
+- macOS: Should show all displays with accurate info
+- Windows: Should show all displays with accurate info
+- Linux (PipeWire): Should show displays (may require system picker)
+- Linux (X11): Should show all displays with accurate info
+
+### Window Enumeration
+- [ ] Window list populates with open windows
+- [ ] Window titles are accurate
+- [ ] Window owner/app names are shown (macOS/Windows/X11)
+- [ ] System/hidden windows are filtered appropriately
+- [ ] Window list updates when windows open/close
+
+**Platform Notes:**
+- macOS: Full window enumeration with metadata
+- Windows: Full window enumeration with metadata
+- Linux (PipeWire): ⚠️ Window enumeration NOT available (security restriction)
+- Linux (X11): Full window enumeration with metadata
+
+---
+
+## Recording Tests
+
+### Display Recording
+- [ ] Select a display from the list
+- [ ] Click "Start Recording"
+- [ ] Recording starts without errors
+- [ ] Frame counter increments
+- [ ] CPU usage is reasonable (check Activity Monitor/Task Manager)
+- [ ] Memory usage is stable (no leaks)
+- [ ] Click "Stop Recording"
+- [ ] Output file path is returned
+- [ ] Output file exists and is valid
+- [ ] Output file is playable in video player
+
+### Window Recording
+- [ ] Select a window from the list
+- [ ] Click "Start Recording"
+- [ ] Recording starts without errors
+- [ ] Only selected window is captured
+- [ ] Window can be moved/resized during recording
+- [ ] Click "Stop Recording"
+- [ ] Output file is valid and playable
+
+**Platform Notes:**
+- Linux (PipeWire): ⚠️ Uses system picker instead of pre-selection
+
+### Duration Test
+- [ ] Record for at least 30 seconds
+- [ ] Frame counter shows consistent progress
+- [ ] No dropped frames or stuttering
+- [ ] Memory usage remains stable
+- [ ] Playback is smooth
+
+### Sequential Recordings
+- [ ] Complete a recording successfully
+- [ ] Start a second recording immediately
+- [ ] No errors or crashes
+- [ ] Second recording completes successfully
+- [ ] Start a third recording
+- [ ] Third recording completes successfully
+- [ ] No memory leaks between recordings
+
+---
+
+## Cursor Tracking Tests
+
+### Cursor Visibility
+- [ ] Enable cursor capture
+- [ ] Start recording
+- [ ] Move mouse around screen
+- [ ] Cursor movements are visible in recording
+- [ ] Cursor position is accurate
+- [ ] Stop recording and playback
+
+**Platform Notes:**
+- macOS: ✅ Full cursor tracking
+- Windows: ✅ Full cursor tracking
+- Linux (PipeWire): ❌ Cursor NOT available
+- Linux (X11): ✅ Full cursor tracking
+
+### Click Detection
+- [ ] Enable cursor capture
+- [ ] Start recording
+- [ ] Perform several left clicks
+- [ ] Perform several right clicks
+- [ ] Click indicators appear in recording (if implemented)
+- [ ] Stop and verify playback
+
+**Platform Notes:**
+- Linux (PipeWire): ❌ Click detection NOT available
+
+---
+
+## Audio Capture Tests
+
+### System Audio
+- [ ] Enable audio capture
+- [ ] Play audio (YouTube, music, etc.)
+- [ ] Start recording
+- [ ] Audio levels show activity
+- [ ] Stop recording
+- [ ] Playback video - audio is present and synchronized
+
+### Microphone Audio
+- [ ] Enable microphone capture
+- [ ] Select microphone from device list
+- [ ] Start recording
+- [ ] Speak into microphone
+- [ ] Audio levels show activity
+- [ ] Stop recording
+- [ ] Playback video - microphone audio is present
+
+### No Audio
+- [ ] Disable audio capture
+- [ ] Start recording
+- [ ] Stop recording
+- [ ] Playback video - no audio track present
+
+---
+
+## Frame Effects Tests
+
+### Zoom Effects
+- [ ] Create a zoom region at start of video
+- [ ] Zoom region appears on timeline
+- [ ] Preview shows zoom applied
+- [ ] Playback shows smooth zoom transition
+- [ ] Create multiple zoom regions
+- [ ] All zoom regions work correctly
+
+### Window Framing
+- [ ] Apply "None" frame template
+- [ ] Video shows no decorations
+- [ ] Apply "Rounded" frame template
+- [ ] Video shows rounded corners
+- [ ] Apply "Modern" frame template
+- [ ] Video shows title bar decoration
+- [ ] Apply "Minimal" frame template
+- [ ] Video shows minimal border
+- [ ] Custom frame colors work correctly
+
+### Background Effects
+- [ ] Apply solid color background
+- [ ] Background color appears correctly
+- [ ] Apply gradient background
+- [ ] Gradient renders smoothly
+- [ ] Apply blur background
+- [ ] Background is properly blurred
+
+---
+
+## Export Tests
+
+### 1080p 30fps Export
+- [ ] Select "1080p 30fps" preset
+- [ ] Click Export
+- [ ] Export completes without errors
+- [ ] Output file size is reasonable
+- [ ] Playback quality is good
+- [ ] Frame rate is consistent
+
+### 1080p 60fps Export
+- [ ] Select "1080p 60fps" preset
+- [ ] Click Export
+- [ ] Export completes without errors
+- [ ] Playback is smooth at 60fps
+
+### 4K 30fps Export
+- [ ] Select "4K 30fps" preset
+- [ ] Click Export
+- [ ] Export completes without errors
+- [ ] File size is larger (expected)
+- [ ] Quality is excellent
+
+### 4K 60fps Export
+- [ ] Select "4K 60fps" preset
+- [ ] Click Export
+- [ ] Export completes without errors
+- [ ] Large file size (expected)
+- [ ] High quality maintained
+
+### Web Optimized Export
+- [ ] Select "Web Optimized" preset
+- [ ] Click Export
+- [ ] Export completes without errors
+- [ ] File size is small
+- [ ] Quality is acceptable for web
+- [ ] Loads quickly in browser
+
+---
+
+## Performance Tests
+
+### CPU Usage
+- [ ] Monitor CPU during recording
+- [ ] CPU usage is acceptable (< 30% on modern hardware)
+- [ ] No CPU spikes or throttling
+- [ ] Fans don't run excessively
+
+### Memory Usage
+- [ ] Monitor memory during recording
+- [ ] Memory usage is stable
+- [ ] No memory leaks over time
+- [ ] Memory is released after stopping
+
+### Frame Rate Consistency
+- [ ] Record at 30 FPS
+- [ ] Verify actual frame rate in output
+- [ ] No dropped frames
+- [ ] Record at 60 FPS
+- [ ] Verify actual frame rate in output
+- [ ] Consistent frame times
+
+---
+
+## Error Handling Tests
+
+### Invalid Source Selection
+- [ ] Attempt to record with no source selected
+- [ ] Appropriate error message is shown
+- [ ] App doesn't crash
+
+### Permission Denied
+- [ ] Revoke screen recording permission (macOS)
+- [ ] Attempt to start recording
+- [ ] Permission error is shown
+- [ ] User is directed to settings
+
+### Disk Space
+- [ ] Fill disk to near capacity
+- [ ] Attempt to record
+- [ ] Disk space error is shown
+- [ ] No corruption of existing files
+
+### Network Drive (if applicable)
+- [ ] Set output to network location
+- [ ] Record video
+- [ ] Verify successful save to network
+
+---
+
+## UI/UX Tests
+
+### Timeline Interaction
+- [ ] Timeline renders correctly
+- [ ] Playhead can be dragged
+- [ ] Zoom in/out on timeline works
+- [ ] Timeline markers are visible
+- [ ] Clicking on timeline seeks correctly
+
+### Undo/Redo
+- [ ] Perform several edits
+- [ ] Click Undo
+- [ ] Edit is reversed
+- [ ] Click Redo
+- [ ] Edit is reapplied
+- [ ] Multiple undo/redo works correctly
+
+### Keyboard Shortcuts
+- [ ] Space bar plays/pauses
+- [ ] Arrow keys seek frame-by-frame
+- [ ] Cmd/Ctrl+Z undoes
+- [ ] Cmd/Ctrl+Shift+Z redoes
+- [ ] Other shortcuts work as expected
+
+---
+
+## Stress Tests
+
+### Long Recording
+- [ ] Record for 10+ minutes
+- [ ] No crashes or errors
+- [ ] Output file is valid
+- [ ] Memory usage stays reasonable
+
+### Large Resolution
+- [ ] Record 4K display
+- [ ] Recording completes successfully
+- [ ] Performance is acceptable
+
+### Rapid Start/Stop
+- [ ] Start recording
+- [ ] Immediately stop
+- [ ] Repeat 10 times
+- [ ] No crashes or errors
+- [ ] No resource leaks
+
+---
+
+## Regression Tests
+
+### Previously Fixed Bugs
+- [ ] Check issue tracker for fixed bugs
+- [ ] Test each fixed issue
+- [ ] Verify issues don't reoccur
+- [ ] Document any regressions
+
+---
+
+## Platform-Specific Tests
+
+### macOS Only
+- [ ] Test on Intel Mac
+- [ ] Test on Apple Silicon Mac
+- [ ] Hardware encoding works (macOS 13+)
+- [ ] NSEvent cursor tracking works
+- [ ] ScreenCaptureKit permission flow
+
+### Windows Only
+- [ ] Test on Windows 10
+- [ ] Test on Windows 11
+- [ ] Graphics Capture consent picker appears
+- [ ] Low-level mouse hook for cursor works
+- [ ] DirectX 11 capture works
+
+### Linux Only - Wayland
+- [ ] System picker appears for display capture
+- [ ] System picker appears for window capture
+- [ ] PipeWire capture works
+- [ ] Audio capture works
+- [ ] Cursor tracking NOT available (expected)
+
+### Linux Only - X11
+- [ ] Window enumeration works
+- [ ] Display capture works
+- [ ] Window capture works
+- [ ] Cursor tracking works
+- [ ] No permission dialogs (expected)
+
+---
+
+## Sign-Off
+
+### Test Environment
+- **Platform:** _______________
+- **OS Version:** _______________
+- **Hardware:** _______________
+- **Date:** _______________
+- **Tester:** _______________
+
+### Results Summary
+- **Total Tests:** _______________
+- **Passed:** _______________
+- **Failed:** _______________
+- **Skipped (N/A):** _______________
+
+### Issues Found
+1. _______________________________________________
+2. _______________________________________________
+3. _______________________________________________
+
+### Overall Assessment
+- [ ] Ready for release
+- [ ] Needs minor fixes
+- [ ] Needs major fixes
+- [ ] Not ready for release
+
+### Notes
+_________________________________________________
+_________________________________________________
+_________________________________________________
+_________________________________________________
