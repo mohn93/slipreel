@@ -31,7 +31,7 @@ class TimelinePainter extends CustomPainter {
       final endX = (trimSelection!.end.inMicroseconds / duration.inMicroseconds) * size.width;
 
       final trimPaint = Paint()
-        ..color = const Color(0xFF6C63FF).withOpacity(0.2)
+        ..color = const Color(0xFF6C63FF).withValues(alpha: 0.2)
         ..style = PaintingStyle.fill;
 
       canvas.drawRect(

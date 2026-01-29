@@ -42,9 +42,9 @@ class ZoomTransformer {
 
     // Build transformation matrix
     final matrix = Matrix4.identity()
-      ..translate(translation.dx, translation.dy)
-      ..scale(zoomFactor, zoomFactor, 1.0)
-      ..translate(-translation.dx, -translation.dy);
+      ..translateByDouble(translation.dx, translation.dy, 0, 1.0)
+      ..scaleByDouble(zoomFactor, zoomFactor, 1.0, 1.0)
+      ..translateByDouble(-translation.dx, -translation.dy, 0, 1.0);
 
     return matrix;
   }

@@ -262,7 +262,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                     Text(
                       '${recordingState.frameCount} frames',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 14,
                       ),
                     ),
@@ -273,7 +273,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.2),
+                        color: Colors.red.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(color: Colors.red, width: 1),
                       ),
@@ -322,7 +322,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.2),
+                    color: Colors.red.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: Colors.red),
                   ),
@@ -422,7 +422,7 @@ class _WindowThumbnail extends StatelessWidget {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: const Color(0xFF6C63FF).withOpacity(0.5),
+                    color: const Color(0xFF6C63FF).withValues(alpha: 0.5),
                     blurRadius: 12,
                     spreadRadius: 2,
                   ),
@@ -444,7 +444,7 @@ class _WindowThumbnail extends StatelessWidget {
                   child: Icon(
                     Icons.window,
                     size: 48,
-                    color: Colors.white.withOpacity(0.3),
+                    color: Colors.white.withValues(alpha: 0.3),
                   ),
                 ),
               ),
@@ -470,7 +470,7 @@ class _WindowThumbnail extends StatelessWidget {
                   Text(
                     window.ownerName,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.6),
+                      color: Colors.white.withValues(alpha: 0.6),
                       fontSize: 12,
                     ),
                     maxLines: 1,
@@ -526,7 +526,7 @@ class _RecordButton extends ConsumerWidget {
                     color: (isRecording
                             ? const Color(0xFF6C63FF)
                             : Colors.red)
-                        .withOpacity(0.5),
+                        .withValues(alpha: 0.5),
                     blurRadius: 16,
                     spreadRadius: 4,
                   ),

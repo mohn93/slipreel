@@ -8,8 +8,6 @@ import 'processing/video_processing_isolate.dart';
 class VideoEncoderIsolate {
   VideoProcessingIsolate? _isolate;
   int _frameCount = 0;
-  int _width = 0;
-  int _height = 0;
   bool _isInitialized = false;
 
   /// Progress callback for encoding updates
@@ -29,8 +27,6 @@ class VideoEncoderIsolate {
     required int height,
     required int fps,
   }) async {
-    _width = width;
-    _height = height;
     _frameCount = 0;
 
     _isolate = VideoProcessingIsolate();

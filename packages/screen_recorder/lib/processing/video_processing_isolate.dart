@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:isolate';
-import 'dart:typed_data';
-import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../video_encoder.dart';
