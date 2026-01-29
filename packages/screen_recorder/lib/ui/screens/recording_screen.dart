@@ -205,6 +205,8 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
           window: window,
           isSelected: isSelected,
           onTap: () {
+            // Unfocus any text fields
+            FocusScope.of(context).unfocus();
             setState(() {
               _selectedWindowId = window.id;
             });
