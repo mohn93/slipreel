@@ -287,8 +287,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           cursorTracker = nil
         }
 
-        // TODO: Return video file path in Phase 1, Batch 2, Task 6
-        result(["success": true])
+        // Return empty string - video encoding happens on Flutter side
+        result("")
       } catch {
         result(FlutterError(
           code: "STOP_FAILED",
