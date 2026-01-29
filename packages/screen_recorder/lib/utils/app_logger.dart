@@ -54,15 +54,19 @@ class ZoneLogPrinter extends PrettyPrinter {
 
     final output = '$time $emoji $zoneName $levelName $message';
 
+    final lines = <String>[color!(output)];
+
     if (event.error != null) {
-      return [
-        color!(output),
-        ...formatStackTrace(event.stackTrace, errorMethodCount)
-            .map((line) => color(line)),
-      ];
+      lines.add(color('Error: ${event.error}'));
     }
 
-    return [color!(output)];
+    if (event.stackTrace != null) {
+      final stackStr = event.stackTrace.toString();
+      final stackLines = stackStr.split('\n').take(errorMethodCount ?? 5);
+      lines.addAll(stackLines.map((line) => color(line)));
+    }
+
+    return lines;
   }
 }
 
