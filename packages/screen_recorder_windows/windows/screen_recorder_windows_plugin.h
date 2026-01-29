@@ -11,6 +11,7 @@
 namespace screen_recorder_windows {
 
 class GraphicsCaptureManager;
+class CursorTracker;
 
 class ScreenRecorderWindowsPlugin : public flutter::Plugin {
  public:
@@ -30,11 +31,14 @@ class ScreenRecorderWindowsPlugin : public flutter::Plugin {
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
   std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> frames_sink_;
+  std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> cursor_sink_;
 
  private:
   flutter::PluginRegistrarWindows* registrar_;
   std::unique_ptr<GraphicsCaptureManager> capture_manager_;
+  std::unique_ptr<CursorTracker> cursor_tracker_;
   std::mutex frames_sink_mutex_;
+  std::mutex cursor_sink_mutex_;
 };
 
 }  // namespace screen_recorder_windows

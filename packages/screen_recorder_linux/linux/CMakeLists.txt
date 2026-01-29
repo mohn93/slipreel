@@ -34,6 +34,9 @@ else()
     list(APPEND PLUGIN_SOURCES "x11_capture_manager.cc")
 endif()
 
+# Add cursor tracker (always included, uses conditional compilation)
+list(APPEND PLUGIN_SOURCES "cursor_tracker.cc")
+
 # Define the plugin library target. Its name must not be changed (see comment
 # on PLUGIN_NAME above).
 add_library(${PLUGIN_NAME} SHARED

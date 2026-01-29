@@ -1,5 +1,6 @@
 #include "screen_recorder_windows_plugin.h"
 #include "graphics_capture_manager.h"
+#include "cursor_tracker.h"
 
 // This must be included before many other Windows headers.
 #include <windows.h>
@@ -59,16 +60,73 @@ void ScreenRecorderWindowsPlugin::RegisterWithRegistrar(
 
   frames_channel->SetStreamHandler(std::move(frames_handler));
 
+  // Event channel for cursor
+  auto cursor_channel = std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
+      registrar->messenger(),
+      "com.screenflow_studio.screen_recorder/cursor",
+      &flutter::StandardMethodCodec::GetInstance());
+
+  auto cursor_handler = std::make_unique<flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
+      [plugin_pointer = plugin.get()](
+          const flutter::EncodableValue* arguments,
+          std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& events)
+          -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
+
+          std::lock_guard<std::mutex> lock(plugin_pointer->cursor_sink_mutex_);
+          plugin_pointer->cursor_sink_ = std::move(events);
+
+          // Start cursor tracking when stream is listened to
+          if (plugin_pointer->cursor_tracker_) {
+              plugin_pointer->cursor_tracker_->StartTracking(
+                  [plugin_pointer](const CursorDataNative& cursor) {
+                      std::lock_guard<std::mutex> lock(plugin_pointer->cursor_sink_mutex_);
+                      if (plugin_pointer->cursor_sink_) {
+                          flutter::EncodableMap cursor_map;
+                          cursor_map[flutter::EncodableValue("x")] = flutter::EncodableValue(cursor.x);
+                          cursor_map[flutter::EncodableValue("y")] = flutter::EncodableValue(cursor.y);
+                          cursor_map[flutter::EncodableValue("timestampMicros")] =
+                              flutter::EncodableValue(cursor.timestamp_micros);
+                          cursor_map[flutter::EncodableValue("isClicked")] =
+                              flutter::EncodableValue(cursor.is_clicked);
+
+                          plugin_pointer->cursor_sink_->Success(flutter::EncodableValue(cursor_map));
+                      }
+                  });
+          }
+
+          return nullptr;
+      },
+      [plugin_pointer = plugin.get()](
+          const flutter::EncodableValue* arguments)
+          -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
+
+          std::lock_guard<std::mutex> lock(plugin_pointer->cursor_sink_mutex_);
+          plugin_pointer->cursor_sink_ = nullptr;
+
+          // Stop cursor tracking when stream is cancelled
+          if (plugin_pointer->cursor_tracker_) {
+              plugin_pointer->cursor_tracker_->StopTracking();
+          }
+
+          return nullptr;
+      });
+
+  cursor_channel->SetStreamHandler(std::move(cursor_handler));
+
   registrar->AddPlugin(std::move(plugin));
 }
 
 ScreenRecorderWindowsPlugin::ScreenRecorderWindowsPlugin(
     flutter::PluginRegistrarWindows* registrar)
     : registrar_(registrar),
-      capture_manager_(std::make_unique<GraphicsCaptureManager>()) {
+      capture_manager_(std::make_unique<GraphicsCaptureManager>()),
+      cursor_tracker_(std::make_unique<CursorTracker>()) {
 }
 
 ScreenRecorderWindowsPlugin::~ScreenRecorderWindowsPlugin() {
+  if (cursor_tracker_) {
+    cursor_tracker_->StopTracking();
+  }
 }
 
 void ScreenRecorderWindowsPlugin::HandleMethodCall(

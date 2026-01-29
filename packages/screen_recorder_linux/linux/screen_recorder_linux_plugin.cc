@@ -14,6 +14,8 @@
 #include "x11_capture_manager.h"
 #endif
 
+#include "cursor_tracker.h"
+
 #define SCREEN_RECORDER_LINUX_PLUGIN(obj) \
   (G_TYPE_CHECK_INSTANCE_CAST((obj), screen_recorder_linux_plugin_get_type(), \
                               ScreenRecorderLinuxPlugin))
@@ -25,10 +27,12 @@ struct _ScreenRecorderLinuxPlugin {
 #else
   std::unique_ptr<screen_recorder_linux::X11CaptureManager> capture_manager;
 #endif
+  std::unique_ptr<screen_recorder_linux::CursorTracker> cursor_tracker;
   FlEventChannel* frames_channel;
   FlEventSink* frames_sink;
   FlEventChannel* audio_channel;
   FlEventChannel* cursor_channel;
+  FlEventSink* cursor_sink;
 };
 
 G_DEFINE_TYPE(ScreenRecorderLinuxPlugin, screen_recorder_linux_plugin, g_object_get_type())
@@ -69,12 +73,30 @@ static FlMethodErrorResponse* audio_cancel_cb(
   return nullptr;
 }
 
-// Cursor event channel handlers (stubs for now - Task 31 will implement)
+// Cursor event channel handlers
 static FlMethodErrorResponse* cursor_listen_cb(
     FlEventChannel* channel,
     FlValue* args,
     gpointer user_data) {
-  // Will be implemented in Task 31
+  ScreenRecorderLinuxPlugin* self = SCREEN_RECORDER_LINUX_PLUGIN(user_data);
+  self->cursor_sink = fl_event_channel_get_event_sink(channel);
+
+  // Start cursor tracking when stream is listened to
+  if (self->cursor_tracker) {
+    self->cursor_tracker->StartTracking(
+        [self](const screen_recorder_linux::CursorDataNative& cursor) {
+          if (self->cursor_sink) {
+            g_autoptr(FlValue) cursor_map = fl_value_new_map();
+            fl_value_set_string_take(cursor_map, "x", fl_value_new_float(cursor.x));
+            fl_value_set_string_take(cursor_map, "y", fl_value_new_float(cursor.y));
+            fl_value_set_string_take(cursor_map, "timestampMicros", fl_value_new_int(cursor.timestamp_micros));
+            fl_value_set_string_take(cursor_map, "isClicked", fl_value_new_bool(cursor.is_clicked));
+
+            fl_event_sink_success(self->cursor_sink, cursor_map);
+          }
+        });
+  }
+
   return nullptr;
 }
 
@@ -82,7 +104,14 @@ static FlMethodErrorResponse* cursor_cancel_cb(
     FlEventChannel* channel,
     FlValue* args,
     gpointer user_data) {
-  // Will be implemented in Task 31
+  ScreenRecorderLinuxPlugin* self = SCREEN_RECORDER_LINUX_PLUGIN(user_data);
+  self->cursor_sink = nullptr;
+
+  // Stop cursor tracking when stream is cancelled
+  if (self->cursor_tracker) {
+    self->cursor_tracker->StopTracking();
+  }
+
   return nullptr;
 }
 
@@ -213,6 +242,11 @@ static void screen_recorder_linux_plugin_dispose(GObject* object) {
     self->capture_manager.reset();
   }
 
+  if (self->cursor_tracker) {
+    self->cursor_tracker->StopTracking();
+    self->cursor_tracker.reset();
+  }
+
   g_clear_object(&self->frames_channel);
   g_clear_object(&self->audio_channel);
   g_clear_object(&self->cursor_channel);
@@ -232,7 +266,11 @@ static void screen_recorder_linux_plugin_init(ScreenRecorderLinuxPlugin* self) {
 #endif
   // TODO (Task 32): Add initialization check before using capture_manager
   self->capture_manager->Initialize();
+
+  self->cursor_tracker = std::make_unique<screen_recorder_linux::CursorTracker>();
+
   self->frames_sink = nullptr;
+  self->cursor_sink = nullptr;
 }
 
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,

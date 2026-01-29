@@ -26,6 +26,8 @@ list(APPEND PLUGIN_SOURCES
   "screen_recorder_windows_plugin.h"
   "graphics_capture_manager.cpp"
   "graphics_capture_manager.h"
+  "cursor_tracker.cpp"
+  "cursor_tracker.h"
 )
 
 # Define the plugin library target. Its name must not be changed (see comment
