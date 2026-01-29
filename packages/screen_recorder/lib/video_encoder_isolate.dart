@@ -77,7 +77,8 @@ class VideoEncoderIsolate {
   /// Cancel encoding and cleanup
   Future<void> cancel() async {
     if (!_isInitialized) {
-      throw StateError('Encoder not initialized');
+      // Nothing to cancel if not initialized
+      return;
     }
     await _dispose();
   }
