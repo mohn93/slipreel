@@ -24,4 +24,6 @@ class ScreenRecorderMethods {
   static const String stopRecording = 'stopRecording';
   static const String requestPermissions = 'requestPermissions';
   static const String checkPermissions = 'checkPermissions';
+  static const String startLiveRecording = 'startLiveRecording';
+  static const String stopLiveRecording = 'stopLiveRecording';
 }

@@ -4,6 +4,7 @@ import 'models/audio_data.dart';
 import 'models/audio_device_info.dart';
 import 'models/cursor_position.dart';
 import 'models/frame_data.dart';
+import 'models/recording_result.dart';
 import 'models/recording_settings.dart';
 import 'models/screen_info.dart';
 import 'models/window_info.dart';
@@ -99,5 +100,26 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   /// Stream of cursor positions during recording
   Stream<CursorPosition> get cursorStream {
     throw UnimplementedError('cursorStream has not been implemented.');
+  }
+
+  /// Start a live HW-encoded recording. Writes a complete MP4 directly to
+  /// [outputPath] during capture (no raw-frame spool). Throws
+  /// `UnsupportedError` on platforms that don't support the live path.
+  Future<void> startLiveRecording({
+    required RecordingSettings settings,
+    required String outputPath,
+    required int width,
+    required int height,
+  }) {
+    throw UnsupportedError(
+      'startLiveRecording() is not supported on this platform; '
+      'use startRecording() with the spool-based path instead.',
+    );
+  }
+
+  /// Stop the live recording, finalize the MP4, and return the path plus
+  /// native perf stats.
+  Future<RecordingResult> stopLiveRecording() {
+    throw UnsupportedError('stopLiveRecording() is not supported on this platform.');
   }
 }
