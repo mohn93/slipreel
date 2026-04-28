@@ -45,6 +45,13 @@ class VideoToolboxEncoder {
   /// `kVTEncodeInfo_FrameDropped`. Read at stop time.
   private(set) var droppedFrameCount: Int = 0
 
+  /// Number of times encode(pixelBuffer:timestamp:) was called.
+  private(set) var encodeCallCount: Int = 0
+  /// Number of frames successfully submitted to VTCompressionSessionEncodeFrame.
+  private(set) var encodeSuccessCount: Int = 0
+  /// Number of times the static outputCallback fired with a ready sample.
+  private(set) var outputCallbackCount: Int = 0
+
   init(width: Int, height: Int, fps: Int) {
     self.width = width
     self.height = height
@@ -96,6 +103,7 @@ class VideoToolboxEncoder {
   }
 
   func encode(pixelBuffer: CVPixelBuffer, timestamp: CMTime) throws {
+    encodeCallCount += 1
     guard let session = compressionSession else { throw EncoderError.notInitialized }
     var flags = VTEncodeInfoFlags()
     let status = VTCompressionSessionEncodeFrame(
@@ -108,6 +116,7 @@ class VideoToolboxEncoder {
       infoFlagsOut: &flags
     )
     if status != noErr { throw EncoderError.encodeFailed(status) }
+    encodeSuccessCount += 1
     if flags.contains(.frameDropped) { droppedFrameCount += 1 }
   }
 
@@ -131,6 +140,7 @@ class VideoToolboxEncoder {
     guard let sampleBuffer = sampleBuffer, CMSampleBufferDataIsReady(sampleBuffer) else { return }
     guard let refcon = refcon else { return }
     let encoder = Unmanaged<VideoToolboxEncoder>.fromOpaque(refcon).takeUnretainedValue()
+    encoder.outputCallbackCount += 1
     encoder.onCompressedSample?(sampleBuffer)
   }
 }

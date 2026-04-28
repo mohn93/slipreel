@@ -61,6 +61,13 @@ class LiveRecordingWriter {
   /// Set to true once `assetWriter.startWriting()` and `startSession` have been called.
   private var writerActive = false
 
+  /// Number of times appendVideo was called.
+  private(set) var appendVideoCallCount: Int = 0
+  /// Number of times a sample was successfully appended (input was ready).
+  private(set) var appendVideoAcceptedCount: Int = 0
+  /// Number of times a sample was dropped because input was not ready.
+  private(set) var appendVideoNotReadyCount: Int = 0
+
   // MARK: - Init
 
   init(outputPath: String, width: Int, height: Int, fps: Int, captureAudio: Bool) {
@@ -153,6 +160,7 @@ class LiveRecordingWriter {
   /// Append a compressed video sample. The first call lazily adds the video
   /// input (with a format-description hint) and starts the write session.
   func appendVideo(_ sampleBuffer: CMSampleBuffer) {
+    appendVideoCallCount += 1
     guard isStarted, let _ = assetWriter else { return }
 
     if !writerActive {
@@ -171,9 +179,12 @@ class LiveRecordingWriter {
       }
     }
 
-    if let input = videoInput, input.isReadyForMoreMediaData {
+    guard let input = videoInput else { return }
+    if input.isReadyForMoreMediaData {
       input.append(sampleBuffer)
+      appendVideoAcceptedCount += 1
     } else {
+      appendVideoNotReadyCount += 1
       // Drop. Capture queue depth + VT real-time mode should keep this rare;
       // PerfSampler will report the drop count.
     }

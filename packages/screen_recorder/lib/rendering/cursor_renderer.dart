@@ -16,11 +16,11 @@ class CursorRenderer {
   Future<void> initialize() async {
     try {
       // Load default cursor
-      final defaultData = await rootBundle.load('packages/screen_recorder/assets/cursors/default_cursor.png');
+      final defaultData = await rootBundle.load('assets/cursors/default_cursor.png');
       _defaultCursor = await _loadImage(defaultData.buffer.asUint8List());
 
       // Load click cursor
-      final clickData = await rootBundle.load('packages/screen_recorder/assets/cursors/click_cursor.png');
+      final clickData = await rootBundle.load('assets/cursors/click_cursor.png');
       _clickCursor = await _loadImage(clickData.buffer.asUint8List());
 
       _isInitialized = true;

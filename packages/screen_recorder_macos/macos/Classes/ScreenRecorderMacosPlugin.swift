@@ -455,6 +455,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         liveEncoder?.finalize()
         NSLog("[Phase9-stop] liveEncoder.finalize done")
         let droppedFrames = liveEncoder?.droppedFrameCount ?? 0
+        let encodeCalls = liveEncoder?.encodeCallCount ?? 0
+        let encodeSuccess = liveEncoder?.encodeSuccessCount ?? 0
+        let outputCalls = liveEncoder?.outputCallbackCount ?? 0
+        NSLog("[Phase9-counts] encoder: encode_called=\(encodeCalls) encode_success=\(encodeSuccess) output_callback=\(outputCalls) dropped=\(droppedFrames)")
         liveEncoder = nil
 
         let stats = perfSampler?.stop()
@@ -467,6 +471,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         }
         liveWriter = nil
 
+        let writerAppendCalls = writer.appendVideoCallCount
+        let writerAppendAccepted = writer.appendVideoAcceptedCount
+        let writerAppendNotReady = writer.appendVideoNotReadyCount
+        NSLog("[Phase9-counts] writer: appendVideo_called=\(writerAppendCalls) accepted=\(writerAppendAccepted) not_ready=\(writerAppendNotReady)")
         NSLog("[Phase9-stop] calling writer.stop")
         writer.stop { stopResult in
           NSLog("[Phase9-stop] writer.stop completion fired")
