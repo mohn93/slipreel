@@ -9,6 +9,7 @@ class ScreenCaptureManager: NSObject {
   // MARK: - Properties
 
   private var stream: SCStream?
+  private var streamOutput: ScreenCaptureStreamOutput?
   private var streamConfiguration: SCStreamConfiguration?
   private var contentFilter: SCContentFilter?
   private var isCapturing = false
@@ -180,14 +181,15 @@ class ScreenCaptureManager: NSObject {
     stream = SCStream(filter: filter, configuration: config, delegate: self)
 
     // Add stream output with throttling (max 60fps)
-    let streamOutput = ScreenCaptureStreamOutput(
+    let output = ScreenCaptureStreamOutput(
       minFrameInterval: 1.0 / 60.0,
       onFrameReceived: { [weak self] sampleBuffer in
         self?.onFrameReceived?(sampleBuffer)
       }
     )
+    self.streamOutput = output
 
-    try stream?.addStreamOutput(streamOutput, type: .screen, sampleHandlerQueue: .global(qos: .userInteractive))
+    try stream?.addStreamOutput(output, type: .screen, sampleHandlerQueue: .global(qos: .userInteractive))
 
     // Start capture
     try await stream?.startCapture()
@@ -203,6 +205,7 @@ class ScreenCaptureManager: NSObject {
 
     try await stream?.stopCapture()
     stream = nil
+    streamOutput = nil
     contentFilter = nil
     streamConfiguration = nil
     isCapturing = false
