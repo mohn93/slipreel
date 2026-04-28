@@ -212,15 +212,16 @@ class LiveRecordingWriter {
     }
 
     NSLog("[Phase9-LRW] calling writer.finishWriting...")
-    writer.finishWriting { [weak self] in
-      NSLog("[Phase9-LRW] finishWriting completion fired, status=\(writer.status.rawValue)")
-      guard let self = self else { return }
-      defer { self.isStarted = false }
-      if writer.status == .completed {
-        completion(.success(self.outputURL.path))
+    let outputPath = outputURL.path
+    writer.finishWriting {
+      let status = writer.status
+      NSLog("[Phase9-LRW] finishWriting completion fired, status=\(status.rawValue)")
+      if status == .completed {
+        completion(.success(outputPath))
       } else {
         completion(.failure(WriterError.finalizeFailed(writer.error)))
       }
     }
+    isStarted = false
   }
 }
