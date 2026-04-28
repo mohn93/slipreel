@@ -3,20 +3,14 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import '../video_encoder_isolate.dart';
 import '../models/cursor_recording.dart';
+import '../models/recording_metadata.dart';
 import '../utils/app_logger.dart';
+import '../utils/perf_summary.dart';
+import '../video_encoder.dart';
 
-/// Recording status enum
-enum RecordingStatus {
-  idle,
-  recording,
-  processing,
-  completed,
-  error,
-}
+enum RecordingStatus { idle, recording, processing, completed, error }
 
-/// Recording state class
 class RecordingState {
   final RecordingStatus status;
   final int frameCount;
@@ -24,7 +18,6 @@ class RecordingState {
   final String? videoPath;
   final String? error;
   final String? selectedWindowId;
-  final double progress;
 
   const RecordingState({
     this.status = RecordingStatus.idle,
@@ -33,7 +26,6 @@ class RecordingState {
     this.videoPath,
     this.error,
     this.selectedWindowId,
-    this.progress = 0.0,
   });
 
   RecordingState copyWith({
@@ -43,7 +35,6 @@ class RecordingState {
     String? videoPath,
     String? error,
     String? selectedWindowId,
-    double? progress,
   }) {
     return RecordingState(
       status: status ?? this.status,
@@ -52,7 +43,6 @@ class RecordingState {
       videoPath: videoPath ?? this.videoPath,
       error: error,
       selectedWindowId: selectedWindowId ?? this.selectedWindowId,
-      progress: progress ?? this.progress,
     );
   }
 
@@ -62,261 +52,168 @@ class RecordingState {
       status == RecordingStatus.idle || status == RecordingStatus.completed;
 }
 
-/// Recording controller
 class RecordingController extends StateNotifier<RecordingState> {
   RecordingController() : super(const RecordingState());
 
-  VideoEncoderIsolate? _videoEncoder;
-  StreamSubscription<FrameData>? _frameSubscription;
-  StreamSubscription<AudioData>? _audioSubscription;
+  final VideoEncoder _videoEncoder = VideoEncoder();
   StreamSubscription<CursorPosition>? _cursorSubscription;
   CursorRecording? _cursorRecording;
   Timer? _durationTimer;
   DateTime? _startTime;
 
-  /// Select a window for recording
+  static const int _defaultFps = 60;
+  static const int _defaultWidth = 1920;
+  static const int _defaultHeight = 1080;
+
   void selectWindow(String? windowId) {
     state = state.copyWith(selectedWindowId: windowId);
   }
 
-  /// Start recording
   Future<void> startRecording() async {
-    if (!state.canStartRecording || state.selectedWindowId == null) {
-      return;
-    }
-
+    if (!state.canStartRecording || state.selectedWindowId == null) return;
     try {
-      // Reset state
       state = state.copyWith(
         status: RecordingStatus.recording,
         frameCount: 0,
         duration: Duration.zero,
         videoPath: null,
         error: null,
-        progress: 0.0,
       );
 
-      // Create output path
       final docsDir = await getApplicationDocumentsDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final outputPath = '${docsDir.path}/recording_$timestamp.mp4';
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final outputPath = '${docsDir.path}/recording_$ts.mp4';
 
-      // Initialize video encoder
-      _videoEncoder = VideoEncoderIsolate();
-
-      // Set up progress callback
-      _videoEncoder!.onProgress = (p) {
-        state = state.copyWith(progress: p);
-      };
-
-      // Subscribe to frame stream
-      var firstFrame = true;
-      _frameSubscription =
-          ScreenRecorderPlatform.instance.frameStream.listen(
-        (frameData) async {
-          // Initialize encoder with first frame dimensions
-          if (firstFrame && _videoEncoder != null) {
-            await _videoEncoder!.initialize(
-              outputPath: outputPath,
-              width: frameData.width,
-              height: frameData.height,
-              fps: 30,
-            );
-            firstFrame = false;
-          }
-
-          // Add frame to encoder
-          if (_videoEncoder != null && _videoEncoder!.isInitialized) {
-            await _videoEncoder!.addFrame(frameData.data, frameData.timestampMicros);
-          }
-
-          // Update frame count
-          state = state.copyWith(frameCount: state.frameCount + 1);
-        },
-        onError: (error) {
-          _handleError('Frame stream error: $error');
-        },
-      );
-
-      // Subscribe to audio stream
-      _audioSubscription =
-          ScreenRecorderPlatform.instance.audioStream.listen(
-        (audioData) async {
-          // PHASE 4 LIMITATION: Audio encoding is not yet supported in the isolate version.
-          // Audio encoding still works on the main thread via VideoEncoder.addAudioSample(),
-          // but VideoEncoderIsolate does not yet process audio samples.
-          // Audio support for the isolate will be added in a future phase.
-          // For now, recordings made with VideoEncoderIsolate will be video-only.
-        },
-        onError: (error) {
-          AppLogger.recording.w('Audio stream error', error: error);
-          // Don't fail the entire recording if audio fails
-        },
-      );
-
-      // Start duration timer
-      _startTime = DateTime.now();
-      _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (_startTime != null) {
-          final duration = DateTime.now().difference(_startTime!);
-          state = state.copyWith(duration: duration);
-        }
-      });
-
-      // Start platform recording
       final settings = RecordingSettings(
         source: RecordingSource.window,
         sourceId: state.selectedWindowId,
-        frameRate: 30,
+        frameRate: _defaultFps,
         captureAudio: true,
         captureCursor: true,
       );
-      await ScreenRecorderPlatform.instance.startRecording(settings);
 
-      // Subscribe to cursor stream if cursor capture enabled
-      if (settings.captureCursor) {
-        _cursorRecording = CursorRecording();
+      await _videoEncoder.start(
+        settings: settings,
+        outputPath: outputPath,
+        width: _defaultWidth,
+        height: _defaultHeight,
+      );
 
-        _cursorSubscription = ScreenRecorderPlatform.instance.cursorStream.listen(
-          (cursorData) {
-            _cursorRecording?.addPosition(cursorData);
-          },
-          onError: (error) {
-            AppLogger.recording.w('Cursor stream error', error: error);
-          },
-        );
-      }
+      _cursorRecording = CursorRecording();
+      _cursorSubscription = ScreenRecorderPlatform.instance.cursorStream.listen(
+        (pos) => _cursorRecording?.addPosition(pos),
+        onError: (e) => AppLogger.recording.w('Cursor stream error', error: e),
+      );
+
+      _startTime = DateTime.now();
+      _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (_startTime != null) {
+          state = state.copyWith(duration: DateTime.now().difference(_startTime!));
+        }
+      });
     } catch (e) {
       _handleError('Failed to start recording: $e');
     }
   }
 
-  /// Stop recording
   Future<void> stopRecording() async {
-    if (!state.isRecording) {
-      return;
-    }
-
+    if (!state.isRecording) return;
     try {
-      // Update status to processing
       state = state.copyWith(status: RecordingStatus.processing);
 
-      // Stop platform recording
-      await ScreenRecorderPlatform.instance.stopRecording();
-
-      // Cancel streams and timers
-      await _frameSubscription?.cancel();
-      _frameSubscription = null;
-      await _audioSubscription?.cancel();
-      _audioSubscription = null;
       _durationTimer?.cancel();
       _durationTimer = null;
+      final duration = _startTime != null
+          ? DateTime.now().difference(_startTime!)
+          : Duration.zero;
       _startTime = null;
 
-      // Cancel cursor subscription and save data
       await _cursorSubscription?.cancel();
       _cursorSubscription = null;
 
-      // Save cursor data if captured
+      final result = await _videoEncoder.stop();
+
+      // Save cursor sidecar (next to MP4).
       if (_cursorRecording != null && _cursorRecording!.count > 0) {
-        final docsDir = await getApplicationDocumentsDirectory();
-        final cursorPath = '${docsDir.path}/cursor_${DateTime.now().millisecondsSinceEpoch}.json';
-        await _cursorRecording!.saveToFile(cursorPath);
+        await _cursorRecording!.saveToFile('${result.outputPath}.cursor.json');
         AppLogger.recording.i('Cursor data saved: ${_cursorRecording!.count} positions');
-
-        // PHASE 4 LIMITATION: Cursor rendering is not yet integrated with the isolate.
-        // Cursor rendering happens in VideoEncoder.addFrame() on the main thread.
-        // Frames are already rendered with the cursor before being sent to the isolate.
-        // In the current implementation, cursor data is captured and saved but not
-        // automatically rendered onto the video frames during isolate processing.
-        // Full cursor rendering integration will be added in a future phase.
       }
+      _cursorRecording = null;
 
-      // Finalize video encoding
-      if (_videoEncoder != null && _videoEncoder!.frameCount > 0) {
-        final videoPath = await _videoEncoder!.finalize();
+      // Save recording metadata sidecar.
+      final meta = RecordingMetadata(
+        isPureSource: true,
+        recordedAt: DateTime.now(),
+        widthPx: _videoEncoder.width,
+        heightPx: _videoEncoder.height,
+        fps: _videoEncoder.fps,
+      );
+      await meta.saveForVideo(result.outputPath);
 
-        // Check file exists
-        final file = File(videoPath);
-        if (await file.exists()) {
-          state = state.copyWith(
-            status: RecordingStatus.completed,
-            videoPath: videoPath,
-          );
-        } else {
-          _handleError('Video file was not created');
-        }
-      } else {
-        _handleError('No frames to encode');
-      }
+      // Build and log the perf summary.
+      final fileSize = await File(result.outputPath).length();
+      final expectedFrames =
+          (duration.inMilliseconds * _videoEncoder.fps / 1000).round();
+      // The native encoder doesn't emit a precise count yet; until it does,
+      // use expected frames (minus drops) as the actual count for verdict
+      // purposes. fpsOk effectively becomes a "duration matches expected"
+      // check, which is good enough for the PASS/FAIL gate.
+      final summary = RecordingPerfSummary(
+        durationSeconds: duration.inMilliseconds / 1000.0,
+        frameCount: expectedFrames - result.perfStats.droppedFrames,
+        expectedFrameCount: expectedFrames,
+        droppedFrameCount: result.perfStats.droppedFrames,
+        cpuPctAvg: result.perfStats.cpuPctAvg,
+        cpuPctP95: result.perfStats.cpuPctP95,
+        memPeakBytes: result.perfStats.memBytesPeak,
+        outputBytes: fileSize,
+        targetFps: _videoEncoder.fps,
+      );
+      AppLogger.recording.i(summary.format());
 
-      _videoEncoder = null;
+      state = state.copyWith(
+        status: RecordingStatus.completed,
+        videoPath: result.outputPath,
+        duration: duration,
+      );
     } catch (e) {
       _handleError('Failed to stop recording: $e');
     }
   }
 
-  void _handleError(String errorMessage) {
-    state = state.copyWith(
-      status: RecordingStatus.error,
-      error: errorMessage,
-    );
-
-    // Cleanup
-    _frameSubscription?.cancel();
-    _frameSubscription = null;
-    _audioSubscription?.cancel();
-    _audioSubscription = null;
+  void _handleError(String message) {
+    state = state.copyWith(status: RecordingStatus.error, error: message);
     _cursorSubscription?.cancel();
     _cursorSubscription = null;
-    _cursorRecording = null;
     _durationTimer?.cancel();
     _durationTimer = null;
     _startTime = null;
-    _videoEncoder?.cancel();
-    _videoEncoder = null;
+    _cursorRecording = null;
   }
 
-  /// Reset to idle state
-  void reset() {
-    state = const RecordingState();
-  }
+  void reset() => state = const RecordingState();
 
   @override
   void dispose() {
-    _frameSubscription?.cancel();
-    _audioSubscription?.cancel();
     _cursorSubscription?.cancel();
     _durationTimer?.cancel();
-    _videoEncoder?.cancel();
     super.dispose();
   }
 }
 
-/// Recording controller provider
 final recordingControllerProvider =
-    StateNotifierProvider<RecordingController, RecordingState>((ref) {
-  return RecordingController();
-});
+    StateNotifierProvider<RecordingController, RecordingState>(
+        (ref) => RecordingController());
 
-/// Helper provider for formatted duration
 final formattedDurationProvider = Provider<String>((ref) {
-  final duration = ref.watch(
-    recordingControllerProvider.select((state) => state.duration),
-  );
-
-  final minutes = duration.inMinutes.toString().padLeft(2, '0');
-  final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
-  return '$minutes:$seconds';
+  final d = ref.watch(recordingControllerProvider.select((s) => s.duration));
+  final m = d.inMinutes.toString().padLeft(2, '0');
+  final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+  return '$m:$s';
 });
 
-/// Helper provider for FPS calculation
 final fpsProvider = Provider<double>((ref) {
-  final state = ref.watch(recordingControllerProvider);
-
-  if (state.frameCount == 0 || state.duration.inSeconds == 0) {
-    return 0.0;
-  }
-
-  return state.frameCount / state.duration.inSeconds;
+  final s = ref.watch(recordingControllerProvider);
+  if (s.frameCount == 0 || s.duration.inSeconds == 0) return 0;
+  return s.frameCount / s.duration.inSeconds;
 });

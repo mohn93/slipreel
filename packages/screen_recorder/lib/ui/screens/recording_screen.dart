@@ -346,45 +346,21 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
               // Show processing indicator
               if (recordingState.isProcessing) ...[
                 const SizedBox(height: 16),
-                Column(
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFF6C63FF),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Encoding video... ${(recordingState.progress * 100).toStringAsFixed(0)}%',
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                      ],
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF6C63FF),
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    // Progress bar
-                    Container(
-                      width: 200,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: recordingState.progress.clamp(0.0, 1.0),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6C63FF),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
+                    SizedBox(width: 12),
+                    Text(
+                      'Saving recording...',
+                      style: TextStyle(color: Colors.white70),
                     ),
                   ],
                 ),

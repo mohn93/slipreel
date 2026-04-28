@@ -1,302 +1,55 @@
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import 'rendering/cursor_renderer.dart';
-import 'models/cursor_recording.dart';
-import 'effects/background_effect.dart';
 import 'utils/app_logger.dart';
 
-/// Handles encoding video frames to MP4 using FFmpeg
+/// Façade over the platform's live HW-encoded recording API.
+///
+/// Started before the platform-side capture begins; stopped after capture
+/// ends. The output MP4 is written directly by the native side during
+/// capture; this class does not see frame bytes.
 class VideoEncoder {
-  String? _tempDir;
   String? _outputPath;
   int _width = 0;
   int _height = 0;
   int _fps = 30;
-  int _frameIndex = 0;
-  int _audioSampleIndex = 0;
-  bool _isInitialized = false;
-  int? _audioSampleRate;
-  int? _audioChannels;
-  CursorRecording? _cursorRecording;
-  CursorRenderer? _cursorRenderer;
-  bool _renderCursor = false;
+  bool _isActive = false;
 
-  /// Initialize the encoder with output settings
-  Future<void> initialize({
+  /// Start a live recording session that will write to [outputPath].
+  /// Must be called before [ScreenRecorderPlatform.startLiveRecording] would
+  /// otherwise be triggered (see [RecordingController]).
+  Future<void> start({
+    required RecordingSettings settings,
     required String outputPath,
     required int width,
     required int height,
-    required int fps,
   }) async {
     _outputPath = outputPath;
     _width = width;
     _height = height;
-    _fps = fps;
-
-    // Create temporary directory for frames
-    final tempBaseDir = await getTemporaryDirectory();
-    _tempDir = '${tempBaseDir.path}/screenflow_frames_${DateTime.now().millisecondsSinceEpoch}';
-    await Directory(_tempDir!).create(recursive: true);
-
-    _frameIndex = 0;
-    _isInitialized = true;
-
-    AppLogger.videoEncoder.i('Initialized: ${_width}x$_height @ ${_fps}fps');
-    AppLogger.videoEncoder.d('Temp dir: $_tempDir');
-    AppLogger.videoEncoder.d('Output: $_outputPath');
+    _fps = settings.frameRate;
+    await ScreenRecorderPlatform.instance.startLiveRecording(
+      settings: settings,
+      outputPath: outputPath,
+      width: width,
+      height: height,
+    );
+    _isActive = true;
+    AppLogger.videoEncoder.i('Live recording started: ${_width}x$_height @ ${_fps}fps -> $_outputPath');
   }
 
-  /// Set cursor recording data for rendering
-  Future<void> setCursorData(CursorRecording cursorRecording) async {
-    _cursorRecording = cursorRecording;
-    _renderCursor = true;
-
-    // Initialize cursor renderer
-    _cursorRenderer = CursorRenderer();
-    await _cursorRenderer!.initialize();
-
-    AppLogger.cursorRenderer.i('Initialized with ${cursorRecording.count} positions');
+  /// Stop the live recording and return the result (path + native perf stats).
+  Future<RecordingResult> stop() async {
+    if (!_isActive) {
+      throw StateError('VideoEncoder.stop called when not active');
+    }
+    final result = await ScreenRecorderPlatform.instance.stopLiveRecording();
+    _isActive = false;
+    AppLogger.videoEncoder.i('Live recording finished: ${result.outputPath}');
+    return result;
   }
 
-  /// Set background effect to apply to frames
-  Future<void> setBackgroundEffect(BackgroundEffect? effect) async {
-    if (_cursorRenderer != null) {
-      await _cursorRenderer!.setBackgroundEffect(effect);
-    }
-  }
-
-  /// Add a frame to the video
-  Future<void> addFrame(FrameData frameData) async {
-    if (!_isInitialized) {
-      throw StateError('VideoEncoder not initialized. Call initialize() first.');
-    }
-
-    // Update dimensions if first frame
-    if (_frameIndex == 0) {
-      _width = frameData.width;
-      _height = frameData.height;
-    }
-
-    Uint8List frameBytes = frameData.data;
-
-    // Render cursor on frame if enabled
-    if (_renderCursor && _cursorRecording != null && _cursorRenderer != null) {
-      frameBytes = await _cursorRenderer!.renderCursorOnFrame(
-        frameData: frameData.data,
-        width: frameData.width,
-        height: frameData.height,
-        timestampMicros: frameData.timestampMicros,
-        cursorRecording: _cursorRecording!,
-      );
-    }
-
-    // Save frame with cursor overlay
-    final framePath = '$_tempDir/frame_${_frameIndex.toString().padLeft(6, '0')}.bgra';
-    final file = File(framePath);
-    await file.writeAsBytes(frameBytes);
-
-    _frameIndex++;
-
-    if (_frameIndex % 30 == 0) {
-      AppLogger.videoEncoder.d('Saved frame $_frameIndex');
-    }
-  }
-
-  /// Add an audio sample to the recording
-  Future<void> addAudioSample(Uint8List audioData, int sampleRate, int channels) async {
-    if (!_isInitialized) {
-      throw StateError('VideoEncoder not initialized. Call initialize() first.');
-    }
-
-    // Store audio format on first sample
-    if (_audioSampleRate == null) {
-      _audioSampleRate = sampleRate;
-      _audioChannels = channels;
-      AppLogger.audioEncoder.i('Audio format: $sampleRate Hz, $channels channels');
-    }
-
-    // Validate audio format hasn't changed
-    if (_audioSampleRate != null &&
-        (sampleRate != _audioSampleRate || channels != _audioChannels)) {
-      throw ArgumentError(
-        'Audio format changed: expected $_audioSampleRate Hz, $_audioChannels ch, '
-        'got $sampleRate Hz, $channels ch'
-      );
-    }
-
-    // Save audio sample as individual PCM file
-    final audioPath = '$_tempDir/audio_${_audioSampleIndex.toString().padLeft(6, '0')}.pcm';
-    final file = File(audioPath);
-    await file.writeAsBytes(audioData);
-
-    _audioSampleIndex++;
-
-    if (_audioSampleIndex % 100 == 0) {
-      AppLogger.audioEncoder.d('Saved audio sample $_audioSampleIndex');
-    }
-  }
-
-  /// Finalize the video by encoding all frames to MP4
-  Future<String> finalize() async {
-    if (!_isInitialized) {
-      throw StateError('VideoEncoder not initialized');
-    }
-
-    if (_frameIndex == 0) {
-      throw StateError('No frames to encode');
-    }
-
-    AppLogger.videoEncoder.i('Finalizing: $_frameIndex frames, $_audioSampleIndex audio samples');
-
-    // Concatenate audio samples if we have any
-    String? combinedAudioPath;
-    if (_audioSampleIndex > 0 && _audioSampleRate != null && _audioChannels != null) {
-      AppLogger.audioEncoder.d('Concatenating audio samples...');
-      combinedAudioPath = '$_tempDir/audio_combined.pcm';
-      final combinedFile = File(combinedAudioPath);
-      final sink = combinedFile.openWrite();
-
-      try {
-        for (int i = 0; i < _audioSampleIndex; i++) {
-          final audioPath = '$_tempDir/audio_${i.toString().padLeft(6, '0')}.pcm';
-          final audioFile = File(audioPath);
-
-          if (!await audioFile.exists()) {
-            throw Exception('Missing audio file $i of $_audioSampleIndex');
-          }
-
-          await audioFile.openRead().pipe(sink);  // Stream copy
-        }
-        await sink.flush();
-        await sink.close();
-        AppLogger.audioEncoder.i('Audio concatenation complete');
-      } catch (e) {
-        AppLogger.audioEncoder.e('Error concatenating audio', error: e);
-        await sink.close();
-        combinedAudioPath = null;
-      }
-    }
-
-    // Build FFmpeg command
-    List<String> args;
-
-    if (combinedAudioPath != null) {
-      // Mux video + audio
-      args = [
-        // Video input
-        '-f', 'rawvideo',
-        '-pix_fmt', 'bgra',
-        '-s', '${_width}x$_height',
-        '-r', '$_fps',
-        '-i', '$_tempDir/frame_%06d.bgra',
-        // Audio input
-        '-f', 's16le',
-        '-ar', '$_audioSampleRate',
-        '-ac', '$_audioChannels',
-        '-i', combinedAudioPath,
-        // Video codec
-        '-c:v', 'libx264',
-        '-preset', 'fast',
-        '-crf', '23',
-        '-pix_fmt', 'yuv420p',
-        // Audio codec
-        '-c:a', 'aac',
-        '-b:a', '192k',
-        // Sync options
-        '-vsync', 'cfr',
-        '-async', '1',
-        '-y',
-        _outputPath!,
-      ];
-      AppLogger.ffmpeg.i('Encoding with audio and video');
-    } else {
-      // Video only (original behavior)
-      args = [
-        '-f', 'rawvideo',
-        '-pix_fmt', 'bgra',
-        '-s', '${_width}x$_height',
-        '-r', '$_fps',
-        '-i', '$_tempDir/frame_%06d.bgra',
-        '-c:v', 'libx264',
-        '-preset', 'fast',
-        '-crf', '23',
-        '-pix_fmt', 'yuv420p',
-        '-y',
-        _outputPath!,
-      ];
-      AppLogger.ffmpeg.i('Encoding video only (no audio)');
-    }
-
-    AppLogger.ffmpeg.d('Command: ffmpeg ${args.join(" ")}');
-
-    try {
-      // Execute FFmpeg using system command
-      final result = await Process.run('ffmpeg', args);
-
-      if (result.exitCode == 0) {
-        AppLogger.ffmpeg.i('Encoding successful!');
-        if (result.stdout.toString().isNotEmpty) {
-          AppLogger.ffmpeg.d('stdout: ${result.stdout}');
-        }
-        if (result.stderr.toString().isNotEmpty) {
-          AppLogger.ffmpeg.d('stderr: ${result.stderr}');
-        }
-        AppLogger.ffmpeg.i('Output file: $_outputPath');
-
-        // Check file size
-        final outputFile = File(_outputPath!);
-        if (await outputFile.exists()) {
-          final sizeBytes = await outputFile.length();
-          final sizeMB = sizeBytes / (1024 * 1024);
-          AppLogger.ffmpeg.i('File size: ${sizeMB.toStringAsFixed(2)} MB');
-        }
-      } else {
-        AppLogger.ffmpeg.e('FFmpeg failed with exit code ${result.exitCode}');
-        AppLogger.ffmpeg.d('stdout: ${result.stdout}');
-        AppLogger.ffmpeg.e('stderr: ${result.stderr}');
-        throw Exception('Failed to encode video: exit code ${result.exitCode}');
-      }
-    } on ProcessException catch (e) {
-      AppLogger.ffmpeg.e('FFmpeg not found or failed to run', error: e);
-      throw Exception('FFmpeg is not installed or not in PATH. Please install FFmpeg.');
-    }
-
-    // Cleanup temporary files
-    await _cleanup();
-
-    return _outputPath!;
-  }
-
-  /// Clean up temporary frame files
-  Future<void> _cleanup() async {
-    if (_tempDir != null) {
-      try {
-        final dir = Directory(_tempDir!);
-        if (await dir.exists()) {
-          await dir.delete(recursive: true);
-          AppLogger.videoEncoder.d('Cleaned up temporary files');
-        }
-      } catch (e) {
-        AppLogger.videoEncoder.w('Error cleaning up temp files', error: e);
-      }
-    }
-
-    _isInitialized = false;
-  }
-
-  /// Cancel encoding and cleanup
-  Future<void> cancel() async {
-    _cursorRenderer?.dispose();
-    _cursorRenderer = null;
-    _cursorRecording = null;
-    await _cleanup();
-  }
-
-  /// Get the number of frames added
-  int get frameCount => _frameIndex;
-
-  /// Check if encoder is initialized
-  bool get isInitialized => _isInitialized;
+  bool get isActive => _isActive;
+  String? get outputPath => _outputPath;
+  int get width => _width;
+  int get height => _height;
+  int get fps => _fps;
 }
