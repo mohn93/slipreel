@@ -16,12 +16,16 @@ class ExportPreset {
   /// Used for future FFmpeg CRF mapping
   final double quality;
 
+  /// Target bitrate in kbps for HW encoder
+  final int bitrateKbps;
+
   const ExportPreset({
     required this.name,
     required this.width,
     required this.height,
     required this.fps,
     required this.quality,
+    required this.bitrateKbps,
   });
 
   /// 1080p at 30 fps with high quality (0.85)
@@ -32,6 +36,7 @@ class ExportPreset {
       height: 1080,
       fps: 30,
       quality: 0.85,
+      bitrateKbps: 8000,
     );
   }
 
@@ -43,6 +48,7 @@ class ExportPreset {
       height: 1080,
       fps: 60,
       quality: 0.90,
+      bitrateKbps: 12000,
     );
   }
 
@@ -54,6 +60,7 @@ class ExportPreset {
       height: 2160,
       fps: 30,
       quality: 0.90,
+      bitrateKbps: 35000,
     );
   }
 
@@ -65,6 +72,7 @@ class ExportPreset {
       height: 2160,
       fps: 60,
       quality: 0.95,
+      bitrateKbps: 50000,
     );
   }
 
@@ -76,6 +84,7 @@ class ExportPreset {
       height: 720,
       fps: 30,
       quality: 0.75,
+      bitrateKbps: 4000,
     );
   }
 
@@ -96,6 +105,7 @@ class ExportPreset {
       'height': height,
       'fps': fps,
       'quality': quality,
+      'bitrateKbps': bitrateKbps,
     };
   }
 
@@ -107,6 +117,7 @@ class ExportPreset {
       height: json['height'] as int,
       fps: json['fps'] as int,
       quality: json['quality'] as double,
+      bitrateKbps: json['bitrateKbps'] as int? ?? 8000,
     );
   }
 
@@ -119,16 +130,17 @@ class ExportPreset {
         other.width == width &&
         other.height == height &&
         other.fps == fps &&
-        other.quality == quality;
+        other.quality == quality &&
+        other.bitrateKbps == bitrateKbps;
   }
 
   @override
   int get hashCode {
-    return Object.hash(name, width, height, fps, quality);
+    return Object.hash(name, width, height, fps, quality, bitrateKbps);
   }
 
   @override
   String toString() {
-    return 'ExportPreset(name: $name, width: $width, height: $height, fps: $fps, quality: $quality)';
+    return 'ExportPreset(name: $name, width: $width, height: $height, fps: $fps, quality: $quality, bitrateKbps: $bitrateKbps)';
   }
 }

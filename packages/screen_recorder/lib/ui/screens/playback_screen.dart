@@ -13,6 +13,9 @@ import 'package:screen_recorder/ui/widgets/timeline/timeline_widget.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
+import 'package:screen_recorder/export/export_pipeline.dart';
+import 'package:screen_recorder/models/cursor_recording.dart';
+import 'package:screen_recorder/models/recording_metadata.dart';
 
 class PlaybackScreen extends StatefulWidget {
   final String videoPath;
@@ -188,23 +191,60 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       context: context,
       builder: (context) => const ExportDialog(),
     );
+    if (preset == null || !mounted) return;
 
-    if (preset != null && mounted) {
-      // Show confirmation with preset details
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Export with ${preset.name} (${preset.width}x${preset.height} @ ${preset.fps}fps)',
-          ),
-          backgroundColor: const Color(0xFF4CAF50),
+    // Resolve output path beside the source.
+    final src = File(widget.videoPath);
+    final dir = src.parent.path;
+    final stem = src.uri.pathSegments.last.split('.').first;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final out = '$dir/${stem}_export_${preset.name}_$ts.mp4';
+
+    // Load source metadata + cursor sidecar (best-effort).
+    final meta = await RecordingMetadata.loadForVideo(widget.videoPath);
+    CursorRecording cursorRec;
+    try {
+      cursorRec = await CursorRecording.loadFromFile('${widget.videoPath}.cursor.json');
+    } catch (_) {
+      cursorRec = CursorRecording();
+    }
+
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: SizedBox(
+          height: 80,
+          child: Center(child: CircularProgressIndicator()),
         ),
-      );
+      ),
+    );
 
-      // TODO: Implement actual video export with FFmpeg
-      // - Apply trim selection
-      // - Apply zoom effects
-      // - Apply frame overlay
-      // - Encode with preset settings
+    try {
+      final pipeline = ExportPipeline(
+        sourcePath: widget.videoPath,
+        outputPath: out,
+        sourceMetadata: meta,
+        cursorRecording: cursorRec,
+        bitrateKbps: preset.bitrateKbps,
+      );
+      final summary = await pipeline.run();
+      if (!mounted) return;
+      Navigator.of(context).pop(); // close progress dialog
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(summary.pass
+            ? 'Export complete: ${preset.name} (${summary.realtimeMultiple.toStringAsFixed(1)}× real-time)'
+            : 'Export complete (slower than real-time): $out'),
+        backgroundColor: summary.pass ? const Color(0xFF4CAF50) : Colors.orange,
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Export failed: $e'),
+        backgroundColor: Colors.red,
+      ));
     }
   }
 

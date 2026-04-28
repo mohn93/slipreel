@@ -10,6 +10,7 @@ void main() {
         height: 1080,
         fps: 30,
         quality: 0.9,
+        bitrateKbps: 8000,
       );
 
       expect(preset.name, 'Custom');
@@ -17,6 +18,7 @@ void main() {
       expect(preset.height, 1080);
       expect(preset.fps, 30);
       expect(preset.quality, 0.9);
+      expect(preset.bitrateKbps, 8000);
     });
 
     test('should create 1080p 30fps preset', () {
@@ -76,6 +78,7 @@ void main() {
         height: 1080,
         fps: 30,
         quality: 0.9,
+        bitrateKbps: 8000,
       );
 
       final json = preset.toJson();
@@ -86,6 +89,7 @@ void main() {
       expect(restored.height, preset.height);
       expect(restored.fps, preset.fps);
       expect(restored.quality, preset.quality);
+      expect(restored.bitrateKbps, preset.bitrateKbps);
     });
 
     test('should provide all built-in presets', () {
