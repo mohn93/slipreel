@@ -122,4 +122,33 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
       return CursorPosition.fromJson(Map<String, dynamic>.from(event as Map));
     });
   }
+
+  @override
+  Future<void> startLiveRecording({
+    required RecordingSettings settings,
+    required String outputPath,
+    required int width,
+    required int height,
+  }) async {
+    await _recordingChannel.invokeMethod<void>(
+      ScreenRecorderMethods.startLiveRecording,
+      {
+        ...settings.toJson(),
+        'outputPath': outputPath,
+        'width': width,
+        'height': height,
+      },
+    );
+  }
+
+  @override
+  Future<RecordingResult> stopLiveRecording() async {
+    final raw = await _recordingChannel.invokeMapMethod<String, dynamic>(
+      ScreenRecorderMethods.stopLiveRecording,
+    );
+    if (raw == null) {
+      throw StateError('stopLiveRecording returned null');
+    }
+    return RecordingResult.fromMap(raw);
+  }
 }
