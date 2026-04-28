@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import ScreenCaptureKit
 import AVFoundation
 import CoreMedia
@@ -155,10 +156,11 @@ class ScreenCaptureManager: NSObject {
 
     // Set capture resolution based on source
     if isWindow {
-      // For windows, use actual window size
+      // For windows, use actual window size in pixels (frame is in logical points)
       if let window = content.windows.first(where: { $0.windowID == UInt32(sourceId) ?? 0 }) {
-        config.width = Int(window.frame.width)
-        config.height = Int(window.frame.height)
+        let scale = NSScreen.main?.backingScaleFactor ?? 1.0
+        config.width = Int(window.frame.width * scale)
+        config.height = Int(window.frame.height * scale)
       }
     } else {
       // For displays, use native resolution
