@@ -373,6 +373,33 @@ This checklist should be completed when testing ScreenFlow Studio on each platfo
 
 ---
 
+## Phase 9 Verification (macOS)
+
+These checks confirm the live HW encode path and the export pipeline meet
+their targets. Run on a representative Mac (Apple Silicon preferred).
+
+### Recording (live HW encode)
+- [ ] Start a 1-minute recording at 1080p60 of an active window
+- [ ] Confirm CPU usage stays under 10% in Activity Monitor (avg)
+- [ ] Confirm memory stays under 500 MB
+- [ ] Stop recording — output `.mp4` exists at the path shown in the UI
+- [ ] Sidecar `.meta.json` and `.cursor.json` exist next to the `.mp4`
+- [ ] Log shows `[Recording] verdict: ... -> PASS`
+- [ ] Open the recording in the editor — cursor overlay tracks playback
+
+### Export (HW encode)
+- [ ] Click Export, choose 1080p30 preset
+- [ ] Export completes; output file plays in QuickTime
+- [ ] Log shows `[Export] verdict: realtimeMultiple≥1.0 ✓ -> PASS`
+- [ ] `outputCodec=h264_videotoolbox` in the summary line
+
+### Legacy recording handling
+- [ ] Open a recording made before Phase 9 (no `.meta.json` sidecar)
+- [ ] No double-cursor in the editor preview (overlay correctly suppressed)
+- [ ] Export still works (uses the same pipeline; cursor is already baked)
+
+---
+
 ## Sign-Off
 
 ### Test Environment
