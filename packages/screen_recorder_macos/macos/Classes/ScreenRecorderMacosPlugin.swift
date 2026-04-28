@@ -369,9 +369,16 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
         if captureManager == nil { captureManager = ScreenCaptureManager() }
         captureManager?.onFrameReceived = { [weak encoder] sampleBuffer in
-          guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+          guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            NSLog("[Phase9-cap] onFrameReceived: no image buffer")
+            return
+          }
           let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-          try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
+          do {
+            try encoder?.encode(pixelBuffer: pb, timestamp: pts)
+          } catch {
+            NSLog("[Phase9-cap] encoder.encode threw: \(error)")
+          }
         }
 
         let isWindow = source == "window"
@@ -424,7 +431,9 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private func stopLiveRecording(result: @escaping FlutterResult) {
     Task {
       do {
+        NSLog("[Phase9-stop] entered stopLiveRecording")
         try await captureManager?.stopCapture()
+        NSLog("[Phase9-stop] captureManager.stopCapture done")
         captureManager = nil
 
         if let am = audioCaptureManager, am.isCaptureActive() {
@@ -434,17 +443,22 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           am.stopCapture()
           audioCaptureManager = nil
         }
+        NSLog("[Phase9-stop] audioCaptureManager stopped")
+
         if let ct = cursorTracker {
           ct.onCursorUpdate = nil
           if ct.isCurrentlyTracking() { ct.stopTracking() }
           cursorTracker = nil
         }
+        NSLog("[Phase9-stop] cursorTracker stopped")
 
         liveEncoder?.finalize()
+        NSLog("[Phase9-stop] liveEncoder.finalize done")
         let droppedFrames = liveEncoder?.droppedFrameCount ?? 0
         liveEncoder = nil
 
         let stats = perfSampler?.stop()
+        NSLog("[Phase9-stop] perfSampler.stop done")
         perfSampler = nil
 
         guard let writer = liveWriter else {
@@ -453,7 +467,9 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         }
         liveWriter = nil
 
+        NSLog("[Phase9-stop] calling writer.stop")
         writer.stop { stopResult in
+          NSLog("[Phase9-stop] writer.stop completion fired")
           switch stopResult {
           case .success(let path):
             let payload: [String: Any] = [

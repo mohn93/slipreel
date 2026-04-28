@@ -262,7 +262,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      '${recordingState.frameCount} frames',
+                      '${(recordingState.duration.inMilliseconds * 60 / 1000).round()} frames (est.)',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 14,

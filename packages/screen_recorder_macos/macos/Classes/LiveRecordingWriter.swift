@@ -156,15 +156,17 @@ class LiveRecordingWriter {
     guard isStarted, let _ = assetWriter else { return }
 
     if !writerActive {
+      NSLog("[Phase9-LRW] appendVideo first sample arriving")
       guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else {
-        NSLog("[LiveRecordingWriter] appendVideo: missing format description on first sample — dropping")
+        NSLog("[Phase9-LRW] appendVideo: missing format description on first sample — dropping")
         return
       }
       let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
       do {
         try addVideoInputAndStartSession(formatDescription: formatDescription, pts: pts)
+        NSLog("[Phase9-LRW] addVideoInputAndStartSession succeeded; writerActive=true")
       } catch {
-        NSLog("[LiveRecordingWriter] addVideoInputAndStartSession failed: \(error.localizedDescription)")
+        NSLog("[Phase9-LRW] addVideoInputAndStartSession threw: \(error)")
         return
       }
     }
@@ -190,22 +192,28 @@ class LiveRecordingWriter {
 
   /// Finish writing and return the output path. Safe to call once.
   func stop(completion: @escaping (Result<String, Error>) -> Void) {
+    NSLog("[Phase9-LRW] stop entered, isStarted=\(isStarted), writerActive=\(writerActive)")
     guard isStarted, let writer = assetWriter else {
+      NSLog("[Phase9-LRW] not started; completing with notStarted")
       completion(.failure(WriterError.notStarted))
       return
     }
 
     videoInput?.markAsFinished()
     audioInput?.markAsFinished()
+    NSLog("[Phase9-LRW] inputs markAsFinished")
 
     if !writerActive {
+      NSLog("[Phase9-LRW] writer never activated, returning success without finishWriting")
       // Nothing was ever written; just clean up.
       isStarted = false
       completion(.success(outputURL.path))
       return
     }
 
+    NSLog("[Phase9-LRW] calling writer.finishWriting...")
     writer.finishWriting { [weak self] in
+      NSLog("[Phase9-LRW] finishWriting completion fired, status=\(writer.status.rawValue)")
       guard let self = self else { return }
       defer { self.isStarted = false }
       if writer.status == .completed {
