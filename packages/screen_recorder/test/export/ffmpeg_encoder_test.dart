@@ -17,6 +17,8 @@ void main() {
         fps: 30,
         bitrateKbps: 1000,
         audioSourcePath: 'test/fixtures/sample_recording.mp4',
+        sourceWidth: 320,
+        sourceHeight: 240,
       );
 
       // 30 solid red frames (BGRA).

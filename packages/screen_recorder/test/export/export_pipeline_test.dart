@@ -25,6 +25,9 @@ void main() {
         ),
         cursorRecording: CursorRecording(),
         bitrateKbps: 800,
+        outputWidth: 320,
+        outputHeight: 240,
+        outputFps: 30,
       );
 
       final summary = await pipeline.run();

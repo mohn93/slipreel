@@ -238,6 +238,9 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         sourceMetadata: meta,
         cursorRecording: cursorRec,
         bitrateKbps: preset.bitrateKbps,
+        outputWidth: preset.width,
+        outputHeight: preset.height,
+        outputFps: preset.fps,
       );
       final summary = await pipeline.run();
       if (!mounted) return;

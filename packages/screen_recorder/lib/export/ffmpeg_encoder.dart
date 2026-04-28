@@ -6,12 +6,22 @@ import '../utils/app_logger.dart';
 
 /// Spawns `ffmpeg` to encode raw BGRA frames piped into its stdin.
 /// Tries `h264_videotoolbox` first; falls back to `libx264` if startup fails.
+///
+/// [sourceWidth]/[sourceHeight] describe the raw frames arriving on stdin
+/// (decoder output). [width]/[height] are the output dimensions. When they
+/// differ a `-vf scale` filter is inserted automatically.
 class FfmpegEncoder {
   final String outputPath;
+
+  /// Output dimensions written to the MP4.
   final int width;
   final int height;
   final int fps;
   final int bitrateKbps;
+
+  /// Dimensions of the raw BGRA frames piped into stdin (decoder/source res).
+  final int sourceWidth;
+  final int sourceHeight;
 
   /// Optional path to the source MP4 — its audio track is muxed into the
   /// output via `-c:a copy` (no re-encode).
@@ -19,11 +29,12 @@ class FfmpegEncoder {
 
   Process? _process;
   String _codecUsed = 'h264_videotoolbox';
+  bool _hwEncoderConfirmed = false;
   int totalEncodeMs = 0;
   final Stopwatch _sw = Stopwatch();
 
   String get codecUsed => _codecUsed;
-  bool get usedHardware => _codecUsed == 'h264_videotoolbox';
+  bool get usedHardware => _hwEncoderConfirmed;
 
   FfmpegEncoder({
     required this.outputPath,
@@ -32,16 +43,19 @@ class FfmpegEncoder {
     required this.fps,
     required this.bitrateKbps,
     this.audioSourcePath,
-  });
+    int? sourceWidth,
+    int? sourceHeight,
+  })  : sourceWidth = sourceWidth ?? width,
+        sourceHeight = sourceHeight ?? height;
 
   List<String> _argsFor(String codec) {
     final args = <String>[
       '-loglevel', 'error',
       '-y',
-      // Video input from stdin
+      // Video input from stdin — always sized to source (decoder) resolution.
       '-f', 'rawvideo',
       '-pix_fmt', 'bgra',
-      '-s', '${width}x$height',
+      '-s', '${sourceWidth}x$sourceHeight',
       '-r', '$fps',
       '-i', '-',
     ];
@@ -54,6 +68,11 @@ class FfmpegEncoder {
       '-b:v', '${bitrateKbps}k',
       '-pix_fmt', 'yuv420p',
     ]);
+    // Insert scaling filter only when output differs from source.
+    if (width != sourceWidth || height != sourceHeight) {
+      args.addAll(['-vf', 'scale=$width:$height']);
+    }
+    args.addAll(['-r', '$fps']);
     if (audioSourcePath != null) {
       args.addAll(['-c:a', 'copy']);
     }
@@ -98,9 +117,24 @@ class FfmpegEncoder {
     final exit = await p.exitCode;
     _sw.stop();
     totalEncodeMs = _sw.elapsedMilliseconds;
+
+    final stderr = await p.stderr.transform(SystemEncoding().decoder).join();
+
     if (exit != 0) {
-      final err = await p.stderr.transform(SystemEncoding().decoder).join();
-      throw Exception('ffmpeg encode exited $exit: $err');
+      // Correct _codecUsed if VideoToolbox failed silently after start().
+      if (_codecUsed == 'h264_videotoolbox' &&
+          (stderr.contains('videotoolbox') ||
+              stderr.contains('Error initializing'))) {
+        _codecUsed = 'libx264';
+      }
+      throw Exception('ffmpeg encode exited $exit: $stderr');
+    }
+
+    // Confirm HW encoder actually engaged: exit 0 and no VT init errors.
+    if (_codecUsed == 'h264_videotoolbox' &&
+        !stderr.contains('videotoolbox') &&
+        !stderr.contains('Error initializing')) {
+      _hwEncoderConfirmed = true;
     }
   }
 }

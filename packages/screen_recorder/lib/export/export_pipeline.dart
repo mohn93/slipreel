@@ -17,31 +17,51 @@ class ExportPipeline {
   final CursorRecording cursorRecording;
   final int bitrateKbps;
 
+  /// Desired output dimensions / frame rate (from the chosen ExportPreset).
+  final int outputWidth;
+  final int outputHeight;
+  final int outputFps;
+
+  // Cache for a single ffprobe result per pipeline instance.
+  List<int>? _probedDims; // [width, height, fps]
+
   ExportPipeline({
     required this.sourcePath,
     required this.outputPath,
     required this.sourceMetadata,
     required this.cursorRecording,
     required this.bitrateKbps,
+    required this.outputWidth,
+    required this.outputHeight,
+    required this.outputFps,
   });
 
   Future<ExportPerfSummary> run() async {
-    final width = sourceMetadata.widthPx;
-    final height = sourceMetadata.heightPx;
-    final fps = sourceMetadata.fps;
+    // Use metadata when available; fall back to ffprobe for legacy recordings.
+    final srcWidth = sourceMetadata.widthPx > 0
+        ? sourceMetadata.widthPx
+        : await _probeWidth();
+    final srcHeight = sourceMetadata.heightPx > 0
+        ? sourceMetadata.heightPx
+        : await _probeHeight();
+    final srcFps = sourceMetadata.fps > 0
+        ? sourceMetadata.fps
+        : await _probeFps();
 
     final decoder = FfmpegDecoder(
       inputPath: sourcePath,
-      width: width,
-      height: height,
+      width: srcWidth,
+      height: srcHeight,
     );
     final encoder = FfmpegEncoder(
       outputPath: outputPath,
-      width: width,
-      height: height,
-      fps: fps,
+      width: outputWidth,
+      height: outputHeight,
+      fps: outputFps,
       bitrateKbps: bitrateKbps,
       audioSourcePath: sourcePath,
+      sourceWidth: srcWidth,
+      sourceHeight: srcHeight,
     );
 
     final cursorRenderer = CursorRenderer();
@@ -62,11 +82,11 @@ class ExportPipeline {
 
         if (sourceMetadata.isPureSource && cursorRecording.count > 0) {
           compositeSw.start();
-          final ts = ((1000000 * frameIndex) ~/ fps);
+          final ts = ((1000000 * frameIndex) ~/ srcFps);
           composited = await cursorRenderer.renderCursorOnFrame(
             frameData: raw,
-            width: width,
-            height: height,
+            width: srcWidth,
+            height: srcHeight,
             timestampMicros: ts,
             cursorRecording: cursorRecording,
           );
@@ -85,7 +105,7 @@ class ExportPipeline {
     wallSw.stop();
 
     final wallSec = wallSw.elapsedMilliseconds / 1000.0;
-    final inputDuration = totalFrames > 0 ? totalFrames / fps : 0.0;
+    final inputDuration = totalFrames > 0 ? totalFrames / srcFps : 0.0;
     final outputBytes = await _fileLength(outputPath);
 
     final summary = ExportPerfSummary(
@@ -103,6 +123,47 @@ class ExportPipeline {
     AppLogger.ffmpeg.i(summary.format());
     return summary;
   }
+
+  // ---------------------------------------------------------------------------
+  // ffprobe helpers
+  // ---------------------------------------------------------------------------
+
+  /// Runs ffprobe once and caches [width, height, fps_int] for this instance.
+  Future<List<int>> _probeSource() async {
+    if (_probedDims != null) return _probedDims!;
+
+    final result = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height,r_frame_rate',
+      '-of', 'csv=p=0',
+      sourcePath,
+    ]);
+    final output = (result.stdout as String).trim();
+    // Expected format: "width,height,num/den"
+    final parts = output.split(',');
+    if (parts.length < 3) {
+      throw Exception('ffprobe returned unexpected output: $output');
+    }
+    final w = int.parse(parts[0].trim());
+    final h = int.parse(parts[1].trim());
+    final fpsStr = parts[2].trim();
+    int fps;
+    if (fpsStr.contains('/')) {
+      final nd = fpsStr.split('/');
+      final num = int.parse(nd[0]);
+      final den = int.parse(nd[1]);
+      fps = den > 0 ? (num / den).round() : 30;
+    } else {
+      fps = int.tryParse(fpsStr) ?? 30;
+    }
+    _probedDims = [w, h, fps];
+    return _probedDims!;
+  }
+
+  Future<int> _probeWidth() async => (await _probeSource())[0];
+  Future<int> _probeHeight() async => (await _probeSource())[1];
+  Future<int> _probeFps() async => (await _probeSource())[2];
 
   Future<int> _fileLength(String path) async {
     try {
