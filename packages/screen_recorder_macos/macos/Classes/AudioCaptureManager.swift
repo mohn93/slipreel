@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import CoreAudio
+import CoreMedia
 
 /// Manages audio capture using AVAudioEngine
 class AudioCaptureManager: NSObject {
@@ -14,6 +15,10 @@ class AudioCaptureManager: NSObject {
   // Callback for audio data
   var onAudioReceived: ((Data, Int64) -> Void)?
   var onError: ((Error) -> Void)?
+
+  // NEW: raw CMSampleBuffer for the live writer path. Either or both
+  // callbacks can be set; both are invoked per buffer.
+  var onSampleBufferReceived: ((CMSampleBuffer) -> Void)?
 
   // Audio format properties
   var sampleRate: Double {
@@ -130,6 +135,12 @@ class AudioCaptureManager: NSObject {
 
     // Send audio data via callback
     onAudioReceived?(pcmData, timestampMicros)
+
+    // Forward as CMSampleBuffer for the AVAssetWriter path.
+    if let onBuf = onSampleBufferReceived,
+       let sampleBuffer = makeSampleBuffer(from: buffer, time: time) {
+      onBuf(sampleBuffer)
+    }
   }
 
   /// Stop capturing audio
@@ -151,6 +162,44 @@ class AudioCaptureManager: NSObject {
   /// Check if currently capturing
   func isCaptureActive() -> Bool {
     return isCapturing
+  }
+
+  private func makeSampleBuffer(from buffer: AVAudioPCMBuffer, time: AVAudioTime) -> CMSampleBuffer? {
+    guard let formatDescription = buffer.format.streamDescription.cmFormatDescription() else {
+      return nil
+    }
+
+    var sampleBuffer: CMSampleBuffer?
+    let timing = CMSampleTimingInfo(
+      duration: CMTime(value: 1, timescale: CMTimeScale(buffer.format.sampleRate)),
+      presentationTimeStamp: CMTime(value: CMTimeValue(time.sampleTime), timescale: CMTimeScale(buffer.format.sampleRate)),
+      decodeTimeStamp: .invalid
+    )
+
+    let status = CMAudioSampleBufferCreateWithPacketDescriptions(
+      allocator: kCFAllocatorDefault,
+      dataBuffer: nil,
+      dataReady: false,
+      makeDataReadyCallback: nil,
+      refcon: nil,
+      formatDescription: formatDescription,
+      sampleCount: CMItemCount(buffer.frameLength),
+      presentationTimeStamp: timing.presentationTimeStamp,
+      packetDescriptions: nil,
+      sampleBufferOut: &sampleBuffer
+    )
+    guard status == noErr, let sb = sampleBuffer else { return nil }
+
+    let setDataStatus = CMSampleBufferSetDataBufferFromAudioBufferList(
+      sb,
+      blockBufferAllocator: kCFAllocatorDefault,
+      blockBufferMemoryAllocator: kCFAllocatorDefault,
+      flags: 0,
+      bufferList: buffer.audioBufferList
+    )
+    guard setDataStatus == noErr else { return nil }
+
+    return sb
   }
 }
 
@@ -179,5 +228,23 @@ enum AudioCaptureError: LocalizedError {
     case .systemAudioNotSupported:
       return "System audio capture is not yet supported. Use ScreenCaptureKit for system audio."
     }
+  }
+}
+
+fileprivate extension UnsafePointer where Pointee == AudioStreamBasicDescription {
+  func cmFormatDescription() -> CMAudioFormatDescription? {
+    var asbd = self.pointee
+    var fd: CMAudioFormatDescription?
+    let status = CMAudioFormatDescriptionCreate(
+      allocator: kCFAllocatorDefault,
+      asbd: &asbd,
+      layoutSize: 0,
+      layout: nil,
+      magicCookieSize: 0,
+      magicCookie: nil,
+      extensions: nil,
+      formatDescriptionOut: &fd
+    )
+    return status == noErr ? fd : nil
   }
 }
