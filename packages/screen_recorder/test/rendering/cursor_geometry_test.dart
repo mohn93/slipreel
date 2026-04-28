@@ -41,6 +41,24 @@ void main() {
       final pos = cursorAt(rec, const Duration(milliseconds: 500));
       expect(pos!.isClicked, isTrue);
     });
+
+    test('returns first position when queried before all samples', () {
+      final rec = CursorRecording()
+        ..addPosition(const CursorPosition(
+            x: 5, y: 5, timestampMicros: 500000, isClicked: false));
+      final pos = cursorAt(rec, Duration.zero);
+      expect(pos?.x, 5);
+      expect(pos?.y, 5);
+    });
+
+    test('returns last position when queried after all samples', () {
+      final rec = CursorRecording()
+        ..addPosition(const CursorPosition(
+            x: 5, y: 5, timestampMicros: 0, isClicked: false));
+      final pos = cursorAt(rec, const Duration(seconds: 60));
+      expect(pos?.x, 5);
+      expect(pos?.y, 5);
+    });
   });
 
   group('screenToVideoSpace', () {
