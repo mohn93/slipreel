@@ -18,12 +18,28 @@ void main() {
   test('RecordingResult parses from method-channel map', () {
     final map = <String, dynamic>{
       'outputPath': '/tmp/x.mp4',
+      'width': 2560,
+      'height': 1600,
       'droppedFrames': 0,
       'cpuPctSamples': <double>[],
       'memBytesSamples': <int>[],
     };
     final r = RecordingResult.fromMap(map);
     expect(r.outputPath, '/tmp/x.mp4');
+    expect(r.width, 2560);
+    expect(r.height, 1600);
     expect(r.perfStats.droppedFrames, 0);
+  });
+
+  test('RecordingResult falls back to zero when dimensions absent', () {
+    final map = <String, dynamic>{
+      'outputPath': '/tmp/y.mp4',
+      'droppedFrames': 0,
+      'cpuPctSamples': <double>[],
+      'memBytesSamples': <int>[],
+    };
+    final r = RecordingResult.fromMap(map);
+    expect(r.width, 0);
+    expect(r.height, 0);
   });
 }

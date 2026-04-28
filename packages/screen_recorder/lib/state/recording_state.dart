@@ -145,11 +145,20 @@ class RecordingController extends StateNotifier<RecordingState> {
       // movement as a dirty-rect signal to deliver frames continuously. The
       // editor's overlay logic gates on isPureSource and will correctly skip
       // the overlay.
+      //
+      // Prefer the actual capture dimensions returned by the native side.
+      // _videoEncoder.width/height is what Dart *requested* (a hint that the
+      // native side may override based on the actual window/display pixel size).
+      // The fallback keeps Windows/Linux working (they don't yet return actual
+      // dimensions in their stop response).
+      final actualWidth = result.width > 0 ? result.width : _videoEncoder.width;
+      final actualHeight =
+          result.height > 0 ? result.height : _videoEncoder.height;
       final meta = RecordingMetadata(
         isPureSource: false,
         recordedAt: DateTime.now(),
-        widthPx: _videoEncoder.width,
-        heightPx: _videoEncoder.height,
+        widthPx: actualWidth,
+        heightPx: actualHeight,
         fps: _videoEncoder.fps,
       );
       await meta.saveForVideo(result.outputPath);
