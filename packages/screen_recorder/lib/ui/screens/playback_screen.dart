@@ -471,7 +471,10 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
 
     return AspectRatio(
       aspectRatio: totalSize.width / totalSize.height,
-      child: framedVideo,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: framedVideo,
+      ),
     );
   }
 
