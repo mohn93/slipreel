@@ -16,6 +16,7 @@ import 'package:screen_recorder/ui/screens/settings_screen.dart';
 import 'package:screen_recorder/export/export_pipeline.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
+import 'package:screen_recorder/ui/widgets/cursor_overlay_painter.dart';
 
 class PlaybackScreen extends StatefulWidget {
   final String videoPath;
@@ -40,6 +41,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   final _zoomTransformer = ZoomTransformer();
   int? _selectedZoomIndex;
   late FrameSettingsProvider _frameSettings;
+  RecordingMetadata? _metadata;
+  CursorRecording _cursorRecording = CursorRecording();
 
   @override
   void initState() {
@@ -59,6 +62,13 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     try {
       _controller = VideoPlayerController.file(File(widget.videoPath));
       await _controller.initialize();
+      _metadata = await RecordingMetadata.loadForVideo(widget.videoPath);
+      try {
+        _cursorRecording = await CursorRecording.loadFromFile(
+            '${widget.videoPath}.cursor.json');
+      } catch (_) {
+        _cursorRecording = CursorRecording();
+      }
       setState(() {
         _isInitialized = true;
         // Initialize trim selection to full duration
@@ -435,6 +445,23 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
               ),
             ),
           ),
+          if (_metadata?.isPureSource == true && _cursorRecording.count > 0)
+            Positioned(
+              left: currentFrame.padding.left,
+              top: currentFrame.padding.top,
+              child: SizedBox(
+                width: videoSize.width,
+                height: videoSize.height,
+                child: CustomPaint(
+                  painter: CursorOverlayPainter(
+                    cursorRecording: _cursorRecording,
+                    position: _controller.value.position,
+                    videoSize: videoSize,
+                    screenSize: videoSize,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
