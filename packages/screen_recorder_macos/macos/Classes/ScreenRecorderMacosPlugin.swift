@@ -344,9 +344,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     guard let args = call.arguments as? [String: Any],
           let source = args["source"] as? String,
           let fps = args["frameRate"] as? Int,
-          let outputPath = args["outputPath"] as? String,
-          let width = args["width"] as? Int,
-          let height = args["height"] as? Int else {
+          let outputPath = args["outputPath"] as? String else {
       result(FlutterError(code: "INVALID_ARGUMENTS",
                           message: "Missing required parameters",
                           details: nil))
@@ -375,8 +373,6 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         let dims = try await captureManager!.captureDimensions(sourceId: finalSourceId, isWindow: isWindow)
         let captureWidth = dims.width
         let captureHeight = dims.height
-        NSLog("[Phase9-cap] actual capture dimensions: \(captureWidth)x\(captureHeight) (dart hint was \(width)x\(height))")
-
         let writer = LiveRecordingWriter(
           outputPath: outputPath, width: captureWidth, height: captureHeight,
           fps: fps, captureAudio: captureAudio)
@@ -389,16 +385,9 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         try encoder.initialize()
 
         captureManager?.onFrameReceived = { [weak encoder] sampleBuffer in
-          guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            NSLog("[Phase9-cap] onFrameReceived: no image buffer")
-            return
-          }
+          guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
           let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-          do {
-            try encoder?.encode(pixelBuffer: pb, timestamp: pts)
-          } catch {
-            NSLog("[Phase9-cap] encoder.encode threw: \(error)")
-          }
+          try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
         }
 
         try await captureManager?.startCapture(sourceId: finalSourceId, fps: fps, isWindow: isWindow)
@@ -442,9 +431,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private func stopLiveRecording(result: @escaping FlutterResult) {
     Task {
       do {
-        NSLog("[Phase9-stop] entered stopLiveRecording")
         try await captureManager?.stopCapture()
-        NSLog("[Phase9-stop] captureManager.stopCapture done")
         captureManager = nil
 
         if let am = audioCaptureManager, am.isCaptureActive() {
@@ -454,26 +441,18 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           am.stopCapture()
           audioCaptureManager = nil
         }
-        NSLog("[Phase9-stop] audioCaptureManager stopped")
 
         if let ct = cursorTracker {
           ct.onCursorUpdate = nil
           if ct.isCurrentlyTracking() { ct.stopTracking() }
           cursorTracker = nil
         }
-        NSLog("[Phase9-stop] cursorTracker stopped")
 
         liveEncoder?.finalize()
-        NSLog("[Phase9-stop] liveEncoder.finalize done")
         let droppedFrames = liveEncoder?.droppedFrameCount ?? 0
-        let encodeCalls = liveEncoder?.encodeCallCount ?? 0
-        let encodeSuccess = liveEncoder?.encodeSuccessCount ?? 0
-        let outputCalls = liveEncoder?.outputCallbackCount ?? 0
-        NSLog("[Phase9-counts] encoder: encode_called=\(encodeCalls) encode_success=\(encodeSuccess) output_callback=\(outputCalls) dropped=\(droppedFrames)")
         liveEncoder = nil
 
         let stats = perfSampler?.stop()
-        NSLog("[Phase9-stop] perfSampler.stop done")
         perfSampler = nil
 
         guard let writer = liveWriter else {
@@ -482,13 +461,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         }
         liveWriter = nil
 
-        let writerAppendCalls = writer.appendVideoCallCount
-        let writerAppendAccepted = writer.appendVideoAcceptedCount
-        let writerAppendNotReady = writer.appendVideoNotReadyCount
-        NSLog("[Phase9-counts] writer: appendVideo_called=\(writerAppendCalls) accepted=\(writerAppendAccepted) not_ready=\(writerAppendNotReady)")
-        NSLog("[Phase9-stop] calling writer.stop")
         writer.stop { stopResult in
-          NSLog("[Phase9-stop] writer.stop completion fired")
           switch stopResult {
           case .success(let path):
             let payload: [String: Any] = [
