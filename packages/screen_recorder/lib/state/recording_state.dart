@@ -141,8 +141,12 @@ class RecordingController extends StateNotifier<RecordingState> {
       _cursorRecording = null;
 
       // Save recording metadata sidecar.
+      // Cursor is baked into the recorded MP4 because SCStream needs cursor
+      // movement as a dirty-rect signal to deliver frames continuously. The
+      // editor's overlay logic gates on isPureSource and will correctly skip
+      // the overlay.
       final meta = RecordingMetadata(
-        isPureSource: true,
+        isPureSource: false,
         recordedAt: DateTime.now(),
         widthPx: _videoEncoder.width,
         heightPx: _videoEncoder.height,

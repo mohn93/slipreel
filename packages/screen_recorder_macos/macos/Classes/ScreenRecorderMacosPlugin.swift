@@ -392,7 +392,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
                               details: nil))
           return
         }
-        try await captureManager?.startCapture(sourceId: finalSourceId, fps: fps, isWindow: isWindow, showCursor: false)
+        try await captureManager?.startCapture(sourceId: finalSourceId, fps: fps, isWindow: isWindow)
 
         if captureAudio {
           if audioCaptureManager == nil { audioCaptureManager = AudioCaptureManager() }
