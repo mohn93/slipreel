@@ -102,7 +102,7 @@ class ScreenCaptureManager: NSObject {
   ///   - sourceId: The display ID or window ID to capture
   ///   - fps: Frames per second (30 or 60)
   ///   - isWindow: Whether the sourceId refers to a window (true) or display (false)
-  func startCapture(sourceId: String, fps: Int, isWindow: Bool) async throws {
+  func startCapture(sourceId: String, fps: Int, isWindow: Bool, showCursor: Bool = true) async throws {
     guard !isCapturing else {
       throw ScreenCaptureError.alreadyCapturing
     }
@@ -150,7 +150,7 @@ class ScreenCaptureManager: NSObject {
 
     // Enable high resolution capture
     config.scalesToFit = false
-    config.showsCursor = true
+    config.showsCursor = showCursor
 
     // Set capture resolution based on source
     if isWindow {
