@@ -12,6 +12,13 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var cursorStreamHandler: CursorStreamHandler?
   private var cursorTracker: CursorTracker?
 
+  // NEW: Live recording state.
+  private var liveWriter: LiveRecordingWriter?
+  private var liveEncoder: VideoToolboxEncoder?
+  private var perfSampler: PerfSampler?
+  private var liveStartTime: Date?
+  private var liveFrameCount: Int = 0
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     // Main method channel for recording control
     let recordingChannel = FlutterMethodChannel(
@@ -58,12 +65,16 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       getAudioDevices(result: result)
     case "startRecording":
       startRecording(call: call, result: result)
+    case "stopRecording":
+      stopRecording(result: result)
+    case "startLiveRecording":
+      startLiveRecording(call: call, result: result)
+    case "stopLiveRecording":
+      stopLiveRecording(result: result)
     case "pauseRecording":
       pauseRecording(result: result)
     case "resumeRecording":
       resumeRecording(result: result)
-    case "stopRecording":
-      stopRecording(result: result)
     case "requestPermissions":
       requestPermissions(result: result)
     case "checkPermissions":
@@ -322,6 +333,147 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       let manager = ScreenCaptureManager()
       let granted = await manager.checkPermission()
       result(granted)
+    }
+  }
+
+  // MARK: - Live Recording (Phase 9)
+
+  private func startLiveRecording(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any],
+          let source = args["source"] as? String,
+          let fps = args["frameRate"] as? Int,
+          let outputPath = args["outputPath"] as? String,
+          let width = args["width"] as? Int,
+          let height = args["height"] as? Int else {
+      result(FlutterError(code: "INVALID_ARGUMENTS",
+                          message: "Missing required parameters",
+                          details: nil))
+      return
+    }
+    let sourceId = args["sourceId"] as? String
+    let captureAudio = args["captureAudio"] as? Bool ?? false
+    let captureCursor = args["captureCursor"] as? Bool ?? true
+
+    Task {
+      do {
+        let writer = LiveRecordingWriter(
+          outputPath: outputPath, width: width, height: height,
+          fps: fps, captureAudio: captureAudio)
+        try writer.start()
+
+        let encoder = VideoToolboxEncoder(width: width, height: height, fps: fps)
+        encoder.onCompressedSample = { [weak writer] sb in
+          writer?.appendVideo(sb)
+        }
+        try encoder.initialize()
+
+        if captureManager == nil { captureManager = ScreenCaptureManager() }
+        captureManager?.onFrameReceived = { [weak encoder] sampleBuffer in
+          guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+          let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+          try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
+        }
+
+        let isWindow = source == "window"
+        var actualSourceId = sourceId
+        if actualSourceId == nil && !isWindow {
+          actualSourceId = String(CGMainDisplayID())
+        }
+        guard let finalSourceId = actualSourceId else {
+          result(FlutterError(code: "INVALID_ARGUMENTS",
+                              message: "sourceId required for window capture",
+                              details: nil))
+          return
+        }
+        try await captureManager?.startCapture(sourceId: finalSourceId, fps: fps, isWindow: isWindow)
+
+        if captureAudio {
+          if audioCaptureManager == nil { audioCaptureManager = AudioCaptureManager() }
+          audioCaptureManager?.onSampleBufferReceived = { [weak writer] sb in
+            writer?.appendAudio(sb)
+          }
+          try audioCaptureManager?.startCapture(includeMicrophone: true, includeSystem: false)
+        }
+
+        if captureCursor {
+          if cursorTracker == nil { cursorTracker = CursorTracker() }
+          cursorTracker?.onCursorUpdate = { [weak self] x, y, ts, isClicked in
+            self?.cursorStreamHandler?.sendCursorPosition(x: x, y: y, timestamp: ts, isClicked: isClicked)
+          }
+          try cursorTracker?.startTracking(frequency: 60)
+        }
+
+        let sampler = PerfSampler()
+        sampler.start()
+
+        self.liveWriter = writer
+        self.liveEncoder = encoder
+        self.perfSampler = sampler
+        self.liveStartTime = Date()
+        self.liveFrameCount = 0
+
+        result(true)
+      } catch {
+        result(FlutterError(code: "LIVE_START_FAILED",
+                            message: "Failed to start live recording: \(error.localizedDescription)",
+                            details: nil))
+      }
+    }
+  }
+
+  private func stopLiveRecording(result: @escaping FlutterResult) {
+    Task {
+      do {
+        try await captureManager?.stopCapture()
+        captureManager = nil
+
+        if let am = audioCaptureManager, am.isCaptureActive() {
+          am.onSampleBufferReceived = nil
+          am.onAudioReceived = nil
+          am.onError = nil
+          am.stopCapture()
+          audioCaptureManager = nil
+        }
+        if let ct = cursorTracker {
+          ct.onCursorUpdate = nil
+          if ct.isCurrentlyTracking() { ct.stopTracking() }
+          cursorTracker = nil
+        }
+
+        liveEncoder?.finalize()
+        let droppedFrames = liveEncoder?.droppedFrameCount ?? 0
+        liveEncoder = nil
+
+        let stats = perfSampler?.stop()
+        perfSampler = nil
+
+        guard let writer = liveWriter else {
+          result(FlutterError(code: "NOT_RECORDING", message: "no live writer", details: nil))
+          return
+        }
+        liveWriter = nil
+
+        writer.stop { stopResult in
+          switch stopResult {
+          case .success(let path):
+            let payload: [String: Any] = [
+              "outputPath": path,
+              "droppedFrames": droppedFrames,
+              "cpuPctSamples": stats?.cpuPctSamples ?? [],
+              "memBytesSamples": (stats?.memBytesSamples ?? []).map { Int($0) },
+            ]
+            result(payload)
+          case .failure(let err):
+            result(FlutterError(code: "LIVE_STOP_FAILED",
+                                message: "Failed to finalize: \(err.localizedDescription)",
+                                details: nil))
+          }
+        }
+      } catch {
+        result(FlutterError(code: "LIVE_STOP_FAILED",
+                            message: "Failed to stop live recording: \(error.localizedDescription)",
+                            details: nil))
+      }
     }
   }
 }
