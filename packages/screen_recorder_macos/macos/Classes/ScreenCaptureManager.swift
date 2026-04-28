@@ -97,6 +97,29 @@ class ScreenCaptureManager: NSObject {
     }
   }
 
+  // MARK: - Dimension Query
+
+  /// Compute the actual pixel dimensions that would be used for capture,
+  /// matching what SCStream produces for the given source. Window dimensions
+  /// account for Retina backing scale; display dimensions are already in pixels.
+  func captureDimensions(sourceId: String, isWindow: Bool) async throws -> (width: Int, height: Int) {
+    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    if isWindow {
+      guard let windowID = UInt32(sourceId),
+            let window = content.windows.first(where: { $0.windowID == windowID }) else {
+        throw ScreenCaptureError.invalidSourceId
+      }
+      let scale = NSScreen.main?.backingScaleFactor ?? 1.0
+      return (Int(window.frame.width * scale), Int(window.frame.height * scale))
+    } else {
+      guard let displayID = UInt32(sourceId),
+            let display = content.displays.first(where: { $0.displayID == displayID }) else {
+        throw ScreenCaptureError.invalidSourceId
+      }
+      return (display.width, display.height)
+    }
+  }
+
   // MARK: - Recording Control
 
   /// Start capturing screen or window

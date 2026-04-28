@@ -18,6 +18,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var perfSampler: PerfSampler?
   private var liveStartTime: Date?
   private var liveFrameCount: Int = 0
+  private var liveCaptureWidth: Int = 0
+  private var liveCaptureHeight: Int = 0
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     // Main method channel for recording control
@@ -356,18 +358,36 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
     Task {
       do {
+        let isWindow = source == "window"
+        var actualSourceId = sourceId
+        if actualSourceId == nil && !isWindow {
+          actualSourceId = String(CGMainDisplayID())
+        }
+        guard let finalSourceId = actualSourceId else {
+          result(FlutterError(code: "INVALID_ARGUMENTS",
+                              message: "sourceId required for window capture",
+                              details: nil))
+          return
+        }
+
+        // Query the actual capture dimensions so encoder + writer match what SCStream produces.
+        if captureManager == nil { captureManager = ScreenCaptureManager() }
+        let dims = try await captureManager!.captureDimensions(sourceId: finalSourceId, isWindow: isWindow)
+        let captureWidth = dims.width
+        let captureHeight = dims.height
+        NSLog("[Phase9-cap] actual capture dimensions: \(captureWidth)x\(captureHeight) (dart hint was \(width)x\(height))")
+
         let writer = LiveRecordingWriter(
-          outputPath: outputPath, width: width, height: height,
+          outputPath: outputPath, width: captureWidth, height: captureHeight,
           fps: fps, captureAudio: captureAudio)
         try writer.start()
 
-        let encoder = VideoToolboxEncoder(width: width, height: height, fps: fps)
+        let encoder = VideoToolboxEncoder(width: captureWidth, height: captureHeight, fps: fps)
         encoder.onCompressedSample = { [weak writer] sb in
           writer?.appendVideo(sb)
         }
         try encoder.initialize()
 
-        if captureManager == nil { captureManager = ScreenCaptureManager() }
         captureManager?.onFrameReceived = { [weak encoder] sampleBuffer in
           guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             NSLog("[Phase9-cap] onFrameReceived: no image buffer")
@@ -381,17 +401,6 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           }
         }
 
-        let isWindow = source == "window"
-        var actualSourceId = sourceId
-        if actualSourceId == nil && !isWindow {
-          actualSourceId = String(CGMainDisplayID())
-        }
-        guard let finalSourceId = actualSourceId else {
-          result(FlutterError(code: "INVALID_ARGUMENTS",
-                              message: "sourceId required for window capture",
-                              details: nil))
-          return
-        }
         try await captureManager?.startCapture(sourceId: finalSourceId, fps: fps, isWindow: isWindow)
 
         if captureAudio {
@@ -418,6 +427,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         self.perfSampler = sampler
         self.liveStartTime = Date()
         self.liveFrameCount = 0
+        self.liveCaptureWidth = captureWidth
+        self.liveCaptureHeight = captureHeight
 
         result(true)
       } catch {
@@ -485,6 +496,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
               "droppedFrames": droppedFrames,
               "cpuPctSamples": stats?.cpuPctSamples ?? [],
               "memBytesSamples": (stats?.memBytesSamples ?? []).map { Int($0) },
+              "width": self.liveCaptureWidth,
+              "height": self.liveCaptureHeight,
             ]
             result(payload)
           case .failure(let err):
