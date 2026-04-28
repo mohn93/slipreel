@@ -37,6 +37,15 @@ void main() {
       expect(await file.exists(), isTrue);
       expect(await file.length(), greaterThan(1000));
       expect(encoder.totalEncodeMs, greaterThan(0));
+      // usedHardware must only be true after a clean finish() — not merely
+      // because h264_videotoolbox was attempted.
+      if (encoder.codecUsed == 'h264_videotoolbox') {
+        expect(encoder.usedHardware, isTrue,
+            reason: 'usedHardware must be true when VT encode succeeded cleanly');
+      } else {
+        expect(encoder.usedHardware, isFalse,
+            reason: 'usedHardware must be false when libx264 fallback was used');
+      }
 
       tmp.deleteSync(recursive: true);
     });
