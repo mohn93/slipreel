@@ -1,4 +1,3 @@
-// packages/screen_recorder_macos/example/macos/RunnerTests/RunnerTests.swift
 import Cocoa
 import FlutterMacOS
 import XCTest
