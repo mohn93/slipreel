@@ -63,6 +63,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       getAvailableScreens(result: result)
     case "getAvailableWindows":
       getAvailableWindows(result: result)
+    case "listSources":
+      listSources(call: call, result: result)
+    case "captureThumbnail":
+      captureThumbnail(call: call, result: result)
     case "getAudioDevices":
       getAudioDevices(result: result)
     case "startRecording":
@@ -483,6 +487,48 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         result(FlutterError(code: "LIVE_STOP_FAILED",
                             message: "Failed to stop live recording: \(error.localizedDescription)",
                             details: nil))
+      }
+    }
+  }
+  // MARK: - Source picker
+
+  private func listSources(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any] else {
+      result(FlutterError(code: "INVALID_ARGUMENTS",
+                          message: "listSources requires a map argument",
+                          details: nil))
+      return
+    }
+    let strict = args["strictFilter"] as? Bool ?? true
+    Task {
+      do {
+        let lists = try await SourceCatalog.listSources(strictFilter: strict)
+        result(["windows": lists.windows, "screens": lists.screens])
+      } catch {
+        result(FlutterError(code: "DISCOVERY_FAILED",
+                            message: "listSources failed: \(error.localizedDescription)",
+                            details: nil))
+      }
+    }
+  }
+
+  private func captureThumbnail(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any],
+          let id = args["id"] as? String,
+          let kindRaw = args["kind"] as? String,
+          let kind = ThumbnailKind(rawValue: kindRaw),
+          let maxDim = args["maxDimension"] as? Int else {
+      result(FlutterError(code: "INVALID_ARGUMENTS",
+                          message: "captureThumbnail requires { id, kind, maxDimension }",
+                          details: nil))
+      return
+    }
+    Task {
+      do {
+        let data = try await ThumbnailCapture.capture(sourceId: id, kind: kind, maxDimension: maxDim)
+        result(FlutterStandardTypedData(bytes: data))
+      } catch {
+        result(nil)
       }
     }
   }
