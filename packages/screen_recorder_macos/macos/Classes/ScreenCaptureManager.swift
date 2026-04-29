@@ -155,8 +155,16 @@ class ScreenCaptureManager: NSObject {
         throw ScreenCaptureError.invalidSourceId
       }
       contentFilter = SCContentFilter(display: display, excludingWindows: [])
-      config.sourceRect = CGRect(x: region.x, y: region.y,
-                                 width: region.widthPx, height: region.heightPx)
+      // sourceRect uses display points (logical coords); RegionSelection stores
+      // pixels, so divide by the display's scale factor. config.width/height
+      // stay in pixels — they govern the output framebuffer dimensions.
+      let scale = CGFloat(display.width) / CGFloat(display.frame.width)
+      config.sourceRect = CGRect(
+        x: CGFloat(region.x) / scale,
+        y: CGFloat(region.y) / scale,
+        width: CGFloat(region.widthPx) / scale,
+        height: CGFloat(region.heightPx) / scale
+      )
       config.width = region.widthPx
       config.height = region.heightPx
     } else if isWindow {
