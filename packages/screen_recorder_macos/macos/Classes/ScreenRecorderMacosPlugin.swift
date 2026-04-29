@@ -528,7 +528,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   // MARK: - Source picker
 
   private func selectRegion(call: FlutterMethodCall, result: @escaping FlutterResult) {
-    Task.detached {
+    Task { @MainActor in
       let selection = await RegionSelector.shared.selectRegion()
       if let s = selection {
         result([
