@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'models/audio_data.dart';
@@ -7,6 +9,7 @@ import 'models/frame_data.dart';
 import 'models/recording_result.dart';
 import 'models/recording_settings.dart';
 import 'models/screen_info.dart';
+import 'models/source_list.dart';
 import 'models/window_info.dart';
 
 /// The interface that platform-specific implementations must extend.
@@ -44,6 +47,23 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   /// Get list of available windows
   Future<List<WindowInfo>> getAvailableWindows() {
     throw UnimplementedError('getAvailableWindows() has not been implemented.');
+  }
+
+  /// Returns a combined list of windows and screens. When [strictFilter] is
+  /// true (the default), system-noise windows are filtered out.
+  Future<SourceList> listSources({bool strictFilter = true}) {
+    throw UnimplementedError('listSources() has not been implemented.');
+  }
+
+  /// Captures a JPEG thumbnail for the given source. [kind] must be
+  /// [RecordingSource.window] or [RecordingSource.screen]. Returns null on
+  /// capture failure so the UI can fall back to an icon.
+  Future<Uint8List?> captureThumbnail(
+    String id,
+    RecordingSource kind, {
+    int maxDimension = 480,
+  }) {
+    throw UnimplementedError('captureThumbnail() has not been implemented.');
   }
 
   /// Get list of available audio devices
