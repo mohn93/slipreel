@@ -1,6 +1,5 @@
 import Foundation
 import CoreGraphics
-import CoreImage
 import AppKit
 import ScreenCaptureKit
 import ImageIO
@@ -22,6 +21,8 @@ struct LiveOSVersionProbe: OSVersionProbe {
   }
 }
 
+/// Errors thumbnail capture can surface to the plugin layer. Plugins should
+/// translate to `null` (not error) so the UI can fall back to an icon.
 enum ThumbnailCaptureError: Error {
   case sourceNotFound
   case captureFailed
@@ -78,17 +79,16 @@ enum ThumbnailCapture {
         filter = SCContentFilter(display: d, excludingWindows: [])
       }
       let config = SCStreamConfiguration()
-      config.width = maxW
-      config.height = maxH
       config.showsCursor = false
-      config.scalesToFit = true
       let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-      return try jpegData(from: cgImage)
+      let downsampled = downsample(cgImage, maxDimension: maxW)
+      return try jpegData(from: downsampled)
     }
     throw ThumbnailCaptureError.captureFailed
   }
 
   private static let defaultLegacyWindowCapture: (CGWindowID, Int) async throws -> Data = { id, maxDim in
+    // Deprecated in macOS 14 but not removed; this closure is only reached on 12.3-13.
     guard let cgImage = CGWindowListCreateImage(.null, .optionIncludingWindow, id, [.boundsIgnoreFraming, .nominalResolution]) else {
       throw ThumbnailCaptureError.captureFailed
     }
@@ -97,6 +97,7 @@ enum ThumbnailCapture {
   }
 
   private static let defaultLegacyDisplayCapture: (CGDirectDisplayID, Int) async throws -> Data = { id, maxDim in
+    // Deprecated in macOS 14 but not removed; this closure is only reached on 12.3-13.
     guard let cgImage = CGDisplayCreateImage(id) else {
       throw ThumbnailCaptureError.captureFailed
     }
@@ -115,10 +116,9 @@ enum ThumbnailCapture {
     let newW = Int(CGFloat(w) * scale)
     let newH = Int(CGFloat(h) * scale)
     let colorSpace = image.colorSpace ?? CGColorSpaceCreateDeviceRGB()
-    let bytesPerRow = newW * 4
     guard let ctx = CGContext(
       data: nil, width: newW, height: newH, bitsPerComponent: 8,
-      bytesPerRow: bytesPerRow, space: colorSpace,
+      bytesPerRow: 0, space: colorSpace,
       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
     ) else { return image }
     ctx.interpolationQuality = .medium

@@ -27,18 +27,19 @@ final class ThumbnailCaptureTests: XCTestCase {
     var pickedModern = false
     var pickedLegacyWindow = false
     var pickedLegacyDisplay = false
-    _ = try? await ThumbnailCapture.capture(
+    let result = try await ThumbnailCapture.capture(
       sourceId: "42",
       kind: .window,
       maxDimension: 240,
       osVersion: probe,
       modernCapture: { _, _, _, _ in pickedModern = true; return Data() },
-      legacyWindowCapture: { id, _ in pickedLegacyWindow = true; XCTAssertEqual(id, 42); return Data() },
+      legacyWindowCapture: { id, _ in pickedLegacyWindow = true; XCTAssertEqual(id, 42); return Data([0xAB]) },
       legacyDisplayCapture: { _, _ in pickedLegacyDisplay = true; return Data() }
     )
     XCTAssertFalse(pickedModern)
     XCTAssertTrue(pickedLegacyWindow)
     XCTAssertFalse(pickedLegacyDisplay)
+    XCTAssertFalse(result.isEmpty)
   }
 
   func testPicksLegacyDisplayPathOnVentura() async throws {
@@ -46,18 +47,19 @@ final class ThumbnailCaptureTests: XCTestCase {
     var pickedModern = false
     var pickedLegacyWindow = false
     var pickedLegacyDisplay = false
-    _ = try? await ThumbnailCapture.capture(
+    let result = try await ThumbnailCapture.capture(
       sourceId: "100",
       kind: .screen,
       maxDimension: 240,
       osVersion: probe,
       modernCapture: { _, _, _, _ in pickedModern = true; return Data() },
       legacyWindowCapture: { _, _ in pickedLegacyWindow = true; return Data() },
-      legacyDisplayCapture: { id, _ in pickedLegacyDisplay = true; XCTAssertEqual(id, 100); return Data() }
+      legacyDisplayCapture: { id, _ in pickedLegacyDisplay = true; XCTAssertEqual(id, 100); return Data([0xCD]) }
     )
     XCTAssertFalse(pickedModern)
     XCTAssertFalse(pickedLegacyWindow)
     XCTAssertTrue(pickedLegacyDisplay)
+    XCTAssertFalse(result.isEmpty)
   }
 }
 
