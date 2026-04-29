@@ -90,6 +90,22 @@ final class SourceCatalogTests: XCTestCase {
     XCTAssertEqual(result.count, 1)
   }
 
+  func testDropsWindowThatIsTooShortButWideEnough() {
+    let result = SourceCatalog.applyStrictFilter([makeWindow(width: 200, height: 30)])
+    XCTAssertTrue(result.isEmpty)
+  }
+
+  func testProjectAllPassesThroughNilTitle() {
+    let result = SourceCatalog.projectAll([makeWindow(title: nil)])
+    XCTAssertEqual(result.count, 1)
+    XCTAssertEqual(result.first?["title"] as? String, "")
+  }
+
+  func testProjectAllPassesThroughExcludedBundleId() {
+    let result = SourceCatalog.projectAll([makeWindow(bundleId: "com.apple.dock")])
+    XCTAssertEqual(result.count, 1)
+  }
+
   func testEmittedDictionaryShape() {
     let result = SourceCatalog.applyStrictFilter([makeWindow()])
     let dict = result.first!
