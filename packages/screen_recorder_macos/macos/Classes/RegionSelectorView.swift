@@ -1,9 +1,15 @@
 import AppKit
 
 final class RegionSelectorView: NSView {
-  var machine: RegionSelectorMachine
+  private(set) var machine: RegionSelectorMachine
   var onStateChange: ((RegionSelectionState) -> Void)?
+  private static let accentColor = NSColor(
+    srgbRed: 0x6c/255.0, green: 0x63/255.0, blue: 0xff/255.0, alpha: 1)
 
+  /// The hosting NSWindow MUST be non-opaque (`isOpaque = false`,
+  /// `backgroundColor = .clear`) for `ctx.clear(rect)` in `draw(_:)` to show
+  /// through to the desktop. An opaque window will composite the cleared
+  /// region against the window's background instead.
   init(displayBounds: CGRect) {
     self.machine = RegionSelectorMachine(displayBounds: displayBounds)
     super.init(frame: NSRect(origin: .zero, size: displayBounds.size))
@@ -61,7 +67,7 @@ final class RegionSelectorView: NSView {
     if rect.isEmpty { return }
 
     // Rect outline.
-    ctx.setStrokeColor(NSColor(srgbRed: 0x6c/255.0, green: 0x63/255.0, blue: 0xff/255.0, alpha: 1).cgColor)
+    ctx.setStrokeColor(Self.accentColor.cgColor)
     ctx.setLineWidth(1)
     ctx.stroke(rect)
 
@@ -81,8 +87,7 @@ final class RegionSelectorView: NSView {
   }
 
   private func drawHandles(in rect: CGRect, context ctx: CGContext) {
-    let purple = NSColor(srgbRed: 0x6c/255.0, green: 0x63/255.0, blue: 0xff/255.0, alpha: 1).cgColor
-    ctx.setFillColor(purple)
+    ctx.setFillColor(Self.accentColor.cgColor)
     let s: CGFloat = 12
     let half = s / 2
     let points = [
@@ -109,10 +114,13 @@ final class RegionSelectorView: NSView {
     let str = NSAttributedString(string: text, attributes: attrs)
     let pad: CGFloat = 6
     let textSize = str.size()
-    let bgRect = CGRect(
-      x: rect.minX, y: rect.minY - textSize.height - pad * 2,
-      width: textSize.width + pad * 2, height: textSize.height + pad
-    )
+    let bgWidth = textSize.width + pad * 2
+    let bgHeight = textSize.height + pad
+    // Prefer above the rect; fall back below when the rect is near the top edge.
+    let yAbove = rect.minY - bgHeight - pad
+    let yBelow = rect.maxY + pad
+    let bgY = yAbove >= 0 ? yAbove : yBelow
+    let bgRect = CGRect(x: rect.minX, y: bgY, width: bgWidth, height: bgHeight)
     ctx.setFillColor(NSColor.black.withAlphaComponent(0.7).cgColor)
     ctx.fill(bgRect)
     str.draw(at: CGPoint(x: bgRect.minX + pad, y: bgRect.minY + pad / 2))
