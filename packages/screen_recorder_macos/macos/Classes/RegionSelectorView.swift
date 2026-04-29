@@ -3,6 +3,7 @@ import AppKit
 final class RegionSelectorView: NSView {
   private(set) var machine: RegionSelectorMachine
   var onStateChange: ((RegionSelectionState) -> Void)?
+  private let displayBounds: CGRect
   private static let accentColor = NSColor(
     srgbRed: 0x6c/255.0, green: 0x63/255.0, blue: 0xff/255.0, alpha: 1)
 
@@ -11,6 +12,7 @@ final class RegionSelectorView: NSView {
   /// through to the desktop. An opaque window will composite the cleared
   /// region against the window's background instead.
   init(displayBounds: CGRect) {
+    self.displayBounds = displayBounds
     self.machine = RegionSelectorMachine(displayBounds: displayBounds)
     super.init(frame: NSRect(origin: .zero, size: displayBounds.size))
     wantsLayer = true
@@ -49,7 +51,7 @@ final class RegionSelectorView: NSView {
   }
 
   func resetMachine() {
-    machine = RegionSelectorMachine(displayBounds: CGRect(origin: .zero, size: frame.size))
+    machine = RegionSelectorMachine(displayBounds: displayBounds)
     needsDisplay = true
   }
 

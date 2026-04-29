@@ -9,6 +9,7 @@ struct RegionSelection {
   let heightPx: Int
 }
 
+@MainActor
 final class RegionSelector {
   static let shared = RegionSelector()
   private init() {}
@@ -33,7 +34,7 @@ final class RegionSelector {
 
   @MainActor
   private func runSelection() async -> RegionSelection? {
-    NSApp.miniaturizeAll(nil)
+    NSApp.hide(nil)
     overlayWindows.removeAll()
     views.removeAll()
     toolbar = RegionToolbar()
@@ -47,7 +48,7 @@ final class RegionSelector {
         screen: screen)
       win.level = .screenSaver
       win.isOpaque = false
-      win.backgroundColor = NSColor.black.withAlphaComponent(0.0)
+      win.backgroundColor = .clear
       win.ignoresMouseEvents = false
       win.collectionBehavior = [.canJoinAllSpaces, .stationary]
 
