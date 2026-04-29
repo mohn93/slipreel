@@ -179,6 +179,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       loader: _loader,
       fetcher: _fetchThumbnail,
       selectedId: state.selectedSourceId,
+      selectedKind: state.selectedSourceKind,
       onSelect: (item) => ref
           .read(recordingControllerProvider.notifier)
           .selectSource(kind: item.kind, id: item.id),

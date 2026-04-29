@@ -80,9 +80,13 @@ enum ThumbnailCapture {
       }
       let config = SCStreamConfiguration()
       config.showsCursor = false
+      // Cap the capture resolution to maxW×maxW so the GPU scales before
+      // transferring to the CPU. SCKit letterboxes to preserve aspect ratio.
+      config.width = maxW
+      config.height = maxW
+      config.scalesToFit = true
       let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-      let downsampled = downsample(cgImage, maxDimension: maxW)
-      return try jpegData(from: downsampled)
+      return try jpegData(from: cgImage)
     }
     throw ThumbnailCaptureError.captureFailed
   }

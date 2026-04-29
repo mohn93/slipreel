@@ -34,6 +34,7 @@ class SourceGrid extends StatefulWidget {
     required this.loader,
     required this.fetcher,
     required this.selectedId,
+    this.selectedKind,
     required this.onSelect,
   });
 
@@ -42,6 +43,7 @@ class SourceGrid extends StatefulWidget {
   final ConcurrentLoader loader;
   final ThumbnailFetcher fetcher;
   final String? selectedId;
+  final RecordingSource? selectedKind;
   final void Function(SourceGridItem item) onSelect;
 
   @override
@@ -105,7 +107,8 @@ class _SourceGridState extends State<SourceGrid> {
               title: item.title,
               subtitle: item.subtitle,
               thumbnail: bytes,
-              isSelected: widget.selectedId == item.id,
+              isSelected: widget.selectedId == item.id &&
+                  widget.selectedKind == item.kind,
               isErrored: errored,
               fallbackIcon: item.fallbackIcon,
               onTap: () => widget.onSelect(item),
