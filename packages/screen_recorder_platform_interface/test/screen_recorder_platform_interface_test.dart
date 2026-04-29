@@ -17,5 +17,12 @@ void main() {
         throwsA(isA<UnimplementedError>()),
       );
     });
+
+    test('captureThumbnail throws ArgumentError for unsupported kind', () {
+      expect(
+        () => p.captureThumbnail('1', RecordingSource.area),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 }
