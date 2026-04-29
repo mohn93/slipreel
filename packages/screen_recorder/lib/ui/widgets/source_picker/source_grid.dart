@@ -64,8 +64,8 @@ class _SourceGridState extends State<SourceGrid> {
         .run<Uint8List?>(() => widget.fetcher(item.id, item.kind))
         .then((bytes) {
       if (!mounted) return;
-      _inFlight.remove(key);
       setState(() {
+        _inFlight.remove(key);
         if (bytes == null) {
           _erroredKeys.add(key);
         } else {
@@ -73,9 +73,12 @@ class _SourceGridState extends State<SourceGrid> {
         }
       });
     }).catchError((_) {
-      if (!mounted) return;
-      _inFlight.remove(key);
-      setState(() => _erroredKeys.add(key));
+      if (!mounted) return null;
+      setState(() {
+        _inFlight.remove(key);
+        _erroredKeys.add(key);
+      });
+      return null;
     });
   }
 
