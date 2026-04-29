@@ -127,6 +127,11 @@ final class RegionSelector {
     continuation = nil
   }
 
+  /// Cancels any in-progress region selection, returning nil to the waiting caller.
+  func cancel() {
+    cancelAll()
+  }
+
   private func cancelAll() {
     teardown()
     continuation?.resume(returning: nil)
