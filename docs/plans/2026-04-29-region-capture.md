@@ -1062,10 +1062,12 @@ final class RegionSelector {
       // Hide toolbar while actively drawing so it doesn't cover the readout.
       toolbar?.hide()
     case .selected:
-      toolbar?.show(in: displayBounds, anchoredTo: currentRect)
+      toolbar?.show(in: displayBounds, anchoredTo: currentRect,
+                    screenOrigin: NSPoint(x: screen.frame.minX, y: screen.frame.minY))
     case .resizing, .moving:
       // Keep toolbar visible during resize/move so user can confirm.
-      toolbar?.show(in: displayBounds, anchoredTo: currentRect)
+      toolbar?.show(in: displayBounds, anchoredTo: currentRect,
+                    screenOrigin: NSPoint(x: screen.frame.minX, y: screen.frame.minY))
     case .confirmed(let rect):
       finish(with: rect, on: screen)
     case .cancelled:

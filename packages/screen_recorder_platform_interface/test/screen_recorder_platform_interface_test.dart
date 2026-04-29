@@ -24,5 +24,9 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+
+    test('selectRegion throws UnsupportedError', () {
+      expect(() => p.selectRegion(), throwsA(isA<UnsupportedError>()));
+    });
   });
 }

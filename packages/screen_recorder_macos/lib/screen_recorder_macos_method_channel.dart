@@ -129,15 +129,20 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
     required String outputPath,
     required int width,
     required int height,
+    RegionSelection? region,
   }) async {
+    final args = <String, dynamic>{
+      ...settings.toJson(),
+      'outputPath': outputPath,
+      'width': width,
+      'height': height,
+    };
+    if (region != null) {
+      args['region'] = region.toMap();
+    }
     await _recordingChannel.invokeMethod<void>(
       ScreenRecorderMethods.startLiveRecording,
-      {
-        ...settings.toJson(),
-        'outputPath': outputPath,
-        'width': width,
-        'height': height,
-      },
+      args,
     );
   }
 
@@ -180,5 +185,14 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
       },
     );
     return result;
+  }
+
+  @override
+  Future<RegionSelection?> selectRegion() async {
+    final raw = await _recordingChannel.invokeMapMethod<String, dynamic>(
+      ScreenRecorderMethods.selectRegion,
+    );
+    if (raw == null) return null;
+    return RegionSelection.fromMap(raw);
   }
 }

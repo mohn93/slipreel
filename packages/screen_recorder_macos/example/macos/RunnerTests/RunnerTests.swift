@@ -48,4 +48,24 @@ class RunnerTests: XCTestCase {
     }
     waitForExpectations(timeout: 1)
   }
+
+  func testStartLiveRecordingRejectsBadRegionShape() {
+    let plugin = ScreenRecorderMacosPlugin()
+    let call = FlutterMethodCall(
+      methodName: "startLiveRecording",
+      arguments: [
+        "source": "area",
+        "frameRate": 30,
+        "outputPath": "/tmp/test.mp4",
+        "region": "not a map",
+      ]
+    )
+    let exp = expectation(description: "result")
+    plugin.handle(call) { result in
+      let err = result as? FlutterError
+      XCTAssertEqual(err?.code, "INVALID_ARGUMENTS")
+      exp.fulfill()
+    }
+    waitForExpectations(timeout: 2)
+  }
 }

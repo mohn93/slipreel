@@ -120,14 +120,20 @@ class ScreenCaptureManager: NSObject {
     }
   }
 
+  /// Compute the actual pixel dimensions for a region capture.
+  func captureDimensions(region: RegionSelection) -> (width: Int, height: Int) {
+    return (region.widthPx, region.heightPx)
+  }
+
   // MARK: - Recording Control
 
-  /// Start capturing screen or window
-  /// - Parameters:
-  ///   - sourceId: The display ID or window ID to capture
-  ///   - fps: Frames per second (30 or 60)
-  ///   - isWindow: Whether the sourceId refers to a window (true) or display (false)
-  func startCapture(sourceId: String, fps: Int, isWindow: Bool, showCursor: Bool = true) async throws {
+  func startCapture(
+    sourceId: String,
+    fps: Int,
+    isWindow: Bool,
+    region: RegionSelection? = nil,
+    showCursor: Bool = true
+  ) async throws {
     guard !isCapturing else {
       throw ScreenCaptureError.alreadyCapturing
     }
@@ -135,66 +141,58 @@ class ScreenCaptureManager: NSObject {
     // Get shareable content
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
-    // Create content filter based on source type
-    if isWindow {
-      // Capture specific window
+    // Configure stream
+    let config = SCStreamConfiguration()
+    config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
+    config.pixelFormat = kCVPixelFormatType_32BGRA
+    config.scalesToFit = false
+    config.showsCursor = showCursor
+    config.queueDepth = 5
+
+    if let region = region {
+      // Region path: full-display filter + sourceRect crop.
+      guard let display = content.displays.first(where: { $0.displayID == region.displayId }) else {
+        throw ScreenCaptureError.invalidSourceId
+      }
+      contentFilter = SCContentFilter(display: display, excludingWindows: [])
+      // sourceRect uses display points (logical coords); RegionSelection stores
+      // pixels, so divide by the display's scale factor. config.width/height
+      // stay in pixels — they govern the output framebuffer dimensions.
+      let scale = CGFloat(display.width) / CGFloat(display.frame.width)
+      config.sourceRect = CGRect(
+        x: CGFloat(region.x) / scale,
+        y: CGFloat(region.y) / scale,
+        width: CGFloat(region.widthPx) / scale,
+        height: CGFloat(region.heightPx) / scale
+      )
+      config.width = region.widthPx
+      config.height = region.heightPx
+    } else if isWindow {
       guard let windowID = UInt32(sourceId),
             let window = content.windows.first(where: { $0.windowID == windowID }) else {
         throw ScreenCaptureError.invalidSourceId
       }
       contentFilter = SCContentFilter(desktopIndependentWindow: window)
+      let scale = NSScreen.main?.backingScaleFactor ?? 1.0
+      config.width = Int(window.frame.width * scale)
+      config.height = Int(window.frame.height * scale)
     } else {
-      // Capture display
       guard let displayID = UInt32(sourceId),
             let display = content.displays.first(where: { $0.displayID == displayID }) else {
         throw ScreenCaptureError.invalidSourceId
       }
-
-      // Exclude desktop windows for cleaner capture
       let excludedApps = content.applications.filter { app in
-        // Exclude Finder and Dock
         app.bundleIdentifier == "com.apple.finder" ||
         app.bundleIdentifier == "com.apple.dock"
       }
-
       contentFilter = SCContentFilter(
         display: display,
         excludingApplications: excludedApps,
         exceptingWindows: []
       )
+      config.width = display.width
+      config.height = display.height
     }
-
-    // Configure stream
-    let config = SCStreamConfiguration()
-
-    // Set frame rate
-    config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
-
-    // Set pixel format (BGRA is most common and efficient)
-    config.pixelFormat = kCVPixelFormatType_32BGRA
-
-    // Enable high resolution capture
-    config.scalesToFit = false
-    config.showsCursor = showCursor
-
-    // Set capture resolution based on source
-    if isWindow {
-      // For windows, use actual window size in pixels (frame is in logical points)
-      if let window = content.windows.first(where: { $0.windowID == UInt32(sourceId) ?? 0 }) {
-        let scale = NSScreen.main?.backingScaleFactor ?? 1.0
-        config.width = Int(window.frame.width * scale)
-        config.height = Int(window.frame.height * scale)
-      }
-    } else {
-      // For displays, use native resolution
-      if let display = content.displays.first(where: { $0.displayID == UInt32(sourceId) ?? 0 }) {
-        config.width = display.width
-        config.height = display.height
-      }
-    }
-
-    // Quality settings
-    config.queueDepth = 5 // Buffer up to 5 frames
 
     streamConfiguration = config
 

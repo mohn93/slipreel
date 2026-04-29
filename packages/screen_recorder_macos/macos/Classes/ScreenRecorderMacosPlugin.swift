@@ -67,6 +67,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       listSources(call: call, result: result)
     case "captureThumbnail":
       captureThumbnail(call: call, result: result)
+    case "selectRegion":
+      selectRegion(call: call, result: result)
     case "getAudioDevices":
       getAudioDevices(result: result)
     case "startRecording":
@@ -358,12 +360,35 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     let captureAudio = args["captureAudio"] as? Bool ?? false
     let captureCursor = args["captureCursor"] as? Bool ?? true
 
+    // Optional region for area capture.
+    var regionSelection: RegionSelection? = nil
+    if let raw = args["region"] {
+      guard let map = raw as? [String: Any],
+            let didStr = map["displayId"] as? String,
+            let displayId = CGDirectDisplayID(didStr),
+            let x = map["x"] as? Int,
+            let y = map["y"] as? Int,
+            let w = map["width"] as? Int,
+            let h = map["height"] as? Int else {
+        result(FlutterError(code: "INVALID_ARGUMENTS",
+                            message: "region argument must be a map with displayId/x/y/width/height",
+                            details: nil))
+        return
+      }
+      regionSelection = RegionSelection(
+        displayId: displayId, x: x, y: y, widthPx: w, heightPx: h)
+    }
+
     Task {
       do {
         let isWindow = source == "window"
         var actualSourceId = sourceId
         if actualSourceId == nil && !isWindow {
-          actualSourceId = String(CGMainDisplayID())
+          if let region = regionSelection {
+            actualSourceId = String(region.displayId)
+          } else {
+            actualSourceId = String(CGMainDisplayID())
+          }
         }
         guard let finalSourceId = actualSourceId else {
           result(FlutterError(code: "INVALID_ARGUMENTS",
@@ -374,9 +399,16 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
         // Query the actual capture dimensions so encoder + writer match what SCStream produces.
         if captureManager == nil { captureManager = ScreenCaptureManager() }
-        let dims = try await captureManager!.captureDimensions(sourceId: finalSourceId, isWindow: isWindow)
-        let captureWidth = dims.width
-        let captureHeight = dims.height
+        let captureWidth: Int
+        let captureHeight: Int
+        if let region = regionSelection {
+          captureWidth = region.widthPx
+          captureHeight = region.heightPx
+        } else {
+          let dims = try await captureManager!.captureDimensions(sourceId: finalSourceId, isWindow: isWindow)
+          captureWidth = dims.width
+          captureHeight = dims.height
+        }
         let writer = LiveRecordingWriter(
           outputPath: outputPath, width: captureWidth, height: captureHeight,
           fps: fps, captureAudio: captureAudio)
@@ -394,7 +426,9 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
         }
 
-        try await captureManager?.startCapture(sourceId: finalSourceId, fps: fps, isWindow: isWindow)
+        try await captureManager?.startCapture(
+          sourceId: finalSourceId, fps: fps, isWindow: isWindow,
+          region: regionSelection)
 
         if captureAudio {
           if audioCaptureManager == nil { audioCaptureManager = AudioCaptureManager() }
@@ -492,6 +526,23 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   }
 
   // MARK: - Source picker
+
+  private func selectRegion(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    Task { @MainActor in
+      let selection = await RegionSelector.shared.selectRegion()
+      if let s = selection {
+        result([
+          "displayId": String(s.displayId),
+          "x": s.x,
+          "y": s.y,
+          "width": s.widthPx,
+          "height": s.heightPx,
+        ])
+      } else {
+        result(nil)
+      }
+    }
+  }
 
   private func listSources(call: FlutterMethodCall, result: @escaping FlutterResult) {
     guard call.arguments == nil || call.arguments is [String: Any] else {

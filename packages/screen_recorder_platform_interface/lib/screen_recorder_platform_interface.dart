@@ -15,3 +15,4 @@ export 'src/models/recording_settings.dart';
 export 'src/models/screen_info.dart';
 export 'src/models/source_list.dart';
 export 'src/models/window_info.dart';
+export 'src/models/region_selection.dart';

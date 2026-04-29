@@ -441,3 +441,22 @@ _________________________________________________
 - [ ] Select screen → record → stop → playback covers full display.
 - [ ] Toggle "Show all" — utility windows appear.
 - [ ] First-launch permission flow: revoke Screen Recording in System Settings, re-launch, see CTA, grant, refresh works.
+
+## Region Capture (2026-04-29)
+
+- [ ] Region tab visible in segmented control with crop icon.
+- [ ] Click Region tab on first launch → empty state with "Draw a region" button.
+- [ ] Click "Draw a region" → app minimizes; transparent overlay appears across every connected display with the desktop dimmed.
+- [ ] Click-drag → live `W × H` readout follows cursor; rect outlined in purple.
+- [ ] Release → 8 resize handles appear at corners + edge midpoints; floating Start/Cancel toolbar appears at bottom-right of the rect.
+- [ ] Drag a corner handle → rect resizes; toolbar follows.
+- [ ] Drag an edge midpoint handle → resizes that axis only.
+- [ ] Drag inside the rect → rect translates; toolbar follows.
+- [ ] Drag past display edge → rect clips at the display boundary.
+- [ ] Press Esc → overlay closes everywhere; app restores; Region tab still in empty state.
+- [ ] Click Cancel → same as Esc.
+- [ ] Click Start → overlay closes; app restores; Region tab now shows recap card with the chosen size and display name; Record button enabled.
+- [ ] Click Record → recording captures only the chosen region at the rect's pixel size.
+- [ ] Stop → playback shows exactly the region you drew (no scaling, correct aspect ratio).
+- [ ] Switch to Windows tab → Region selection clears; switching back to Region tab shows empty state.
+- [ ] Multi-display: drag rect on a secondary display, record, verify the secondary display's pixels are captured.
