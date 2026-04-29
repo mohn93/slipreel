@@ -81,9 +81,9 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         .selectSource(kind: null, id: null);
   }
 
-  void _toggleStrictFilter(bool value) {
+  Future<void> _toggleStrictFilter(bool value) async {
     setState(() => _strictFilter = value);
-    _refresh();
+    await _refresh();
   }
 
   Future<Uint8List?> _fetchThumbnail(String id, RecordingSource kind) =>
