@@ -13,4 +13,5 @@ export 'src/models/native_perf_stats.dart';
 export 'src/models/recording_result.dart';
 export 'src/models/recording_settings.dart';
 export 'src/models/screen_info.dart';
+export 'src/models/source_list.dart';
 export 'src/models/window_info.dart';
