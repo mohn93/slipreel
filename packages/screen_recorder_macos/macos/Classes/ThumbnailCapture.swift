@@ -64,6 +64,7 @@ enum ThumbnailCapture {
     if #available(macOS 14.0, *) {
       let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
       let filter: SCContentFilter
+      let nativeSize: CGSize
       switch kind {
       case .window:
         guard let id = UInt32(sourceId),
@@ -71,20 +72,34 @@ enum ThumbnailCapture {
           throw ThumbnailCaptureError.sourceNotFound
         }
         filter = SCContentFilter(desktopIndependentWindow: w)
+        nativeSize = w.frame.size
       case .screen:
         guard let id = UInt32(sourceId),
               let d = content.displays.first(where: { $0.displayID == id }) else {
           throw ThumbnailCaptureError.sourceNotFound
         }
         filter = SCContentFilter(display: d, excludingWindows: [])
+        nativeSize = CGSize(width: d.width, height: d.height)
+      }
+      // Preserve the source's aspect ratio so the framebuffer is not letterboxed
+      // (SCKit pads to whatever the configured width/height demand, producing
+      // visible bars otherwise).
+      let aspect = nativeSize.width > 0 && nativeSize.height > 0
+        ? nativeSize.width / nativeSize.height
+        : 1.0
+      let targetW: Int
+      let targetH: Int
+      if aspect >= 1 {
+        targetW = maxW
+        targetH = max(1, Int(CGFloat(maxW) / aspect))
+      } else {
+        targetH = maxW
+        targetW = max(1, Int(CGFloat(maxW) * aspect))
       }
       let config = SCStreamConfiguration()
       config.showsCursor = false
-      // Cap the capture resolution to maxW×maxW so the GPU scales before
-      // transferring to the CPU. SCKit letterboxes to preserve aspect ratio.
-      config.width = maxW
-      config.height = maxW
-      config.scalesToFit = true
+      config.width = targetW
+      config.height = targetH
       let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
       return try jpegData(from: cgImage)
     }
