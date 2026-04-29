@@ -28,6 +28,7 @@ final class RegionSelectorView: NSView {
     machine.handle(.mouseDown(at: p))
     needsDisplay = true
     onStateChange?(machine.state)
+    cursorFor(state: machine.state, point: p).set()
   }
 
   override func mouseDragged(with event: NSEvent) {
@@ -35,6 +36,7 @@ final class RegionSelectorView: NSView {
     machine.handle(.mouseDragged(to: p))
     needsDisplay = true
     onStateChange?(machine.state)
+    cursorFor(state: machine.state, point: p).set()
   }
 
   override func mouseUp(with event: NSEvent) {
@@ -42,6 +44,7 @@ final class RegionSelectorView: NSView {
     machine.handle(.mouseUp(at: p))
     needsDisplay = true
     onStateChange?(machine.state)
+    cursorFor(state: machine.state, point: p).set()
   }
 
   func triggerStart() {
@@ -62,6 +65,64 @@ final class RegionSelectorView: NSView {
       return
     }
     super.keyDown(with: event)
+  }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    trackingAreas.forEach { removeTrackingArea($0) }
+    let area = NSTrackingArea(
+      rect: bounds,
+      options: [.mouseEnteredAndExited, .mouseMoved, .activeInActiveApp, .inVisibleRect],
+      owner: self,
+      userInfo: nil
+    )
+    addTrackingArea(area)
+  }
+
+  override func resetCursorRects() {
+    super.resetCursorRects()
+    addCursorRect(bounds, cursor: .crosshair)
+  }
+
+  override func mouseMoved(with event: NSEvent) {
+    let p = convert(event.locationInWindow, from: nil)
+    cursorFor(state: machine.state, point: p).set()
+  }
+
+  override func mouseEntered(with event: NSEvent) {
+    let p = convert(event.locationInWindow, from: nil)
+    cursorFor(state: machine.state, point: p).set()
+  }
+
+  override func mouseExited(with event: NSEvent) {
+    NSCursor.crosshair.set()
+  }
+
+  private func cursorFor(state: RegionSelectionState, point: CGPoint) -> NSCursor {
+    switch state {
+    case .moving:
+      return .closedHand
+    case .resizing(let handle, _, _):
+      return cursorForHandle(handle)
+    case .selected(let rect):
+      if let h = ResizeHandle.hit(at: point, in: rect) {
+        return cursorForHandle(h)
+      }
+      if rect.contains(point) {
+        return .openHand
+      }
+      return .crosshair
+    default:
+      return .crosshair
+    }
+  }
+
+  private func cursorForHandle(_ handle: ResizeHandle) -> NSCursor {
+    switch handle {
+    case .n, .s: return .resizeUpDown
+    case .e, .w: return .resizeLeftRight
+    case .nw, .se, .ne, .sw: return .crosshair  // macOS lacks public diagonal cursors
+    }
   }
 
   override func draw(_ dirty: NSRect) {

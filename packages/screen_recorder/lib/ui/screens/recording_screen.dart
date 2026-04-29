@@ -300,8 +300,12 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                     fontSize: 16,
                     fontWeight: FontWeight.w500))
           else
-            const Text('Pick a window or screen above',
-                style: TextStyle(color: Colors.white38)),
+            Text(
+              _tab == _Tab.region
+                  ? 'Draw a region first'
+                  : 'Pick a window or screen above',
+              style: const TextStyle(color: Colors.white38),
+            ),
           const SizedBox(height: 12),
           _RecordButton(
               enabled: state.selectedSourceId != null &&

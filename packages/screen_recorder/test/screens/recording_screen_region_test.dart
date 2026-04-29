@@ -61,6 +61,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('1280 × 720'), findsOneWidget);
     expect(find.text('Redraw'), findsOneWidget);
+
+    // Confirm the Record button is actually enabled.
+    final recordBtn = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Record'),
+    );
+    expect(recordBtn.onPressed, isNotNull);
   });
 
   testWidgets('selectRegion null leaves empty state', (tester) async {

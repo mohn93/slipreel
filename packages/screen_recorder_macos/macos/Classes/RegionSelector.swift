@@ -20,6 +20,7 @@ final class RegionSelector {
   private var toolbar: RegionToolbar?
   private var continuation: CheckedContinuation<RegionSelection?, Never>?
   private var activeScreen: NSScreen?
+  private var escMonitor: Any?
 
   func selectRegion() async -> RegionSelection? {
     if let inFlight = inFlight { return await inFlight.value }
@@ -61,6 +62,14 @@ final class RegionSelector {
       win.makeFirstResponder(view)
       overlayWindows.append(win)
       views[screen] = view
+    }
+
+    escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      if event.keyCode == 53 {  // Esc
+        self?.cancelAll()
+        return nil
+      }
+      return event
     }
 
     toolbar?.onStart = { [weak self] in
@@ -140,6 +149,10 @@ final class RegionSelector {
     overlayWindows.removeAll()
     views.removeAll()
     activeScreen = nil
+    if let m = escMonitor {
+      NSEvent.removeMonitor(m)
+      escMonitor = nil
+    }
     NSApp.unhide(nil)
   }
 }
