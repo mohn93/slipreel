@@ -26,6 +26,15 @@ void main() {
       expect(round.widthPx, 100);
       expect(round.heightPx, 200);
     });
+
+    test('defaults to zeros when fields missing', () {
+      final r = RegionSelection.fromMap({});
+      expect(r.displayId, '');
+      expect(r.x, 0);
+      expect(r.y, 0);
+      expect(r.widthPx, 0);
+      expect(r.heightPx, 0);
+    });
   });
 
   group('ScreenRecorderMethods constants', () {
