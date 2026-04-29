@@ -39,5 +39,31 @@ final class RegionToolbarPositionTests: XCTestCase {
       rect: rect, displayBounds: displayBounds,
       toolbarSize: toolbarSize, gap: gap)
     XCTAssertEqual(p.x, 0)
+    XCTAssertEqual(p.y, 278)
+  }
+
+  func testClampsRightEdgeToDisplay() {
+    // Rect anchored near the right edge — initial x = rect.maxX - toolbar.width
+    // exceeds displayBounds.maxX, so the right-edge clamp must apply.
+    let rect = CGRect(x: 1900, y: 200, width: 100, height: 100)
+    let p = RegionToolbarPosition.positionFor(
+      rect: rect, displayBounds: displayBounds,
+      toolbarSize: toolbarSize, gap: gap)
+    XCTAssertEqual(p.x, 1920 - 140)
+  }
+
+  func testFallbackUsesRectNotDisplayBounds() {
+    // Construct a scenario where neither below nor above fits, but the rect
+    // does NOT fill the display. The fallback must anchor to the rect.
+    let smallDisplay = CGRect(x: 0, y: 0, width: 800, height: 200)
+    let rect = CGRect(x: 200, y: 0, width: 200, height: 160)
+    let p = RegionToolbarPosition.positionFor(
+      rect: rect, displayBounds: smallDisplay,
+      toolbarSize: toolbarSize, gap: gap)
+    // Below: y = 160 + 8 = 168, 168 + 36 = 204 > 200 → flip above
+    // Above: y = 0 - 8 - 36 = -44 < 0 → fallback
+    // Fallback (rect-relative): x = 400 - 140 - 8 = 252, y = 160 - 36 - 8 = 116
+    XCTAssertEqual(p.x, 252)
+    XCTAssertEqual(p.y, 116)
   }
 }

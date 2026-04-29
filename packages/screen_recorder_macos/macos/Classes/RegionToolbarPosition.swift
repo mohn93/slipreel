@@ -1,4 +1,3 @@
-import Foundation
 import CoreGraphics
 
 enum RegionToolbarPosition {
@@ -12,11 +11,13 @@ enum RegionToolbarPosition {
     var y = rect.maxY + gap
 
     if y + toolbarSize.height > displayBounds.maxY {
+      // Not enough room below — flip above.
       y = rect.minY - gap - toolbarSize.height
     }
     if y < displayBounds.minY || y + toolbarSize.height > displayBounds.maxY {
-      x = displayBounds.maxX - toolbarSize.width - gap
-      y = displayBounds.maxY - toolbarSize.height - gap
+      // No room outside the rect — fall inside the rect, bottom-right inset by gap.
+      x = rect.maxX - toolbarSize.width - gap
+      y = rect.maxY - toolbarSize.height - gap
     }
     if x < displayBounds.minX { x = displayBounds.minX }
     if x + toolbarSize.width > displayBounds.maxX {
