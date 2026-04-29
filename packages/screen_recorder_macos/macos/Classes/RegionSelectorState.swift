@@ -122,6 +122,8 @@ struct RegionSelectorMachine {
   mutating func handle(_ event: RegionEvent) {
     switch event {
     case .escapePressed:
+      // .confirmed is terminal; escape after confirm should not destroy the result.
+      if case .confirmed = state { return }
       state = .cancelled
       return
     default:

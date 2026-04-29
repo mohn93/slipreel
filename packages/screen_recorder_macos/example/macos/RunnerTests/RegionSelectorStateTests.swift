@@ -145,11 +145,68 @@ final class RegionSelectorStateTests: XCTestCase {
     XCTAssertEqual(r.height, 150)
   }
 
-  func testEscapeCancelsFromAnyState() {
+  func testEscapeFromDrawingCancels() {
     var m = makeMachine()
     m.handle(.mouseDown(at: CGPoint(x: 100, y: 100)))
     m.handle(.escapePressed)
-    if case .cancelled = m.state {} else { XCTFail("expected cancelled, got \(m.state)") }
+    if case .cancelled = m.state {} else { XCTFail("expected cancelled") }
+  }
+
+  func testEscapeFromSelectedCancels() {
+    var m = makeMachine()
+    m.setSelectedForTest(CGRect(x: 100, y: 100, width: 200, height: 150))
+    m.handle(.escapePressed)
+    if case .cancelled = m.state {} else { XCTFail("expected cancelled") }
+  }
+
+  func testEscapeFromResizingCancels() {
+    var m = makeMachine()
+    m.setSelectedForTest(CGRect(x: 100, y: 100, width: 200, height: 150))
+    m.handle(.mouseDown(at: CGPoint(x: 300, y: 250)))
+    m.handle(.escapePressed)
+    if case .cancelled = m.state {} else { XCTFail("expected cancelled") }
+  }
+
+  func testEscapeFromMovingCancels() {
+    var m = makeMachine()
+    m.setSelectedForTest(CGRect(x: 100, y: 100, width: 200, height: 150))
+    m.handle(.mouseDown(at: CGPoint(x: 200, y: 175)))
+    m.handle(.escapePressed)
+    if case .cancelled = m.state {} else { XCTFail("expected cancelled") }
+  }
+
+  func testEscapeFromConfirmedIsIgnored() {
+    var m = makeMachine()
+    let rect = CGRect(x: 100, y: 100, width: 200, height: 150)
+    m.setSelectedForTest(rect)
+    m.handle(.startPressed)
+    m.handle(.escapePressed)
+    guard case let .confirmed(r) = m.state else {
+      return XCTFail("expected confirmed (terminal), got \(m.state)")
+    }
+    XCTAssertEqual(r, rect)
+  }
+
+  func testDrawingMouseUpAtExactlyMinSizeBecomesSelected() {
+    var m = makeMachine()
+    m.handle(.mouseDown(at: CGPoint(x: 100, y: 100)))
+    m.handle(.mouseUp(at: CGPoint(x: 150, y: 150)))
+    guard case let .selected(rect) = m.state else {
+      return XCTFail("expected selected at exact 50x50 boundary, got \(m.state)")
+    }
+    XCTAssertEqual(rect, CGRect(x: 100, y: 100, width: 50, height: 50))
+  }
+
+  func testResizingBelowMinSizeRevertsToOriginal() {
+    var m = makeMachine()
+    let rect = CGRect(x: 200, y: 200, width: 200, height: 150)
+    m.setSelectedForTest(rect)
+    m.handle(.mouseDown(at: CGPoint(x: 400, y: 350))) // SE handle
+    m.handle(.mouseUp(at: CGPoint(x: 210, y: 210)))   // drag SE far toward NW
+    guard case let .selected(r) = m.state else {
+      return XCTFail("expected selected, got \(m.state)")
+    }
+    XCTAssertEqual(r, rect, "resizing below minSize should revert to original")
   }
 
   func testStartFromSelectedConfirms() {
