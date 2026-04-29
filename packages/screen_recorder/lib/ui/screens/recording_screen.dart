@@ -1,7 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+
 import '../../state/recording_state.dart';
+import '../widgets/source_picker/concurrent_loader.dart';
+import '../widgets/source_picker/permission_cta.dart';
+import '../widgets/source_picker/source_grid.dart';
+import '../widgets/source_picker/thumbnail_cache.dart';
 import 'playback_screen.dart';
 
 class RecordingScreen extends ConsumerStatefulWidget {
@@ -11,512 +19,291 @@ class RecordingScreen extends ConsumerStatefulWidget {
   ConsumerState<RecordingScreen> createState() => _RecordingScreenState();
 }
 
+enum _Tab { windows, screens }
+
 class _RecordingScreenState extends ConsumerState<RecordingScreen> {
-  List<WindowInfo> _windows = [];
-  bool _isLoading = true;
-  String? _selectedWindowId;
+  _Tab _tab = _Tab.windows;
+  bool _strictFilter = true;
+  bool _loading = true;
+  bool _permissionDenied = false;
   String? _error;
+  SourceList _sources = const SourceList();
+
+  late final ThumbnailCache _cache = ThumbnailCache();
+  late final ConcurrentLoader _loader = ConcurrentLoader(maxInFlight: 4);
 
   @override
   void initState() {
     super.initState();
-    _loadWindows();
+    _load();
   }
 
-  Future<void> _loadWindows() async {
+  Future<void> _load() async {
     setState(() {
-      _isLoading = true;
+      _loading = true;
       _error = null;
+      _permissionDenied = false;
     });
-
     try {
-      final windows = await ScreenRecorderPlatform.instance.getAvailableWindows();
+      final result = await ScreenRecorderPlatform.instance
+          .listSources(strictFilter: _strictFilter);
+      if (!mounted) return;
       setState(() {
-        _windows = windows;
-        _isLoading = false;
+        _sources = result;
+        _loading = false;
+      });
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _permissionDenied =
+            e.message?.toLowerCase().contains('permission') ?? false;
+        _error = _permissionDenied ? null : (e.message ?? e.code);
+        _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
-        _isLoading = false;
+        _loading = false;
       });
     }
   }
 
+  Future<void> _refresh() async {
+    _cache.clear();
+    await _load();
+  }
+
+  void _selectTab(_Tab tab) {
+    if (tab == _tab) return;
+    setState(() => _tab = tab);
+    ref.read(recordingControllerProvider.notifier)
+        .selectSource(kind: null, id: null);
+  }
+
+  void _toggleStrictFilter(bool value) {
+    setState(() => _strictFilter = value);
+    _refresh();
+  }
+
+  Future<Uint8List?> _fetchThumbnail(String id, RecordingSource kind) =>
+      ScreenRecorderPlatform.instance
+          .captureThumbnail(id, kind, maxDimension: 480);
+
   @override
   Widget build(BuildContext context) {
-    // Listen for recording completion and navigate to playback
-    ref.listen<RecordingState>(
-      recordingControllerProvider,
-      (previous, next) {
-        if (previous?.status != RecordingStatus.completed &&
-            next.status == RecordingStatus.completed &&
-            next.videoPath != null) {
-          // Navigate to playback screen
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => PlaybackScreen(videoPath: next.videoPath!),
-            ),
-          );
-        }
-      },
-    );
+    ref.listen<RecordingState>(recordingControllerProvider, (previous, next) {
+      if (previous?.status != RecordingStatus.completed &&
+          next.status == RecordingStatus.completed &&
+          next.videoPath != null) {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => PlaybackScreen(videoPath: next.videoPath!),
+        ));
+      }
+    });
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E2E),
       appBar: AppBar(
-        title: const Text(
-          'ScreenFlow Studio',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        title: const Text('ScreenFlow Studio',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
         backgroundColor: const Color(0xFF2B2B3D),
         elevation: 0,
         actions: [
+          if (_tab == _Tab.windows)
+            IconButton(
+              tooltip: 'Show all windows',
+              icon: Icon(
+                  _strictFilter ? Icons.visibility_off : Icons.visibility),
+              onPressed: () => _toggleStrictFilter(!_strictFilter),
+            ),
           IconButton(
+            tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
-            onPressed: _loadWindows,
-            tooltip: 'Refresh windows',
+            onPressed: _refresh,
           ),
         ],
       ),
       body: Column(
         children: [
-          // Window selection area
-          Expanded(
-            child: _buildWindowGrid(),
-          ),
-
-          // Recording controls
-          _buildRecordingControls(),
+          _buildSegmentedControl(),
+          Expanded(child: _buildBody()),
+          _buildBottomBar(),
         ],
       ),
     );
   }
 
-  Widget _buildWindowGrid() {
-    if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: Color(0xFF6C63FF),
-        ),
-      );
-    }
+  Widget _buildSegmentedControl() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: SegmentedButton<_Tab>(
+        segments: const [
+          ButtonSegment(
+              value: _Tab.windows,
+              label: Text('Windows'),
+              icon: Icon(Icons.window)),
+          ButtonSegment(
+              value: _Tab.screens,
+              label: Text('Screens'),
+              icon: Icon(Icons.desktop_windows)),
+        ],
+        selected: {_tab},
+        onSelectionChanged: (s) => _selectTab(s.first),
+      ),
+    );
+  }
 
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(
+          child: CircularProgressIndicator(color: Color(0xFF6C63FF)));
+    }
+    if (_permissionDenied) return PermissionCta(onRetry: _refresh);
     if (_error != null) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Error loading windows',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _error!,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _loadWindows,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6C63FF),
-              ),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child:
+              Text(_error!, style: const TextStyle(color: Colors.redAccent)),
         ),
       );
     }
-
-    if (_windows.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.window_outlined,
-              size: 64,
-              color: Colors.white38,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'No windows available',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Open some applications to record',
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _loadWindows,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refresh'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6C63FF),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(24),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 300,
-        childAspectRatio: 16 / 10,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-      ),
-      itemCount: _windows.length,
-      itemBuilder: (context, index) {
-        final window = _windows[index];
-        final isSelected = _selectedWindowId == window.id;
-
-        return _WindowThumbnail(
-          window: window,
-          isSelected: isSelected,
-          onTap: () {
-            // Unfocus any text fields
-            FocusScope.of(context).unfocus();
-            setState(() {
-              _selectedWindowId = window.id;
-            });
-          },
-        );
-      },
+    final items =
+        _tab == _Tab.windows ? _windowItems() : _screenItems();
+    if (items.isEmpty) return _buildEmptyState();
+    final state = ref.watch(recordingControllerProvider);
+    return SourceGrid(
+      items: items,
+      cache: _cache,
+      loader: _loader,
+      fetcher: _fetchThumbnail,
+      selectedId: state.selectedSourceId,
+      onSelect: (item) => ref
+          .read(recordingControllerProvider.notifier)
+          .selectSource(kind: item.kind, id: item.id),
     );
   }
 
-  Widget _buildRecordingControls() {
-    return Consumer(
-      builder: (context, ref, child) {
-        final recordingState = ref.watch(recordingControllerProvider);
-        final formattedDuration = ref.watch(formattedDurationProvider);
+  List<SourceGridItem> _windowItems() => _sources.windows
+      .map((w) => SourceGridItem(
+            id: w.id,
+            kind: RecordingSource.window,
+            title: w.title,
+            subtitle: w.ownerName,
+            fallbackIcon: Icons.window,
+          ))
+      .toList();
 
-        // Update controller's selected window when user selects
-        if (_selectedWindowId != null &&
-            recordingState.selectedWindowId != _selectedWindowId) {
-          Future.microtask(() {
-            ref
-                .read(recordingControllerProvider.notifier)
-                .selectWindow(_selectedWindowId);
-          });
-        }
+  List<SourceGridItem> _screenItems() => _sources.screens
+      .map((s) => SourceGridItem(
+            id: s.id,
+            kind: RecordingSource.screen,
+            title: s.name,
+            subtitle:
+                '${s.width} × ${s.height}${s.isPrimary ? ' · Main' : ''}',
+            fallbackIcon: Icons.desktop_windows,
+          ))
+      .toList();
 
-        return Container(
-          padding: const EdgeInsets.all(24),
-          decoration: const BoxDecoration(
-            color: Color(0xFF2B2B3D),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 8,
-                offset: Offset(0, -2),
+  Widget _buildEmptyState() {
+    if (_tab == _Tab.windows) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.window_outlined,
+                  size: 48, color: Colors.white38),
+              const SizedBox(height: 16),
+              Text(
+                _strictFilter
+                    ? 'No app windows detected. Open a window you want to record, then tap refresh.'
+                    : 'No windows available. Tap refresh.',
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
-          child: Column(
-            children: [
-              if (recordingState.isRecording) ...[
-                // Recording timer
-                Text(
-                  formattedDuration,
-                  style: const TextStyle(
-                    color: Color(0xFF6C63FF),
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '${(recordingState.duration.inMilliseconds * 60 / 1000).round()} frames (est.)',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.red, width: 1),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.mic,
-                            size: 14,
-                            color: Colors.red,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Audio',
-                            style: TextStyle(
-                              color: Colors.red,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ] else if (_selectedWindowId != null) ...[
-                Text(
-                  _windows.firstWhere((w) => w.id == _selectedWindowId).title,
-                  style: const TextStyle(
+        ),
+      );
+    }
+    return const Center(
+      child:
+          Text('No displays found.', style: TextStyle(color: Colors.white70)),
+    );
+  }
+
+  Widget _buildBottomBar() {
+    final state = ref.watch(recordingControllerProvider);
+    final title = _selectedTitle(state);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        color: Color(0xFF2B2B3D),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black26, blurRadius: 8, offset: Offset(0, -2))
+        ],
+      ),
+      child: Column(
+        children: [
+          if (title != null)
+            Text(title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 16),
-              ],
-              const _RecordButton(),
-
-              // Show error if any
-              if (recordingState.status == RecordingStatus.error &&
-                  recordingState.error != null) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error, color: Colors.red, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          recordingState.error!,
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // Show processing indicator
-              if (recordingState.isProcessing) ...[
-                const SizedBox(height: 16),
-                const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFF6C63FF),
-                      ),
-                    ),
-                    SizedBox(width: 12),
-                    Text(
-                      'Saving recording...',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _WindowThumbnail extends StatelessWidget {
-  final WindowInfo window;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _WindowThumbnail({
-    required this.window,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        decoration: BoxDecoration(
-          color: const Color(0xFF363649),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF6C63FF) : Colors.transparent,
-            width: 3,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF6C63FF).withValues(alpha: 0.5),
-                    blurRadius: 12,
-                    spreadRadius: 2,
-                  ),
-                ]
-              : null,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Thumbnail placeholder
-            Expanded(
-              child: Container(
-                margin: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2B2B3D),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.window,
-                    size: 48,
-                    color: Colors.white.withValues(alpha: 0.3),
-                  ),
-                ),
-              ),
-            ),
-
-            // Window info
-            Container(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    window.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    window.ownerName,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
-                      fontSize: 12,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+                    fontWeight: FontWeight.w500))
+          else
+            const Text('Pick a window or screen above',
+                style: TextStyle(color: Colors.white38)),
+          const SizedBox(height: 12),
+          _RecordButton(
+              enabled: state.selectedSourceId != null &&
+                  state.canStartRecording),
+        ],
       ),
     );
+  }
+
+  String? _selectedTitle(RecordingState s) {
+    final id = s.selectedSourceId;
+    if (id == null) return null;
+    if (s.selectedSourceKind == RecordingSource.window) {
+      for (final w in _sources.windows) {
+        if (w.id == id) return w.title;
+      }
+      return null;
+    }
+    for (final scr in _sources.screens) {
+      if (scr.id == id) return scr.name;
+    }
+    return null;
   }
 }
 
 class _RecordButton extends ConsumerWidget {
-  const _RecordButton();
+  const _RecordButton({required this.enabled});
+  final bool enabled;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final recordingState = ref.watch(recordingControllerProvider);
-    final controller = ref.read(recordingControllerProvider.notifier);
-
-    final isEnabled = recordingState.selectedWindowId != null &&
-        (recordingState.canStartRecording || recordingState.isRecording);
-
-    final isRecording = recordingState.isRecording;
-    final isProcessing = recordingState.isProcessing;
-
-    return GestureDetector(
-      onTap: isEnabled && !isProcessing
-          ? () async {
-              if (isRecording) {
-                await controller.stopRecording();
-                // Navigation to playback happens via ref.listen in RecordingScreen
-              } else {
-                await controller.startRecording();
-              }
-            }
-          : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 80,
-        height: 80,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isEnabled
-              ? (isRecording ? const Color(0xFF6C63FF) : Colors.red)
-              : Colors.grey,
-          boxShadow: isEnabled && !isProcessing
-              ? [
-                  BoxShadow(
-                    color: (isRecording
-                            ? const Color(0xFF6C63FF)
-                            : Colors.red)
-                        .withValues(alpha: 0.5),
-                    blurRadius: 16,
-                    spreadRadius: 4,
-                  ),
-                ]
-              : null,
-        ),
-        child: Icon(
-          isRecording ? Icons.stop : Icons.fiber_manual_record,
-          color: Colors.white,
-          size: 40,
-        ),
-      ),
+    final state = ref.watch(recordingControllerProvider);
+    final notifier = ref.read(recordingControllerProvider.notifier);
+    if (state.isRecording) {
+      return FilledButton.icon(
+        onPressed: notifier.stopRecording,
+        icon: const Icon(Icons.stop),
+        label: const Text('Stop'),
+      );
+    }
+    return FilledButton.icon(
+      onPressed: enabled ? notifier.startRecording : null,
+      icon: const Icon(Icons.fiber_manual_record),
+      label: const Text('Record'),
     );
   }
 }
