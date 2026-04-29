@@ -7,7 +7,7 @@ final class ThumbnailCaptureTests: XCTestCase {
     var pickedModern = false
     var pickedLegacyWindow = false
     var pickedLegacyDisplay = false
-    let result = try? await ThumbnailCapture.capture(
+    let result = try await ThumbnailCapture.capture(
       sourceId: "1",
       kind: .window,
       maxDimension: 240,

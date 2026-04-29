@@ -60,7 +60,7 @@ enum ThumbnailCapture {
 
   // MARK: - Default capture implementations
 
-  private static let defaultModernCapture: (String, ThumbnailKind, Int, Int) async throws -> Data = { sourceId, kind, maxW, maxH in
+  private static let defaultModernCapture: (String, ThumbnailKind, Int, Int) async throws -> Data = { sourceId, kind, maxW, _ in
     if #available(macOS 14.0, *) {
       let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
       let filter: SCContentFilter
