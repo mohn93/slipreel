@@ -490,15 +490,17 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       }
     }
   }
+
   // MARK: - Source picker
 
   private func listSources(call: FlutterMethodCall, result: @escaping FlutterResult) {
-    guard let args = call.arguments as? [String: Any] else {
+    guard call.arguments == nil || call.arguments is [String: Any] else {
       result(FlutterError(code: "INVALID_ARGUMENTS",
-                          message: "listSources requires a map argument",
+                          message: "listSources argument must be a map",
                           details: nil))
       return
     }
+    let args = call.arguments as? [String: Any] ?? [:]
     let strict = args["strictFilter"] as? Bool ?? true
     Task {
       do {
@@ -520,6 +522,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           let maxDim = args["maxDimension"] as? Int else {
       result(FlutterError(code: "INVALID_ARGUMENTS",
                           message: "captureThumbnail requires { id, kind, maxDimension }",
+                          details: nil))
+      return
+    }
+    guard maxDim > 0, maxDim <= 2048 else {
+      result(FlutterError(code: "INVALID_ARGUMENTS",
+                          message: "maxDimension must be between 1 and 2048",
                           details: nil))
       return
     }
