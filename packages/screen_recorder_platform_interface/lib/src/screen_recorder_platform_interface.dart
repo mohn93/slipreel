@@ -63,6 +63,9 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
     RecordingSource kind, {
     int maxDimension = 480,
   }) {
+    if (kind != RecordingSource.window && kind != RecordingSource.screen) {
+      throw ArgumentError('captureThumbnail kind must be window or screen, got $kind');
+    }
     throw UnimplementedError('captureThumbnail() has not been implemented.');
   }
 

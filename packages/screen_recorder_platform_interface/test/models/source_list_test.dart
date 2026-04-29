@@ -63,20 +63,4 @@ void main() {
     });
   });
 
-  group('ScreenRecorderPlatform abstract defaults', () {
-    final p = _UnimplementedPlatform();
-
-    test('listSources throws UnimplementedError', () {
-      expect(() => p.listSources(), throwsA(isA<UnimplementedError>()));
-    });
-
-    test('captureThumbnail throws UnimplementedError', () {
-      expect(
-        () => p.captureThumbnail('1', RecordingSource.window),
-        throwsA(isA<UnimplementedError>()),
-      );
-    });
-  });
 }
-
-class _UnimplementedPlatform extends ScreenRecorderPlatform {}

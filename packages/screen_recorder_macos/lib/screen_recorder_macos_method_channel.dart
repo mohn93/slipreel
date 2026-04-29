@@ -168,9 +168,6 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
     RecordingSource kind, {
     int maxDimension = 480,
   }) async {
-    if (kind != RecordingSource.window && kind != RecordingSource.screen) {
-      throw ArgumentError('captureThumbnail kind must be window or screen, got $kind');
-    }
     final result = await _recordingChannel.invokeMethod<Uint8List>(
       ScreenRecorderMethods.captureThumbnail,
       {
