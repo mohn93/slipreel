@@ -431,3 +431,13 @@ _________________________________________________
 _________________________________________________
 _________________________________________________
 _________________________________________________
+
+## Source Picker Redesign (2026-04-28)
+
+- [ ] Picker open → first thumbnails visible within ~1.5s on a Mac with ~20 windows.
+- [ ] Switch to Screens, see all physical displays with correct resolutions, "Main" badge on primary.
+- [ ] Refresh re-captures (visually verify a stale thumbnail updates after scrolling content in the source).
+- [ ] Select window → record → stop → playback shows what you recorded.
+- [ ] Select screen → record → stop → playback covers full display.
+- [ ] Toggle "Show all" — utility windows appear.
+- [ ] First-launch permission flow: revoke Screen Recording in System Settings, re-launch, see CTA, grant, refresh works.
