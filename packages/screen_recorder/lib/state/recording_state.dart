@@ -19,6 +19,7 @@ class RecordingState {
   final String? error;
   final String? selectedSourceId;
   final RecordingSource? selectedSourceKind;
+  final RegionSelection? selectedRegion;
 
   const RecordingState({
     this.status = RecordingStatus.idle,
@@ -28,6 +29,7 @@ class RecordingState {
     this.error,
     this.selectedSourceId,
     this.selectedSourceKind,
+    this.selectedRegion,
   });
 
   RecordingState copyWith({
@@ -38,6 +40,7 @@ class RecordingState {
     String? error,
     String? selectedSourceId,
     RecordingSource? selectedSourceKind,
+    RegionSelection? selectedRegion,
     bool clearSelection = false,
   }) {
     return RecordingState(
@@ -51,6 +54,8 @@ class RecordingState {
       selectedSourceKind: clearSelection
           ? null
           : (selectedSourceKind ?? this.selectedSourceKind),
+      selectedRegion:
+          clearSelection ? null : (selectedRegion ?? this.selectedRegion),
     );
   }
 
@@ -73,12 +78,20 @@ class RecordingController extends StateNotifier<RecordingState> {
   static const int _defaultWidth = 1920;
   static const int _defaultHeight = 1080;
 
-  void selectSource({required RecordingSource? kind, required String? id}) {
+  void selectSource({
+    required RecordingSource? kind,
+    required String? id,
+    RegionSelection? region,
+  }) {
     if (kind == null && id == null) {
       state = state.copyWith(clearSelection: true);
       return;
     }
-    state = state.copyWith(selectedSourceId: id, selectedSourceKind: kind);
+    state = state.copyWith(
+      selectedSourceId: id,
+      selectedSourceKind: kind,
+      selectedRegion: region,
+    );
   }
 
   Future<void> startRecording() async {
@@ -111,6 +124,7 @@ class RecordingController extends StateNotifier<RecordingState> {
         outputPath: outputPath,
         width: _defaultWidth,
         height: _defaultHeight,
+        region: state.selectedRegion,
       );
 
       _cursorRecording = CursorRecording();

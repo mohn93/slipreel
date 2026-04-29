@@ -21,6 +21,7 @@ class VideoEncoder {
     required String outputPath,
     required int width,
     required int height,
+    RegionSelection? region,
   }) async {
     _outputPath = outputPath;
     _width = width;
@@ -31,6 +32,7 @@ class VideoEncoder {
       outputPath: outputPath,
       width: width,
       height: height,
+      region: region,
     );
     _isActive = true;
     AppLogger.videoEncoder.i('Live recording started: ${_width}x$_height @ ${_fps}fps -> $_outputPath');
