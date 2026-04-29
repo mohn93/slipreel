@@ -3,19 +3,19 @@ import 'dart:collection';
 
 /// Runs async tasks with a global maximum-in-flight cap. Tasks queue FIFO and
 /// start as slots free up.
-class ConcurrentLoader<T> {
+class ConcurrentLoader {
   ConcurrentLoader({required this.maxInFlight}) : assert(maxInFlight > 0);
 
   final int maxInFlight;
   int _inFlight = 0;
-  final Queue<_Pending<T>> _queue = Queue();
+  final Queue<_Pending> _queue = Queue();
 
   Future<R> run<R>(Future<R> Function() task) {
     final completer = Completer<R>();
-    _queue.add(_Pending<T>(() async {
+    _queue.add(_Pending(() async {
       try {
         final result = await task();
-        completer.complete(result as R);
+        completer.complete(result);
       } catch (e, st) {
         completer.completeError(e, st);
       }
@@ -36,7 +36,7 @@ class ConcurrentLoader<T> {
   }
 }
 
-class _Pending<T> {
+class _Pending {
   _Pending(this.run);
   final Future<void> Function() run;
 }

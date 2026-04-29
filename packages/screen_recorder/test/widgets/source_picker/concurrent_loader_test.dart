@@ -4,7 +4,7 @@ import 'package:screen_recorder/ui/widgets/source_picker/concurrent_loader.dart'
 
 void main() {
   test('never exceeds maxInFlight, all complete', () async {
-    final loader = ConcurrentLoader<int>(maxInFlight: 4);
+    final loader = ConcurrentLoader(maxInFlight: 4);
     int inFlight = 0;
     int peak = 0;
     final completers = <Completer<int>>[];
@@ -36,7 +36,7 @@ void main() {
   });
 
   test('forwards errors to caller', () async {
-    final loader = ConcurrentLoader<int>(maxInFlight: 1);
+    final loader = ConcurrentLoader(maxInFlight: 1);
     expect(
       loader.run<int>(() async => throw StateError('boom')),
       throwsA(isA<StateError>()),

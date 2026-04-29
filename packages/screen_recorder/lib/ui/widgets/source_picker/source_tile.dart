@@ -44,9 +44,12 @@ class SourceTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: _buildThumbnail(),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: _buildThumbnail(),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
