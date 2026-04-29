@@ -17,7 +17,8 @@ class RecordingState {
   final Duration duration;
   final String? videoPath;
   final String? error;
-  final String? selectedWindowId;
+  final String? selectedSourceId;
+  final RecordingSource? selectedSourceKind;
 
   const RecordingState({
     this.status = RecordingStatus.idle,
@@ -25,7 +26,8 @@ class RecordingState {
     this.duration = Duration.zero,
     this.videoPath,
     this.error,
-    this.selectedWindowId,
+    this.selectedSourceId,
+    this.selectedSourceKind,
   });
 
   RecordingState copyWith({
@@ -34,7 +36,9 @@ class RecordingState {
     Duration? duration,
     String? videoPath,
     String? error,
-    String? selectedWindowId,
+    String? selectedSourceId,
+    RecordingSource? selectedSourceKind,
+    bool clearSelection = false,
   }) {
     return RecordingState(
       status: status ?? this.status,
@@ -42,7 +46,11 @@ class RecordingState {
       duration: duration ?? this.duration,
       videoPath: videoPath ?? this.videoPath,
       error: error,
-      selectedWindowId: selectedWindowId ?? this.selectedWindowId,
+      selectedSourceId:
+          clearSelection ? null : (selectedSourceId ?? this.selectedSourceId),
+      selectedSourceKind: clearSelection
+          ? null
+          : (selectedSourceKind ?? this.selectedSourceKind),
     );
   }
 
@@ -65,12 +73,18 @@ class RecordingController extends StateNotifier<RecordingState> {
   static const int _defaultWidth = 1920;
   static const int _defaultHeight = 1080;
 
-  void selectWindow(String? windowId) {
-    state = state.copyWith(selectedWindowId: windowId);
+  void selectSource({required RecordingSource? kind, required String? id}) {
+    if (kind == null && id == null) {
+      state = state.copyWith(clearSelection: true);
+      return;
+    }
+    state = state.copyWith(selectedSourceId: id, selectedSourceKind: kind);
   }
 
   Future<void> startRecording() async {
-    if (!state.canStartRecording || state.selectedWindowId == null) return;
+    if (!state.canStartRecording ||
+        state.selectedSourceId == null ||
+        state.selectedSourceKind == null) return;
     try {
       state = state.copyWith(
         status: RecordingStatus.recording,
@@ -85,8 +99,8 @@ class RecordingController extends StateNotifier<RecordingState> {
       final outputPath = '${docsDir.path}/recording_$ts.mp4';
 
       final settings = RecordingSettings(
-        source: RecordingSource.window,
-        sourceId: state.selectedWindowId,
+        source: state.selectedSourceKind!,
+        sourceId: state.selectedSourceId,
         frameRate: _defaultFps,
         captureAudio: true,
         captureCursor: true,
