@@ -42,6 +42,17 @@ final class RegionSelectorView: NSView {
     onStateChange?(machine.state)
   }
 
+  func triggerStart() {
+    machine.handle(.startPressed)
+    needsDisplay = true
+    onStateChange?(machine.state)
+  }
+
+  func resetMachine() {
+    machine = RegionSelectorMachine(displayBounds: CGRect(origin: .zero, size: frame.size))
+    needsDisplay = true
+  }
+
   override func keyDown(with event: NSEvent) {
     if event.keyCode == 53 { // Esc
       machine.handle(.escapePressed)
