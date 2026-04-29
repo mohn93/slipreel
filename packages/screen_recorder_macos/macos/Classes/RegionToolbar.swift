@@ -45,12 +45,22 @@ final class RegionToolbar {
     window.contentView = host
   }
 
-  func show(in displayBounds: CGRect, anchoredTo rect: CGRect) {
+  /// Anchor the toolbar near the user's rect on a specific screen.
+  /// `displayBounds` and `rect` are in the screen's local top-left-origin
+  /// coordinate space (matching the state machine's convention).
+  /// `screenOrigin` is the screen's global frame origin in AppKit's
+  /// bottom-left-origin coordinate space — needed to place the panel on the
+  /// correct display in a multi-display setup.
+  func show(in displayBounds: CGRect, anchoredTo rect: CGRect, screenOrigin: NSPoint) {
     let p = RegionToolbarPosition.positionFor(
       rect: rect, displayBounds: displayBounds,
       toolbarSize: Self.toolbarSize, gap: 8)
-    let flippedY = displayBounds.maxY - p.y - Self.toolbarSize.height
-    window.setFrameOrigin(NSPoint(x: p.x + displayBounds.minX, y: flippedY + displayBounds.minY))
+    // Convert from top-left-origin (state-machine convention) to AppKit's
+    // bottom-left-origin global display coords for setFrameOrigin.
+    let flippedY = displayBounds.height - p.y - Self.toolbarSize.height
+    window.setFrameOrigin(NSPoint(
+      x: p.x + screenOrigin.x,
+      y: flippedY + screenOrigin.y))
     window.orderFrontRegardless()
   }
 
