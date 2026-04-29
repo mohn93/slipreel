@@ -8,6 +8,7 @@ import 'models/cursor_position.dart';
 import 'models/frame_data.dart';
 import 'models/recording_result.dart';
 import 'models/recording_settings.dart';
+import 'models/region_selection.dart';
 import 'models/screen_info.dart';
 import 'models/source_list.dart';
 import 'models/window_info.dart';
@@ -125,6 +126,12 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
     throw UnimplementedError('cursorStream has not been implemented.');
   }
 
+  /// Show a full-screen overlay for region selection. Returns the chosen
+  /// region in display-pixel coordinates, or null if the user cancelled.
+  Future<RegionSelection?> selectRegion() {
+    throw UnsupportedError('selectRegion() is not supported on this platform.');
+  }
+
   /// Start a live HW-encoded recording. Writes a complete MP4 directly to
   /// [outputPath] during capture (no raw-frame spool). Throws
   /// `UnsupportedError` on platforms that don't support the live path.
@@ -133,6 +140,7 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
     required String outputPath,
     required int width,
     required int height,
+    RegionSelection? region,
   }) {
     throw UnsupportedError(
       'startLiveRecording() is not supported on this platform; '
