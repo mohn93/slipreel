@@ -8,6 +8,7 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import '../../state/recording_state.dart';
 import '../widgets/source_picker/concurrent_loader.dart';
 import '../widgets/source_picker/permission_cta.dart';
+import '../widgets/source_picker/region_tab_content.dart';
 import '../widgets/source_picker/source_grid.dart';
 import '../widgets/source_picker/thumbnail_cache.dart';
 import 'playback_screen.dart';
@@ -19,11 +20,12 @@ class RecordingScreen extends ConsumerStatefulWidget {
   ConsumerState<RecordingScreen> createState() => _RecordingScreenState();
 }
 
-enum _Tab { windows, screens }
+enum _Tab { windows, screens, region }
 
 class _RecordingScreenState extends ConsumerState<RecordingScreen> {
   _Tab _tab = _Tab.windows;
   bool _strictFilter = true;
+  bool _drawingRegion = false;
   bool _loading = true;
   bool _permissionDenied = false;
   String? _error;
@@ -84,6 +86,23 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
   Future<void> _toggleStrictFilter(bool value) async {
     setState(() => _strictFilter = value);
     await _refresh();
+  }
+
+  Future<void> _drawRegion() async {
+    setState(() => _drawingRegion = true);
+    try {
+      final region = await ScreenRecorderPlatform.instance.selectRegion();
+      if (!mounted) return;
+      if (region != null) {
+        ref.read(recordingControllerProvider.notifier).selectSource(
+              kind: RecordingSource.area,
+              id: region.displayId,
+              region: region,
+            );
+      }
+    } finally {
+      if (mounted) setState(() => _drawingRegion = false);
+    }
   }
 
   Future<Uint8List?> _fetchThumbnail(String id, RecordingSource kind) =>
@@ -147,6 +166,10 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
               value: _Tab.screens,
               label: Text('Screens'),
               icon: Icon(Icons.desktop_windows)),
+          ButtonSegment(
+              value: _Tab.region,
+              label: Text('Region'),
+              icon: Icon(Icons.crop)),
         ],
         selected: {_tab},
         onSelectionChanged: (s) => _selectTab(s.first),
@@ -167,6 +190,24 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
           child:
               Text(_error!, style: const TextStyle(color: Colors.redAccent)),
         ),
+      );
+    }
+    if (_tab == _Tab.region) {
+      final state = ref.watch(recordingControllerProvider);
+      String? displayName;
+      if (state.selectedRegion != null) {
+        for (final s in _sources.screens) {
+          if (s.id == state.selectedRegion!.displayId) {
+            displayName = s.name;
+            break;
+          }
+        }
+      }
+      return RegionTabContent(
+        selection: state.selectedRegion,
+        displayName: displayName,
+        isDrawing: _drawingRegion,
+        onDraw: _drawRegion,
       );
     }
     final items =
@@ -279,8 +320,19 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       }
       return null;
     }
-    for (final scr in _sources.screens) {
-      if (scr.id == id) return scr.name;
+    if (s.selectedSourceKind == RecordingSource.screen) {
+      for (final scr in _sources.screens) {
+        if (scr.id == id) return scr.name;
+      }
+      return null;
+    }
+    if (s.selectedSourceKind == RecordingSource.area && s.selectedRegion != null) {
+      final r = s.selectedRegion!;
+      String? screenName;
+      for (final scr in _sources.screens) {
+        if (scr.id == r.displayId) { screenName = scr.name; break; }
+      }
+      return 'Region ${r.widthPx}×${r.heightPx} on ${screenName ?? 'Display ${r.displayId}'}';
     }
     return null;
   }
