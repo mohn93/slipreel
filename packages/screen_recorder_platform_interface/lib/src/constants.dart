@@ -28,4 +28,5 @@ class ScreenRecorderMethods {
   static const String stopLiveRecording = 'stopLiveRecording';
   static const String listSources = 'listSources';
   static const String captureThumbnail = 'captureThumbnail';
+  static const String selectRegion = 'selectRegion';
 }
