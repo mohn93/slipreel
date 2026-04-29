@@ -58,6 +58,9 @@ dependencies:
   # Logging
   logger: ^2.5.0
 
+  # Deep-link to system settings for permission prompts
+  url_launcher: ^6.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

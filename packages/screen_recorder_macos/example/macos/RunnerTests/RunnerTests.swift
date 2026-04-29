@@ -2,27 +2,50 @@ import Cocoa
 import FlutterMacOS
 import XCTest
 
-
 @testable import screen_recorder_macos
 
-// This demonstrates a simple unit test of the Swift portion of this plugin's implementation.
-//
-// See https://developer.apple.com/documentation/xctest for more information about using XCTest.
-
 class RunnerTests: XCTestCase {
-
-  func testGetPlatformVersion() {
+  func testPluginInstantiates() {
     let plugin = ScreenRecorderMacosPlugin()
+    XCTAssertNotNil(plugin)
+  }
 
-    let call = FlutterMethodCall(methodName: "getPlatformVersion", arguments: [])
-
-    let resultExpectation = expectation(description: "result block must be called.")
+  func testListSourcesRejectsBadArgs() {
+    let plugin = ScreenRecorderMacosPlugin()
+    let call = FlutterMethodCall(methodName: "listSources", arguments: "not a dict")
+    let exp = expectation(description: "result")
     plugin.handle(call) { result in
-      XCTAssertEqual(result as! String,
-                     "macOS " + ProcessInfo.processInfo.operatingSystemVersionString)
-      resultExpectation.fulfill()
+      let err = result as? FlutterError
+      XCTAssertEqual(err?.code, "INVALID_ARGUMENTS")
+      exp.fulfill()
     }
     waitForExpectations(timeout: 1)
   }
 
+  func testCaptureThumbnailRejectsBadArgs() {
+    let plugin = ScreenRecorderMacosPlugin()
+    let call = FlutterMethodCall(methodName: "captureThumbnail", arguments: ["id": "1"])
+    let exp = expectation(description: "result")
+    plugin.handle(call) { result in
+      let err = result as? FlutterError
+      XCTAssertEqual(err?.code, "INVALID_ARGUMENTS")
+      exp.fulfill()
+    }
+    waitForExpectations(timeout: 1)
+  }
+
+  func testCaptureThumbnailRejectsBadKind() {
+    let plugin = ScreenRecorderMacosPlugin()
+    let call = FlutterMethodCall(
+      methodName: "captureThumbnail",
+      arguments: ["id": "1", "kind": "potato", "maxDimension": 240]
+    )
+    let exp = expectation(description: "result")
+    plugin.handle(call) { result in
+      let err = result as? FlutterError
+      XCTAssertEqual(err?.code, "INVALID_ARGUMENTS")
+      exp.fulfill()
+    }
+    waitForExpectations(timeout: 1)
+  }
 }

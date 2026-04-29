@@ -151,4 +151,34 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
     }
     return RecordingResult.fromMap(raw);
   }
+
+  @override
+  Future<SourceList> listSources({bool strictFilter = true}) async {
+    final raw = await _recordingChannel.invokeMapMethod<String, dynamic>(
+      ScreenRecorderMethods.listSources,
+      {'strictFilter': strictFilter},
+    );
+    if (raw == null) return const SourceList();
+    return SourceList.fromMap(raw);
+  }
+
+  @override
+  Future<Uint8List?> captureThumbnail(
+    String id,
+    RecordingSource kind, {
+    int maxDimension = 480,
+  }) async {
+    if (kind != RecordingSource.window && kind != RecordingSource.screen) {
+      throw ArgumentError('captureThumbnail kind must be window or screen, got $kind');
+    }
+    final result = await _recordingChannel.invokeMethod<Uint8List>(
+      ScreenRecorderMethods.captureThumbnail,
+      {
+        'id': id,
+        'kind': kind.name,
+        'maxDimension': maxDimension,
+      },
+    );
+    return result;
+  }
 }
