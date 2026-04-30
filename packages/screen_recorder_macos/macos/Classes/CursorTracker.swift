@@ -25,14 +25,24 @@ class CursorTracker: NSObject {
       throw CursorTrackerError.alreadyTracking
     }
 
-    // Set up position sampling timer
+    // Set up position sampling timer. We explicitly schedule on the main
+    // runloop because startTracking can be called from a Task whose
+    // executor is a background queue — Timer.scheduledTimer in that
+    // context schedules on the background runloop, which never pumps,
+    // and the timer fires exactly zero times. Adding to .main with
+    // .common keeps it firing during scroll/drag too.
     let interval = 1.0 / Double(frequency)
-    positionTimer = Timer.scheduledTimer(
-      withTimeInterval: interval,
+    let timer = Timer(
+      timeInterval: interval,
       repeats: true
     ) { [weak self] _ in
       self?.captureCurrentPosition()
     }
+    RunLoop.main.add(timer, forMode: .common)
+    positionTimer = timer
+    // Capture an initial position immediately so the first frame of
+    // recording always has a sample, regardless of when the timer fires.
+    captureCurrentPosition()
 
     // Set up global event monitor for clicks (when app is not focused)
     globalMonitor = NSEvent.addGlobalMonitorForEvents(
