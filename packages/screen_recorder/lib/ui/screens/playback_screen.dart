@@ -171,15 +171,6 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     });
   }
 
-  void _deleteSelectedZoom() {
-    if (_selectedZoomIndex != null) {
-      setState(() {
-        _zoomRegions = List.from(_zoomRegions)..removeAt(_selectedZoomIndex!);
-        _selectedZoomIndex = null;
-      });
-    }
-  }
-
   void _checkZoomMarkerClick(Duration position) {
     // Find zoom region near clicked position (within 0.5 seconds).
     const tolerance = Duration(milliseconds: 500);
@@ -576,26 +567,23 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                     _zoomRegions = list;
                   });
                 },
+                onZoomDeleted: (index) {
+                  setState(() {
+                    final list = List<ZoomRegion>.from(_zoomRegions)
+                      ..removeAt(index);
+                    _zoomRegions = list;
+                    if (_selectedZoomIndex == index) {
+                      _selectedZoomIndex = null;
+                    } else if (_selectedZoomIndex != null &&
+                        _selectedZoomIndex! > index) {
+                      _selectedZoomIndex = _selectedZoomIndex! - 1;
+                    }
+                  });
+                },
               );
             },
           ),
 
-          // Selected zoom delete affordance.
-          if (_selectedZoomIndex != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  onPressed: _deleteSelectedZoom,
-                  icon: const Icon(Icons.delete_outline),
-                  color: Colors.white70,
-                  iconSize: 20,
-                  tooltip: 'Delete zoom',
-                ),
-              ],
-            ),
-          ],
 
           const SizedBox(height: 8),
 

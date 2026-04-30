@@ -56,6 +56,7 @@ class EditorTimeline extends StatelessWidget {
     this.selectedZoomIndex,
     this.onZoomChanged,
     this.onZoomSelected,
+    this.onZoomDeleted,
     this.playbackSpeedLabel = '1x',
   });
 
@@ -66,6 +67,7 @@ class EditorTimeline extends StatelessWidget {
   final int? selectedZoomIndex;
   final void Function(int index, ZoomRegion next)? onZoomChanged;
   final ValueChanged<int?>? onZoomSelected;
+  final ValueChanged<int>? onZoomDeleted;
   final String playbackSpeedLabel;
 
   @override
@@ -113,6 +115,7 @@ class EditorTimeline extends StatelessWidget {
                         selectedIndex: selectedZoomIndex,
                         onZoomChanged: onZoomChanged,
                         onZoomSelected: onZoomSelected,
+                        onZoomDeleted: onZoomDeleted,
                         onSeek: onSeek,
                       ),
                     ),
@@ -359,6 +362,7 @@ class _ZoomLane extends StatelessWidget {
     this.selectedIndex,
     this.onZoomChanged,
     this.onZoomSelected,
+    this.onZoomDeleted,
   });
 
   final Duration duration;
@@ -368,6 +372,7 @@ class _ZoomLane extends StatelessWidget {
   final int? selectedIndex;
   final void Function(int, ZoomRegion)? onZoomChanged;
   final ValueChanged<int?>? onZoomSelected;
+  final ValueChanged<int>? onZoomDeleted;
 
   @override
   Widget build(BuildContext context) {
@@ -395,6 +400,7 @@ class _ZoomLane extends StatelessWidget {
             neighbors: _neighborsOf(i),
             onChanged: onZoomChanged,
             onSelected: onZoomSelected,
+            onDeleted: onZoomDeleted,
             onSeek: onSeek,
           ),
       ],
@@ -431,6 +437,7 @@ class _ZoomPill extends StatefulWidget {
     required this.onSeek,
     this.onChanged,
     this.onSelected,
+    this.onDeleted,
   });
 
   final int index;
@@ -442,6 +449,7 @@ class _ZoomPill extends StatefulWidget {
   final ValueChanged<Duration> onSeek;
   final void Function(int, ZoomRegion)? onChanged;
   final ValueChanged<int?>? onSelected;
+  final ValueChanged<int>? onDeleted;
 
   @override
   State<_ZoomPill> createState() => _ZoomPillState();
@@ -456,6 +464,7 @@ class _ZoomPillState extends State<_ZoomPill> {
   // the running delta ourselves — onHorizontalDragUpdate.delta.dx is
   // per-frame, not cumulative.
   double _dxAccum = 0;
+  bool _hovered = false;
 
   double get _startX =>
       _timeToX(widget.zoom.startTime, widget.laneWidth, widget.duration);
@@ -555,31 +564,48 @@ class _ZoomPillState extends State<_ZoomPill> {
       height: _laneHeight - _zoomPillInset * 2,
       child: MouseRegion(
         cursor: cursor,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (d) {
-            widget.onSelected?.call(widget.index);
-            widget.onSeek(widget.zoom.startTime);
-          },
-          onHorizontalDragStart: (d) => _begin(d.localPosition),
-          onHorizontalDragUpdate: (d) => _update(d.delta.dx),
-          onHorizontalDragEnd: (_) {
-            _mode = _ZoomDragMode.none;
-            _dxAccum = 0;
-          },
-          onHorizontalDragCancel: () {
-            _mode = _ZoomDragMode.none;
-            _dxAccum = 0;
-          },
-          child: CustomPaint(
-            painter: _ZoomPillPainter(
-              fillTop: fillTop,
-              fill: fill,
-              stroke: stroke,
-              zoomLevel: widget.zoom.zoomLevel,
-              isSelected: widget.isSelected,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (d) {
+                  widget.onSelected?.call(widget.index);
+                  widget.onSeek(widget.zoom.startTime);
+                },
+                onHorizontalDragStart: (d) => _begin(d.localPosition),
+                onHorizontalDragUpdate: (d) => _update(d.delta.dx),
+                onHorizontalDragEnd: (_) {
+                  _mode = _ZoomDragMode.none;
+                  _dxAccum = 0;
+                },
+                onHorizontalDragCancel: () {
+                  _mode = _ZoomDragMode.none;
+                  _dxAccum = 0;
+                },
+                child: CustomPaint(
+                  painter: _ZoomPillPainter(
+                    fillTop: fillTop,
+                    fill: fill,
+                    stroke: stroke,
+                    zoomLevel: widget.zoom.zoomLevel,
+                    isSelected: widget.isSelected,
+                  ),
+                ),
+              ),
             ),
-          ),
+            if (_hovered && widget.onDeleted != null)
+              Positioned(
+                top: -6,
+                right: -6,
+                child: _ZoomDeleteButton(
+                  onPressed: () => widget.onDeleted!(widget.index),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -595,6 +621,41 @@ class _ZoomPillState extends State<_ZoomPill> {
       case _ZoomDragMode.none:
         return SystemMouseCursors.grab;
     }
+  }
+}
+
+class _ZoomDeleteButton extends StatelessWidget {
+  const _ZoomDeleteButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE5484D),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 1.2),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x66000000),
+                blurRadius: 4,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: const Icon(Icons.close, size: 12, color: Colors.white),
+        ),
+      ),
+    );
   }
 }
 
