@@ -445,6 +445,13 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           try audioCaptureManager?.startCapture(includeMicrophone: true, includeSystem: false)
         }
 
+        // liveStartTime must be set BEFORE cursor tracking begins so the
+        // cursor callback can rebase timestamps to video-relative time.
+        // Without this, cursor samples would carry mach_absolute_time
+        // values while playback queries are 0-based video time, and
+        // every lookup would clamp to the first sample.
+        self.liveStartTime = Date()
+
         if captureCursor {
           if cursorTracker == nil { cursorTracker = CursorTracker() }
           // Build the global-points → video-pixels mapping for this
@@ -457,11 +464,19 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
               sourceId: finalSourceId,
               region: regionSelection)
           }
-          cursorTracker?.onCursorUpdate = { [weak self] x, y, ts, isClicked in
+          cursorTracker?.onCursorUpdate = { [weak self] x, y, _, isClicked in
             guard let self = self else { return }
             let (px, py) = self.cursorTransform?(x, y) ?? (x, y)
+            // Rebase to video-relative microseconds so cursor timestamps
+            // align with VideoPlayerController.value.position at playback.
+            let videoMicros: Int64
+            if let start = self.liveStartTime {
+              videoMicros = Int64(Date().timeIntervalSince(start) * 1_000_000)
+            } else {
+              videoMicros = 0
+            }
             self.cursorStreamHandler?.sendCursorPosition(
-              x: px, y: py, timestamp: ts, isClicked: isClicked)
+              x: px, y: py, timestamp: videoMicros, isClicked: isClicked)
           }
           try cursorTracker?.startTracking(frequency: 60)
         }
@@ -472,7 +487,6 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         self.liveWriter = writer
         self.liveEncoder = encoder
         self.perfSampler = sampler
-        self.liveStartTime = Date()
         self.liveFrameCount = 0
         self.liveCaptureWidth = captureWidth
         self.liveCaptureHeight = captureHeight
