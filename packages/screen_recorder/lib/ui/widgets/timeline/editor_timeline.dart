@@ -562,11 +562,30 @@ class _ZoomPillState extends State<_ZoomPill> {
         return;
     }
 
+    final newDuration = nextEnd - nextStart;
+    // Scale the enter / exit ramps if the new region is shorter than
+    // the sum of their stored durations — otherwise the dividers visually
+    // cross and the model stores impossible state. We scale proportionally
+    // so the enter:exit ratio is preserved.
+    Duration newEnter = widget.zoom.enterDuration;
+    Duration newExit = widget.zoom.exitDuration;
+    final ramps = newEnter + newExit;
+    if (ramps > newDuration && ramps > Duration.zero) {
+      final factor =
+          newDuration.inMicroseconds / ramps.inMicroseconds;
+      final scaledEnterUs =
+          (newEnter.inMicroseconds * factor).round();
+      newEnter = Duration(microseconds: scaledEnterUs);
+      newExit = newDuration - newEnter;
+    }
+
     widget.onChanged!(
       widget.index,
       widget.zoom.copyWith(
         startTime: nextStart,
-        duration: nextEnd - nextStart,
+        duration: newDuration,
+        enterDuration: newEnter,
+        exitDuration: newExit,
       ),
     );
   }
@@ -1011,12 +1030,70 @@ class _ZoomPillPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final rect = Rect.fromLTWH(0, 0, size.width, size.height);
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(7));
-    final gradient = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [fillTop, fill],
-    );
-    canvas.drawRRect(rrect, Paint()..shader = gradient.createShader(rect));
+
+    // Three visually distinct phases — enter ramp / hold / exit ramp.
+    // The hold uses the full saturated fill; enter and exit are clearly
+    // de-saturated and faded on the outer edge so the user can read the
+    // shape of the zoom at a glance. We clip to the rounded rect so the
+    // segment seams align with the pill's outline.
+    canvas.save();
+    canvas.clipRRect(rrect);
+
+    final clampedEnter = enterPx.clamp(0.0, size.width);
+    final clampedExit = exitPx.clamp(clampedEnter, size.width);
+    final holdColor = fill;
+    // Enter ramp: horizontal gradient from the pill edge (low-alpha
+    // de-saturated) into full saturated fill at the divider.
+    if (clampedEnter > 0) {
+      final enterRect = Rect.fromLTWH(0, 0, clampedEnter, size.height);
+      canvas.drawRect(
+        enterRect,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [
+              holdColor.withValues(alpha: 0.45),
+              holdColor,
+            ],
+          ).createShader(enterRect),
+      );
+    }
+    // Hold: the bright, saturated middle.
+    if (clampedExit > clampedEnter) {
+      final holdRect = Rect.fromLTWH(
+        clampedEnter, 0, clampedExit - clampedEnter, size.height);
+      canvas.drawRect(
+        holdRect,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [fillTop, holdColor],
+          ).createShader(holdRect),
+      );
+    }
+    // Exit ramp: mirror of enter — solid to faded on the right edge.
+    if (clampedExit < size.width) {
+      final exitRect = Rect.fromLTWH(
+        clampedExit, 0, size.width - clampedExit, size.height);
+      canvas.drawRect(
+        exitRect,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [
+              holdColor,
+              holdColor.withValues(alpha: 0.45),
+            ],
+          ).createShader(exitRect),
+      );
+    }
+
+    canvas.restore();
+
+    // Border on top of all segments.
     canvas.drawRRect(
       rrect,
       Paint()
@@ -1041,12 +1118,12 @@ class _ZoomPillPainter extends CustomPainter {
     // The actual draggable handles are interactive Positioned widgets above
     // this layer; this just hints at where they live.
     if (showInternalGuides) {
-      final guidePaint = Paint()..color = const Color(0x33FFFFFF);
+      final guidePaint = Paint()..color = const Color(0x55FFFFFF);
       for (final cx in [enterPx, exitPx]) {
         if (cx > 6 && cx < size.width - 6) {
           canvas.drawLine(
-            Offset(cx, size.height * 0.18),
-            Offset(cx, size.height * 0.82),
+            Offset(cx, size.height * 0.16),
+            Offset(cx, size.height * 0.84),
             guidePaint..strokeWidth = 1,
           );
         }
