@@ -551,16 +551,23 @@ class _ZoomPillState extends State<_ZoomPill> {
   @override
   Widget build(BuildContext context) {
     final left = _startX;
-    final width = (_endX - _startX).clamp(_handleHitWidth * 2, double.infinity);
+    final pillWidth =
+        (_endX - _startX).clamp(_handleHitWidth * 2, double.infinity);
     final cursor = _cursorForMode(_mode);
     final fillTop = widget.isSelected ? _zoomFillSelected : _zoomFillTop;
     final fill = widget.isSelected ? _zoomFillSelected : _zoomFill;
     final stroke = widget.isSelected ? Colors.white : _zoomStroke;
 
+    final regionUs = widget.zoom.duration.inMicroseconds;
+    final pxPerRegionUs = regionUs == 0 ? 0.0 : pillWidth / regionUs;
+    final enterPx = widget.zoom.enterDuration.inMicroseconds * pxPerRegionUs;
+    final exitPx =
+        pillWidth - widget.zoom.exitDuration.inMicroseconds * pxPerRegionUs;
+
     return Positioned(
       left: left,
       top: _zoomPillInset,
-      width: width,
+      width: pillWidth,
       height: _laneHeight - _zoomPillInset * 2,
       child: MouseRegion(
         cursor: cursor,
@@ -592,11 +599,40 @@ class _ZoomPillState extends State<_ZoomPill> {
                     fill: fill,
                     stroke: stroke,
                     zoomLevel: widget.zoom.zoomLevel,
+                    enterPx: enterPx,
+                    exitPx: exitPx,
+                    showInternalGuides: _hovered,
                     isSelected: widget.isSelected,
                   ),
                 ),
               ),
             ),
+            // Inline ramp dividers: appear on hover, expand on direct
+            // hover, drag horizontally to change enterDuration / exitDuration.
+            if (_hovered && pillWidth > _handleHitWidth * 4) ...[
+              _RampDivider(
+                centerX: enterPx,
+                pillHeight: _laneHeight - _zoomPillInset * 2,
+                onDelta: _onEnterDividerDrag,
+                tooltip: 'Enter ${widget.zoom.enterDuration.inMilliseconds}ms',
+              ),
+              _RampDivider(
+                centerX: exitPx,
+                pillHeight: _laneHeight - _zoomPillInset * 2,
+                onDelta: _onExitDividerDrag,
+                tooltip: 'Exit ${widget.zoom.exitDuration.inMilliseconds}ms',
+              ),
+            ],
+            if (_hovered)
+              Positioned(
+                left: pillWidth / 2 - 38,
+                top: -26,
+                child: _ZoomLevelBadge(
+                  level: widget.zoom.zoomLevel,
+                  onIncrement: () => _stepZoomLevel(0.1),
+                  onDecrement: () => _stepZoomLevel(-0.1),
+                ),
+              ),
             if (_hovered && widget.onDeleted != null)
               Positioned(
                 top: -6,
@@ -611,6 +647,51 @@ class _ZoomPillState extends State<_ZoomPill> {
     );
   }
 
+  void _onEnterDividerDrag(double dx) {
+    if (widget.onChanged == null) return;
+    final usPerPx =
+        widget.duration.inMicroseconds / widget.laneWidth;
+    final deltaUs = (dx * usPerPx).round();
+    final maxEnterUs = widget.zoom.duration.inMicroseconds -
+        widget.zoom.exitDuration.inMicroseconds;
+    final newEnterUs =
+        (widget.zoom.enterDuration.inMicroseconds + deltaUs).clamp(0, maxEnterUs);
+    widget.onChanged!(
+      widget.index,
+      widget.zoom.copyWith(
+        enterDuration: Duration(microseconds: newEnterUs),
+      ),
+    );
+  }
+
+  void _onExitDividerDrag(double dx) {
+    if (widget.onChanged == null) return;
+    final usPerPx =
+        widget.duration.inMicroseconds / widget.laneWidth;
+    // Dragging the exit divider rightward shortens the exit ramp.
+    final deltaUs = (-dx * usPerPx).round();
+    final maxExitUs = widget.zoom.duration.inMicroseconds -
+        widget.zoom.enterDuration.inMicroseconds;
+    final newExitUs =
+        (widget.zoom.exitDuration.inMicroseconds + deltaUs).clamp(0, maxExitUs);
+    widget.onChanged!(
+      widget.index,
+      widget.zoom.copyWith(
+        exitDuration: Duration(microseconds: newExitUs),
+      ),
+    );
+  }
+
+  void _stepZoomLevel(double delta) {
+    if (widget.onChanged == null) return;
+    final next = (widget.zoom.zoomLevel + delta).clamp(1.0, 5.0);
+    final rounded = (next * 10).round() / 10.0;
+    widget.onChanged!(
+      widget.index,
+      widget.zoom.copyWith(zoomLevel: rounded),
+    );
+  }
+
   static MouseCursor _cursorForMode(_ZoomDragMode mode) {
     switch (mode) {
       case _ZoomDragMode.leftEdge:
@@ -621,6 +702,172 @@ class _ZoomPillState extends State<_ZoomPill> {
       case _ZoomDragMode.none:
         return SystemMouseCursors.grab;
     }
+  }
+}
+
+/// Vertical drag-handle inside a zoom pill marking the boundary between
+/// ramp and hold (enter or exit). Subtle when not directly hovered;
+/// expands into a clear grip when the cursor is over it.
+class _RampDivider extends StatefulWidget {
+  const _RampDivider({
+    required this.centerX,
+    required this.pillHeight,
+    required this.onDelta,
+    required this.tooltip,
+  });
+
+  final double centerX;
+  final double pillHeight;
+  final ValueChanged<double> onDelta;
+  final String tooltip;
+
+  @override
+  State<_RampDivider> createState() => _RampDividerState();
+}
+
+class _RampDividerState extends State<_RampDivider> {
+  bool _hover = false;
+  bool _dragging = false;
+  static const double _hitWidth = 14;
+
+  @override
+  Widget build(BuildContext context) {
+    final emphasized = _hover || _dragging;
+    final lineWidth = emphasized ? 3.0 : 1.5;
+    final lineColor = emphasized
+        ? Colors.white
+        : Colors.white.withValues(alpha: 0.55);
+
+    return Positioned(
+      left: widget.centerX - _hitWidth / 2,
+      top: 0,
+      width: _hitWidth,
+      height: widget.pillHeight,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeLeftRight,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: Tooltip(
+          message: widget.tooltip,
+          waitDuration: const Duration(milliseconds: 350),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragStart: (_) => setState(() => _dragging = true),
+            onHorizontalDragUpdate: (d) => widget.onDelta(d.delta.dx),
+            onHorizontalDragEnd: (_) => setState(() => _dragging = false),
+            onHorizontalDragCancel: () => setState(() => _dragging = false),
+            child: Center(
+              child: Container(
+                width: lineWidth,
+                decoration: BoxDecoration(
+                  color: lineColor,
+                  borderRadius: BorderRadius.circular(1.5),
+                  boxShadow: emphasized
+                      ? const [
+                          BoxShadow(
+                            color: Color(0x66000000),
+                            blurRadius: 4,
+                            offset: Offset(0, 1),
+                          ),
+                        ]
+                      : null,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Floating zoom-level pill above the zoom region, with chevron buttons
+/// to step the zoom level by 0.1× when hovered. Each chevron has its
+/// own hover state so it visibly highlights when targetable.
+class _ZoomLevelBadge extends StatelessWidget {
+  const _ZoomLevelBadge({
+    required this.level,
+    required this.onIncrement,
+    required this.onDecrement,
+  });
+
+  final double level;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1F1F2E),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white24, width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ChevronButton(icon: Icons.remove, onPressed: onDecrement),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Text(
+              '${level.toStringAsFixed(1)}×',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontFeatures: [FontFeature.tabularFigures()],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          _ChevronButton(icon: Icons.add, onPressed: onIncrement),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChevronButton extends StatefulWidget {
+  const _ChevronButton({required this.icon, required this.onPressed});
+
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  State<_ChevronButton> createState() => _ChevronButtonState();
+}
+
+class _ChevronButtonState extends State<_ChevronButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onPressed,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 18,
+          height: 18,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: _hover ? Colors.white24 : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(widget.icon, size: 13, color: Colors.white),
+        ),
+      ),
+    );
   }
 }
 
@@ -665,6 +912,9 @@ class _ZoomPillPainter extends CustomPainter {
     required this.fill,
     required this.stroke,
     required this.zoomLevel,
+    required this.enterPx,
+    required this.exitPx,
+    required this.showInternalGuides,
     required this.isSelected,
   });
 
@@ -672,6 +922,9 @@ class _ZoomPillPainter extends CustomPainter {
   final Color fill;
   final Color stroke;
   final double zoomLevel;
+  final double enterPx;
+  final double exitPx;
+  final bool showInternalGuides;
   final bool isSelected;
 
   @override
@@ -702,6 +955,22 @@ class _ZoomPillPainter extends CustomPainter {
         ),
         gripPaint,
       );
+    }
+
+    // Faint enter/exit ramp dividers, only while the pill is hovered.
+    // The actual draggable handles are interactive Positioned widgets above
+    // this layer; this just hints at where they live.
+    if (showInternalGuides) {
+      final guidePaint = Paint()..color = const Color(0x33FFFFFF);
+      for (final cx in [enterPx, exitPx]) {
+        if (cx > 6 && cx < size.width - 6) {
+          canvas.drawLine(
+            Offset(cx, size.height * 0.18),
+            Offset(cx, size.height * 0.82),
+            guidePaint..strokeWidth = 1,
+          );
+        }
+      }
     }
 
     // Title + subtitle (only when the pill is wide enough to fit it).
@@ -742,6 +1011,9 @@ class _ZoomPillPainter extends CustomPainter {
       old.fill != fill ||
       old.stroke != stroke ||
       old.zoomLevel != zoomLevel ||
+      old.enterPx != enterPx ||
+      old.exitPx != exitPx ||
+      old.showInternalGuides != showInternalGuides ||
       old.isSelected != isSelected;
 }
 
