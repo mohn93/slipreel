@@ -412,16 +412,28 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         }
         if (activeZoom == null) return child!;
 
-        final transform = _zoomTransformer.getTransform(
-          position: pos,
-          zoomRegion: activeZoom,
-          videoSize: _controller.value.size,
-          focalPoint: activeZoom.rect.center,
-        );
-        return Transform(
-          transform: transform,
-          alignment: Alignment.center,
-          child: child,
+        // Smoothly interpolate the rendered zoom level when the user
+        // changes it via the badge — otherwise stepping the level
+        // produces a visual snap.
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: activeZoom.zoomLevel),
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          builder: (context, animatedZoom, _) {
+            final tweenedRegion =
+                activeZoom!.copyWith(zoomLevel: animatedZoom);
+            final transform = _zoomTransformer.getTransform(
+              position: pos,
+              zoomRegion: tweenedRegion,
+              videoSize: _controller.value.size,
+              focalPoint: activeZoom.rect.center,
+            );
+            return Transform(
+              transform: transform,
+              alignment: Alignment.center,
+              child: child,
+            );
+          },
         );
       },
     );

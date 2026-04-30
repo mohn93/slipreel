@@ -479,6 +479,16 @@ class _ZoomPillState extends State<_ZoomPill> {
   double _dxAccum = 0;
   bool _hovered = false;
 
+  // Divider drags need their own anchor + accumulator. Reading
+  // widget.zoom.enterDuration each tick loses deltas when several drag
+  // updates fire inside a single frame (the parent's setState batches
+  // until the next rebuild) — same trap the pill body's accumulator
+  // already avoids.
+  Duration? _enterAnchor;
+  double _enterAccum = 0;
+  Duration? _exitAnchor;
+  double _exitAccum = 0;
+
   double get _startX =>
       _timeToX(widget.zoom.startTime, widget.laneWidth, widget.duration);
   double get _endX =>
@@ -634,14 +644,18 @@ class _ZoomPillState extends State<_ZoomPill> {
                 centerX: enterPx,
                 top: _zoomBadgeAreaHeight,
                 height: pillBodyHeight,
+                onDragStart: _beginEnterDrag,
                 onDelta: _onEnterDividerDrag,
+                onDragEnd: _endEnterDrag,
                 tooltip: 'Enter ${widget.zoom.enterDuration.inMilliseconds}ms',
               ),
               _RampDivider(
                 centerX: exitPx,
                 top: _zoomBadgeAreaHeight,
                 height: pillBodyHeight,
+                onDragStart: _beginExitDrag,
                 onDelta: _onExitDividerDrag,
+                onDragEnd: _endExitDrag,
                 tooltip: 'Exit ${widget.zoom.exitDuration.inMilliseconds}ms',
               ),
             ],
@@ -669,15 +683,21 @@ class _ZoomPillState extends State<_ZoomPill> {
     );
   }
 
+  void _beginEnterDrag() {
+    _enterAnchor = widget.zoom.enterDuration;
+    _enterAccum = 0;
+  }
+
   void _onEnterDividerDrag(double dx) {
-    if (widget.onChanged == null) return;
+    if (widget.onChanged == null || _enterAnchor == null) return;
+    _enterAccum += dx;
     final usPerPx =
         widget.duration.inMicroseconds / widget.laneWidth;
-    final deltaUs = (dx * usPerPx).round();
+    final deltaUs = (_enterAccum * usPerPx).round();
     final maxEnterUs = widget.zoom.duration.inMicroseconds -
         widget.zoom.exitDuration.inMicroseconds;
-    final newEnterUs =
-        (widget.zoom.enterDuration.inMicroseconds + deltaUs).clamp(0, maxEnterUs);
+    final newEnterUs = (_enterAnchor!.inMicroseconds + deltaUs)
+        .clamp(0, maxEnterUs);
     widget.onChanged!(
       widget.index,
       widget.zoom.copyWith(
@@ -686,22 +706,38 @@ class _ZoomPillState extends State<_ZoomPill> {
     );
   }
 
+  void _endEnterDrag() {
+    _enterAnchor = null;
+    _enterAccum = 0;
+  }
+
+  void _beginExitDrag() {
+    _exitAnchor = widget.zoom.exitDuration;
+    _exitAccum = 0;
+  }
+
   void _onExitDividerDrag(double dx) {
-    if (widget.onChanged == null) return;
+    if (widget.onChanged == null || _exitAnchor == null) return;
+    _exitAccum += dx;
     final usPerPx =
         widget.duration.inMicroseconds / widget.laneWidth;
     // Dragging the exit divider rightward shortens the exit ramp.
-    final deltaUs = (-dx * usPerPx).round();
+    final deltaUs = (-_exitAccum * usPerPx).round();
     final maxExitUs = widget.zoom.duration.inMicroseconds -
         widget.zoom.enterDuration.inMicroseconds;
     final newExitUs =
-        (widget.zoom.exitDuration.inMicroseconds + deltaUs).clamp(0, maxExitUs);
+        (_exitAnchor!.inMicroseconds + deltaUs).clamp(0, maxExitUs);
     widget.onChanged!(
       widget.index,
       widget.zoom.copyWith(
         exitDuration: Duration(microseconds: newExitUs),
       ),
     );
+  }
+
+  void _endExitDrag() {
+    _exitAnchor = null;
+    _exitAccum = 0;
   }
 
   void _stepZoomLevel(double delta) {
@@ -735,14 +771,18 @@ class _RampDivider extends StatefulWidget {
     required this.centerX,
     required this.top,
     required this.height,
+    required this.onDragStart,
     required this.onDelta,
+    required this.onDragEnd,
     required this.tooltip,
   });
 
   final double centerX;
   final double top;
   final double height;
+  final VoidCallback onDragStart;
   final ValueChanged<double> onDelta;
+  final VoidCallback onDragEnd;
   final String tooltip;
 
   @override
@@ -776,10 +816,19 @@ class _RampDividerState extends State<_RampDivider> {
           waitDuration: const Duration(milliseconds: 350),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onHorizontalDragStart: (_) => setState(() => _dragging = true),
+            onHorizontalDragStart: (_) {
+              setState(() => _dragging = true);
+              widget.onDragStart();
+            },
             onHorizontalDragUpdate: (d) => widget.onDelta(d.delta.dx),
-            onHorizontalDragEnd: (_) => setState(() => _dragging = false),
-            onHorizontalDragCancel: () => setState(() => _dragging = false),
+            onHorizontalDragEnd: (_) {
+              setState(() => _dragging = false);
+              widget.onDragEnd();
+            },
+            onHorizontalDragCancel: () {
+              setState(() => _dragging = false);
+              widget.onDragEnd();
+            },
             child: Center(
               child: Container(
                 width: lineWidth,
@@ -841,13 +890,20 @@ class _ZoomLevelBadge extends StatelessWidget {
           _ChevronButton(icon: Icons.remove, onPressed: onDecrement),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Text(
-              '${level.toStringAsFixed(1)}×',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontFeatures: [FontFeature.tabularFigures()],
-                fontWeight: FontWeight.w600,
+            // Animate the displayed value so a 1.6× → 1.7× change eases
+            // through 1.61, 1.62, … instead of snapping.
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: level),
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, _) => Text(
+                '${value.toStringAsFixed(1)}×',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
