@@ -6,6 +6,7 @@ import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
+import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
@@ -51,6 +52,11 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   // display this fixed value, even though the controller is being live-
   // seeked to follow the cursor for frame preview. Restored on hover end.
   Duration? _hoverFrozenPosition;
+  // Smoothed focal point for cursor-following zoom (video pixels). Reset
+  // when the active zoom (de)activates so a fresh zoom doesn't lerp from
+  // a stale focal.
+  Offset? _smoothedZoomFocal;
+  ZoomRegion? _previousActiveZoom;
 
   @override
   void initState() {
@@ -415,7 +421,36 @@ class _PlaybackScreenState extends State<PlaybackScreen>
             break;
           }
         }
-        if (activeZoom == null) return child!;
+        if (activeZoom == null) {
+          if (_previousActiveZoom != null) {
+            _previousActiveZoom = null;
+            _smoothedZoomFocal = null;
+          }
+          return child!;
+        }
+
+        // Cursor-driven focal: cursor positions are saved in video-pixel
+        // coords (the native side transforms NSEvent.mouseLocation into
+        // video-pixel space at capture time), so we can use them
+        // directly. Falls back to the static rect center when no cursor
+        // sample is available for this time (legacy recording, window
+        // source, or before the cursor track started).
+        Offset? rawFocal;
+        final cursor = cursorAt(_cursorRecording, pos);
+        if (cursor != null) {
+          rawFocal = Offset(cursor.x, cursor.y);
+        }
+        rawFocal ??= activeZoom.rect.center;
+
+        if (activeZoom != _previousActiveZoom) {
+          _previousActiveZoom = activeZoom;
+          _smoothedZoomFocal = rawFocal;
+        } else {
+          _smoothedZoomFocal = _smoothedZoomFocal == null
+              ? rawFocal
+              : Offset.lerp(_smoothedZoomFocal!, rawFocal, 0.18)!;
+        }
+        final focalForFrame = _smoothedZoomFocal!;
 
         // Smoothly interpolate the rendered zoom level when the user
         // changes it via the badge — otherwise stepping the level
@@ -431,7 +466,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
               position: pos,
               zoomRegion: tweenedRegion,
               videoSize: _controller.value.size,
-              focalPoint: activeZoom.rect.center,
+              focalPoint: focalForFrame,
             );
             return Transform(
               transform: transform,

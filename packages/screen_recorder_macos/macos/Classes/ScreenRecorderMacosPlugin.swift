@@ -21,6 +21,13 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var liveCaptureWidth: Int = 0
   private var liveCaptureHeight: Int = 0
 
+  /// Maps a global, AppKit-bottom-left, screen-points cursor location
+  /// (i.e. NSEvent.mouseLocation) to the recorded video's pixel space
+  /// (top-left origin). Set per recording from the resolved source — see
+  /// `makeCursorTransform`. When `nil`, cursor coordinates are forwarded
+  /// unchanged (legacy behaviour).
+  private var cursorTransform: ((Double, Double) -> (Double, Double))?
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     // Main method channel for recording control
     let recordingChannel = FlutterMethodChannel(
@@ -440,8 +447,21 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
         if captureCursor {
           if cursorTracker == nil { cursorTracker = CursorTracker() }
+          // Build the global-points → video-pixels mapping for this
+          // recording so cursor data lands in the same coordinate space
+          // as the captured video frames. Computed on @MainActor because
+          // it touches NSScreen.screens.
+          self.cursorTransform = await MainActor.run {
+            self.makeCursorTransform(
+              source: source,
+              sourceId: finalSourceId,
+              region: regionSelection)
+          }
           cursorTracker?.onCursorUpdate = { [weak self] x, y, ts, isClicked in
-            self?.cursorStreamHandler?.sendCursorPosition(x: x, y: y, timestamp: ts, isClicked: isClicked)
+            guard let self = self else { return }
+            let (px, py) = self.cursorTransform?(x, y) ?? (x, y)
+            self.cursorStreamHandler?.sendCursorPosition(
+              x: px, y: py, timestamp: ts, isClicked: isClicked)
           }
           try cursorTracker?.startTracking(frequency: 60)
         }
@@ -490,6 +510,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           if ct.isCurrentlyTracking() { ct.stopTracking() }
           cursorTracker = nil
         }
+        cursorTransform = nil
 
         liveEncoder?.finalize()
         let droppedFrames = liveEncoder?.droppedFrameCount ?? 0
@@ -531,6 +552,65 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   }
 
   // MARK: - Source picker
+
+  /// Build a closure that maps NSEvent.mouseLocation (global, AppKit
+  /// bottom-left origin, screen points) into the recorded video's pixel
+  /// space (top-left origin within the captured rect). Returns `nil` for
+  /// sources we can't introspect synchronously (e.g. window capture —
+  /// SCWindow lookup is async); cursor data for those falls through
+  /// untransformed.
+  @MainActor
+  private func makeCursorTransform(
+    source: String,
+    sourceId: String,
+    region: RegionSelection?
+  ) -> ((Double, Double) -> (Double, Double))? {
+    // For area capture we know the recording is `region` pixels inside
+    // the display identified by region.displayId.
+    if source == "area", let r = region {
+      guard let screen = NSScreen.screens.first(where: {
+        ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+          as? CGDirectDisplayID) == r.displayId
+      }) else { return nil }
+      let scale = Double(screen.backingScaleFactor)
+      let displayMinX = Double(screen.frame.minX)
+      let displayMaxY = Double(screen.frame.maxY)
+      let regionLocalXPoints = Double(r.x) / scale
+      let regionLocalYPoints = Double(r.y) / scale
+      return { gx, gy in
+        // Cursor in display-local top-left points.
+        let xInDisplayPts = gx - displayMinX
+        let yInDisplayPts = displayMaxY - gy
+        // Cursor in region-local top-left points, then scaled to pixels.
+        let xPx = (xInDisplayPts - regionLocalXPoints) * scale
+        let yPx = (yInDisplayPts - regionLocalYPoints) * scale
+        return (xPx, yPx)
+      }
+    }
+
+    // For full-display capture the recording covers the entire display
+    // identified by sourceId.
+    if source == "screen", let displayId = CGDirectDisplayID(sourceId),
+       let screen = NSScreen.screens.first(where: {
+         ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+           as? CGDirectDisplayID) == displayId
+       }) {
+      let scale = Double(screen.backingScaleFactor)
+      let displayMinX = Double(screen.frame.minX)
+      let displayMaxY = Double(screen.frame.maxY)
+      return { gx, gy in
+        let xInDisplayPts = gx - displayMinX
+        let yInDisplayPts = displayMaxY - gy
+        return (xInDisplayPts * scale, yInDisplayPts * scale)
+      }
+    }
+
+    // Window capture: SCWindow.frame is async to fetch and the window
+    // can move during recording. Skip for v1; cursor data is left in
+    // global-points form and the editor will fall back to rect.center
+    // for that source type.
+    return nil
+  }
 
   private func selectRegion(call: FlutterMethodCall, result: @escaping FlutterResult) {
     Task { @MainActor in
