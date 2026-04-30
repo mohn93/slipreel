@@ -11,7 +11,9 @@ const _zoomStroke = Color(0xFF6457E8);
 const _zoomFillSelected = Color(0xFF9080FF);
 const _tickColor = Color(0xFF454555);
 const _labelColor = Color(0xFFAAAAB5);
-const _playheadColor = Color(0xFFFF4D6D);
+const _playheadTop = Color(0xFF4FC3FF);
+const _playheadMid = Color(0xFF6F5BFF);
+const _playheadBottom = Color(0xFF3D26AA);
 
 const double _rulerHeight = 26;
 const double _laneHeight = 46;
@@ -690,23 +692,101 @@ class _PlayheadPainter extends CustomPainter {
   final double progress;
   final double rulerHeight;
 
+  static const _knobRadius = 6.5;
+  static const _lineWidth = 2.0;
+
   @override
   void paint(Canvas canvas, Size size) {
     final x = size.width * progress;
+    final knobCenter = Offset(x, _knobRadius);
+    final lineTop = _knobRadius + _knobRadius - 1;
+    final lineRect = Rect.fromLTWH(
+      x - _lineWidth / 2,
+      lineTop,
+      _lineWidth,
+      size.height - lineTop,
+    );
 
-    final linePaint = Paint()
-      ..color = _playheadColor
-      ..strokeWidth = 1.5;
-    canvas.drawLine(Offset(x, rulerHeight - 4), Offset(x, size.height), linePaint);
+    // ── Vertical line: blue → dark purple → transparent
+    final lineGradient = const LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        _playheadTop,
+        _playheadMid,
+        _playheadBottom,
+        Color(0x003D26AA),
+      ],
+      stops: [0.0, 0.35, 0.7, 1.0],
+    ).createShader(lineRect);
 
-    // Top-of-ruler caret so the playhead reads from the timecode strip.
-    final caretPaint = Paint()..color = _playheadColor;
-    final caret = Path()
-      ..moveTo(x - 4, 0)
-      ..lineTo(x + 4, 0)
-      ..lineTo(x, 6)
-      ..close();
-    canvas.drawPath(caret, caretPaint);
+    // Soft outer glow for the line.
+    final glowPaint = Paint()
+      ..shader = lineGradient
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
+      ..color = const Color(0xFF000000); // shader overrides; color carries alpha into mask
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        lineRect.inflate(0.5), const Radius.circular(2)),
+      glowPaint,
+    );
+
+    // Solid line on top of the glow.
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(lineRect, const Radius.circular(1.5)),
+      Paint()..shader = lineGradient,
+    );
+
+    // ── Knob (button-like cap): drop shadow + outer glow + gradient fill +
+    // inner highlight. Uses the same blue-to-purple palette but fully
+    // opaque so it stays prominent.
+    final knobRect = Rect.fromCircle(
+      center: knobCenter,
+      radius: _knobRadius,
+    );
+    final knobGradient = const LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [_playheadTop, _playheadBottom],
+    ).createShader(knobRect);
+
+    // Drop shadow underneath.
+    canvas.drawCircle(
+      knobCenter.translate(0, 1.5),
+      _knobRadius,
+      Paint()
+        ..color = const Color(0x66000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    // Soft outer cyan glow to tie the knob into the line.
+    canvas.drawCircle(
+      knobCenter,
+      _knobRadius + 2,
+      Paint()
+        ..color = const Color(0x554FC3FF)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+    // Gradient fill.
+    canvas.drawCircle(
+      knobCenter,
+      _knobRadius,
+      Paint()..shader = knobGradient,
+    );
+    // Crisp 1px ring so the knob reads against light backgrounds too.
+    canvas.drawCircle(
+      knobCenter,
+      _knobRadius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = const Color(0x88FFFFFF),
+    );
+    // Specular highlight.
+    canvas.drawCircle(
+      knobCenter.translate(0, -1.8),
+      2.2,
+      Paint()..color = const Color(0x88FFFFFF),
+    );
   }
 
   @override
