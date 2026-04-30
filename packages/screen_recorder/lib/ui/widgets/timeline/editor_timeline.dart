@@ -67,6 +67,7 @@ class EditorTimeline extends StatefulWidget {
     this.playbackSpeedLabel = '1x',
     this.isPlaying = false,
     this.onHoverSeek,
+    this.onHoverEnd,
   });
 
   final Duration duration;
@@ -84,6 +85,9 @@ class EditorTimeline extends StatefulWidget {
   // (zoom-marker selection, history pushes) for the high-frequency hover
   // stream.
   final ValueChanged<Duration>? onHoverSeek;
+  // Fired once when the cursor leaves the timeline so the caller can
+  // restore the playback position to where it was before hover started.
+  final VoidCallback? onHoverEnd;
 
   @override
   State<EditorTimeline> createState() => _EditorTimelineState();
@@ -107,9 +111,11 @@ class _EditorTimelineState extends State<EditorTimeline> {
   }
 
   void _clearHover() {
-    if (_hoverProgress != null) {
+    final wasHovering = _hoverProgress != null;
+    if (wasHovering) {
       setState(() => _hoverProgress = null);
     }
+    if (wasHovering) widget.onHoverEnd?.call();
   }
 
   @override

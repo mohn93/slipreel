@@ -46,6 +46,11 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
+  // Where playback was parked when a hover-scrub began. While this is
+  // non-null the timeline's real (colored) playhead and the time labels
+  // display this fixed value, even though the controller is being live-
+  // seeked to follow the cursor for frame preview. Restored on hover end.
+  Duration? _hoverFrozenPosition;
 
   @override
   void initState() {
@@ -537,7 +542,8 @@ class _PlaybackScreenState extends State<PlaybackScreen>
             animation:
                 Listenable.merge([_controller, _smoothPlayhead]),
             builder: (context, _) {
-              final pos = _smoothPlayhead?.position ?? _controller.value.position;
+              final pos = _hoverFrozenPosition ??
+                  (_smoothPlayhead?.position ?? _controller.value.position);
               final dur = _controller.value.duration;
               return Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -559,19 +565,42 @@ class _PlaybackScreenState extends State<PlaybackScreen>
             animation:
                 Listenable.merge([_controller, _smoothPlayhead]),
             builder: (context, _) {
-              final pos = _smoothPlayhead?.position ?? _controller.value.position;
+              // The colored playhead and time labels stay parked at
+              // _hoverFrozenPosition (when set) even while the controller
+              // is being seeked to preview the hover frame.
+              final displayedPos = _hoverFrozenPosition ??
+                  (_smoothPlayhead?.position ?? _controller.value.position);
               return EditorTimeline(
                 duration: _controller.value.duration,
-                position: pos,
+                position: displayedPos,
                 isPlaying: _controller.value.isPlaying,
                 onSeek: (next) {
+                  // Committed seek: clear any hover freeze first so the
+                  // colored playhead lands at the click target instead of
+                  // restoring to the parked position when hover ends.
+                  if (_hoverFrozenPosition != null) {
+                    setState(() => _hoverFrozenPosition = null);
+                  }
                   _controller.seekTo(next);
                   _checkZoomMarkerClick(next);
                 },
                 onHoverSeek: (next) {
-                  // Live preview: just seek, no zoom-marker selection
-                  // change (would setState on every cursor pixel).
+                  // Capture the parked position the first time hover
+                  // fires so the colored playhead and time labels can
+                  // stay put while we live-seek the controller for frame
+                  // preview.
+                  if (_hoverFrozenPosition == null) {
+                    setState(() => _hoverFrozenPosition =
+                        _controller.value.position);
+                  }
                   _controller.seekTo(next);
+                },
+                onHoverEnd: () {
+                  final parked = _hoverFrozenPosition;
+                  if (parked != null) {
+                    _controller.seekTo(parked);
+                    setState(() => _hoverFrozenPosition = null);
+                  }
                 },
                 zoomRegions: _zoomRegions,
                 selectedZoomIndex: _selectedZoomIndex,
