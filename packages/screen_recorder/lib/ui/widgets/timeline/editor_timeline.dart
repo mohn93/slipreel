@@ -53,7 +53,7 @@ String _formatSecondsLabel(double secs) {
 /// optional zoom lane on the bottom. A single playhead line runs across all
 /// rows. Designed to be redrawn at vsync (caller passes a smoothed
 /// `position`) so the playhead glides instead of stepping.
-class EditorTimeline extends StatelessWidget {
+class EditorTimeline extends StatefulWidget {
   const EditorTimeline({
     super.key,
     required this.duration,
@@ -65,6 +65,8 @@ class EditorTimeline extends StatelessWidget {
     this.onZoomSelected,
     this.onZoomDeleted,
     this.playbackSpeedLabel = '1x',
+    this.isPlaying = false,
+    this.onHoverSeek,
   });
 
   final Duration duration;
@@ -76,13 +78,55 @@ class EditorTimeline extends StatelessWidget {
   final ValueChanged<int?>? onZoomSelected;
   final ValueChanged<int>? onZoomDeleted;
   final String playbackSpeedLabel;
+  final bool isPlaying;
+  // Live preview seek while the cursor hovers the timeline (paused only).
+  // Wired separately from `onSeek` so the caller can skip side-effects
+  // (zoom-marker selection, history pushes) for the high-frequency hover
+  // stream.
+  final ValueChanged<Duration>? onHoverSeek;
+
+  @override
+  State<EditorTimeline> createState() => _EditorTimelineState();
+}
+
+class _EditorTimelineState extends State<EditorTimeline> {
+  double? _hoverProgress;
+
+  void _updateHover(Offset local, double width) {
+    if (widget.isPlaying || width <= 0) return;
+    final progress = (local.dx / width).clamp(0.0, 1.0);
+    if (_hoverProgress != progress) {
+      setState(() => _hoverProgress = progress);
+    }
+    if (widget.onHoverSeek != null) {
+      final hoverTime = Duration(
+        microseconds: (widget.duration.inMicroseconds * progress).round(),
+      );
+      widget.onHoverSeek!(hoverTime);
+    }
+  }
+
+  void _clearHover() {
+    if (_hoverProgress != null) {
+      setState(() => _hoverProgress = null);
+    }
+  }
+
+  @override
+  void didUpdateWidget(EditorTimeline old) {
+    super.didUpdateWidget(old);
+    // If playback resumes, the hover indicator should disappear.
+    if (widget.isPlaying && _hoverProgress != null) {
+      _hoverProgress = null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final hasZooms = zoomRegions.isNotEmpty;
+        final hasZooms = widget.zoomRegions.isNotEmpty;
         final zoomLaneHeight = _laneHeight + _zoomBadgeAreaHeight;
         final totalHeight = _rulerHeight +
             _laneSpacing +
@@ -92,57 +136,71 @@ class EditorTimeline extends StatelessWidget {
         return SizedBox(
           height: totalHeight,
           width: width,
-          child: Stack(
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    height: _rulerHeight,
-                    child: _TimeRuler(
-                        duration: duration, width: width, onSeek: onSeek),
-                  ),
-                  const SizedBox(height: _laneSpacing),
-                  SizedBox(
-                    height: _laneHeight,
-                    child: _ClipLane(
-                      duration: duration,
-                      width: width,
-                      onSeek: onSeek,
-                      speedLabel: playbackSpeedLabel,
+          child: MouseRegion(
+            // Hover-to-scrub when paused. The MouseRegion sits above the
+            // gesture detectors but doesn't consume events — onHover is
+            // hover-only, onTap/onPan still flow through to the lanes
+            // below.
+            opaque: false,
+            onHover: (e) => _updateHover(e.localPosition, width),
+            onExit: (_) => _clearHover(),
+            child: Stack(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      height: _rulerHeight,
+                      child: _TimeRuler(
+                          duration: widget.duration,
+                          width: width,
+                          onSeek: widget.onSeek),
                     ),
-                  ),
-                  if (hasZooms) ...[
                     const SizedBox(height: _laneSpacing),
                     SizedBox(
-                      height: zoomLaneHeight,
-                      child: _ZoomLane(
-                        duration: duration,
+                      height: _laneHeight,
+                      child: _ClipLane(
+                        duration: widget.duration,
                         width: width,
-                        zoomRegions: zoomRegions,
-                        selectedIndex: selectedZoomIndex,
-                        onZoomChanged: onZoomChanged,
-                        onZoomSelected: onZoomSelected,
-                        onZoomDeleted: onZoomDeleted,
-                        onSeek: onSeek,
+                        onSeek: widget.onSeek,
+                        speedLabel: widget.playbackSpeedLabel,
                       ),
                     ),
+                    if (hasZooms) ...[
+                      const SizedBox(height: _laneSpacing),
+                      SizedBox(
+                        height: zoomLaneHeight,
+                        child: _ZoomLane(
+                          duration: widget.duration,
+                          width: width,
+                          zoomRegions: widget.zoomRegions,
+                          selectedIndex: widget.selectedZoomIndex,
+                          onZoomChanged: widget.onZoomChanged,
+                          onZoomSelected: widget.onZoomSelected,
+                          onZoomDeleted: widget.onZoomDeleted,
+                          onSeek: widget.onSeek,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
-              ),
-              IgnorePointer(
-                child: CustomPaint(
-                  size: Size(width, totalHeight),
-                  painter: _PlayheadPainter(
-                    progress: duration.inMicroseconds == 0
-                        ? 0
-                        : (position.inMicroseconds / duration.inMicroseconds)
-                            .clamp(0.0, 1.0),
-                    rulerHeight: _rulerHeight,
+                ),
+                IgnorePointer(
+                  child: CustomPaint(
+                    size: Size(width, totalHeight),
+                    painter: _PlayheadPainter(
+                      progress: widget.duration.inMicroseconds == 0
+                          ? 0
+                          : (widget.position.inMicroseconds /
+                                  widget.duration.inMicroseconds)
+                              .clamp(0.0, 1.0),
+                      hoverProgress:
+                          widget.isPlaying ? null : _hoverProgress,
+                      rulerHeight: _rulerHeight,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -1177,9 +1235,14 @@ class _ZoomPillPainter extends CustomPainter {
 // ──────────────────────────────── Playhead ──────────────────────────────
 
 class _PlayheadPainter extends CustomPainter {
-  _PlayheadPainter({required this.progress, required this.rulerHeight});
+  _PlayheadPainter({
+    required this.progress,
+    required this.hoverProgress,
+    required this.rulerHeight,
+  });
 
   final double progress;
+  final double? hoverProgress;
   final double rulerHeight;
 
   static const _knobRadius = 6.5;
@@ -1187,6 +1250,31 @@ class _PlayheadPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Hover preview indicator (drawn first, so the regular playhead
+    // sits on top when both end up at the same x). Only present when
+    // the cursor is hovering the timeline and playback is paused.
+    if (hoverProgress != null) {
+      final hx = size.width * hoverProgress!;
+      final hoverPaint = Paint()
+        ..color = const Color(0x99FFFFFF)
+        ..strokeWidth = 1;
+      canvas.drawLine(
+        Offset(hx, rulerHeight - 2),
+        Offset(hx, size.height),
+        hoverPaint,
+      );
+      // Small ring at the top so the ghost reads as an indicator,
+      // not a stray line.
+      canvas.drawCircle(
+        Offset(hx, rulerHeight - 6),
+        4,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2
+          ..color = const Color(0xCCFFFFFF),
+      );
+    }
+
     final x = size.width * progress;
     final knobCenter = Offset(x, _knobRadius);
     final lineTop = _knobRadius + _knobRadius - 1;
@@ -1281,5 +1369,7 @@ class _PlayheadPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_PlayheadPainter old) =>
-      old.progress != progress || old.rulerHeight != rulerHeight;
+      old.progress != progress ||
+      old.hoverProgress != hoverProgress ||
+      old.rulerHeight != rulerHeight;
 }

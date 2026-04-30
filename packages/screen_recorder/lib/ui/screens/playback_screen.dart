@@ -563,9 +563,15 @@ class _PlaybackScreenState extends State<PlaybackScreen>
               return EditorTimeline(
                 duration: _controller.value.duration,
                 position: pos,
+                isPlaying: _controller.value.isPlaying,
                 onSeek: (next) {
                   _controller.seekTo(next);
                   _checkZoomMarkerClick(next);
+                },
+                onHoverSeek: (next) {
+                  // Live preview: just seek, no zoom-marker selection
+                  // change (would setState on every cursor pixel).
+                  _controller.seekTo(next);
                 },
                 zoomRegions: _zoomRegions,
                 selectedZoomIndex: _selectedZoomIndex,
