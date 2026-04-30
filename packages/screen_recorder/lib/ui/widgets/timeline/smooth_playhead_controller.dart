@@ -33,7 +33,15 @@ class SmoothPlayheadController extends ChangeNotifier {
   late bool _wasPlaying;
   Duration _smoothed = Duration.zero;
 
-  static const _seekDriftThreshold = Duration(milliseconds: 250);
+  /// Forward drift this large means video_player jumped ahead of our
+  /// extrapolation — almost certainly a forward seek; re-base immediately.
+  static const _forwardSeekThreshold = Duration(milliseconds: 250);
+
+  /// Backward drift this large means video_player position is far behind
+  /// our extrapolation — only re-base in this case (catches reverse seeks).
+  /// Smaller backward drift is decode/reporting jitter and ignoring it
+  /// keeps the playhead from glitching backward during playback.
+  static const _backwardSeekThreshold = Duration(seconds: -1);
 
   /// The interpolated playhead position; safe to read every build.
   Duration get position => _smoothed;
@@ -55,14 +63,15 @@ class SmoothPlayheadController extends ChangeNotifier {
     }
 
     if (isPlaying) {
-      // Detect seeks (or large reporting drift) and re-base extrapolation.
       final expected = _basePosition +
           _scale(DateTime.now().difference(_baseTimestamp), v.playbackSpeed);
-      final drift = (v.position - expected).abs();
-      if (drift > _seekDriftThreshold) {
+      final drift = v.position - expected;
+      if (drift > _forwardSeekThreshold || drift < _backwardSeekThreshold) {
         _basePosition = v.position;
         _baseTimestamp = DateTime.now();
       }
+      // Else: small backward drift is decode jitter — keep extrapolating
+      // forward rather than snapping the playhead backward.
     } else {
       // While paused the controller is the source of truth.
       if (_smoothed != v.position) {

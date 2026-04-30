@@ -449,6 +449,11 @@ class _ZoomPillState extends State<_ZoomPill> {
   _ZoomDragMode _mode = _ZoomDragMode.none;
   late Duration _dragStartTime;
   late Duration _dragEndTime;
+  // Cumulative dx since the drag began. We anchor the math to drag-start
+  // values, not the (constantly-changing) widget.zoom, so we must track
+  // the running delta ourselves — onHorizontalDragUpdate.delta.dx is
+  // per-frame, not cumulative.
+  double _dxAccum = 0;
 
   double get _startX =>
       _timeToX(widget.zoom.startTime, widget.laneWidth, widget.duration);
@@ -463,6 +468,7 @@ class _ZoomPillState extends State<_ZoomPill> {
       const Duration(milliseconds: _minZoomDurationMs);
 
   void _begin(Offset local) {
+    _dxAccum = 0;
     _dragStartTime = widget.zoom.startTime;
     _dragEndTime = widget.zoom.endTime;
     final x = local.dx;
@@ -482,8 +488,9 @@ class _ZoomPillState extends State<_ZoomPill> {
 
   void _update(double dxDelta) {
     if (widget.onChanged == null) return;
+    _dxAccum += dxDelta;
     final scale = widget.duration.inMicroseconds / widget.laneWidth;
-    final deltaUs = (dxDelta * scale).round();
+    final deltaUs = (_dxAccum * scale).round();
     final delta = Duration(microseconds: deltaUs);
 
     var nextStart = _dragStartTime;
@@ -554,8 +561,14 @@ class _ZoomPillState extends State<_ZoomPill> {
           },
           onHorizontalDragStart: (d) => _begin(d.localPosition),
           onHorizontalDragUpdate: (d) => _update(d.delta.dx),
-          onHorizontalDragEnd: (_) => _mode = _ZoomDragMode.none,
-          onHorizontalDragCancel: () => _mode = _ZoomDragMode.none,
+          onHorizontalDragEnd: (_) {
+            _mode = _ZoomDragMode.none;
+            _dxAccum = 0;
+          },
+          onHorizontalDragCancel: () {
+            _mode = _ZoomDragMode.none;
+            _dxAccum = 0;
+          },
           child: CustomPaint(
             painter: _ZoomPillPainter(
               fillTop: fillTop,
