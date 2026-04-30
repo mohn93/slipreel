@@ -17,7 +17,6 @@ final class RegionSelector {
   private var inFlight: Task<RegionSelection?, Never>?
   private var overlayWindows: [NSWindow] = []
   private var views: [NSScreen: RegionSelectorView] = [:]
-  private var toolbar: RegionToolbar?
   private var continuation: CheckedContinuation<RegionSelection?, Never>?
   private var activeScreen: NSScreen?
   private var escMonitor: Any?
@@ -37,7 +36,6 @@ final class RegionSelector {
   private func runSelection() async -> RegionSelection? {
     overlayWindows.removeAll()
     views.removeAll()
-    toolbar = RegionToolbar()
 
     for screen in NSScreen.screens {
       // contentRect is in GLOBAL screen coordinates. We intentionally do NOT
@@ -59,6 +57,9 @@ final class RegionSelector {
       view.onStateChange = { [weak self] state in
         self?.handleStateChange(state, on: screen)
       }
+      view.onToolbarCancel = { [weak self] in
+        self?.cancelAll()
+      }
       win.contentView = view
       win.orderFrontRegardless()
       overlayWindows.append(win)
@@ -69,6 +70,7 @@ final class RegionSelector {
     // the app would suppress these new overlays until the user clicks the
     // Dock icon. The screen-saver-level dim covers the Flutter window for us.
     NSApp.activate(ignoringOtherApps: true)
+    if let firstWin = overlayWindows.first { firstWin.makeKey() }
 
     escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       if event.keyCode == 53 {  // Esc
@@ -76,15 +78,6 @@ final class RegionSelector {
         return nil
       }
       return event
-    }
-
-    toolbar?.onStart = { [weak self] in
-      guard let self = self, let screen = self.activeScreen,
-            let view = self.views[screen] else { return }
-      view.triggerStart()
-    }
-    toolbar?.onCancel = { [weak self] in
-      self?.cancelAll()
     }
 
     return await withCheckedContinuation { cont in
@@ -107,19 +100,9 @@ final class RegionSelector {
       }
     }
 
-    let displayBounds = CGRect(origin: .zero, size: screen.frame.size)
-    let currentRect = views[screen]?.machine.currentRect ?? .zero
-    let screenOrigin = NSPoint(x: screen.frame.minX, y: screen.frame.minY)
-
     switch state {
-    case .idle:
-      toolbar?.hide()
-    case .drawing:
-      toolbar?.hide()
-    case .selected:
-      toolbar?.show(in: displayBounds, anchoredTo: currentRect, screenOrigin: screenOrigin)
-    case .resizing, .moving:
-      toolbar?.show(in: displayBounds, anchoredTo: currentRect, screenOrigin: screenOrigin)
+    case .idle, .drawing, .selected, .resizing, .moving:
+      break
     case .confirmed(let rect):
       finish(with: rect, on: screen)
     case .cancelled:
@@ -149,8 +132,6 @@ final class RegionSelector {
   }
 
   private func teardown() {
-    toolbar?.hide()
-    toolbar = nil
     for win in overlayWindows { win.orderOut(nil) }
     overlayWindows.removeAll()
     views.removeAll()
