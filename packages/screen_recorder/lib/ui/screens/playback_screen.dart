@@ -6,7 +6,6 @@ import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
-import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
@@ -47,11 +46,6 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
-  // Smoothed focal point for cursor-following zoom (video coords). null
-  // means "no recent focal" — initialized lazily when a zoom first
-  // activates so it doesn't lerp from origin on first hit.
-  Offset? _smoothedFocal;
-  ZoomRegion? _activeZoom;
 
   @override
   void initState() {
@@ -403,10 +397,16 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       );
     }
 
-    // The video itself + Transform wrapper rebuild every frame, but the
-    // expensive parts of the tree above (frame shadow, gradient backdrop,
-    // ClipRRect) sit OUTSIDE this AnimatedBuilder, and the VideoPlayer
-    // instance is held as `child` so it isn't reconstructed each frame.
+    // The Transform rebuilds every frame, but the expensive parts of the
+    // tree above (frame shadow, gradient backdrop, ClipRRect) sit OUTSIDE
+    // this AnimatedBuilder, and the VideoPlayer is held as `child` so it
+    // isn't reconstructed each frame.
+    //
+    // The focal is the zoom region's stored rect center (where the user
+    // clicked when creating the zoom). True cursor-follow would require
+    // recording-region origin + backing scale in the metadata sidecar so
+    // we could translate captured screen-global cursor points into video
+    // pixels — that's a larger refactor.
     final Widget videoWidget = AnimatedBuilder(
       animation: Listenable.merge([_controller, _smoothPlayhead]),
       child: VideoPlayer(_controller),
@@ -419,41 +419,13 @@ class _PlaybackScreenState extends State<PlaybackScreen>
             break;
           }
         }
-        if (activeZoom == null) {
-          if (_activeZoom != null) {
-            _activeZoom = null;
-            _smoothedFocal = null;
-          }
-          return child!;
-        }
-
-        // Cursor-driven focal, eased via per-frame lerp so the zoom glides
-        // toward a moving cursor instead of snapping.
-        Offset? rawFocal;
-        final cursor = cursorAt(_cursorRecording, pos);
-        if (cursor != null && _controller.value.size.width > 0) {
-          rawFocal = screenToVideoSpace(
-            screenPos: Offset(cursor.x, cursor.y),
-            screenSize: _controller.value.size,
-            videoSize: _controller.value.size,
-          );
-        }
-        rawFocal ??= activeZoom.rect.center;
-
-        if (activeZoom != _activeZoom) {
-          _activeZoom = activeZoom;
-          _smoothedFocal = rawFocal;
-        } else {
-          _smoothedFocal = _smoothedFocal == null
-              ? rawFocal
-              : Offset.lerp(_smoothedFocal!, rawFocal, 0.18)!;
-        }
+        if (activeZoom == null) return child!;
 
         final transform = _zoomTransformer.getTransform(
           position: pos,
           zoomRegion: activeZoom,
           videoSize: _controller.value.size,
-          focalPoint: _smoothedFocal,
+          focalPoint: activeZoom.rect.center,
         );
         return Transform(
           transform: transform,
