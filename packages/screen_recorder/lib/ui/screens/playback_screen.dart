@@ -9,7 +9,8 @@ import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
-import 'package:screen_recorder/ui/widgets/timeline/timeline_widget.dart';
+import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
+import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
@@ -30,8 +31,10 @@ class PlaybackScreen extends StatefulWidget {
   State<PlaybackScreen> createState() => _PlaybackScreenState();
 }
 
-class _PlaybackScreenState extends State<PlaybackScreen> {
+class _PlaybackScreenState extends State<PlaybackScreen>
+    with TickerProviderStateMixin {
   late VideoPlayerController _controller;
+  SmoothPlayheadController? _smoothPlayhead;
   bool _isInitialized = false;
   String? _error;
   TrimSelection? _trimSelection;
@@ -69,6 +72,10 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       } catch (_) {
         _cursorRecording = CursorRecording();
       }
+      _smoothPlayhead = SmoothPlayheadController(
+        videoController: _controller,
+        vsync: this,
+      );
       setState(() {
         _isInitialized = true;
         // Initialize trim selection to full duration
@@ -79,12 +86,6 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         );
         // Push initial state to undo/redo controller
         _undoRedo.push(_trimSelection!);
-      });
-      // Add listener to rebuild during playback for smooth zoom
-      _controller.addListener(() {
-        if (_controller.value.isPlaying) {
-          setState(() {}); // Force rebuild to update zoom transform
-        }
       });
       // Auto-play on load
       _controller.play();
@@ -97,6 +98,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
 
   @override
   void dispose() {
+    _smoothPlayhead?.dispose();
     _controller.dispose();
     _frameSettings.removeListener(_onFrameSettingsChanged);
     _frameSettings.dispose();
@@ -177,13 +179,6 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     setState(() {
       _selectedZoomIndex = null;
     });
-  }
-
-  void _handleTrimChanged(TrimSelection newTrim) {
-    setState(() {
-      _trimSelection = newTrim;
-    });
-    _undoRedo.push(newTrim);
   }
 
   void _openFrameSettings() {
@@ -497,103 +492,73 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       ),
       child: Column(
         children: [
-          // Progress bar
-          ValueListenableBuilder(
-            valueListenable: _controller,
-            builder: (context, VideoPlayerValue value, child) {
-              return Column(
+          // Time labels (driven by smooth playhead so the timer counts up frame-by-frame).
+          AnimatedBuilder(
+            animation:
+                Listenable.merge([_controller, _smoothPlayhead]),
+            builder: (context, _) {
+              final pos = _smoothPlayhead?.position ?? _controller.value.position;
+              final dur = _controller.value.duration;
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Time labels
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _formatDuration(value.position),
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                      Text(
-                        _formatDuration(value.duration),
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Timeline widget
-                  TimelineWidget(
-                    duration: value.duration,
-                    position: value.position,
-                    onPositionChanged: (newPosition) {
-                      _controller.seekTo(newPosition);
-                      _checkZoomMarkerClick(newPosition);
-                    },
-                    trimSelection: _trimSelection,
-                    onTrimChanged: _handleTrimChanged,
-                    zoomRegions: _zoomRegions,
-                  ),
-
-                  // Trim info display
-                  if (_trimSelection != null) ...[
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Trim: ${_formatDuration(_trimSelection!.start)} - ${_formatDuration(_trimSelection!.end)}',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '(${_formatDuration(_trimSelection!.duration)})',
-                          style: const TextStyle(
-                            color: Color(0xFF6C63FF),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-
-                  // Zoom effects count display
-                  if (_zoomRegions.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Zoom effects: ${_zoomRegions.length}',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        ),
-                        if (_selectedZoomIndex != null) ...[
-                          const SizedBox(width: 16),
-                          IconButton(
-                            onPressed: _deleteSelectedZoom,
-                            icon: const Icon(Icons.delete),
-                            color: Colors.red,
-                            iconSize: 20,
-                            tooltip: 'Delete Zoom Effect',
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
+                  Text(_formatDuration(pos),
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 12)),
+                  Text(_formatDuration(dur),
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 12)),
                 ],
               );
             },
           ),
+          const SizedBox(height: 8),
+
+          // Stacked timeline (time ruler + clip lane + zoom lane).
+          AnimatedBuilder(
+            animation:
+                Listenable.merge([_controller, _smoothPlayhead]),
+            builder: (context, _) {
+              final pos = _smoothPlayhead?.position ?? _controller.value.position;
+              return EditorTimeline(
+                duration: _controller.value.duration,
+                position: pos,
+                onSeek: (next) {
+                  _controller.seekTo(next);
+                  _checkZoomMarkerClick(next);
+                },
+                zoomRegions: _zoomRegions,
+                selectedZoomIndex: _selectedZoomIndex,
+                onZoomSelected: (i) {
+                  setState(() => _selectedZoomIndex = i);
+                },
+                onZoomChanged: (index, next) {
+                  setState(() {
+                    final list = List<ZoomRegion>.from(_zoomRegions);
+                    list[index] = next;
+                    _zoomRegions = list;
+                  });
+                },
+              );
+            },
+          ),
+
+          // Selected zoom delete affordance.
+          if (_selectedZoomIndex != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  onPressed: _deleteSelectedZoom,
+                  icon: const Icon(Icons.delete_outline),
+                  color: Colors.white70,
+                  iconSize: 20,
+                  tooltip: 'Delete zoom',
+                ),
+              ],
+            ),
+          ],
 
           const SizedBox(height: 8),
 
