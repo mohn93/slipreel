@@ -457,6 +457,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         self.liveCaptureWidth = captureWidth
         self.liveCaptureHeight = captureHeight
 
+        if let region = regionSelection {
+          await MainActor.run { RegionRecordingIndicator.shared.show(region: region) }
+        }
+
         result(true)
       } catch {
         result(FlutterError(code: "LIVE_START_FAILED",
@@ -468,6 +472,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
   private func stopLiveRecording(result: @escaping FlutterResult) {
     Task {
+      await MainActor.run { RegionRecordingIndicator.shared.hide() }
       do {
         try await captureManager?.stopCapture()
         captureManager = nil
