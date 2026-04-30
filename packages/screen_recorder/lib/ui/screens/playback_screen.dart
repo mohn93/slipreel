@@ -187,20 +187,22 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   }
 
   void _checkZoomMarkerClick(Duration position) {
-    // Find zoom region near clicked position (within 0.5 seconds)
-    final tolerance = const Duration(milliseconds: 500);
+    // Find zoom region near clicked position (within 0.5 seconds).
+    const tolerance = Duration(milliseconds: 500);
+    int? newIndex;
     for (var i = 0; i < _zoomRegions.length; i++) {
-      final zoom = _zoomRegions[i];
-      if ((position - zoom.startTime).abs() < tolerance) {
-        setState(() {
-          _selectedZoomIndex = i;
-        });
-        return;
+      if ((position - _zoomRegions[i].startTime).abs() < tolerance) {
+        newIndex = i;
+        break;
       }
     }
-    setState(() {
-      _selectedZoomIndex = null;
-    });
+    // Only setState when the selection actually changes — otherwise dragging
+    // the playhead causes a setState every tick which rebuilds the whole
+    // video panel (gradient backdrop + 80px-blur frame shadow + ClipRRect +
+    // Transform), making the seek visibly heavy.
+    if (newIndex != _selectedZoomIndex) {
+      setState(() => _selectedZoomIndex = newIndex);
+    }
   }
 
   void _openFrameSettings() {
@@ -401,65 +403,65 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       );
     }
 
-    // Find any zoom active at the current playback time.
-    ZoomRegion? activeZoom;
-    final currentPosition = _controller.value.position;
-    for (final z in _zoomRegions) {
-      if (z.isActive(currentPosition)) {
-        activeZoom = z;
-        break;
-      }
-    }
+    // The video itself + Transform wrapper rebuild every frame, but the
+    // expensive parts of the tree above (frame shadow, gradient backdrop,
+    // ClipRRect) sit OUTSIDE this AnimatedBuilder, and the VideoPlayer
+    // instance is held as `child` so it isn't reconstructed each frame.
+    final Widget videoWidget = AnimatedBuilder(
+      animation: Listenable.merge([_controller, _smoothPlayhead]),
+      child: VideoPlayer(_controller),
+      builder: (context, child) {
+        final pos = _smoothPlayhead?.position ?? _controller.value.position;
+        ZoomRegion? activeZoom;
+        for (final z in _zoomRegions) {
+          if (z.isActive(pos)) {
+            activeZoom = z;
+            break;
+          }
+        }
+        if (activeZoom == null) {
+          if (_activeZoom != null) {
+            _activeZoom = null;
+            _smoothedFocal = null;
+          }
+          return child!;
+        }
 
-    // Compute the focal point: prefer the recorded cursor (so the zoom
-    // tracks where the user was pointing); fall back to the zoom region's
-    // stored rect center. Smooth via per-frame lerp so the focal eases
-    // into a moving cursor instead of snapping.
-    Offset? rawFocal;
-    if (activeZoom != null) {
-      final cursor = cursorAt(_cursorRecording, currentPosition);
-      if (cursor != null && _controller.value.size.width > 0) {
-        final cursorScreen = Offset(cursor.x, cursor.y);
-        // Cursor is captured in screen coords; map to the video's coord
-        // system. We don't have a separate screenSize available here, so
-        // assume the recorded video matches the screen capture (the common
-        // case — area/window/screen sources all use the source resolution).
-        rawFocal = screenToVideoSpace(
-          screenPos: cursorScreen,
-          screenSize: _controller.value.size,
+        // Cursor-driven focal, eased via per-frame lerp so the zoom glides
+        // toward a moving cursor instead of snapping.
+        Offset? rawFocal;
+        final cursor = cursorAt(_cursorRecording, pos);
+        if (cursor != null && _controller.value.size.width > 0) {
+          rawFocal = screenToVideoSpace(
+            screenPos: Offset(cursor.x, cursor.y),
+            screenSize: _controller.value.size,
+            videoSize: _controller.value.size,
+          );
+        }
+        rawFocal ??= activeZoom.rect.center;
+
+        if (activeZoom != _activeZoom) {
+          _activeZoom = activeZoom;
+          _smoothedFocal = rawFocal;
+        } else {
+          _smoothedFocal = _smoothedFocal == null
+              ? rawFocal
+              : Offset.lerp(_smoothedFocal!, rawFocal, 0.18)!;
+        }
+
+        final transform = _zoomTransformer.getTransform(
+          position: pos,
+          zoomRegion: activeZoom,
           videoSize: _controller.value.size,
+          focalPoint: _smoothedFocal,
         );
-      }
-      rawFocal ??= activeZoom.rect.center;
-    }
-
-    if (activeZoom != _activeZoom) {
-      // Zoom just (de)activated — reset smoothing so the next active zoom
-      // starts on its actual focal instead of lerping from a stale one.
-      _smoothedFocal = null;
-      _activeZoom = activeZoom;
-    }
-    if (rawFocal != null) {
-      _smoothedFocal = _smoothedFocal == null
-          ? rawFocal
-          : Offset.lerp(_smoothedFocal!, rawFocal, 0.18)!;
-    }
-
-    Widget videoWidget = VideoPlayer(_controller);
-
-    if (activeZoom != null) {
-      final transform = _zoomTransformer.getTransform(
-        position: currentPosition,
-        zoomRegion: activeZoom,
-        videoSize: _controller.value.size,
-        focalPoint: _smoothedFocal,
-      );
-      videoWidget = Transform(
-        transform: transform,
-        alignment: Alignment.center,
-        child: videoWidget,
-      );
-    }
+        return Transform(
+          transform: transform,
+          alignment: Alignment.center,
+          child: child,
+        );
+      },
+    );
 
     // Calculate the total size including frame padding
     final videoSize = _controller.value.size;
@@ -508,12 +510,17 @@ class _PlaybackScreenState extends State<PlaybackScreen>
               child: SizedBox(
                 width: videoSize.width,
                 height: videoSize.height,
-                child: CustomPaint(
-                  painter: CursorOverlayPainter(
-                    cursorRecording: _cursorRecording,
-                    position: _controller.value.position,
-                    videoSize: videoSize,
-                    screenSize: videoSize,
+                child: AnimatedBuilder(
+                  animation:
+                      Listenable.merge([_controller, _smoothPlayhead]),
+                  builder: (context, _) => CustomPaint(
+                    painter: CursorOverlayPainter(
+                      cursorRecording: _cursorRecording,
+                      position: _smoothPlayhead?.position ??
+                          _controller.value.position,
+                      videoSize: videoSize,
+                      screenSize: videoSize,
+                    ),
                   ),
                 ),
               ),
