@@ -11,7 +11,7 @@ import 'package:screen_recorder/models/window_frame.dart';
 class FrameSettingsProvider extends ChangeNotifier {
   static const String _storageKey = 'window_frame_settings';
 
-  WindowFrame _currentFrame = WindowFrame.none();
+  WindowFrame _currentFrame = WindowFrame.rounded();
 
   /// The currently selected frame with all customizations
   WindowFrame get currentFrame => _currentFrame;
@@ -27,12 +27,11 @@ class FrameSettingsProvider extends ChangeNotifier {
         _currentFrame = WindowFrame.fromJson(json);
         notifyListeners();
       } else {
-        // Use default frame (None)
-        _currentFrame = WindowFrame.none();
+        _currentFrame = WindowFrame.rounded();
       }
     } catch (e) {
       debugPrint('Error loading frame settings: $e');
-      _currentFrame = WindowFrame.none();
+      _currentFrame = WindowFrame.rounded();
     }
   }
 

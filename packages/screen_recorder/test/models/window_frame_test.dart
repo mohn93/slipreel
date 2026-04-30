@@ -46,12 +46,12 @@ void main() {
       final frame = WindowFrame.rounded();
 
       expect(frame.name, 'Rounded');
-      expect(frame.padding, const EdgeInsets.all(40));
+      expect(frame.padding, const EdgeInsets.all(72));
       expect(frame.cornerRadius, 16.0);
-      expect(frame.shadowBlur, 40.0);
-      expect(frame.shadowOffset, const Offset(0, 10));
-      expect(frame.shadowColor, const Color(0x4D000000));
-      expect(frame.backgroundColor, const Color(0xFFFFFFFF));
+      expect(frame.shadowBlur, 80.0);
+      expect(frame.shadowOffset, const Offset(0, 28));
+      expect(frame.shadowColor, const Color(0x99000000));
+      expect(frame.backgroundColor, null);
       expect(frame.borderWidth, 0.0);
       expect(frame.borderColor, null);
     });

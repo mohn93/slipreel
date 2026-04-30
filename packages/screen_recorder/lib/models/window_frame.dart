@@ -59,16 +59,19 @@ class WindowFrame {
     );
   }
 
-  /// Creates a rounded frame with soft shadows and white background
+  /// Default cinematic frame: large padding and a soft, broad drop shadow
+  /// so the recording reads as a floating panel above the page backdrop.
+  /// Background is transparent — let whatever sits behind the frame show
+  /// through.
   factory WindowFrame.rounded() {
     return const WindowFrame(
       name: 'Rounded',
-      padding: EdgeInsets.all(40),
+      padding: EdgeInsets.all(72),
       cornerRadius: 16.0,
-      shadowBlur: 40.0,
-      shadowOffset: Offset(0, 10),
-      shadowColor: Color(0x4D000000), // 30% opacity black
-      backgroundColor: Color(0xFFFFFFFF), // White
+      shadowBlur: 80.0,
+      shadowOffset: Offset(0, 28),
+      shadowColor: Color(0x99000000), // 60% opacity black
+      backgroundColor: null,
       borderWidth: 0.0,
       borderColor: null,
     );

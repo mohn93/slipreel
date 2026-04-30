@@ -17,7 +17,7 @@ void main() {
       await provider.load();
 
       expect(provider.currentFrame, isA<WindowFrame>());
-      expect(provider.currentFrame.name, equals('None'));
+      expect(provider.currentFrame.name, equals('Rounded'));
     });
 
     test('should save and load custom frame', () async {
@@ -33,7 +33,7 @@ void main() {
       await provider2.load();
 
       expect(provider2.currentFrame.name, equals('Rounded'));
-      expect(provider2.currentFrame.padding, equals(const EdgeInsets.all(40)));
+      expect(provider2.currentFrame.padding, equals(const EdgeInsets.all(72)));
       expect(provider2.currentFrame.cornerRadius, equals(16.0));
     });
 
@@ -42,7 +42,7 @@ void main() {
       await provider.load();
 
       // Start with None frame
-      expect(provider.currentFrame.name, equals('None'));
+      expect(provider.currentFrame.name, equals('Rounded'));
 
       // Update padding
       await provider.updatePadding(50.0);
@@ -68,7 +68,7 @@ void main() {
       // Select Rounded template
       await provider.selectTemplate('Rounded');
       expect(provider.currentFrame.name, equals('Rounded'));
-      expect(provider.currentFrame.padding, equals(const EdgeInsets.all(40)));
+      expect(provider.currentFrame.padding, equals(const EdgeInsets.all(72)));
 
       // Select Modern template
       await provider.selectTemplate('Modern');

@@ -6,6 +6,7 @@ import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
+import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
@@ -46,6 +47,11 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
+  // Smoothed focal point for cursor-following zoom (video coords). null
+  // means "no recent focal" — initialized lazily when a zoom first
+  // activates so it doesn't lerp from origin on first hit.
+  Offset? _smoothedFocal;
+  ZoomRegion? _activeZoom;
 
   @override
   void initState() {
@@ -335,14 +341,21 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         ),
         body: Column(
           children: [
-            // Video player
+            // Video player on a soft dark backdrop so the framed recording
+            // reads as a floating, layered panel.
             Expanded(
-              child: Center(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFF181826), Color(0xFF0E0E18)],
+                  ),
+                ),
+                alignment: Alignment.center,
                 child: _buildVideoPlayer(),
               ),
             ),
-
-            // Controls
             _buildControls(),
           ],
         ),
@@ -388,30 +401,59 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       );
     }
 
-    // Get current zoom region if any
+    // Find any zoom active at the current playback time.
     ZoomRegion? activeZoom;
-    if (_isInitialized) {
-      final currentPosition = _controller.value.position;
-      try {
-        activeZoom = _zoomRegions.firstWhere(
-          (zoom) => zoom.isActive(currentPosition),
-        );
-      } catch (_) {
-        // No active zoom region
-        activeZoom = null;
+    final currentPosition = _controller.value.position;
+    for (final z in _zoomRegions) {
+      if (z.isActive(currentPosition)) {
+        activeZoom = z;
+        break;
       }
+    }
+
+    // Compute the focal point: prefer the recorded cursor (so the zoom
+    // tracks where the user was pointing); fall back to the zoom region's
+    // stored rect center. Smooth via per-frame lerp so the focal eases
+    // into a moving cursor instead of snapping.
+    Offset? rawFocal;
+    if (activeZoom != null) {
+      final cursor = cursorAt(_cursorRecording, currentPosition);
+      if (cursor != null && _controller.value.size.width > 0) {
+        final cursorScreen = Offset(cursor.x, cursor.y);
+        // Cursor is captured in screen coords; map to the video's coord
+        // system. We don't have a separate screenSize available here, so
+        // assume the recorded video matches the screen capture (the common
+        // case — area/window/screen sources all use the source resolution).
+        rawFocal = screenToVideoSpace(
+          screenPos: cursorScreen,
+          screenSize: _controller.value.size,
+          videoSize: _controller.value.size,
+        );
+      }
+      rawFocal ??= activeZoom.rect.center;
+    }
+
+    if (activeZoom != _activeZoom) {
+      // Zoom just (de)activated — reset smoothing so the next active zoom
+      // starts on its actual focal instead of lerping from a stale one.
+      _smoothedFocal = null;
+      _activeZoom = activeZoom;
+    }
+    if (rawFocal != null) {
+      _smoothedFocal = _smoothedFocal == null
+          ? rawFocal
+          : Offset.lerp(_smoothedFocal!, rawFocal, 0.18)!;
     }
 
     Widget videoWidget = VideoPlayer(_controller);
 
-    // Apply zoom transform if active
     if (activeZoom != null) {
       final transform = _zoomTransformer.getTransform(
-        position: _controller.value.position,
+        position: currentPosition,
         zoomRegion: activeZoom,
         videoSize: _controller.value.size,
+        focalPoint: _smoothedFocal,
       );
-
       videoWidget = Transform(
         transform: transform,
         alignment: Alignment.center,

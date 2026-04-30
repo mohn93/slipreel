@@ -77,9 +77,9 @@ void main() {
         videoSize: videoSize,
       );
 
-      // Rounded frame has 40px padding on all sides
-      expect(totalSize.width, equals(1920 + 80)); // left + right = 40 + 40
-      expect(totalSize.height, equals(1080 + 80)); // top + bottom = 40 + 40
+      // Rounded frame has 72px padding on all sides.
+      expect(totalSize.width, equals(1920 + 144));
+      expect(totalSize.height, equals(1080 + 144));
     });
 
     test('should return video size when frame is none', () {
