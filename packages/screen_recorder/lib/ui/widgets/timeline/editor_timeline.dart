@@ -22,6 +22,13 @@ const double _handleHitWidth = 16;
 const double _zoomPillInset = 2;
 const int _minZoomDurationMs = 250;
 
+/// Vertical room reserved ABOVE each zoom pill's body for the
+/// hover-revealed zoom-level badge. The zoom lane is sized to include
+/// this so the pill's hit area can cover the badge zone (otherwise the
+/// badge ends up outside any hit-testable region and unmounts as soon
+/// as the cursor leaves the pill body).
+const double _zoomBadgeAreaHeight = 32;
+
 double _timeToX(Duration t, double width, Duration total) {
   if (total.inMicroseconds <= 0) return 0;
   return (t.inMicroseconds / total.inMicroseconds) * width;
@@ -76,10 +83,11 @@ class EditorTimeline extends StatelessWidget {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final hasZooms = zoomRegions.isNotEmpty;
+        final zoomLaneHeight = _laneHeight + _zoomBadgeAreaHeight;
         final totalHeight = _rulerHeight +
             _laneSpacing +
             _laneHeight +
-            (hasZooms ? _laneSpacing + _laneHeight : 0);
+            (hasZooms ? _laneSpacing + zoomLaneHeight : 0);
 
         return SizedBox(
           height: totalHeight,
@@ -107,7 +115,7 @@ class EditorTimeline extends StatelessWidget {
                   if (hasZooms) ...[
                     const SizedBox(height: _laneSpacing),
                     SizedBox(
-                      height: _laneHeight,
+                      height: zoomLaneHeight,
                       child: _ZoomLane(
                         duration: duration,
                         width: width,
@@ -553,13 +561,6 @@ class _ZoomPillState extends State<_ZoomPill> {
     );
   }
 
-  // Vertical room reserved ABOVE the pill body for the hover-revealed
-  // zoom-level badge. The pill's MouseRegion extends over this whole area
-  // (pill body + badge area) so moving the cursor up to the badge stays
-  // inside the same hover region — otherwise the badge unmounts the
-  // moment the cursor leaves the pill body.
-  static const double _badgeAreaHeight = 32;
-
   @override
   Widget build(BuildContext context) {
     final left = _startX;
@@ -577,20 +578,18 @@ class _ZoomPillState extends State<_ZoomPill> {
     final exitPx =
         pillWidth - widget.zoom.exitDuration.inMicroseconds * pxPerRegionUs;
 
+    // The zoom lane is sized to (pillBodyHeight + badgeArea + 2*inset). The
+    // pill's MouseRegion fills the full vertical extent so the cursor moving
+    // from the pill body up to the badge stays in the same hover region.
     return Positioned(
       left: left,
-      top: _zoomPillInset - _badgeAreaHeight,
+      top: _zoomPillInset,
       width: pillWidth,
-      height: pillBodyHeight + _badgeAreaHeight,
+      height: pillBodyHeight + _zoomBadgeAreaHeight,
       child: MouseRegion(
         cursor: cursor,
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
-        // The MouseRegion's hit area covers the badge zone too — but only
-        // the badge itself paints in there, so don't swallow events meant
-        // for whatever lives above this lane (clip lane, time ruler).
-        opaque: false,
-        hitTestBehavior: HitTestBehavior.deferToChild,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -598,7 +597,7 @@ class _ZoomPillState extends State<_ZoomPill> {
             Positioned(
               left: 0,
               right: 0,
-              top: _badgeAreaHeight,
+              top: _zoomBadgeAreaHeight,
               height: pillBodyHeight,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -633,14 +632,14 @@ class _ZoomPillState extends State<_ZoomPill> {
             if (_hovered && pillWidth > _handleHitWidth * 4) ...[
               _RampDivider(
                 centerX: enterPx,
-                top: _badgeAreaHeight,
+                top: _zoomBadgeAreaHeight,
                 height: pillBodyHeight,
                 onDelta: _onEnterDividerDrag,
                 tooltip: 'Enter ${widget.zoom.enterDuration.inMilliseconds}ms',
               ),
               _RampDivider(
                 centerX: exitPx,
-                top: _badgeAreaHeight,
+                top: _zoomBadgeAreaHeight,
                 height: pillBodyHeight,
                 onDelta: _onExitDividerDrag,
                 tooltip: 'Exit ${widget.zoom.exitDuration.inMilliseconds}ms',
@@ -658,7 +657,7 @@ class _ZoomPillState extends State<_ZoomPill> {
               ),
             if (_hovered && widget.onDeleted != null)
               Positioned(
-                top: _badgeAreaHeight - 6,
+                top: _zoomBadgeAreaHeight - 6,
                 right: -6,
                 child: _ZoomDeleteButton(
                   onPressed: () => widget.onDeleted!(widget.index),
