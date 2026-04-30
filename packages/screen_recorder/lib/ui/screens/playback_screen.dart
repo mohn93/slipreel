@@ -850,6 +850,26 @@ class _ZoomFocalDebugPainter extends CustomPainter {
     final scaleX = size.width / videoSize.width;
     final scaleY = size.height / videoSize.height;
 
+    // Trail: render every recorded cursor sample as a small dot, colored
+    // by time (early=blue → late=red). Lets you see whether the saved
+    // cursor path roughly matches the path you actually moved during
+    // recording. If the trail looks completely different, the native
+    // transform is producing wrong coordinates.
+    final all = cursorRecording.positions;
+    if (all.length > 1) {
+      final n = all.length;
+      final dotPaint = Paint();
+      for (var i = 0; i < n; i++) {
+        final p = all[i];
+        final t = i / (n - 1);
+        // HSL: 220° (blue) → 0° (red). Saturation 0.9, lightness 0.5.
+        final hue = 220.0 * (1 - t);
+        dotPaint.color = HSLColor.fromAHSL(0.6, hue, 0.9, 0.55).toColor();
+        canvas.drawCircle(
+            Offset(p.x * scaleX, p.y * scaleY), 2, dotPaint);
+      }
+    }
+
     if (raw != null) {
       final p = Offset(raw.x * scaleX, raw.y * scaleY);
       // Raw cursor: small filled cyan dot.
@@ -879,6 +899,7 @@ class _ZoomFocalDebugPainter extends CustomPainter {
 
     // Text readout — top-left of the video.
     final readout = StringBuffer();
+    readout.writeln('samples: ${cursorRecording.count}');
     if (raw == null) {
       readout.writeln('cursor: <none at this time>');
     } else {
@@ -889,6 +910,14 @@ class _ZoomFocalDebugPainter extends CustomPainter {
           'focal:  ${smoothedFocal!.dx.toStringAsFixed(0)}, ${smoothedFocal!.dy.toStringAsFixed(0)} px');
     } else {
       readout.writeln('focal:  <no active zoom>');
+    }
+    if (cursorRecording.positions.isNotEmpty) {
+      final xs = cursorRecording.positions.map((p) => p.x);
+      final ys = cursorRecording.positions.map((p) => p.y);
+      readout.writeln(
+          'x rng:  ${xs.reduce((a, b) => a < b ? a : b).toStringAsFixed(0)} … ${xs.reduce((a, b) => a > b ? a : b).toStringAsFixed(0)}');
+      readout.writeln(
+          'y rng:  ${ys.reduce((a, b) => a < b ? a : b).toStringAsFixed(0)} … ${ys.reduce((a, b) => a > b ? a : b).toStringAsFixed(0)}');
     }
     readout.write('video:  ${videoSize.width.toStringAsFixed(0)} × ${videoSize.height.toStringAsFixed(0)}');
     final tp = TextPainter(
