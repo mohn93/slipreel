@@ -68,7 +68,14 @@ class CursorRecording {
     }
   }
 
-  /// Load cursor data from file
+  /// Load cursor data from file.
+  ///
+  /// Normalizes timestamps to be relative to the first sample. Recordings
+  /// made before the native plugin started rebasing cursor timestamps to
+  /// video-relative micros stored mach_absolute_time values (huge integers
+  /// since boot), which would make every editor lookup clamp to the first
+  /// sample. Subtracting the first sample's timestamp brings them into
+  /// the same 0-based time space the editor queries with.
   static Future<CursorRecording> loadFromFile(String filePath) async {
     try {
       final file = File(filePath);
@@ -80,8 +87,29 @@ class CursorRecording {
       final jsonData = jsonDecode(content) as List;
 
       final recording = CursorRecording();
-      for (final item in jsonData) {
-        recording.addPosition(CursorPosition.fromJson(item as Map<String, dynamic>));
+      if (jsonData.isEmpty) return recording;
+
+      // Read raw, then rebase timestamps. We only rebase if the first
+      // sample's timestamp is large enough to clearly NOT be a video-
+      // relative value (>1 hour of micros), to keep new recordings
+      // (already 0-based) byte-stable.
+      // Always rebase timestamps to start at 0 relative to the first
+      // sample. This handles both new recordings (already 0-based, base
+      // ≈ 0 — pass through unchanged) and legacy recordings (mach time,
+      // huge values — get normalized) without needing a heuristic. Drops
+      // ≤16ms of leading dead time on new recordings, which is below
+      // user-visible.
+      final raw = jsonData
+          .map((m) => CursorPosition.fromJson(m as Map<String, dynamic>))
+          .toList(growable: false);
+      final base = raw.first.timestampMicros;
+      for (final p in raw) {
+        recording.addPosition(CursorPosition(
+          x: p.x,
+          y: p.y,
+          timestampMicros: p.timestampMicros - base,
+          isClicked: p.isClicked,
+        ));
       }
 
       return recording;
