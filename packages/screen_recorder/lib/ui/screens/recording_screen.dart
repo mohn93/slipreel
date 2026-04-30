@@ -12,6 +12,7 @@ import '../widgets/source_picker/region_tab_content.dart';
 import '../widgets/source_picker/source_grid.dart';
 import '../widgets/source_picker/thumbnail_cache.dart';
 import 'playback_screen.dart';
+import 'recents_screen.dart';
 
 class RecordingScreen extends ConsumerStatefulWidget {
   const RecordingScreen({super.key});
@@ -136,6 +137,15 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                   _strictFilter ? Icons.visibility_off : Icons.visibility),
               onPressed: () => _toggleStrictFilter(!_strictFilter),
             ),
+          IconButton(
+            tooltip: 'Recent recordings',
+            icon: const Icon(Icons.history),
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const RecentsScreen(),
+              ));
+            },
+          ),
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../models/cursor_recording.dart';
+import '../models/recording_history.dart';
 import '../models/recording_metadata.dart';
 import '../utils/app_logger.dart';
 import '../utils/perf_summary.dart';
@@ -66,9 +67,12 @@ class RecordingState {
 }
 
 class RecordingController extends StateNotifier<RecordingState> {
-  RecordingController() : super(const RecordingState());
+  RecordingController({RecordingHistoryStore? historyStore})
+      : _historyStore = historyStore ?? RecordingHistoryStore(),
+        super(const RecordingState());
 
   final VideoEncoder _videoEncoder = VideoEncoder();
+  final RecordingHistoryStore _historyStore;
   StreamSubscription<CursorPosition>? _cursorSubscription;
   CursorRecording? _cursorRecording;
   Timer? _durationTimer;
@@ -190,6 +194,21 @@ class RecordingController extends StateNotifier<RecordingState> {
         fps: _videoEncoder.fps,
       );
       await meta.saveForVideo(result.outputPath);
+
+      // Append to the persisted recording history so the user can find
+      // this video again later from the Recents screen. Failures here are
+      // non-fatal — never block a successful recording on a prefs write.
+      try {
+        await _historyStore.append(RecordingHistoryEntry(
+          videoPath: result.outputPath,
+          recordedAt: meta.recordedAt,
+          widthPx: actualWidth,
+          heightPx: actualHeight,
+          fps: _videoEncoder.fps,
+        ));
+      } catch (e) {
+        AppLogger.recording.w('Failed to append to recording history: $e');
+      }
 
       // Build and log the perf summary.
       final fileSize = await File(result.outputPath).length();
