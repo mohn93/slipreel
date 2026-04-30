@@ -35,34 +35,40 @@ final class RegionSelector {
 
   @MainActor
   private func runSelection() async -> RegionSelection? {
-    NSApp.hide(nil)
     overlayWindows.removeAll()
     views.removeAll()
     toolbar = RegionToolbar()
 
     for screen in NSScreen.screens {
+      // contentRect is in GLOBAL screen coordinates. We intentionally do NOT
+      // pass `screen:` — when that parameter is non-nil, AppKit interprets
+      // contentRect as relative to that screen's origin, which on a secondary
+      // display (origin e.g. (1920, 0)) double-shifts the window off-screen.
       let win = NSWindow(
         contentRect: screen.frame,
         styleMask: [.borderless],
         backing: .buffered,
-        defer: false,
-        screen: screen)
+        defer: false)
       win.level = .screenSaver
       win.isOpaque = false
       win.backgroundColor = .clear
       win.ignoresMouseEvents = false
-      win.collectionBehavior = [.canJoinAllSpaces, .stationary]
+      win.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
 
       let view = RegionSelectorView(displayBounds: CGRect(origin: .zero, size: screen.frame.size))
       view.onStateChange = { [weak self] state in
         self?.handleStateChange(state, on: screen)
       }
       win.contentView = view
-      win.makeKeyAndOrderFront(nil)
-      win.makeFirstResponder(view)
+      win.orderFrontRegardless()
       overlayWindows.append(win)
       views[screen] = view
     }
+
+    // Ensure overlays receive input. We do NOT call NSApp.hide here — hiding
+    // the app would suppress these new overlays until the user clicks the
+    // Dock icon. The screen-saver-level dim covers the Flutter window for us.
+    NSApp.activate(ignoringOtherApps: true)
 
     escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       if event.keyCode == 53 {  // Esc
@@ -153,6 +159,5 @@ final class RegionSelector {
       NSEvent.removeMonitor(m)
       escMonitor = nil
     }
-    NSApp.unhide(nil)
   }
 }
