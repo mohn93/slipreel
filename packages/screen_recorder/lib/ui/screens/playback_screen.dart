@@ -11,6 +11,7 @@ import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
+import 'package:screen_recorder/ui/widgets/timeline/zoom_inspector.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
@@ -584,6 +585,18 @@ class _PlaybackScreenState extends State<PlaybackScreen>
             },
           ),
 
+          if (_selectedZoomIndex != null &&
+              _selectedZoomIndex! < _zoomRegions.length)
+            ZoomInspector(
+              zoom: _zoomRegions[_selectedZoomIndex!],
+              onChanged: (next) {
+                setState(() {
+                  final list = List<ZoomRegion>.from(_zoomRegions);
+                  list[_selectedZoomIndex!] = next;
+                  _zoomRegions = list;
+                });
+              },
+            ),
 
           const SizedBox(height: 8),
 

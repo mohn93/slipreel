@@ -22,8 +22,7 @@ class ZoomTransformer {
     if (!zoomRegion.isActive(position)) {
       return Matrix4.identity();
     }
-    final progress = _easeInOutCurve(zoomRegion.getProgress(position));
-    final z = _calculateZoomFactor(progress, zoomRegion.zoomLevel);
+    final z = _calculateZoomFactor(position, zoomRegion);
     if (z == 1.0) return Matrix4.identity();
 
     final focal = focalPoint ?? zoomRegion.rect.center;
@@ -57,9 +56,36 @@ class ZoomTransformer {
   double _easeInOutCurve(double t) =>
       t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
 
-  /// Goes 1 → zoomLevel → 1 across the region (sine ramp).
-  double _calculateZoomFactor(double progress, double maxZoom) {
-    final ramp = 1 - (progress * 2 - 1).abs();
-    return 1.0 + (maxZoom - 1.0) * ramp;
+  /// Three-phase zoom: ease-in over [enterDuration], hold at full
+  /// zoomLevel for the middle, ease-out over [exitDuration]. If the
+  /// requested enter+exit don't fit inside the region, both are scaled
+  /// down proportionally so the shape is preserved (and the hold goes
+  /// to zero in the limit).
+  double _calculateZoomFactor(Duration position, ZoomRegion z) {
+    final tIntoRegionUs =
+        (position - z.startTime).inMicroseconds.clamp(0, z.duration.inMicroseconds);
+    final regionUs = z.duration.inMicroseconds;
+    if (regionUs <= 0) return 1.0;
+
+    var enterUs = z.enterDuration.inMicroseconds;
+    var exitUs = z.exitDuration.inMicroseconds;
+    final totalRamp = enterUs + exitUs;
+    if (totalRamp > regionUs && totalRamp > 0) {
+      final scale = regionUs / totalRamp;
+      enterUs = (enterUs * scale).round();
+      exitUs = (exitUs * scale).round();
+    }
+
+    if (tIntoRegionUs < enterUs) {
+      final t = enterUs == 0 ? 1.0 : tIntoRegionUs / enterUs;
+      return 1.0 + (z.zoomLevel - 1.0) * _easeInOutCurve(t);
+    }
+    final exitStartUs = regionUs - exitUs;
+    if (tIntoRegionUs >= exitStartUs && exitUs > 0) {
+      final t = ((tIntoRegionUs - exitStartUs) / exitUs).clamp(0.0, 1.0);
+      return 1.0 + (z.zoomLevel - 1.0) * (1 - _easeInOutCurve(t));
+    }
+    // Hold phase.
+    return z.zoomLevel;
   }
 }

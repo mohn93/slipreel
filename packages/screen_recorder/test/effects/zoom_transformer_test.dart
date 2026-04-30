@@ -103,6 +103,69 @@ void main() {
       expect(v.y, closeTo(0, 0.001));
     });
 
+    test('three-phase curve holds at full zoom between enter and exit', () {
+      final transformer = ZoomTransformer();
+      final zoomRegion = ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 6),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: const Duration(milliseconds: 500),
+      );
+      const videoSize = Size(800, 600);
+
+      double zoomAt(Duration t) => transformer
+          .getTransform(
+            position: t,
+            zoomRegion: zoomRegion,
+            videoSize: videoSize,
+          )
+          .getMaxScaleOnAxis();
+
+      // Mid-enter: somewhere between 1× and 2×.
+      final midEnter = zoomAt(const Duration(milliseconds: 250));
+      expect(midEnter, greaterThan(1.0));
+      expect(midEnter, lessThan(2.0));
+
+      // After enter, in the hold region: should be exactly 2×.
+      expect(zoomAt(const Duration(seconds: 1)), closeTo(2.0, 0.001));
+      expect(zoomAt(const Duration(seconds: 3)), closeTo(2.0, 0.001));
+      expect(zoomAt(const Duration(seconds: 5)), closeTo(2.0, 0.001));
+
+      // Mid-exit: between 2× and 1×.
+      final midExit = zoomAt(const Duration(milliseconds: 5750));
+      expect(midExit, greaterThan(1.0));
+      expect(midExit, lessThan(2.0));
+    });
+
+    test('zoom factor scales enter+exit when total ramp exceeds duration',
+        () {
+      final transformer = ZoomTransformer();
+      // Region is 200ms but enter+exit asks for 1s — has to be squeezed.
+      final zoomRegion = ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 200),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: const Duration(milliseconds: 500),
+      );
+      // Should still produce a valid zoom factor between 1 and 2 across
+      // the region without crashing or going out of range.
+      for (var t = 0; t <= 200; t += 25) {
+        final s = transformer
+            .getTransform(
+              position: Duration(milliseconds: t),
+              zoomRegion: zoomRegion,
+              videoSize: const Size(800, 600),
+            )
+            .getMaxScaleOnAxis();
+        expect(s, greaterThanOrEqualTo(1.0));
+        expect(s, lessThanOrEqualTo(2.0001));
+      }
+    });
+
     test('focal point near edge clamps so visible area stays in bounds', () {
       final transformer = ZoomTransformer();
       final zoomRegion = ZoomRegion(

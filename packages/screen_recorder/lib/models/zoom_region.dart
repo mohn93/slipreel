@@ -1,21 +1,45 @@
 import 'package:flutter/material.dart';
 
-/// Represents a zoom region with timing and transformation parameters
+/// Represents a zoom region with timing and transformation parameters.
+///
+/// A zoom region runs in three phases across its [duration]:
+///  1. Enter ramp from 1× → [zoomLevel] over [enterDuration].
+///  2. Hold at [zoomLevel] for the middle.
+///  3. Exit ramp from [zoomLevel] → 1× over [exitDuration].
+///
+/// If [enterDuration] + [exitDuration] would consume the entire region
+/// (or more), they are scaled down proportionally so the region still has
+/// a consistent shape; the hold becomes zero-length in that case.
 class ZoomRegion {
+  static const Duration _defaultEnter = Duration(milliseconds: 500);
+  static const Duration _defaultExit = Duration(milliseconds: 500);
+
   final Rect rect;
   final Duration startTime;
   final Duration duration;
   final double zoomLevel;
+  final Duration enterDuration;
+  final Duration exitDuration;
 
   ZoomRegion({
     required Rect rect,
     required this.startTime,
     required this.duration,
     required double zoomLevel,
+    Duration? enterDuration,
+    Duration? exitDuration,
     Size? videoBounds,
   })  : assert(duration > Duration.zero, 'Duration must be positive'),
         rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
-        zoomLevel = zoomLevel.clamp(1.0, 5.0);
+        zoomLevel = zoomLevel.clamp(1.0, 5.0),
+        enterDuration =
+            (enterDuration ?? _defaultEnter).isNegative
+                ? Duration.zero
+                : (enterDuration ?? _defaultEnter),
+        exitDuration =
+            (exitDuration ?? _defaultExit).isNegative
+                ? Duration.zero
+                : (exitDuration ?? _defaultExit);
 
   /// End time of zoom effect
   Duration get endTime => startTime + duration;
@@ -40,6 +64,8 @@ class ZoomRegion {
     Duration? startTime,
     Duration? duration,
     double? zoomLevel,
+    Duration? enterDuration,
+    Duration? exitDuration,
     Size? videoBounds,
   }) {
     return ZoomRegion(
@@ -47,6 +73,8 @@ class ZoomRegion {
       startTime: startTime ?? this.startTime,
       duration: duration ?? this.duration,
       zoomLevel: zoomLevel ?? this.zoomLevel,
+      enterDuration: enterDuration ?? this.enterDuration,
+      exitDuration: exitDuration ?? this.exitDuration,
       videoBounds: videoBounds,
     );
   }
@@ -68,12 +96,17 @@ class ZoomRegion {
           rect == other.rect &&
           startTime == other.startTime &&
           duration == other.duration &&
-          zoomLevel == other.zoomLevel;
+          zoomLevel == other.zoomLevel &&
+          enterDuration == other.enterDuration &&
+          exitDuration == other.exitDuration;
 
   @override
-  int get hashCode =>
-      rect.hashCode ^
-      startTime.hashCode ^
-      duration.hashCode ^
-      zoomLevel.hashCode;
+  int get hashCode => Object.hash(
+        rect,
+        startTime,
+        duration,
+        zoomLevel,
+        enterDuration,
+        exitDuration,
+      );
 }
