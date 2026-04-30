@@ -130,12 +130,28 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   void _handleZoomRegionSelected(Rect rect) {
     if (!_isInitialized) return;
 
-    // Create zoom region at current playback position
-    final currentPosition = _controller.value.position;
+    final videoDuration = _controller.value.duration;
+    if (videoDuration <= Duration.zero) return;
+
+    const desired = Duration(seconds: 2);
+    // Default to 2s, but never longer than the video itself.
+    final span = videoDuration < desired ? videoDuration : desired;
+
+    var start = _controller.value.position;
+    var end = start + span;
+    // Keep the zoom inside the video timeline. If the playhead is near the
+    // end and the default span would overflow, shift the start back so the
+    // zoom ends at the video's end.
+    if (end > videoDuration) {
+      end = videoDuration;
+      start = end - span;
+      if (start < Duration.zero) start = Duration.zero;
+    }
+
     final zoomRegion = ZoomRegion(
       rect: rect,
-      startTime: currentPosition,
-      duration: const Duration(seconds: 2), // Default 2 second zoom
+      startTime: start,
+      duration: end - start,
       zoomLevel: 2.0,
       videoBounds: Size(
         _controller.value.size.width,
