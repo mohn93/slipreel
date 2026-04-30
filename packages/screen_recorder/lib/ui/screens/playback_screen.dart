@@ -57,6 +57,9 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   // a stale focal.
   Offset? _smoothedZoomFocal;
   ZoomRegion? _previousActiveZoom;
+  // Dev HUD: when on, draws a marker at the recorded cursor's video-pixel
+  // position so we can visually confirm the zoom focal is tracking it.
+  bool _showZoomDebug = false;
 
   @override
   void initState() {
@@ -540,6 +543,33 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                 ),
               ),
             ),
+          // Dev HUD: marks the recorded cursor's video-pixel position so
+          // we can verify the zoom focal is tracking the cursor. Painted
+          // last so it sits on top of the video and any other overlays.
+          if (_showZoomDebug)
+            Positioned(
+              left: currentFrame.padding.left,
+              top: currentFrame.padding.top,
+              child: IgnorePointer(
+                child: SizedBox(
+                  width: videoSize.width,
+                  height: videoSize.height,
+                  child: AnimatedBuilder(
+                    animation:
+                        Listenable.merge([_controller, _smoothPlayhead]),
+                    builder: (context, _) => CustomPaint(
+                      painter: _ZoomFocalDebugPainter(
+                        cursorRecording: _cursorRecording,
+                        position: _smoothPlayhead?.position ??
+                            _controller.value.position,
+                        videoSize: videoSize,
+                        smoothedFocal: _smoothedZoomFocal,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -707,6 +737,20 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                     : Colors.white70,
                 tooltip: 'Frame Settings',
               ),
+
+              // Dev HUD toggle: shows the recorded cursor position
+              // overlaid on the video so we can verify the zoom focal
+              // is following it.
+              IconButton(
+                onPressed: () =>
+                    setState(() => _showZoomDebug = !_showZoomDebug),
+                icon: const Icon(Icons.gps_fixed),
+                color: _showZoomDebug
+                    ? const Color(0xFF6C63FF)
+                    : Colors.white38,
+                tooltip:
+                    _showZoomDebug ? 'Hide cursor HUD' : 'Show cursor HUD',
+              ),
             ],
           ),
 
@@ -778,4 +822,102 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       ),
     );
   }
+}
+
+
+/// Dev HUD overlay drawn on top of the video while debugging cursor-follow
+/// zoom. Renders the recorded cursor's position at the current playback
+/// time (in video-pixel coords as stored in the .cursor.json sidecar) plus
+/// the smoothed focal point that the zoom transformer is currently using,
+/// with a small text readout. Off by default; toggled via the AppBar HUD
+/// button.
+class _ZoomFocalDebugPainter extends CustomPainter {
+  _ZoomFocalDebugPainter({
+    required this.cursorRecording,
+    required this.position,
+    required this.videoSize,
+    required this.smoothedFocal,
+  });
+
+  final CursorRecording cursorRecording;
+  final Duration position;
+  final Size videoSize;
+  final Offset? smoothedFocal;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final raw = cursorAt(cursorRecording, position);
+    final scaleX = size.width / videoSize.width;
+    final scaleY = size.height / videoSize.height;
+
+    if (raw != null) {
+      final p = Offset(raw.x * scaleX, raw.y * scaleY);
+      // Raw cursor: small filled cyan dot.
+      canvas.drawCircle(p, 6,
+          Paint()..color = const Color(0xCC00E5FF));
+      canvas.drawCircle(
+        p,
+        6,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = Colors.black87,
+      );
+    }
+
+    if (smoothedFocal != null) {
+      final f = Offset(smoothedFocal!.dx * scaleX, smoothedFocal!.dy * scaleY);
+      // Smoothed focal: hollow yellow ring + crosshair.
+      final ringPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = const Color(0xFFFFC107);
+      canvas.drawCircle(f, 14, ringPaint);
+      canvas.drawLine(Offset(f.dx - 18, f.dy), Offset(f.dx + 18, f.dy), ringPaint);
+      canvas.drawLine(Offset(f.dx, f.dy - 18), Offset(f.dx, f.dy + 18), ringPaint);
+    }
+
+    // Text readout — top-left of the video.
+    final readout = StringBuffer();
+    if (raw == null) {
+      readout.writeln('cursor: <none at this time>');
+    } else {
+      readout.writeln('cursor: ${raw.x.toStringAsFixed(0)}, ${raw.y.toStringAsFixed(0)} px');
+    }
+    if (smoothedFocal != null) {
+      readout.writeln(
+          'focal:  ${smoothedFocal!.dx.toStringAsFixed(0)}, ${smoothedFocal!.dy.toStringAsFixed(0)} px');
+    } else {
+      readout.writeln('focal:  <no active zoom>');
+    }
+    readout.write('video:  ${videoSize.width.toStringAsFixed(0)} × ${videoSize.height.toStringAsFixed(0)}');
+    final tp = TextPainter(
+      text: TextSpan(
+        text: readout.toString(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontFeatures: [FontFeature.tabularFigures()],
+          shadows: [
+            Shadow(color: Colors.black, blurRadius: 4),
+          ],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final pad = 6.0;
+    final bg = Rect.fromLTWH(8, 8, tp.width + pad * 2, tp.height + pad * 2);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(bg, const Radius.circular(4)),
+      Paint()..color = const Color(0xAA000000),
+    );
+    tp.paint(canvas, Offset(bg.left + pad, bg.top + pad));
+  }
+
+  @override
+  bool shouldRepaint(_ZoomFocalDebugPainter old) =>
+      old.position != position ||
+      old.cursorRecording != cursorRecording ||
+      old.videoSize != videoSize ||
+      old.smoothedFocal != smoothedFocal;
 }
