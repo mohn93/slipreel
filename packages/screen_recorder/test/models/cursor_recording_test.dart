@@ -116,5 +116,113 @@ void main() {
       expect(interpolated, isNotNull);
       expect(interpolated!.x, closeTo(500.5, 0.1));
     });
+
+    group('loadFromFile timestamp handling', () {
+      // The native plugin started writing video-relative microseconds
+      // (small values, typically <60s) for new recordings. Legacy files
+      // captured before that change stored mach_absolute_time (billions
+      // of micros since boot). loadFromFile must rebase the legacy form
+      // and leave the modern form alone — rebasing modern timestamps
+      // shifts the cursor track forward by the SCStream warmup gap and
+      // misaligns the cursor-follow zoom focal with the burned-in
+      // sprite.
+      late File tempFile;
+
+      setUp(() {
+        tempFile = File(
+            'test_cursor_${DateTime.now().microsecondsSinceEpoch}.json');
+      });
+
+      tearDown(() async {
+        if (await tempFile.exists()) {
+          await tempFile.delete();
+        }
+      });
+
+      test(
+          'preserves video-relative timestamps when first sample is small '
+          '(modern recording)', () async {
+        // First sample at 311ms — exactly the SCStream warmup gap shape
+        // we observed in production. Must not be shifted to 0.
+        final original = CursorRecording();
+        original.addPosition(
+            CursorPosition(x: 1, y: 1, timestampMicros: 311035));
+        original.addPosition(
+            CursorPosition(x: 2, y: 2, timestampMicros: 327000));
+        original.addPosition(
+            CursorPosition(x: 3, y: 3, timestampMicros: 5360329));
+        await original.saveToFile(tempFile.path);
+
+        final loaded = await CursorRecording.loadFromFile(tempFile.path);
+
+        expect(loaded.count, 3);
+        expect(loaded.positions[0].timestampMicros, 311035,
+            reason:
+                'first sample must keep its video-relative timestamp; '
+                'rebasing to 0 destructively shifts the rest of the track '
+                'forward by the warmup gap');
+        expect(loaded.positions[1].timestampMicros, 327000);
+        expect(loaded.positions[2].timestampMicros, 5360329);
+      });
+
+      test(
+          'rebases mach_absolute_time timestamps when first sample is '
+          'huge (legacy recording)', () async {
+        // Legacy files had timestamps in the trillions (mach time since
+        // boot). Without rebasing, every editor lookup would clamp to
+        // the first sample because the play queries are in the
+        // 0-based domain.
+        const machBase = 1234567890123;
+        final original = CursorRecording();
+        original.addPosition(CursorPosition(
+            x: 1, y: 1, timestampMicros: machBase));
+        original.addPosition(CursorPosition(
+            x: 2, y: 2, timestampMicros: machBase + 16000));
+        original.addPosition(CursorPosition(
+            x: 3, y: 3, timestampMicros: machBase + 5000000));
+        await original.saveToFile(tempFile.path);
+
+        final loaded = await CursorRecording.loadFromFile(tempFile.path);
+
+        expect(loaded.count, 3);
+        expect(loaded.positions[0].timestampMicros, 0,
+            reason: 'legacy mach timestamps must rebase so editor '
+                'lookups in the 0-based video-time domain hit them');
+        expect(loaded.positions[1].timestampMicros, 16000);
+        expect(loaded.positions[2].timestampMicros, 5000000);
+      });
+
+      test('detects format by first-sample threshold (60 seconds)',
+          () async {
+        // Just under 60s of micros is treated as video-relative;
+        // just over is treated as legacy and rebased.
+        const justUnder = 59 * 1000 * 1000;
+        const justOver = 61 * 1000 * 1000;
+
+        final modern = CursorRecording();
+        modern.addPosition(
+            CursorPosition(x: 1, y: 1, timestampMicros: justUnder));
+        modern.addPosition(CursorPosition(
+            x: 2, y: 2, timestampMicros: justUnder + 16000));
+        await modern.saveToFile(tempFile.path);
+        final loadedModern =
+            await CursorRecording.loadFromFile(tempFile.path);
+        expect(loadedModern.positions[0].timestampMicros, justUnder,
+            reason: '59s first sample is plausible video-relative time');
+
+        final legacy = CursorRecording();
+        legacy.addPosition(
+            CursorPosition(x: 1, y: 1, timestampMicros: justOver));
+        legacy.addPosition(CursorPosition(
+            x: 2, y: 2, timestampMicros: justOver + 16000));
+        await legacy.saveToFile(tempFile.path);
+        final loadedLegacy =
+            await CursorRecording.loadFromFile(tempFile.path);
+        expect(loadedLegacy.positions[0].timestampMicros, 0,
+            reason: '61s first sample is implausible for a single clip; '
+                'treat as legacy and rebase');
+        expect(loadedLegacy.positions[1].timestampMicros, 16000);
+      });
+    });
   });
 }
