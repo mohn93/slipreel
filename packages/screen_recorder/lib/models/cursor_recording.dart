@@ -70,12 +70,23 @@ class CursorRecording {
 
   /// Load cursor data from file.
   ///
-  /// Normalizes timestamps to be relative to the first sample. Recordings
-  /// made before the native plugin started rebasing cursor timestamps to
-  /// video-relative micros stored mach_absolute_time values (huge integers
-  /// since boot), which would make every editor lookup clamp to the first
-  /// sample. Subtracting the first sample's timestamp brings them into
-  /// the same 0-based time space the editor queries with.
+  /// Detects the timestamp format and only rebases legacy recordings.
+  /// New recordings store timestamps as microseconds since the first
+  /// video frame's capture time (small values, typically 0–7 seconds
+  /// for a short clip). Legacy recordings (made before the native
+  /// plugin rebased to video-relative time) stored
+  /// `mach_absolute_time()` values — billions of microseconds since
+  /// boot. We tell them apart by magnitude: if the first sample's
+  /// timestamp is implausibly large for a single recording (>1 minute),
+  /// it's legacy and gets rebased to start at zero. Otherwise the
+  /// timestamps are already video-relative and we use them as-is —
+  /// rebasing them would destructively shift every sample forward by
+  /// the warmup gap (typically 100–400 ms while SCStream produces its
+  /// first frame), so editor lookups at video time t return the cursor
+  /// position from t + gap and the focal/cyan-dot lead the actual
+  /// cursor sprite.
+  static const int _legacyTimestampThresholdMicros = 60 * 1000 * 1000;
+
   static Future<CursorRecording> loadFromFile(String filePath) async {
     try {
       final file = File(filePath);
@@ -89,20 +100,12 @@ class CursorRecording {
       final recording = CursorRecording();
       if (jsonData.isEmpty) return recording;
 
-      // Read raw, then rebase timestamps. We only rebase if the first
-      // sample's timestamp is large enough to clearly NOT be a video-
-      // relative value (>1 hour of micros), to keep new recordings
-      // (already 0-based) byte-stable.
-      // Always rebase timestamps to start at 0 relative to the first
-      // sample. This handles both new recordings (already 0-based, base
-      // ≈ 0 — pass through unchanged) and legacy recordings (mach time,
-      // huge values — get normalized) without needing a heuristic. Drops
-      // ≤16ms of leading dead time on new recordings, which is below
-      // user-visible.
       final raw = jsonData
           .map((m) => CursorPosition.fromJson(m as Map<String, dynamic>))
           .toList(growable: false);
-      final base = raw.first.timestampMicros;
+      final isLegacy =
+          raw.first.timestampMicros > _legacyTimestampThresholdMicros;
+      final base = isLegacy ? raw.first.timestampMicros : 0;
       for (final p in raw) {
         recording.addPosition(CursorPosition(
           x: p.x,
