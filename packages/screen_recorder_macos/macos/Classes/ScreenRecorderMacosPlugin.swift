@@ -439,17 +439,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         captureManager?.onFrameReceived = { [weak self, weak encoder] sampleBuffer in
           guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
           let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-          // Stamp the first frame's wall-clock CAPTURE time (not callback
-          // time) so cursor timestamps line up with the moment SCStream
-          // grabbed the pixels — the callback arrives some ms later due
-          // to compression/dispatch. SCStream pts is in the host clock
-          // domain; subtract its age from now() to recover capture time.
           if let self = self, self.firstVideoFrameAt == nil {
             let hostNow = CMClockGetTime(CMClockGetHostTimeClock())
-            let ageSeconds = CMTimeGetSeconds(hostNow) - CMTimeGetSeconds(pts)
-            let safeAge = ageSeconds.isFinite && ageSeconds > 0 ? ageSeconds : 0
-            self.firstVideoFrameAt =
-              Date().addingTimeInterval(-safeAge)
+            self.firstVideoFrameAt = FirstFrameTiming.captureInstant(
+              nowWall: Date(),
+              hostNowSeconds: CMTimeGetSeconds(hostNow),
+              ptsSeconds: CMTimeGetSeconds(pts))
           }
           try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
         }
@@ -489,16 +484,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           }
           cursorTracker?.onCursorUpdate = { [weak self] x, y, _, isClicked in
             guard let self = self else { return }
-            // Drop pre-first-frame samples entirely. Otherwise every
-            // cursor sample fired during SCStream's ~50–200ms warmup
-            // collapses onto t=0, the binary search at playback only
-            // returns one of them, and the rest become invisible "lost"
-            // positions in the trail.
             guard let frameStart = self.firstVideoFrameAt else { return }
-            let elapsed = Date().timeIntervalSince(frameStart)
-            guard elapsed >= 0 else { return }
+            guard let videoMicros = FirstFrameTiming.videoMicros(
+              now: Date(), since: frameStart) else { return }
             let (px, py) = self.cursorTransform?(x, y) ?? (x, y)
-            let videoMicros = Int64(elapsed * 1_000_000)
             self.cursorStreamHandler?.sendCursorPosition(
               x: px, y: py, timestamp: videoMicros, isClicked: isClicked)
           }
