@@ -489,22 +489,16 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           }
           cursorTracker?.onCursorUpdate = { [weak self] x, y, _, isClicked in
             guard let self = self else { return }
+            // Drop pre-first-frame samples entirely. Otherwise every
+            // cursor sample fired during SCStream's ~50–200ms warmup
+            // collapses onto t=0, the binary search at playback only
+            // returns one of them, and the rest become invisible "lost"
+            // positions in the trail.
+            guard let frameStart = self.firstVideoFrameAt else { return }
+            let elapsed = Date().timeIntervalSince(frameStart)
+            guard elapsed >= 0 else { return }
             let (px, py) = self.cursorTransform?(x, y) ?? (x, y)
-            // Rebase against the FIRST video frame's wall-clock time so
-            // cursor timestamps align with VideoPlayerController.value
-            // .position at playback. SCStream takes a noticeable amount
-            // of time to start emitting frames after startCapture returns
-            // (~50–200ms), so using liveStartTime would put cursor
-            // samples ahead of the video by that delay. Samples that fire
-            // before the first frame arrives are clamped to t=0.
-            let videoMicros: Int64
-            if let frameStart = self.firstVideoFrameAt {
-              let elapsed = Date().timeIntervalSince(frameStart)
-              videoMicros =
-                elapsed >= 0 ? Int64(elapsed * 1_000_000) : 0
-            } else {
-              videoMicros = 0
-            }
+            let videoMicros = Int64(elapsed * 1_000_000)
             self.cursorStreamHandler?.sendCursorPosition(
               x: px, y: py, timestamp: videoMicros, isClicked: isClicked)
           }

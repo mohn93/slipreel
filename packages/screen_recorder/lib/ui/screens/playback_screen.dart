@@ -432,14 +432,25 @@ class _PlaybackScreenState extends State<PlaybackScreen>
           return child!;
         }
 
-        // Cursor-driven focal: cursor positions are saved in video-pixel
-        // coords (the native side transforms NSEvent.mouseLocation into
-        // video-pixel space at capture time), so we can use them
-        // directly. Falls back to the static rect center when no cursor
+        // Cursor-driven focal. We look up the cursor track slightly
+        // AHEAD of the actual playback time because the OS-rendered
+        // cursor sprite that gets baked into each frame is itself drawn
+        // ahead of the real cursor position (the system uses one
+        // compositor cycle of look-ahead). Without this offset, the
+        // focal — and the HUD's cyan dot — visibly lag the cursor
+        // sprite. ~33ms (≈ 2 frames @ 60fps) is what tracks cleanly in
+        // practice.
+        final cursorLookupAt =
+            pos + const Duration(milliseconds: 33);
+
+        // Cursor positions are saved in video-pixel coords (the native
+        // side transforms NSEvent.mouseLocation into video-pixel space
+        // at capture time), so we can use them directly. Falls back to
+        // the static rect center when no cursor
         // sample is available for this time (legacy recording, window
         // source, or before the cursor track started).
         Offset? rawFocal;
-        final cursor = cursorAt(_cursorRecording, pos);
+        final cursor = cursorAt(_cursorRecording, cursorLookupAt);
         if (cursor != null) {
           rawFocal = Offset(cursor.x, cursor.y);
         }
@@ -560,8 +571,12 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                     builder: (context, _) => CustomPaint(
                       painter: _ZoomFocalDebugPainter(
                         cursorRecording: _cursorRecording,
-                        position: _smoothPlayhead?.position ??
-                            _controller.value.position,
+                        // Same forward offset the zoom focal uses so the
+                        // HUD's cyan dot tracks the visible cursor sprite
+                        // instead of trailing it.
+                        position: (_smoothPlayhead?.position ??
+                                _controller.value.position) +
+                            const Duration(milliseconds: 33),
                         videoSize: videoSize,
                         smoothedFocal: _smoothedZoomFocal,
                       ),
