@@ -437,12 +437,20 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         try encoder.initialize()
 
         captureManager?.onFrameReceived = { [weak self, weak encoder] sampleBuffer in
-          // Stamp the first frame's wall-clock time so cursor timestamps
-          // can be rebased against the actual video start (not the
-          // pre-stream liveStartTime).
-          if self?.firstVideoFrameAt == nil { self?.firstVideoFrameAt = Date() }
           guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
           let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+          // Stamp the first frame's wall-clock CAPTURE time (not callback
+          // time) so cursor timestamps line up with the moment SCStream
+          // grabbed the pixels — the callback arrives some ms later due
+          // to compression/dispatch. SCStream pts is in the host clock
+          // domain; subtract its age from now() to recover capture time.
+          if let self = self, self.firstVideoFrameAt == nil {
+            let hostNow = CMClockGetTime(CMClockGetHostTimeClock())
+            let ageSeconds = CMTimeGetSeconds(hostNow) - CMTimeGetSeconds(pts)
+            let safeAge = ageSeconds.isFinite && ageSeconds > 0 ? ageSeconds : 0
+            self.firstVideoFrameAt =
+              Date().addingTimeInterval(-safeAge)
+          }
           try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
         }
 
