@@ -12,6 +12,7 @@ import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
+import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
@@ -52,11 +53,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   // display this fixed value, even though the controller is being live-
   // seeked to follow the cursor for frame preview. Restored on hover end.
   Duration? _hoverFrozenPosition;
-  // Smoothed focal point for cursor-following zoom (video pixels). Reset
-  // when the active zoom (de)activates so a fresh zoom doesn't lerp from
-  // a stale focal.
-  Offset? _smoothedZoomFocal;
-  ZoomRegion? _previousActiveZoom;
+  // Cursor-driven zoom focal smoothing. State (active-zoom tracking,
+  // last smoothed offset) lives in the controller so it can be unit-
+  // tested without a widget tree.
+  final ZoomFocalController _zoomFocalController = ZoomFocalController();
   // Dev HUD: when on, draws a marker at the recorded cursor's video-pixel
   // position so we can visually confirm the zoom focal is tracking it.
   bool _showZoomDebug = false;
@@ -417,43 +417,15 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       child: VideoPlayer(_controller),
       builder: (context, child) {
         final pos = _smoothPlayhead?.position ?? _controller.value.position;
-        ZoomRegion? activeZoom;
-        for (final z in _zoomRegions) {
-          if (z.isActive(pos)) {
-            activeZoom = z;
-            break;
-          }
-        }
-        if (activeZoom == null) {
-          if (_previousActiveZoom != null) {
-            _previousActiveZoom = null;
-            _smoothedZoomFocal = null;
-          }
-          return child!;
-        }
+        final focalUpdate = _zoomFocalController.update(
+          position: pos,
+          zoomRegions: _zoomRegions,
+          cursorRecording: _cursorRecording,
+        );
+        if (focalUpdate == null) return child!;
 
-        // Cursor positions are saved in video-pixel coords (the native
-        // side transforms NSEvent.mouseLocation into video-pixel space
-        // at capture time), so we can look them up at the raw playhead.
-        // Falls back to the static rect center when no cursor sample is
-        // available for this time (legacy recording, window source, or
-        // before the cursor track started).
-        Offset? rawFocal;
-        final cursor = cursorAt(_cursorRecording, pos);
-        if (cursor != null) {
-          rawFocal = Offset(cursor.x, cursor.y);
-        }
-        rawFocal ??= activeZoom.rect.center;
-
-        if (activeZoom != _previousActiveZoom) {
-          _previousActiveZoom = activeZoom;
-          _smoothedZoomFocal = rawFocal;
-        } else {
-          _smoothedZoomFocal = _smoothedZoomFocal == null
-              ? rawFocal
-              : Offset.lerp(_smoothedZoomFocal!, rawFocal, 0.18)!;
-        }
-        final focalForFrame = _smoothedZoomFocal!;
+        final activeZoom = focalUpdate.zoom;
+        final focalForFrame = focalUpdate.focal;
 
         // Smoothly interpolate the rendered zoom level when the user
         // changes it via the badge — otherwise stepping the level
@@ -464,7 +436,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
           curve: Curves.easeOutCubic,
           builder: (context, animatedZoom, _) {
             final tweenedRegion =
-                activeZoom!.copyWith(zoomLevel: animatedZoom);
+                activeZoom.copyWith(zoomLevel: animatedZoom);
             final transform = _zoomTransformer.getTransform(
               position: pos,
               zoomRegion: tweenedRegion,
@@ -563,7 +535,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                         position: _smoothPlayhead?.position ??
                             _controller.value.position,
                         videoSize: videoSize,
-                        smoothedFocal: _smoothedZoomFocal,
+                        smoothedFocal: _zoomFocalController.smoothedFocal,
                       ),
                     ),
                   ),
