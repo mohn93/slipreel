@@ -462,7 +462,9 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
             self.makeCursorTransform(
               source: source,
               sourceId: finalSourceId,
-              region: regionSelection)
+              region: regionSelection,
+              videoWidthPx: captureWidth,
+              videoHeightPx: captureHeight)
           }
           cursorTracker?.onCursorUpdate = { [weak self] x, y, _, isClicked in
             guard let self = self else { return }
@@ -577,8 +579,17 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private func makeCursorTransform(
     source: String,
     sourceId: String,
-    region: RegionSelection?
+    region: RegionSelection?,
+    videoWidthPx: Int,
+    videoHeightPx: Int
   ) -> ((Double, Double) -> (Double, Double))? {
+    // The "effective scale" — pixels of recorded video per display point
+    // — is NOT always equal to NSScreen.backingScaleFactor. On Apple
+    // Silicon the system can capture at logical-point resolution while
+    // the screen still reports backingScaleFactor 2.0. Always derive
+    // the scale from the actual video dimensions vs the display's point
+    // dimensions so the math matches what SCStream produced.
+
     // For area capture we know the recording is `region` pixels inside
     // the display identified by region.displayId.
     if source == "area", let r = region {
@@ -586,16 +597,21 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
           as? CGDirectDisplayID) == r.displayId
       }) else { return nil }
-      let scale = Double(screen.backingScaleFactor)
       let displayMinX = Double(screen.frame.minX)
       let displayMaxY = Double(screen.frame.maxY)
+      // For area, region.widthPx WAS the SCStream framebuffer width, so
+      // pixelsPerPoint between display points and video pixels is the
+      // same ratio as what RegionSelector used at selection time, i.e.
+      // NSScreen.backingScaleFactor. (videoWidthPx == region.widthPx by
+      // construction.)
+      _ = videoWidthPx
+      _ = videoHeightPx
+      let scale = Double(screen.backingScaleFactor)
       let regionLocalXPoints = Double(r.x) / scale
       let regionLocalYPoints = Double(r.y) / scale
       return { gx, gy in
-        // Cursor in display-local top-left points.
         let xInDisplayPts = gx - displayMinX
         let yInDisplayPts = displayMaxY - gy
-        // Cursor in region-local top-left points, then scaled to pixels.
         let xPx = (xInDisplayPts - regionLocalXPoints) * scale
         let yPx = (yInDisplayPts - regionLocalYPoints) * scale
         return (xPx, yPx)
@@ -609,13 +625,19 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
          ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
            as? CGDirectDisplayID) == displayId
        }) {
-      let scale = Double(screen.backingScaleFactor)
       let displayMinX = Double(screen.frame.minX)
       let displayMaxY = Double(screen.frame.maxY)
+      // pixels per display-point. Computed from the actual recorded
+      // video size — handles macOS configurations where SCStream
+      // captures at logical-point resolution rather than backing pixels.
+      let pixelsPerPointX = Double(videoWidthPx) / Double(screen.frame.width)
+      let pixelsPerPointY =
+        Double(videoHeightPx) / Double(screen.frame.height)
       return { gx, gy in
         let xInDisplayPts = gx - displayMinX
         let yInDisplayPts = displayMaxY - gy
-        return (xInDisplayPts * scale, yInDisplayPts * scale)
+        return (xInDisplayPts * pixelsPerPointX,
+                yInDisplayPts * pixelsPerPointY)
       }
     }
 
