@@ -13,6 +13,7 @@ import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_panel.dart';
+import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog.dart';
@@ -46,6 +47,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   bool _isSelectingZoom = false;
   final _zoomTransformer = ZoomTransformer();
   int? _selectedZoomIndex;
+  // Whether the main clip bar is currently selected. Mutually
+  // exclusive with [_selectedZoomIndex]: selecting one clears the
+  // other. Drives the inspector's context-mode display.
+  bool _isClipSelected = false;
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
@@ -70,6 +75,18 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     _frameSettings.load();
     _frameSettings.addListener(_onFrameSettingsChanged);
     _initializeVideo();
+  }
+
+  /// Compute the inspector's current timeline-selection input from
+  /// the screen's selection state. Zoom selection wins if both are
+  /// somehow set (only one can be set under normal flow because the
+  /// tap handlers clear the other).
+  TimelineSelection? _currentSelection() {
+    if (_selectedZoomIndex != null) {
+      return ZoomSelected(_selectedZoomIndex!);
+    }
+    if (_isClipSelected) return const ClipSelected();
+    return null;
   }
 
   void _onFrameSettingsChanged() {
@@ -365,7 +382,25 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                     ),
                   ),
                   if (_isInitialized)
-                    InspectorPanel(frameSettings: _frameSettings),
+                    InspectorPanel(
+                      frameSettings: _frameSettings,
+                      selection: _currentSelection(),
+                      zoomRegions: _zoomRegions,
+                      clipDuration: _controller.value.duration,
+                      onZoomChanged: (index, next) {
+                        setState(() => _zoomRegions[index] = next);
+                      },
+                      onZoomDeleted: (index) {
+                        setState(() {
+                          _zoomRegions.removeAt(index);
+                          _selectedZoomIndex = null;
+                        });
+                      },
+                      onSelectionCleared: () => setState(() {
+                        _selectedZoomIndex = null;
+                        _isClipSelected = false;
+                      }),
+                    ),
                 ],
               ),
             ),
@@ -654,7 +689,19 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                 zoomRegions: _zoomRegions,
                 selectedZoomIndex: _selectedZoomIndex,
                 onZoomSelected: (i) {
-                  setState(() => _selectedZoomIndex = i);
+                  setState(() {
+                    _selectedZoomIndex = i;
+                    // Zoom and clip selections are mutually exclusive
+                    // — selecting a zoom clears any clip selection.
+                    if (i != null) _isClipSelected = false;
+                  });
+                },
+                clipSelected: _isClipSelected,
+                onClipSelected: (selected) {
+                  setState(() {
+                    _isClipSelected = selected;
+                    if (selected) _selectedZoomIndex = null;
+                  });
                 },
                 onZoomChanged: (index, next) {
                   setState(() {

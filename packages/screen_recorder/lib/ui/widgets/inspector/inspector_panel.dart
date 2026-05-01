@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
+import 'package:screen_recorder/ui/widgets/inspector/contexts/clip_context_inspector.dart';
+import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/animation_tab.dart';
@@ -9,27 +12,55 @@ import 'package:screen_recorder/ui/widgets/inspector/tabs/camera_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/captions_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/cursor_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/shortcuts_tab.dart';
+import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
 
 /// Right-hand inspector for the playback editor.
 ///
-/// Vertical icon rail on the left selects which tab is shown on the
-/// right. The selected-tab indicator is a tinted icon plus a small
-/// purple dot in the upper-right corner of the icon button (matching
-/// Screen Studio's reference).
+/// Two display modes:
+///   - Format mode (no selection): vertical icon rail on the left
+///     plus the chosen tab on the right (Background, Cursor, etc.).
+///   - Context mode: when [selection] is non-null, the rail is
+///     replaced by a "Back" pill and the right pane shows a
+///     properties view specific to the selected timeline element.
+///
+/// Either mode keeps the same outer width so the preview area
+/// doesn't reflow when selection toggles.
 class InspectorPanel extends StatefulWidget {
   const InspectorPanel({
     super.key,
     required this.frameSettings,
     this.width = 380,
     this.initialTab = InspectorTab.background,
+    this.selection,
+    this.zoomRegions = const [],
+    this.clipDuration = Duration.zero,
+    this.onZoomChanged,
+    this.onZoomDeleted,
+    this.onSelectionCleared,
   });
 
-  /// FrameSettings is the only model the inspector currently writes
-  /// through to (Background tab → padding/cornerRadius/shadowBlur).
-  /// Other tabs hold local state only for now.
   final FrameSettingsProvider frameSettings;
   final double width;
   final InspectorTab initialTab;
+
+  /// What's currently selected on the timeline. When non-null, the
+  /// inspector enters context mode. Null returns to tab mode.
+  final TimelineSelection? selection;
+
+  /// All zoom regions, indexed by [ZoomSelected.index].
+  final List<ZoomRegion> zoomRegions;
+
+  /// Total clip duration, displayed in the Clip context header.
+  final Duration clipDuration;
+
+  /// Mutate a zoom region (zoom level, enter/exit duration).
+  final void Function(int index, ZoomRegion next)? onZoomChanged;
+
+  /// Delete a zoom region.
+  final void Function(int index)? onZoomDeleted;
+
+  /// User asked to leave context mode (X button).
+  final VoidCallback? onSelectionCleared;
 
   @override
   State<InspectorPanel> createState() => _InspectorPanelState();
@@ -38,8 +69,15 @@ class InspectorPanel extends StatefulWidget {
 class _InspectorPanelState extends State<InspectorPanel> {
   late InspectorTab _selected = widget.initialTab;
 
+  // Local state for context-mode controls that don't have a model
+  // field yet. Per-zoom values are keyed on the zoom's startTime so
+  // the right values come back when re-selecting the same zoom.
+  final Map<Duration, _ZoomLocalState> _zoomLocal = {};
+  final _ClipLocalState _clipLocal = _ClipLocalState();
+
   @override
   Widget build(BuildContext context) {
+    final selection = widget.selection;
     return Container(
       width: widget.width,
       decoration: const BoxDecoration(
@@ -48,20 +86,26 @@ class _InspectorPanelState extends State<InspectorPanel> {
           left: BorderSide(color: Color(0xFF14141C), width: 1),
         ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Rail(
-            selected: _selected,
-            onSelect: (t) => setState(() => _selected = t),
-          ),
-          Expanded(child: _content()),
-        ],
-      ),
+      child: selection == null
+          ? _formatMode()
+          : _contextMode(selection),
     );
   }
 
-  Widget _content() {
+  Widget _formatMode() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Rail(
+          selected: _selected,
+          onSelect: (t) => setState(() => _selected = t),
+        ),
+        Expanded(child: _formatContent()),
+      ],
+    );
+  }
+
+  Widget _formatContent() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       child: switch (_selected) {
@@ -74,6 +118,55 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.shortcuts => const ShortcutsTab(),
         InspectorTab.animation => const AnimationTab(),
       },
+    );
+  }
+
+  Widget _contextMode(TimelineSelection selection) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+      child: switch (selection) {
+        ClipSelected() => _clipContext(),
+        ZoomSelected(:final index) => _zoomContext(index),
+      },
+    );
+  }
+
+  Widget _zoomContext(int index) {
+    if (index < 0 || index >= widget.zoomRegions.length) {
+      // Selection points to a zoom that no longer exists (deleted
+      // mid-flight). Bail to format mode safely.
+      WidgetsBinding.instance.addPostFrameCallback(
+          (_) => widget.onSelectionCleared?.call());
+      return const SizedBox.shrink();
+    }
+    final zoom = widget.zoomRegions[index];
+    final local =
+        _zoomLocal.putIfAbsent(zoom.startTime, () => _ZoomLocalState());
+    return ZoomContextInspector(
+      zoom: zoom,
+      zoomNumber: index + 1,
+      onChanged: (next) => widget.onZoomChanged?.call(index, next),
+      onDelete: () => widget.onZoomDeleted?.call(index),
+      onClose: () => widget.onSelectionCleared?.call(),
+      followCursor: local.followCursor,
+      onFollowCursorChanged: (v) =>
+          setState(() => local.followCursor = v),
+      focalMode: local.focalMode,
+      onFocalModeChanged: (m) => setState(() => local.focalMode = m),
+    );
+  }
+
+  Widget _clipContext() {
+    return ClipContextInspector(
+      clipDuration: widget.clipDuration,
+      playbackSpeed: _clipLocal.playbackSpeed,
+      onPlaybackSpeedChanged: (v) =>
+          setState(() => _clipLocal.playbackSpeed = v),
+      fadeIn: _clipLocal.fadeIn,
+      fadeOut: _clipLocal.fadeOut,
+      onFadeInChanged: (v) => setState(() => _clipLocal.fadeIn = v),
+      onFadeOutChanged: (v) => setState(() => _clipLocal.fadeOut = v),
+      onClose: () => widget.onSelectionCleared?.call(),
     );
   }
 }
@@ -164,4 +257,15 @@ class _AccentDot extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ZoomLocalState {
+  bool followCursor = true;
+  FocalMode focalMode = FocalMode.cursor;
+}
+
+class _ClipLocalState {
+  double playbackSpeed = 1.0;
+  double fadeIn = 0;
+  double fadeOut = 0;
 }

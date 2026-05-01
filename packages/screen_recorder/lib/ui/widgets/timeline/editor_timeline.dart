@@ -64,6 +64,8 @@ class EditorTimeline extends StatefulWidget {
     this.onZoomChanged,
     this.onZoomSelected,
     this.onZoomDeleted,
+    this.clipSelected = false,
+    this.onClipSelected,
     this.playbackSpeedLabel = '1x',
     this.isPlaying = false,
     this.onHoverSeek,
@@ -78,6 +80,13 @@ class EditorTimeline extends StatefulWidget {
   final void Function(int index, ZoomRegion next)? onZoomChanged;
   final ValueChanged<int?>? onZoomSelected;
   final ValueChanged<int>? onZoomDeleted;
+  /// Whether the main clip bar is currently selected (drives the
+  /// inspector's clip-context view).
+  final bool clipSelected;
+  /// Called when the user taps the clip lane. Passes `true` to select
+  /// the clip, `false` to clear if it was already selected. Selection
+  /// fires alongside seeking — the playhead still moves to the tap.
+  final ValueChanged<bool>? onClipSelected;
   final String playbackSpeedLabel;
   final bool isPlaying;
   // Live preview seek while the cursor hovers the timeline (paused only).
@@ -170,6 +179,9 @@ class _EditorTimelineState extends State<EditorTimeline> {
                         width: width,
                         onSeek: widget.onSeek,
                         speedLabel: widget.playbackSpeedLabel,
+                        isSelected: widget.clipSelected,
+                        onTap: () => widget.onClipSelected
+                            ?.call(!widget.clipSelected),
                       ),
                     ),
                     if (hasZooms) ...[
@@ -311,12 +323,16 @@ class _ClipLane extends StatelessWidget {
     required this.width,
     required this.onSeek,
     required this.speedLabel,
+    required this.isSelected,
+    required this.onTap,
   });
 
   final Duration duration;
   final double width;
   final ValueChanged<Duration> onSeek;
   final String speedLabel;
+  final bool isSelected;
+  final VoidCallback onTap;
 
   void _seek(Offset local) =>
       onSeek(_xToTime(local.dx, width, duration));
@@ -325,13 +341,17 @@ class _ClipLane extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (d) => _seek(d.localPosition),
+      onTapDown: (d) {
+        _seek(d.localPosition);
+        onTap();
+      },
       onHorizontalDragStart: (d) => _seek(d.localPosition),
       onHorizontalDragUpdate: (d) => _seek(d.localPosition),
       child: CustomPaint(
         painter: _ClipLanePainter(
           duration: duration,
           speedLabel: speedLabel,
+          isSelected: isSelected,
         ),
       ),
     );
@@ -339,10 +359,15 @@ class _ClipLane extends StatelessWidget {
 }
 
 class _ClipLanePainter extends CustomPainter {
-  _ClipLanePainter({required this.duration, required this.speedLabel});
+  _ClipLanePainter({
+    required this.duration,
+    required this.speedLabel,
+    required this.isSelected,
+  });
 
   final Duration duration;
   final String speedLabel;
+  final bool isSelected;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -365,12 +390,16 @@ class _ClipLanePainter extends CustomPainter {
       rrect,
       Paint()..shader = gradient.createShader(rect),
     );
+    // When selected, paint a brighter accent border so the user can
+    // see at a glance that the inspector's clip-context belongs to
+    // this bar.
     canvas.drawRRect(
       rrect,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1
-        ..color = _clipStroke,
+        ..strokeWidth = isSelected ? 2 : 1
+        ..color =
+            isSelected ? const Color(0xFF8B7DFF) : _clipStroke,
     );
 
     // Centered "Clip" + duration / speed subtitle.
@@ -420,7 +449,9 @@ class _ClipLanePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ClipLanePainter old) =>
-      old.duration != duration || old.speedLabel != speedLabel;
+      old.duration != duration ||
+      old.speedLabel != speedLabel ||
+      old.isSelected != isSelected;
 }
 
 // ─────────────────────────────── Zoom lane ──────────────────────────────
