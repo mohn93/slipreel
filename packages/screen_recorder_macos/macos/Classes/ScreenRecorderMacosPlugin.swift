@@ -622,22 +622,18 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       }) else { return nil }
       let displayMinX = Double(screen.frame.minX)
       let displayMaxY = Double(screen.frame.maxY)
-      // For area, region.widthPx WAS the SCStream framebuffer width, so
-      // pixelsPerPoint between display points and video pixels is the
-      // same ratio as what RegionSelector used at selection time, i.e.
-      // NSScreen.backingScaleFactor. (videoWidthPx == region.widthPx by
-      // construction.)
-      _ = videoWidthPx
-      _ = videoHeightPx
       let scale = Double(screen.backingScaleFactor)
-      let regionLocalXPoints = Double(r.x) / scale
-      let regionLocalYPoints = Double(r.y) / scale
+      let regionXPx = Double(r.x)
+      let regionYPx = Double(r.y)
       return { gx, gy in
-        let xInDisplayPts = gx - displayMinX
-        let yInDisplayPts = displayMaxY - gy
-        let xPx = (xInDisplayPts - regionLocalXPoints) * scale
-        let yPx = (yInDisplayPts - regionLocalYPoints) * scale
-        return (xPx, yPx)
+        CursorCoordinateMapper.mapForArea(
+          cursorGlobalX: gx,
+          cursorGlobalY: gy,
+          displayMinX: displayMinX,
+          displayMaxY: displayMaxY,
+          backingScale: scale,
+          regionXPx: regionXPx,
+          regionYPx: regionYPx)
       }
     }
 
@@ -650,17 +646,20 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
        }) {
       let displayMinX = Double(screen.frame.minX)
       let displayMaxY = Double(screen.frame.maxY)
-      // pixels per display-point. Computed from the actual recorded
-      // video size — handles macOS configurations where SCStream
-      // captures at logical-point resolution rather than backing pixels.
-      let pixelsPerPointX = Double(videoWidthPx) / Double(screen.frame.width)
-      let pixelsPerPointY =
-        Double(videoHeightPx) / Double(screen.frame.height)
+      let displayWidthPts = Double(screen.frame.width)
+      let displayHeightPts = Double(screen.frame.height)
+      let widthPx = videoWidthPx
+      let heightPx = videoHeightPx
       return { gx, gy in
-        let xInDisplayPts = gx - displayMinX
-        let yInDisplayPts = displayMaxY - gy
-        return (xInDisplayPts * pixelsPerPointX,
-                yInDisplayPts * pixelsPerPointY)
+        CursorCoordinateMapper.mapForScreen(
+          cursorGlobalX: gx,
+          cursorGlobalY: gy,
+          displayMinX: displayMinX,
+          displayMaxY: displayMaxY,
+          displayWidthPts: displayWidthPts,
+          displayHeightPts: displayHeightPts,
+          videoWidthPx: widthPx,
+          videoHeightPx: heightPx)
       }
     }
 
