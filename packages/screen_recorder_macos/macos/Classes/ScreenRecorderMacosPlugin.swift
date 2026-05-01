@@ -28,6 +28,15 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   /// unchanged (legacy behaviour).
   private var cursorTransform: ((Double, Double) -> (Double, Double))?
 
+  /// Wall-clock time the FIRST video frame arrived at the encoder for
+  /// the active recording. Cursor sample timestamps are rebased against
+  /// this so they align with VideoPlayerController.value.position during
+  /// playback. SCStream takes ~tens to hundreds of ms to spin up between
+  /// startCapture() returning and the first frame actually appearing —
+  /// using liveStartTime instead would shift cursor data ahead of the
+  /// video by exactly that delay.
+  private var firstVideoFrameAt: Date?
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     // Main method channel for recording control
     let recordingChannel = FlutterMethodChannel(
@@ -427,7 +436,11 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         }
         try encoder.initialize()
 
-        captureManager?.onFrameReceived = { [weak encoder] sampleBuffer in
+        captureManager?.onFrameReceived = { [weak self, weak encoder] sampleBuffer in
+          // Stamp the first frame's wall-clock time so cursor timestamps
+          // can be rebased against the actual video start (not the
+          // pre-stream liveStartTime).
+          if self?.firstVideoFrameAt == nil { self?.firstVideoFrameAt = Date() }
           guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
           let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
           try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
@@ -469,11 +482,18 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           cursorTracker?.onCursorUpdate = { [weak self] x, y, _, isClicked in
             guard let self = self else { return }
             let (px, py) = self.cursorTransform?(x, y) ?? (x, y)
-            // Rebase to video-relative microseconds so cursor timestamps
-            // align with VideoPlayerController.value.position at playback.
+            // Rebase against the FIRST video frame's wall-clock time so
+            // cursor timestamps align with VideoPlayerController.value
+            // .position at playback. SCStream takes a noticeable amount
+            // of time to start emitting frames after startCapture returns
+            // (~50–200ms), so using liveStartTime would put cursor
+            // samples ahead of the video by that delay. Samples that fire
+            // before the first frame arrives are clamped to t=0.
             let videoMicros: Int64
-            if let start = self.liveStartTime {
-              videoMicros = Int64(Date().timeIntervalSince(start) * 1_000_000)
+            if let frameStart = self.firstVideoFrameAt {
+              let elapsed = Date().timeIntervalSince(frameStart)
+              videoMicros =
+                elapsed >= 0 ? Int64(elapsed * 1_000_000) : 0
             } else {
               videoMicros = 0
             }
@@ -527,6 +547,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           cursorTracker = nil
         }
         cursorTransform = nil
+        firstVideoFrameAt = nil
 
         liveEncoder?.finalize()
         let droppedFrames = liveEncoder?.droppedFrameCount ?? 0
