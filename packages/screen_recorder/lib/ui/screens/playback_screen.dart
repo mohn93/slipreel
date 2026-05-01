@@ -297,10 +297,44 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     }
   }
 
-  String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes.toString().padLeft(2, '0');
-    final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
+  void _togglePlayPause() {
+    setState(() {
+      if (_controller.value.isPlaying) {
+        _controller.pause();
+      } else {
+        _controller.play();
+      }
+    });
+  }
+
+  void _seekToStart() {
+    if (_hoverFrozenPosition != null) {
+      setState(() => _hoverFrozenPosition = null);
+    }
+    _controller.seekTo(Duration.zero);
+  }
+
+  void _seekToEnd() {
+    if (_hoverFrozenPosition != null) {
+      setState(() => _hoverFrozenPosition = null);
+    }
+    final dur = _controller.value.duration;
+    if (dur > Duration.zero) {
+      // 1ms back from the end so the player doesn't auto-rewind on
+      // the next tick (some VideoPlayer backends snap a position
+      // exactly at duration to 0).
+      _controller.seekTo(dur - const Duration(milliseconds: 1));
+    }
+  }
+
+  /// `m:ss.hh` — used in the transport bar where the playhead's
+  /// hundredths matter (frame-accurate scrubbing feedback).
+  String _formatPreciseDuration(Duration d) {
+    final m = d.inMinutes;
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    final hundredths =
+        ((d.inMilliseconds % 1000) ~/ 10).toString().padLeft(2, '0');
+    return '$m:$s.$hundredths';
   }
 
   @override
@@ -342,6 +376,18 @@ class _PlaybackScreenState extends State<PlaybackScreen>
           } else {
             _controller.play();
           }
+          return KeyEventResult.handled;
+        }
+
+        // Cmd/Ctrl+Left → first frame, Cmd/Ctrl+Right → last frame.
+        if (cmdOrCtrl &&
+            event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+          _seekToStart();
+          return KeyEventResult.handled;
+        }
+        if (cmdOrCtrl &&
+            event.logicalKey == LogicalKeyboardKey.arrowRight) {
+          _seekToEnd();
           return KeyEventResult.handled;
         }
 
@@ -602,6 +648,74 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     );
   }
 
+  /// Compact transport bar shown above the timeline:
+  ///   `[ start-time ]  ⏮  ▶  ⏭  [ end-time ]`
+  ///
+  /// Each button has a tooltip with its keyboard shortcut. Time labels
+  /// use `m:ss.hh` precision so the user gets frame-level feedback.
+  Widget _buildTransportBar() {
+    final isMac = Platform.isMacOS;
+    final modKey = isMac ? '⌘' : 'Ctrl';
+    return AnimatedBuilder(
+      animation: Listenable.merge([_controller, _smoothPlayhead]),
+      builder: (context, _) {
+        final pos = _hoverFrozenPosition ??
+            (_smoothPlayhead?.position ?? _controller.value.position);
+        final dur = _controller.value.duration;
+        final isPlaying = _controller.value.isPlaying;
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 64,
+              child: Text(
+                _formatPreciseDuration(pos),
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 13,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+            const SizedBox(width: 24),
+            _TransportButton(
+              icon: Icons.skip_previous,
+              tooltip: 'Go to first frame',
+              shortcut: '$modKey ←',
+              onPressed: _seekToStart,
+            ),
+            const SizedBox(width: 16),
+            _TransportPlayButton(
+              isPlaying: isPlaying,
+              onPressed: _togglePlayPause,
+            ),
+            const SizedBox(width: 16),
+            _TransportButton(
+              icon: Icons.skip_next,
+              tooltip: 'Go to last frame',
+              shortcut: '$modKey →',
+              onPressed: _seekToEnd,
+            ),
+            const SizedBox(width: 24),
+            SizedBox(
+              width: 64,
+              child: Text(
+                _formatPreciseDuration(dur),
+                textAlign: TextAlign.left,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 13,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildControls() {
     if (_error != null || !_isInitialized) {
       return const SizedBox.shrink();
@@ -621,28 +735,8 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       ),
       child: Column(
         children: [
-          // Time labels (driven by smooth playhead so the timer counts up frame-by-frame).
-          AnimatedBuilder(
-            animation:
-                Listenable.merge([_controller, _smoothPlayhead]),
-            builder: (context, _) {
-              final pos = _hoverFrozenPosition ??
-                  (_smoothPlayhead?.position ?? _controller.value.position);
-              final dur = _controller.value.duration;
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(_formatDuration(pos),
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 12)),
-                  Text(_formatDuration(dur),
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 12)),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 8),
+          _buildTransportBar(),
+          const SizedBox(height: 12),
 
           // Stacked timeline (time ruler + clip lane + zoom lane).
           AnimatedBuilder(
@@ -787,35 +881,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
 
           const SizedBox(height: 8),
 
-          // Play/Pause and Record Another buttons
+          // Record Another + Export
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Play/Pause button
-              ValueListenableBuilder(
-                valueListenable: _controller,
-                builder: (context, VideoPlayerValue value, child) {
-                  return IconButton(
-                    onPressed: () {
-                      setState(() {
-                        if (value.isPlaying) {
-                          _controller.pause();
-                        } else {
-                          _controller.play();
-                        }
-                      });
-                    },
-                    icon: Icon(
-                      value.isPlaying ? Icons.pause : Icons.play_arrow,
-                      size: 48,
-                    ),
-                    color: const Color(0xFF6C63FF),
-                  );
-                },
-              ),
-
-              const SizedBox(width: 32),
-
               // Record Another button
               ElevatedButton.icon(
                 onPressed: () {
@@ -855,6 +924,149 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   }
 }
 
+
+/// Skip-back / skip-forward button used in the transport bar above the
+/// timeline. Shows a soft hover background and a rich tooltip that
+/// includes the keyboard shortcut (e.g. "Go to last frame  ⌘ →").
+class _TransportButton extends StatefulWidget {
+  const _TransportButton({
+    required this.icon,
+    required this.tooltip,
+    required this.shortcut,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final String shortcut;
+  final VoidCallback onPressed;
+
+  @override
+  State<_TransportButton> createState() => _TransportButtonState();
+}
+
+class _TransportButtonState extends State<_TransportButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      richMessage: TextSpan(
+        children: [
+          TextSpan(
+            text: widget.tooltip,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+          const TextSpan(text: '   '),
+          TextSpan(
+            text: widget.shortcut,
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+        ],
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A26),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF35354A)),
+      ),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      verticalOffset: 22,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: widget.onPressed,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _hovered
+                  ? const Color(0xFF2B2B3D)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(widget.icon, color: Colors.white, size: 22),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Circular outlined play/pause button shown between the skip
+/// buttons in the transport bar.
+class _TransportPlayButton extends StatefulWidget {
+  const _TransportPlayButton({
+    required this.isPlaying,
+    required this.onPressed,
+  });
+
+  final bool isPlaying;
+  final VoidCallback onPressed;
+
+  @override
+  State<_TransportPlayButton> createState() =>
+      _TransportPlayButtonState();
+}
+
+class _TransportPlayButtonState extends State<_TransportPlayButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      richMessage: TextSpan(
+        children: [
+          TextSpan(
+            text: widget.isPlaying ? 'Pause' : 'Play',
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+          const TextSpan(text: '   '),
+          const TextSpan(
+            text: 'Space',
+            style: TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+        ],
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A26),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF35354A)),
+      ),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      verticalOffset: 26,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: widget.onPressed,
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _hovered ? Colors.white : Colors.white70,
+                width: 2,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              widget.isPlaying ? Icons.pause : Icons.play_arrow,
+              color: Colors.white,
+              size: 22,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// Dev HUD overlay drawn on top of the video while debugging cursor-follow
 /// zoom. Renders the recorded cursor's position at the current playback
