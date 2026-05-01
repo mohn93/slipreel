@@ -12,6 +12,7 @@ import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
+import 'package:screen_recorder/ui/widgets/inspector/inspector_panel.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog.dart';
@@ -342,19 +343,30 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         ),
         body: Column(
           children: [
-            // Video player on a soft dark backdrop so the framed recording
-            // reads as a floating, layered panel.
+            // Preview backdrop on the left, inspector panel on the right.
             Expanded(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF181826), Color(0xFF0E0E18)],
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0xFF181826),
+                            Color(0xFF0E0E18)
+                          ],
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: _buildVideoPlayer(),
+                    ),
                   ),
-                ),
-                alignment: Alignment.center,
-                child: _buildVideoPlayer(),
+                  if (_isInitialized)
+                    InspectorPanel(frameSettings: _frameSettings),
+                ],
               ),
             ),
             _buildControls(),
