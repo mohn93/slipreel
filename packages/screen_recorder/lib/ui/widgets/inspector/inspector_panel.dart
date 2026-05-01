@@ -37,11 +37,26 @@ class InspectorPanel extends StatefulWidget {
     this.onZoomChanged,
     this.onZoomDeleted,
     this.onSelectionCleared,
+    this.hideCursor = false,
+    this.canHideCursor = false,
+    this.onHideCursorChanged,
   });
 
   final FrameSettingsProvider frameSettings;
   final double width;
   final InspectorTab initialTab;
+
+  /// Whether the synthetic cursor overlay is currently hidden in the
+  /// preview. Controlled from the cursor tab's "Hide cursor" toggle.
+  final bool hideCursor;
+
+  /// Whether hiding the cursor is supported for the current recording.
+  /// When false the toggle is rendered disabled.
+  final bool canHideCursor;
+
+  /// Setter for [hideCursor]. Required for the cursor tab to write
+  /// through to the parent's state.
+  final ValueChanged<bool>? onHideCursorChanged;
 
   /// What's currently selected on the timeline. When non-null, the
   /// inspector enters context mode. Null returns to tab mode.
@@ -111,7 +126,12 @@ class _InspectorPanelState extends State<InspectorPanel> {
       child: switch (_selected) {
         InspectorTab.background =>
           BackgroundTab(frameSettings: widget.frameSettings),
-        InspectorTab.cursor => const CursorTab(),
+        InspectorTab.cursor => CursorTab(
+            hideCursor: widget.hideCursor,
+            canHideCursor: widget.canHideCursor,
+            onHideCursorChanged:
+                widget.onHideCursorChanged ?? (_) {},
+          ),
         InspectorTab.camera => const CameraTab(),
         InspectorTab.captions => const CaptionsTab(),
         InspectorTab.audio => const AudioTab(),

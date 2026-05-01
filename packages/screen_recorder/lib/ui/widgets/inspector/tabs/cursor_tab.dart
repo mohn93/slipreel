@@ -3,11 +3,30 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Cursor tab — size, style, behavior toggles, click-effect section.
 ///
-/// All state is local for now: the recorded cursor track is rendered
-/// elsewhere and doesn't yet honor these controls. UI is fully
-/// interactive so the tab feels live.
+/// Most controls remain local-state placeholders — the recorded cursor
+/// track is rendered elsewhere and doesn't yet honor them. The "Hide
+/// cursor" toggle is the exception: it's lifted to the playback screen
+/// because suppressing the synthetic cursor overlay needs to happen
+/// outside this widget's scope.
 class CursorTab extends StatefulWidget {
-  const CursorTab({super.key});
+  const CursorTab({
+    super.key,
+    required this.hideCursor,
+    required this.canHideCursor,
+    required this.onHideCursorChanged,
+  });
+
+  /// Current value of the synthetic cursor overlay's hidden state.
+  final bool hideCursor;
+
+  /// Whether the toggle is meaningful for the current recording.
+  /// False for legacy recordings without a separate cursor track —
+  /// their cursor is baked into the video and can't be hidden.
+  final bool canHideCursor;
+
+  /// Lifted setter for [hideCursor]. Ignored when [canHideCursor] is
+  /// false (the toggle renders disabled).
+  final ValueChanged<bool> onHideCursorChanged;
 
   @override
   State<CursorTab> createState() => _CursorTabState();
@@ -19,7 +38,6 @@ class _CursorTabState extends State<CursorTab> {
   bool _alwaysPointer = false;
   bool _hideIfStill = false;
   bool _loopPosition = false;
-  bool _hideCursor = false;
 
   @override
   Widget build(BuildContext context) {
@@ -78,8 +96,12 @@ class _CursorTabState extends State<CursorTab> {
         InspectorToggle(
           label: 'Hide cursor',
           leadingIcon: Icons.visibility_off_outlined,
-          value: _hideCursor,
-          onChanged: (v) => setState(() => _hideCursor = v),
+          subtitle: widget.canHideCursor
+              ? null
+              : 'Available for recordings made with this version.',
+          value: widget.canHideCursor && widget.hideCursor,
+          onChanged:
+              widget.canHideCursor ? widget.onHideCursorChanged : null,
         ),
         const InspectorSectionDivider(),
         InspectorCollapsible(

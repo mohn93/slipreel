@@ -316,10 +316,15 @@ class InspectorToggle extends StatelessWidget {
   final String? subtitle;
   final IconData? leadingIcon;
   final bool value;
-  final ValueChanged<bool> onChanged;
+  /// When null, the toggle renders disabled (no interaction, dimmed
+  /// labels). Use this for options that don't apply to the current
+  /// context (e.g., features that need data the recording doesn't have).
+  final ValueChanged<bool>? onChanged;
 
   @override
   Widget build(BuildContext context) {
+    final disabled = onChanged == null;
+    final labelColor = disabled ? Colors.white38 : Colors.white;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -331,14 +336,15 @@ class InspectorToggle extends StatelessWidget {
                 children: [
                   if (leadingIcon != null) ...[
                     Icon(leadingIcon,
-                        size: 16, color: Colors.white70),
+                        size: 16,
+                        color: disabled ? Colors.white30 : Colors.white70),
                     const SizedBox(width: 8),
                   ],
                   Flexible(
                     child: Text(
                       label,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: labelColor,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
@@ -350,8 +356,8 @@ class InspectorToggle extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle!,
-                  style: const TextStyle(
-                    color: kInspectorMuted,
+                  style: TextStyle(
+                    color: disabled ? Colors.white24 : kInspectorMuted,
                     fontSize: 12,
                   ),
                 ),

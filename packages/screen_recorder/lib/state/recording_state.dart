@@ -173,10 +173,10 @@ class RecordingController extends StateNotifier<RecordingState> {
       _cursorRecording = null;
 
       // Save recording metadata sidecar.
-      // Cursor is baked into the recorded MP4 because SCStream needs cursor
-      // movement as a dirty-rect signal to deliver frames continuously. The
-      // editor's overlay logic gates on isPureSource and will correctly skip
-      // the overlay.
+      // The recorder is configured with showsCursor=false, so the MP4 frames
+      // contain no cursor pixels. The editor renders a synthetic cursor on
+      // top from the .cursor.json track when isPureSource=true, which lets
+      // the inspector's "Hide cursor" toggle actually hide it.
       //
       // Prefer the actual capture dimensions returned by the native side.
       // _videoEncoder.width/height is what Dart *requested* (a hint that the
@@ -187,7 +187,7 @@ class RecordingController extends StateNotifier<RecordingState> {
       final actualHeight =
           result.height > 0 ? result.height : _videoEncoder.height;
       final meta = RecordingMetadata(
-        isPureSource: false,
+        isPureSource: true,
         recordedAt: DateTime.now(),
         widthPx: actualWidth,
         heightPx: actualHeight,

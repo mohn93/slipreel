@@ -15,7 +15,6 @@ import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.d
 import 'package:screen_recorder/ui/widgets/inspector/inspector_panel.dart';
 import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
-import 'package:screen_recorder/ui/widgets/zoom/zoom_selector.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
 import 'package:screen_recorder/export/export_pipeline.dart';
@@ -44,13 +43,16 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   TrimSelection? _trimSelection;
   late UndoRedoController<TrimSelection> _undoRedo;
   List<ZoomRegion> _zoomRegions = [];
-  bool _isSelectingZoom = false;
   final _zoomTransformer = ZoomTransformer();
   int? _selectedZoomIndex;
   // Whether the main clip bar is currently selected. Mutually
   // exclusive with [_selectedZoomIndex]: selecting one clears the
   // other. Drives the inspector's context-mode display.
   bool _isClipSelected = false;
+  // Whether the synthetic cursor overlay is hidden in the preview.
+  // Toggled from the inspector's "Hide cursor" control. Only meaningful
+  // when the recording is pure source (cursor not baked into the MP4).
+  bool _hideCursorOverlay = false;
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
@@ -159,48 +161,30 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     }
   }
 
-  void _handleZoomRegionSelected(Rect rect) {
+  /// Click-to-add zoom from the timeline ghost. Spatial rect defaults
+  /// to the full video frame; the cursor-follow pipeline handles
+  /// re-centering on the recorded cursor.
+  void _addZoomAt(Duration start, Duration end) {
     if (!_isInitialized) return;
-
-    final videoDuration = _controller.value.duration;
-    if (videoDuration <= Duration.zero) return;
-
-    const desired = Duration(seconds: 2);
-    // Default to 2s, but never longer than the video itself.
-    final span = videoDuration < desired ? videoDuration : desired;
-
-    var start = _controller.value.position;
-    var end = start + span;
-    // Keep the zoom inside the video timeline. If the playhead is near the
-    // end and the default span would overflow, shift the start back so the
-    // zoom ends at the video's end.
-    if (end > videoDuration) {
-      end = videoDuration;
-      start = end - span;
-      if (start < Duration.zero) start = Duration.zero;
-    }
+    final videoSize = _controller.value.size;
+    if (videoSize.isEmpty) return;
+    if (end <= start) return;
 
     final zoomRegion = ZoomRegion(
-      rect: rect,
+      rect: Rect.fromLTWH(0, 0, videoSize.width, videoSize.height),
       startTime: start,
       duration: end - start,
       zoomLevel: 2.0,
-      videoBounds: Size(
-        _controller.value.size.width,
-        _controller.value.size.height,
-      ),
+      videoBounds: videoSize,
     );
 
     setState(() {
       _zoomRegions = [..._zoomRegions, zoomRegion];
-      _isSelectingZoom = false;
+      // Auto-select the new zoom so the inspector opens on it.
+      _selectedZoomIndex = _zoomRegions.length - 1;
+      _isClipSelected = false;
     });
-  }
-
-  void _toggleZoomSelector() {
-    setState(() {
-      _isSelectingZoom = !_isSelectingZoom;
-    });
+    _controller.seekTo(start);
   }
 
   void _checkZoomMarkerClick(Duration position) {
@@ -433,6 +417,11 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                       selection: _currentSelection(),
                       zoomRegions: _zoomRegions,
                       clipDuration: _controller.value.duration,
+                      hideCursor: _hideCursorOverlay,
+                      canHideCursor: _metadata?.isPureSource == true &&
+                          _cursorRecording.count > 0,
+                      onHideCursorChanged: (v) =>
+                          setState(() => _hideCursorOverlay = v),
                       onZoomChanged: (index, next) {
                         setState(() => _zoomRegions[index] = next);
                       },
@@ -577,16 +566,13 @@ class _PlaybackScreenState extends State<PlaybackScreen>
               child: SizedBox(
                 width: videoSize.width,
                 height: videoSize.height,
-                child: ZoomSelector(
-                  enabled: _isSelectingZoom,
-                  videoSize: videoSize,
-                  onRegionSelected: _handleZoomRegionSelected,
-                  child: videoWidget,
-                ),
+                child: videoWidget,
               ),
             ),
           ),
-          if (_metadata?.isPureSource == true && _cursorRecording.count > 0)
+          if (_metadata?.isPureSource == true &&
+              _cursorRecording.count > 0 &&
+              !_hideCursorOverlay)
             Positioned(
               left: currentFrame.padding.left,
               top: currentFrame.padding.top,
@@ -817,6 +803,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                     }
                   });
                 },
+                onZoomAdded: _addZoomAt,
               );
             },
           ),
@@ -843,14 +830,6 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                 tooltip: 'Redo (Cmd+Shift+Z)',
                 color: const Color(0xFF6C63FF),
                 disabledColor: Colors.white24,
-              ),
-
-              // Zoom button
-              IconButton(
-                onPressed: _toggleZoomSelector,
-                icon: Icon(_isSelectingZoom ? Icons.zoom_in : Icons.zoom_out_map),
-                color: _isSelectingZoom ? const Color(0xFF6C63FF) : Colors.white70,
-                tooltip: 'Add Zoom Effect',
               ),
 
               // Frame settings button

@@ -132,7 +132,7 @@ class ScreenCaptureManager: NSObject {
     fps: Int,
     isWindow: Bool,
     region: RegionSelection? = nil,
-    showCursor: Bool = true
+    showCursor: Bool = false
   ) async throws {
     guard !isCapturing else {
       throw ScreenCaptureError.alreadyCapturing

@@ -9,6 +9,16 @@ const _zoomFill = Color(0xFF7C6BFF);
 const _zoomFillTop = Color(0xFF8E7DFF);
 const _zoomStroke = Color(0xFF6457E8);
 const _zoomFillSelected = Color(0xFF9080FF);
+const _zoomGhostFill = Color(0x547C6BFF); // _zoomFill @ ~33% alpha
+const _zoomGhostStroke = Color(0x807C6BFF);
+
+/// Default span for a click-to-add zoom on the timeline. Trimmed if the
+/// available gap between neighboring zooms is shorter than this.
+const Duration _kGhostZoomSpan = Duration(seconds: 2);
+
+/// Below this gap-length we don't render the ghost — no useful zoom can
+/// fit there.
+const Duration _kGhostMinSpan = Duration(milliseconds: 250);
 const _tickColor = Color(0xFF454555);
 const _labelColor = Color(0xFFAAAAB5);
 const _playheadTop = Color(0xFF4FC3FF);
@@ -64,6 +74,7 @@ class EditorTimeline extends StatefulWidget {
     this.onZoomChanged,
     this.onZoomSelected,
     this.onZoomDeleted,
+    this.onZoomAdded,
     this.clipSelected = false,
     this.onClipSelected,
     this.playbackSpeedLabel = '1x',
@@ -80,6 +91,9 @@ class EditorTimeline extends StatefulWidget {
   final void Function(int index, ZoomRegion next)? onZoomChanged;
   final ValueChanged<int?>? onZoomSelected;
   final ValueChanged<int>? onZoomDeleted;
+  /// Click-to-add: fires with `(start, end)` for the ghost the user
+  /// just committed by tapping in the empty area of the zoom lane.
+  final void Function(Duration start, Duration end)? onZoomAdded;
   /// Whether the main clip bar is currently selected (drives the
   /// inspector's clip-context view).
   final bool clipSelected;
@@ -141,12 +155,14 @@ class _EditorTimelineState extends State<EditorTimeline> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final hasZooms = widget.zoomRegions.isNotEmpty;
+        // Zoom lane is always rendered, even when empty, so users can
+        // hover/click an empty patch to add a new zoom.
         final zoomLaneHeight = _laneHeight + _zoomBadgeAreaHeight;
         final totalHeight = _rulerHeight +
             _laneSpacing +
             _laneHeight +
-            (hasZooms ? _laneSpacing + zoomLaneHeight : 0);
+            _laneSpacing +
+            zoomLaneHeight;
 
         return SizedBox(
           height: totalHeight,
@@ -184,22 +200,21 @@ class _EditorTimelineState extends State<EditorTimeline> {
                             ?.call(!widget.clipSelected),
                       ),
                     ),
-                    if (hasZooms) ...[
-                      const SizedBox(height: _laneSpacing),
-                      SizedBox(
-                        height: zoomLaneHeight,
-                        child: _ZoomLane(
-                          duration: widget.duration,
-                          width: width,
-                          zoomRegions: widget.zoomRegions,
-                          selectedIndex: widget.selectedZoomIndex,
-                          onZoomChanged: widget.onZoomChanged,
-                          onZoomSelected: widget.onZoomSelected,
-                          onZoomDeleted: widget.onZoomDeleted,
-                          onSeek: widget.onSeek,
-                        ),
+                    const SizedBox(height: _laneSpacing),
+                    SizedBox(
+                      height: zoomLaneHeight,
+                      child: _ZoomLane(
+                        duration: widget.duration,
+                        width: width,
+                        zoomRegions: widget.zoomRegions,
+                        selectedIndex: widget.selectedZoomIndex,
+                        onZoomChanged: widget.onZoomChanged,
+                        onZoomSelected: widget.onZoomSelected,
+                        onZoomDeleted: widget.onZoomDeleted,
+                        onZoomAdded: widget.onZoomAdded,
+                        onSeek: widget.onSeek,
                       ),
-                    ],
+                    ),
                   ],
                 ),
                 IgnorePointer(
@@ -456,7 +471,7 @@ class _ClipLanePainter extends CustomPainter {
 
 // ─────────────────────────────── Zoom lane ──────────────────────────────
 
-class _ZoomLane extends StatelessWidget {
+class _ZoomLane extends StatefulWidget {
   const _ZoomLane({
     required this.duration,
     required this.width,
@@ -466,6 +481,7 @@ class _ZoomLane extends StatelessWidget {
     this.onZoomChanged,
     this.onZoomSelected,
     this.onZoomDeleted,
+    this.onZoomAdded,
   });
 
   final Duration duration;
@@ -476,58 +492,193 @@ class _ZoomLane extends StatelessWidget {
   final void Function(int, ZoomRegion)? onZoomChanged;
   final ValueChanged<int?>? onZoomSelected;
   final ValueChanged<int>? onZoomDeleted;
+  final void Function(Duration start, Duration end)? onZoomAdded;
+
+  @override
+  State<_ZoomLane> createState() => _ZoomLaneState();
+}
+
+class _ZoomLaneState extends State<_ZoomLane> {
+  /// Last hovered x within the lane, in lane-local pixels. Null when
+  /// the cursor is outside the lane.
+  double? _hoverX;
+
+  void _setHoverX(double? x) {
+    if (_hoverX != x) setState(() => _hoverX = x);
+  }
+
+  /// Compute the ghost zoom range for the current hover position.
+  /// Returns null when no ghost should render — either the cursor is
+  /// outside the lane, hovering inside an existing zoom, or the
+  /// available gap is too small to fit a meaningful zoom.
+  ({Duration start, Duration end})? _ghostRange() {
+    final hoverX = _hoverX;
+    if (hoverX == null || widget.duration <= Duration.zero) return null;
+
+    final hoverTime =
+        _xToTime(hoverX, widget.width, widget.duration);
+
+    // If the cursor is over an existing zoom, the ghost is hidden —
+    // that pill catches its own clicks anyway.
+    for (final z in widget.zoomRegions) {
+      if (hoverTime > z.startTime && hoverTime < z.endTime) return null;
+    }
+
+    // Find the gap [prevEnd, nextStart] surrounding hoverTime.
+    var prevEnd = Duration.zero;
+    var nextStart = widget.duration;
+    for (final z in widget.zoomRegions) {
+      if (z.endTime <= hoverTime && z.endTime > prevEnd) {
+        prevEnd = z.endTime;
+      }
+      if (z.startTime >= hoverTime && z.startTime < nextStart) {
+        nextStart = z.startTime;
+      }
+    }
+
+    final gap = nextStart - prevEnd;
+    if (gap < _kGhostMinSpan) return null;
+
+    final span = gap < _kGhostZoomSpan ? gap : _kGhostZoomSpan;
+
+    // Mouse-x = ghost left edge; if that pushes the right edge past
+    // nextStart, slide the whole ghost left until it sits flush with
+    // the next zoom. Same for the prev edge.
+    var start = hoverTime;
+    var end = start + span;
+    if (end > nextStart) {
+      end = nextStart;
+      start = end - span;
+    }
+    if (start < prevEnd) {
+      start = prevEnd;
+      end = start + span;
+    }
+    return (start: start, end: end);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final ghost = _ghostRange();
+
     // Clip.none so each zoom pill can extend upward into the spacing/clip
     // lane area to host its hover-revealed zoom-level badge — without that,
     // the badge falls outside the lane's hit area and its hover detection
     // breaks (cursor moving toward it triggers onExit).
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        // Empty-area background that handles seek-on-tap and deselect-on-tap.
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: (d) {
-              onZoomSelected?.call(null);
-              onSeek(_xToTime(d.localPosition.dx, width, duration));
-            },
-            child: const SizedBox.expand(),
+    return MouseRegion(
+      opaque: false,
+      onHover: (e) => _setHoverX(e.localPosition.dx),
+      onExit: (_) => _setHoverX(null),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Empty-area background. Tap commits a ghost zoom when one is
+          // visible; otherwise falls back to seek-and-deselect.
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (d) {
+                final g = _ghostRange();
+                if (g != null && widget.onZoomAdded != null) {
+                  widget.onZoomAdded!(g.start, g.end);
+                  return;
+                }
+                widget.onZoomSelected?.call(null);
+                widget.onSeek(_xToTime(
+                    d.localPosition.dx, widget.width, widget.duration));
+              },
+              child: const SizedBox.expand(),
+            ),
           ),
-        ),
-        for (var i = 0; i < zoomRegions.length; i++)
-          _ZoomPill(
-            key: ValueKey(i),
-            index: i,
-            zoom: zoomRegions[i],
-            isSelected: selectedIndex == i,
-            duration: duration,
-            laneWidth: width,
-            neighbors: _neighborsOf(i),
-            onChanged: onZoomChanged,
-            onSelected: onZoomSelected,
-            onDeleted: onZoomDeleted,
-            onSeek: onSeek,
-          ),
-      ],
+          if (ghost != null)
+            _ZoomGhost(
+              start: ghost.start,
+              end: ghost.end,
+              laneWidth: widget.width,
+              duration: widget.duration,
+            ),
+          for (var i = 0; i < widget.zoomRegions.length; i++)
+            _ZoomPill(
+              key: ValueKey(i),
+              index: i,
+              zoom: widget.zoomRegions[i],
+              isSelected: widget.selectedIndex == i,
+              duration: widget.duration,
+              laneWidth: widget.width,
+              neighbors: _neighborsOf(i),
+              onChanged: widget.onZoomChanged,
+              onSelected: widget.onZoomSelected,
+              onDeleted: widget.onZoomDeleted,
+              onSeek: widget.onSeek,
+            ),
+        ],
+      ),
     );
   }
 
   ({Duration? prevEnd, Duration? nextStart}) _neighborsOf(int i) {
     Duration? prev;
     Duration? next;
-    for (var j = 0; j < zoomRegions.length; j++) {
+    final regions = widget.zoomRegions;
+    for (var j = 0; j < regions.length; j++) {
       if (j == i) continue;
-      final z = zoomRegions[j];
-      if (z.endTime <= zoomRegions[i].startTime) {
+      final z = regions[j];
+      if (z.endTime <= regions[i].startTime) {
         if (prev == null || z.endTime > prev) prev = z.endTime;
-      } else if (z.startTime >= zoomRegions[i].endTime) {
+      } else if (z.startTime >= regions[i].endTime) {
         if (next == null || z.startTime < next) next = z.startTime;
       }
     }
     return (prevEnd: prev, nextStart: next);
+  }
+}
+
+/// Translucent preview of a zoom that would be created on the next
+/// click. Non-interactive — the lane's background tap detector commits
+/// it, and the lane's MouseRegion drives hover position.
+class _ZoomGhost extends StatelessWidget {
+  const _ZoomGhost({
+    required this.start,
+    required this.end,
+    required this.laneWidth,
+    required this.duration,
+  });
+
+  final Duration start;
+  final Duration end;
+  final double laneWidth;
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
+    final left = _timeToX(start, laneWidth, duration);
+    final width = _timeToX(end, laneWidth, duration) - left;
+    // Only paint the "+" affordance when the ghost is wide enough to
+    // avoid the icon spilling past the rounded edges.
+    final showAddIcon = width >= 28;
+    return Positioned(
+      left: left,
+      top: _zoomBadgeAreaHeight + _zoomPillInset,
+      width: width,
+      height: _laneHeight - _zoomPillInset * 2,
+      child: IgnorePointer(
+        child: Container(
+          decoration: BoxDecoration(
+            color: _zoomGhostFill,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _zoomGhostStroke, width: 1),
+          ),
+          alignment: Alignment.center,
+          child: showAddIcon
+              ? const Icon(
+                  Icons.add,
+                  size: 18,
+                  color: Colors.white,
+                )
+              : null,
+        ),
+      ),
+    );
   }
 }
 
