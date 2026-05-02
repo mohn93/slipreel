@@ -25,10 +25,12 @@ class FramePainter extends CustomPainter {
       return;
     }
 
+    final p = effectivePadding(frame.padding, videoSize);
+
     // Calculate the rect for the video content within the frame
     final contentRect = Rect.fromLTWH(
-      frame.padding.left,
-      frame.padding.top,
+      p.left,
+      p.top,
       videoSize.width,
       videoSize.height,
     );
@@ -85,9 +87,12 @@ class FramePainter extends CustomPainter {
 
   /// Calculates the total size needed for the frame including padding.
   ///
-  /// Returns the size of the canvas needed to render the video content
-  /// with the frame padding applied. If the frame is 'None', returns
-  /// the video size unchanged.
+  /// Padding is aspect-scaled (X scaled by video aspect ratio) so the
+  /// canvas keeps the video's aspect — without this, sliding the
+  /// padding control would change the framedVideo's aspect, the outer
+  /// FittedBox would re-fit it to the available area, and the user
+  /// sees the entire composition (wallpaper + video) visibly resize.
+  /// If the frame is 'None', returns the video size unchanged.
   static Size calculateTotalSize({
     required WindowFrame frame,
     required Size videoSize,
@@ -95,10 +100,28 @@ class FramePainter extends CustomPainter {
     if (frame.name == 'None') {
       return videoSize;
     }
-
+    final p = effectivePadding(frame.padding, videoSize);
     return Size(
-      videoSize.width + frame.padding.left + frame.padding.right,
-      videoSize.height + frame.padding.top + frame.padding.bottom,
+      videoSize.width + p.left + p.right,
+      videoSize.height + p.top + p.bottom,
+    );
+  }
+
+  /// Aspect-scaled padding used by [calculateTotalSize] and [paint].
+  /// Stored padding is treated as the vertical (top/bottom) value;
+  /// horizontal padding is scaled by the video's aspect ratio so the
+  /// resulting canvas matches the video's aspect.
+  static EdgeInsets effectivePadding(
+    EdgeInsets base,
+    Size videoSize,
+  ) {
+    if (videoSize.height <= 0) return base;
+    final aspect = videoSize.width / videoSize.height;
+    return EdgeInsets.only(
+      left: base.left * aspect,
+      right: base.right * aspect,
+      top: base.top,
+      bottom: base.bottom,
     );
   }
 }

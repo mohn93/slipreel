@@ -68,7 +68,7 @@ void main() {
       expect(painter1.shouldRepaint(painter2), isTrue);
     });
 
-    test('should calculate total size including padding', () {
+    test('should calculate total size with aspect-scaled padding', () {
       final frame = WindowFrame.rounded();
       final videoSize = const Size(1920, 1080);
 
@@ -77,9 +77,16 @@ void main() {
         videoSize: videoSize,
       );
 
-      // Rounded frame has 72px padding on all sides.
-      expect(totalSize.width, equals(1920 + 144));
+      // Rounded frame stores 72px padding. We aspect-scale X by the
+      // video's aspect ratio (16/9) so the canvas keeps the video
+      // aspect — otherwise the outer FittedBox would resize the whole
+      // composition every time padding moves. Vertical padding stays
+      // at the stored value.
+      const aspect = 1920 / 1080;
+      expect(totalSize.width, closeTo(1920 + 2 * 72 * aspect, 1e-9));
       expect(totalSize.height, equals(1080 + 144));
+      expect(totalSize.width / totalSize.height,
+          closeTo(aspect, 1e-9));
     });
 
     test('should return video size when frame is none', () {

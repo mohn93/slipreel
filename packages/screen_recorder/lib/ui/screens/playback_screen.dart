@@ -505,87 +505,6 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       );
     }
 
-    // The Transform rebuilds every frame, but the expensive parts of the
-    // tree above (frame shadow, gradient backdrop, ClipRRect) sit OUTSIDE
-    // this AnimatedBuilder, and the VideoPlayer is held as `child` so it
-    // isn't reconstructed each frame.
-    //
-    // The cursor overlay sits in the same Stack as the VideoPlayer so
-    // it travels through the zoom Transform alongside the video pixels
-    // — otherwise the cursor would visually drift off the content it
-    // points at and stay 1× while the video scales up.
-    //
-    // The focal is the zoom region's stored rect center (where the user
-    // clicked when creating the zoom). True cursor-follow would require
-    // recording-region origin + backing scale in the metadata sidecar so
-    // we could translate captured screen-global cursor points into video
-    // pixels — that's a larger refactor.
-    final Widget videoWidget = AnimatedBuilder(
-      animation: Listenable.merge([_controller, _smoothPlayhead]),
-      child: VideoPlayer(_controller),
-      builder: (context, videoPlayer) {
-        final pos = _smoothPlayhead?.position ?? _controller.value.position;
-        final videoBounds = _controller.value.size;
-        final showCursor = _metadata?.isPureSource == true &&
-            _cursorRecording.count > 0 &&
-            !_hideCursorOverlay;
-
-        final content = Stack(
-          fit: StackFit.expand,
-          children: [
-            videoPlayer!,
-            if (showCursor)
-              CustomPaint(
-                painter: CursorOverlayPainter(
-                  cursorRecording: _cursorRecording,
-                  position: pos,
-                  videoSize: videoBounds,
-                  screenSize: videoBounds,
-                  sizeMultiplier: _cursorSize,
-                  style: _cursorStyle,
-                  clickEffect: _cursorClickEffect,
-                ),
-              ),
-          ],
-        );
-
-        final focalUpdate = _zoomFocalController.update(
-          position: pos,
-          zoomRegions: _zoomRegions,
-          cursorRecording: _cursorRecording,
-        );
-        if (focalUpdate == null) return content;
-
-        final activeZoom = focalUpdate.zoom;
-        final focalForFrame = focalUpdate.focal;
-
-        // Smoothly interpolate the rendered zoom level when the user
-        // changes it via the badge — otherwise stepping the level
-        // produces a visual snap.
-        return TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: activeZoom.zoomLevel),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-          child: content,
-          builder: (context, animatedZoom, transformChild) {
-            final tweenedRegion =
-                activeZoom.copyWith(zoomLevel: animatedZoom);
-            final transform = _zoomTransformer.getTransform(
-              position: pos,
-              zoomRegion: tweenedRegion,
-              videoSize: videoBounds,
-              focalPoint: focalForFrame,
-            );
-            return Transform(
-              transform: transform,
-              alignment: Alignment.center,
-              child: transformChild,
-            );
-          },
-        );
-      },
-    );
-
     // Calculate the total size including frame padding
     final videoSize = _controller.value.size;
     final currentFrame = _frameSettings.currentFrame;
@@ -593,76 +512,150 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       frame: currentFrame,
       videoSize: videoSize,
     );
+    // Effective padding has X scaled by the video aspect so layout
+    // matches the canvas computed by calculateTotalSize.
+    final effPadding = FramePainter.effectivePadding(
+      currentFrame.padding,
+      videoSize,
+    );
 
-    // Wrap video with frame using CustomPaint
+    // Single AnimatedBuilder rebuilt per frame: drives the cursor
+    // overlay (needs current playhead) AND the zoom Transform. The
+    // VideoPlayer is held as `child` so its widget isn't reconstructed
+    // each frame even though the surrounding Stack is.
+    //
+    // Zoom Transform wraps the ENTIRE composition (wallpaper + frame
+    // + video + cursor + dev HUD) so when zoom kicks in everything
+    // pushes in together rather than only the video pixels scaling
+    // while the wallpaper stays put. ClipRect on the outside keeps
+    // the scaled-up tail inside the frame so it doesn't leak across
+    // the editor backdrop.
+    //
+    // The focal is the zoom region's stored rect center (where the
+    // user clicked when creating the zoom). True cursor-follow would
+    // require recording-region origin + backing scale in the metadata
+    // sidecar so we could translate captured screen-global cursor
+    // points into video pixels — that's a larger refactor.
     Widget framedVideo = SizedBox(
       width: totalSize.width,
       height: totalSize.height,
-      child: Stack(
-        children: [
-          // Wallpaper layer fills the entire frame area so it shows
-          // through the padding around the video. Optional blur is
-          // applied via ImageFiltered (skipped at sigma 0 to avoid
-          // an unnecessary saveLayer each frame).
-          if (currentFrame.wallpaperCategory != null)
-            Positioned.fill(
-              child: _wallpaperLayer(
-                category: currentFrame.wallpaperCategory!,
-                index: currentFrame.wallpaperIndex,
-                blur: currentFrame.backgroundBlur,
-              ),
-            ),
-          // Frame background and border
-          CustomPaint(
-            size: totalSize,
-            painter: FramePainter(
-              frame: currentFrame,
-              videoSize: videoSize,
-            ),
-          ),
-          // Video content with padding and clipping
-          Positioned(
-            left: currentFrame.padding.left,
-            top: currentFrame.padding.top,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(currentFrame.cornerRadius),
-              child: SizedBox(
-                width: videoSize.width,
-                height: videoSize.height,
-                child: videoWidget,
-              ),
-            ),
-          ),
-          // (Cursor overlay lives inside videoWidget so it shares the
-          // zoom Transform with the video.)
-          // Dev HUD: marks the recorded cursor's video-pixel position so
-          // we can verify the zoom focal is tracking the cursor. Painted
-          // last so it sits on top of the video and any other overlays.
-          if (_showZoomDebug)
-            Positioned(
-              left: currentFrame.padding.left,
-              top: currentFrame.padding.top,
-              child: IgnorePointer(
-                child: SizedBox(
-                  width: videoSize.width,
-                  height: videoSize.height,
-                  child: AnimatedBuilder(
-                    animation:
-                        Listenable.merge([_controller, _smoothPlayhead]),
-                    builder: (context, _) => CustomPaint(
-                      painter: _ZoomFocalDebugPainter(
-                        cursorRecording: _cursorRecording,
-                        position: _smoothPlayhead?.position ??
-                            _controller.value.position,
-                        videoSize: videoSize,
-                        smoothedFocal: _zoomFocalController.smoothedFocal,
+      child: ClipRect(
+        child: AnimatedBuilder(
+          animation: Listenable.merge([_controller, _smoothPlayhead]),
+          child: VideoPlayer(_controller),
+          builder: (context, videoPlayer) {
+            final pos = _smoothPlayhead?.position ??
+                _controller.value.position;
+            final showCursor = _metadata?.isPureSource == true &&
+                _cursorRecording.count > 0 &&
+                !_hideCursorOverlay;
+
+            final composition = Stack(
+              children: [
+                if (currentFrame.wallpaperCategory != null)
+                  Positioned.fill(
+                    child: _wallpaperLayer(
+                      category: currentFrame.wallpaperCategory!,
+                      index: currentFrame.wallpaperIndex,
+                      blur: currentFrame.backgroundBlur,
+                    ),
+                  ),
+                CustomPaint(
+                  size: totalSize,
+                  painter: FramePainter(
+                    frame: currentFrame,
+                    videoSize: videoSize,
+                  ),
+                ),
+                Positioned(
+                  left: effPadding.left,
+                  top: effPadding.top,
+                  child: ClipRRect(
+                    borderRadius:
+                        BorderRadius.circular(currentFrame.cornerRadius),
+                    child: SizedBox(
+                      width: videoSize.width,
+                      height: videoSize.height,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          videoPlayer!,
+                          if (showCursor)
+                            CustomPaint(
+                              painter: CursorOverlayPainter(
+                                cursorRecording: _cursorRecording,
+                                position: pos,
+                                videoSize: videoSize,
+                                screenSize: videoSize,
+                                sizeMultiplier: _cursorSize,
+                                style: _cursorStyle,
+                                clickEffect: _cursorClickEffect,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
-        ],
+                if (_showZoomDebug)
+                  Positioned(
+                    left: currentFrame.padding.left,
+                    top: currentFrame.padding.top,
+                    child: IgnorePointer(
+                      child: SizedBox(
+                        width: videoSize.width,
+                        height: videoSize.height,
+                        child: CustomPaint(
+                          painter: _ZoomFocalDebugPainter(
+                            cursorRecording: _cursorRecording,
+                            position: pos,
+                            videoSize: videoSize,
+                            smoothedFocal:
+                                _zoomFocalController.smoothedFocal,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+
+            final focalUpdate = _zoomFocalController.update(
+              position: pos,
+              zoomRegions: _zoomRegions,
+              cursorRecording: _cursorRecording,
+            );
+            if (focalUpdate == null) return composition;
+
+            final activeZoom = focalUpdate.zoom;
+            final focalForFrame = focalUpdate.focal;
+
+            // Smoothly interpolate the rendered zoom level when the
+            // user changes it via the badge — otherwise stepping the
+            // level produces a visual snap.
+            return TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: activeZoom.zoomLevel),
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              child: composition,
+              builder: (context, animatedZoom, transformChild) {
+                final tweenedRegion =
+                    activeZoom.copyWith(zoomLevel: animatedZoom);
+                final transform = _zoomTransformer.getTransform(
+                  position: pos,
+                  zoomRegion: tweenedRegion,
+                  videoSize: videoSize,
+                  focalPoint: focalForFrame,
+                );
+                return Transform(
+                  transform: transform,
+                  alignment: Alignment.center,
+                  child: transformChild,
+                );
+              },
+            );
+          },
+        ),
       ),
     );
 
