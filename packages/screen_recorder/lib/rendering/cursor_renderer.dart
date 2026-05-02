@@ -4,37 +4,23 @@ import 'package:flutter/services.dart';
 import '../models/cursor_recording.dart';
 import '../effects/background_effect.dart';
 import '../utils/app_logger.dart';
+import 'cursor_glyph.dart';
 
-/// Renders cursor overlay on video frames
+/// Renders cursor overlay on video frames during export. The glyph is
+/// drawn programmatically via [paintCursorGlyph] so the exported video
+/// matches the editor's playback overlay style-for-style.
 class CursorRenderer {
-  ui.Image? _defaultCursor;
-  ui.Image? _clickCursor;
-  bool _isInitialized = false;
+  final double sizeMultiplier;
+  final CursorStyle style;
   BackgroundEffect? _backgroundEffect;
 
-  /// Initialize cursor images
-  Future<void> initialize() async {
-    try {
-      // Load default cursor
-      final defaultData = await rootBundle.load('assets/cursors/default_cursor.png');
-      _defaultCursor = await _loadImage(defaultData.buffer.asUint8List());
+  CursorRenderer({
+    this.sizeMultiplier = 1.0,
+    this.style = CursorStyle.modernDark,
+  });
 
-      // Load click cursor
-      final clickData = await rootBundle.load('assets/cursors/click_cursor.png');
-      _clickCursor = await _loadImage(clickData.buffer.asUint8List());
-
-      _isInitialized = true;
-    } catch (e) {
-      _isInitialized = false;
-      throw Exception('Failed to initialize cursor renderer: $e');
-    }
-  }
-
-  Future<ui.Image> _loadImage(Uint8List bytes) async {
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frame = await codec.getNextFrame();
-    return frame.image;
-  }
+  /// No-op kept for source-compat with earlier asset-loading API.
+  Future<void> initialize() async {}
 
   /// Set background effect to apply before cursor
   Future<void> setBackgroundEffect(BackgroundEffect? effect) async {
@@ -45,7 +31,7 @@ class CursorRenderer {
     }
   }
 
-  /// Draw cursor on frame at specific timestamp
+  /// Draw cursor on frame at specific timestamp.
   Future<Uint8List> renderCursorOnFrame({
     required Uint8List frameData,
     required int width,
@@ -53,10 +39,6 @@ class CursorRenderer {
     required int timestampMicros,
     required CursorRecording cursorRecording,
   }) async {
-    if (!_isInitialized) {
-      throw StateError('CursorRenderer not initialized');
-    }
-
     try {
       // Apply background effect first (if set)
       Uint8List processedFrame = frameData;
@@ -75,11 +57,6 @@ class CursorRenderer {
         return processedFrame;
       }
 
-      // Validate cursors loaded
-      if (_defaultCursor == null || _clickCursor == null) {
-        throw StateError('Cursor images not loaded');
-      }
-
       // Convert BGRA frame data to Image
       final frameImage = await _createImageFromBGRA(processedFrame, width, height);
 
@@ -90,13 +67,16 @@ class CursorRenderer {
       // Draw original frame
       canvas.drawImage(frameImage, ui.Offset.zero, ui.Paint());
 
-      // Draw cursor at position
-      final cursorImage = cursorPos.isClicked ? _clickCursor! : _defaultCursor!;
-      final cursorOffset = ui.Offset(
-        cursorPos.x - cursorImage.width / 2,
-        cursorPos.y - cursorImage.height / 2,
+      // Draw the synthetic cursor at the recorded position. The cursor
+      // recording stores positions in screen-space pixels; for the
+      // export, screen-space matches video-space (we encode at the
+      // capture's native dimensions).
+      paintCursorGlyph(
+        canvas,
+        position: ui.Offset(cursorPos.x, cursorPos.y),
+        diameter: kCursorBaseDiameter * sizeMultiplier,
+        style: style,
       );
-      canvas.drawImage(cursorImage, cursorOffset, ui.Paint());
 
       // Convert back to BGRA bytes
       final picture = recorder.endRecording();
@@ -146,10 +126,7 @@ class CursorRenderer {
 
   /// Dispose resources
   void dispose() {
-    _defaultCursor?.dispose();
-    _clickCursor?.dispose();
     _backgroundEffect?.dispose();
     _backgroundEffect = null;
-    _isInitialized = false;
   }
 }

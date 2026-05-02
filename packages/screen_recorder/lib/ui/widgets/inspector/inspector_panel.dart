@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/clip_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';
@@ -40,6 +41,10 @@ class InspectorPanel extends StatefulWidget {
     this.hideCursor = false,
     this.canHideCursor = false,
     this.onHideCursorChanged,
+    this.cursorSize = 1.0,
+    this.cursorStyle = CursorStyle.modernDark,
+    this.onCursorSizeChanged,
+    this.onCursorStyleChanged,
   });
 
   final FrameSettingsProvider frameSettings;
@@ -57,6 +62,13 @@ class InspectorPanel extends StatefulWidget {
   /// Setter for [hideCursor]. Required for the cursor tab to write
   /// through to the parent's state.
   final ValueChanged<bool>? onHideCursorChanged;
+
+  /// Cursor size multiplier (0.5 – 2.0). Live-applied to the playback
+  /// overlay and carried into the export pipeline.
+  final double cursorSize;
+  final CursorStyle cursorStyle;
+  final ValueChanged<double>? onCursorSizeChanged;
+  final ValueChanged<CursorStyle>? onCursorStyleChanged;
 
   /// What's currently selected on the timeline. When non-null, the
   /// inspector enters context mode. Null returns to tab mode.
@@ -127,6 +139,10 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.background =>
           BackgroundTab(frameSettings: widget.frameSettings),
         InspectorTab.cursor => CursorTab(
+            size: widget.cursorSize,
+            onSizeChanged: widget.onCursorSizeChanged ?? (_) {},
+            style: widget.cursorStyle,
+            onStyleChanged: widget.onCursorStyleChanged ?? (_) {},
             hideCursor: widget.hideCursor,
             canHideCursor: widget.canHideCursor,
             onHideCursorChanged:

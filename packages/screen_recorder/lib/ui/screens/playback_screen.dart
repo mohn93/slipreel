@@ -7,6 +7,7 @@ import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
+import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
@@ -53,6 +54,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   // Toggled from the inspector's "Hide cursor" control. Only meaningful
   // when the recording is pure source (cursor not baked into the MP4).
   bool _hideCursorOverlay = false;
+  // Cursor visual settings — live-applied to the playback overlay and
+  // forwarded to the export pipeline so the rendered video matches.
+  double _cursorSize = 1.0;
+  CursorStyle _cursorStyle = CursorStyle.modernDark;
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
@@ -261,6 +266,8 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         outputWidth: preset.width,
         outputHeight: preset.height,
         outputFps: preset.fps,
+        cursorSize: _cursorSize,
+        cursorStyle: _cursorStyle,
       );
       final summary = await pipeline.run();
       if (!mounted) return;
@@ -422,6 +429,12 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                           _cursorRecording.count > 0,
                       onHideCursorChanged: (v) =>
                           setState(() => _hideCursorOverlay = v),
+                      cursorSize: _cursorSize,
+                      cursorStyle: _cursorStyle,
+                      onCursorSizeChanged: (v) =>
+                          setState(() => _cursorSize = v),
+                      onCursorStyleChanged: (s) =>
+                          setState(() => _cursorStyle = s),
                       onZoomChanged: (index, next) {
                         setState(() => _zoomRegions[index] = next);
                       },
@@ -589,6 +602,8 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                           _controller.value.position,
                       videoSize: videoSize,
                       screenSize: videoSize,
+                      sizeMultiplier: _cursorSize,
+                      style: _cursorStyle,
                     ),
                   ),
                 ),

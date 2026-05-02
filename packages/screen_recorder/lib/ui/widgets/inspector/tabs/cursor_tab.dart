@@ -1,31 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Cursor tab — size, style, behavior toggles, click-effect section.
 ///
-/// Most controls remain local-state placeholders — the recorded cursor
-/// track is rendered elsewhere and doesn't yet honor them. The "Hide
-/// cursor" toggle is the exception: it's lifted to the playback screen
-/// because suppressing the synthetic cursor overlay needs to happen
-/// outside this widget's scope.
+/// Size, style, and "Hide cursor" are wired to the playback overlay
+/// and the export pipeline. The remaining toggles (always-pointer,
+/// hide-if-still, loop-position, click-effect) are still local-state
+/// placeholders.
 class CursorTab extends StatefulWidget {
   const CursorTab({
     super.key,
+    required this.size,
+    required this.onSizeChanged,
+    required this.style,
+    required this.onStyleChanged,
     required this.hideCursor,
     required this.canHideCursor,
     required this.onHideCursorChanged,
   });
 
-  /// Current value of the synthetic cursor overlay's hidden state.
+  final double size;
+  final ValueChanged<double> onSizeChanged;
+  final CursorStyle style;
+  final ValueChanged<CursorStyle> onStyleChanged;
   final bool hideCursor;
-
-  /// Whether the toggle is meaningful for the current recording.
-  /// False for legacy recordings without a separate cursor track —
-  /// their cursor is baked into the video and can't be hidden.
   final bool canHideCursor;
-
-  /// Lifted setter for [hideCursor]. Ignored when [canHideCursor] is
-  /// false (the toggle renders disabled).
   final ValueChanged<bool> onHideCursorChanged;
 
   @override
@@ -33,8 +33,6 @@ class CursorTab extends StatefulWidget {
 }
 
 class _CursorTabState extends State<CursorTab> {
-  double _size = 1.0;
-  _CursorStyle _style = _CursorStyle.modernDark;
   bool _alwaysPointer = false;
   bool _hideIfStill = false;
   bool _loopPosition = false;
@@ -46,12 +44,13 @@ class _CursorTabState extends State<CursorTab> {
       children: [
         InspectorSlider(
           label: 'Cursor size',
-          value: _size,
+          value: widget.size,
           min: 0.5,
           max: 2.0,
-          onChanged: (v) => setState(() => _size = v),
-          onReset: () => setState(() => _size = 1.0),
-          canReset: _size != 1.0,
+          onChanged: widget.onSizeChanged,
+          onReset: () => widget.onSizeChanged(1.0),
+          canReset: widget.size != 1.0,
+          subtitle: '${widget.size.toStringAsFixed(2)}×',
         ),
         const InspectorSectionDivider(),
         const Text(
@@ -63,11 +62,11 @@ class _CursorTabState extends State<CursorTab> {
           ),
         ),
         const SizedBox(height: 12),
-        InspectorOptionRow<_CursorStyle>(
-          items: _CursorStyle.values,
-          selected: _style,
-          onSelected: (s) => setState(() => _style = s),
-          iconOf: (s) => s._buildPreview(),
+        InspectorOptionRow<CursorStyle>(
+          items: CursorStyle.values,
+          selected: widget.style,
+          onSelected: widget.onStyleChanged,
+          iconOf: (s) => _CursorStylePreview(style: s),
           labelOf: (_) => null,
         ),
         const InspectorSectionDivider(),
@@ -125,117 +124,45 @@ class _CursorTabState extends State<CursorTab> {
   }
 }
 
-/// Built-in cursor style presets the picker shows. Previews are drawn
-/// inline rather than from asset images so the tab works without
-/// shipping cursor pixmaps.
-enum _CursorStyle {
-  classic,
-  modernDark,
-  dot,
-  bold,
-  outlined,
-}
-
-extension on _CursorStyle {
-  Widget _buildPreview() {
-    switch (this) {
-      case _CursorStyle.classic:
-        return const _ArrowGlyph(
-            fillColor: Colors.transparent, outlineColor: Colors.white);
-      case _CursorStyle.modernDark:
-        return const _ArrowGlyph(
-            fillColor: Colors.white, outlineColor: Colors.black);
-      case _CursorStyle.dot:
-        return Container(
-          width: 18,
-          height: 18,
-          decoration: const BoxDecoration(
-            color: Colors.white60,
-            shape: BoxShape.circle,
-          ),
-        );
-      case _CursorStyle.bold:
-        return const _ArrowGlyph(
-            fillColor: Colors.white,
-            outlineColor: Colors.white,
-            strokeWidth: 0);
-      case _CursorStyle.outlined:
-        return const _ArrowGlyph(
-            fillColor: Colors.white,
-            outlineColor: Colors.white,
-            strokeWidth: 1.6);
-    }
-  }
-}
-
-/// Inline arrow-cursor glyph drawn with a CustomPainter so we don't
-/// rely on assets. Mirrors the shape of the macOS arrow pointer.
-class _ArrowGlyph extends StatelessWidget {
-  const _ArrowGlyph({
-    required this.fillColor,
-    required this.outlineColor,
-    this.strokeWidth = 1.4,
-  });
-
-  final Color fillColor;
-  final Color outlineColor;
-  final double strokeWidth;
+/// Tile-sized preview of a cursor style. Renders via the shared
+/// [paintCursorGlyph] helper so the picker tile, the playback overlay,
+/// and the exported video all match exactly.
+class _CursorStylePreview extends StatelessWidget {
+  const _CursorStylePreview({required this.style});
+  final CursorStyle style;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
       size: const Size(20, 24),
-      painter: _ArrowPainter(
-        fillColor: fillColor,
-        outlineColor: outlineColor,
-        strokeWidth: strokeWidth,
-      ),
+      painter: _CursorStylePreviewPainter(style: style),
     );
   }
 }
 
-class _ArrowPainter extends CustomPainter {
-  _ArrowPainter({
-    required this.fillColor,
-    required this.outlineColor,
-    required this.strokeWidth,
-  });
-
-  final Color fillColor;
-  final Color outlineColor;
-  final double strokeWidth;
+class _CursorStylePreviewPainter extends CustomPainter {
+  _CursorStylePreviewPainter({required this.style});
+  final CursorStyle style;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final path = Path()
-      ..moveTo(w * 0.15, h * 0.05)
-      ..lineTo(w * 0.85, h * 0.55)
-      ..lineTo(w * 0.55, h * 0.6)
-      ..lineTo(w * 0.7, h * 0.92)
-      ..lineTo(w * 0.55, h * 0.96)
-      ..lineTo(w * 0.4, h * 0.66)
-      ..lineTo(w * 0.15, h * 0.85)
-      ..close();
-    if (fillColor != Colors.transparent) {
-      canvas.drawPath(path, Paint()..color = fillColor);
-    }
-    if (strokeWidth > 0) {
-      canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..color = outlineColor
-          ..strokeWidth = strokeWidth
-          ..strokeJoin = StrokeJoin.round,
-      );
-    }
+    final isDot = style == CursorStyle.dot;
+    // Dot is centered and sized to fit the tile width; arrows are
+    // anchored near the top-left so the full arrow shape fits inside
+    // the tile naturally (same convention as the actual overlay).
+    final position = isDot
+        ? Offset(size.width / 2, size.height / 2)
+        : Offset(size.width * 0.15, size.height * 0.05);
+    final diameter = isDot ? size.shortestSide * 0.75 : size.height;
+    paintCursorGlyph(
+      canvas,
+      position: position,
+      diameter: diameter,
+      style: style,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant _ArrowPainter old) =>
-      old.fillColor != fillColor ||
-      old.outlineColor != outlineColor ||
-      old.strokeWidth != strokeWidth;
+  bool shouldRepaint(covariant _CursorStylePreviewPainter old) =>
+      old.style != style;
 }

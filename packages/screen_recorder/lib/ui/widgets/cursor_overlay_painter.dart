@@ -2,21 +2,28 @@
 import 'package:flutter/material.dart';
 import '../../models/cursor_recording.dart';
 import '../../rendering/cursor_geometry.dart';
+import '../../rendering/cursor_glyph.dart';
 
 /// Paints the recorded cursor on top of the video at the player's current
 /// position. Reads positions from [CursorRecording] using the shared
-/// [cursorAt] geometry helper, so its math matches the export-time renderer.
+/// [cursorAt] geometry helper, so its math matches the export-time
+/// renderer; the actual glyph is drawn via [paintCursorGlyph] so the
+/// preview and the exported video stay visually consistent.
 class CursorOverlayPainter extends CustomPainter {
   final CursorRecording cursorRecording;
   final Duration position;
   final Size videoSize;
   final Size screenSize;
+  final double sizeMultiplier;
+  final CursorStyle style;
 
   CursorOverlayPainter({
     required this.cursorRecording,
     required this.position,
     required this.videoSize,
     required this.screenSize,
+    this.sizeMultiplier = 1.0,
+    this.style = CursorStyle.modernDark,
   });
 
   @override
@@ -24,7 +31,6 @@ class CursorOverlayPainter extends CustomPainter {
     final pos = cursorAt(cursorRecording, position);
     if (pos == null) return;
 
-    // Map screen-space cursor coords to widget-space (size).
     final inVideo = screenToVideoSpace(
       screenPos: Offset(pos.x, pos.y),
       screenSize: screenSize,
@@ -34,20 +40,17 @@ class CursorOverlayPainter extends CustomPainter {
     final scaleY = size.height / videoSize.height;
     final widgetPos = Offset(inVideo.dx * scaleX, inVideo.dy * scaleY);
 
-    final paint = Paint()
-      ..color = pos.isClicked ? Colors.yellowAccent : Colors.white
-      ..style = PaintingStyle.fill;
+    // Diameter scales with the widget→video ratio so the cursor stays
+    // visually proportional even when the preview is rendered at a
+    // size other than the native video size.
+    final pxDiameter =
+        kCursorBaseDiameter * sizeMultiplier * (scaleX + scaleY) / 2;
 
-    // Simple cursor: 8px filled circle. Final visuals can be a sprite later;
-    // the geometry math is what matters for spec correctness.
-    canvas.drawCircle(widgetPos, 8, paint);
-    canvas.drawCircle(
-      widgetPos,
-      8,
-      Paint()
-        ..color = Colors.black87
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
+    paintCursorGlyph(
+      canvas,
+      position: widgetPos,
+      diameter: pxDiameter,
+      style: style,
     );
   }
 
@@ -56,6 +59,8 @@ class CursorOverlayPainter extends CustomPainter {
     return old.position != position ||
         old.cursorRecording != cursorRecording ||
         old.videoSize != videoSize ||
-        old.screenSize != screenSize;
+        old.screenSize != screenSize ||
+        old.sizeMultiplier != sizeMultiplier ||
+        old.style != style;
   }
 }
