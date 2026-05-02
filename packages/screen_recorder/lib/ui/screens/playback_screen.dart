@@ -6,6 +6,7 @@ import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
+import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
@@ -58,6 +59,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   // forwarded to the export pipeline so the rendered video matches.
   double _cursorSize = 1.0;
   CursorStyle _cursorStyle = CursorStyle.modernDark;
+  CursorClickEffect _cursorClickEffect = CursorClickEffect.ripple;
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
@@ -268,6 +270,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         outputFps: preset.fps,
         cursorSize: _cursorSize,
         cursorStyle: _cursorStyle,
+        cursorClickEffect: _cursorClickEffect,
       );
       final summary = await pipeline.run();
       if (!mounted) return;
@@ -431,10 +434,13 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                           setState(() => _hideCursorOverlay = v),
                       cursorSize: _cursorSize,
                       cursorStyle: _cursorStyle,
+                      cursorClickEffect: _cursorClickEffect,
                       onCursorSizeChanged: (v) =>
                           setState(() => _cursorSize = v),
                       onCursorStyleChanged: (s) =>
                           setState(() => _cursorStyle = s),
+                      onCursorClickEffectChanged: (e) =>
+                          setState(() => _cursorClickEffect = e),
                       onZoomChanged: (index, next) {
                         setState(() => _zoomRegions[index] = next);
                       },
@@ -604,6 +610,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                       screenSize: videoSize,
                       sizeMultiplier: _cursorSize,
                       style: _cursorStyle,
+                      clickEffect: _cursorClickEffect,
                     ),
                   ),
                 ),

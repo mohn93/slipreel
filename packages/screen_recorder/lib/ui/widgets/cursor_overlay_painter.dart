@@ -1,14 +1,16 @@
 // packages/screen_recorder/lib/ui/widgets/cursor_overlay_painter.dart
 import 'package:flutter/material.dart';
 import '../../models/cursor_recording.dart';
+import '../../rendering/cursor_click_effect.dart';
 import '../../rendering/cursor_geometry.dart';
 import '../../rendering/cursor_glyph.dart';
 
 /// Paints the recorded cursor on top of the video at the player's current
 /// position. Reads positions from [CursorRecording] using the shared
 /// [cursorAt] geometry helper, so its math matches the export-time
-/// renderer; the actual glyph is drawn via [paintCursorGlyph] so the
-/// preview and the exported video stay visually consistent.
+/// renderer; the actual glyph + click effects are drawn via
+/// [paintCursorWithEffects] so the preview and the exported video stay
+/// visually consistent.
 class CursorOverlayPainter extends CustomPainter {
   final CursorRecording cursorRecording;
   final Duration position;
@@ -16,6 +18,7 @@ class CursorOverlayPainter extends CustomPainter {
   final Size screenSize;
   final double sizeMultiplier;
   final CursorStyle style;
+  final CursorClickEffect clickEffect;
 
   CursorOverlayPainter({
     required this.cursorRecording,
@@ -24,6 +27,7 @@ class CursorOverlayPainter extends CustomPainter {
     required this.screenSize,
     this.sizeMultiplier = 1.0,
     this.style = CursorStyle.modernDark,
+    this.clickEffect = CursorClickEffect.ripple,
   });
 
   @override
@@ -46,11 +50,16 @@ class CursorOverlayPainter extends CustomPainter {
     final pxDiameter =
         kCursorBaseDiameter * sizeMultiplier * (scaleX + scaleY) / 2;
 
-    paintCursorGlyph(
+    final dt =
+        microsSinceClick(cursorRecording, position.inMicroseconds);
+
+    paintCursorWithEffects(
       canvas,
       position: widgetPos,
-      diameter: pxDiameter,
+      baseDiameter: pxDiameter,
       style: style,
+      microsSinceClick: dt,
+      effect: clickEffect,
     );
   }
 
@@ -61,6 +70,7 @@ class CursorOverlayPainter extends CustomPainter {
         old.videoSize != videoSize ||
         old.screenSize != screenSize ||
         old.sizeMultiplier != sizeMultiplier ||
-        old.style != style;
+        old.style != style ||
+        old.clickEffect != clickEffect;
   }
 }

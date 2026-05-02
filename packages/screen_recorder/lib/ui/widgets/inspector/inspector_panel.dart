@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/clip_context_inspector.dart';
@@ -43,8 +44,10 @@ class InspectorPanel extends StatefulWidget {
     this.onHideCursorChanged,
     this.cursorSize = 1.0,
     this.cursorStyle = CursorStyle.modernDark,
+    this.cursorClickEffect = CursorClickEffect.ripple,
     this.onCursorSizeChanged,
     this.onCursorStyleChanged,
+    this.onCursorClickEffectChanged,
   });
 
   final FrameSettingsProvider frameSettings;
@@ -63,12 +66,14 @@ class InspectorPanel extends StatefulWidget {
   /// through to the parent's state.
   final ValueChanged<bool>? onHideCursorChanged;
 
-  /// Cursor size multiplier (0.5 – 2.0). Live-applied to the playback
+  /// Cursor size multiplier (0.5 – 8.0). Live-applied to the playback
   /// overlay and carried into the export pipeline.
   final double cursorSize;
   final CursorStyle cursorStyle;
+  final CursorClickEffect cursorClickEffect;
   final ValueChanged<double>? onCursorSizeChanged;
   final ValueChanged<CursorStyle>? onCursorStyleChanged;
+  final ValueChanged<CursorClickEffect>? onCursorClickEffectChanged;
 
   /// What's currently selected on the timeline. When non-null, the
   /// inspector enters context mode. Null returns to tab mode.
@@ -143,6 +148,9 @@ class _InspectorPanelState extends State<InspectorPanel> {
             onSizeChanged: widget.onCursorSizeChanged ?? (_) {},
             style: widget.cursorStyle,
             onStyleChanged: widget.onCursorStyleChanged ?? (_) {},
+            clickEffect: widget.cursorClickEffect,
+            onClickEffectChanged:
+                widget.onCursorClickEffectChanged ?? (_) {},
             hideCursor: widget.hideCursor,
             canHideCursor: widget.canHideCursor,
             onHideCursorChanged:

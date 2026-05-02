@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import '../models/cursor_recording.dart';
 import '../models/recording_metadata.dart';
+import '../rendering/cursor_click_effect.dart';
 import '../rendering/cursor_glyph.dart';
 import '../rendering/cursor_renderer.dart';
 import '../utils/perf_summary.dart';
@@ -26,6 +27,7 @@ class ExportPipeline {
   /// Cursor visual settings carried over from the editor.
   final double cursorSize;
   final CursorStyle cursorStyle;
+  final CursorClickEffect cursorClickEffect;
 
   // Cache for a single ffprobe result per pipeline instance.
   List<int>? _probedDims; // [width, height, fps]
@@ -41,6 +43,7 @@ class ExportPipeline {
     required this.outputFps,
     this.cursorSize = 1.0,
     this.cursorStyle = CursorStyle.modernDark,
+    this.cursorClickEffect = CursorClickEffect.ripple,
   });
 
   Future<ExportPerfSummary> run() async {
@@ -74,6 +77,7 @@ class ExportPipeline {
     final cursorRenderer = CursorRenderer(
       sizeMultiplier: cursorSize,
       style: cursorStyle,
+      clickEffect: cursorClickEffect,
     );
     if (sourceMetadata.isPureSource && cursorRecording.count > 0) {
       await cursorRenderer.initialize();

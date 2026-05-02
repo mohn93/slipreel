@@ -4,19 +4,23 @@ import 'package:flutter/services.dart';
 import '../models/cursor_recording.dart';
 import '../effects/background_effect.dart';
 import '../utils/app_logger.dart';
+import 'cursor_click_effect.dart';
 import 'cursor_glyph.dart';
 
 /// Renders cursor overlay on video frames during export. The glyph is
-/// drawn programmatically via [paintCursorGlyph] so the exported video
-/// matches the editor's playback overlay style-for-style.
+/// drawn programmatically via [paintCursorWithEffects] so the exported
+/// video matches the editor's playback overlay (size, style, and click
+/// effect) frame-for-frame.
 class CursorRenderer {
   final double sizeMultiplier;
   final CursorStyle style;
+  final CursorClickEffect clickEffect;
   BackgroundEffect? _backgroundEffect;
 
   CursorRenderer({
     this.sizeMultiplier = 1.0,
     this.style = CursorStyle.modernDark,
+    this.clickEffect = CursorClickEffect.ripple,
   });
 
   /// No-op kept for source-compat with earlier asset-loading API.
@@ -71,11 +75,14 @@ class CursorRenderer {
       // recording stores positions in screen-space pixels; for the
       // export, screen-space matches video-space (we encode at the
       // capture's native dimensions).
-      paintCursorGlyph(
+      final dt = microsSinceClick(cursorRecording, timestampMicros);
+      paintCursorWithEffects(
         canvas,
         position: ui.Offset(cursorPos.x, cursorPos.y),
-        diameter: kCursorBaseDiameter * sizeMultiplier,
+        baseDiameter: kCursorBaseDiameter * sizeMultiplier,
         style: style,
+        microsSinceClick: dt,
+        effect: clickEffect,
       );
 
       // Convert back to BGRA bytes
