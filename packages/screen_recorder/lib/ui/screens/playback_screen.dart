@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -10,6 +11,7 @@ import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
+import 'package:screen_recorder/rendering/wallpaper.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
@@ -508,6 +510,11 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     // this AnimatedBuilder, and the VideoPlayer is held as `child` so it
     // isn't reconstructed each frame.
     //
+    // The cursor overlay sits in the same Stack as the VideoPlayer so
+    // it travels through the zoom Transform alongside the video pixels
+    // — otherwise the cursor would visually drift off the content it
+    // points at and stay 1× while the video scales up.
+    //
     // The focal is the zoom region's stored rect center (where the user
     // clicked when creating the zoom). True cursor-follow would require
     // recording-region origin + backing scale in the metadata sidecar so
@@ -516,14 +523,38 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     final Widget videoWidget = AnimatedBuilder(
       animation: Listenable.merge([_controller, _smoothPlayhead]),
       child: VideoPlayer(_controller),
-      builder: (context, child) {
+      builder: (context, videoPlayer) {
         final pos = _smoothPlayhead?.position ?? _controller.value.position;
+        final videoBounds = _controller.value.size;
+        final showCursor = _metadata?.isPureSource == true &&
+            _cursorRecording.count > 0 &&
+            !_hideCursorOverlay;
+
+        final content = Stack(
+          fit: StackFit.expand,
+          children: [
+            videoPlayer!,
+            if (showCursor)
+              CustomPaint(
+                painter: CursorOverlayPainter(
+                  cursorRecording: _cursorRecording,
+                  position: pos,
+                  videoSize: videoBounds,
+                  screenSize: videoBounds,
+                  sizeMultiplier: _cursorSize,
+                  style: _cursorStyle,
+                  clickEffect: _cursorClickEffect,
+                ),
+              ),
+          ],
+        );
+
         final focalUpdate = _zoomFocalController.update(
           position: pos,
           zoomRegions: _zoomRegions,
           cursorRecording: _cursorRecording,
         );
-        if (focalUpdate == null) return child!;
+        if (focalUpdate == null) return content;
 
         final activeZoom = focalUpdate.zoom;
         final focalForFrame = focalUpdate.focal;
@@ -535,19 +566,20 @@ class _PlaybackScreenState extends State<PlaybackScreen>
           tween: Tween<double>(end: activeZoom.zoomLevel),
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
-          builder: (context, animatedZoom, _) {
+          child: content,
+          builder: (context, animatedZoom, transformChild) {
             final tweenedRegion =
                 activeZoom.copyWith(zoomLevel: animatedZoom);
             final transform = _zoomTransformer.getTransform(
               position: pos,
               zoomRegion: tweenedRegion,
-              videoSize: _controller.value.size,
+              videoSize: videoBounds,
               focalPoint: focalForFrame,
             );
             return Transform(
               transform: transform,
               alignment: Alignment.center,
-              child: child,
+              child: transformChild,
             );
           },
         );
@@ -568,6 +600,18 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       height: totalSize.height,
       child: Stack(
         children: [
+          // Wallpaper layer fills the entire frame area so it shows
+          // through the padding around the video. Optional blur is
+          // applied via ImageFiltered (skipped at sigma 0 to avoid
+          // an unnecessary saveLayer each frame).
+          if (currentFrame.wallpaperCategory != null)
+            Positioned.fill(
+              child: _wallpaperLayer(
+                category: currentFrame.wallpaperCategory!,
+                index: currentFrame.wallpaperIndex,
+                blur: currentFrame.backgroundBlur,
+              ),
+            ),
           // Frame background and border
           CustomPaint(
             size: totalSize,
@@ -589,33 +633,8 @@ class _PlaybackScreenState extends State<PlaybackScreen>
               ),
             ),
           ),
-          if (_metadata?.isPureSource == true &&
-              _cursorRecording.count > 0 &&
-              !_hideCursorOverlay)
-            Positioned(
-              left: currentFrame.padding.left,
-              top: currentFrame.padding.top,
-              child: SizedBox(
-                width: videoSize.width,
-                height: videoSize.height,
-                child: AnimatedBuilder(
-                  animation:
-                      Listenable.merge([_controller, _smoothPlayhead]),
-                  builder: (context, _) => CustomPaint(
-                    painter: CursorOverlayPainter(
-                      cursorRecording: _cursorRecording,
-                      position: _smoothPlayhead?.position ??
-                          _controller.value.position,
-                      videoSize: videoSize,
-                      screenSize: videoSize,
-                      sizeMultiplier: _cursorSize,
-                      style: _cursorStyle,
-                      clickEffect: _cursorClickEffect,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          // (Cursor overlay lives inside videoWidget so it shares the
+          // zoom Transform with the video.)
           // Dev HUD: marks the recorded cursor's video-pixel position so
           // we can verify the zoom focal is tracking the cursor. Painted
           // last so it sits on top of the video and any other overlays.
@@ -652,6 +671,26 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       child: FittedBox(
         fit: BoxFit.contain,
         child: framedVideo,
+      ),
+    );
+  }
+
+  Widget _wallpaperLayer({
+    required String category,
+    required int index,
+    required double blur,
+  }) {
+    final fill = Container(
+      decoration: wallpaperDecoration(category, index),
+    );
+    if (blur <= 0) return fill;
+    // ClipRect prevents the gaussian tail from leaking outside the
+    // frame's totalSize. ImageFiltered does a saveLayer internally,
+    // which is why we skip it altogether at sigma 0.
+    return ClipRect(
+      child: ImageFiltered(
+        imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: fill,
       ),
     );
   }

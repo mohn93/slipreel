@@ -91,6 +91,38 @@ class FrameSettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Pick a wallpaper from the wallpaper catalog. Pass `null` for
+  /// [category] to drop the wallpaper layer entirely.
+  Future<void> updateWallpaper({
+    required String? category,
+    int index = 0,
+  }) async {
+    if (category == null) {
+      _currentFrame = _currentFrame.copyWith(
+        clearWallpaper: true,
+        name: 'Custom',
+      );
+    } else {
+      _currentFrame = _currentFrame.copyWith(
+        wallpaperCategory: category,
+        wallpaperIndex: index,
+        name: 'Custom',
+      );
+    }
+    await _save();
+    notifyListeners();
+  }
+
+  /// Update the wallpaper Gaussian-blur sigma (canvas pixels).
+  Future<void> updateBackgroundBlur(double sigma) async {
+    _currentFrame = _currentFrame.copyWith(
+      backgroundBlur: sigma,
+      name: 'Custom',
+    );
+    await _save();
+    notifyListeners();
+  }
+
   /// Save the current frame to persistent storage
   Future<void> _save() async {
     try {

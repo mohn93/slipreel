@@ -1,16 +1,18 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:screen_recorder/rendering/wallpaper.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Background tab — wallpaper picker, blur, padding, corners, inset.
 ///
-/// Padding and rounded corners write through to FrameSettingsProvider
-/// (already wired into the playback render path). Wallpaper category /
-/// thumbnail and inset are local-state-only for now: the model
-/// doesn't carry a wallpaper concept yet, so the picker behaves
-/// correctly visually but doesn't change the rendered frame.
+/// Wallpaper category, tile, and blur write through to
+/// [FrameSettingsProvider] so the playback canvas re-renders live.
+/// Padding and rounded corners were already wired. Inset stays
+/// local-state-only — there's no layered "inset" concept in the
+/// model yet (it would shrink the video pill inside its rounded
+/// corners independent of the outer frame padding).
 class BackgroundTab extends StatefulWidget {
   const BackgroundTab({super.key, required this.frameSettings});
   final FrameSettingsProvider frameSettings;
@@ -20,26 +22,41 @@ class BackgroundTab extends StatefulWidget {
 }
 
 class _BackgroundTabState extends State<BackgroundTab> {
-  static const _categories = <String>[
-    'Favorite',
-    'macOS',
-    'Spring',
-    'Sunset',
-    'Radial',
-    'Solid',
-  ];
-  String _selectedCategory = 'macOS';
-  int _selectedWallpaper = 0;
-  double _backgroundBlur = 0;
+  /// Local-only because the user can pick a category without
+  /// committing to a tile yet. Initialized from the model so the
+  /// chip selection persists across rebuilds.
+  late String _selectedCategory =
+      widget.frameSettings.currentFrame.wallpaperCategory ?? 'macOS';
+
   double _inset = 0;
 
-  static const _wallpapersPerCategory = 16;
+  @override
+  void initState() {
+    super.initState();
+    widget.frameSettings.addListener(_onFrameChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.frameSettings.removeListener(_onFrameChanged);
+    super.dispose();
+  }
+
+  void _onFrameChanged() {
+    final next = widget.frameSettings.currentFrame.wallpaperCategory;
+    if (next != null && next != _selectedCategory) {
+      setState(() => _selectedCategory = next);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final frame = widget.frameSettings.currentFrame;
     final padding = frame.padding.left;
     final cornerRadius = frame.cornerRadius;
+    final selectedIndex = frame.wallpaperCategory == _selectedCategory
+        ? frame.wallpaperIndex
+        : -1;
 
     return ListView(
       padding: EdgeInsets.zero,
@@ -47,26 +64,30 @@ class _BackgroundTabState extends State<BackgroundTab> {
         _wallpaperHeader(),
         const SizedBox(height: 12),
         InspectorChipGroup<String>(
-          items: _categories,
+          items: kWallpaperCategories,
           labelOf: (s) => s,
           iconOf: (s) => s == 'Favorite' ? Icons.star_border : null,
           selected: _selectedCategory,
           onSelected: (s) => setState(() {
             _selectedCategory = s;
-            _selectedWallpaper = 0;
           }),
         ),
         const SizedBox(height: 16),
         _randomButton(),
         const SizedBox(height: 16),
-        _wallpaperGrid(),
+        _wallpaperGrid(selectedIndex),
         const InspectorSectionDivider(),
         InspectorSlider(
           label: 'Background blur',
-          value: _backgroundBlur,
+          subtitle: frame.backgroundBlur > 0
+              ? '${frame.backgroundBlur.toStringAsFixed(0)} px'
+              : 'Off',
+          value: frame.backgroundBlur,
           min: 0,
-          max: 1,
-          onChanged: (v) => setState(() => _backgroundBlur = v),
+          max: 60,
+          onChanged: widget.frameSettings.updateBackgroundBlur,
+          onReset: () => widget.frameSettings.updateBackgroundBlur(0),
+          canReset: frame.backgroundBlur != 0,
         ),
         const InspectorSectionDivider(),
         InspectorSlider(
@@ -116,10 +137,10 @@ class _BackgroundTabState extends State<BackgroundTab> {
 
   Widget _randomButton() {
     return InkWell(
-      onTap: () => setState(() {
-        _selectedWallpaper =
-            Random().nextInt(_wallpapersPerCategory);
-      }),
+      onTap: () => widget.frameSettings.updateWallpaper(
+        category: _selectedCategory,
+        index: Random().nextInt(kWallpapersPerCategory),
+      ),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         width: double.infinity,
@@ -149,11 +170,7 @@ class _BackgroundTabState extends State<BackgroundTab> {
     );
   }
 
-  Widget _wallpaperGrid() {
-    // Synthetic gradient thumbnails until we have a real wallpaper
-    // catalog. Each tile is a deterministic gradient seeded on the
-    // (category, index) pair so swapping categories produces a
-    // different-looking palette.
+  Widget _wallpaperGrid(int selectedIndex) {
     return GridView.count(
       crossAxisCount: 7,
       shrinkWrap: true,
@@ -163,12 +180,14 @@ class _BackgroundTabState extends State<BackgroundTab> {
       crossAxisSpacing: 8,
       childAspectRatio: 1,
       children: [
-        for (int i = 0; i < _wallpapersPerCategory; i++)
+        for (int i = 0; i < kWallpapersPerCategory; i++)
           _WallpaperThumb(
-            seed: '$_selectedCategory.$i'.hashCode,
-            isSelected: i == _selectedWallpaper,
-            onTap: () =>
-                setState(() => _selectedWallpaper = i),
+            decoration: wallpaperDecoration(_selectedCategory, i),
+            isSelected: i == selectedIndex,
+            onTap: () => widget.frameSettings.updateWallpaper(
+              category: _selectedCategory,
+              index: i,
+            ),
           ),
       ],
     );
@@ -177,38 +196,25 @@ class _BackgroundTabState extends State<BackgroundTab> {
 
 class _WallpaperThumb extends StatelessWidget {
   const _WallpaperThumb({
-    required this.seed,
+    required this.decoration,
     required this.isSelected,
     required this.onTap,
   });
 
-  final int seed;
+  final BoxDecoration decoration;
   final bool isSelected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final r = Random(seed);
-    final hue1 = r.nextDouble() * 360;
-    final hue2 = (hue1 + 30 + r.nextDouble() * 90) % 360;
-    final c1 =
-        HSLColor.fromAHSL(1, hue1, 0.6, 0.55).toColor();
-    final c2 =
-        HSLColor.fromAHSL(1, hue2, 0.6, 0.4).toColor();
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [c1, c2],
-          ),
+        decoration: decoration.copyWith(
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color:
-                isSelected ? kInspectorAccent : Colors.transparent,
+            color: isSelected ? kInspectorAccent : Colors.transparent,
             width: 2,
           ),
         ),

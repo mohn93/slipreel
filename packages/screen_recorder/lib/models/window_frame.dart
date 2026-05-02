@@ -32,6 +32,19 @@ class WindowFrame {
   /// Border color (null for no border)
   final Color? borderColor;
 
+  /// Wallpaper category selected in the inspector (e.g. "macOS",
+  /// "Sunset"). Null means no wallpaper layer is drawn — the editor
+  /// backdrop shows through.
+  final String? wallpaperCategory;
+
+  /// Tile index inside the chosen [wallpaperCategory]. Ignored when
+  /// [wallpaperCategory] is null.
+  final int wallpaperIndex;
+
+  /// Gaussian blur sigma applied to the wallpaper layer (in canvas
+  /// pixels). 0 means no blur.
+  final double backgroundBlur;
+
   const WindowFrame({
     required this.name,
     required this.padding,
@@ -42,6 +55,9 @@ class WindowFrame {
     this.backgroundColor,
     required this.borderWidth,
     this.borderColor,
+    this.wallpaperCategory,
+    this.wallpaperIndex = 0,
+    this.backgroundBlur = 0,
   });
 
   /// Creates a frame with no decorations (transparent, no padding or effects)
@@ -61,8 +77,8 @@ class WindowFrame {
 
   /// Default cinematic frame: large padding and a soft, broad drop shadow
   /// so the recording reads as a floating panel above the page backdrop.
-  /// Background is transparent — let whatever sits behind the frame show
-  /// through.
+  /// Ships with a default macOS-style wallpaper so a fresh recording
+  /// looks finished out of the box.
   factory WindowFrame.rounded() {
     return const WindowFrame(
       name: 'Rounded',
@@ -74,6 +90,8 @@ class WindowFrame {
       backgroundColor: null,
       borderWidth: 0.0,
       borderColor: null,
+      wallpaperCategory: 'macOS',
+      wallpaperIndex: 0,
     );
   }
 
@@ -115,7 +133,11 @@ class WindowFrame {
         WindowFrame.minimal(),
       ];
 
-  /// Creates a copy of this frame with the given properties replaced
+  /// Creates a copy of this frame with the given properties replaced.
+  ///
+  /// `wallpaperCategory` is special: pass [clearWallpaper] = true to
+  /// drop the wallpaper (set the field to null), since `null` would
+  /// otherwise mean "leave unchanged" in the copyWith convention.
   WindowFrame copyWith({
     String? name,
     EdgeInsets? padding,
@@ -126,6 +148,10 @@ class WindowFrame {
     Color? backgroundColor,
     double? borderWidth,
     Color? borderColor,
+    String? wallpaperCategory,
+    int? wallpaperIndex,
+    double? backgroundBlur,
+    bool clearWallpaper = false,
   }) {
     return WindowFrame(
       name: name ?? this.name,
@@ -137,6 +163,11 @@ class WindowFrame {
       backgroundColor: backgroundColor ?? this.backgroundColor,
       borderWidth: borderWidth ?? this.borderWidth,
       borderColor: borderColor ?? this.borderColor,
+      wallpaperCategory: clearWallpaper
+          ? null
+          : (wallpaperCategory ?? this.wallpaperCategory),
+      wallpaperIndex: wallpaperIndex ?? this.wallpaperIndex,
+      backgroundBlur: backgroundBlur ?? this.backgroundBlur,
     );
   }
 
@@ -160,6 +191,9 @@ class WindowFrame {
       'backgroundColor': backgroundColor?.toARGB32(),
       'borderWidth': borderWidth,
       'borderColor': borderColor?.toARGB32(),
+      'wallpaperCategory': wallpaperCategory,
+      'wallpaperIndex': wallpaperIndex,
+      'backgroundBlur': backgroundBlur,
     };
   }
 
@@ -190,6 +224,10 @@ class WindowFrame {
       borderColor: json['borderColor'] != null
           ? Color(json['borderColor'] as int)
           : null,
+      wallpaperCategory: json['wallpaperCategory'] as String?,
+      wallpaperIndex: (json['wallpaperIndex'] as num?)?.toInt() ?? 0,
+      backgroundBlur:
+          (json['backgroundBlur'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -206,7 +244,10 @@ class WindowFrame {
         other.shadowColor == shadowColor &&
         other.backgroundColor == backgroundColor &&
         other.borderWidth == borderWidth &&
-        other.borderColor == borderColor;
+        other.borderColor == borderColor &&
+        other.wallpaperCategory == wallpaperCategory &&
+        other.wallpaperIndex == wallpaperIndex &&
+        other.backgroundBlur == backgroundBlur;
   }
 
   @override
@@ -221,6 +262,9 @@ class WindowFrame {
       backgroundColor,
       borderWidth,
       borderColor,
+      wallpaperCategory,
+      wallpaperIndex,
+      backgroundBlur,
     );
   }
 
