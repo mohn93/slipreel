@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:screen_recorder/rendering/animation_curve.dart';
+import 'package:screen_recorder/services/curve_library.dart';
+import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Properties view shown when a zoom pill is selected on the timeline.
@@ -21,6 +24,8 @@ class ZoomContextInspector extends StatelessWidget {
     required this.onFollowCursorChanged,
     required this.focalMode,
     required this.onFocalModeChanged,
+    required this.curveLibrary,
+    required this.onCurveOverrideChanged,
   });
 
   final ZoomRegion zoom;
@@ -33,6 +38,8 @@ class ZoomContextInspector extends StatelessWidget {
   final ValueChanged<bool> onFollowCursorChanged;
   final FocalMode focalMode;
   final ValueChanged<FocalMode> onFocalModeChanged;
+  final CurveLibrary curveLibrary;
+  final ValueChanged<AnimationCurve?> onCurveOverrideChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -119,6 +126,34 @@ class ZoomContextInspector extends StatelessWidget {
                 canReset:
                     zoom.exitDuration != const Duration(milliseconds: 500),
               ),
+              const InspectorSectionDivider(),
+              InspectorToggle(
+                label: 'Animation override',
+                subtitle: 'Use a custom curve for this region\'s ramp.',
+                value: zoom.rampCurveOverride != null,
+                onChanged: (v) {
+                  if (v) {
+                    onCurveOverrideChanged(
+                      const CubicBezierCurve(
+                          x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0),
+                    );
+                  } else {
+                    onCurveOverrideChanged(null);
+                  }
+                },
+              ),
+              if (zoom.rampCurveOverride is CubicBezierCurve)
+                CurveEditor(
+                  curve: zoom.rampCurveOverride as CubicBezierCurve,
+                  duration: Duration.zero, // unused — slider hidden
+                  durationLabel: '',
+                  durationMin: Duration.zero,
+                  durationMax: Duration.zero,
+                  onCurveChanged: onCurveOverrideChanged,
+                  onDurationChanged: (_) {},
+                  library: curveLibrary,
+                  showDurationSlider: false,
+                ),
               const InspectorSectionDivider(),
               _DeleteButton(onPressed: onDelete),
               const SizedBox(height: 24),
