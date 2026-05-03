@@ -49,6 +49,9 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   SmoothPlayheadController? _smoothPlayhead;
   bool _isInitialized = false;
   String? _error;
+  // Path of the last successfully exported file — used to wire the
+  // reveal-in-Finder button in the ExportDialog destination row.
+  String? _lastExportPath;
   TrimSelection? _trimSelection;
   late UndoRedoController<TrimSelection> _undoRedo;
   List<ZoomRegion> _zoomRegions = [];
@@ -296,39 +299,73 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   }
 
   Future<void> _export() async {
-    // Load persisted default settings.
-    final store = await ExportSettingsStore.resolveDefault();
-    final defaults = await store.load();
+    // ── Phase 1: pre-dialog setup (probe + dialog) ─────────────────────
+    // Any exception here (bad codec, missing metadata, probe failure)
+    // shows a snackbar rather than dying silently.
+    final ExportSettings? settings;
+    final RecordingMetadata meta;
+    final Duration videoDuration;
+    final ExportSettingsStore store;
 
-    if (!mounted) return;
+    try {
+      store = await ExportSettingsStore.resolveDefault();
+      final defaults = await store.load();
 
-    // Load source metadata — needed for dialog (resolution capping, sub-label)
-    // and for the pipeline.
-    final meta = await RecordingMetadata.loadForVideo(widget.videoPath);
-    final sourceVideoSize =
-        Size(meta.widthPx.toDouble(), meta.heightPx.toDouble());
+      if (!mounted) return;
 
-    // Probe the video to get the authoritative duration.
-    final probed = await ffmpegProbe(
-      path: widget.videoPath,
-      metadataFps: meta.fps,
-    );
-    final videoDuration = probed.durationSec != null
-        ? Duration(milliseconds: (probed.durationSec! * 1000).round())
-        : Duration.zero;
+      // Load source metadata — needed for dialog (resolution capping,
+      // sub-label) and for the pipeline.
+      meta = await RecordingMetadata.loadForVideo(widget.videoPath);
+      final sourceVideoSize =
+          Size(meta.widthPx.toDouble(), meta.heightPx.toDouble());
 
-    if (!mounted) return;
+      // Probe the video to get the authoritative duration.
+      final probed = await ffmpegProbe(
+        path: widget.videoPath,
+        metadataFps: meta.fps,
+      );
+      videoDuration = probed.durationSec != null
+          ? Duration(milliseconds: (probed.durationSec! * 1000).round())
+          : Duration.zero;
 
-    final settings = await showDialog<ExportSettings>(
-      context: context,
-      builder: (_) => ExportDialog(
-        initialSettings: defaults,
-        sourceVideoSize: sourceVideoSize,
-        videoDuration: videoDuration,
-      ),
-    );
+      if (!mounted) return;
+
+      settings = await showDialog<ExportSettings>(
+        context: context,
+        builder: (_) => ExportDialog(
+          initialSettings: defaults,
+          sourceVideoSize: sourceVideoSize,
+          videoDuration: videoDuration,
+          onRevealLastExport: _lastExportPath == null
+              ? null
+              : () => Process.run('open', ['-R', _lastExportPath!]),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Couldn\'t prepare export: $e'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
     if (settings == null || !mounted) return;
 
+    // ── GIF >60s gate ──────────────────────────────────────────────────
+    if (settings.format == ExportFormat.gif &&
+        videoDuration.inSeconds > 60) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+          'GIF export is limited to clips of 60 seconds or less. '
+          'Try MP4 instead.',
+        ),
+        backgroundColor: Colors.orange,
+      ));
+      return;
+    }
+
+    // ── Phase 2: pick save location ────────────────────────────────────
     // Resolve destination handler.
     final DestinationHandler handler = switch (settings.destination) {
       ExportDestination.file => FileSaver(),
@@ -343,105 +380,130 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     final ts = DateTime.now().millisecondsSinceEpoch;
     final suggested = '${stem}_export_$ts$ext';
 
-    final outPath =
-        await handler.resolveOutputPath(suggestedFileName: suggested);
+    // resolveOutputPath is in its own try/catch so that if file_selector
+    // throws (sandbox denial, save-panel error) the user sees a clear
+    // message — and we haven't shown the progress dialog yet, so there is
+    // nothing to pop.
+    final String? outPath;
+    try {
+      outPath = await handler.resolveOutputPath(suggestedFileName: suggested);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Couldn\'t pick a save location: $e'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
     if (outPath == null || !mounted) return;
 
+    // ── Phase 3: encode ────────────────────────────────────────────────
     // Load cursor sidecar (best-effort).
     final cursorRec = await CursorRecording.loadFromFile(
             '${widget.videoPath}.cursor.json')
         .catchError((_) => CursorRecording());
 
     if (!mounted) return;
+
     final progress = ValueNotifier<double?>(null);
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        content: SizedBox(
-          height: 80,
-          child: ValueListenableBuilder<double?>(
-            valueListenable: progress,
-            builder: (context, value, _) {
-              return Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    value == null
-                        ? 'Exporting…'
-                        : 'Exporting… ${(value * 100).round()}%',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+    try {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          content: SizedBox(
+            height: 80,
+            child: ValueListenableBuilder<double?>(
+              valueListenable: progress,
+              builder: (context, value, _) {
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      value == null
+                          ? 'Exporting…'
+                          : 'Exporting… ${(value * 100).round()}%',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  // value=null → indeterminate (the bar bounces) until
-                  // we know the frame count; once we do, it switches
-                  // to a determinate fill.
-                  LinearProgressIndicator(value: value),
-                ],
-              );
-            },
+                    const SizedBox(height: 12),
+                    // value=null → indeterminate (the bar bounces) until
+                    // we know the frame count; once we do, it switches
+                    // to a determinate fill.
+                    LinearProgressIndicator(value: value),
+                  ],
+                );
+              },
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    try {
-      if (settings.format == ExportFormat.gif) {
-        final pipeline = GifExportPipeline(
-          sourcePath: widget.videoPath,
-          outputPath: outPath,
-          sourceMetadata: meta,
-          cursorRecording: cursorRec,
-          projectState: _captureProjectState(),
-          settings: settings,
-        );
-        await pipeline.run(onProgress: (p) => progress.value = p);
-      } else {
-        final pipeline = ExportPipeline(
-          sourcePath: widget.videoPath,
-          outputPath: outPath,
-          sourceMetadata: meta,
-          cursorRecording: cursorRec,
-          projectState: _captureProjectState(),
-          settings: settings,
-        );
-        await pipeline.run(onProgress: (p) => progress.value = p);
+      try {
+        if (settings.format == ExportFormat.gif) {
+          final pipeline = GifExportPipeline(
+            sourcePath: widget.videoPath,
+            outputPath: outPath,
+            sourceMetadata: meta,
+            cursorRecording: cursorRec,
+            projectState: _captureProjectState(),
+            settings: settings,
+          );
+          await pipeline.run(onProgress: (p) => progress.value = p);
+        } else {
+          final pipeline = ExportPipeline(
+            sourcePath: widget.videoPath,
+            outputPath: outPath,
+            sourceMetadata: meta,
+            cursorRecording: cursorRec,
+            projectState: _captureProjectState(),
+            settings: settings,
+          );
+          await pipeline.run(onProgress: (p) => progress.value = p);
+        }
+
+        if (!mounted) return;
+        Navigator.of(context).pop(); // close progress dialog
+
+        // Persist settings minus the title (plan rule 5).
+        await store.save(settings.copyWith(clearTitle: true));
+
+        final result = await handler.deliver(outPath);
+        if (!mounted) return;
+
+        // Record the export path so the reveal-in-Finder button lights up
+        // the next time the dialog is opened.
+        setState(() => _lastExportPath = outPath);
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result.message),
+          backgroundColor: const Color(0xFF4CAF50),
+          action: result.revealPath != null
+              ? SnackBarAction(
+                  label: 'Show in Finder',
+                  onPressed: () {
+                    // macOS-only: reveal in Finder. No-op on other platforms.
+                    if (Platform.isMacOS) {
+                      Process.run('open', ['-R', result.revealPath!]);
+                    }
+                  },
+                )
+              : null,
+        ));
+      } catch (e) {
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Export failed: $e'),
+          backgroundColor: Colors.red,
+        ));
       }
-
-      if (!mounted) return;
-      Navigator.of(context).pop(); // close progress dialog
-
-      // Persist settings minus the title (plan rule 5).
-      await store.save(settings.copyWith(clearTitle: true));
-
-      final result = await handler.deliver(outPath);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(result.message),
-        backgroundColor: const Color(0xFF4CAF50),
-        action: result.revealPath != null
-            ? SnackBarAction(
-                label: 'Show in Finder',
-                onPressed: () {
-                  // macOS-only: reveal in Finder. No-op on other platforms.
-                  if (Platform.isMacOS) {
-                    Process.run('open', ['-R', result.revealPath!]);
-                  }
-                },
-              )
-            : null,
-      ));
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Export failed: $e'),
-        backgroundColor: Colors.red,
-      ));
+    } finally {
+      progress.dispose();
     }
   }
 
