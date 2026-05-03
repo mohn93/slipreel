@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/_export_dialog_theme.dart';
 
-const Color _kFieldBg = kBgUnselected;
-const Color _kBorderColor = Color(0xFF35354A);
-
 class ShareableLinkPanel extends StatelessWidget {
   const ShareableLinkPanel({
     super.key,
@@ -97,14 +94,14 @@ class _TitleFieldState extends State<_TitleField> {
           style: const TextStyle(color: kTextPrimary, fontSize: 13),
           decoration: InputDecoration(
             filled: true,
-            fillColor: _kFieldBg,
+            fillColor: kBgUnselected,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
               vertical: 10,
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(kSegmentRadius),
-              borderSide: const BorderSide(color: _kBorderColor),
+              borderSide: const BorderSide(color: kBorderSubtle),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(kSegmentRadius),
