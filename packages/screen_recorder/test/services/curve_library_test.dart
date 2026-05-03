@@ -66,16 +66,6 @@ void main() {
       expect(a.id, isNot(b.id));
     });
 
-    test('rename updates only the name', () async {
-      const c = CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 0.3, y2: 0.4);
-      final saved = await lib.save(name: 'old', curve: c);
-      await lib.rename(saved.id, 'new');
-      final list = await lib.list();
-      expect(list.first.name, 'new');
-      expect(list.first.curve, c);
-      expect(list.first.id, saved.id);
-    });
-
     test('delete removes the entry', () async {
       const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
       final saved = await lib.save(name: 'x', curve: c);
@@ -114,6 +104,21 @@ void main() {
         (i) => lib.save(name: 'c$i', curve: c),
       ));
       expect(await lib.list(), hasLength(20));
+    });
+
+    test('save self-heals when an orphaned .tmp file exists', () async {
+      // Simulate a crash mid-write that left a stale .tmp file.
+      final stale = File('${tempDir.path}/curves.json.tmp');
+      await stale.writeAsString('partial garbage');
+
+      const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
+      await lib.save(name: 'after-crash', curve: c);
+
+      // Save succeeds; final curves.json is well-formed; no .tmp leftover.
+      expect(await stale.exists(), isFalse);
+      final list = await lib.list();
+      expect(list, hasLength(1));
+      expect(list.first.name, 'after-crash');
     });
   });
 }

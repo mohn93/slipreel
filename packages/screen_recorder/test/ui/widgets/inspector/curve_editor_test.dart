@@ -15,14 +15,6 @@ class _FakeLibrary implements CurveLibrary {
     return n;
   }
   @override
-  Future<void> rename(String id, String newName) async {
-    for (var i = 0; i < _entries.length; i++) {
-      if (_entries[i].id == id) {
-        _entries[i] = NamedCurve(id: id, name: newName, curve: _entries[i].curve);
-      }
-    }
-  }
-  @override
   Future<void> delete(String id) async {
     _entries.removeWhere((e) => e.id == id);
   }
@@ -56,7 +48,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: CurveEditor(
-          curve: const CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 0.3, y2: 0.4),
+          // x2 = 1.0 so the x1 ≤ x2 clamp doesn't constrain this test.
+          curve: const CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 1.0, y2: 0.4),
           duration: const Duration(milliseconds: 320),
           durationLabel: 'Duration',
           durationMin: const Duration(milliseconds: 100),
@@ -83,7 +76,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: CurveEditor(
-          curve: const CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 0.3, y2: 0.4),
+          // x2 = 1.0 so the upper bound of x1 is also 1.0 (clamp(0, x2)).
+          curve: const CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 1.0, y2: 0.4),
           duration: const Duration(milliseconds: 320),
           durationLabel: 'Duration',
           durationMin: const Duration(milliseconds: 100),
@@ -102,6 +96,38 @@ void main() {
     await tester.pump();
 
     expect(captured?.x1, 1.0);
+  });
+
+  testWidgets('x1 cannot exceed x2 via numeric input', (tester) async {
+    tester.view.physicalSize = const Size(280, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    CubicBezierCurve? captured;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: CurveEditor(
+          curve: const CubicBezierCurve(x1: 0.1, y1: 0.0, x2: 0.5, y2: 1.0),
+          duration: const Duration(milliseconds: 320),
+          durationLabel: 'Duration',
+          durationMin: const Duration(milliseconds: 100),
+          durationMax: const Duration(milliseconds: 1000),
+          onCurveChanged: (c) => captured = c,
+          onDurationChanged: (_) {},
+          library: _FakeLibrary(),
+          showDurationSlider: true,
+        ),
+      ),
+    ));
+
+    // Try to set x1 to 0.9, but x2 is only 0.5 — must clamp to 0.5.
+    await tester.enterText(
+        find.byKey(const ValueKey('curveEditor.x1Field')), '0.9');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    expect(captured?.x1, closeTo(0.5, 1e-9));
   });
 
   testWidgets('clicking a built-in chip overwrites the curve', (tester) async {

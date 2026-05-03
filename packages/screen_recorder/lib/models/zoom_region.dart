@@ -21,7 +21,7 @@ class ZoomRegion {
   final double zoomLevel;
   final Duration enterDuration;
   final Duration exitDuration;
-  final AnimationCurve? rampCurveOverride;
+  final CubicBezierCurve? rampCurveOverride;
 
   ZoomRegion({
     required Rect rect,
@@ -75,7 +75,7 @@ class ZoomRegion {
     Duration? enterDuration,
     Duration? exitDuration,
     Size? videoBounds,
-    AnimationCurve? rampCurveOverride,
+    CubicBezierCurve? rampCurveOverride,
     bool clearRampCurveOverride = false,
   }) {
     return ZoomRegion(

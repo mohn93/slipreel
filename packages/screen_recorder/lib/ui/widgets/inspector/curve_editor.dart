@@ -116,14 +116,14 @@ class _CurveEditorState extends State<CurveEditor>
     var y2 = widget.curve.y2;
     switch (idx) {
       case 0:
-        x1 = v.clamp(0.0, 1.0);
-        break;
+        x1 = v.clamp(0.0, x2);
+        break; // x1 ≤ x2
       case 1:
         y1 = v.clamp(-0.5, 1.5);
         break;
       case 2:
-        x2 = v.clamp(0.0, 1.0);
-        break;
+        x2 = v.clamp(x1, 1.0);
+        break; // x2 ≥ x1
       case 3:
         y2 = v.clamp(-0.5, 1.5);
         break;
@@ -139,11 +139,11 @@ class _CurveEditorState extends State<CurveEditor>
     var x2 = widget.curve.x2;
     var y2 = widget.curve.y2;
     if (idx == 1) {
-      x1 = nx;
+      x1 = nx.clamp(0.0, x2); // can't drag h1 past h2
       y1 = ny;
     }
     if (idx == 2) {
-      x2 = nx;
+      x2 = nx.clamp(x1, 1.0); // can't drag h2 before h1
       y2 = ny;
     }
     widget.onCurveChanged(CubicBezierCurve(x1: x1, y1: y1, x2: x2, y2: y2));

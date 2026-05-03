@@ -8,7 +8,6 @@ import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
-import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
@@ -687,10 +686,8 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                   zoomRegion: tweenedRegion,
                   videoSize: videoSize,
                   focalPoint: focalForFrame,
-                  rampCurve: activeZoom.rampCurveOverride is CubicBezierCurve
-                      ? (activeZoom.rampCurveOverride as CubicBezierCurve)
-                          .toFlutterCurve()
-                      : _screenAnimationConfig.rampCurve,
+                  rampCurve: activeZoom.rampCurveOverride?.toFlutterCurve()
+                      ?? _screenAnimationConfig.rampCurve,
                 );
                 return Transform(
                   transform: transform,
@@ -1001,9 +998,15 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     );
   }
 
-  /// Map the cursor config's FIR window onto the legacy lerp factor
-  /// used by ZoomFocalController. Same perceptual feel as the old
-  /// preset table, just derived from the new config shape.
+  /// Map the cursor config's FIR window onto the legacy lerp factor used
+  /// by [ZoomFocalController]. The focal smoothing intentionally only
+  /// reads the window length — not the custom curve's shape — because
+  /// [ZoomFocalController] is a separate IIR low-pass filter for the
+  /// zoom-camera focal point, not the cursor itself. As a result, the
+  /// rendered cursor and the zoom focal point can have visibly
+  /// different lag profiles when a Custom cursor config is in use.
+  /// This is by design: focal lag is a UX-stability concern (not the
+  /// expressive choice the user is making with a custom curve).
   double _focalSmoothingFor(CursorAnimationConfig cfg) {
     final ms = cfg.window.inMilliseconds;
     if (ms <= 0)   return 1.00;   // None → snap

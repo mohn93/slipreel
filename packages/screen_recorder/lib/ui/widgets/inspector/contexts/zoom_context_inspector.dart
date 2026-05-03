@@ -39,7 +39,7 @@ class ZoomContextInspector extends StatelessWidget {
   final FocalMode focalMode;
   final ValueChanged<FocalMode> onFocalModeChanged;
   final CurveLibrary curveLibrary;
-  final ValueChanged<AnimationCurve?> onCurveOverrideChanged;
+  final ValueChanged<CubicBezierCurve?> onCurveOverrideChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -142,9 +142,9 @@ class ZoomContextInspector extends StatelessWidget {
                   }
                 },
               ),
-              if (zoom.rampCurveOverride is CubicBezierCurve)
+              if (zoom.rampCurveOverride != null)
                 CurveEditor(
-                  curve: zoom.rampCurveOverride as CubicBezierCurve,
+                  curve: zoom.rampCurveOverride!,
                   duration: Duration.zero, // unused — slider hidden
                   durationLabel: '',
                   durationMin: Duration.zero,

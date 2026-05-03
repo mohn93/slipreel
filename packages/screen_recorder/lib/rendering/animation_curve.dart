@@ -34,8 +34,12 @@ class PresetCurve extends AnimationCurve {
   Curve toFlutterCurve() {
     // Preset resolution lives in the ScreenAnimationConfig /
     // CursorAnimationConfig wrappers — they know which enum the id
-    // belongs to. PresetCurve.toFlutterCurve is only called as a last
-    // resort and falls back to linear so we never crash a render pass.
+    // belongs to. PresetCurve.toFlutterCurve should never be called
+    // directly. In debug builds we assert; in release we fall back to
+    // linear so we never crash a render pass.
+    assert(false,
+        'PresetCurve.toFlutterCurve called directly — resolve presets '
+        'via ScreenAnimationConfig or CursorAnimationConfig first');
     return Curves.linear;
   }
 

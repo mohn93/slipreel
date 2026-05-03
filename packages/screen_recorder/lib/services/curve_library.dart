@@ -23,7 +23,6 @@ class NamedCurve {
 abstract class CurveLibrary {
   Future<List<NamedCurve>> list();
   Future<NamedCurve> save({required String name, required CubicBezierCurve curve});
-  Future<void> rename(String id, String newName);
   Future<void> delete(String id);
 }
 
@@ -102,19 +101,6 @@ class FileCurveLibrary implements CurveLibrary {
       entries.add(entry);
       await _write(entries);
       return entry;
-    });
-  }
-
-  @override
-  Future<void> rename(String id, String newName) {
-    return _enqueue(() async {
-      final entries = await list();
-      final next = entries
-          .map((e) => e.id == id
-              ? NamedCurve(id: e.id, name: newName, curve: e.curve)
-              : e)
-          .toList(growable: false);
-      await _write(next);
     });
   }
 

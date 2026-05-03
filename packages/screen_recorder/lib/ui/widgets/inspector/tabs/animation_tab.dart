@@ -168,7 +168,7 @@ class _AnimationTabState extends State<AnimationTab> {
             curve: widget.cursorConfig.customCurve!,
             duration: widget.cursorConfig.window,
             durationLabel: 'Catch-up window',
-            durationMin: Duration.zero,
+            durationMin: const Duration(milliseconds: 50),
             durationMax: const Duration(milliseconds: 1500),
             onCurveChanged: (c) => widget.onCursorConfigChanged(
               CursorAnimationConfig.custom(
