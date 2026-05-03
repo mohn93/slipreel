@@ -7,9 +7,11 @@ import '../models/recording_metadata.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
+import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
 import 'ffmpeg_encoder.dart';
 import 'frame_compositor.dart';
+import 'isolate_frame_compositor.dart';
 
 /// Orchestrates: decode source MP4 → composite (wallpaper + frame +
 /// video + cursor + zoom) via [FrameCompositor] → encode HW.
@@ -38,6 +40,15 @@ class ExportPipeline {
 
   // Cache for a single ffprobe result per pipeline instance.
   List<int>? _probedDims; // [width, height, fps]
+  int? _probedNbFrames; // null when ffprobe couldn't tell us
+
+  /// When `true` (the production default), the per-frame compositor
+  /// runs in a background isolate so decoder/encoder I/O on the main
+  /// isolate aren't blocked by `Picture.toImage` CPU work. Tests
+  /// running under `flutter test` should set this to `false` — the
+  /// test harness doesn't reliably attach a child isolate to the
+  /// engine and `Picture.toImage` segfaults during the worker spawn.
+  final bool useIsolateCompositor;
 
   ExportPipeline({
     required this.sourcePath,
@@ -49,9 +60,16 @@ class ExportPipeline {
     required this.outputWidth,
     required this.outputHeight,
     required this.outputFps,
+    this.useIsolateCompositor = true,
   });
 
-  Future<ExportPerfSummary> run() async {
+  /// [onProgress] is called after every encoded frame with a value in
+  /// `[0, 1]`. The denominator is `ffprobe`'s `nb_frames`; if that's
+  /// unavailable the callback is suppressed (a determinate UI would
+  /// rather show nothing than a wildly-wrong percentage).
+  Future<ExportPerfSummary> run({
+    void Function(double progress)? onProgress,
+  }) async {
     // ffprobe is authoritative for dimensions. Recording metadata
     // stores the *capture* width/height returned by the native plugin,
     // which can differ from what the encoder actually wrote to the
@@ -66,13 +84,21 @@ class ExportPipeline {
     final srcFps =
         probed[2] > 0 ? probed[2] : (sourceMetadata.fps > 0 ? sourceMetadata.fps : 30);
 
-    final compositor = FrameCompositor(
-      projectState: projectState,
-      cursorRecording: cursorRecording,
-      metadata: sourceMetadata,
-      videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
-      fps: srcFps,
-    );
+    final ExportCompositor compositor = useIsolateCompositor
+        ? await IsolateFrameCompositor.spawn(
+            projectState: projectState,
+            cursorRecording: cursorRecording,
+            metadata: sourceMetadata,
+            videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
+            fps: srcFps,
+          )
+        : InProcessExportCompositor(FrameCompositor(
+            projectState: projectState,
+            cursorRecording: cursorRecording,
+            metadata: sourceMetadata,
+            videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
+            fps: srcFps,
+          ));
 
     final decoder = FfmpegDecoder(
       inputPath: sourcePath,
@@ -100,20 +126,33 @@ class ExportPipeline {
     final compositeSw = Stopwatch();
     int totalFrames = 0;
 
-    await for (final raw in decoder.frames()) {
-      compositeSw.start();
-      // Frame timestamp at the source rate. SCStream is VFR but ffmpeg
-      // re-times to a constant rate before piping out (see avg_frame_rate
-      // probe in _probeSource), so per-index timing is accurate.
-      final tsMicros = (1000000 * totalFrames) ~/ srcFps;
-      final composited = await compositor.compose(
-        videoFrameBgra: raw,
-        position: Duration(microseconds: tsMicros),
-      );
-      compositeSw.stop();
+    final expectedFrames = _probedNbFrames;
+    try {
+      await for (final raw in decoder.frames()) {
+        compositeSw.start();
+        // Frame timestamp at the source rate. SCStream is VFR but ffmpeg
+        // re-times to a constant rate before piping out (see avg_frame_rate
+        // probe in _probeSource), so per-index timing is accurate.
+        final tsMicros = (1000000 * totalFrames) ~/ srcFps;
+        final composited = await compositor.compose(
+          bgra: raw,
+          position: Duration(microseconds: tsMicros),
+        );
+        compositeSw.stop();
 
-      await encoder.writeFrame(composited);
-      totalFrames++;
+        await encoder.writeFrame(composited);
+        totalFrames++;
+        if (onProgress != null &&
+            expectedFrames != null &&
+            expectedFrames > 0) {
+          onProgress((totalFrames / expectedFrames).clamp(0.0, 1.0));
+        }
+      }
+    } finally {
+      // Always tear the isolate down, even if the decode/encode loop
+      // bails on an exception — leaking it keeps the engine's raster
+      // resources pinned for the lifetime of the app.
+      await compositor.dispose();
     }
 
     await encoder.finish();
@@ -220,6 +259,7 @@ class ExportPipeline {
       'nb_frames=$nbFrames duration=$dur → using $fps fps',
     );
     _probedDims = [w, h, fps];
+    _probedNbFrames = nbFrames;
     return _probedDims!;
   }
 

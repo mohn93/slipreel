@@ -315,13 +315,38 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     }
 
     if (!mounted) return;
+    final progress = ValueNotifier<double?>(null);
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const AlertDialog(
+      builder: (_) => AlertDialog(
         content: SizedBox(
           height: 80,
-          child: Center(child: CircularProgressIndicator()),
+          child: ValueListenableBuilder<double?>(
+            valueListenable: progress,
+            builder: (context, value, _) {
+              return Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    value == null
+                        ? 'Exporting…'
+                        : 'Exporting… ${(value * 100).round()}%',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // value=null → indeterminate (the bar bounces) until
+                  // we know the frame count; once we do, it switches
+                  // to a determinate fill.
+                  LinearProgressIndicator(value: value),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -341,7 +366,9 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         outputHeight: preset.height,
         outputFps: preset.fps,
       );
-      final summary = await pipeline.run();
+      final summary = await pipeline.run(
+        onProgress: (p) => progress.value = p,
+      );
       if (!mounted) return;
       Navigator.of(context).pop(); // close progress dialog
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

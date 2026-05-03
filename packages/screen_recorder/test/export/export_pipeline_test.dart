@@ -50,6 +50,10 @@ void main() {
         outputWidth: 320,
         outputHeight: 240,
         outputFps: 30,
+        // flutter_test child isolates can't reach the engine's GPU
+        // thread for Picture.toImage rasterization — segfaults on
+        // spawn. Production exports run with the isolate path.
+        useIsolateCompositor: false,
       );
 
       final summary = await pipeline.run();
