@@ -23,6 +23,7 @@ import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
 import 'package:screen_recorder/ui/widgets/zoom/cursor_motion_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
+import 'package:screen_recorder/ui/widgets/transport/transport_buttons.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
 import 'package:screen_recorder/export/export_pipeline.dart';
@@ -761,19 +762,19 @@ class _PlaybackScreenState extends State<PlaybackScreen>
               ),
             ),
             const SizedBox(width: 24),
-            _TransportButton(
+            TransportButton(
               icon: Icons.skip_previous,
               tooltip: 'Go to first frame',
               shortcut: '$modKey ←',
               onPressed: _seekToStart,
             ),
             const SizedBox(width: 16),
-            _TransportPlayButton(
+            TransportPlayButton(
               isPlaying: isPlaying,
               onPressed: _togglePlayPause,
             ),
             const SizedBox(width: 16),
-            _TransportButton(
+            TransportButton(
               icon: Icons.skip_next,
               tooltip: 'Go to last frame',
               shortcut: '$modKey →',
@@ -1016,146 +1017,3 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   }
 }
 
-
-/// Skip-back / skip-forward button used in the transport bar above the
-/// timeline. Shows a soft hover background and a rich tooltip that
-/// includes the keyboard shortcut (e.g. "Go to last frame  ⌘ →").
-class _TransportButton extends StatefulWidget {
-  const _TransportButton({
-    required this.icon,
-    required this.tooltip,
-    required this.shortcut,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final String shortcut;
-  final VoidCallback onPressed;
-
-  @override
-  State<_TransportButton> createState() => _TransportButtonState();
-}
-
-class _TransportButtonState extends State<_TransportButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      richMessage: TextSpan(
-        children: [
-          TextSpan(
-            text: widget.tooltip,
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-          const TextSpan(text: '   '),
-          TextSpan(
-            text: widget.shortcut,
-            style: const TextStyle(color: Colors.white54, fontSize: 12),
-          ),
-        ],
-      ),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A26),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF35354A)),
-      ),
-      padding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      verticalOffset: 22,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: widget.onPressed,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: _hovered
-                  ? const Color(0xFF2B2B3D)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(widget.icon, color: Colors.white, size: 22),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Circular outlined play/pause button shown between the skip
-/// buttons in the transport bar.
-class _TransportPlayButton extends StatefulWidget {
-  const _TransportPlayButton({
-    required this.isPlaying,
-    required this.onPressed,
-  });
-
-  final bool isPlaying;
-  final VoidCallback onPressed;
-
-  @override
-  State<_TransportPlayButton> createState() =>
-      _TransportPlayButtonState();
-}
-
-class _TransportPlayButtonState extends State<_TransportPlayButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      richMessage: TextSpan(
-        children: [
-          TextSpan(
-            text: widget.isPlaying ? 'Pause' : 'Play',
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-          const TextSpan(text: '   '),
-          const TextSpan(
-            text: 'Space',
-            style: TextStyle(color: Colors.white54, fontSize: 12),
-          ),
-        ],
-      ),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A26),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF35354A)),
-      ),
-      padding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      verticalOffset: 26,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: widget.onPressed,
-          behavior: HitTestBehavior.opaque,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: _hovered ? Colors.white : Colors.white70,
-                width: 2,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              widget.isPlaying ? Icons.pause : Icons.play_arrow,
-              color: Colors.white,
-              size: 22,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
