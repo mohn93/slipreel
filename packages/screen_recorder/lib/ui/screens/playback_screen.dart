@@ -1,18 +1,14 @@
 import 'dart:io';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
-import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
-import 'package:screen_recorder/rendering/frame_painter.dart';
-import 'package:screen_recorder/rendering/wallpaper.dart';
 import 'package:screen_recorder/services/curve_library.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
@@ -20,16 +16,13 @@ import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_panel.dart';
 import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
-import 'package:screen_recorder/ui/widgets/zoom/cursor_motion_controller.dart';
-import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
-import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 import 'package:screen_recorder/ui/widgets/transport/transport_buttons.dart';
+import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
 import 'package:screen_recorder/export/export_pipeline.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
-import 'package:screen_recorder/ui/widgets/cursor_overlay_painter.dart';
 
 class PlaybackScreen extends StatefulWidget {
   final String videoPath;
@@ -52,7 +45,6 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   TrimSelection? _trimSelection;
   late UndoRedoController<TrimSelection> _undoRedo;
   List<ZoomRegion> _zoomRegions = [];
-  final _zoomTransformer = ZoomTransformer();
   int? _selectedZoomIndex;
   // Whether the main clip bar is currently selected. Mutually
   // exclusive with [_selectedZoomIndex]: selecting one clears the
@@ -82,14 +74,6 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   // display this fixed value, even though the controller is being live-
   // seeked to follow the cursor for frame preview. Restored on hover end.
   Duration? _hoverFrozenPosition;
-  // Cursor-driven zoom focal smoothing. State (active-zoom tracking,
-  // last smoothed offset) lives in the controller so it can be unit-
-  // tested without a widget tree.
-  final ZoomFocalController _zoomFocalController = ZoomFocalController();
-  // Smooths the synthetic cursor's on-screen position toward the
-  // recorded path each frame, driven by _cursorAnimationStyle.
-  final CursorMotionController _cursorMotionController =
-      CursorMotionController();
   // Dev HUD: when on, draws a marker at the recorded cursor's video-pixel
   // position so we can visually confirm the zoom focal is tracking it.
   bool _showZoomDebug = false;
@@ -535,199 +519,20 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       );
     }
 
-    // Calculate the total size including frame padding
-    final videoSize = _controller.value.size;
-    final currentFrame = _frameSettings.currentFrame;
-    final totalSize = FramePainter.calculateTotalSize(
-      frame: currentFrame,
-      videoSize: videoSize,
-    );
-    // Effective padding has X scaled by the video aspect so layout
-    // matches the canvas computed by calculateTotalSize.
-    final effPadding = FramePainter.effectivePadding(
-      currentFrame.padding,
-      videoSize,
-    );
-
-    // Single AnimatedBuilder rebuilt per frame: drives the cursor
-    // overlay (needs current playhead) AND the zoom Transform. The
-    // VideoPlayer is held as `child` so its widget isn't reconstructed
-    // each frame even though the surrounding Stack is.
-    //
-    // Zoom Transform wraps the ENTIRE composition (wallpaper + frame
-    // + video + cursor + dev HUD) so when zoom kicks in everything
-    // pushes in together rather than only the video pixels scaling
-    // while the wallpaper stays put. ClipRect on the outside keeps
-    // the scaled-up tail inside the frame so it doesn't leak across
-    // the editor backdrop.
-    //
-    // The focal is the zoom region's stored rect center (where the
-    // user clicked when creating the zoom). True cursor-follow would
-    // require recording-region origin + backing scale in the metadata
-    // sidecar so we could translate captured screen-global cursor
-    // points into video pixels — that's a larger refactor.
-    Widget framedVideo = SizedBox(
-      width: totalSize.width,
-      height: totalSize.height,
-      child: ClipRect(
-        child: AnimatedBuilder(
-          animation: Listenable.merge([_controller, _smoothPlayhead]),
-          child: VideoPlayer(_controller),
-          builder: (context, videoPlayer) {
-            final pos = _smoothPlayhead?.position ??
-                _controller.value.position;
-            final showCursor = _metadata?.isPureSource == true &&
-                _cursorRecording.count > 0 &&
-                !_hideCursorOverlay;
-
-            final motion = showCursor
-                ? _cursorMotionController.update(
-                    position: pos,
-                    cursorRecording: _cursorRecording,
-                    config: _cursorAnimationConfig,
-                    fps: _metadata?.fps ?? 60,
-                  )
-                : null;
-
-            final composition = Stack(
-              children: [
-                if (currentFrame.wallpaperCategory != null)
-                  Positioned.fill(
-                    child: _wallpaperLayer(
-                      category: currentFrame.wallpaperCategory!,
-                      index: currentFrame.wallpaperIndex,
-                      blur: currentFrame.backgroundBlur,
-                    ),
-                  ),
-                CustomPaint(
-                  size: totalSize,
-                  painter: FramePainter(
-                    frame: currentFrame,
-                    videoSize: videoSize,
-                  ),
-                ),
-                Positioned(
-                  left: effPadding.left,
-                  top: effPadding.top,
-                  child: ClipRRect(
-                    borderRadius:
-                        BorderRadius.circular(currentFrame.cornerRadius),
-                    child: SizedBox(
-                      width: videoSize.width,
-                      height: videoSize.height,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          videoPlayer!,
-                          if (motion != null)
-                            CustomPaint(
-                              painter: CursorOverlayPainter(
-                                cursorRecording: _cursorRecording,
-                                position: pos,
-                                screenPos: motion.screenPos,
-                                videoSize: videoSize,
-                                screenSize: videoSize,
-                                sizeMultiplier: _cursorSize,
-                                style: _cursorStyle,
-                                clickEffect: _cursorClickEffect,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                if (_showZoomDebug)
-                  Positioned(
-                    left: currentFrame.padding.left,
-                    top: currentFrame.padding.top,
-                    child: IgnorePointer(
-                      child: SizedBox(
-                        width: videoSize.width,
-                        height: videoSize.height,
-                        child: CustomPaint(
-                          painter: ZoomFocalDebugPainter(
-                            cursorRecording: _cursorRecording,
-                            position: pos,
-                            videoSize: videoSize,
-                            smoothedFocal:
-                                _zoomFocalController.smoothedFocal,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-
-            final focalUpdate = _zoomFocalController.update(
-              position: pos,
-              zoomRegions: _zoomRegions,
-              cursorRecording: _cursorRecording,
-              smoothing: _focalSmoothingFor(_cursorAnimationConfig),
-            );
-            if (focalUpdate == null) return composition;
-
-            final activeZoom = focalUpdate.zoom;
-            final focalForFrame = focalUpdate.focal;
-
-            // Smoothly interpolate the rendered zoom level when the
-            // user changes it via the badge — otherwise stepping the
-            // level produces a visual snap.
-            return TweenAnimationBuilder<double>(
-              tween: Tween<double>(end: activeZoom.zoomLevel),
-              duration: _screenAnimationConfig.badgeDuration,
-              curve: _screenAnimationConfig.badgeCurve,
-              child: composition,
-              builder: (context, animatedZoom, transformChild) {
-                final tweenedRegion =
-                    activeZoom.copyWith(zoomLevel: animatedZoom);
-                final transform = _zoomTransformer.getTransform(
-                  position: pos,
-                  zoomRegion: tweenedRegion,
-                  videoSize: videoSize,
-                  focalPoint: focalForFrame,
-                  rampCurve: activeZoom.rampCurveOverride?.toFlutterCurve()
-                      ?? _screenAnimationConfig.rampCurve,
-                );
-                return Transform(
-                  transform: transform,
-                  alignment: Alignment.center,
-                  child: transformChild,
-                );
-              },
-            );
-          },
-        ),
-      ),
-    );
-
-    return AspectRatio(
-      aspectRatio: totalSize.width / totalSize.height,
-      child: FittedBox(
-        fit: BoxFit.contain,
-        child: framedVideo,
-      ),
-    );
-  }
-
-  Widget _wallpaperLayer({
-    required String category,
-    required int index,
-    required double blur,
-  }) {
-    final fill = Container(
-      decoration: wallpaperDecoration(category, index),
-    );
-    if (blur <= 0) return fill;
-    // ClipRect prevents the gaussian tail from leaking outside the
-    // frame's totalSize. ImageFiltered does a saveLayer internally,
-    // which is why we skip it altogether at sigma 0.
-    return ClipRect(
-      child: ImageFiltered(
-        imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: fill,
-      ),
+    return PlaybackCanvas(
+      controller: _controller,
+      smoothPlayhead: _smoothPlayhead,
+      frameSettings: _frameSettings,
+      metadata: _metadata,
+      cursorRecording: _cursorRecording,
+      hideCursorOverlay: _hideCursorOverlay,
+      cursorSize: _cursorSize,
+      cursorStyle: _cursorStyle,
+      cursorClickEffect: _cursorClickEffect,
+      showZoomDebug: _showZoomDebug,
+      zoomRegions: _zoomRegions,
+      screenAnimationConfig: _screenAnimationConfig,
+      cursorAnimationConfig: _cursorAnimationConfig,
     );
   }
 
@@ -999,21 +804,5 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     );
   }
 
-  /// Map the cursor config's FIR window onto the legacy lerp factor used
-  /// by [ZoomFocalController]. The focal smoothing intentionally only
-  /// reads the window length — not the custom curve's shape — because
-  /// [ZoomFocalController] is a separate IIR low-pass filter for the
-  /// zoom-camera focal point, not the cursor itself. As a result, the
-  /// rendered cursor and the zoom focal point can have visibly
-  /// different lag profiles when a Custom cursor config is in use.
-  /// This is by design: focal lag is a UX-stability concern (not the
-  /// expressive choice the user is making with a custom curve).
-  double _focalSmoothingFor(CursorAnimationConfig cfg) {
-    final ms = cfg.window.inMilliseconds;
-    if (ms <= 0)   return 1.00;   // None → snap
-    if (ms <= 90)  return 0.40;   // Rapid
-    if (ms <= 250) return 0.18;   // Medium
-    return 0.08;                  // Smooth or longer custom windows
-  }
 }
 
