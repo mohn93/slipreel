@@ -45,7 +45,9 @@ void main() {
         onChanged: (v) => fired = v,
       ),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_4K')));
+    await tester.tap(
+      find.byKey(const ValueKey('seg_btn_ExportResolution.r4k')),
+    );
     await tester.pump();
     expect(fired, isNull);
   });
@@ -59,7 +61,9 @@ void main() {
         onChanged: (v) => fired = v,
       ),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_4K')));
+    await tester.tap(
+      find.byKey(const ValueKey('seg_btn_ExportResolution.r4k')),
+    );
     await tester.pump();
     expect(fired, ExportResolution.r4k);
   });
@@ -103,7 +107,9 @@ void main() {
         onChanged: (v) => fired = v,
       ),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_720p')));
+    await tester.tap(
+      find.byKey(const ValueKey('seg_btn_ExportResolution.r720p')),
+    );
     await tester.pump();
     expect(fired, ExportResolution.r720p);
   });

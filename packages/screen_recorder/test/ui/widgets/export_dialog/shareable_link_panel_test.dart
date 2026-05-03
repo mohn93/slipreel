@@ -82,4 +82,80 @@ void main() {
       findsOneWidget,
     );
   });
+
+  // --- controller-sync / focus tests ---
+
+  testWidgets(
+      'controller text does NOT update when field is focused and parent changes value',
+      (tester) async {
+    // Use a StatefulWidget harness so we can change the title from outside.
+    String currentTitle = 'Original';
+    late StateSetter setStateRef;
+
+    await tester.pumpWidget(
+      StatefulBuilder(
+        builder: (context, setState) {
+          setStateRef = setState;
+          return MaterialApp(
+            home: Scaffold(
+              body: ShareableLinkPanel(
+                title: currentTitle,
+                isPrivate: false,
+                onTitleChanged: (_) {},
+                onIsPrivateChanged: (_) {},
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    // Focus the text field by tapping it.
+    await tester.tap(find.byKey(const ValueKey('shareable_title_field')));
+    await tester.pump();
+
+    // Parent pushes a new value while field is focused.
+    setStateRef(() => currentTitle = 'Parent Normalized');
+    await tester.pump();
+
+    final field = tester.widget<TextField>(
+      find.byKey(const ValueKey('shareable_title_field')),
+    );
+    // The controller text should remain 'Original' — not clobbered.
+    expect(field.controller!.text, 'Original');
+  });
+
+  testWidgets(
+      'controller text DOES update when field is not focused and parent changes value',
+      (tester) async {
+    String currentTitle = 'Original';
+    late StateSetter setStateRef;
+
+    await tester.pumpWidget(
+      StatefulBuilder(
+        builder: (context, setState) {
+          setStateRef = setState;
+          return MaterialApp(
+            home: Scaffold(
+              body: ShareableLinkPanel(
+                title: currentTitle,
+                isPrivate: false,
+                onTitleChanged: (_) {},
+                onIsPrivateChanged: (_) {},
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    // Field is NOT focused — just update the parent value.
+    setStateRef(() => currentTitle = 'New Value');
+    await tester.pump();
+
+    final field = tester.widget<TextField>(
+      find.byKey(const ValueKey('shareable_title_field')),
+    );
+    expect(field.controller!.text, 'New Value');
+  });
 }

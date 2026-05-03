@@ -1,15 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/export_settings.dart';
+import 'package:screen_recorder/ui/widgets/export_dialog/_export_dialog_theme.dart';
 
-const Color _kTitleColor = Color(0xFFE8E8EA);
-const Color _kIconColor = Color(0xFFE8E8EA);
-const Color _kSubtitleColor = Color(0xFF8C8C95);
-const Color _kUnselectedFill = Color(0xFF22232C);
-const Color _kSelectedBorder = Color(0xFF8B5CF6);
-
-/// Dropdown picker for frame rate. Uses [PopupMenuButton] which integrates
-/// cleanly with Flutter's overlay system and avoids manual OverlayEntry
-/// lifecycle management.
+/// Dropdown picker for frame rate. Uses [PopupMenuButton] to avoid a
+/// mid-export overlay tear-down if the parent dialog dismisses while
+/// the menu is open — Flutter's overlay system handles that gracefully.
 class FrameRatePicker extends StatelessWidget {
   const FrameRatePicker({
     super.key,
@@ -28,22 +23,26 @@ class FrameRatePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    assert(
+      options.contains(value),
+      'value must be in options — currently $value not in $options',
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
+          spacing: 6,
           children: const [
             Icon(
               Icons.speed_outlined,
               size: 14,
-              color: _kIconColor,
+              color: kTextPrimary,
             ),
-            SizedBox(width: 6),
             Text(
               'Frame rate',
               style: TextStyle(
-                color: _kTitleColor,
+                color: kTextPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -54,14 +53,17 @@ class FrameRatePicker extends StatelessWidget {
         PopupMenuButton<int>(
           key: const ValueKey('frame_rate_popup'),
           onSelected: onChanged,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          color: const Color(0xFF22232C),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(kSegmentRadius),
+          ),
+          color: kBgUnselected,
           itemBuilder: (context) => [
             for (final fps in options)
               PopupMenuItem<int>(
                 key: ValueKey('fps_option_$fps'),
                 value: fps,
                 child: Row(
+                  spacing: 0,
                   children: [
                     SizedBox(
                       width: 20,
@@ -69,14 +71,14 @@ class FrameRatePicker extends StatelessWidget {
                           ? const Icon(
                               Icons.check,
                               size: 14,
-                              color: _kSelectedBorder,
+                              color: kAccent,
                             )
                           : null,
                     ),
                     Text(
                       '$fps fps',
                       style: const TextStyle(
-                        color: _kTitleColor,
+                        color: kTextPrimary,
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                       ),
@@ -87,28 +89,28 @@ class FrameRatePicker extends StatelessWidget {
           ],
           child: Container(
             key: const ValueKey('frame_rate_closed'),
-            height: 36,
+            height: kSegmentHeight,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: _kUnselectedFill,
-              borderRadius: BorderRadius.circular(8),
+              color: kBgUnselected,
+              borderRadius: BorderRadius.circular(kSegmentRadius),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
+              spacing: 6,
               children: [
                 Text(
                   '$value fps',
                   style: const TextStyle(
-                    color: _kTitleColor,
+                    color: kTextPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(width: 6),
                 const Icon(
                   Icons.expand_more,
                   size: 16,
-                  color: _kSubtitleColor,
+                  color: kTextSecondary,
                 ),
               ],
             ),

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/export_settings.dart';
+import 'package:screen_recorder/ui/widgets/export_dialog/_export_dialog_theme.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/segmented_button.dart';
-
-const Color _kTitleColor = Color(0xFFE8E8EA);
-const Color _kIconColor = Color(0xFFE8E8EA);
 
 class FormatPicker extends StatelessWidget {
   const FormatPicker({
@@ -27,17 +25,17 @@ class FormatPicker extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
+          spacing: 6,
           children: const [
             Icon(
               Icons.videocam_outlined,
               size: 14,
-              color: _kIconColor,
+              color: kTextPrimary,
             ),
-            SizedBox(width: 6),
             Text(
               'Format',
               style: TextStyle(
-                color: _kTitleColor,
+                color: kTextPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -47,7 +45,7 @@ class FormatPicker extends StatelessWidget {
         const SizedBox(height: 8),
         ExportSegmentedButton<ExportFormat>(
           options: _options,
-          selected: value,
+          value: value,
           onChanged: onChanged,
         ),
       ],

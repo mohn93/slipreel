@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
-
-const Color _kSelectedBorder = Color(0xFF8B5CF6);
-const Color _kSelectedFill = Color(0xFF1F1A2E);
-const Color _kUnselectedFill = Color(0xFF22232C);
-const Color _kLabelColor = Color(0xFFE8E8EA);
+import 'package:screen_recorder/ui/widgets/export_dialog/_export_dialog_theme.dart';
 
 /// A horizontal row of pill buttons where exactly one option is selected.
 ///
@@ -18,13 +14,13 @@ class ExportSegmentedButton<T> extends StatelessWidget {
   const ExportSegmentedButton({
     super.key,
     required this.options,
-    required this.selected,
+    required this.value,
     required this.onChanged,
     this.disabled = const {},
   });
 
   final List<({T value, String label, String? tooltip})> options;
-  final T selected;
+  final T value;
   final ValueChanged<T> onChanged;
   final Set<T> disabled;
 
@@ -32,16 +28,15 @@ class ExportSegmentedButton<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
+      spacing: kSegmentHGap,
       children: [
-        for (int i = 0; i < options.length; i++) ...[
-          if (i > 0) const SizedBox(width: 8),
+        for (final option in options)
           _Button<T>(
-            option: options[i],
-            isSelected: options[i].value == selected,
-            isDisabled: disabled.contains(options[i].value),
-            onTap: () => onChanged(options[i].value),
+            option: option,
+            isSelected: option.value == value,
+            isDisabled: disabled.contains(option.value),
+            onTap: () => onChanged(option.value),
           ),
-        ],
       ],
     );
   }
@@ -49,7 +44,6 @@ class ExportSegmentedButton<T> extends StatelessWidget {
 
 class _Button<T> extends StatelessWidget {
   const _Button({
-    super.key,
     required this.option,
     required this.isSelected,
     required this.isDisabled,
@@ -63,38 +57,54 @@ class _Button<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final button = Opacity(
-      opacity: isDisabled ? 0.4 : 1.0,
-      child: GestureDetector(
-        key: ValueKey('seg_btn_${option.label}'),
-        onTap: (isDisabled || isSelected) ? null : onTap,
-        child: Container(
-          height: 36,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: isSelected ? _kSelectedFill : _kUnselectedFill,
-            borderRadius: BorderRadius.circular(8),
-            border: isSelected
-                ? Border.all(color: _kSelectedBorder, width: 1.5)
-                : null,
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            option.label,
-            style: const TextStyle(
-              color: _kLabelColor,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+    final body = Opacity(
+      opacity: isDisabled ? kDisabledOpacity : 1.0,
+      child: Semantics(
+        enabled: !isDisabled,
+        button: true,
+        selected: isSelected,
+        label: option.label,
+        child: GestureDetector(
+          key: ValueKey('seg_btn_${option.value}'),
+          onTap: (isDisabled || isSelected) ? null : onTap,
+          child: Container(
+            height: kSegmentHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: isSelected ? kBgSelected : kBgUnselected,
+              borderRadius: BorderRadius.circular(kSegmentRadius),
+              border: isSelected
+                  ? Border.all(color: kAccent, width: 1.5)
+                  : null,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              option.label,
+              style: const TextStyle(
+                color: kTextPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ),
       ),
     );
 
-    final tooltip = option.tooltip;
-    if (tooltip != null && isDisabled) {
-      return Tooltip(message: tooltip, child: button);
+    Widget result = body;
+
+    if (isDisabled) {
+      result = MouseRegion(
+        cursor: SystemMouseCursors.forbidden,
+        child: result,
+      );
     }
-    return button;
+
+    final tooltip = option.tooltip;
+    if (tooltip != null) {
+      result = Tooltip(message: tooltip, child: result);
+    }
+
+    return result;
   }
 }

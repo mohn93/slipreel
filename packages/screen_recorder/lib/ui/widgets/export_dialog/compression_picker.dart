@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/export_settings.dart';
+import 'package:screen_recorder/ui/widgets/export_dialog/_export_dialog_theme.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/segmented_button.dart';
-
-const Color _kTitleColor = Color(0xFFE8E8EA);
-const Color _kIconColor = Color(0xFFE8E8EA);
-const Color _kSubtitleColor = Color(0xFF8C8C95);
 
 const _kSpeedDisclaimer = 'Quality setting does not impact export speed.';
 
@@ -49,13 +46,13 @@ class CompressionPicker extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
+          spacing: 6,
           children: const [
-            Icon(Icons.compress_outlined, size: 14, color: _kIconColor),
-            SizedBox(width: 6),
+            Icon(Icons.compress_outlined, size: 14, color: kTextPrimary),
             Text(
               'Compression',
               style: TextStyle(
-                color: _kTitleColor,
+                color: kTextPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -65,20 +62,20 @@ class CompressionPicker extends StatelessWidget {
         const SizedBox(height: 8),
         ExportSegmentedButton<CompressionTier>(
           options: _options,
-          selected: value,
+          value: value,
           onChanged: onChanged,
         ),
         const SizedBox(height: 8),
         Text(
           description,
           key: const ValueKey('compression_description'),
-          style: const TextStyle(color: _kSubtitleColor, fontSize: 12),
+          style: const TextStyle(color: kTextSecondary, fontSize: 12),
         ),
         const SizedBox(height: 4),
         const Text(
           _kSpeedDisclaimer,
           key: ValueKey('compression_speed_disclaimer'),
-          style: TextStyle(color: _kSubtitleColor, fontSize: 12),
+          style: TextStyle(color: kTextSecondary, fontSize: 12),
         ),
       ],
     );

@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:screen_recorder/ui/widgets/export_dialog/_export_dialog_theme.dart';
 
-const Color _kTitleColor = Color(0xFFE8E8EA);
-const Color _kSubtitleColor = Color(0xFF8C8C95);
-const Color _kFieldBg = Color(0xFF22232C);
+const Color _kFieldBg = kBgUnselected;
 const Color _kBorderColor = Color(0xFF35354A);
-const Color _kAccent = Color(0xFF8B5CF6);
 
 class ShareableLinkPanel extends StatelessWidget {
   const ShareableLinkPanel({
@@ -49,25 +47,30 @@ class _TitleField extends StatefulWidget {
 
 class _TitleFieldState extends State<_TitleField> {
   late final TextEditingController _controller;
+  late final FocusNode _focusNode;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.value);
+    _focusNode = FocusNode();
   }
 
   @override
-  void didUpdateWidget(_TitleField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.value != widget.value &&
-        _controller.text != widget.value) {
-      _controller.text = widget.value;
-    }
+  void didUpdateWidget(_TitleField old) {
+    super.didUpdateWidget(old);
+    if (old.value == widget.value) return;
+    if (_controller.text == widget.value) return;
+    // Don't clobber the caret if the user is mid-edit; the parent's
+    // value will catch up via the next onChanged.
+    if (_focusNode.hasFocus) return;
+    _controller.text = widget.value;
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -80,7 +83,7 @@ class _TitleFieldState extends State<_TitleField> {
         const Text(
           'Video title',
           style: TextStyle(
-            color: _kTitleColor,
+            color: kTextPrimary,
             fontSize: 13,
             fontWeight: FontWeight.w500,
           ),
@@ -89,8 +92,9 @@ class _TitleFieldState extends State<_TitleField> {
         TextField(
           key: const ValueKey('shareable_title_field'),
           controller: _controller,
+          focusNode: _focusNode,
           onChanged: widget.onChanged,
-          style: const TextStyle(color: _kTitleColor, fontSize: 13),
+          style: const TextStyle(color: kTextPrimary, fontSize: 13),
           decoration: InputDecoration(
             filled: true,
             fillColor: _kFieldBg,
@@ -99,12 +103,12 @@ class _TitleFieldState extends State<_TitleField> {
               vertical: 10,
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(kSegmentRadius),
               borderSide: const BorderSide(color: _kBorderColor),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _kAccent, width: 1.5),
+              borderRadius: BorderRadius.circular(kSegmentRadius),
+              borderSide: const BorderSide(color: kAccent, width: 1.5),
             ),
           ),
         ),
@@ -129,7 +133,7 @@ class _PrivateToggle extends StatelessWidget {
             const Text(
               'Private',
               style: TextStyle(
-                color: _kTitleColor,
+                color: kTextPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -139,14 +143,14 @@ class _PrivateToggle extends StatelessWidget {
               key: const ValueKey('shareable_private_switch'),
               value: value,
               onChanged: onChanged,
-              activeThumbColor: _kAccent,
+              activeThumbColor: kAccent,
             ),
           ],
         ),
         const SizedBox(height: 4),
         const Text(
           'Only the people you share this video with will be able to watch it.',
-          style: TextStyle(color: _kSubtitleColor, fontSize: 12),
+          style: TextStyle(color: kTextSecondary, fontSize: 12),
         ),
       ],
     );

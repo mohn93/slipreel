@@ -50,6 +50,17 @@ void main() {
     expect(fired, 60);
   });
 
+  testWidgets('menu closes after selecting an option', (tester) async {
+    await tester.pumpWidget(build(value: 30, onChanged: (_) {}));
+    await tester.tap(find.byKey(const ValueKey('frame_rate_popup')));
+    await tester.pumpAndSettle();
+    // Menu is open — items are visible.
+    expect(find.byType(PopupMenuItem<int>), findsWidgets);
+    await tester.tap(find.byKey(const ValueKey('fps_option_60')));
+    await tester.pumpAndSettle();
+    expect(find.byType(PopupMenuItem<int>), findsNothing);
+  });
+
   testWidgets('checkmark appears beside selected value in menu', (tester) async {
     await tester.pumpWidget(build(value: 30, onChanged: (_) {}));
     await tester.tap(find.byKey(const ValueKey('frame_rate_popup')));

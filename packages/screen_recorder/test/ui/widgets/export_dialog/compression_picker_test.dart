@@ -91,7 +91,9 @@ void main() {
     await tester.pumpWidget(
       build(value: CompressionTier.web, onChanged: (v) => fired = v),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_Social Media')));
+    await tester.tap(
+      find.byKey(const ValueKey('seg_btn_CompressionTier.socialMedia')),
+    );
     await tester.pump();
     expect(fired, CompressionTier.socialMedia);
   });

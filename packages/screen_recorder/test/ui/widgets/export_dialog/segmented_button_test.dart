@@ -18,7 +18,7 @@ void main() {
       home: Scaffold(
         body: ExportSegmentedButton<String>(
           options: options,
-          selected: selected,
+          value: selected,
           onChanged: onChanged,
           disabled: disabled,
         ),
@@ -39,7 +39,7 @@ void main() {
     await tester.pumpWidget(
       build(selected: 'a', onChanged: (v) => fired = v),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_Beta')));
+    await tester.tap(find.byKey(const ValueKey('seg_btn_b')));
     await tester.pump();
     expect(fired, 'b');
   });
@@ -50,7 +50,7 @@ void main() {
     await tester.pumpWidget(
       build(selected: 'a', onChanged: (_) => callCount++),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_Alpha')));
+    await tester.tap(find.byKey(const ValueKey('seg_btn_a')));
     await tester.pump();
     expect(callCount, 0);
   });
@@ -64,7 +64,7 @@ void main() {
         disabled: {'c'},
       ),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_Gamma')));
+    await tester.tap(find.byKey(const ValueKey('seg_btn_c')));
     await tester.pump();
     expect(fired, isNull);
   });
@@ -74,7 +74,7 @@ void main() {
     final container = tester.widget<Container>(
       find
           .descendant(
-            of: find.byKey(const ValueKey('seg_btn_Beta')),
+            of: find.byKey(const ValueKey('seg_btn_b')),
             matching: find.byType(Container),
           )
           .first,
@@ -90,7 +90,7 @@ void main() {
     final container = tester.widget<Container>(
       find
           .descendant(
-            of: find.byKey(const ValueKey('seg_btn_Alpha')),
+            of: find.byKey(const ValueKey('seg_btn_a')),
             matching: find.byType(Container),
           )
           .first,
@@ -106,11 +106,30 @@ void main() {
     final opacity = tester.widget<Opacity>(
       find
           .ancestor(
-            of: find.byKey(const ValueKey('seg_btn_Gamma')),
+            of: find.byKey(const ValueKey('seg_btn_c')),
             matching: find.byType(Opacity),
           )
           .first,
     );
     expect(opacity.opacity, 0.4);
+  });
+
+  testWidgets('disabled option has Semantics with enabled=false', (tester) async {
+    await tester.pumpWidget(
+      build(selected: 'a', onChanged: (_) {}, disabled: {'c'}),
+    );
+    // The Semantics widget wraps the GestureDetector (key seg_btn_c) as an
+    // ancestor.
+    final semanticsNodes = tester.widgetList<Semantics>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('seg_btn_c')),
+        matching: find.byType(Semantics),
+      ),
+    );
+    // At least one Semantics ancestor should have enabled=false.
+    expect(
+      semanticsNodes.any((s) => s.properties.enabled == false),
+      isTrue,
+    );
   });
 }

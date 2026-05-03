@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/export/export_estimator.dart';
 import 'package:screen_recorder/models/export_settings.dart';
-
-const Color _kSubtitleColor = Color(0xFF8C8C95);
+import 'package:screen_recorder/ui/widgets/export_dialog/_export_dialog_theme.dart';
 
 /// A right-aligned single-line widget that shows the estimated export
 /// time and output size. The parent swaps this widget for a different
@@ -35,7 +34,7 @@ class EstimationLine extends StatelessWidget {
       child: Text(
         line,
         key: const ValueKey('estimation_line_text'),
-        style: const TextStyle(color: _kSubtitleColor, fontSize: 12),
+        style: const TextStyle(color: kTextSecondary, fontSize: 12),
         textAlign: TextAlign.right,
       ),
     );

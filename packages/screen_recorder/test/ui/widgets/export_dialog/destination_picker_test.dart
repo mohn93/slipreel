@@ -46,7 +46,9 @@ void main() {
         onChanged: (v) => fired = v,
       ),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_Clipboard')));
+    await tester.tap(
+      find.byKey(const ValueKey('seg_btn_ExportDestination.clipboard')),
+    );
     await tester.pump();
     expect(fired, ExportDestination.clipboard);
   });
@@ -60,7 +62,11 @@ void main() {
         onChanged: (v) => fired = v,
       ),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_Shareable link')));
+    await tester.tap(
+      find.byKey(
+        const ValueKey('seg_btn_ExportDestination.shareableLink'),
+      ),
+    );
     await tester.pump();
     expect(fired, ExportDestination.shareableLink);
   });

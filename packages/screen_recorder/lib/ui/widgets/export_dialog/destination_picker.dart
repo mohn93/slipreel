@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/export_settings.dart';
+import 'package:screen_recorder/ui/widgets/export_dialog/_export_dialog_theme.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/segmented_button.dart';
-
-const Color _kTitleColor = Color(0xFFE8E8EA);
-const Color _kIconColor = Color(0xFFE8E8EA);
 
 class DestinationPicker extends StatelessWidget {
   const DestinationPicker({
@@ -38,13 +36,13 @@ class DestinationPicker extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
+          spacing: 6,
           children: const [
-            Icon(Icons.send_outlined, size: 14, color: _kIconColor),
-            SizedBox(width: 6),
+            Icon(Icons.send_outlined, size: 14, color: kTextPrimary),
             Text(
               'Destination',
               style: TextStyle(
-                color: _kTitleColor,
+                color: kTextPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -54,42 +52,18 @@ class DestinationPicker extends StatelessWidget {
         const SizedBox(height: 8),
         Row(
           mainAxisSize: MainAxisSize.min,
+          spacing: kSegmentHGap,
           children: [
-            _DestinationRow(
+            ExportSegmentedButton<ExportDestination>(
               options: _options,
-              selected: value,
+              value: value,
               onChanged: onChanged,
             ),
-            if (onRevealLastExport != null) ...[
-              const SizedBox(width: 8),
+            if (onRevealLastExport != null)
               _RevealButton(onTap: onRevealLastExport!),
-            ],
           ],
         ),
       ],
-    );
-  }
-}
-
-/// The three destination buttons with their leading icons.
-class _DestinationRow extends StatelessWidget {
-  const _DestinationRow({
-    required this.options,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  final List<({ExportDestination value, String label, String? tooltip})>
-      options;
-  final ExportDestination selected;
-  final ValueChanged<ExportDestination> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return ExportSegmentedButton<ExportDestination>(
-      options: options,
-      selected: selected,
-      onChanged: onChanged,
     );
   }
 }
@@ -102,22 +76,14 @@ class _RevealButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: 'Reveal in Finder',
-      child: GestureDetector(
+      child: PillSurface(
         key: const ValueKey('reveal_in_finder_btn'),
+        width: kSegmentHeight,
         onTap: onTap,
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: const Color(0xFF22232C),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          alignment: Alignment.center,
-          child: const Icon(
-            Icons.folder_outlined,
-            size: 16,
-            color: Color(0xFFE8E8EA),
-          ),
+        child: const Icon(
+          Icons.folder_outlined,
+          size: 16,
+          color: kTextPrimary,
         ),
       ),
     );

@@ -32,7 +32,7 @@ void main() {
     await tester.pumpWidget(
       build(value: ExportFormat.mp4, onChanged: (v) => fired = v),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_GIF')));
+    await tester.tap(find.byKey(const ValueKey('seg_btn_ExportFormat.gif')));
     await tester.pump();
     expect(fired, ExportFormat.gif);
   });
@@ -42,7 +42,7 @@ void main() {
     await tester.pumpWidget(
       build(value: ExportFormat.mp4, onChanged: (_) => callCount++),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_MP4')));
+    await tester.tap(find.byKey(const ValueKey('seg_btn_ExportFormat.mp4')));
     await tester.pump();
     expect(callCount, 0);
   });
@@ -53,7 +53,7 @@ void main() {
     await tester.pumpWidget(
       build(value: ExportFormat.gif, onChanged: (v) => fired = v),
     );
-    await tester.tap(find.byKey(const ValueKey('seg_btn_MP4')));
+    await tester.tap(find.byKey(const ValueKey('seg_btn_ExportFormat.mp4')));
     await tester.pump();
     expect(fired, ExportFormat.mp4);
   });

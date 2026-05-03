@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/export_settings.dart';
+import 'package:screen_recorder/ui/widgets/export_dialog/_export_dialog_theme.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/segmented_button.dart';
-
-const Color _kTitleColor = Color(0xFFE8E8EA);
-const Color _kIconColor = Color(0xFFE8E8EA);
-const Color _kSubtitleColor = Color(0xFF8C8C95);
 
 class ResolutionPicker extends StatelessWidget {
   const ResolutionPicker({
@@ -40,13 +37,13 @@ class ResolutionPicker extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
+          spacing: 6,
           children: const [
-            Icon(Icons.aspect_ratio_outlined, size: 14, color: _kIconColor),
-            SizedBox(width: 6),
+            Icon(Icons.aspect_ratio_outlined, size: 14, color: kTextPrimary),
             Text(
               'Resolution',
               style: TextStyle(
-                color: _kTitleColor,
+                color: kTextPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -56,7 +53,7 @@ class ResolutionPicker extends StatelessWidget {
         const SizedBox(height: 8),
         ExportSegmentedButton<ExportResolution>(
           options: _options,
-          selected: value,
+          value: value,
           onChanged: onChanged,
           disabled: disabled,
         ),
@@ -65,7 +62,7 @@ class ResolutionPicker extends StatelessWidget {
           dimLabel,
           key: const ValueKey('resolution_dim_label'),
           style: const TextStyle(
-            color: _kSubtitleColor,
+            color: kTextSecondary,
             fontSize: 12,
           ),
         ),
