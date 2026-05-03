@@ -85,12 +85,12 @@ class ZoomContextInspector extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                _FollowStyleSegmented(
-                  bounded: zoom.boundedFollow,
-                  onChanged: (b) =>
-                      onChanged(zoom.copyWith(boundedFollow: b)),
+                _FollowModeSegmented(
+                  mode: zoom.followMode,
+                  onChanged: (m) =>
+                      onChanged(zoom.copyWith(followMode: m)),
                 ),
-                if (zoom.boundedFollow) ...[
+                if (zoom.followMode == FollowMode.bounded) ...[
                   const SizedBox(height: 16),
                   InspectorSlider(
                     label: 'Deadzone size',
@@ -106,6 +106,28 @@ class ZoomContextInspector extends StatelessWidget {
                     onReset: () =>
                         onChanged(zoom.copyWith(deadzoneRatio: 0.3)),
                     canReset: (zoom.deadzoneRatio - 0.3).abs() > 1e-6,
+                  ),
+                ],
+                if (zoom.followMode == FollowMode.predictive) ...[
+                  const SizedBox(height: 16),
+                  InspectorSlider(
+                    label: 'Lookahead window',
+                    subtitle:
+                        '${zoom.predictiveWindow.inMilliseconds} ms of '
+                        'cursor history. Camera centers on the median '
+                        'dwell location over this window.',
+                    value:
+                        zoom.predictiveWindow.inMilliseconds.toDouble(),
+                    min: 300,
+                    max: 4000,
+                    onChanged: (v) => onChanged(zoom.copyWith(
+                        predictiveWindow:
+                            Duration(milliseconds: v.toInt()))),
+                    onReset: () => onChanged(zoom.copyWith(
+                        predictiveWindow:
+                            const Duration(milliseconds: 1500))),
+                    canReset: zoom.predictiveWindow !=
+                        const Duration(milliseconds: 1500),
                   ),
                 ],
                 const SizedBox(height: 24),
@@ -311,14 +333,14 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _FollowStyleSegmented extends StatelessWidget {
-  const _FollowStyleSegmented({
-    required this.bounded,
+class _FollowModeSegmented extends StatelessWidget {
+  const _FollowModeSegmented({
+    required this.mode,
     required this.onChanged,
   });
 
-  final bool bounded;
-  final ValueChanged<bool> onChanged;
+  final FollowMode mode;
+  final ValueChanged<FollowMode> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -328,17 +350,26 @@ class _FollowStyleSegmented extends StatelessWidget {
           child: _segment(
             label: 'Bounded',
             icon: Icons.crop_free,
-            isSelected: bounded,
-            onTap: () => onChanged(true),
+            isSelected: mode == FollowMode.bounded,
+            onTap: () => onChanged(FollowMode.bounded),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: _segment(
-            label: 'Always centered',
+            label: 'Centered',
             icon: Icons.center_focus_strong,
-            isSelected: !bounded,
-            onTap: () => onChanged(false),
+            isSelected: mode == FollowMode.centered,
+            onTap: () => onChanged(FollowMode.centered),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _segment(
+            label: 'Predictive',
+            icon: Icons.auto_awesome,
+            isSelected: mode == FollowMode.predictive,
+            onTap: () => onChanged(FollowMode.predictive),
           ),
         ),
       ],
@@ -374,7 +405,7 @@ class _FollowStyleSegmented extends StatelessWidget {
               label,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w500,
               ),
             ),

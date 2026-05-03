@@ -209,7 +209,7 @@ class ZoomFocalController {
       return false;
     }
     final boundsActive = zoom.followCursor &&
-        zoom.boundedFollow &&
+        zoom.followMode == FollowMode.bounded &&
         cursor != null &&
         zoom.deadzoneRatio > 0 &&
         videoSize.width > 0 &&

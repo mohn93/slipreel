@@ -9,6 +9,7 @@ import 'package:screen_recorder/models/recording_metadata.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
+import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
 import 'package:screen_recorder/rendering/wallpaper.dart';
@@ -204,10 +205,25 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
               ],
             );
 
+            // Cursor target for the focal: predictive mode looks at
+            // the median of recent cursor samples (dwell location),
+            // every other mode tracks the FIR-smoothed sprite so the
+            // camera and the visible cursor never disagree.
+            final activeZoomForCursor =
+                _activeZoomAt(widget.zoomRegions, pos);
+            final cursorForFocal = activeZoomForCursor?.followMode ==
+                    FollowMode.predictive
+                ? medianCursorOver(
+                    recording: widget.cursorRecording,
+                    t: pos,
+                    window: activeZoomForCursor!.predictiveWindow,
+                  )
+                : motion?.screenPos;
+
             final focalUpdate = _zoomFocalController.update(
               position: pos,
               zoomRegions: widget.zoomRegions,
-              cursor: motion?.screenPos,
+              cursor: cursorForFocal,
               videoSize: videoSize,
             );
             if (focalUpdate == null) return composition;
@@ -253,6 +269,13 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
         child: framedVideo,
       ),
     );
+  }
+
+  static ZoomRegion? _activeZoomAt(List<ZoomRegion> zooms, Duration t) {
+    for (final z in zooms) {
+      if (z.isActive(t)) return z;
+    }
+    return null;
   }
 
   Widget _wallpaperLayer({

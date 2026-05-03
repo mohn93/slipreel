@@ -13,7 +13,7 @@ ZoomRegion _zoomAt({
   Rect rect = const Rect.fromLTWH(100, 100, 200, 200),
   double zoomLevel = 2.0,
   bool followCursor = true,
-  bool boundedFollow = false,
+  FollowMode followMode = FollowMode.centered,
   double deadzoneRatio = 0.3,
   Duration followDuration = const Duration(milliseconds: 400),
   CubicBezierCurve? followCurve,
@@ -26,7 +26,7 @@ ZoomRegion _zoomAt({
     enterDuration: Duration.zero,
     exitDuration: Duration.zero,
     followCursor: followCursor,
-    boundedFollow: boundedFollow,
+    followMode: followMode,
     deadzoneRatio: deadzoneRatio,
     followDuration: followDuration,
     followCurve: followCurve,
@@ -269,7 +269,7 @@ void main() {
         startTime: Duration.zero,
         duration: const Duration(seconds: 5),
         zoomLevel: 2.0,
-        boundedFollow: true,
+        followMode: FollowMode.bounded,
         deadzoneRatio: 0.3,
       );
 
@@ -408,7 +408,7 @@ void main() {
         startTime: Duration.zero,
         duration: const Duration(seconds: 5),
         zoomLevel: 2.0,
-        boundedFollow: true,
+        followMode: FollowMode.bounded,
         deadzoneRatio: 0.3,
         followDuration: const Duration(milliseconds: 400),
       );
@@ -458,7 +458,7 @@ void main() {
         startTime: Duration.zero,
         duration: const Duration(seconds: 5),
         zoomLevel: 2.0,
-        boundedFollow: true,
+        followMode: FollowMode.bounded,
         deadzoneRatio: 0.3,
         followDuration: const Duration(milliseconds: 400),
       );
