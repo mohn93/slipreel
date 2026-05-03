@@ -1,10 +1,14 @@
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart' show Offset, Rect, Size;
-import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
-import 'package:screen_recorder/rendering/cursor_geometry.dart';
 
 /// Stateful controller for the cursor-follow zoom focal point.
+///
+/// The caller passes in a [cursor] offset that has already been
+/// resolved against the recording (and ideally smoothed by the same
+/// pipeline that paints the visible cursor sprite — otherwise the
+/// camera tracks a different cursor than the one on screen and the
+/// sprite visibly drifts off-center during zooms).
 ///
 /// Each [update] call advances a duration-based catch-up tween: when
 /// the cursor leaves the deadzone (or [ZoomRegion.followCursor] flips
@@ -49,12 +53,17 @@ class ZoomFocalController {
   /// Returns `null` when no zoom region is active at [position].
   /// Idempotent for the same [position] — see [_cachedPosition].
   ///
+  /// [cursor] is the cursor position in source-video pixels for this
+  /// frame. Pass the same value the visible cursor sprite is drawn at
+  /// so the camera and the sprite track each other; pass `null` when
+  /// no cursor data is available (legacy / window-source / pre-warmup).
+  ///
   /// [videoSize] is the source video resolution and feeds the
   /// deadzone box (`videoSize / zoom.zoomLevel * deadzoneRatio`).
   ZoomFocalUpdate? update({
     required Duration position,
     required List<ZoomRegion> zoomRegions,
-    required CursorRecording cursorRecording,
+    required Offset? cursor,
     required Size videoSize,
   }) {
     if (_cachedPosition == position) {
@@ -71,14 +80,10 @@ class ZoomFocalController {
       return null;
     }
 
-    final cursor = cursorAt(cursorRecording, position);
-    final cursorOffset =
-        cursor == null ? null : Offset(cursor.x, cursor.y);
-
     // First frame of this zoom: snap, never lerp.
     if (!identical(activeZoom, _previousActiveZoom)) {
       _previousActiveZoom = activeZoom;
-      final initial = _initialTarget(activeZoom, cursorOffset);
+      final initial = _initialTarget(activeZoom, cursor);
       _smoothedFocal = initial;
       _resetTween();
       _cachedResult = ZoomFocalUpdate(zoom: activeZoom, focal: initial);
@@ -105,7 +110,7 @@ class ZoomFocalController {
     // frame, given the freshly-advanced focal.
     final target = _resolveTarget(
       zoom: activeZoom,
-      cursor: cursorOffset,
+      cursor: cursor,
       currentFocal: _smoothedFocal!,
       videoSize: videoSize,
     );

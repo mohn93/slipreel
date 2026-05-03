@@ -115,11 +115,16 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
           builder: (context, videoPlayer) {
             final pos = widget.smoothPlayhead?.position ??
                 widget.controller.value.position;
-            final showCursor = widget.metadata?.isPureSource == true &&
-                widget.cursorRecording.count > 0 &&
-                !widget.hideCursorOverlay;
+            // Cursor motion is computed whenever cursor data exists,
+            // independent of `hideCursorOverlay` — the zoom focal
+            // needs the smoothed cursor even when the sprite is
+            // hidden, so the camera and the sprite always agree.
+            final hasCursorData = widget.metadata?.isPureSource == true &&
+                widget.cursorRecording.count > 0;
+            final showCursor =
+                hasCursorData && !widget.hideCursorOverlay;
 
-            final motion = showCursor
+            final motion = hasCursorData
                 ? _cursorMotionController.update(
                     position: pos,
                     cursorRecording: widget.cursorRecording,
@@ -158,7 +163,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                         fit: StackFit.expand,
                         children: [
                           videoPlayer!,
-                          if (motion != null)
+                          if (showCursor && motion != null)
                             CustomPaint(
                               painter: CursorOverlayPainter(
                                 cursorRecording: widget.cursorRecording,
@@ -202,7 +207,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
             final focalUpdate = _zoomFocalController.update(
               position: pos,
               zoomRegions: widget.zoomRegions,
-              cursorRecording: widget.cursorRecording,
+              cursor: motion?.screenPos,
               videoSize: videoSize,
             );
             if (focalUpdate == null) return composition;
