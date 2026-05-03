@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 // TODO when super_clipboard's file-pasteboard API is needed:
@@ -15,19 +16,9 @@ import 'package:path_provider/path_provider.dart';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Returns the file extension including the leading dot, e.g. `".mp4"`.
-/// Returns `""` when the name has no extension.
-String _fileExtension(String fileName) {
-  final dot = fileName.lastIndexOf('.');
-  if (dot < 0 || dot == fileName.length - 1) return '';
-  return fileName.substring(dot); // includes the dot
-}
-
-/// Returns the last component of a POSIX path, e.g. `"foo.mp4"`.
-String _basename(String path) {
-  final sep = path.lastIndexOf(Platform.pathSeparator);
-  return sep < 0 ? path : path.substring(sep + 1);
-}
+/// Default implementation: write text to the system clipboard.
+Future<void> _defaultClipboardWrite(String text) =>
+    Clipboard.setData(ClipboardData(text: text));
 
 // ---------------------------------------------------------------------------
 // DestinationResult
@@ -59,6 +50,18 @@ class DestinationResult {
 // DestinationHandler
 // ---------------------------------------------------------------------------
 
+/// Implements an export destination workflow: resolve → encode → deliver.
+///
+/// The [DestinationHandler] coordinates where an exported video should be
+/// written and what happens after encoding completes. The lifecycle is:
+/// 1. [resolveOutputPath] is called before encoding begins — the handler
+///    decides where the final file should go (user-chosen via Save dialog,
+///    system temp directory, etc.). If the user cancels, return null.
+/// 2. The video pipeline encodes to that path.
+/// 3. [deliver] is called after successful encoding — the handler performs
+///    post-export actions (reveal file in Finder, copy to clipboard, initiate
+///    upload, etc.) and returns a [DestinationResult] summarizing what
+///    happened for UI feedback.
 abstract class DestinationHandler {
   /// Called BEFORE export — the handler decides where the encoded file
   /// should land. May prompt the user (Save dialog) or pick a tmp path.
@@ -89,7 +92,7 @@ class FileSaver implements DestinationHandler {
   final Future<String?> Function(String suggestedName) _saveDialog;
 
   static Future<String?> _defaultSaveDialog(String suggestedName) async {
-    final ext = _fileExtension(suggestedName); // e.g. ".mp4"
+    final ext = p.extension(suggestedName); // e.g. ".mp4"
     final XTypeGroup typeGroup;
     if (ext == '.gif') {
       typeGroup = const XTypeGroup(label: 'GIF', extensions: ['gif']);
@@ -110,7 +113,7 @@ class FileSaver implements DestinationHandler {
 
   @override
   Future<DestinationResult> deliver(String outputPath) async {
-    final basename = _basename(outputPath);
+    final basename = p.basename(outputPath);
     return DestinationResult(
       message: 'Export complete: $basename',
       revealPath: outputPath,
@@ -139,16 +142,16 @@ class ClipboardCopier implements DestinationHandler {
 
   final Future<void> Function(String text) _clipboardWrite;
   final Future<Directory> Function() _tempDirProvider;
-
-  static Future<void> _defaultClipboardWrite(String text) =>
-      Clipboard.setData(ClipboardData(text: text));
+  int _nonce = 0;
 
   @override
   Future<String?> resolveOutputPath({required String suggestedFileName}) async {
+    final cleanName = p.basename(suggestedFileName);
+    final ext = p.extension(cleanName);
     final tmpDir = await _tempDirProvider();
-    final ext = _fileExtension(suggestedFileName); // e.g. ".mp4" or ".gif"
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    return '${tmpDir.path}${Platform.pathSeparator}screenflow_export_$ts$ext';
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    final n = _nonce++;
+    return p.join(tmpDir.path, 'screenflow_export_${ts}_$n$ext');
   }
 
   @override
@@ -191,21 +194,21 @@ class ShareableLinkPublisher implements DestinationHandler {
 
   final Future<void> Function(String text) _clipboardWrite;
   final Future<Directory> Function() _tempDirProvider;
-
-  static Future<void> _defaultClipboardWrite(String text) =>
-      Clipboard.setData(ClipboardData(text: text));
+  int _nonce = 0;
 
   @override
   Future<String?> resolveOutputPath({required String suggestedFileName}) async {
+    final cleanName = p.basename(suggestedFileName);
+    final ext = p.extension(cleanName);
     final tmpDir = await _tempDirProvider();
-    final ext = _fileExtension(suggestedFileName);
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    return '${tmpDir.path}${Platform.pathSeparator}screenflow_export_$ts$ext';
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    final n = _nonce++;
+    return p.join(tmpDir.path, 'screenflow_export_${ts}_$n$ext');
   }
 
   @override
   Future<DestinationResult> deliver(String outputPath) async {
-    final fileUrl = 'file://$outputPath';
+    final fileUrl = Uri.file(outputPath).toString();
     await _clipboardWrite(fileUrl);
     return DestinationResult(
       message: 'URL copied (local file for now — hosted upload coming soon)',

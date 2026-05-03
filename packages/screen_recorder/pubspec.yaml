@@ -61,7 +61,13 @@ dependencies:
   # Deep-link to system settings for permission prompts
   url_launcher: ^6.2.0
   file_selector: ^1.1.0
+  # Reserved for future file-pasteboard work in destination_handlers.dart;
+  # currently unused but kept declared so a follow-up that flips to
+  # NSPasteboard file refs doesn't need a new dep PR.
   super_clipboard: ^0.9.1
+
+  # Path manipulation — replaces inline _basename/_fileExtension helpers
+  path: any
 
 dev_dependencies:
   flutter_test:

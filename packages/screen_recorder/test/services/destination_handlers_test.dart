@@ -145,6 +145,25 @@ void main() {
       expect(path2, isNotNull);
     });
 
+    test('two consecutive resolveOutputPath calls return distinct paths',
+        () async {
+      final copier = ClipboardCopier(
+        tempDirProvider: _fakeTmpDir(tmpDir),
+        clipboardWrite: clipboard.write,
+      );
+
+      final path1 = await copier.resolveOutputPath(
+        suggestedFileName: 'recording.mp4',
+      );
+      final path2 = await copier.resolveOutputPath(
+        suggestedFileName: 'recording.mp4',
+      );
+
+      expect(path1, isNotNull);
+      expect(path2, isNotNull);
+      expect(path1, isNot(path2));
+    });
+
     test('deliver puts the absolute path on the clipboard', () async {
       final copier = ClipboardCopier(
         tempDirProvider: _fakeTmpDir(tmpDir),
@@ -223,6 +242,25 @@ void main() {
       expect(path, isNotNull);
     });
 
+    test('two consecutive resolveOutputPath calls return distinct paths',
+        () async {
+      final publisher = ShareableLinkPublisher(
+        tempDirProvider: _fakeTmpDir(tmpDir),
+        clipboardWrite: clipboard.write,
+      );
+
+      final path1 = await publisher.resolveOutputPath(
+        suggestedFileName: 'recording.mp4',
+      );
+      final path2 = await publisher.resolveOutputPath(
+        suggestedFileName: 'recording.mp4',
+      );
+
+      expect(path1, isNotNull);
+      expect(path2, isNotNull);
+      expect(path1, isNot(path2));
+    });
+
     test('deliver puts a file:// URL on the clipboard', () async {
       final publisher = ShareableLinkPublisher(
         tempDirProvider: _fakeTmpDir(tmpDir),
@@ -232,7 +270,23 @@ void main() {
       const outputPath = '/tmp/screenflow_export_99999.mp4';
       await publisher.deliver(outputPath);
 
-      expect(clipboard.lastText, 'file://$outputPath');
+      expect(clipboard.lastText, Uri.file(outputPath).toString());
+    });
+
+    test('deliver URL-encodes special characters in paths (e.g., spaces)',
+        () async {
+      final publisher = ShareableLinkPublisher(
+        tempDirProvider: _fakeTmpDir(tmpDir),
+        clipboardWrite: clipboard.write,
+      );
+
+      const outputPath = '/tmp/has space/screenflow_export.mp4';
+      await publisher.deliver(outputPath);
+
+      final expectedUrl = Uri.file(outputPath).toString();
+      expect(clipboard.lastText, expectedUrl);
+      // Verify that the URL contains the encoded space
+      expect(expectedUrl, contains('%20'));
     });
 
     test('deliver returns copiedToClipboard: true', () async {
