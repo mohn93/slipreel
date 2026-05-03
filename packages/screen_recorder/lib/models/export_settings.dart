@@ -41,6 +41,9 @@ class ExportSettings {
     int? frameRate,
     ExportDestination? destination,
     String? title,
+    /// Pass `true` to set `title` to null. Distinguishes "leave alone"
+    /// (the default) from "explicitly clear" — `copyWith(title: null)`
+    /// alone can't, because `null` is the param-not-supplied default.
     bool clearTitle = false,
     bool? isPrivate,
   }) {
@@ -73,6 +76,7 @@ class ExportSettings {
     final format = _decodeEnum<ExportFormat>(
       formatStr,
       ExportFormat.values,
+      'format',
     );
 
     final resolutionStr = json['resolution'] as String?;
@@ -83,6 +87,7 @@ class ExportSettings {
     final resolution = _decodeEnum<ExportResolution>(
       resolutionStr,
       ExportResolution.values,
+      'resolution',
     );
 
     final compressionStr = json['compression'] as String?;
@@ -93,6 +98,7 @@ class ExportSettings {
     final compression = _decodeEnum<CompressionTier>(
       compressionStr,
       CompressionTier.values,
+      'compression',
     );
 
     final frameRate = json['frameRate'] as int?;
@@ -108,6 +114,7 @@ class ExportSettings {
     final destination = _decodeEnum<ExportDestination>(
       destinationStr,
       ExportDestination.values,
+      'destination',
     );
 
     return ExportSettings(
@@ -121,12 +128,16 @@ class ExportSettings {
     );
   }
 
-  static T _decodeEnum<T extends Enum>(String name, List<T> values) {
+  static T _decodeEnum<T extends Enum>(
+    String name,
+    List<T> values,
+    String fieldName,
+  ) {
     for (final v in values) {
       if (v.name == name) return v;
     }
     throw FormatException(
-        'ExportSettings: unknown enum value "$name" for ${values.first.runtimeType}');
+        'ExportSettings: invalid value "$name" for field "$fieldName"');
   }
 
   @override
@@ -153,6 +164,12 @@ class ExportSettings {
         title,
         isPrivate,
       );
+
+  @override
+  String toString() =>
+      'ExportSettings(format: $format, resolution: $resolution, '
+      'compression: $compression, frameRate: $frameRate, '
+      'destination: $destination, title: $title, isPrivate: $isPrivate)';
 }
 
 extension ExportResolutionDimensions on ExportResolution {
@@ -168,10 +185,9 @@ extension ExportResolutionDimensions on ExportResolution {
     final srcWidth = sourceVideo.width;
     final srcHeight = sourceVideo.height;
 
-    // Compute width to fit source aspect ratio into target height
     final targetW = (targetHeight * srcWidth / srcHeight).round();
 
-    // Bump to even if necessary
+    // yuv420p (h264) requires both dimensions even
     final width = targetW.isEven ? targetW : targetW + 1;
 
     return Size(width.toDouble(), targetHeight.toDouble());

@@ -224,7 +224,6 @@ void main() {
       final s = ExportSettings.defaults();
       final s2 = s.copyWith();
       expect(s2, s);
-      expect(s2 == s, isTrue);
     });
 
     test('copyWith with clearTitle: true clears title', () {
