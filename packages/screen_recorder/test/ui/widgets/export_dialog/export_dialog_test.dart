@@ -179,34 +179,6 @@ void main() {
       );
     });
 
-    testWidgets('switching to Shareable link locks fps and resolution in state',
-        (tester) async {
-      // Start with 720p / 30fps
-      await openDialog(
-        tester,
-        initialSettings: ExportSettings.defaults().copyWith(
-          resolution: ExportResolution.r720p,
-          frameRate: 30,
-        ),
-      );
-
-      await tester.tap(
-        find.byKey(
-          const ValueKey('seg_btn_ExportDestination.shareableLink'),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // The state lock is verified indirectly:
-      // - Resolution/Compression pickers are hidden (shareable link mode)
-      expect(find.text('Resolution'), findsNothing);
-      // - Button label proves destination changed to shareableLink
-      expect(find.text('Export & Share'), findsOneWidget);
-      // - The full lock verification (1080p/60fps values) is covered
-      //   by the "shareable link locks resolution to 1080p and fps to 60"
-      //   test in the "confirming returns ExportSettings" group.
-    });
-
     testWidgets('button label changes to "Export & Share"', (tester) async {
       await openDialog(tester);
 
@@ -537,7 +509,6 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1400, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      Object? sentinel = Object(); // non-null sentinel
       ExportSettings? returned;
 
       final widget = MaterialApp(
@@ -547,7 +518,7 @@ void main() {
               child: ElevatedButton(
                 key: const ValueKey('open_dialog_btn'),
                 onPressed: () async {
-                  final result = await showDialog<ExportSettings>(
+                  returned = await showDialog<ExportSettings>(
                     context: context,
                     builder: (_) => ExportDialog(
                       initialSettings: ExportSettings.defaults(),
@@ -555,8 +526,6 @@ void main() {
                       videoDuration: const Duration(seconds: 5),
                     ),
                   );
-                  returned = result;
-                  sentinel = result; // will be null if cancelled
                 },
                 child: const Text('Open'),
               ),
@@ -574,7 +543,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(returned, isNull);
-      expect(sentinel, isNull);
     });
   });
 

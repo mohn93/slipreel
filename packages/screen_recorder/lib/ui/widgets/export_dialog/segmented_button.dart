@@ -69,7 +69,7 @@ class _Button<T> extends StatelessWidget {
           onTap: (isDisabled || isSelected) ? null : onTap,
           child: Container(
             height: kSegmentHeight,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
               color: isSelected ? kBgSelected : kBgUnselected,
               borderRadius: BorderRadius.circular(kSegmentRadius),

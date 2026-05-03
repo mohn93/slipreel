@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 const kBgUnselected = Color(0xFF22232C);
 const kBgSelected = Color(0xFF1F1A2E);
+const kDialogBackground = Color(0xFF0E0E10);
 const kAccent = Color(0xFF8B5CF6);
 const kTextPrimary = Color(0xFFE8E8EA);
 const kTextSecondary = Color(0xFF8C8C95);
@@ -15,6 +16,12 @@ const kSegmentHeight = 36.0;
 const kSegmentRadius = 8.0;
 const kSegmentHGap = 8.0;
 const kDisabledOpacity = 0.4;
+
+/// Height of a section header row (13pt label + 8px gap below).
+/// Used as a structural spacer in _buildActionButtons to vertically
+/// align the action row with the destination-picker's first pill,
+/// matching the pattern used in the left column.
+const kSectionHeaderHeight = 21.0;
 
 /// A pill-shaped surface shared by [ExportSegmentedButton] buttons and
 /// other icon-only buttons in the export dialog (e.g. _RevealButton).

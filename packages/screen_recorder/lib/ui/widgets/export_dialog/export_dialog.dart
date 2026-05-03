@@ -21,6 +21,10 @@ const _kGifFrameRateOptions = <int>[30, 25, 24, 20, 15, 10];
 /// frame rate is not in [_kGifFrameRateOptions].
 const _kGifDefaultFrameRate = 10;
 
+/// The default frame rate used when switching back to MP4 and the current
+/// frame rate is not in [kFrameRateOptions] (e.g. after a GIF→MP4 round-trip).
+const _kMp4DefaultFrameRate = 30;
+
 class ExportDialog extends StatefulWidget {
   const ExportDialog({
     super.key,
@@ -96,7 +100,7 @@ class _ExportDialogState extends State<ExportDialog> {
         // Switching back to MP4: snap fps to MP4 list if necessary.
         final snapFps = kFrameRateOptions.contains(_settings.frameRate)
             ? _settings.frameRate
-            : 30; // MP4 default
+            : _kMp4DefaultFrameRate;
         _settings = _settings.copyWith(format: format, frameRate: snapFps);
       }
     });
@@ -148,7 +152,7 @@ class _ExportDialogState extends State<ExportDialog> {
   }
 
   void _onExport() {
-    Navigator.of(context).pop(_settings);
+    Navigator.of(context).pop<ExportSettings>(_settings);
   }
 
   void _onCancel() {
@@ -160,12 +164,12 @@ class _ExportDialogState extends State<ExportDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: const Color(0xFF0E0E10),
+      backgroundColor: kDialogBackground,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 680, maxWidth: 900),
+          constraints: const BoxConstraints(minWidth: 680, maxWidth: 1100),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -237,12 +241,9 @@ class _ExportDialogState extends State<ExportDialog> {
             const SizedBox(width: 24),
             SizedBox(
               width: colWidth,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: CompressionPicker(
-                  value: _settings.compression,
-                  onChanged: _onCompressionChanged,
-                ),
+              child: CompressionPicker(
+                value: _settings.compression,
+                onChanged: _onCompressionChanged,
               ),
             ),
           ],
@@ -253,26 +254,19 @@ class _ExportDialogState extends State<ExportDialog> {
 
   /// Bottom row: Destination (left) + Export + Cancel buttons (right).
   Widget _buildBottomRow() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DestinationPicker(
-                  value: _settings.destination,
-                  onChanged: _onDestinationChanged,
-                  onRevealLastExport: widget.onRevealLastExport,
-                ),
-              ),
-            ),
-            const SizedBox(width: 24),
-            _buildActionButtons(),
-          ],
-        );
-      },
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: DestinationPicker(
+            value: _settings.destination,
+            onChanged: _onDestinationChanged,
+            onRevealLastExport: widget.onRevealLastExport,
+          ),
+        ),
+        const SizedBox(width: 24),
+        _buildActionButtons(),
+      ],
     );
   }
 
@@ -282,9 +276,9 @@ class _ExportDialogState extends State<ExportDialog> {
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Spacer to vertically align with the destination picker label
-        // (row header height = 13pt text + 8 gap = ~21 logical pixels).
-        const SizedBox(height: 21),
+        // Spacer aligns the action row with the destination picker's first
+        // pill; tracks kSectionHeaderHeight (13pt label + 8px gap).
+        const SizedBox(height: kSectionHeaderHeight),
         Row(
           mainAxisSize: MainAxisSize.min,
           spacing: 8,
