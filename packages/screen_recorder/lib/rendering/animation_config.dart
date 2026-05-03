@@ -19,6 +19,15 @@ class ScreenAnimationConfig {
         _customCurve = curve,
         _customBadgeDuration = badgeDuration;
 
+  /// Default badge tween duration when a `.custom` config doesn't
+  /// supply one. Matches the Smooth preset's badge duration so the
+  /// transition between picking "Smooth" and picking "Custom" with no
+  /// duration override doesn't change the feel.
+  static const Duration _defaultCustomBadgeDuration =
+      Duration(milliseconds: 350);
+
+  // Exactly one of (_preset, _customCurve) is non-null. Enforced by the
+  // two named constructors. Resolution accessors below rely on this.
   final ScreenAnimationStyle? _preset;
   final CubicBezierCurve? _customCurve;
   final Duration? _customBadgeDuration;
@@ -36,7 +45,7 @@ class ScreenAnimationConfig {
   Duration get badgeDuration =>
       _customBadgeDuration ??
       _preset?.badgeDuration ??
-      ScreenAnimationStyle.smooth.badgeDuration;
+      _defaultCustomBadgeDuration;
 
   Map<String, dynamic> toJson() {
     if (_preset != null) {
@@ -52,10 +61,17 @@ class ScreenAnimationConfig {
   factory ScreenAnimationConfig.fromJson(Map<String, dynamic> json) {
     final presetName = json['preset'] as String?;
     if (presetName != null) {
-      final preset = ScreenAnimationStyle.values.firstWhere(
-        (e) => e.name == presetName,
-        orElse: () => ScreenAnimationStyle.smooth,
-      );
+      ScreenAnimationStyle? preset;
+      for (final s in ScreenAnimationStyle.values) {
+        if (s.name == presetName) {
+          preset = s;
+          break;
+        }
+      }
+      if (preset == null) {
+        throw FormatException(
+            'Unknown ScreenAnimationStyle preset: $presetName');
+      }
       return ScreenAnimationConfig.preset(preset);
     }
     final curve = AnimationCurve.fromJson(
@@ -81,6 +97,8 @@ class CursorAnimationConfig {
         _customCurve = curve,
         _customWindow = window;
 
+  // Exactly one of (_preset, _customCurve) is non-null. Enforced by the
+  // two named constructors. Resolution accessors below rely on this.
   final CursorAnimationStyle? _preset;
   final CubicBezierCurve? _customCurve;
   final Duration? _customWindow;
@@ -105,17 +123,29 @@ class CursorAnimationConfig {
   factory CursorAnimationConfig.fromJson(Map<String, dynamic> json) {
     final presetName = json['preset'] as String?;
     if (presetName != null) {
-      final preset = CursorAnimationStyle.values.firstWhere(
-        (e) => e.name == presetName,
-        orElse: () => CursorAnimationStyle.smooth,
-      );
+      CursorAnimationStyle? preset;
+      for (final s in CursorAnimationStyle.values) {
+        if (s.name == presetName) {
+          preset = s;
+          break;
+        }
+      }
+      if (preset == null) {
+        throw FormatException(
+            'Unknown CursorAnimationStyle preset: $presetName');
+      }
       return CursorAnimationConfig.preset(preset);
     }
     final curve = AnimationCurve.fromJson(
         json['curve'] as Map<String, dynamic>) as CubicBezierCurve;
+    final micros = json['windowMicros'];
+    if (micros is! int) {
+      throw const FormatException(
+          'CursorAnimationConfig.fromJson: missing or non-int windowMicros');
+    }
     return CursorAnimationConfig.custom(
       curve: curve,
-      window: Duration(microseconds: json['windowMicros'] as int),
+      window: Duration(microseconds: micros),
     );
   }
 }

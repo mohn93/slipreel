@@ -29,6 +29,13 @@ void main() {
       const cfg = ScreenAnimationConfig.custom(curve: c);
       expect(cfg.badgeDuration, ScreenAnimationStyle.smooth.badgeDuration);
     });
+
+    test('fromJson throws on unknown preset name', () {
+      expect(
+        () => ScreenAnimationConfig.fromJson({'preset': 'no-such-preset'}),
+        throwsA(isA<FormatException>()),
+      );
+    });
   });
 
   group('CursorAnimationConfig', () {
@@ -51,6 +58,23 @@ void main() {
     test('window=0 preset is "None"', () {
       const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.none);
       expect(cfg.window, Duration.zero);
+    });
+
+    test('fromJson throws on unknown preset name', () {
+      expect(
+        () => CursorAnimationConfig.fromJson({'preset': 'no-such-preset'}),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('fromJson custom throws on missing windowMicros', () {
+      expect(
+        () => CursorAnimationConfig.fromJson({
+          'curve': const CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 0.3, y2: 0.4)
+              .toJson(),
+        }),
+        throwsA(isA<FormatException>()),
+      );
     });
   });
 }
