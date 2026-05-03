@@ -34,6 +34,20 @@ class FileCurveLibrary implements CurveLibrary {
   String? _resolvedPath;
   final Random _rng = Random.secure();
 
+  Future<void> _writeQueue = Future.value();
+
+  /// Serialize mutations so two concurrent save/rename/delete calls
+  /// can never both `await list()` against the same on-disk state and
+  /// then race to overwrite each other.
+  Future<T> _enqueue<T>(Future<T> Function() op) {
+    final next = _writeQueue.then((_) => op());
+    // Swallow errors on the queue so a failed op doesn't poison
+    // subsequent ops; the original error still propagates to the caller
+    // via `next`.
+    _writeQueue = next.then<void>((_) {}, onError: (_) {});
+    return next;
+  }
+
   Future<String> _path() async {
     final explicit = _explicitPath;
     if (explicit != null) return explicit;
@@ -80,31 +94,37 @@ class FileCurveLibrary implements CurveLibrary {
   Future<NamedCurve> save({
     required String name,
     required CubicBezierCurve curve,
-  }) async {
-    final entries = [...await list()];
-    final id = _newId();
-    final entry = NamedCurve(id: id, name: name, curve: curve);
-    entries.add(entry);
-    await _write(entries);
-    return entry;
+  }) {
+    return _enqueue(() async {
+      final entries = [...await list()];
+      final id = _newId();
+      final entry = NamedCurve(id: id, name: name, curve: curve);
+      entries.add(entry);
+      await _write(entries);
+      return entry;
+    });
   }
 
   @override
-  Future<void> rename(String id, String newName) async {
-    final entries = await list();
-    final next = entries
-        .map((e) => e.id == id
-            ? NamedCurve(id: e.id, name: newName, curve: e.curve)
-            : e)
-        .toList(growable: false);
-    await _write(next);
+  Future<void> rename(String id, String newName) {
+    return _enqueue(() async {
+      final entries = await list();
+      final next = entries
+          .map((e) => e.id == id
+              ? NamedCurve(id: e.id, name: newName, curve: e.curve)
+              : e)
+          .toList(growable: false);
+      await _write(next);
+    });
   }
 
   @override
-  Future<void> delete(String id) async {
-    final entries = await list();
-    final next = entries.where((e) => e.id != id).toList(growable: false);
-    await _write(next);
+  Future<void> delete(String id) {
+    return _enqueue(() async {
+      final entries = await list();
+      final next = entries.where((e) => e.id != id).toList(growable: false);
+      await _write(next);
+    });
   }
 
   Future<void> _write(List<NamedCurve> entries) async {

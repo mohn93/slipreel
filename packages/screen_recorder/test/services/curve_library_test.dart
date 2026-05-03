@@ -103,5 +103,17 @@ void main() {
       final json = jsonDecode(raw) as Map<String, dynamic>;
       expect(json['version'], 1);
     });
+
+    test('concurrent saves do not lose entries', () async {
+      const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
+      // Kick off many saves without awaiting between them. Without the
+      // mutation queue, the read-modify-write pattern in save() loses
+      // most of these.
+      await Future.wait(List.generate(
+        20,
+        (i) => lib.save(name: 'c$i', curve: c),
+      ));
+      expect(await lib.list(), hasLength(20));
+    });
   });
 }
