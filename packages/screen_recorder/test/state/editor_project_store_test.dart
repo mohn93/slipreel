@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder/models/window_frame.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
@@ -52,6 +53,7 @@ void main() {
         cursorClickEffect: CursorClickEffect.none,
         hideCursorOverlay: true,
         motionBlur: 0.4,
+        windowFrame: WindowFrame.modern(),
       );
 
       final json = state.toJson();
@@ -63,6 +65,7 @@ void main() {
       expect(restored.cursorClickEffect, CursorClickEffect.none);
       expect(restored.hideCursorOverlay, isTrue);
       expect(restored.motionBlur, closeTo(0.4, 1e-9));
+      expect(restored.windowFrame, WindowFrame.modern());
     });
 
     test('refuses to load a future schemaVersion', () {
@@ -150,6 +153,7 @@ extension on EditorProjectState {
         cursorClickEffect: cursorClickEffect,
         hideCursorOverlay: hideCursorOverlay,
         motionBlur: motionBlur,
+        windowFrame: windowFrame,
       );
 
   EditorProjectState copyWithCursorSize(double size) => EditorProjectState(
@@ -161,5 +165,6 @@ extension on EditorProjectState {
         cursorClickEffect: cursorClickEffect,
         hideCursorOverlay: hideCursorOverlay,
         motionBlur: motionBlur,
+        windowFrame: windowFrame,
       );
 }

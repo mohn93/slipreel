@@ -1,3 +1,4 @@
+import 'package:screen_recorder/models/window_frame.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
@@ -7,13 +8,11 @@ import 'package:screen_recorder/rendering/cursor_glyph.dart';
 /// Per-recording editor settings that persist across app sessions.
 ///
 /// Mirrors the mutable fields on `_PlaybackScreenState` that the
-/// inspector lets the user edit. Saved to a `<videoPath>.editor.json`
-/// sidecar by [EditorProjectStore].
-///
-/// Frame chrome / wallpaper deliberately live elsewhere: those go
-/// through `FrameSettingsProvider`, which is global (the user's chosen
-/// frame style is meant to apply to *every* recording, not be locked
-/// to one clip).
+/// inspector lets the user edit, plus the frame chrome (wallpaper,
+/// padding, corners, shadow, background blur) — the user expects all
+/// of those to be locked to the clip they were dialed in for, not
+/// applied globally. Saved to a `<videoPath>.editor.json` sidecar by
+/// [EditorProjectStore].
 class EditorProjectState {
   const EditorProjectState({
     required this.zoomRegions,
@@ -24,22 +23,25 @@ class EditorProjectState {
     required this.cursorClickEffect,
     required this.hideCursorOverlay,
     required this.motionBlur,
+    required this.windowFrame,
   });
 
   /// Sensible blank slate for a freshly-loaded recording with no saved
   /// project file. Matches the constants previously hard-coded in
-  /// `_PlaybackScreenState`'s field initializers.
-  factory EditorProjectState.defaults() => const EditorProjectState(
-        zoomRegions: [],
-        screenAnimationConfig:
-            ScreenAnimationConfig.preset(ScreenAnimationStyle.smooth),
-        cursorAnimationConfig:
-            CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+  /// `_PlaybackScreenState`'s field initializers and the rounded
+  /// frame template.
+  factory EditorProjectState.defaults() => EditorProjectState(
+        zoomRegions: const [],
+        screenAnimationConfig: const ScreenAnimationConfig.preset(
+            ScreenAnimationStyle.smooth),
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+            CursorAnimationStyle.smooth),
         cursorSize: 1.0,
         cursorStyle: CursorStyle.modernDark,
         cursorClickEffect: CursorClickEffect.ripple,
         hideCursorOverlay: false,
         motionBlur: 0,
+        windowFrame: WindowFrame.rounded(),
       );
 
   final List<ZoomRegion> zoomRegions;
@@ -50,10 +52,11 @@ class EditorProjectState {
   final CursorClickEffect cursorClickEffect;
   final bool hideCursorOverlay;
   final double motionBlur;
+  final WindowFrame windowFrame;
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 1;
+  static const int currentSchemaVersion = 2;
 
   Map<String, dynamic> toJson() => {
         'schemaVersion': currentSchemaVersion,
@@ -65,6 +68,7 @@ class EditorProjectState {
         'cursorClickEffect': cursorClickEffect.name,
         'hideCursorOverlay': hideCursorOverlay,
         'motionBlur': motionBlur,
+        'windowFrame': windowFrame.toJson(),
       };
 
   factory EditorProjectState.fromJson(Map<String, dynamic> json) {
@@ -85,6 +89,7 @@ class EditorProjectState {
 
     final screen = json['screenAnimationConfig'] as Map<String, dynamic>?;
     final cursorAnim = json['cursorAnimationConfig'] as Map<String, dynamic>?;
+    final frame = json['windowFrame'] as Map<String, dynamic>?;
     final defaults = EditorProjectState.defaults();
 
     return EditorProjectState(
@@ -111,6 +116,8 @@ class EditorProjectState {
           (json['hideCursorOverlay'] as bool?) ?? defaults.hideCursorOverlay,
       motionBlur:
           (json['motionBlur'] as num?)?.toDouble() ?? defaults.motionBlur,
+      windowFrame:
+          frame != null ? WindowFrame.fromJson(frame) : defaults.windowFrame,
     );
   }
 

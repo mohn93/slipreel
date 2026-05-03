@@ -1,137 +1,97 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:screen_recorder/models/window_frame.dart';
 
-/// Manages frame customization settings with persistence.
+/// In-memory frame state for the active recording.
 ///
-/// Extends ChangeNotifier to notify listeners when frame properties change.
-/// Uses SharedPreferences to persist settings between app sessions.
+/// Mutator methods bump the held [WindowFrame] and call
+/// [notifyListeners] so the inspector and the playback canvas redraw.
+/// Persistence is the owner's responsibility — the playback screen
+/// loads the frame from the recording's `<videoPath>.editor.json`
+/// sidecar on init and saves any changes back through
+/// `EditorProjectStore`.
 class FrameSettingsProvider extends ChangeNotifier {
-  static const String _storageKey = 'window_frame_settings';
-
   WindowFrame _currentFrame = WindowFrame.rounded();
 
   /// The currently selected frame with all customizations
   WindowFrame get currentFrame => _currentFrame;
 
-  /// Load frame settings from persistent storage
-  Future<void> load() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final jsonString = prefs.getString(_storageKey);
-
-      if (jsonString != null) {
-        final json = jsonDecode(jsonString) as Map<String, dynamic>;
-        _currentFrame = WindowFrame.fromJson(json);
-        notifyListeners();
-      } else {
-        _currentFrame = WindowFrame.rounded();
-      }
-    } catch (e) {
-      debugPrint('Error loading frame settings: $e');
-      _currentFrame = WindowFrame.rounded();
-    }
-  }
-
-  /// Set a complete frame (e.g., from a template or custom configuration)
-  Future<void> setFrame(WindowFrame frame) async {
+  /// Set a complete frame (e.g., from a template, the persistence
+  /// layer, or a custom configuration). Notifies listeners only when
+  /// the frame actually changes — important during init so a
+  /// no-op restore from a sidecar doesn't trigger a save loop.
+  void setFrame(WindowFrame frame) {
+    if (_currentFrame == frame) return;
     _currentFrame = frame;
-    await _save();
     notifyListeners();
   }
 
   /// Select a frame template by name
-  Future<void> selectTemplate(String templateName) async {
+  void selectTemplate(String templateName) {
     final template = WindowFrame.templates.firstWhere(
       (frame) => frame.name == templateName,
       orElse: () => WindowFrame.none(),
     );
-    await setFrame(template);
+    setFrame(template);
   }
 
   /// Update the padding of the current frame
-  Future<void> updatePadding(double padding) async {
-    _currentFrame = _currentFrame.copyWith(
+  void updatePadding(double padding) {
+    setFrame(_currentFrame.copyWith(
       padding: EdgeInsets.all(padding),
       name: 'Custom',
-    );
-    await _save();
-    notifyListeners();
+    ));
   }
 
   /// Update the corner radius of the current frame
-  Future<void> updateCornerRadius(double radius) async {
-    _currentFrame = _currentFrame.copyWith(
+  void updateCornerRadius(double radius) {
+    setFrame(_currentFrame.copyWith(
       cornerRadius: radius,
       name: 'Custom',
-    );
-    await _save();
-    notifyListeners();
+    ));
   }
 
   /// Update the shadow blur of the current frame
-  Future<void> updateShadowBlur(double blur) async {
-    _currentFrame = _currentFrame.copyWith(
+  void updateShadowBlur(double blur) {
+    setFrame(_currentFrame.copyWith(
       shadowBlur: blur,
       name: 'Custom',
-    );
-    await _save();
-    notifyListeners();
+    ));
   }
 
   /// Update the background color of the current frame
-  Future<void> updateBackgroundColor(Color? color) async {
-    _currentFrame = _currentFrame.copyWith(
+  void updateBackgroundColor(Color? color) {
+    setFrame(_currentFrame.copyWith(
       backgroundColor: color,
       name: 'Custom',
-    );
-    await _save();
-    notifyListeners();
+    ));
   }
 
   /// Pick a wallpaper from the wallpaper catalog. Pass `null` for
   /// [category] to drop the wallpaper layer entirely.
-  Future<void> updateWallpaper({
+  void updateWallpaper({
     required String? category,
     int index = 0,
-  }) async {
+  }) {
     if (category == null) {
-      _currentFrame = _currentFrame.copyWith(
+      setFrame(_currentFrame.copyWith(
         clearWallpaper: true,
         name: 'Custom',
-      );
+      ));
     } else {
-      _currentFrame = _currentFrame.copyWith(
+      setFrame(_currentFrame.copyWith(
         wallpaperCategory: category,
         wallpaperIndex: index,
         name: 'Custom',
-      );
+      ));
     }
-    await _save();
-    notifyListeners();
   }
 
   /// Update the wallpaper Gaussian-blur sigma (canvas pixels).
-  Future<void> updateBackgroundBlur(double sigma) async {
-    _currentFrame = _currentFrame.copyWith(
+  void updateBackgroundBlur(double sigma) {
+    setFrame(_currentFrame.copyWith(
       backgroundBlur: sigma,
       name: 'Custom',
-    );
-    await _save();
-    notifyListeners();
-  }
-
-  /// Save the current frame to persistent storage
-  Future<void> _save() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final json = _currentFrame.toJson();
-      final jsonString = jsonEncode(json);
-      await prefs.setString(_storageKey, jsonString);
-    } catch (e) {
-      debugPrint('Error saving frame settings: $e');
-    }
+    ));
   }
 }

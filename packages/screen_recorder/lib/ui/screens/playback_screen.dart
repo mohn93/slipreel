@@ -96,7 +96,6 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     super.initState();
     _undoRedo = UndoRedoController<TrimSelection>();
     _frameSettings = FrameSettingsProvider();
-    _frameSettings.load();
     _frameSettings.addListener(_onFrameSettingsChanged);
     _initializeVideo();
   }
@@ -115,6 +114,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
 
   void _onFrameSettingsChanged() {
     setState(() {});
+    _persistProject();
   }
 
   Future<void> _initializeVideo() async {
@@ -146,6 +146,11 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       _cursorClickEffect = saved.cursorClickEffect;
       _hideCursorOverlay = saved.hideCursorOverlay;
       _motionBlur = saved.motionBlur;
+      // Frame chrome (wallpaper, padding, corners, shadow, blur) is
+      // also per-clip. Restore via setFrame BEFORE flipping the
+      // _isInitialized flag so _persistProject won't fire on the
+      // listener callback during init.
+      _frameSettings.setFrame(saved.windowFrame);
 
       setState(() {
         _isInitialized = true;
@@ -177,6 +182,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         cursorClickEffect: _cursorClickEffect,
         hideCursorOverlay: _hideCursorOverlay,
         motionBlur: _motionBlur,
+        windowFrame: _frameSettings.currentFrame,
       );
 
   /// Schedule a debounced save so a slider drag doesn't hammer the
