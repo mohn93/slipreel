@@ -52,7 +52,8 @@ void main() {
           bitrateKbps: 6000,
           format: ExportFormat.gif,
         );
-        expect(bytesGIF, closeTo(bytesMP4 * 0.6, bytesMP4 * 0.01));
+        expect(bytesMP4, 23040000);
+        expect(bytesGIF, 13824000); // 23,040,000 × 0.6 rounded.
       });
 
       test('0-second duration → 0 bytes', () {
@@ -78,36 +79,34 @@ void main() {
       });
 
       test('plural seconds format', () {
-        // At 1.0× multiplier, 5s source → 5s export time
         const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
         final line = estimator1x.formatLine(
           durationSec: 5.0,
           bitrateKbps: 256,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('5 seconds'));
+        expect(line, 'Estimation — Export time 5 seconds — Output size 160.0KB');
       });
 
       test('singular second format', () {
-        // At 1.0× multiplier, 1s source → 1s export time
         const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
         final line = estimator1x.formatLine(
           durationSec: 1.0,
           bitrateKbps: 256,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('1 second'));
+        expect(line, 'Estimation — Export time 1 second — Output size 32.0KB');
       });
 
       test('formatLine with minute and second components', () {
-        // At 1.0×, 90s source → 90s export time = 1 minute 30 seconds
         const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
         final line = estimator1x.formatLine(
           durationSec: 90.0,
           bitrateKbps: 256,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('1 minute 30 seconds'));
+        expect(line,
+            'Estimation — Export time 1 minute 30 seconds — Output size 2.8MB');
       });
 
       test('exactly 60s formats as "1 minute"', () {
@@ -138,7 +137,7 @@ void main() {
           bitrateKbps: 128,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('KB'));
+        expect(line, 'Estimation — Export time 1 second — Output size 16.0KB');
       });
 
       test('exactly 1MB worth of bytes formats as "1.0MB"', () {
@@ -162,7 +161,7 @@ void main() {
           bitrateKbps: 100000,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('GB'));
+        expect(line, 'Estimation — Export time 1 hour — Output size 42.9GB');
       });
 
       test('format=GIF affects size only, not time', () {
@@ -191,7 +190,7 @@ void main() {
           bitrateKbps: 50000,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('Estimation'));
+        expect(line, 'Estimation — Export time 5 minutes — Output size 1.8GB');
       });
     });
 
