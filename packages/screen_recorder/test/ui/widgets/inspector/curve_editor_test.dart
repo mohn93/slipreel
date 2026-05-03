@@ -98,7 +98,7 @@ void main() {
     expect(captured?.x1, 1.0);
   });
 
-  testWidgets('x1 cannot exceed x2 via numeric input', (tester) async {
+  testWidgets('x1 may exceed x2 — fold-back curves are allowed', (tester) async {
     tester.view.physicalSize = const Size(280, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -121,13 +121,15 @@ void main() {
       ),
     ));
 
-    // Try to set x1 to 0.9, but x2 is only 0.5 — must clamp to 0.5.
+    // Author a fold-back curve: x1 (0.9) > x2 (0.5). The editor must
+    // accept this — authoring non-monotone curves is intentional.
     await tester.enterText(
         find.byKey(const ValueKey('curveEditor.x1Field')), '0.9');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
 
-    expect(captured?.x1, closeTo(0.5, 1e-9));
+    expect(captured?.x1, closeTo(0.9, 1e-9));
+    expect(captured?.x2, closeTo(0.5, 1e-9));
   });
 
   testWidgets('clicking a built-in chip overwrites the curve', (tester) async {

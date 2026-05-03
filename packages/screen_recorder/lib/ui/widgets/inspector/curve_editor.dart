@@ -114,16 +114,20 @@ class _CurveEditorState extends State<CurveEditor>
     var y1 = widget.curve.y1;
     var x2 = widget.curve.x2;
     var y2 = widget.curve.y2;
+    // x is clamped to [0, 1] (CSS spec / Flutter Cubic input range).
+    // x1 vs x2 ordering is intentionally not enforced — authoring a
+    // "fold-back" curve is a valid expressive choice, even though it
+    // produces unconventional motion.
     switch (idx) {
       case 0:
-        x1 = v.clamp(0.0, x2);
-        break; // x1 ≤ x2
+        x1 = v.clamp(0.0, 1.0);
+        break;
       case 1:
         y1 = v.clamp(-0.5, 1.5);
         break;
       case 2:
-        x2 = v.clamp(x1, 1.0);
-        break; // x2 ≥ x1
+        x2 = v.clamp(0.0, 1.0);
+        break;
       case 3:
         y2 = v.clamp(-0.5, 1.5);
         break;
@@ -132,6 +136,8 @@ class _CurveEditorState extends State<CurveEditor>
   }
 
   void _onDragHandle(int idx, Offset local, Size size) {
+    // Free movement inside the unit square (with overshoot room on y).
+    // No monotonicity constraint between handles — see _commitNumeric.
     final nx = (local.dx / size.width).clamp(0.0, 1.0);
     final ny = (1 - (local.dy / size.height)).clamp(-0.5, 1.5);
     var x1 = widget.curve.x1;
@@ -139,11 +145,11 @@ class _CurveEditorState extends State<CurveEditor>
     var x2 = widget.curve.x2;
     var y2 = widget.curve.y2;
     if (idx == 1) {
-      x1 = nx.clamp(0.0, x2); // can't drag h1 past h2
+      x1 = nx;
       y1 = ny;
     }
     if (idx == 2) {
-      x2 = nx.clamp(x1, 1.0); // can't drag h2 before h1
+      x2 = nx;
       y2 = ny;
     }
     widget.onCurveChanged(CubicBezierCurve(x1: x1, y1: y1, x2: x2, y2: y2));

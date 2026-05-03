@@ -55,7 +55,10 @@ class ZoomContextInspector extends StatelessWidget {
         const SizedBox(height: 8),
         Expanded(
           child: ListView(
-            padding: EdgeInsets.zero,
+            // Right-side gutter — the override section can host the
+            // curve editor whose drag area must not sit under the
+            // macOS Scrollbar's hit zone.
+            padding: const EdgeInsets.only(right: 12),
             children: [
               InspectorSlider(
                 label: 'Zoom level',

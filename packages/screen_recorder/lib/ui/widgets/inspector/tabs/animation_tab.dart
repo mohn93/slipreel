@@ -51,7 +51,10 @@ class _AnimationTabState extends State<AnimationTab> {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: EdgeInsets.zero,
+      // Right-side gutter keeps the curve editor's drag area clear of
+      // the macOS Scrollbar's hit zone — without it, dragging a handle
+      // near the right edge gets intercepted by the scrollbar.
+      padding: const EdgeInsets.only(right: 12),
       children: [
         const Text(
           'Screen animation style',
