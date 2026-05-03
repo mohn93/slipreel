@@ -1,74 +1,141 @@
-import 'package:flutter/painting.dart' show Offset;
+import 'dart:math' as math;
+
+import 'package:flutter/animation.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
+import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
 
-/// Stateful controller for the synthetic cursor's on-screen position.
+/// Stateless FIR convolution over the recorded cursor path.
 ///
-/// The renderer calls [update] once per frame with the current playhead
-/// position and gets back either `null` (no recorded cursor sample at
-/// this time) or a smoothed [Offset] in screen-space pixels.
+/// Each `update` builds (or reuses) a kernel from the active config's
+/// `(window, curve)` pair, then samples the recorded cursor at past
+/// times relative to `position` weighted by the kernel. There's no
+/// running smoothed-state — every frame is computed from scratch —
+/// so scrubbing the playhead can never strand a stale value.
 ///
-/// Lerps the rendered position toward the recorded position by
-/// [smoothing] each frame:
-///   - 1.0 → no smoothing, cursor draws exactly at the recorded
-///     position (matches the historical behavior).
-///   - lower → cursor visibly lags then catches up gracefully.
-///
-/// Idempotent for the same [position] so a parent setState that
-/// triggers an extra builder run for the same frame doesn't lerp
-/// twice and visibly jump the cursor.
+/// Two caches:
+///   - kernel cache, keyed by (window, curve) — invalidated when the
+///     config changes,
+///   - result cache, keyed by `position` — fixes the parent-setState
+///     double-builder problem (same as ZoomFocalController).
 class CursorMotionController {
-  /// Beyond this gap between consecutive [update] calls we treat the
-  /// playhead as scrubbed (or jumped) and snap to the new raw position
-  /// instead of lerping — otherwise the cursor would visibly drift
-  /// across the screen at the smoothing rate.
-  static const Duration _snapThreshold = Duration(milliseconds: 100);
+  // Kernel cache.
+  Duration? _kernelWindow;
+  Curve? _kernelCurve;
+  int? _kernelFps;
+  List<double>? _kernelWeights;
 
-  Offset? _smoothed;
-  Duration? _lastSmoothedAt;
+  // Result cache (idempotency for same-frame rebuilds).
   Duration? _cachedPosition;
   CursorMotionUpdate? _cachedResult;
+  Object? _cachedConfigKey;
 
   CursorMotionUpdate? update({
     required Duration position,
     required CursorRecording cursorRecording,
-    double smoothing = 1.0,
+    required CursorAnimationConfig config,
+    required int fps,
   }) {
-    if (_cachedPosition == position) return _cachedResult;
+    final configKey = _configKey(config, fps);
+    if (_cachedPosition == position && _cachedConfigKey == configKey) {
+      return _cachedResult;
+    }
     _cachedPosition = position;
+    _cachedConfigKey = configKey;
 
-    final raw = cursorAt(cursorRecording, position);
-    if (raw == null) {
-      _smoothed = null;
-      _lastSmoothedAt = null;
+    if (config.window == Duration.zero) {
+      // Snap path — no FIR, no kernel.
+      final raw = cursorAt(cursorRecording, position);
+      if (raw == null) {
+        _cachedResult = null;
+        return null;
+      }
+      _cachedResult = CursorMotionUpdate(
+        screenPos: Offset(raw.x, raw.y),
+        isClicked: raw.isClicked,
+      );
+      return _cachedResult;
+    }
+
+    final weights = _ensureKernel(window: config.window, curve: config.firCurve, fps: fps);
+    final framePeriodMicros = (1000000 / fps).round();
+
+    double accX = 0;
+    double accY = 0;
+    double accW = 0;
+    bool anyClicked = false;
+    for (var i = 0; i < weights.length; i++) {
+      final tapMicros = position.inMicroseconds - i * framePeriodMicros;
+      final tapTime = Duration(
+        microseconds: tapMicros < 0 ? 0 : tapMicros,
+      );
+      final s = cursorAt(cursorRecording, tapTime);
+      if (s == null) continue;
+      accX += s.x * weights[i];
+      accY += s.y * weights[i];
+      accW += weights[i];
+      if (i == 0 && s.isClicked) anyClicked = true;
+    }
+    if (accW == 0) {
       _cachedResult = null;
       return null;
     }
-
-    final rawOffset = Offset(raw.x, raw.y);
-    final scrubbed = _lastSmoothedAt == null ||
-        (position - _lastSmoothedAt!).abs() > _snapThreshold;
-    if (_smoothed == null || smoothing >= 1.0 || scrubbed) {
-      _smoothed = rawOffset;
-    } else {
-      _smoothed = Offset.lerp(_smoothed!, rawOffset, smoothing)!;
-    }
-    _lastSmoothedAt = position;
-
+    final inv = 1.0 / accW;
     _cachedResult = CursorMotionUpdate(
-      screenPos: _smoothed!,
-      isClicked: raw.isClicked,
+      screenPos: Offset(accX * inv, accY * inv),
+      isClicked: anyClicked,
     );
     return _cachedResult;
   }
 
-  /// Drop all smoothing state. Use when switching recordings or
-  /// scrubbing past gaps so the next call snaps cleanly.
   void reset() {
-    _smoothed = null;
-    _lastSmoothedAt = null;
     _cachedPosition = null;
     _cachedResult = null;
+    _cachedConfigKey = null;
+  }
+
+  // --- internals --------------------------------------------------------
+
+  Object _configKey(CursorAnimationConfig c, int fps) =>
+      Object.hash(c.window.inMicroseconds, c.firCurve.runtimeType,
+          identityHashCode(c.firCurve), fps);
+
+  List<double> _ensureKernel({
+    required Duration window,
+    required Curve curve,
+    required int fps,
+  }) {
+    if (_kernelWindow == window &&
+        identical(_kernelCurve, curve) &&
+        _kernelFps == fps &&
+        _kernelWeights != null) {
+      return _kernelWeights!;
+    }
+
+    final n = math.max(1, (window.inMicroseconds * fps / 1000000).round());
+    final weights = List<double>.filled(n, 0);
+    double sum = 0;
+    for (var i = 0; i < n; i++) {
+      final hi = curve.transform(((n - i) / n).clamp(0.0, 1.0));
+      final lo = curve.transform(((n - i - 1) / n).clamp(0.0, 1.0));
+      final w = (hi - lo).abs();
+      weights[i] = w;
+      sum += w;
+    }
+    if (sum > 0) {
+      for (var i = 0; i < n; i++) {
+        weights[i] /= sum;
+      }
+    } else {
+      // Degenerate curve — fall back to "snap to most recent tap".
+      weights[0] = 1.0;
+    }
+
+    _kernelWindow = window;
+    _kernelCurve = curve;
+    _kernelFps = fps;
+    _kernelWeights = weights;
+    return weights;
   }
 }
 

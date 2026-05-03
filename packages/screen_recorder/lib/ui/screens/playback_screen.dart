@@ -7,6 +7,7 @@ import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
+import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
@@ -576,7 +577,8 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                 ? _cursorMotionController.update(
                     position: pos,
                     cursorRecording: _cursorRecording,
-                    smoothing: _cursorAnimationStyle.smoothing,
+                    config: CursorAnimationConfig.preset(_cursorAnimationStyle),
+                    fps: _metadata?.fps ?? 60,
                   )
                 : null;
 
