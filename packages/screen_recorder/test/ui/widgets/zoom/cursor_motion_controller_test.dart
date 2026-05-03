@@ -158,9 +158,9 @@ void main() {
         (micros: 0, x: 0, y: 0, clicked: false),
         (micros: 1000000, x: 200, y: 100, clicked: false),
       ]);
-      const cfg = CursorAnimationConfig.custom(
+      final cfg = CursorAnimationConfig.custom(
         curve: CubicBezierCurveDummy.testCurve,
-        window: Duration(milliseconds: 300),
+        window: const Duration(milliseconds: 300),
       );
       final out = ctrl.update(
         position: const Duration(milliseconds: 500),

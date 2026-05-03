@@ -15,9 +15,9 @@ void main() {
 
     test('custom config resolves curve to the supplied bezier', () {
       const c = CubicBezierCurve(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.4);
-      const cfg = ScreenAnimationConfig.custom(
+      final cfg = ScreenAnimationConfig.custom(
         curve: c,
-        badgeDuration: Duration(milliseconds: 500),
+        badgeDuration: const Duration(milliseconds: 500),
       );
       expect(cfg.badgeCurve, isA<Cubic>());
       expect(cfg.rampCurve, isA<Cubic>());
@@ -26,7 +26,7 @@ void main() {
 
     test('custom without explicit duration falls back to Smooth preset', () {
       const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
-      const cfg = ScreenAnimationConfig.custom(curve: c);
+      final cfg = ScreenAnimationConfig.custom(curve: c);
       expect(cfg.badgeDuration, ScreenAnimationStyle.smooth.badgeDuration);
     });
 
@@ -47,9 +47,9 @@ void main() {
 
     test('custom config carries user window + curve', () {
       const c = CubicBezierCurve(x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0);
-      const cfg = CursorAnimationConfig.custom(
+      final cfg = CursorAnimationConfig.custom(
         curve: c,
-        window: Duration(milliseconds: 500),
+        window: const Duration(milliseconds: 500),
       );
       expect(cfg.window, const Duration(milliseconds: 500));
       expect(cfg.firCurve, isA<Cubic>());

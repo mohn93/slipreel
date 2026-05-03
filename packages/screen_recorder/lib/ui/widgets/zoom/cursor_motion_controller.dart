@@ -60,10 +60,10 @@ class CursorMotionController {
     final weights = _ensureKernel(window: config.window, curve: config.firCurve, fps: fps);
     final framePeriodMicros = (1000000 / fps).round();
 
+    bool clicked = false;
     double accX = 0;
     double accY = 0;
     double accW = 0;
-    bool anyClicked = false;
     for (var i = 0; i < weights.length; i++) {
       final tapMicros = position.inMicroseconds - i * framePeriodMicros;
       final tapTime = Duration(
@@ -74,7 +74,9 @@ class CursorMotionController {
       accX += s.x * weights[i];
       accY += s.y * weights[i];
       accW += weights[i];
-      if (i == 0 && s.isClicked) anyClicked = true;
+      // Render the most-recent tap's click state — matches the legacy
+      // IIR behavior. Older taps don't extend the click visibly.
+      if (i == 0) clicked = s.isClicked;
     }
     if (accW == 0) {
       _cachedResult = null;
@@ -83,7 +85,7 @@ class CursorMotionController {
     final inv = 1.0 / accW;
     _cachedResult = CursorMotionUpdate(
       screenPos: Offset(accX * inv, accY * inv),
-      isClicked: anyClicked,
+      isClicked: clicked,
     );
     return _cachedResult;
   }
@@ -118,7 +120,11 @@ class CursorMotionController {
     for (var i = 0; i < n; i++) {
       final hi = curve.transform(((n - i) / n).clamp(0.0, 1.0));
       final lo = curve.transform(((n - i - 1) / n).clamp(0.0, 1.0));
-      final w = (hi - lo).abs();
+      // Kernel must be non-negative — an FIR that averages past samples
+      // can't have "anti-weight" frames. For overshoot curves where the
+      // signed derivative dips negative, treat that segment as zero
+      // contribution rather than mirroring it.
+      final w = math.max(0.0, hi - lo);
       weights[i] = w;
       sum += w;
     }
