@@ -1,8 +1,11 @@
 import 'package:flutter/painting.dart';
 
 enum ExportFormat { mp4, gif }
+
 enum ExportResolution { r720p, r1080p, r4k }
+
 enum CompressionTier { studio, socialMedia, web, webLow }
+
 enum ExportDestination { file, clipboard, shareableLink }
 
 const kFrameRateOptions = <int>[60, 50, 30, 25, 24, 20, 10];
@@ -27,12 +30,12 @@ class ExportSettings {
   final bool isPrivate;
 
   factory ExportSettings.defaults() => const ExportSettings(
-        format: ExportFormat.mp4,
-        resolution: ExportResolution.r1080p,
-        compression: CompressionTier.web,
-        frameRate: 30,
-        destination: ExportDestination.file,
-      );
+    format: ExportFormat.mp4,
+    resolution: ExportResolution.r1080p,
+    compression: CompressionTier.web,
+    frameRate: 30,
+    destination: ExportDestination.file,
+  );
 
   ExportSettings copyWith({
     ExportFormat? format,
@@ -41,6 +44,7 @@ class ExportSettings {
     int? frameRate,
     ExportDestination? destination,
     String? title,
+
     /// Pass `true` to set `title` to null. Distinguishes "leave alone"
     /// (the default) from "explicitly clear" — `copyWith(title: null)`
     /// alone can't, because `null` is the param-not-supplied default.
@@ -59,14 +63,14 @@ class ExportSettings {
   }
 
   Map<String, dynamic> toJson() => {
-        'format': format.name,
-        'resolution': resolution.name,
-        'compression': compression.name,
-        'frameRate': frameRate,
-        'destination': destination.name,
-        if (title != null) 'title': title,
-        'isPrivate': isPrivate,
-      };
+    'format': format.name,
+    'resolution': resolution.name,
+    'compression': compression.name,
+    'frameRate': frameRate,
+    'destination': destination.name,
+    if (title != null) 'title': title,
+    'isPrivate': isPrivate,
+  };
 
   factory ExportSettings.fromJson(Map<String, dynamic> json) {
     final formatStr = json['format'] as String?;
@@ -82,7 +86,8 @@ class ExportSettings {
     final resolutionStr = json['resolution'] as String?;
     if (resolutionStr == null) {
       throw FormatException(
-          'ExportSettings: missing required field "resolution"');
+        'ExportSettings: missing required field "resolution"',
+      );
     }
     final resolution = _decodeEnum<ExportResolution>(
       resolutionStr,
@@ -93,7 +98,8 @@ class ExportSettings {
     final compressionStr = json['compression'] as String?;
     if (compressionStr == null) {
       throw FormatException(
-          'ExportSettings: missing required field "compression"');
+        'ExportSettings: missing required field "compression"',
+      );
     }
     final compression = _decodeEnum<CompressionTier>(
       compressionStr,
@@ -103,13 +109,16 @@ class ExportSettings {
 
     final frameRate = json['frameRate'] as int?;
     if (frameRate == null) {
-      throw FormatException('ExportSettings: missing required field "frameRate"');
+      throw FormatException(
+        'ExportSettings: missing required field "frameRate"',
+      );
     }
 
     final destinationStr = json['destination'] as String?;
     if (destinationStr == null) {
       throw FormatException(
-          'ExportSettings: missing required field "destination"');
+        'ExportSettings: missing required field "destination"',
+      );
     }
     final destination = _decodeEnum<ExportDestination>(
       destinationStr,
@@ -137,7 +146,8 @@ class ExportSettings {
       if (v.name == name) return v;
     }
     throw FormatException(
-        'ExportSettings: invalid value "$name" for field "$fieldName"');
+      'ExportSettings: invalid value "$name" for field "$fieldName"',
+    );
   }
 
   @override
@@ -156,14 +166,14 @@ class ExportSettings {
 
   @override
   int get hashCode => Object.hash(
-        format,
-        resolution,
-        compression,
-        frameRate,
-        destination,
-        title,
-        isPrivate,
-      );
+    format,
+    resolution,
+    compression,
+    frameRate,
+    destination,
+    title,
+    isPrivate,
+  );
 
   @override
   String toString() =>
