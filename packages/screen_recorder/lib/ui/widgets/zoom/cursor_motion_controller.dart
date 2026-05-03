@@ -118,8 +118,13 @@ class CursorMotionController {
     final weights = List<double>.filled(n, 0);
     double sum = 0;
     for (var i = 0; i < n; i++) {
-      final hi = curve.transform(((n - i) / n).clamp(0.0, 1.0));
-      final lo = curve.transform(((n - i - 1) / n).clamp(0.0, 1.0));
+      // i indexes taps from "now" (i=0) backward in time. The kernel
+      // must put the curve's *initial* derivative on the most recent
+      // tap so an ease-out curve produces ease-out cursor motion: a
+      // step input then settles as `curve(T/W)` (fast start, slow
+      // settle). Mapping i=0 → curve(1/n) - curve(0).
+      final hi = curve.transform(((i + 1) / n).clamp(0.0, 1.0));
+      final lo = curve.transform((i / n).clamp(0.0, 1.0));
       // Kernel must be non-negative — an FIR that averages past samples
       // can't have "anti-weight" frames. For overshoot curves where the
       // signed derivative dips negative, treat that segment as zero

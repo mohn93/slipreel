@@ -129,6 +129,39 @@ void main() {
       expect(rapid!.screenPos.dx, greaterThan(smooth!.screenPos.dx));
     });
 
+    test('easeOut kernel produces ease-out response after a step (fast start, slow settle)',
+        () {
+      // Step from 0 → 100 at t=500ms, sample shortly after the step.
+      // With a 450 ms easeOutCubic window ("smooth"), after ~25% of the
+      // window the cursor should already be well past 25% of the way to
+      // the target — that's the defining feature of an ease-out
+      // response (fast initial movement). A bug we hit once: the kernel
+      // got reversed, producing ease-IN behavior (slow start, sudden
+      // snap), which felt like "the cursor catches up faster the
+      // bigger the window" because nothing happened until the very
+      // end. Lock the orientation in.
+      final ctrl = CursorMotionController();
+      final rec = _record([
+        (micros: 0, x: 0, y: 0, clicked: false),
+        (micros: 499000, x: 0, y: 0, clicked: false),
+        (micros: 500000, x: 100, y: 0, clicked: false),
+        (micros: 2000000, x: 100, y: 0, clicked: false),
+      ]);
+
+      // Smooth window = 450 ms. 100 ms into the step ≈ 22% of W.
+      // ease-out: response ≈ 1 - (1 - 0.22)^3 ≈ 0.53 → ~53.
+      // ease-in (the bug): response ≈ 0.22^3 ≈ 0.01 → ~1.
+      final out = ctrl.update(
+        position: const Duration(milliseconds: 600),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+        fps: 60,
+      );
+      expect(out!.screenPos.dx, greaterThan(40),
+          reason: 'easeOut FIR must move >40% of the way after ~22% of the '
+              'window; values near 0 mean the kernel is reversed (ease-in).');
+    });
+
     test('reset() clears the cache so the next update recomputes', () {
       final ctrl = CursorMotionController();
       final rec = _record([
