@@ -28,9 +28,30 @@ class _FakeLibrary implements CurveLibrary {
   }
 }
 
+/// Tall narrow viewport mirrors the inspector pane the editor lives in.
+/// Without it the default 800x600 test surface either pushes the bottom
+/// of the editor off-screen (no scroll wrapper anymore) or makes the
+/// square graph 800px tall and shoves the chip row out of view.
+void _useInspectorViewport(WidgetTester tester) {
+  tester.view.physicalSize = const Size(280, 1200);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+/// Walk a few frames to let _refreshLibrary's microtask resolve and
+/// the AnimationController repaint cycles flush. Don't use
+/// pumpAndSettle — the demo controller never settles.
+Future<void> _pumpFrames(WidgetTester tester) async {
+  for (var i = 0; i < 4; i++) {
+    await tester.pump(const Duration(milliseconds: 20));
+  }
+}
+
 void main() {
   testWidgets('numeric input edits flow back to onChanged on submit',
       (tester) async {
+    _useInspectorViewport(tester);
     CubicBezierCurve? captured;
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -57,6 +78,7 @@ void main() {
   });
 
   testWidgets('numeric input clamps x1 to [0, 1]', (tester) async {
+    _useInspectorViewport(tester);
     CubicBezierCurve? captured;
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -83,6 +105,7 @@ void main() {
   });
 
   testWidgets('clicking a built-in chip overwrites the curve', (tester) async {
+    _useInspectorViewport(tester);
     CubicBezierCurve? captured;
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -99,7 +122,7 @@ void main() {
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await _pumpFrames(tester);
 
     await tester.tap(find.byKey(const ValueKey('curveEditor.chip.ease')));
     await tester.pump();
@@ -109,6 +132,7 @@ void main() {
 
   testWidgets('Save to library persists then shows the new chip',
       (tester) async {
+    _useInspectorViewport(tester);
     final lib = _FakeLibrary();
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -125,14 +149,14 @@ void main() {
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await _pumpFrames(tester);
 
     await tester.tap(find.byKey(const ValueKey('curveEditor.saveButton')));
-    await tester.pumpAndSettle();
+    await _pumpFrames(tester);
     await tester.enterText(
         find.byKey(const ValueKey('curveEditor.saveNameField')), 'snap-back');
     await tester.tap(find.byKey(const ValueKey('curveEditor.saveConfirm')));
-    await tester.pumpAndSettle();
+    await _pumpFrames(tester);
 
     expect(lib.list().then((l) => l.first.name), completion('snap-back'));
     expect(find.byKey(const ValueKey('curveEditor.chip.0')), findsOneWidget);
@@ -140,6 +164,7 @@ void main() {
 
   testWidgets('hides duration slider when showDurationSlider=false',
       (tester) async {
+    _useInspectorViewport(tester);
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: CurveEditor(

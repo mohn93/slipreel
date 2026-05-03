@@ -41,7 +41,7 @@ class _CurveEditorState extends State<CurveEditor>
   late final AnimationController _demoCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1400),
-  );
+  )..repeat(reverse: true);
   int _draggingHandle = 0;
   List<NamedCurve> _saved = const [];
   bool _showSaveField = false;
@@ -67,8 +67,6 @@ class _CurveEditorState extends State<CurveEditor>
       _y1.text = widget.curve.y1.toStringAsFixed(2);
       _x2.text = widget.curve.x2.toStringAsFixed(2);
       _y2.text = widget.curve.y2.toStringAsFixed(2);
-      // Replay the demo dot so the new curve's shape is visible.
-      _demoCtrl.forward(from: 0);
     }
   }
 
@@ -143,10 +141,9 @@ class _CurveEditorState extends State<CurveEditor>
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         const SizedBox(height: 12),
         // Square graph, but capped so the editor stays usable when the
         // parent is much wider than tall (e.g. the inspector at desktop
@@ -258,8 +255,7 @@ class _CurveEditorState extends State<CurveEditor>
               child: const Text('Save'),
             ),
           ]),
-        ],
-      ),
+      ],
     );
   }
 
