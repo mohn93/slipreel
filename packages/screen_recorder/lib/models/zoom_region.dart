@@ -179,6 +179,94 @@ class ZoomRegion {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'rect': {
+        'left': rect.left,
+        'top': rect.top,
+        'width': rect.width,
+        'height': rect.height,
+      },
+      'startTimeMicros': startTime.inMicroseconds,
+      'durationMicros': duration.inMicroseconds,
+      'zoomLevel': zoomLevel,
+      'enterDurationMicros': enterDuration.inMicroseconds,
+      'exitDurationMicros': exitDuration.inMicroseconds,
+      if (rampCurveOverride != null)
+        'rampCurveOverride': rampCurveOverride!.toJson(),
+      'followCursor': followCursor,
+      'followMode': followMode.name,
+      'deadzoneRatio': deadzoneRatio,
+      'followDurationMicros': followDuration.inMicroseconds,
+      if (followCurve != null) 'followCurve': followCurve!.toJson(),
+      'predictiveWindowMicros': predictiveWindow.inMicroseconds,
+    };
+  }
+
+  factory ZoomRegion.fromJson(Map<String, dynamic> json) {
+    final rectJson = json['rect'];
+    if (rectJson is! Map) {
+      throw const FormatException('ZoomRegion.fromJson: missing rect');
+    }
+    final rect = Rect.fromLTWH(
+      (rectJson['left'] as num).toDouble(),
+      (rectJson['top'] as num).toDouble(),
+      (rectJson['width'] as num).toDouble(),
+      (rectJson['height'] as num).toDouble(),
+    );
+
+    Duration micros(String key) => Duration(
+        microseconds: (json[key] as num).toInt());
+    Duration? optMicros(String key) => json[key] == null
+        ? null
+        : Duration(microseconds: (json[key] as num).toInt());
+
+    final modeName = json['followMode'] as String?;
+    FollowMode mode = FollowMode.bounded;
+    if (modeName != null) {
+      FollowMode? matched;
+      for (final m in FollowMode.values) {
+        if (m.name == modeName) {
+          matched = m;
+          break;
+        }
+      }
+      if (matched == null) {
+        throw FormatException(
+            'ZoomRegion.fromJson: unknown followMode "$modeName"');
+      }
+      mode = matched;
+    }
+
+    CubicBezierCurve? parseBezier(Map<String, dynamic>? j) {
+      if (j == null) return null;
+      final c = AnimationCurve.fromJson(j);
+      if (c is! CubicBezierCurve) {
+        throw const FormatException(
+            'ZoomRegion.fromJson: curve override must be a bezier');
+      }
+      return c;
+    }
+
+    return ZoomRegion(
+      rect: rect,
+      startTime: micros('startTimeMicros'),
+      duration: micros('durationMicros'),
+      zoomLevel: (json['zoomLevel'] as num).toDouble(),
+      enterDuration: optMicros('enterDurationMicros'),
+      exitDuration: optMicros('exitDurationMicros'),
+      rampCurveOverride: parseBezier(
+          json['rampCurveOverride'] as Map<String, dynamic>?),
+      followCursor: (json['followCursor'] as bool?) ?? true,
+      followMode: mode,
+      deadzoneRatio: (json['deadzoneRatio'] as num?)?.toDouble() ?? 0.3,
+      followDuration: optMicros('followDurationMicros'),
+      followCurve:
+          parseBezier(json['followCurve'] as Map<String, dynamic>?),
+      predictiveWindow: optMicros('predictiveWindowMicros'),
+    );
+  }
+
   static Rect _constrainRect(Rect rect, Size bounds) {
     final left = rect.left.clamp(0.0, bounds.width);
     final top = rect.top.clamp(0.0, bounds.height);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,8 @@ import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/services/curve_library.dart';
+import 'package:screen_recorder/state/editor_project_state.dart';
+import 'package:screen_recorder/state/editor_project_store.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
@@ -81,6 +84,12 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   // Library row. One instance per playback screen so saves survive
   // animation-tab rebuilds.
   final FileCurveLibrary _curveLibrary = FileCurveLibrary();
+  // Per-recording editor settings (zoom regions, animation configs,
+  // cursor visuals, etc.) — saved to a `<videoPath>.editor.json`
+  // sidecar so the user's edits survive across app sessions.
+  late final EditorProjectStore _projectStore =
+      EditorProjectStore(videoPath: widget.videoPath);
+  Timer? _saveDebounce;
 
   @override
   void initState() {
@@ -123,6 +132,21 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         videoController: _controller,
         vsync: this,
       );
+
+      // Restore the user's saved edits for this recording, if any.
+      // Loaded *before* we mark _isInitialized so the very first
+      // build sees the persisted state and the canvas doesn't flash
+      // its defaults for a frame.
+      final saved = await _projectStore.load();
+      _zoomRegions = List.of(saved.zoomRegions);
+      _screenAnimationConfig = saved.screenAnimationConfig;
+      _cursorAnimationConfig = saved.cursorAnimationConfig;
+      _cursorSize = saved.cursorSize;
+      _cursorStyle = saved.cursorStyle;
+      _cursorClickEffect = saved.cursorClickEffect;
+      _hideCursorOverlay = saved.hideCursorOverlay;
+      _motionBlur = saved.motionBlur;
+
       setState(() {
         _isInitialized = true;
         // Initialize trim selection to full duration
@@ -143,8 +167,39 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     }
   }
 
+  /// Snapshot of the current persistable editor state.
+  EditorProjectState _captureProjectState() => EditorProjectState(
+        zoomRegions: List.unmodifiable(_zoomRegions),
+        screenAnimationConfig: _screenAnimationConfig,
+        cursorAnimationConfig: _cursorAnimationConfig,
+        cursorSize: _cursorSize,
+        cursorStyle: _cursorStyle,
+        cursorClickEffect: _cursorClickEffect,
+        hideCursorOverlay: _hideCursorOverlay,
+        motionBlur: _motionBlur,
+      );
+
+  /// Schedule a debounced save so a slider drag doesn't hammer the
+  /// disk on every tick. Call after any setState that mutates a
+  /// tracked field.
+  void _persistProject() {
+    if (!_isInitialized) return; // Don't overwrite on the load pass.
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 500), () {
+      _projectStore.save(_captureProjectState());
+    });
+  }
+
   @override
   void dispose() {
+    // Flush any pending debounced save before tearing down so the
+    // user doesn't lose the last change they made before navigating
+    // away. Fire-and-forget — atomic write + the store's mutation
+    // queue mean a partially-written file is impossible.
+    _saveDebounce?.cancel();
+    if (_isInitialized) {
+      _projectStore.save(_captureProjectState());
+    }
     _smoothPlayhead?.dispose();
     _controller.dispose();
     _frameSettings.removeListener(_onFrameSettingsChanged);
@@ -197,6 +252,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       _selectedZoomIndex = _zoomRegions.length - 1;
       _isClipSelected = false;
     });
+    _persistProject();
     _controller.seekTo(start);
   }
 
@@ -436,35 +492,51 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                       hideCursor: _hideCursorOverlay,
                       canHideCursor: _metadata?.isPureSource == true &&
                           _cursorRecording.count > 0,
-                      onHideCursorChanged: (v) =>
-                          setState(() => _hideCursorOverlay = v),
+                      onHideCursorChanged: (v) {
+                        setState(() => _hideCursorOverlay = v);
+                        _persistProject();
+                      },
                       cursorSize: _cursorSize,
                       cursorStyle: _cursorStyle,
                       cursorClickEffect: _cursorClickEffect,
-                      onCursorSizeChanged: (v) =>
-                          setState(() => _cursorSize = v),
-                      onCursorStyleChanged: (s) =>
-                          setState(() => _cursorStyle = s),
-                      onCursorClickEffectChanged: (e) =>
-                          setState(() => _cursorClickEffect = e),
+                      onCursorSizeChanged: (v) {
+                        setState(() => _cursorSize = v);
+                        _persistProject();
+                      },
+                      onCursorStyleChanged: (s) {
+                        setState(() => _cursorStyle = s);
+                        _persistProject();
+                      },
+                      onCursorClickEffectChanged: (e) {
+                        setState(() => _cursorClickEffect = e);
+                        _persistProject();
+                      },
                       screenAnimationConfig: _screenAnimationConfig,
                       cursorAnimationConfig: _cursorAnimationConfig,
                       motionBlur: _motionBlur,
-                      onScreenAnimationConfigChanged: (c) =>
-                          setState(() => _screenAnimationConfig = c),
-                      onCursorAnimationConfigChanged: (c) =>
-                          setState(() => _cursorAnimationConfig = c),
-                      onMotionBlurChanged: (v) =>
-                          setState(() => _motionBlur = v),
+                      onScreenAnimationConfigChanged: (c) {
+                        setState(() => _screenAnimationConfig = c);
+                        _persistProject();
+                      },
+                      onCursorAnimationConfigChanged: (c) {
+                        setState(() => _cursorAnimationConfig = c);
+                        _persistProject();
+                      },
+                      onMotionBlurChanged: (v) {
+                        setState(() => _motionBlur = v);
+                        _persistProject();
+                      },
                       curveLibrary: _curveLibrary,
                       onZoomChanged: (index, next) {
                         setState(() => _zoomRegions[index] = next);
+                        _persistProject();
                       },
                       onZoomDeleted: (index) {
                         setState(() {
                           _zoomRegions.removeAt(index);
                           _selectedZoomIndex = null;
                         });
+                        _persistProject();
                       },
                       onSelectionCleared: () => setState(() {
                         _selectedZoomIndex = null;
