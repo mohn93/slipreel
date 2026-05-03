@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/export/export_pipeline.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
+import 'package:screen_recorder/models/export_settings.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
 import 'package:screen_recorder/models/window_frame.dart';
 import 'package:screen_recorder/state/editor_project_state.dart';
@@ -34,6 +35,17 @@ void main() {
         ),
       );
 
+      // r720p.dimensionsFor(320×240) → width = round(320*720/240) = 960 (even),
+      // height = 720. This upscales the 320×240 fixture; the test's goal is
+      // "produces a valid MP4 + sane summary", not pixel-exact dimensions.
+      final settings = const ExportSettings(
+        format: ExportFormat.mp4,
+        resolution: ExportResolution.r720p,
+        compression: CompressionTier.web,
+        frameRate: 30,
+        destination: ExportDestination.file,
+      );
+
       final pipeline = ExportPipeline(
         sourcePath: 'test/fixtures/sample_recording.mp4',
         outputPath: outPath,
@@ -46,10 +58,7 @@ void main() {
         ),
         cursorRecording: CursorRecording(),
         projectState: state,
-        bitrateKbps: 800,
-        outputWidth: 320,
-        outputHeight: 240,
-        outputFps: 30,
+        settings: settings,
       );
 
       final summary = await pipeline.run();

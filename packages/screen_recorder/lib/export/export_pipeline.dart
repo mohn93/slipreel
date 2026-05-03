@@ -4,7 +4,9 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' show Size;
 
+import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
+import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
@@ -23,7 +25,7 @@ import 'isolate_frame_compositor.dart';
 /// The compositor renders at the framed `totalSize` (videoSize +
 /// effective padding) so the export matches the editor preview pixel
 /// for pixel; ffmpeg's `-vf scale=...,pad=...` then fits/letterboxes
-/// that into the user-chosen output preset.
+/// that into the user-chosen output [ExportSettings].
 class ExportPipeline {
   final String sourcePath;
   final String outputPath;
@@ -35,12 +37,9 @@ class ExportPipeline {
   /// `<videoPath>.editor.json` sidecar by the caller.
   final EditorProjectState projectState;
 
-  final int bitrateKbps;
-
-  /// Desired output dimensions / frame rate (from the chosen ExportPreset).
-  final int outputWidth;
-  final int outputHeight;
-  final int outputFps;
+  /// Export settings: resolution, compression, frame rate, and destination.
+  /// Must have [ExportSettings.format] == [ExportFormat.mp4].
+  final ExportSettings settings;
 
   // Cache for a single ffprobe result per pipeline instance.
   FfmpegProbeResult? _probeCache;
@@ -59,12 +58,17 @@ class ExportPipeline {
     required this.sourceMetadata,
     required this.cursorRecording,
     required this.projectState,
-    required this.bitrateKbps,
-    required this.outputWidth,
-    required this.outputHeight,
-    required this.outputFps,
+    required this.settings,
     this.useIsolateCompositor = false,
-  });
+  }) {
+    if (settings.format != ExportFormat.mp4) {
+      throw ArgumentError.value(
+        settings.format,
+        'settings.format',
+        'ExportPipeline handles MP4 only — pass GIF settings to GifExportPipeline.',
+      );
+    }
+  }
 
   /// [onProgress] is called after every encoded frame with a value in
   /// `[0, 1]`. The denominator is `ffprobe`'s `nb_frames`; if that's
@@ -88,15 +92,25 @@ class ExportPipeline {
     final srcWidth = probed.width;
     final srcHeight = probed.height;
 
+    // Derive output dimensions and bitrate from ExportSettings so callers
+    // supply one settings value rather than raw fields.
+    final outDims = settings.resolution.dimensionsFor(
+      Size(srcWidth.toDouble(), srcHeight.toDouble()),
+    );
+    final outWidth = outDims.width.toInt();
+    final outHeight = outDims.height.toInt();
+    final outFps = settings.frameRate;
+    final bitrateKbps = compressionBitrate(settings.resolution, settings.compression);
+
     // Drive the entire pipeline at the chosen output rate. The decoder
     // resamples the source (which may be VFR, e.g. SCStream skips
-    // unchanged frames) to constant-rate outputFps via `-vf fps=`; the
-    // compositor samples cursor / zoom animations at outputFps; the
+    // unchanged frames) to constant-rate outFps via `-vf fps=`; the
+    // compositor samples cursor / zoom animations at outFps; the
     // encoder pipes through 1:1 with no internal up/downsample. Going
     // through a single rate eliminates the jitter caused by mislabeling
     // VFR frames as evenly spaced or by ffmpeg duplicating/dropping
     // frames internally to bridge two different rates.
-    final pipelineFps = outputFps;
+    final pipelineFps = outFps;
 
     final ExportCompositor compositor = useIsolateCompositor
         ? await IsolateFrameCompositor.spawn(
@@ -122,9 +136,9 @@ class ExportPipeline {
     );
     final encoder = FfmpegEncoder(
       outputPath: outputPath,
-      width: outputWidth,
-      height: outputHeight,
-      fps: outputFps,
+      width: outWidth,
+      height: outHeight,
+      fps: outFps,
       bitrateKbps: bitrateKbps,
       audioSourcePath: sourcePath,
       // The encoder receives composed frames at totalSize (the framed

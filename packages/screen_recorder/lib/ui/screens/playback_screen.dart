@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
+import 'package:screen_recorder/models/export_settings.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
@@ -291,6 +292,13 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     );
   }
 
+  // Transitional: legacy preset adapter. Removed in Task 9.
+  ExportResolution _resolutionFromPreset(ExportPreset p) {
+    if (p.height >= 2160) return ExportResolution.r4k;
+    if (p.height >= 1080) return ExportResolution.r1080p;
+    return ExportResolution.r720p;
+  }
+
   Future<void> _showExportDialog() async {
     final preset = await showDialog<ExportPreset>(
       context: context,
@@ -351,6 +359,15 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       ),
     );
 
+    // Transitional: legacy preset adapter. Removed in Task 9.
+    final settings = ExportSettings(
+      format: ExportFormat.mp4,
+      resolution: _resolutionFromPreset(preset),
+      compression: CompressionTier.web, // reasonable default for the legacy dialog
+      frameRate: preset.fps,
+      destination: ExportDestination.file,
+    );
+
     try {
       final pipeline = ExportPipeline(
         sourcePath: widget.videoPath,
@@ -361,10 +378,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         // wallpaper, cursor visuals, animation curves) off the live
         // project state so the export matches the editor preview.
         projectState: _captureProjectState(),
-        bitrateKbps: preset.bitrateKbps,
-        outputWidth: preset.width,
-        outputHeight: preset.height,
-        outputFps: preset.fps,
+        settings: settings,
       );
       final summary = await pipeline.run(
         onProgress: (p) => progress.value = p,
