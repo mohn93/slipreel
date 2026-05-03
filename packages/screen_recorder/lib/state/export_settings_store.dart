@@ -19,6 +19,8 @@ class ExportSettingsStore {
   ExportSettingsStore({required this.filePath});
 
   final String filePath;
+  static const int _currentSchemaVersion = 1;
+  Future<void> _writeQueue = Future.value();
 
   /// Resolve the production path: `<appSupport>/screenflow_studio/export_settings.json`.
   /// Uses `path_provider`'s `getApplicationSupportDirectory()`. Creates
@@ -33,64 +35,58 @@ class ExportSettingsStore {
     return ExportSettingsStore(filePath: filePath);
   }
 
-  static const int _currentSchemaVersion = 1;
-
   /// Load. Returns [ExportSettings.defaults()] when file is missing or
   /// the JSON is unparseable. Logs a warning on corrupt content (don't
   /// throw — the user shouldn't see "your prefs are broken" surfaced).
   /// Throws [FormatException] when schema version is in the future
   /// (downgrades are explicit-fail rather than silent-data-loss).
   Future<ExportSettings> load() async {
-    final f = File(filePath);
-    if (!await f.exists()) {
+    final file = File(filePath);
+    if (!await file.exists()) {
       return ExportSettings.defaults();
     }
+
+    Map<String, dynamic>? json;
     try {
-      final text = await f.readAsString();
-      if (text.trim().isEmpty) {
+      final raw = await file.readAsString();
+      if (raw.trim().isEmpty) {
         return ExportSettings.defaults();
       }
-      final json = jsonDecode(text) as Map<String, dynamic>;
-
-      final schemaVersion = json['schemaVersion'] as int?;
-      if (schemaVersion == null || schemaVersion < 1) {
-        AppLogger.ui.w(
-          'ExportSettingsStore: invalid or missing schema version — falling back to defaults',
-        );
-        return ExportSettings.defaults();
-      }
-
-      if (schemaVersion > _currentSchemaVersion) {
-        throw FormatException(
-          'ExportSettingsStore: unsupported schema version $schemaVersion (max supported: $_currentSchemaVersion)',
-        );
-      }
-
-      final settingsJson = json['settings'] as Map<String, dynamic>?;
-      if (settingsJson == null) {
-        AppLogger.ui.w(
-          'ExportSettingsStore: missing settings field — falling back to defaults',
-        );
-        return ExportSettings.defaults();
-      }
-
-      return ExportSettings.fromJson(settingsJson);
-    } catch (e, stack) {
-      if (e is FormatException && e.message.startsWith('ExportSettingsStore:')) {
-        rethrow;
-      }
+      json = jsonDecode(raw) as Map<String, dynamic>;
+    } catch (e) {
       AppLogger.ui.w(
-        'ExportSettingsStore: failed to load, using defaults',
-        error: e,
-        stackTrace: stack,
+        'ExportSettingsStore: failed to parse $filePath, using defaults: $e',
+      );
+      return ExportSettings.defaults();
+    }
+
+    final v = json['schemaVersion'];
+    if (v is int && v > _currentSchemaVersion) {
+      throw FormatException(
+        'ExportSettingsStore: unsupported schema version $v in $filePath '
+        '(max supported: $_currentSchemaVersion)',
+      );
+    }
+    if (v != _currentSchemaVersion) {
+      AppLogger.ui.w(
+        'ExportSettingsStore: missing/old schemaVersion ($v) in $filePath, using defaults',
+      );
+      return ExportSettings.defaults();
+    }
+
+    try {
+      return ExportSettings.fromJson(json['settings'] as Map<String, dynamic>);
+    } catch (e) {
+      AppLogger.ui.w(
+        'ExportSettingsStore: failed to decode settings in $filePath, using defaults: $e',
       );
       return ExportSettings.defaults();
     }
   }
 
-  Future<void> _writeQueue = Future.value();
   Future<T> _enqueue<T>(Future<T> Function() op) {
     final next = _writeQueue.then((_) => op());
+    // Swallow errors so a single failed save doesn't poison the chain.
     _writeQueue = next.then<void>((_) {}, onError: (_) {});
     return next;
   }
@@ -114,6 +110,8 @@ class ExportSettingsStore {
           error: e,
           stackTrace: stack,
         );
+        // Best-effort cleanup; ignore errors here since the rename
+        // may have already moved the tmp file out from under us.
         try {
           if (await tmp.exists()) await tmp.delete();
         } catch (_) {}

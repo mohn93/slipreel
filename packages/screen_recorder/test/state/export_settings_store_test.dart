@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -89,26 +90,26 @@ void main() {
       expect(restored, newSettings);
     });
 
-    test('concurrent saves are serialized', () async {
-      final filePath = '${tmpDir.path}/settings.json';
-      final store = ExportSettingsStore(filePath: filePath);
-      final baseSettings = ExportSettings.defaults();
+    test('concurrent saves are serialized in submission order', () async {
+      final store = ExportSettingsStore(filePath: '${tmpDir.path}/settings.json');
+      final completionOrder = <int>[];
 
       final futures = <Future<void>>[];
       for (var i = 0; i < 10; i++) {
         futures.add(
           store.save(
-            baseSettings.copyWith(frameRate: 10 + i),
-          ),
+            ExportSettings.defaults().copyWith(frameRate: 30 + (i % 60)),
+          ).then((_) => completionOrder.add(i)),
         );
       }
       await Future.wait(futures);
 
-      final loaded = await store.load();
-      expect(loaded.frameRate, 19);
+      // Saves were submitted 0..9; the queue must complete them in
+      // submission order, not interleaved or out-of-order.
+      expect(completionOrder, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     });
 
-    test('save uses atomic tmp + rename', () async {
+    test('save cleans up tmp file on success', () async {
       final filePath = '${tmpDir.path}/settings.json';
       final store = ExportSettingsStore(filePath: filePath);
       final settings = ExportSettings.defaults();
@@ -118,6 +119,59 @@ void main() {
       expect(File(filePath).existsSync(), isTrue);
       final tmpFile = File('$filePath.tmp');
       expect(tmpFile.existsSync(), isFalse);
+    });
+
+    test('save overwrites a stale .tmp file from a prior crash', () async {
+      final filePath = '${tmpDir.path}/settings.json';
+      // Pre-create a stale tmp file as if a previous run crashed mid-write.
+      await File('$filePath.tmp').writeAsString('garbage from a crash');
+
+      final store = ExportSettingsStore(filePath: filePath);
+      await store.save(ExportSettings.defaults());
+
+      // Tmp file is gone; target file is valid.
+      expect(File('$filePath.tmp').existsSync(), isFalse);
+      expect(File(filePath).existsSync(), isTrue);
+      final reloaded = await store.load();
+      expect(reloaded, ExportSettings.defaults());
+    });
+
+    test('load returns defaults when schemaVersion is missing', () async {
+      final filePath = '${tmpDir.path}/settings.json';
+      await File(filePath).writeAsString(
+        jsonEncode({
+          'settings': {
+            'format': 'mp4',
+            'resolution': 'r1080p',
+            'compression': 'web',
+            'frameRate': 30,
+            'destination': 'file',
+          }
+        }),
+      );
+
+      final store = ExportSettingsStore(filePath: filePath);
+      expect(await store.load(), ExportSettings.defaults());
+    });
+
+    test('load returns defaults when schemaVersion is older than supported',
+        () async {
+      final filePath = '${tmpDir.path}/settings.json';
+      await File(filePath).writeAsString(
+        jsonEncode({
+          'schemaVersion': 0,
+          'settings': {
+            'format': 'mp4',
+            'resolution': 'r1080p',
+            'compression': 'web',
+            'frameRate': 30,
+            'destination': 'file',
+          }
+        }),
+      );
+
+      final store = ExportSettingsStore(filePath: filePath);
+      expect(await store.load(), ExportSettings.defaults());
     });
   });
 }
