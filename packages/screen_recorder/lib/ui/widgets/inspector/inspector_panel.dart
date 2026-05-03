@@ -238,12 +238,10 @@ class _InspectorPanelState extends State<InspectorPanel> {
       onFocalModeChanged: (m) => setState(() => local.focalMode = m),
       curveLibrary: widget.curveLibrary,
       onCurveOverrideChanged: (curve) {
-        final idx = (widget.selection as ZoomSelected).index;
-        final region = widget.zoomRegions[idx];
         final next = curve == null
-            ? region.copyWith(clearRampCurveOverride: true)
-            : region.copyWith(rampCurveOverride: curve);
-        widget.onZoomChanged?.call(idx, next);
+            ? zoom.copyWith(clearRampCurveOverride: true)
+            : zoom.copyWith(rampCurveOverride: curve);
+        widget.onZoomChanged?.call(index, next);
       },
     );
   }
