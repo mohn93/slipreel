@@ -1,5 +1,7 @@
 // packages/screen_recorder/lib/export/export_pipeline.dart
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' show Size;
 
 import '../models/cursor_recording.dart';
@@ -7,6 +9,7 @@ import '../models/recording_metadata.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
+import 'bounded_async_queue.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
 import 'ffmpeg_encoder.dart';
@@ -127,20 +130,59 @@ class ExportPipeline {
     int totalFrames = 0;
 
     final expectedFrames = _probedNbFrames;
-    try {
-      await for (final raw in decoder.frames()) {
-        compositeSw.start();
-        // Frame timestamp at the source rate. SCStream is VFR but ffmpeg
-        // re-times to a constant rate before piping out (see avg_frame_rate
-        // probe in _probeSource), so per-index timing is accurate.
-        final tsMicros = (1000000 * totalFrames) ~/ srcFps;
-        final composited = await compositor.compose(
-          bgra: raw,
-          position: Duration(microseconds: tsMicros),
-        );
-        compositeSw.stop();
 
-        await encoder.writeFrame(composited);
+    // Three-stage producer/consumer pipeline. Decode reads from ffmpeg's
+    // stdout, compose rasterizes the frame chrome + cursor + zoom, encode
+    // pipes the result to the encoder's stdin. Without queues, each frame
+    // serializes through all three; the encoder sits idle while compose
+    // awaits Picture.toImage, the decoder sits idle while the encoder's
+    // stdin flush awaits, etc. Capacity-2 queues give each stage one
+    // frame in hand and one in flight so adjacent stages overlap their
+    // I/O, while still bounding memory (a composed RGBA frame is ~10MB
+    // at 1440p, so worst case ~7 frames in flight ≈ 70MB).
+    final decodedQueue = BoundedAsyncQueue<Uint8List>(2);
+    final composedQueue = BoundedAsyncQueue<Uint8List>(2);
+
+    final decodeFuture = () async {
+      try {
+        await for (final raw in decoder.frames()) {
+          await decodedQueue.add(raw);
+        }
+      } finally {
+        decodedQueue.close();
+      }
+    }();
+
+    final composeFuture = () async {
+      try {
+        var index = 0;
+        while (true) {
+          final raw = await decodedQueue.take();
+          if (raw == null) break;
+          // Frame timestamp at the source rate. SCStream is VFR but
+          // ffmpeg re-times to a constant rate before piping out (see
+          // avg_frame_rate probe in _probeSource), so per-index timing
+          // is accurate.
+          final tsMicros = (1000000 * index) ~/ srcFps;
+          compositeSw.start();
+          final composited = await compositor.compose(
+            bgra: raw,
+            position: Duration(microseconds: tsMicros),
+          );
+          compositeSw.stop();
+          await composedQueue.add(composited);
+          index++;
+        }
+      } finally {
+        composedQueue.close();
+      }
+    }();
+
+    final encodeFuture = () async {
+      while (true) {
+        final composed = await composedQueue.take();
+        if (composed == null) break;
+        await encoder.writeFrame(composed);
         totalFrames++;
         if (onProgress != null &&
             expectedFrames != null &&
@@ -148,12 +190,26 @@ class ExportPipeline {
           onProgress((totalFrames / expectedFrames).clamp(0.0, 1.0));
         }
       }
-    } finally {
-      // Always tear the isolate down, even if the decode/encode loop
-      // bails on an exception — leaking it keeps the engine's raster
-      // resources pinned for the lifetime of the app.
+    }();
+
+    final stageFutures = [decodeFuture, composeFuture, encodeFuture];
+    try {
+      await Future.wait(stageFutures, eagerError: true);
+    } catch (_) {
+      // First stage to fail surfaces here. Close the queues so any
+      // sibling stage parked on take/add unblocks and exits, then wait
+      // for them to fully wind down before we tear the compositor down
+      // — letting them leak into the background risks them touching
+      // disposed engine resources.
+      decodedQueue.close();
+      composedQueue.close();
+      await Future.wait(
+        stageFutures.map((f) => f.then<void>((_) {}, onError: (_) {})),
+      );
       await compositor.dispose();
+      rethrow;
     }
+    await compositor.dispose();
 
     await encoder.finish();
     wallSw.stop();
