@@ -67,7 +67,7 @@ dependencies:
   super_clipboard: ^0.9.1
 
   # Path manipulation — replaces inline _basename/_fileExtension helpers
-  path: any
+  path: ^1.9.0
 
 dev_dependencies:
   flutter_test:
