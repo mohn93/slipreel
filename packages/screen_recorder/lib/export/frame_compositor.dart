@@ -53,7 +53,10 @@ class FrameCompositor {
   /// Source video resolution in pixels (matches the decoder's frame size).
   final Size videoSize;
 
-  /// Source playback rate, used to seed the FIR cursor smoother.
+  /// Rate at which [compose] will be called, used to seed the FIR
+  /// cursor smoother. The export pipeline drives this at the chosen
+  /// `outputFps` so the smoother's window is sized against the rate
+  /// the consumer (encoder) is actually reading at.
   final int fps;
 
   /// Output canvas size — the framed totalSize, rounded to even

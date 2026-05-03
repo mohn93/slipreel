@@ -11,6 +11,16 @@ class FfmpegDecoder {
   final int width;
   final int height;
 
+  /// When set, forces ffmpeg to resample the input to a constant frame
+  /// rate via `-vf fps=N` before emitting raw bytes. Without this, the
+  /// `rawvideo` muxer passes the source's native PTS through unchanged
+  /// — which means VFR captures (SCStream skips frames when nothing on
+  /// screen changes) arrive unevenly and any consumer that timestamps
+  /// frames as `idx / fps` will desynchronize cursor motion / animation
+  /// from screen content. With the filter applied ffmpeg drops or
+  /// duplicates frames so the stream is exactly N frames per second.
+  final int? cfrFps;
+
   /// Total wall-clock milliseconds spent reading/awaiting decoded bytes.
   /// Does not include subprocess spawn time.
   int totalDecodeMs = 0;
@@ -19,12 +29,14 @@ class FfmpegDecoder {
     required this.inputPath,
     required this.width,
     required this.height,
+    this.cfrFps,
   });
 
   Stream<Uint8List> frames() async* {
-    final args = [
+    final args = <String>[
       '-loglevel', 'error',
       '-i', inputPath,
+      if (cfrFps != null) ...['-vf', 'fps=$cfrFps'],
       '-f', 'rawvideo',
       '-pix_fmt', 'bgra',
       '-',

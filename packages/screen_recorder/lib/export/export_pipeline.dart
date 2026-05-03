@@ -44,6 +44,7 @@ class ExportPipeline {
   // Cache for a single ffprobe result per pipeline instance.
   List<int>? _probedDims; // [width, height, fps]
   int? _probedNbFrames; // null when ffprobe couldn't tell us
+  double? _probedDurationSec; // null when ffprobe couldn't tell us
 
   /// Off by default — `Picture.toImage` in a background isolate
   /// crashes the Flutter engine on macOS (segfaults on `flutter test`,
@@ -84,8 +85,16 @@ class ExportPipeline {
     final probed = await _probeSource();
     final srcWidth = probed[0];
     final srcHeight = probed[1];
-    final srcFps =
-        probed[2] > 0 ? probed[2] : (sourceMetadata.fps > 0 ? sourceMetadata.fps : 30);
+
+    // Drive the entire pipeline at the chosen output rate. The decoder
+    // resamples the source (which may be VFR, e.g. SCStream skips
+    // unchanged frames) to constant-rate outputFps via `-vf fps=`; the
+    // compositor samples cursor / zoom animations at outputFps; the
+    // encoder pipes through 1:1 with no internal up/downsample. Going
+    // through a single rate eliminates the jitter caused by mislabeling
+    // VFR frames as evenly spaced or by ffmpeg duplicating/dropping
+    // frames internally to bridge two different rates.
+    final pipelineFps = outputFps;
 
     final ExportCompositor compositor = useIsolateCompositor
         ? await IsolateFrameCompositor.spawn(
@@ -93,20 +102,21 @@ class ExportPipeline {
             cursorRecording: cursorRecording,
             metadata: sourceMetadata,
             videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
-            fps: srcFps,
+            fps: pipelineFps,
           )
         : InProcessExportCompositor(FrameCompositor(
             projectState: projectState,
             cursorRecording: cursorRecording,
             metadata: sourceMetadata,
             videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
-            fps: srcFps,
+            fps: pipelineFps,
           ));
 
     final decoder = FfmpegDecoder(
       inputPath: sourcePath,
       width: srcWidth,
       height: srcHeight,
+      cfrFps: pipelineFps,
     );
     final encoder = FfmpegEncoder(
       outputPath: outputPath,
@@ -119,7 +129,7 @@ class ExportPipeline {
       // output), not the source video resolution.
       sourceWidth: compositor.totalSize.width.toInt(),
       sourceHeight: compositor.totalSize.height.toInt(),
-      sourceFps: srcFps,
+      sourceFps: pipelineFps,
       pixelFormat: FfmpegPixelFormat.rgba,
     );
 
@@ -129,7 +139,24 @@ class ExportPipeline {
     final compositeSw = Stopwatch();
     int totalFrames = 0;
 
-    final expectedFrames = _probedNbFrames;
+    // After CFR-resampling at pipelineFps the actual frame count is
+    // duration * pipelineFps. Prefer the probed duration (most
+    // accurate); fall back to scaling nb_frames by the rate ratio if
+    // duration was missing. If neither is available, leave it null —
+    // the progress bar will stay indeterminate, which is preferable
+    // to a wrong percentage. (Final so Dart can promote across the
+    // encode-stage closure that reads it.)
+    final int? expectedFrames = () {
+      final dur = _probedDurationSec;
+      if (dur != null && dur > 0) {
+        return (dur * pipelineFps).round();
+      }
+      final nb = _probedNbFrames;
+      if (nb != null && probed[2] > 0) {
+        return (nb * pipelineFps / probed[2]).round();
+      }
+      return null;
+    }();
 
     // Three-stage producer/consumer pipeline. Decode reads from ffmpeg's
     // stdout, compose rasterizes the frame chrome + cursor + zoom, encode
@@ -159,11 +186,11 @@ class ExportPipeline {
         while (true) {
           final raw = await decodedQueue.take();
           if (raw == null) break;
-          // Frame timestamp at the source rate. SCStream is VFR but
-          // ffmpeg re-times to a constant rate before piping out (see
-          // avg_frame_rate probe in _probeSource), so per-index timing
-          // is accurate.
-          final tsMicros = (1000000 * index) ~/ srcFps;
+          // The decoder is configured with `-vf fps=pipelineFps`, so
+          // frames arrive at strictly constant cadence regardless of
+          // whether the source is VFR. Per-index timing is therefore
+          // accurate against the cursor recording's wall clock.
+          final tsMicros = (1000000 * index) ~/ pipelineFps;
           compositeSw.start();
           final composited = await compositor.compose(
             bgra: raw,
@@ -215,7 +242,7 @@ class ExportPipeline {
     wallSw.stop();
 
     final wallSec = wallSw.elapsedMilliseconds / 1000.0;
-    final inputDuration = totalFrames > 0 ? totalFrames / srcFps : 0.0;
+    final inputDuration = totalFrames > 0 ? totalFrames / pipelineFps : 0.0;
     final outputBytes = await _fileLength(outputPath);
 
     final summary = ExportPerfSummary(
@@ -238,18 +265,16 @@ class ExportPipeline {
   // ffprobe helpers
   // ---------------------------------------------------------------------------
 
-  /// Runs ffprobe once and caches [width, height, fps_int] for this instance.
+  /// Runs ffprobe once and caches [width, height, fps_int] for this
+  /// instance. Also stashes [_probedNbFrames] and [_probedDurationSec]
+  /// so callers can derive the frame count after CFR resampling.
   ///
-  /// **Why both rate fields are read:** SCStream-captured MP4s are VFR
-  /// (`minimumFrameInterval=1/60s`, but frames only emitted when the
-  /// display changes). For such files `r_frame_rate` reports the
-  /// declared/max rate (60 fps) while `avg_frame_rate` reports the
-  /// actual average. Piping the limited set of decoded frames to ffmpeg
-  /// at the declared 60 fps produces a video stream that ends after a
-  /// fraction of the source duration — the audio track keeps playing
-  /// to the end and the user sees the video freeze. Prefer
-  /// `avg_frame_rate`; fall back to `nb_frames/duration`; finally
-  /// `r_frame_rate` (CFR sources where the two agree).
+  /// The reported fps is informational — the pipeline runs at
+  /// `outputFps` regardless. We still pick `avg_frame_rate` over
+  /// `r_frame_rate` for the log line because for VFR captures
+  /// `r_frame_rate` reports the declared maximum (e.g. 60) while
+  /// `avg_frame_rate` reports what was actually written, which is
+  /// what humans expect to see in diagnostics.
   Future<List<int>> _probeSource() async {
     if (_probedDims != null) return _probedDims!;
 
@@ -316,6 +341,7 @@ class ExportPipeline {
     );
     _probedDims = [w, h, fps];
     _probedNbFrames = nbFrames;
+    _probedDurationSec = dur;
     return _probedDims!;
   }
 

@@ -21,6 +21,22 @@ void main() {
       expect(decoder.totalDecodeMs, greaterThan(0));
     });
 
+    test('cfrFps resamples a 30fps source to a different constant rate',
+        () async {
+      // Source is 30fps × 1s = 30 frames. Asking for 60fps must dup
+      // frames so we end up with ~60 raw frames (allow ±2 for ffmpeg's
+      // own rounding at fixture boundaries).
+      final decoder = FfmpegDecoder(
+        inputPath: 'test/fixtures/sample_recording.mp4',
+        width: 320,
+        height: 240,
+        cfrFps: 60,
+      );
+      final frames = <Uint8List>[];
+      await decoder.frames().forEach(frames.add);
+      expect(frames.length, inInclusiveRange(58, 62));
+    });
+
     test('throws on non-existent file', () async {
       final decoder = FfmpegDecoder(
         inputPath: '/nonexistent/path.mp4',
