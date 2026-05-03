@@ -23,6 +23,12 @@ class FfmpegEncoder {
   final int sourceWidth;
   final int sourceHeight;
 
+  /// Frame rate of the BGRA stream arriving on stdin (decoder/source rate).
+  /// Tells ffmpeg how to interpret stdin timing — must match the rate the
+  /// decoder is actually producing frames at, not the preset's [fps], or
+  /// the encoded video plays at the wrong speed.
+  final int sourceFps;
+
   /// Optional path to the source MP4 — its audio track is muxed into the
   /// output via `-c:a copy` (no re-encode).
   final String? audioSourcePath;
@@ -45,18 +51,25 @@ class FfmpegEncoder {
     this.audioSourcePath,
     int? sourceWidth,
     int? sourceHeight,
+    int? sourceFps,
   })  : sourceWidth = sourceWidth ?? width,
-        sourceHeight = sourceHeight ?? height;
+        sourceHeight = sourceHeight ?? height,
+        sourceFps = sourceFps ?? fps;
 
   List<String> _argsFor(String codec) {
     final args = <String>[
       '-loglevel', 'error',
       '-y',
       // Video input from stdin — always sized to source (decoder) resolution.
+      // The `-r` here describes the rate of frames arriving on stdin
+      // (source rate), NOT the desired output rate. Mismatch here
+      // makes ffmpeg interpret each frame as covering more or less
+      // wall time than it really does → encoded video runs slow or
+      // fast even though it has the right number of frames.
       '-f', 'rawvideo',
       '-pix_fmt', 'bgra',
       '-s', '${sourceWidth}x$sourceHeight',
-      '-r', '$fps',
+      '-r', '$sourceFps',
       '-i', '-',
     ];
     if (audioSourcePath != null) {
@@ -69,8 +82,18 @@ class FfmpegEncoder {
       '-pix_fmt', 'yuv420p',
     ]);
     // Insert scaling filter only when output differs from source.
+    // `force_original_aspect_ratio=decrease` + `pad` preserves the
+    // source aspect by letterboxing (black bars) instead of squeezing
+    // the image when the output preset's aspect doesn't match the
+    // source — without it, a 16:9 capture rendered into a 4:3 preset
+    // would appear visibly stretched.
     if (width != sourceWidth || height != sourceHeight) {
-      args.addAll(['-vf', 'scale=$width:$height']);
+      args.addAll([
+        '-vf',
+        'scale=$width:$height:force_original_aspect_ratio=decrease,'
+            'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black,'
+            'setsar=1',
+      ]);
     }
     args.addAll(['-r', '$fps']);
     if (audioSourcePath != null) {

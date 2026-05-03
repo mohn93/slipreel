@@ -47,16 +47,19 @@ class ExportPipeline {
   });
 
   Future<ExportPerfSummary> run() async {
-    // Use metadata when available; fall back to ffprobe for legacy recordings.
-    final srcWidth = sourceMetadata.widthPx > 0
-        ? sourceMetadata.widthPx
-        : await _probeWidth();
-    final srcHeight = sourceMetadata.heightPx > 0
-        ? sourceMetadata.heightPx
-        : await _probeHeight();
-    final srcFps = sourceMetadata.fps > 0
-        ? sourceMetadata.fps
-        : await _probeFps();
+    // ffprobe is authoritative for dimensions. Recording metadata
+    // stores the *capture* width/height returned by the native plugin,
+    // which can differ from what the encoder actually wrote to the
+    // MP4 (e.g., padded to even values for codec compatibility). If
+    // we trust metadata and the real decoded frames are even one row
+    // taller, ffmpeg streams those extra bytes after each frame and
+    // our frameSize-based slicer drifts a few bytes per frame —
+    // showing up as a slow bottom-to-top scrolling effect on export.
+    final probed = await _probeSource();
+    final srcWidth = probed[0];
+    final srcHeight = probed[1];
+    final srcFps =
+        probed[2] > 0 ? probed[2] : (sourceMetadata.fps > 0 ? sourceMetadata.fps : 30);
 
     final decoder = FfmpegDecoder(
       inputPath: sourcePath,
@@ -72,6 +75,7 @@ class ExportPipeline {
       audioSourcePath: sourcePath,
       sourceWidth: srcWidth,
       sourceHeight: srcHeight,
+      sourceFps: srcFps,
     );
 
     final cursorRenderer = CursorRenderer(
@@ -174,10 +178,6 @@ class ExportPipeline {
     _probedDims = [w, h, fps];
     return _probedDims!;
   }
-
-  Future<int> _probeWidth() async => (await _probeSource())[0];
-  Future<int> _probeHeight() async => (await _probeSource())[1];
-  Future<int> _probeFps() async => (await _probeSource())[2];
 
   Future<int> _fileLength(String path) async {
     try {
