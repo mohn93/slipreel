@@ -115,31 +115,34 @@ class _CurveEditorState extends State<CurveEditor>
     var x2 = widget.curve.x2;
     var y2 = widget.curve.y2;
     // x is clamped to [0, 1] (CSS spec / Flutter Cubic input range).
+    // y is clamped to the editor's visible overshoot range so a typed
+    // value stays consistent with where the handle can be dragged.
     // x1 vs x2 ordering is intentionally not enforced — authoring a
-    // "fold-back" curve is a valid expressive choice, even though it
-    // produces unconventional motion.
+    // "fold-back" curve is a valid expressive choice.
     switch (idx) {
       case 0:
         x1 = v.clamp(0.0, 1.0);
         break;
       case 1:
-        y1 = v.clamp(-0.5, 1.5);
+        y1 = v.clamp(kCurveGraphYMin, kCurveGraphYMax);
         break;
       case 2:
         x2 = v.clamp(0.0, 1.0);
         break;
       case 3:
-        y2 = v.clamp(-0.5, 1.5);
+        y2 = v.clamp(kCurveGraphYMin, kCurveGraphYMax);
         break;
     }
     widget.onCurveChanged(CubicBezierCurve(x1: x1, y1: y1, x2: x2, y2: y2));
   }
 
   void _onDragHandle(int idx, Offset local, Size size) {
-    // Free movement inside the unit square (with overshoot room on y).
-    // No monotonicity constraint between handles — see _commitNumeric.
+    // Free movement inside the visible canvas. No monotonicity
+    // constraint between handles — see _commitNumeric.
     final nx = (local.dx / size.width).clamp(0.0, 1.0);
-    final ny = (1 - (local.dy / size.height)).clamp(-0.5, 1.5);
+    final tFromTop = (local.dy / size.height).clamp(0.0, 1.0);
+    final ny =
+        kCurveGraphYMax - tFromTop * (kCurveGraphYMax - kCurveGraphYMin);
     var x1 = widget.curve.x1;
     var y1 = widget.curve.y1;
     var x2 = widget.curve.x2;
@@ -156,8 +159,10 @@ class _CurveEditorState extends State<CurveEditor>
   }
 
   int _hitTestHandle(Offset local, Size size) {
-    Offset toScreen(double x, double y) =>
-        Offset(x * size.width, (1 - y) * size.height);
+    Offset toScreen(double x, double y) {
+      final ny = (kCurveGraphYMax - y) / (kCurveGraphYMax - kCurveGraphYMin);
+      return Offset(x * size.width, ny * size.height);
+    }
     final h1 = toScreen(widget.curve.x1, widget.curve.y1);
     final h2 = toScreen(widget.curve.x2, widget.curve.y2);
     if ((local - h1).distance < 16) return 1;
@@ -171,16 +176,19 @@ class _CurveEditorState extends State<CurveEditor>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 12),
-        // Square graph, but capped so the editor stays usable when the
-        // parent is much wider than tall (e.g. the inspector at desktop
-        // widths or the 800x600 widget-test viewport).
+        // Graph is taller than wide (1:1.5) because the visible y range
+        // includes overshoot above and below the unit square. Width is
+        // capped so the editor stays usable when the parent is much
+        // wider than tall (e.g. the inspector at desktop widths or the
+        // 800x600 widget-test viewport).
         Center(
           child: LayoutBuilder(builder: (context, c) {
-            final side = c.maxWidth.clamp(0.0, 280.0).toDouble();
-            final size = Size(side, side);
+            final width = c.maxWidth.clamp(0.0, 240.0).toDouble();
+            final height = width / kCurveGraphAspect;
+            final size = Size(width, height);
             return SizedBox(
-              width: side,
-              height: side,
+              width: width,
+              height: height,
               child: GestureDetector(
                 // Hit-test only at press time, not during pan: a press that
                 // starts outside any handle is a no-op for the entire gesture.

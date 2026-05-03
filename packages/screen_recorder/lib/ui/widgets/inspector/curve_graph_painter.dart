@@ -3,10 +3,25 @@ import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart'
     show kInspectorAccent, kInspectorBorder;
 
-/// Renders the bezier graph: axes box, the curve sampled at ~64 points,
-/// tangent guide lines from (0,0)→handle1 and (1,1)→handle2, the two
-/// draggable handles, and (optionally) an animated demo dot whose
-/// horizontal position is `progress` (0–1).
+/// Visible y range for the bezier graph. x always spans [0, 1] (CSS
+/// cubic-bezier domain). y can sit outside [0, 1] when the user
+/// authors overshoot or anticipation, so the graph extends a bit
+/// above and below the unit square to keep those handles in view.
+const double kCurveGraphYMin = -0.25;
+const double kCurveGraphYMax = 1.25;
+
+/// Aspect ratio of the graph drawing area: width / height. With y
+/// spanning 1.5 units and x spanning 1 unit, a 1:1 pixel mapping
+/// gives the graph a 1:1.5 aspect ratio — taller than wide.
+const double kCurveGraphAspect = 1.0 / (kCurveGraphYMax - kCurveGraphYMin);
+
+/// Renders the bezier graph: an outer canvas spanning x∈[0,1] and
+/// y∈[kCurveGraphYMin, kCurveGraphYMax], with the unit square
+/// highlighted as a faint inner box (so the user always knows where
+/// y=0 / y=1 are even after dragging into the overshoot zone).
+/// Plus the curve sampled at ~64 points, tangent guide lines from
+/// (0,0)→handle1 and (1,1)→handle2, the two draggable handles, and
+/// an animated demo dot whose horizontal position is `progress` (0–1).
 class CurveGraphPainter extends CustomPainter {
   CurveGraphPainter({
     required this.curve,
@@ -26,27 +41,44 @@ class CurveGraphPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Axes box.
-    final box = Rect.fromLTWH(0, 0, size.width, size.height);
-    final axesPaint = Paint()
+    Offset toScreen(double x, double y) {
+      final ny = (kCurveGraphYMax - y) / (kCurveGraphYMax - kCurveGraphYMin);
+      return Offset(x * size.width, ny * size.height);
+    }
+
+    // Outer frame around the entire visible coordinate range.
+    final outerPaint = Paint()
       ..color = kInspectorBorder
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
-    canvas.drawRect(box, axesPaint);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      outerPaint,
+    );
 
-    // Light grid (quartiles).
+    // Quartile gridlines inside the unit square.
+    final unitTop = toScreen(0, 1).dy;
+    final unitBottom = toScreen(0, 0).dy;
+    final unitHeight = unitBottom - unitTop;
+    final faintGrid = Paint()
+      ..color = kInspectorBorder.withValues(alpha: 0.3);
     for (var i = 1; i < 4; i++) {
       final dx = size.width * i / 4;
-      final dy = size.height * i / 4;
-      canvas.drawLine(Offset(dx, 0), Offset(dx, size.height),
-          Paint()..color = kInspectorBorder.withValues(alpha: 0.3));
-      canvas.drawLine(Offset(0, dy), Offset(size.width, dy),
-          Paint()..color = kInspectorBorder.withValues(alpha: 0.3));
+      final dy = unitTop + unitHeight * i / 4;
+      canvas.drawLine(Offset(dx, 0), Offset(dx, size.height), faintGrid);
+      canvas.drawLine(Offset(0, dy), Offset(size.width, dy), faintGrid);
     }
 
-    Offset toScreen(double x, double y) {
-      return Offset(x * size.width, (1 - y) * size.height);
-    }
+    // Highlight the unit square — y=0 and y=1 baselines — so the user
+    // can read the overshoot region against a clear landmark.
+    final unitFramePaint = Paint()
+      ..color = kInspectorBorder.withValues(alpha: 0.7)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(0, unitTop), Offset(size.width, unitTop), unitFramePaint);
+    canvas.drawLine(
+      Offset(0, unitBottom), Offset(size.width, unitBottom), unitFramePaint);
 
     // Tangent guide lines.
     final guidePaint = Paint()
@@ -57,12 +89,13 @@ class CurveGraphPainter extends CustomPainter {
 
     // Curve path — sample 64 points using the Flutter Cubic.
     final cubic = Cubic(curve.x1, curve.y1, curve.x2, curve.y2);
-    final path = Path()..moveTo(0, size.height);
+    final path = Path()..moveTo(toScreen(0, 0).dx, toScreen(0, 0).dy);
     const samples = 64;
     for (var i = 1; i <= samples; i++) {
       final tx = i / samples;
       final ty = cubic.transform(tx);
-      path.lineTo(tx * size.width, (1 - ty) * size.height);
+      final p = toScreen(tx, ty);
+      path.lineTo(p.dx, p.dy);
     }
     canvas.drawPath(
       path,
