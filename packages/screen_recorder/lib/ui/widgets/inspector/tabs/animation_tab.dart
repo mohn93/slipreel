@@ -185,6 +185,7 @@ class _AnimationTabState extends State<AnimationTab> {
             library: widget.library,
             showDurationSlider: true,
           ),
+        const SizedBox(height: 12),
         const InspectorSectionDivider(),
         InspectorSlider(
           label: 'Motion blur',
@@ -351,7 +352,7 @@ class _AnimationOptionTileState<T> extends State<_AnimationOptionTile<T>>
 /// Tile that opens the inline curve editor. Renders a tiny preview of
 /// the user's current bezier as the tile's body so the tile reflects
 /// the curve they're about to edit (or just edited).
-class _CustomTile extends StatefulWidget {
+class _CustomTile extends StatelessWidget {
   const _CustomTile({
     required this.selected,
     required this.curve,
@@ -365,27 +366,22 @@ class _CustomTile extends StatefulWidget {
   final double size;
 
   @override
-  State<_CustomTile> createState() => _CustomTileState();
-}
-
-class _CustomTileState extends State<_CustomTile> {
-  @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: widget.onTap,
+      onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        width: widget.size,
+        width: size,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: widget.size,
+              height: size,
               decoration: BoxDecoration(
                 color: kInspectorPanel,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: widget.selected
+                  color: selected
                       ? kInspectorAccent
                       : kInspectorBorder,
                   width: 1,
@@ -393,7 +389,7 @@ class _CustomTileState extends State<_CustomTile> {
               ),
               child: CustomPaint(
                 painter: CurveGraphPainter(
-                  curve: widget.curve,
+                  curve: curve,
                   demoProgress: 0.5,
                   draggingHandle: 0,
                 ),

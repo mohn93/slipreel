@@ -68,10 +68,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   CursorClickEffect _cursorClickEffect = CursorClickEffect.ripple;
   // Animation tab — screen + cursor styles + motion blur amount.
   // motionBlur is captured but not yet rendered.
-  ScreenAnimationStyle _screenAnimationStyle =
-      ScreenAnimationStyle.smooth;
-  CursorAnimationStyle _cursorAnimationStyle =
-      CursorAnimationStyle.smooth;
+  ScreenAnimationConfig _screenAnimationConfig =
+      const ScreenAnimationConfig.preset(ScreenAnimationStyle.smooth);
+  CursorAnimationConfig _cursorAnimationConfig =
+      const CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
   double _motionBlur = 0;
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
@@ -462,28 +462,13 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                           setState(() => _cursorStyle = s),
                       onCursorClickEffectChanged: (e) =>
                           setState(() => _cursorClickEffect = e),
-                      screenAnimationConfig:
-                          ScreenAnimationConfig.preset(_screenAnimationStyle),
-                      cursorAnimationConfig:
-                          CursorAnimationConfig.preset(_cursorAnimationStyle),
+                      screenAnimationConfig: _screenAnimationConfig,
+                      cursorAnimationConfig: _cursorAnimationConfig,
                       motionBlur: _motionBlur,
-                      // TODO(task-11): the playback state is still enum-only,
-                      // so a Custom config can't round-trip — we silently
-                      // drop it here. Task 11 lifts this state to
-                      // ScreenAnimationConfig/CursorAnimationConfig and
-                      // wires Custom into the canvas render.
-                      onScreenAnimationConfigChanged: (c) {
-                        final preset = c.preset;
-                        if (preset != null) {
-                          setState(() => _screenAnimationStyle = preset);
-                        }
-                      },
-                      onCursorAnimationConfigChanged: (c) {
-                        final preset = c.preset;
-                        if (preset != null) {
-                          setState(() => _cursorAnimationStyle = preset);
-                        }
-                      },
+                      onScreenAnimationConfigChanged: (c) =>
+                          setState(() => _screenAnimationConfig = c),
+                      onCursorAnimationConfigChanged: (c) =>
+                          setState(() => _cursorAnimationConfig = c),
                       onMotionBlurChanged: (v) =>
                           setState(() => _motionBlur = v),
                       curveLibrary: _curveLibrary,
@@ -598,7 +583,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                 ? _cursorMotionController.update(
                     position: pos,
                     cursorRecording: _cursorRecording,
-                    config: CursorAnimationConfig.preset(_cursorAnimationStyle),
+                    config: _cursorAnimationConfig,
                     fps: _metadata?.fps ?? 60,
                   )
                 : null;
@@ -678,7 +663,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
               position: pos,
               zoomRegions: _zoomRegions,
               cursorRecording: _cursorRecording,
-              smoothing: _cursorAnimationStyle.smoothing,
+              smoothing: _focalSmoothingFor(_cursorAnimationConfig),
             );
             if (focalUpdate == null) return composition;
 
@@ -690,8 +675,8 @@ class _PlaybackScreenState extends State<PlaybackScreen>
             // level produces a visual snap.
             return TweenAnimationBuilder<double>(
               tween: Tween<double>(end: activeZoom.zoomLevel),
-              duration: _screenAnimationStyle.badgeDuration,
-              curve: _screenAnimationStyle.badgeCurve,
+              duration: _screenAnimationConfig.badgeDuration,
+              curve: _screenAnimationConfig.badgeCurve,
               child: composition,
               builder: (context, animatedZoom, transformChild) {
                 final tweenedRegion =
@@ -701,7 +686,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                   zoomRegion: tweenedRegion,
                   videoSize: videoSize,
                   focalPoint: focalForFrame,
-                  rampCurve: _screenAnimationStyle.rampCurve,
+                  rampCurve: _screenAnimationConfig.rampCurve,
                 );
                 return Transform(
                   transform: transform,
@@ -1010,6 +995,17 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         ],
       ),
     );
+  }
+
+  /// Map the cursor config's FIR window onto the legacy lerp factor
+  /// used by ZoomFocalController. Same perceptual feel as the old
+  /// preset table, just derived from the new config shape.
+  double _focalSmoothingFor(CursorAnimationConfig cfg) {
+    final ms = cfg.window.inMilliseconds;
+    if (ms <= 0)   return 1.00;   // None → snap
+    if (ms <= 90)  return 0.40;   // Rapid
+    if (ms <= 250) return 0.18;   // Medium
+    return 0.08;                  // Smooth or longer custom windows
   }
 }
 
