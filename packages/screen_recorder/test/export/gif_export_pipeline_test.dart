@@ -11,10 +11,6 @@ import 'package:screen_recorder/models/recording_metadata.dart';
 import 'package:screen_recorder/models/window_frame.dart';
 import 'package:screen_recorder/state/editor_project_state.dart';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 ExportSettings _gifSettings({
   ExportResolution resolution = ExportResolution.r720p,
   CompressionTier compression = CompressionTier.web,
@@ -46,10 +42,6 @@ RecordingMetadata _metadata() => RecordingMetadata(
       heightPx: 240,
       fps: 30,
     );
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -303,10 +295,6 @@ void main() {
     });
   });
 }
-
-// ---------------------------------------------------------------------------
-// Test extension
-// ---------------------------------------------------------------------------
 
 extension on EditorProjectState {
   EditorProjectState copyForTest({WindowFrame? windowFrame}) {
