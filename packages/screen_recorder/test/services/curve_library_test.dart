@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/services/curve_library.dart';
 
 void main() {
@@ -25,6 +29,79 @@ void main() {
 
     test('byId returns null for unknown id', () {
       expect(BuiltInCurves.byId('nope'), isNull);
+    });
+  });
+
+  group('FileCurveLibrary', () {
+    late Directory tempDir;
+    late FileCurveLibrary lib;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('curve_lib_test_');
+      lib = FileCurveLibrary(filePath: '${tempDir.path}/curves.json');
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    test('save then list returns the saved curve', () async {
+      const c = CubicBezierCurve(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.4);
+      final saved = await lib.save(name: 'snap-back', curve: c);
+      expect(saved.name, 'snap-back');
+      expect(saved.curve, c);
+
+      final list = await lib.list();
+      expect(list, hasLength(1));
+      expect(list.first.id, saved.id);
+      expect(list.first.curve, c);
+    });
+
+    test('save assigns unique ids', () async {
+      const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
+      final a = await lib.save(name: 'a', curve: c);
+      final b = await lib.save(name: 'b', curve: c);
+      expect(a.id, isNot(b.id));
+    });
+
+    test('rename updates only the name', () async {
+      const c = CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 0.3, y2: 0.4);
+      final saved = await lib.save(name: 'old', curve: c);
+      await lib.rename(saved.id, 'new');
+      final list = await lib.list();
+      expect(list.first.name, 'new');
+      expect(list.first.curve, c);
+      expect(list.first.id, saved.id);
+    });
+
+    test('delete removes the entry', () async {
+      const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
+      final saved = await lib.save(name: 'x', curve: c);
+      await lib.delete(saved.id);
+      expect(await lib.list(), isEmpty);
+    });
+
+    test('atomic write leaves no .tmp on success', () async {
+      const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
+      await lib.save(name: 'x', curve: c);
+      final tmp = File('${tempDir.path}/curves.json.tmp');
+      expect(await tmp.exists(), isFalse);
+    });
+
+    test('corrupt JSON yields empty list, not a throw', () async {
+      final f = File('${tempDir.path}/curves.json');
+      await f.writeAsString('not json{{');
+      expect(await lib.list(), isEmpty);
+    });
+
+    test('schema version 1 is written on save', () async {
+      const c = CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 0.3, y2: 0.4);
+      await lib.save(name: 'v1', curve: c);
+      final raw = await File('${tempDir.path}/curves.json').readAsString();
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      expect(json['version'], 1);
     });
   });
 }
