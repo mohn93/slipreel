@@ -1,7 +1,9 @@
+import 'package:flutter/animation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
@@ -15,6 +17,8 @@ ZoomRegion _zoomAt({
   bool followCursor = true,
   bool boundedFollow = false,
   double deadzoneRatio = 0.3,
+  Duration followDuration = const Duration(milliseconds: 400),
+  CubicBezierCurve? followCurve,
 }) {
   return ZoomRegion(
     rect: rect,
@@ -26,6 +30,8 @@ ZoomRegion _zoomAt({
     followCursor: followCursor,
     boundedFollow: boundedFollow,
     deadzoneRatio: deadzoneRatio,
+    followDuration: followDuration,
+    followCurve: followCurve,
   );
 }
 
@@ -59,16 +65,11 @@ void main() {
     });
 
     test('snaps to cursor position on the first frame of a zoom', () {
-      // Cursor at (500, 400) when zoom becomes active. Even with the
-      // 0.18 lerp factor, the very first call must NOT lerp from null
-      // (or from the rect.center) — the result has to be the raw
-      // cursor target so the focal lands cleanly the moment the zoom
-      // starts.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 2),
-        rect: const Rect.fromLTWH(0, 0, 100, 100), // center (50, 50)
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
       );
       final cursor = _recordingAt([
         (micros: 0, x: 500, y: 400),
@@ -88,14 +89,11 @@ void main() {
     });
 
     test('falls back to rect.center when no cursor sample exists', () {
-      // Empty cursor track is the legacy / window-capture / pre-warmup
-      // shape. Focal must fall back to the static rect center, not
-      // throw or hold null.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 2),
-        rect: const Rect.fromLTWH(200, 100, 400, 300), // center (400, 250)
+        rect: const Rect.fromLTWH(200, 100, 400, 300),
       );
 
       final update = ctrl.update(
@@ -107,72 +105,6 @@ void main() {
 
       expect(update, isNotNull);
       expect(update!.focal, const Offset(400, 250));
-    });
-
-    test('lerps toward target on subsequent frames within same zoom', () {
-      // After the snap on frame 1, frame 2 should lerp from the snapped
-      // value toward the new cursor target by exactly 0.18 (the default
-      // smoothing factor that the playback screen has shipped with).
-      final ctrl = ZoomFocalController();
-      final zoom = _zoomAt(
-        startTime: Duration.zero,
-        duration: const Duration(seconds: 2),
-      );
-      final cursor = _recordingAt([
-        (micros: 0,        x: 100, y: 100),
-        (micros: 1_000_000, x: 200, y: 200),
-      ]);
-
-      // Frame 1: snap to (100, 100).
-      ctrl.update(
-        position: Duration.zero,
-        zoomRegions: [zoom],
-        cursorRecording: cursor,
-        videoSize: _videoSize,
-      );
-
-      // Frame 2: cursor is now at (200, 200). Lerp from (100, 100) at
-      // 0.18 → (118, 118).
-      final update = ctrl.update(
-        position: const Duration(seconds: 1),
-        zoomRegions: [zoom],
-        cursorRecording: cursor,
-        videoSize: _videoSize,
-      );
-
-      expect(update, isNotNull);
-      expect(update!.focal.dx, closeTo(118, 1e-6));
-      expect(update.focal.dy, closeTo(118, 1e-6));
-    });
-
-    test('honors a custom smoothing factor', () {
-      final ctrl = ZoomFocalController();
-      final zoom = _zoomAt(
-        startTime: Duration.zero,
-        duration: const Duration(seconds: 2),
-      );
-      final cursor = _recordingAt([
-        (micros: 0,         x: 0,   y: 0),
-        (micros: 1_000_000, x: 100, y: 100),
-      ]);
-
-      ctrl.update(
-        position: Duration.zero,
-        zoomRegions: [zoom],
-        cursorRecording: cursor,
-        videoSize: _videoSize,
-      );
-
-      // Smoothing 0.5 → halfway between (0, 0) and (100, 100).
-      final update = ctrl.update(
-        position: const Duration(seconds: 1),
-        zoomRegions: [zoom],
-        cursorRecording: cursor,
-        videoSize: _videoSize,
-        smoothing: 0.5,
-      );
-
-      expect(update!.focal, const Offset(50, 50));
     });
 
     test(
@@ -210,10 +142,7 @@ void main() {
 
       expect(crossover, isNotNull);
       expect(crossover!.zoom, same(zoomB));
-      expect(crossover.focal, const Offset(950, 850),
-          reason:
-              'crossing into a new zoom region must snap, not lerp '
-              'from the previous zoom\'s focal');
+      expect(crossover.focal, const Offset(950, 850));
     });
 
     test(
@@ -335,7 +264,6 @@ void main() {
         cursorRecording: cursor,
         videoSize: _videoSize,
       );
-
       final secondAtT2 = ctrl.update(
         position: const Duration(milliseconds: 16),
         zoomRegions: [zoom],
@@ -350,18 +278,15 @@ void main() {
 
     test('followCursor=false pins focal to rect.center even with cursor data',
         () {
-      // Auto-zoom toggle off: camera must stay centered on the zoom
-      // rect for the whole region, regardless of where the cursor
-      // wandered.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 2),
-        rect: const Rect.fromLTWH(200, 100, 400, 300), // center (400, 250)
+        rect: const Rect.fromLTWH(200, 100, 400, 300),
         followCursor: false,
       );
       final cursor = _recordingAt([
-        (micros: 0, x: 1500, y: 900), // far from rect.center
+        (micros: 0, x: 1500, y: 900),
       ]);
 
       final out = ctrl.update(
@@ -373,13 +298,8 @@ void main() {
       expect(out!.focal, const Offset(400, 250));
     });
 
-    test(
-        'bounded follow holds focal while cursor stays inside the deadzone',
+    test('bounded follow holds focal while cursor stays inside the deadzone',
         () {
-      // 1920x1080 video at zoomLevel=2 → viewport in source pixels =
-      // 960x540. deadzone 30% → 288x162 box centered on the focal.
-      // After the snap, a small cursor nudge inside that box must
-      // leave the focal unchanged across many frames.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
@@ -389,19 +309,17 @@ void main() {
         deadzoneRatio: 0.3,
       );
       final cursor = _recordingAt([
-        (micros: 0,         x: 960, y: 540), // viewport center
-        (micros: 1_000_000, x: 1000, y: 560), // 40px right, 20px down
-        (micros: 2_000_000, x: 1050, y: 580), // still inside deadzone
+        (micros: 0,         x: 960, y: 540),
+        (micros: 1_000_000, x: 1000, y: 560),
+        (micros: 2_000_000, x: 1050, y: 580),
       ]);
 
-      // Frame 1 — snap to (960, 540).
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoom],
         cursorRecording: cursor,
         videoSize: _videoSize,
       );
-
       final f2 = ctrl.update(
         position: const Duration(seconds: 1),
         zoomRegions: [zoom],
@@ -415,70 +333,66 @@ void main() {
         videoSize: _videoSize,
       );
 
-      expect(f2!.focal, const Offset(960, 540),
-          reason: 'cursor still inside deadzone — focal must hold');
-      expect(f3!.focal, const Offset(960, 540),
-          reason: 'cursor still inside deadzone — focal must hold');
+      expect(f2!.focal, const Offset(960, 540));
+      expect(f3!.focal, const Offset(960, 540));
     });
 
-    test('bounded follow pulls focal toward cursor when it leaves the deadzone',
-        () {
-      // Same setup as above, but the cursor jumps far enough out of
-      // the 288x162 deadzone box that the focal must start lerping.
-      final ctrl = ZoomFocalController();
-      final zoom = _zoomAt(
-        startTime: Duration.zero,
-        duration: const Duration(seconds: 5),
-        zoomLevel: 2.0,
-        boundedFollow: true,
-        deadzoneRatio: 0.3,
-      );
-      final cursor = _recordingAt([
-        (micros: 0,         x: 960,  y: 540),
-        (micros: 1_000_000, x: 1500, y: 900), // well outside the 288x162 box
-      ]);
-
-      // Frame 1 — snap.
-      ctrl.update(
-        position: Duration.zero,
-        zoomRegions: [zoom],
-        cursorRecording: cursor,
-        videoSize: _videoSize,
-      );
-
-      // Frame 2 — cursor outside deadzone, focal lerps 0.18 toward
-      // (1500, 900).
-      final f2 = ctrl.update(
-        position: const Duration(seconds: 1),
-        zoomRegions: [zoom],
-        cursorRecording: cursor,
-        videoSize: _videoSize,
-      );
-
-      expect(f2!.focal.dx, closeTo(960 + (1500 - 960) * 0.18, 1e-6));
-      expect(f2.focal.dy, closeTo(540 + (900 - 540) * 0.18, 1e-6));
-    });
+    // --- duration / curve tween ------------------------------------------
 
     test(
-        'bounded follow with cursor sitting exactly at the deadzone edge '
-        'still locks (Rect.contains is half-open but boundary stays held)',
-        () {
-      // Cursor at (1104, 540) is exactly at the right edge of a
-      // 288-wide deadzone centered on (960, 540). Rect.contains is
-      // exclusive on the right/bottom, so the cursor counts as
-      // *outside* and the lerp engages. This test pins down that
-      // edge-case so a future refactor doesn't silently flip it.
+        'tween reaches captured target after followDuration with '
+        'easeOutCubic default', () {
+      // Always-centered (no deadzone). Cursor jumps from (0,0) to
+      // (100,0) at t=0. By t=followDuration the focal must equal
+      // (100, 0) regardless of curve shape (curve(1)=1).
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
-        duration: const Duration(seconds: 5),
-        zoomLevel: 2.0,
-        boundedFollow: true,
-        deadzoneRatio: 0.3,
+        duration: const Duration(seconds: 2),
+        followDuration: const Duration(milliseconds: 400),
       );
       final cursor = _recordingAt([
-        (micros: 0,         x: 960,  y: 540),
-        (micros: 1_000_000, x: 1104, y: 540), // exactly half-width away
+        (micros: 0,        x: 0,   y: 0),
+        (micros: 1_000,    x: 100, y: 0), // jumps almost immediately
+      ]);
+
+      // First frame snaps to (0, 0).
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      // Frame 2 — cursor now at (100, 0). Tween starts.
+      ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      // After followDuration has elapsed since the tween started.
+      final settled = ctrl.update(
+        position: const Duration(milliseconds: 16 + 400),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+
+      expect(settled!.focal.dx, closeTo(100, 1e-6));
+      expect(settled.focal.dy, closeTo(0, 1e-6));
+    });
+
+    test('followDuration=0 snaps the focal to the cursor each frame',
+        () {
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        followDuration: Duration.zero,
+      );
+      final cursor = _recordingAt([
+        (micros: 0,        x: 0,   y: 0),
+        (micros: 16_000,   x: 200, y: 0),
       ]);
 
       ctrl.update(
@@ -488,13 +402,193 @@ void main() {
         videoSize: _videoSize,
       );
       final f2 = ctrl.update(
-        position: const Duration(seconds: 1),
+        position: const Duration(milliseconds: 16),
         zoomRegions: [zoom],
         cursorRecording: cursor,
         videoSize: _videoSize,
       );
-      // Lerp engaged → x moved toward 1104.
-      expect(f2!.focal.dx, greaterThan(960));
+
+      expect(f2!.focal, const Offset(200, 0));
+    });
+
+    test('mid-tween retarget keeps elapsed and from but updates to', () {
+      // Cursor jumps to (100, 0), then halfway through the tween it
+      // jumps further to (200, 0). The tween's `from` and start time
+      // must stay locked, only `to` updates — so the final landing
+      // point at t=followDuration is (200, 0), not (100, 0).
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        followDuration: const Duration(milliseconds: 400),
+      );
+      final cursor = _recordingAt([
+        (micros: 0,        x: 0,   y: 0),
+        (micros: 16_000,   x: 100, y: 0),
+        (micros: 200_000,  x: 200, y: 0),
+      ]);
+
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      // Tween starts here aiming at (100, 0).
+      ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      // Mid-tween — cursor moves to (200, 0). Re-target.
+      ctrl.update(
+        position: const Duration(milliseconds: 200),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      // After full followDuration since the tween started.
+      final settled = ctrl.update(
+        position: const Duration(milliseconds: 16 + 400),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+
+      expect(settled!.focal.dx, closeTo(200, 1e-6),
+          reason: 'tween must re-aim at the latest cursor target');
+    });
+
+    test('tween aborts when cursor settles back into the deadzone', () {
+      // Bounded follow with a small cursor excursion. Initial focal
+      // (960, 540), zoom=2 → viewport 960×540, deadzone 30% →
+      // half-width 144 px (range 816..1104 around the focal).
+      //
+      // Cursor jumps to (1200, 540) → outside, tween starts toward
+      // (1200, 540). After 100 ms (eased ≈ 0.508) the focal lands
+      // at ~(1082, 540) and its deadzone is now (938..1226). The
+      // cursor returns to (1000, 540), which is *inside* that
+      // shifted deadzone, so the tween must abort and the focal
+      // must hold (1082, 540) for the rest of the run.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        zoomLevel: 2.0,
+        boundedFollow: true,
+        deadzoneRatio: 0.3,
+        followDuration: const Duration(milliseconds: 400),
+      );
+      final cursor = _recordingAt([
+        (micros: 0,        x: 960,  y: 540),
+        (micros: 16_000,   x: 1200, y: 540), // outside initial dz
+        (micros: 100_000,  x: 1000, y: 540), // inside the shifted dz
+      ]);
+
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      final atAbort = ctrl.update(
+        position: const Duration(milliseconds: 100),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      final later = ctrl.update(
+        position: const Duration(milliseconds: 800),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+
+      expect(later!.focal, atAbort!.focal,
+          reason:
+              'cursor re-entered the (moving) deadzone — focal must '
+              'stay put instead of completing the tween toward '
+              '(1200, 540)');
+    });
+
+    test('followCurve override shapes the tween progress', () {
+      // Linear vs. easeOutCubic: at half the followDuration,
+      //   - linear → focal at 50% of the gap
+      //   - easeOutCubic → focal at 1 - 0.5^3 = 87.5%
+      // Ship the same recording through both configs and check.
+      final cursor = _recordingAt([
+        (micros: 0,        x: 0,   y: 0),
+        (micros: 1_000,    x: 100, y: 0),
+      ]);
+      final dur = const Duration(milliseconds: 400);
+
+      final linearZoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        followDuration: dur,
+        followCurve:
+            const CubicBezierCurve(x1: 0, y1: 0, x2: 1, y2: 1),
+      );
+      final ctrlA = ZoomFocalController();
+      ctrlA.update(
+        position: Duration.zero,
+        zoomRegions: [linearZoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      ctrlA.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [linearZoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      final linearMid = ctrlA.update(
+        position: const Duration(milliseconds: 16 + 200),
+        zoomRegions: [linearZoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      // Linear at t=0.5 → 50.
+      expect(linearMid!.focal.dx, closeTo(50, 0.5));
+
+      // Default easeOutCubic at the same elapsed.
+      final easeZoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        followDuration: dur,
+        // followCurve null → controller uses Curves.easeOutCubic.
+      );
+      final ctrlB = ZoomFocalController();
+      ctrlB.update(
+        position: Duration.zero,
+        zoomRegions: [easeZoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      ctrlB.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [easeZoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      final easeMid = ctrlB.update(
+        position: const Duration(milliseconds: 16 + 200),
+        zoomRegions: [easeZoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+
+      // Curves.easeOutCubic is a Cubic-bezier approximation of
+      // 1-(1-t)^3 (≈ 0.87512 at t=0.5), not the analytical curve.
+      // Loose tolerance keeps the test robust to that approximation.
+      expect(easeMid!.focal.dx, closeTo(87.5, 0.5));
     });
   });
 }

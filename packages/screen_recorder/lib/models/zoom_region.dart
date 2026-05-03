@@ -14,6 +14,7 @@ import 'package:screen_recorder/rendering/animation_curve.dart';
 class ZoomRegion {
   static const Duration _defaultEnter = Duration(milliseconds: 500);
   static const Duration _defaultExit = Duration(milliseconds: 500);
+  static const Duration _defaultFollow = Duration(milliseconds: 400);
 
   final Rect rect;
   final Duration startTime;
@@ -42,6 +43,15 @@ class ZoomRegion {
   /// axis. Ignored when [boundedFollow] is false.
   final double deadzoneRatio;
 
+  /// How long the focal takes to catch up to a new target (cursor
+  /// after a deadzone exit, or rect.center when [followCursor] is
+  /// toggled off). Zero or negative ⇒ snap.
+  final Duration followDuration;
+
+  /// Optional curve shaping the catch-up tween. `null` ⇒ the system
+  /// default (`Curves.easeOutCubic`).
+  final CubicBezierCurve? followCurve;
+
   ZoomRegion({
     required Rect rect,
     required this.startTime,
@@ -54,6 +64,8 @@ class ZoomRegion {
     this.followCursor = true,
     this.boundedFollow = true,
     double deadzoneRatio = 0.3,
+    Duration? followDuration,
+    this.followCurve,
   })  : assert(duration > Duration.zero, 'Duration must be positive'),
         rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
         zoomLevel = zoomLevel.clamp(1.0, 5.0),
@@ -65,7 +77,10 @@ class ZoomRegion {
             (exitDuration ?? _defaultExit).isNegative
                 ? Duration.zero
                 : (exitDuration ?? _defaultExit),
-        deadzoneRatio = deadzoneRatio.clamp(0.0, 1.0);
+        deadzoneRatio = deadzoneRatio.clamp(0.0, 1.0),
+        followDuration = (followDuration ?? _defaultFollow).isNegative
+            ? Duration.zero
+            : (followDuration ?? _defaultFollow);
 
   /// End time of zoom effect
   Duration get endTime => startTime + duration;
@@ -103,6 +118,9 @@ class ZoomRegion {
     bool? followCursor,
     bool? boundedFollow,
     double? deadzoneRatio,
+    Duration? followDuration,
+    CubicBezierCurve? followCurve,
+    bool clearFollowCurve = false,
   }) {
     return ZoomRegion(
       rect: rect ?? this.rect,
@@ -118,6 +136,9 @@ class ZoomRegion {
       followCursor: followCursor ?? this.followCursor,
       boundedFollow: boundedFollow ?? this.boundedFollow,
       deadzoneRatio: deadzoneRatio ?? this.deadzoneRatio,
+      followDuration: followDuration ?? this.followDuration,
+      followCurve:
+          clearFollowCurve ? null : (followCurve ?? this.followCurve),
     );
   }
 
@@ -144,7 +165,9 @@ class ZoomRegion {
           rampCurveOverride == other.rampCurveOverride &&
           followCursor == other.followCursor &&
           boundedFollow == other.boundedFollow &&
-          deadzoneRatio == other.deadzoneRatio;
+          deadzoneRatio == other.deadzoneRatio &&
+          followDuration == other.followDuration &&
+          followCurve == other.followCurve;
 
   @override
   int get hashCode => Object.hash(
@@ -158,5 +181,7 @@ class ZoomRegion {
         followCursor,
         boundedFollow,
         deadzoneRatio,
+        followDuration,
+        followCurve,
       );
 }

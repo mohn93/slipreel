@@ -108,6 +108,55 @@ class ZoomContextInspector extends StatelessWidget {
                     canReset: (zoom.deadzoneRatio - 0.3).abs() > 1e-6,
                   ),
                 ],
+                const SizedBox(height: 24),
+                InspectorSlider(
+                  label: 'Follow duration',
+                  subtitle:
+                      '${zoom.followDuration.inMilliseconds} ms to '
+                      'catch up to a new target',
+                  value:
+                      zoom.followDuration.inMilliseconds.toDouble(),
+                  min: 100,
+                  max: 1500,
+                  onChanged: (v) => onChanged(zoom.copyWith(
+                      followDuration:
+                          Duration(milliseconds: v.toInt()))),
+                  onReset: () => onChanged(zoom.copyWith(
+                      followDuration: const Duration(milliseconds: 400))),
+                  canReset: zoom.followDuration !=
+                      const Duration(milliseconds: 400),
+                ),
+                const SizedBox(height: 16),
+                InspectorToggle(
+                  label: 'Follow curve override',
+                  subtitle:
+                      'Shape the catch-up easing. Default is '
+                      'easeOutCubic.',
+                  value: zoom.followCurve != null,
+                  onChanged: (v) {
+                    if (v) {
+                      onChanged(zoom.copyWith(
+                        followCurve: const CubicBezierCurve(
+                            x1: 0.215, y1: 0.61, x2: 0.355, y2: 1.0),
+                      ));
+                    } else {
+                      onChanged(zoom.copyWith(clearFollowCurve: true));
+                    }
+                  },
+                ),
+                if (zoom.followCurve != null)
+                  CurveEditor(
+                    curve: zoom.followCurve!,
+                    duration: Duration.zero,
+                    durationLabel: '',
+                    durationMin: Duration.zero,
+                    durationMax: Duration.zero,
+                    onCurveChanged: (c) =>
+                        onChanged(zoom.copyWith(followCurve: c)),
+                    onDurationChanged: (_) {},
+                    library: curveLibrary,
+                    showDurationSlider: false,
+                  ),
               ],
               const InspectorSectionDivider(),
               InspectorSlider(

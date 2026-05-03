@@ -204,7 +204,6 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
               zoomRegions: widget.zoomRegions,
               cursorRecording: widget.cursorRecording,
               videoSize: videoSize,
-              smoothing: _focalSmoothingFor(widget.cursorAnimationConfig),
             );
             if (focalUpdate == null) return composition;
 
@@ -271,20 +270,4 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
     );
   }
 
-  /// Map the cursor config's FIR window onto the legacy lerp factor used
-  /// by [ZoomFocalController]. The focal smoothing intentionally only
-  /// reads the window length — not the custom curve's shape — because
-  /// [ZoomFocalController] is a separate IIR low-pass filter for the
-  /// zoom-camera focal point, not the cursor itself. As a result, the
-  /// rendered cursor and the zoom focal point can have visibly
-  /// different lag profiles when a Custom cursor config is in use.
-  /// This is by design: focal lag is a UX-stability concern (not the
-  /// expressive choice the user is making with a custom curve).
-  double _focalSmoothingFor(CursorAnimationConfig cfg) {
-    final ms = cfg.window.inMilliseconds;
-    if (ms <= 0)   return 1.00;   // None → snap
-    if (ms <= 90)  return 0.40;   // Rapid
-    if (ms <= 250) return 0.18;   // Medium
-    return 0.08;                  // Smooth or longer custom windows
-  }
 }
