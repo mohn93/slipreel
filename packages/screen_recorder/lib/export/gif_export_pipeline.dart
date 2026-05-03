@@ -12,6 +12,7 @@ import '../utils/app_logger.dart';
 import '../utils/perf_summary.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
+import 'ffmpeg_probe.dart';
 import 'frame_compositor.dart';
 
 /// Two-pass GIF export pipeline using ffmpeg's palettegen + paletteuse.
@@ -35,8 +36,15 @@ class GifExportPipeline {
     required this.cursorRecording,
     required this.projectState,
     required this.settings,
-  }) : assert(settings.format == ExportFormat.gif,
-            'GifExportPipeline requires settings.format == ExportFormat.gif');
+  }) {
+    if (settings.format != ExportFormat.gif) {
+      throw ArgumentError.value(
+        settings.format,
+        'settings.format',
+        'GifExportPipeline requires ExportFormat.gif',
+      );
+    }
+  }
 
   final String sourcePath;
   final String outputPath;
@@ -45,9 +53,10 @@ class GifExportPipeline {
   final EditorProjectState projectState;
   final ExportSettings settings;
 
-  List<int>? _probedDims; // [width, height, fps]
-  int? _probedNbFrames;
-  double? _probedDurationSec;
+  // Holds the directory created for the palette temp file so we can
+  // delete it recursively in the finally block (fixes the dir-leak that
+  // left empty gif_palette* dirs under /var/folders/…/T/).
+  Directory? _paletteDir;
 
   /// Runs both passes. [onProgress] receives a value in [0, 1]:
   /// pass 1 covers [0, 0.5], pass 2 covers [0.5, 1.0].
@@ -56,9 +65,12 @@ class GifExportPipeline {
   }) async {
     final wallSw = Stopwatch()..start();
 
-    final probed = await _probeSource();
-    final srcWidth = probed[0];
-    final srcHeight = probed[1];
+    final probed = await ffmpegProbe(
+      path: sourcePath,
+      metadataFps: sourceMetadata.fps,
+    );
+    final srcWidth = probed.width;
+    final srcHeight = probed.height;
 
     final fps = settings.frameRate;
     final outputDims = settings.resolution.dimensionsFor(
@@ -69,17 +81,17 @@ class GifExportPipeline {
 
     final paletteSettings = gifPaletteSettings(settings.compression);
 
-    final palettePath = await _makePaletteTmpPath();
+    final palettePath = _makePaletteTmpPath();
 
-    final int? expectedFrames = _expectedFrames(fps);
+    final int? expectedFrames = _expectedFrames(probed, fps);
 
     try {
       final compositeSw1 = Stopwatch();
       var pass1Frames = 0;
 
-      // ----------------------------------------------------------------
-      // Pass 1: decode + compose → ffmpeg palettegen → palette.png
-      // ----------------------------------------------------------------
+      // Pass 1: decode + compose → ffmpeg palettegen → palette.png.
+      // The compositor renders each frame at its full framed size; ffmpeg
+      // then scales and generates the optimum palette from all frames.
       final compositor1 = InProcessExportCompositor(FrameCompositor(
         projectState: projectState,
         cursorRecording: cursorRecording,
@@ -144,14 +156,12 @@ class GifExportPipeline {
         throw Exception('GIF pass 1 (palettegen) exited $exit1: $stderr1');
       }
 
-      // ----------------------------------------------------------------
-      // Pass 2: decode + compose → ffmpeg paletteuse → output.gif
-      // ----------------------------------------------------------------
+      // Pass 2: decode + compose → ffmpeg paletteuse → output.gif.
+      // A fresh compositor is required so animation controllers start from
+      // t=0 and produce the exact same frames that pass 1 sent to palettegen.
       final compositeSw2 = Stopwatch();
       var pass2Frames = 0;
 
-      // Fresh compositor: controllers start from t=0 to produce the same
-      // frames pass 1 sent to palettegen.
       final compositor2 = InProcessExportCompositor(FrameCompositor(
         projectState: projectState,
         cursorRecording: cursorRecording,
@@ -188,35 +198,46 @@ class GifExportPipeline {
       );
 
       try {
-        var index = 0;
-        await for (final raw in decoder2.frames()) {
-          final tsMicros = (1000000 * index) ~/ fps;
-          compositeSw2.start();
-          final composed = await compositor2.compose(
-            bgra: raw,
-            position: Duration(microseconds: tsMicros),
-          );
-          compositeSw2.stop();
-          proc2.stdin.add(composed);
-          await proc2.stdin.flush();
-          pass2Frames++;
-          if (onProgress != null && expectedFrames != null && expectedFrames > 0) {
-            onProgress(
-                (0.5 + pass2Frames / expectedFrames * 0.5).clamp(0.5, 1.0));
+        try {
+          var index = 0;
+          await for (final raw in decoder2.frames()) {
+            final tsMicros = (1000000 * index) ~/ fps;
+            compositeSw2.start();
+            final composed = await compositor2.compose(
+              bgra: raw,
+              position: Duration(microseconds: tsMicros),
+            );
+            compositeSw2.stop();
+            proc2.stdin.add(composed);
+            await proc2.stdin.flush();
+            pass2Frames++;
+            if (onProgress != null && expectedFrames != null && expectedFrames > 0) {
+              onProgress(
+                  (0.5 + pass2Frames / expectedFrames * 0.5).clamp(0.5, 1.0));
+            }
+            index++;
           }
-          index++;
+        } finally {
+          await compositor2.dispose();
+          await proc2.stdin.close();
         }
-      } finally {
-        await compositor2.dispose();
-        await proc2.stdin.close();
-      }
 
-      final exit2 = await proc2.exitCode;
-      if (exit2 != 0) {
-        final stderr2 = await proc2.stderr
-            .transform(SystemEncoding().decoder)
-            .join();
-        throw Exception('GIF pass 2 (paletteuse) exited $exit2: $stderr2');
+        final exit2 = await proc2.exitCode;
+        if (exit2 != 0) {
+          final stderr2 = await proc2.stderr
+              .transform(SystemEncoding().decoder)
+              .join();
+          throw Exception('GIF pass 2 (paletteuse) exited $exit2: $stderr2');
+        }
+      } catch (e) {
+        // Pass 2 failed: remove the partial output so callers cannot
+        // mistake an incomplete file for a successful export.
+        if (await File(outputPath).exists()) {
+          try {
+            await File(outputPath).delete();
+          } catch (_) {}
+        }
+        rethrow;
       }
 
       if (onProgress != null) onProgress(1.0);
@@ -246,99 +267,38 @@ class GifExportPipeline {
       AppLogger.ffmpeg.i(summary.format());
       return summary;
     } finally {
-      // Delete the intermediate palette on both success and error.
+      // Recursively delete the temp directory that holds palette.png.
+      // Deleting the dir (not just the file) avoids leaving behind
+      // empty gif_palette* directories under the system temp folder.
       try {
-        final f = File(palettePath);
-        if (f.existsSync()) f.deleteSync();
-      } catch (_) {}
+        final dir = _paletteDir;
+        if (dir != null && dir.existsSync()) {
+          dir.deleteSync(recursive: true);
+        }
+      } catch (_) {
+        // Best-effort cleanup; if the OS already reaped the temp dir we
+        // have nothing to do.
+      }
     }
   }
 
-  // -----------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
   // Helpers
-  // -----------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
 
-  Future<String> _makePaletteTmpPath() async {
-    final dir = await Directory.systemTemp.createTemp('gif_palette');
-    return '${dir.path}/palette.png';
+  String _makePaletteTmpPath() {
+    _paletteDir = Directory.systemTemp.createTempSync('gif_palette');
+    return '${_paletteDir!.path}/palette.png';
   }
 
-  int? _expectedFrames(int fps) {
-    final dur = _probedDurationSec;
+  int? _expectedFrames(FfmpegProbeResult probed, int fps) {
+    final dur = probed.durationSec;
     if (dur != null && dur > 0) return (dur * fps).round();
-    final nb = _probedNbFrames;
-    if (nb != null) {
-      final probed = _probedDims;
-      if (probed != null && probed[2] > 0) {
-        return (nb * fps / probed[2]).round();
-      }
+    final nb = probed.nbFrames;
+    if (nb != null && probed.fps > 0) {
+      return (nb * fps / probed.fps).round();
     }
     return null;
-  }
-
-  Future<List<int>> _probeSource() async {
-    if (_probedDims != null) return _probedDims!;
-
-    final result = await Process.run('ffprobe', [
-      '-v', 'error',
-      '-select_streams', 'v:0',
-      '-show_entries',
-      'stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,duration',
-      '-of', 'default=nw=1:nk=0',
-      sourcePath,
-    ]);
-    final output = (result.stdout as String).trim();
-    final fields = <String, String>{};
-    for (final line in output.split('\n')) {
-      final eq = line.indexOf('=');
-      if (eq <= 0) continue;
-      fields[line.substring(0, eq).trim()] = line.substring(eq + 1).trim();
-    }
-    final w = int.tryParse(fields['width'] ?? '');
-    final h = int.tryParse(fields['height'] ?? '');
-    if (w == null || h == null) {
-      throw Exception('ffprobe missing width/height: $output');
-    }
-
-    int? parseRate(String? s) {
-      if (s == null || s.isEmpty || s == 'N/A' || s == '0/0') return null;
-      if (s.contains('/')) {
-        final nd = s.split('/');
-        if (nd.length != 2) return null;
-        final num = double.tryParse(nd[0]);
-        final den = double.tryParse(nd[1]);
-        if (num == null || den == null || den <= 0) return null;
-        final v = num / den;
-        return v <= 0 ? null : v.round();
-      }
-      final v = double.tryParse(s);
-      return (v == null || v <= 0) ? null : v.round();
-    }
-
-    final avgRate = parseRate(fields['avg_frame_rate']);
-    final rRate = parseRate(fields['r_frame_rate']);
-    final nbFrames = int.tryParse(fields['nb_frames'] ?? '');
-    final dur = double.tryParse(fields['duration'] ?? '');
-
-    int? derivedRate;
-    if (nbFrames != null && nbFrames > 0 && dur != null && dur > 0) {
-      derivedRate = (nbFrames / dur).round();
-    }
-
-    final fps = avgRate ??
-        derivedRate ??
-        rRate ??
-        (sourceMetadata.fps > 0 ? sourceMetadata.fps : 30);
-
-    AppLogger.ffmpeg.d(
-      'gif probe: avg=$avgRate derived=$derivedRate r=$rRate '
-      'nb_frames=$nbFrames duration=$dur → using $fps fps',
-    );
-
-    _probedDims = [w, h, fps];
-    _probedNbFrames = nbFrames;
-    _probedDurationSec = dur;
-    return _probedDims!;
   }
 
   Future<int> _fileLength(String path) async {

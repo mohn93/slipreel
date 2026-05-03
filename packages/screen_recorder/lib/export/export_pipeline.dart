@@ -13,6 +13,7 @@ import 'bounded_async_queue.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
 import 'ffmpeg_encoder.dart';
+import 'ffmpeg_probe.dart';
 import 'frame_compositor.dart';
 import 'isolate_frame_compositor.dart';
 
@@ -42,9 +43,7 @@ class ExportPipeline {
   final int outputFps;
 
   // Cache for a single ffprobe result per pipeline instance.
-  List<int>? _probedDims; // [width, height, fps]
-  int? _probedNbFrames; // null when ffprobe couldn't tell us
-  double? _probedDurationSec; // null when ffprobe couldn't tell us
+  FfmpegProbeResult? _probeCache;
 
   /// Off by default — `Picture.toImage` in a background isolate
   /// crashes the Flutter engine on macOS (segfaults on `flutter test`,
@@ -82,9 +81,12 @@ class ExportPipeline {
     // taller, ffmpeg streams those extra bytes after each frame and
     // our frameSize-based slicer drifts a few bytes per frame —
     // showing up as a slow bottom-to-top scrolling effect on export.
-    final probed = await _probeSource();
-    final srcWidth = probed[0];
-    final srcHeight = probed[1];
+    final probed = _probeCache ??= await ffmpegProbe(
+      path: sourcePath,
+      metadataFps: sourceMetadata.fps,
+    );
+    final srcWidth = probed.width;
+    final srcHeight = probed.height;
 
     // Drive the entire pipeline at the chosen output rate. The decoder
     // resamples the source (which may be VFR, e.g. SCStream skips
@@ -147,13 +149,13 @@ class ExportPipeline {
     // to a wrong percentage. (Final so Dart can promote across the
     // encode-stage closure that reads it.)
     final int? expectedFrames = () {
-      final dur = _probedDurationSec;
+      final dur = probed.durationSec;
       if (dur != null && dur > 0) {
         return (dur * pipelineFps).round();
       }
-      final nb = _probedNbFrames;
-      if (nb != null && probed[2] > 0) {
-        return (nb * pipelineFps / probed[2]).round();
+      final nb = probed.nbFrames;
+      if (nb != null && probed.fps > 0) {
+        return (nb * pipelineFps / probed.fps).round();
       }
       return null;
     }();
@@ -259,90 +261,6 @@ class ExportPipeline {
     );
     AppLogger.ffmpeg.i(summary.format());
     return summary;
-  }
-
-  // ---------------------------------------------------------------------------
-  // ffprobe helpers
-  // ---------------------------------------------------------------------------
-
-  /// Runs ffprobe once and caches [width, height, fps_int] for this
-  /// instance. Also stashes [_probedNbFrames] and [_probedDurationSec]
-  /// so callers can derive the frame count after CFR resampling.
-  ///
-  /// The reported fps is informational — the pipeline runs at
-  /// `outputFps` regardless. We still pick `avg_frame_rate` over
-  /// `r_frame_rate` for the log line because for VFR captures
-  /// `r_frame_rate` reports the declared maximum (e.g. 60) while
-  /// `avg_frame_rate` reports what was actually written, which is
-  /// what humans expect to see in diagnostics.
-  Future<List<int>> _probeSource() async {
-    if (_probedDims != null) return _probedDims!;
-
-    final streamResult = await Process.run('ffprobe', [
-      '-v', 'error',
-      '-select_streams', 'v:0',
-      '-show_entries',
-      'stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,duration',
-      // `default=nw=1:nk=0` prints `key=value` per line, so we read by
-      // field name. ffprobe's CSV order is schema-internal (not
-      // -show_entries order), and `width,height,r,avg,duration,nb_frames`
-      // looks similar enough to other orderings to silently mis-parse.
-      '-of', 'default=nw=1:nk=0',
-      sourcePath,
-    ]);
-    final streamOutput = (streamResult.stdout as String).trim();
-    final fields = <String, String>{};
-    for (final line in streamOutput.split('\n')) {
-      final eq = line.indexOf('=');
-      if (eq <= 0) continue;
-      fields[line.substring(0, eq).trim()] = line.substring(eq + 1).trim();
-    }
-    final w = int.tryParse(fields['width'] ?? '');
-    final h = int.tryParse(fields['height'] ?? '');
-    if (w == null || h == null) {
-      throw Exception('ffprobe missing width/height: $streamOutput');
-    }
-
-    int? parseRate(String? s) {
-      if (s == null || s.isEmpty || s == 'N/A' || s == '0/0') return null;
-      if (s.contains('/')) {
-        final nd = s.split('/');
-        if (nd.length != 2) return null;
-        final num = double.tryParse(nd[0]);
-        final den = double.tryParse(nd[1]);
-        if (num == null || den == null || den <= 0) return null;
-        final v = num / den;
-        return v <= 0 ? null : v.round();
-      }
-      final v = double.tryParse(s);
-      return (v == null || v <= 0) ? null : v.round();
-    }
-
-    final rRate = parseRate(fields['r_frame_rate']);
-    final avgRate = parseRate(fields['avg_frame_rate']);
-    final nbFrames = int.tryParse(fields['nb_frames'] ?? '');
-    final dur = double.tryParse(fields['duration'] ?? '');
-
-    int? derivedRate;
-    if (nbFrames != null && nbFrames > 0 && dur != null && dur > 0) {
-      derivedRate = (nbFrames / dur).round();
-    }
-
-    // avg_frame_rate is authoritative for VFR (SCStream); fall back to
-    // nb_frames/duration; finally the declared r_frame_rate; finally
-    // the recording metadata's claim; finally 30.
-    final fps = avgRate ??
-        derivedRate ??
-        rRate ??
-        (sourceMetadata.fps > 0 ? sourceMetadata.fps : 30);
-    AppLogger.ffmpeg.d(
-      'probe rates: r=$rRate avg=$avgRate '
-      'nb_frames=$nbFrames duration=$dur → using $fps fps',
-    );
-    _probedDims = [w, h, fps];
-    _probedNbFrames = nbFrames;
-    _probedDurationSec = dur;
-    return _probedDims!;
   }
 
   Future<int> _fileLength(String path) async {
