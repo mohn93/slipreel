@@ -8,6 +8,7 @@ import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
+import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
@@ -686,7 +687,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                   zoomRegion: tweenedRegion,
                   videoSize: videoSize,
                   focalPoint: focalForFrame,
-                  rampCurve: _screenAnimationConfig.rampCurve,
+                  rampCurve: activeZoom.rampCurveOverride is CubicBezierCurve
+                      ? (activeZoom.rampCurveOverride as CubicBezierCurve)
+                          .toFlutterCurve()
+                      : _screenAnimationConfig.rampCurve,
                 );
                 return Transform(
                   transform: transform,
