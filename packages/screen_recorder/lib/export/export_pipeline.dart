@@ -42,12 +42,12 @@ class ExportPipeline {
   List<int>? _probedDims; // [width, height, fps]
   int? _probedNbFrames; // null when ffprobe couldn't tell us
 
-  /// When `true` (the production default), the per-frame compositor
-  /// runs in a background isolate so decoder/encoder I/O on the main
-  /// isolate aren't blocked by `Picture.toImage` CPU work. Tests
-  /// running under `flutter test` should set this to `false` — the
-  /// test harness doesn't reliably attach a child isolate to the
-  /// engine and `Picture.toImage` segfaults during the worker spawn.
+  /// Off by default — `Picture.toImage` in a background isolate
+  /// crashes the Flutter engine on macOS (segfaults on `flutter test`,
+  /// "Lost connection to device" on a real desktop run). The isolate
+  /// path stays in the tree behind this flag so we can revisit it
+  /// once engine support stabilizes; until then, compose runs on the
+  /// main isolate and we accept the throughput hit.
   final bool useIsolateCompositor;
 
   ExportPipeline({
@@ -60,7 +60,7 @@ class ExportPipeline {
     required this.outputWidth,
     required this.outputHeight,
     required this.outputFps,
-    this.useIsolateCompositor = true,
+    this.useIsolateCompositor = false,
   });
 
   /// [onProgress] is called after every encoded frame with a value in
