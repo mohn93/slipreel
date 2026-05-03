@@ -1,4 +1,4 @@
-import 'package:flutter/painting.dart' show Offset;
+import 'package:flutter/painting.dart' show Offset, Rect, Size;
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
@@ -20,8 +20,14 @@ import 'package:screen_recorder/rendering/cursor_geometry.dart';
 ///     target each call. The default factor (0.18) is what the
 ///     playback screen has shipped with.
 ///   - The target is the cursor sample at [position], or the zoom's
-///     `rect.center` if no cursor data is available (legacy recording,
-///     window source, or pre-warmup gap).
+///     `rect.center` when [ZoomRegion.followCursor] is off / there's
+///     no cursor data (legacy recording, window source, pre-warmup gap).
+///   - When [ZoomRegion.boundedFollow] is on, the target is held at
+///     the current focal as long as the cursor stays inside a centered
+///     deadzone box of size `(videoSize / zoomLevel) * deadzoneRatio`.
+///     When the cursor leaves the box, the target switches to the
+///     cursor and the lerp draws the focal toward it; once the cursor
+///     re-enters the moving deadzone, the focal locks again.
 ///
 /// Pure-Dart, no Ticker / Stream / VideoPlayerController dependency,
 /// so it can be unit-tested with synthetic inputs.
@@ -45,10 +51,15 @@ class ZoomFocalController {
   ///
   /// Returns `null` when no zoom region is active at [position].
   /// Idempotent for the same [position] — see [_cachedPosition].
+  ///
+  /// [videoSize] is the source video resolution in pixels and is used
+  /// to size the deadzone box for bounded-follow zooms (the visible
+  /// viewport in source pixels is `videoSize / zoom.zoomLevel`).
   ZoomFocalUpdate? update({
     required Duration position,
     required List<ZoomRegion> zoomRegions,
     required CursorRecording cursorRecording,
+    required Size videoSize,
     double smoothing = 0.18,
   }) {
     if (_cachedPosition == position) {
@@ -64,20 +75,57 @@ class ZoomFocalController {
       return null;
     }
 
-    final rawFocal = _rawFocalFor(
-      activeZoom: activeZoom,
-      position: position,
-      cursorRecording: cursorRecording,
-    );
+    final cursor = cursorAt(cursorRecording, position);
+    final cursorOffset =
+        cursor == null ? null : Offset(cursor.x, cursor.y);
 
+    // The "ideal" target — where the camera would teleport to if there
+    // were no smoothing or deadzone.
+    final Offset baseTarget;
+    if (!activeZoom.followCursor || cursorOffset == null) {
+      baseTarget = activeZoom.rect.center;
+    } else {
+      baseTarget = cursorOffset;
+    }
+
+    // First frame of this zoom — snap, never lerp.
     if (!identical(activeZoom, _previousActiveZoom)) {
       _previousActiveZoom = activeZoom;
-      _smoothedFocal = rawFocal;
-    } else {
-      final prev = _smoothedFocal;
-      _smoothedFocal =
-          prev == null ? rawFocal : Offset.lerp(prev, rawFocal, smoothing)!;
+      _smoothedFocal = baseTarget;
+      _cachedResult =
+          ZoomFocalUpdate(zoom: activeZoom, focal: baseTarget);
+      return _cachedResult;
     }
+
+    // Apply the deadzone (only when actually following the cursor).
+    // Effective target = current focal while cursor is inside a box
+    // of size (viewport * deadzoneRatio) centered on the focal;
+    // otherwise the target follows the cursor and the lerp drags the
+    // focal toward it.
+    Offset target = baseTarget;
+    if (activeZoom.followCursor &&
+        activeZoom.boundedFollow &&
+        cursorOffset != null &&
+        _smoothedFocal != null &&
+        activeZoom.deadzoneRatio > 0.0 &&
+        videoSize.width > 0 &&
+        videoSize.height > 0) {
+      final z = activeZoom.zoomLevel;
+      final dzW = (videoSize.width / z) * activeZoom.deadzoneRatio;
+      final dzH = (videoSize.height / z) * activeZoom.deadzoneRatio;
+      final dz = Rect.fromCenter(
+        center: _smoothedFocal!,
+        width: dzW,
+        height: dzH,
+      );
+      if (dz.contains(cursorOffset)) {
+        target = _smoothedFocal!;
+      }
+    }
+
+    final prev = _smoothedFocal;
+    _smoothedFocal =
+        prev == null ? target : Offset.lerp(prev, target, smoothing)!;
 
     _cachedResult =
         ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
@@ -101,16 +149,6 @@ class ZoomFocalController {
       if (z.isActive(position)) return z;
     }
     return null;
-  }
-
-  static Offset _rawFocalFor({
-    required ZoomRegion activeZoom,
-    required Duration position,
-    required CursorRecording cursorRecording,
-  }) {
-    final cursor = cursorAt(cursorRecording, position);
-    if (cursor != null) return Offset(cursor.x, cursor.y);
-    return activeZoom.rect.center;
   }
 }
 

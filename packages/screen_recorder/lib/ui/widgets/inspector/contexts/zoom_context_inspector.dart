@@ -7,11 +7,10 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Properties view shown when a zoom pill is selected on the timeline.
 ///
-/// Zoom level / enter / exit map directly onto ZoomRegion fields and
-/// write through the [onChanged] callback. "Follow cursor" and "Focal
-/// mode" are placeholders — the cursor-follow pipeline is currently
-/// unconditional, so the toggle and segmented control are state-only
-/// for now.
+/// Every control here mutates the underlying [ZoomRegion] through
+/// [onChanged] (or [onCurveOverrideChanged] for the curve override,
+/// which needs `clearRampCurveOverride` semantics that don't fit a
+/// plain copyWith).
 class ZoomContextInspector extends StatelessWidget {
   const ZoomContextInspector({
     super.key,
@@ -20,10 +19,6 @@ class ZoomContextInspector extends StatelessWidget {
     required this.onChanged,
     required this.onDelete,
     required this.onClose,
-    required this.followCursor,
-    required this.onFollowCursorChanged,
-    required this.focalMode,
-    required this.onFocalModeChanged,
     required this.curveLibrary,
     required this.onCurveOverrideChanged,
   });
@@ -34,10 +29,6 @@ class ZoomContextInspector extends StatelessWidget {
   final ValueChanged<ZoomRegion> onChanged;
   final VoidCallback onDelete;
   final VoidCallback onClose;
-  final bool followCursor;
-  final ValueChanged<bool> onFollowCursorChanged;
-  final FocalMode focalMode;
-  final ValueChanged<FocalMode> onFocalModeChanged;
   final CurveLibrary curveLibrary;
   final ValueChanged<CubicBezierCurve?> onCurveOverrideChanged;
 
@@ -77,24 +68,47 @@ class ZoomContextInspector extends StatelessWidget {
                 label: 'Auto-zoom on cursor',
                 subtitle:
                     'Camera follows the recorded cursor through the '
-                    'zoom region.',
-                value: followCursor,
-                onChanged: onFollowCursorChanged,
+                    'zoom region. Off pins the focal to the zoom\'s '
+                    'rect center.',
+                value: zoom.followCursor,
+                onChanged: (v) =>
+                    onChanged(zoom.copyWith(followCursor: v)),
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'Focal point',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+              if (zoom.followCursor) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Follow style',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              _FocalSegmented(
-                value: focalMode,
-                onChanged: onFocalModeChanged,
-              ),
+                const SizedBox(height: 8),
+                _FollowStyleSegmented(
+                  bounded: zoom.boundedFollow,
+                  onChanged: (b) =>
+                      onChanged(zoom.copyWith(boundedFollow: b)),
+                ),
+                if (zoom.boundedFollow) ...[
+                  const SizedBox(height: 16),
+                  InspectorSlider(
+                    label: 'Deadzone size',
+                    subtitle:
+                        '${(zoom.deadzoneRatio * 100).round()}% of '
+                        'the visible viewport. Cursor stays inside → '
+                        'camera holds; outside → camera re-centers.',
+                    value: zoom.deadzoneRatio,
+                    min: 0.1,
+                    max: 0.6,
+                    onChanged: (v) =>
+                        onChanged(zoom.copyWith(deadzoneRatio: v)),
+                    onReset: () =>
+                        onChanged(zoom.copyWith(deadzoneRatio: 0.3)),
+                    canReset: (zoom.deadzoneRatio - 0.3).abs() > 1e-6,
+                  ),
+                ],
+              ],
               const InspectorSectionDivider(),
               InspectorSlider(
                 label: 'Enter duration',
@@ -177,18 +191,6 @@ class ZoomContextInspector extends StatelessWidget {
   }
 }
 
-/// Available focal-point modes shown in the segmented control. Only
-/// `cursor` is wired today; the others are reserved.
-enum FocalMode {
-  cursor(label: 'Cursor', icon: Icons.mouse),
-  center(label: 'Center', icon: Icons.center_focus_strong),
-  custom(label: 'Custom', icon: Icons.touch_app);
-
-  const FocalMode({required this.label, required this.icon});
-  final String label;
-  final IconData icon;
-}
-
 class _Header extends StatelessWidget {
   const _Header({
     required this.icon,
@@ -260,27 +262,48 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _FocalSegmented extends StatelessWidget {
-  const _FocalSegmented({required this.value, required this.onChanged});
-  final FocalMode value;
-  final ValueChanged<FocalMode> onChanged;
+class _FollowStyleSegmented extends StatelessWidget {
+  const _FollowStyleSegmented({
+    required this.bounded,
+    required this.onChanged,
+  });
+
+  final bool bounded;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        for (final m in FocalMode.values) ...[
-          Expanded(child: _segment(m)),
-          if (m != FocalMode.values.last) const SizedBox(width: 8),
-        ],
+        Expanded(
+          child: _segment(
+            label: 'Bounded',
+            icon: Icons.crop_free,
+            isSelected: bounded,
+            onTap: () => onChanged(true),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _segment(
+            label: 'Always centered',
+            icon: Icons.center_focus_strong,
+            isSelected: !bounded,
+            onTap: () => onChanged(false),
+          ),
+        ),
       ],
     );
   }
 
-  Widget _segment(FocalMode m) {
-    final isSelected = m == value;
+  Widget _segment({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
-      onTap: () => onChanged(m),
+      onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -294,12 +317,12 @@ class _FocalSegmented extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(m.icon,
+            Icon(icon,
                 size: 18,
                 color: isSelected ? kInspectorAccent : Colors.white70),
             const SizedBox(height: 4),
             Text(
-              m.label,
+              label,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 12,

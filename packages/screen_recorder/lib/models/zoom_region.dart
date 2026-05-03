@@ -23,6 +23,25 @@ class ZoomRegion {
   final Duration exitDuration;
   final CubicBezierCurve? rampCurveOverride;
 
+  /// Whether the zoom focal point follows the recorded cursor.
+  ///
+  /// When `false`, the focal stays pinned to [rect.center] for the
+  /// entire region — useful for "show this UI element" zooms where
+  /// you don't want the camera moving with the user's mouse.
+  final bool followCursor;
+
+  /// When `true` (the default), the camera holds steady while the
+  /// cursor sits inside a centered deadzone box and only re-centers
+  /// once the cursor leaves it. When `false`, the camera tracks the
+  /// cursor every frame.
+  final bool boundedFollow;
+
+  /// Edge length of the deadzone as a fraction of the *visible
+  /// viewport* (the region of source video framed by the current
+  /// zoom). 0.3 = a centered box covering 30% of the viewport on each
+  /// axis. Ignored when [boundedFollow] is false.
+  final double deadzoneRatio;
+
   ZoomRegion({
     required Rect rect,
     required this.startTime,
@@ -32,6 +51,9 @@ class ZoomRegion {
     Duration? exitDuration,
     Size? videoBounds,
     this.rampCurveOverride,
+    this.followCursor = true,
+    this.boundedFollow = true,
+    double deadzoneRatio = 0.3,
   })  : assert(duration > Duration.zero, 'Duration must be positive'),
         rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
         zoomLevel = zoomLevel.clamp(1.0, 5.0),
@@ -42,7 +64,8 @@ class ZoomRegion {
         exitDuration =
             (exitDuration ?? _defaultExit).isNegative
                 ? Duration.zero
-                : (exitDuration ?? _defaultExit);
+                : (exitDuration ?? _defaultExit),
+        deadzoneRatio = deadzoneRatio.clamp(0.0, 1.0);
 
   /// End time of zoom effect
   Duration get endTime => startTime + duration;
@@ -77,6 +100,9 @@ class ZoomRegion {
     Size? videoBounds,
     CubicBezierCurve? rampCurveOverride,
     bool clearRampCurveOverride = false,
+    bool? followCursor,
+    bool? boundedFollow,
+    double? deadzoneRatio,
   }) {
     return ZoomRegion(
       rect: rect ?? this.rect,
@@ -89,6 +115,9 @@ class ZoomRegion {
       rampCurveOverride: clearRampCurveOverride
           ? null
           : (rampCurveOverride ?? this.rampCurveOverride),
+      followCursor: followCursor ?? this.followCursor,
+      boundedFollow: boundedFollow ?? this.boundedFollow,
+      deadzoneRatio: deadzoneRatio ?? this.deadzoneRatio,
     );
   }
 
@@ -112,7 +141,10 @@ class ZoomRegion {
           zoomLevel == other.zoomLevel &&
           enterDuration == other.enterDuration &&
           exitDuration == other.exitDuration &&
-          rampCurveOverride == other.rampCurveOverride;
+          rampCurveOverride == other.rampCurveOverride &&
+          followCursor == other.followCursor &&
+          boundedFollow == other.boundedFollow &&
+          deadzoneRatio == other.deadzoneRatio;
 
   @override
   int get hashCode => Object.hash(
@@ -123,5 +155,8 @@ class ZoomRegion {
         enterDuration,
         exitDuration,
         rampCurveOverride,
+        followCursor,
+        boundedFollow,
+        deadzoneRatio,
       );
 }

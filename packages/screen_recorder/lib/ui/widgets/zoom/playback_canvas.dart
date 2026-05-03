@@ -203,6 +203,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
               position: pos,
               zoomRegions: widget.zoomRegions,
               cursorRecording: widget.cursorRecording,
+              videoSize: videoSize,
               smoothing: _focalSmoothingFor(widget.cursorAnimationConfig),
             );
             if (focalUpdate == null) return composition;

@@ -5,11 +5,16 @@ import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
+const Size _videoSize = Size(1920, 1080);
+
 ZoomRegion _zoomAt({
   required Duration startTime,
   required Duration duration,
   Rect rect = const Rect.fromLTWH(100, 100, 200, 200),
   double zoomLevel = 2.0,
+  bool followCursor = true,
+  bool boundedFollow = false,
+  double deadzoneRatio = 0.3,
 }) {
   return ZoomRegion(
     rect: rect,
@@ -18,6 +23,9 @@ ZoomRegion _zoomAt({
     zoomLevel: zoomLevel,
     enterDuration: Duration.zero,
     exitDuration: Duration.zero,
+    followCursor: followCursor,
+    boundedFollow: boundedFollow,
+    deadzoneRatio: deadzoneRatio,
   );
 }
 
@@ -43,6 +51,7 @@ void main() {
         position: const Duration(milliseconds: 500),
         zoomRegions: [zoom],
         cursorRecording: _recordingAt([]),
+        videoSize: _videoSize,
       );
 
       expect(update, isNull);
@@ -69,6 +78,7 @@ void main() {
         position: Duration.zero,
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
       expect(update, isNotNull);
@@ -92,14 +102,14 @@ void main() {
         position: const Duration(milliseconds: 500),
         zoomRegions: [zoom],
         cursorRecording: _recordingAt([]),
+        videoSize: _videoSize,
       );
 
       expect(update, isNotNull);
       expect(update!.focal, const Offset(400, 250));
     });
 
-    test('lerps toward target on subsequent frames within same zoom',
-        () {
+    test('lerps toward target on subsequent frames within same zoom', () {
       // After the snap on frame 1, frame 2 should lerp from the snapped
       // value toward the new cursor target by exactly 0.18 (the default
       // smoothing factor that the playback screen has shipped with).
@@ -118,6 +128,7 @@ void main() {
         position: Duration.zero,
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
       // Frame 2: cursor is now at (200, 200). Lerp from (100, 100) at
@@ -126,6 +137,7 @@ void main() {
         position: const Duration(seconds: 1),
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
       expect(update, isNotNull);
@@ -148,6 +160,7 @@ void main() {
         position: Duration.zero,
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
       // Smoothing 0.5 → halfway between (0, 0) and (100, 100).
@@ -155,6 +168,7 @@ void main() {
         position: const Duration(seconds: 1),
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
         smoothing: 0.5,
       );
 
@@ -164,11 +178,6 @@ void main() {
     test(
         'snaps focal when crossing into a different zoom region '
         'instead of lerping across the screen', () {
-      // Zoom A pinned to upper-left, zoom B pinned to lower-right with
-      // no time gap between them. When playback crosses into B the
-      // focal must snap to B's first-frame target — lerping from A's
-      // last position would drag the camera diagonally across the
-      // entire frame for several updates.
       final ctrl = ZoomFocalController();
       final zoomA = _zoomAt(
         startTime: Duration.zero,
@@ -189,12 +198,14 @@ void main() {
         position: Duration.zero,
         zoomRegions: [zoomA, zoomB],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
       final crossover = ctrl.update(
         position: const Duration(milliseconds: 1500),
         zoomRegions: [zoomA, zoomB],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
       expect(crossover, isNotNull);
@@ -208,10 +219,6 @@ void main() {
     test(
         'clears smoothing state when leaving a zoom so the next entry '
         'snaps cleanly', () {
-      // Same zoom region used twice (once in the middle of the
-      // timeline, then again later). A gap with no zoom between them
-      // must reset state — re-entering must snap to the new target,
-      // not lerp from the leftover focal.
       final ctrl = ZoomFocalController();
       final zoomEarly = _zoomAt(
         startTime: Duration.zero,
@@ -228,27 +235,27 @@ void main() {
         (micros: 3_500_000, x: 850, y: 850),
       ]);
 
-      // Inside the early zoom.
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoomEarly, zoomLate],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
-      // Gap (no zoom active) — should clear state.
       final mid = ctrl.update(
         position: const Duration(milliseconds: 2000),
         zoomRegions: [zoomEarly, zoomLate],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
       expect(mid, isNull);
       expect(ctrl.smoothedFocal, isNull);
 
-      // Re-enter with the late zoom — must snap to its target.
       final reEntry = ctrl.update(
         position: const Duration(milliseconds: 3500),
         zoomRegions: [zoomEarly, zoomLate],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
       expect(reEntry!.focal, const Offset(850, 850));
     });
@@ -268,26 +275,23 @@ void main() {
         position: Duration.zero,
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
       expect(ctrl.smoothedFocal, const Offset(100, 100));
 
       ctrl.reset();
       expect(ctrl.smoothedFocal, isNull);
 
-      // Next call should snap to the new target rather than lerp from
-      // the previous (now-cleared) focal.
       final update = ctrl.update(
         position: const Duration(seconds: 1),
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
       expect(update!.focal, const Offset(200, 200));
     });
 
     test('exposes the current smoothed focal for debug HUDs', () {
-      // The HUD reads ZoomFocalController.smoothedFocal between
-      // update() calls to draw the yellow ring. Verify the getter
-      // matches the last update's focal.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
@@ -301,18 +305,13 @@ void main() {
         position: Duration.zero,
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
       expect(ctrl.smoothedFocal, update!.focal);
     });
 
     test('repeated update() at the same position is idempotent', () {
-      // A parent setState (e.g. flipping an inspector toggle) can
-      // trigger an extra builder run for the same playhead before the
-      // next animation tick. Without caching, smoothing would advance
-      // twice in one frame and the focal would visibly jump. Verify
-      // a second call at the same position returns the cached focal
-      // and does not lerp again.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
@@ -323,29 +322,179 @@ void main() {
         (micros: 16000, x: 700, y: 600),
       ]);
 
-      // Frame 1 — snap to the first cursor sample.
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
-      // Frame 2 — lerp toward the new cursor sample.
       final firstAtT2 = ctrl.update(
         position: const Duration(milliseconds: 16),
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
-      // Same position again (parent setState) — must return the same
-      // focal without advancing the lerp.
       final secondAtT2 = ctrl.update(
         position: const Duration(milliseconds: 16),
         zoomRegions: [zoom],
         cursorRecording: cursor,
+        videoSize: _videoSize,
       );
 
       expect(secondAtT2!.focal, firstAtT2!.focal);
+    });
+
+    // --- followCursor / boundedFollow / deadzone semantics ---------------
+
+    test('followCursor=false pins focal to rect.center even with cursor data',
+        () {
+      // Auto-zoom toggle off: camera must stay centered on the zoom
+      // rect for the whole region, regardless of where the cursor
+      // wandered.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        rect: const Rect.fromLTWH(200, 100, 400, 300), // center (400, 250)
+        followCursor: false,
+      );
+      final cursor = _recordingAt([
+        (micros: 0, x: 1500, y: 900), // far from rect.center
+      ]);
+
+      final out = ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      expect(out!.focal, const Offset(400, 250));
+    });
+
+    test(
+        'bounded follow holds focal while cursor stays inside the deadzone',
+        () {
+      // 1920x1080 video at zoomLevel=2 → viewport in source pixels =
+      // 960x540. deadzone 30% → 288x162 box centered on the focal.
+      // After the snap, a small cursor nudge inside that box must
+      // leave the focal unchanged across many frames.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        zoomLevel: 2.0,
+        boundedFollow: true,
+        deadzoneRatio: 0.3,
+      );
+      final cursor = _recordingAt([
+        (micros: 0,         x: 960, y: 540), // viewport center
+        (micros: 1_000_000, x: 1000, y: 560), // 40px right, 20px down
+        (micros: 2_000_000, x: 1050, y: 580), // still inside deadzone
+      ]);
+
+      // Frame 1 — snap to (960, 540).
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+
+      final f2 = ctrl.update(
+        position: const Duration(seconds: 1),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      final f3 = ctrl.update(
+        position: const Duration(seconds: 2),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+
+      expect(f2!.focal, const Offset(960, 540),
+          reason: 'cursor still inside deadzone — focal must hold');
+      expect(f3!.focal, const Offset(960, 540),
+          reason: 'cursor still inside deadzone — focal must hold');
+    });
+
+    test('bounded follow pulls focal toward cursor when it leaves the deadzone',
+        () {
+      // Same setup as above, but the cursor jumps far enough out of
+      // the 288x162 deadzone box that the focal must start lerping.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        zoomLevel: 2.0,
+        boundedFollow: true,
+        deadzoneRatio: 0.3,
+      );
+      final cursor = _recordingAt([
+        (micros: 0,         x: 960,  y: 540),
+        (micros: 1_000_000, x: 1500, y: 900), // well outside the 288x162 box
+      ]);
+
+      // Frame 1 — snap.
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+
+      // Frame 2 — cursor outside deadzone, focal lerps 0.18 toward
+      // (1500, 900).
+      final f2 = ctrl.update(
+        position: const Duration(seconds: 1),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+
+      expect(f2!.focal.dx, closeTo(960 + (1500 - 960) * 0.18, 1e-6));
+      expect(f2.focal.dy, closeTo(540 + (900 - 540) * 0.18, 1e-6));
+    });
+
+    test(
+        'bounded follow with cursor sitting exactly at the deadzone edge '
+        'still locks (Rect.contains is half-open but boundary stays held)',
+        () {
+      // Cursor at (1104, 540) is exactly at the right edge of a
+      // 288-wide deadzone centered on (960, 540). Rect.contains is
+      // exclusive on the right/bottom, so the cursor counts as
+      // *outside* and the lerp engages. This test pins down that
+      // edge-case so a future refactor doesn't silently flip it.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        zoomLevel: 2.0,
+        boundedFollow: true,
+        deadzoneRatio: 0.3,
+      );
+      final cursor = _recordingAt([
+        (micros: 0,         x: 960,  y: 540),
+        (micros: 1_000_000, x: 1104, y: 540), // exactly half-width away
+      ]);
+
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      final f2 = ctrl.update(
+        position: const Duration(seconds: 1),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+        videoSize: _videoSize,
+      );
+      // Lerp engaged → x moved toward 1104.
+      expect(f2!.focal.dx, greaterThan(960));
     });
   });
 }

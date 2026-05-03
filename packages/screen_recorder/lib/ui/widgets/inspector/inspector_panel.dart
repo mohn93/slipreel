@@ -130,9 +130,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
   late InspectorTab _selected = widget.initialTab;
 
   // Local state for context-mode controls that don't have a model
-  // field yet. Per-zoom values are keyed on the zoom's startTime so
-  // the right values come back when re-selecting the same zoom.
-  final Map<Duration, _ZoomLocalState> _zoomLocal = {};
+  // field yet. (Zoom controls all read/write through ZoomRegion now.)
   final _ClipLocalState _clipLocal = _ClipLocalState();
 
   @override
@@ -223,19 +221,12 @@ class _InspectorPanelState extends State<InspectorPanel> {
       return const SizedBox.shrink();
     }
     final zoom = widget.zoomRegions[index];
-    final local =
-        _zoomLocal.putIfAbsent(zoom.startTime, () => _ZoomLocalState());
     return ZoomContextInspector(
       zoom: zoom,
       zoomNumber: index + 1,
       onChanged: (next) => widget.onZoomChanged?.call(index, next),
       onDelete: () => widget.onZoomDeleted?.call(index),
       onClose: () => widget.onSelectionCleared?.call(),
-      followCursor: local.followCursor,
-      onFollowCursorChanged: (v) =>
-          setState(() => local.followCursor = v),
-      focalMode: local.focalMode,
-      onFocalModeChanged: (m) => setState(() => local.focalMode = m),
       curveLibrary: widget.curveLibrary,
       onCurveOverrideChanged: (curve) {
         final next = curve == null
@@ -347,11 +338,6 @@ class _AccentDot extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ZoomLocalState {
-  bool followCursor = true;
-  FocalMode focalMode = FocalMode.cursor;
 }
 
 class _ClipLocalState {
