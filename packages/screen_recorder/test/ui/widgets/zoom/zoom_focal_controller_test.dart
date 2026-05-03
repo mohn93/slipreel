@@ -394,7 +394,15 @@ void main() {
           reason: 'tween must re-aim at the latest cursor target');
     });
 
-    test('tween aborts when cursor settles back into the deadzone', () {
+    test(
+        'tween runs to completion even when cursor briefly re-enters the '
+        'moving deadzone (no mid-tween abort)', () {
+      // Earlier the controller aborted the tween whenever the moving
+      // deadzone briefly re-contained the cursor. During steady cursor
+      // motion that triggered every frame, producing visible jitter.
+      // The deadzone is now a *trigger* for starting tweens only —
+      // once a tween is in flight it runs to completion, re-aiming at
+      // the cursor every frame. Pin that semantics in.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
@@ -405,6 +413,57 @@ void main() {
         followDuration: const Duration(milliseconds: 400),
       );
 
+      // Initial focal at (960, 540).
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(960, 540),
+        videoSize: _videoSize,
+      );
+      // Cursor exits the initial deadzone (range 816..1104 around
+      // (960, 540)) at (1200, 540) → tween starts.
+      ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [zoom],
+        cursor: const Offset(1200, 540),
+        videoSize: _videoSize,
+      );
+      // Mid-tween the cursor returns to (1000, 540) — inside the
+      // initial deadzone, but the focal has moved on. Old logic
+      // aborted here; new logic re-aims `to` to (1000, 540).
+      ctrl.update(
+        position: const Duration(milliseconds: 100),
+        zoomRegions: [zoom],
+        cursor: const Offset(1000, 540),
+        videoSize: _videoSize,
+      );
+      // After full followDuration since the tween began (16 + 400 ms)
+      // the focal must equal the latest cursor target (1000, 540).
+      final settled = ctrl.update(
+        position: const Duration(milliseconds: 16 + 400),
+        zoomRegions: [zoom],
+        cursor: const Offset(1000, 540),
+        videoSize: _videoSize,
+      );
+
+      expect(settled!.focal.dx, closeTo(1000, 1e-6));
+      expect(settled.focal.dy, closeTo(540, 1e-6));
+    });
+
+    test(
+        'after a tween completes, the deadzone re-engages around the '
+        'new focal so further small cursor moves are ignored', () {
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        zoomLevel: 2.0,
+        boundedFollow: true,
+        deadzoneRatio: 0.3,
+        followDuration: const Duration(milliseconds: 400),
+      );
+
+      // Snap then trigger a tween out to (1200, 540).
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoom],
@@ -417,24 +476,26 @@ void main() {
         cursor: const Offset(1200, 540),
         videoSize: _videoSize,
       );
-      final atAbort = ctrl.update(
-        position: const Duration(milliseconds: 100),
+      // Let the tween finish at the captured target.
+      final finished = ctrl.update(
+        position: const Duration(milliseconds: 16 + 400),
         zoomRegions: [zoom],
-        cursor: const Offset(1000, 540),
+        cursor: const Offset(1200, 540),
         videoSize: _videoSize,
       );
-      final later = ctrl.update(
-        position: const Duration(milliseconds: 800),
-        zoomRegions: [zoom],
-        cursor: const Offset(1000, 540),
-        videoSize: _videoSize,
-      );
+      expect(finished!.focal.dx, closeTo(1200, 1e-6));
 
-      expect(later!.focal, atAbort!.focal,
-          reason:
-              'cursor re-entered the (moving) deadzone — focal must '
-              'stay put instead of completing the tween toward '
-              '(1200, 540)');
+      // New deadzone is centered on (1200, 540), half-width 144 →
+      // range 1056..1344. A cursor at (1180, 540) sits inside, so
+      // the focal must hold; no fresh tween should start.
+      final still = ctrl.update(
+        position: const Duration(milliseconds: 500),
+        zoomRegions: [zoom],
+        cursor: const Offset(1180, 540),
+        videoSize: _videoSize,
+      );
+      expect(still!.focal.dx, closeTo(1200, 1e-6),
+          reason: 'cursor inside the new deadzone — focal should hold');
     });
 
     test('followCurve override shapes the tween progress', () {

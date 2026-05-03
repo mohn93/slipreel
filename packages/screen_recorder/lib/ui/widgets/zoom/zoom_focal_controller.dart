@@ -106,41 +106,41 @@ class ZoomFocalController {
       }
     }
 
-    // Step 2 — figure out where the camera *should* be aiming this
-    // frame, given the freshly-advanced focal.
-    final target = _resolveTarget(
-      zoom: activeZoom,
-      cursor: cursor,
-      currentFocal: _smoothedFocal!,
-      videoSize: videoSize,
-    );
+    // Step 2 — decide what the camera should aim at this frame.
+    //
+    // The deadzone is a *trigger*, not a containment: it only gates
+    // whether a NEW tween starts. Once a tween is in flight we keep
+    // aiming at the cursor every frame (same shape as always-centered)
+    // so the focal smoothly chases instead of stuttering as the
+    // moving deadzone briefly re-contains the cursor each frame.
+    final baseTarget = _baseTarget(activeZoom, cursor);
 
     if (_tweenStartPosition == null) {
-      // Idle. Start a tween if the target moved off the focal.
-      if (_distanceSquared(target, _smoothedFocal!) > _moveEpsilonSq) {
+      // Idle. Engage the deadzone gate before starting a tween.
+      final shouldStart = _shouldStartTween(
+        zoom: activeZoom,
+        cursor: cursor,
+        baseTarget: baseTarget,
+        currentFocal: _smoothedFocal!,
+        videoSize: videoSize,
+      );
+      if (shouldStart) {
         if (activeZoom.followDuration.inMicroseconds <= 0) {
           // Zero-duration "snap" mode — apply this frame, no tween.
-          _smoothedFocal = target;
+          _smoothedFocal = baseTarget;
         } else {
           _tweenFrom = _smoothedFocal;
-          _tweenTo = target;
+          _tweenTo = baseTarget;
           _tweenStartPosition = position;
         }
       }
     } else {
-      // Tweening. Three sub-cases:
-      //   a) Target is essentially where the focal already is — the
-      //      cursor wandered back into the deadzone, so abort and let
-      //      the focal stick. (Without this, a brief deadzone re-entry
-      //      followed by the tween finishing would snap to the stale
-      //      `to`.)
-      //   b) Target is the same as our current `to` — keep tweening.
-      //   c) Target moved — re-aim `to` while preserving `from` and
-      //      the start position so `elapsed` keeps growing.
-      if (_distanceSquared(target, _smoothedFocal!) <= _moveEpsilonSq) {
-        _resetTween();
-      } else if (_distanceSquared(target, _tweenTo!) > _moveEpsilonSq) {
-        _tweenTo = target;
+      // Tweening: re-aim `to` toward the latest base target while
+      // preserving `from` and the start position so `elapsed` keeps
+      // growing. The deadzone re-engages on the NEXT idle frame,
+      // not mid-tween.
+      if (_distanceSquared(baseTarget, _tweenTo!) > _moveEpsilonSq) {
+        _tweenTo = baseTarget;
       }
     }
 
@@ -183,22 +183,39 @@ class ZoomFocalController {
     return cursor;
   }
 
-  /// Where the camera should aim this frame. May equal [currentFocal]
-  /// (cursor inside deadzone, or zoom configured for static focal).
-  static Offset _resolveTarget({
-    required ZoomRegion zoom,
-    required Offset? cursor,
-    required Offset currentFocal,
-    required Size videoSize,
-  }) {
+  /// "Base" target this frame, ignoring the deadzone — the cursor
+  /// when we're following it, or the zoom's static center otherwise.
+  /// Used both as a tween's `to` value and as the comparison point
+  /// for the deadzone gate.
+  static Offset _baseTarget(ZoomRegion zoom, Offset? cursor) {
     if (!zoom.followCursor || cursor == null) {
       return zoom.rect.center;
     }
-    if (!zoom.boundedFollow ||
-        zoom.deadzoneRatio <= 0 ||
-        videoSize.width <= 0 ||
-        videoSize.height <= 0) {
-      return cursor;
+    return cursor;
+  }
+
+  /// Whether an idle controller should kick off a fresh tween this
+  /// frame. For bounded follow we check the deadzone; for everything
+  /// else we just look at whether the base target moved off the
+  /// current focal.
+  static bool _shouldStartTween({
+    required ZoomRegion zoom,
+    required Offset? cursor,
+    required Offset baseTarget,
+    required Offset currentFocal,
+    required Size videoSize,
+  }) {
+    if (_distanceSquared(baseTarget, currentFocal) <= _moveEpsilonSq) {
+      return false;
+    }
+    final boundsActive = zoom.followCursor &&
+        zoom.boundedFollow &&
+        cursor != null &&
+        zoom.deadzoneRatio > 0 &&
+        videoSize.width > 0 &&
+        videoSize.height > 0;
+    if (!boundsActive) {
+      return true;
     }
     final z = zoom.zoomLevel;
     final dzW = (videoSize.width / z) * zoom.deadzoneRatio;
@@ -208,7 +225,7 @@ class ZoomFocalController {
       width: dzW,
       height: dzH,
     );
-    return dz.contains(cursor) ? currentFocal : cursor;
+    return !dz.contains(cursor);
   }
 
   static Curve _resolveCurve(ZoomRegion zoom) =>
