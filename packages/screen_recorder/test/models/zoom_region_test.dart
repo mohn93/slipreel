@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:screen_recorder/rendering/animation_curve.dart';
 
 void main() {
   group('ZoomRegion', () {
@@ -77,6 +78,35 @@ void main() {
 
       expect(region1.zoomLevel, 1.0);
       expect(region2.zoomLevel, 5.0);
+    });
+  });
+
+  group('ZoomRegion.rampCurveOverride', () {
+    test('defaults to null', () {
+      final z = ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 10, 10),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2.0,
+      );
+      expect(z.rampCurveOverride, isNull);
+    });
+
+    test('copyWith sets and clears override', () {
+      final z = ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 10, 10),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2.0,
+      );
+      const override = CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 0.3, y2: 0.4);
+      final z2 = z.copyWith(rampCurveOverride: override);
+      expect(z2.rampCurveOverride, override);
+
+      // copyWith with explicit null: use the sentinel-style overload to
+      // distinguish "leave as-is" from "clear".
+      final z3 = z2.copyWith(clearRampCurveOverride: true);
+      expect(z3.rampCurveOverride, isNull);
     });
   });
 }

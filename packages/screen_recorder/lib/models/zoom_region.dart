@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:screen_recorder/rendering/animation_curve.dart';
 
 /// Represents a zoom region with timing and transformation parameters.
 ///
@@ -20,6 +21,7 @@ class ZoomRegion {
   final double zoomLevel;
   final Duration enterDuration;
   final Duration exitDuration;
+  final AnimationCurve? rampCurveOverride;
 
   ZoomRegion({
     required Rect rect,
@@ -29,6 +31,7 @@ class ZoomRegion {
     Duration? enterDuration,
     Duration? exitDuration,
     Size? videoBounds,
+    this.rampCurveOverride,
   })  : assert(duration > Duration.zero, 'Duration must be positive'),
         rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
         zoomLevel = zoomLevel.clamp(1.0, 5.0),
@@ -58,7 +61,12 @@ class ZoomRegion {
     return (elapsed.inMicroseconds / duration.inMicroseconds).clamp(0.0, 1.0);
   }
 
-  /// Create copy with updated values
+  /// Create copy with updated values.
+  ///
+  /// To clear an existing [rampCurveOverride], pass
+  /// `clearRampCurveOverride: true`. Passing `rampCurveOverride: null`
+  /// (the default) leaves the existing override unchanged so callers can
+  /// distinguish "leave as-is" from "clear".
   ZoomRegion copyWith({
     Rect? rect,
     Duration? startTime,
@@ -67,6 +75,8 @@ class ZoomRegion {
     Duration? enterDuration,
     Duration? exitDuration,
     Size? videoBounds,
+    AnimationCurve? rampCurveOverride,
+    bool clearRampCurveOverride = false,
   }) {
     return ZoomRegion(
       rect: rect ?? this.rect,
@@ -76,6 +86,9 @@ class ZoomRegion {
       enterDuration: enterDuration ?? this.enterDuration,
       exitDuration: exitDuration ?? this.exitDuration,
       videoBounds: videoBounds,
+      rampCurveOverride: clearRampCurveOverride
+          ? null
+          : (rampCurveOverride ?? this.rampCurveOverride),
     );
   }
 
@@ -98,7 +111,8 @@ class ZoomRegion {
           duration == other.duration &&
           zoomLevel == other.zoomLevel &&
           enterDuration == other.enterDuration &&
-          exitDuration == other.exitDuration;
+          exitDuration == other.exitDuration &&
+          rampCurveOverride == other.rampCurveOverride;
 
   @override
   int get hashCode => Object.hash(
@@ -108,5 +122,6 @@ class ZoomRegion {
         zoomLevel,
         enterDuration,
         exitDuration,
+        rampCurveOverride,
       );
 }
