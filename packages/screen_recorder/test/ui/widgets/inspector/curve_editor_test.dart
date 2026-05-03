@@ -124,7 +124,7 @@ void main() {
     ));
     await _pumpFrames(tester);
 
-    await tester.tap(find.byKey(const ValueKey('curveEditor.chip.ease')));
+    await tester.tap(find.byKey(const ValueKey('curveEditor.chip.builtin.ease')));
     await tester.pump();
 
     expect(captured, BuiltInCurves.byId('ease')!.curve);
@@ -159,7 +159,7 @@ void main() {
     await _pumpFrames(tester);
 
     expect(lib.list().then((l) => l.first.name), completion('snap-back'));
-    expect(find.byKey(const ValueKey('curveEditor.chip.0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('curveEditor.chip.saved.0')), findsOneWidget);
   });
 
   testWidgets('hides duration slider when showDurationSlider=false',

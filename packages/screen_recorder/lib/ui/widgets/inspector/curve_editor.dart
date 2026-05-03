@@ -49,6 +49,11 @@ class _CurveEditorState extends State<CurveEditor>
 
   late TextEditingController _x1, _y1, _x2, _y2;
 
+  late final FocusNode _x1Focus = FocusNode();
+  late final FocusNode _y1Focus = FocusNode();
+  late final FocusNode _x2Focus = FocusNode();
+  late final FocusNode _y2Focus = FocusNode();
+
   @override
   void initState() {
     super.initState();
@@ -63,10 +68,21 @@ class _CurveEditorState extends State<CurveEditor>
   void didUpdateWidget(covariant CurveEditor old) {
     super.didUpdateWidget(old);
     if (old.curve != widget.curve) {
-      _x1.text = widget.curve.x1.toStringAsFixed(2);
-      _y1.text = widget.curve.y1.toStringAsFixed(2);
-      _x2.text = widget.curve.x2.toStringAsFixed(2);
-      _y2.text = widget.curve.y2.toStringAsFixed(2);
+      // Don't stomp text in a focused field — the user is mid-edit and
+      // our text-update would jump their cursor. Their typed value
+      // flows back via _commitNumeric on submit/blur.
+      if (!_x1Focus.hasFocus) {
+        _x1.text = widget.curve.x1.toStringAsFixed(2);
+      }
+      if (!_y1Focus.hasFocus) {
+        _y1.text = widget.curve.y1.toStringAsFixed(2);
+      }
+      if (!_x2Focus.hasFocus) {
+        _x2.text = widget.curve.x2.toStringAsFixed(2);
+      }
+      if (!_y2Focus.hasFocus) {
+        _y2.text = widget.curve.y2.toStringAsFixed(2);
+      }
     }
   }
 
@@ -78,6 +94,10 @@ class _CurveEditorState extends State<CurveEditor>
     _y1.dispose();
     _x2.dispose();
     _y2.dispose();
+    _x1Focus.dispose();
+    _y1Focus.dispose();
+    _x2Focus.dispose();
+    _y2Focus.dispose();
     super.dispose();
   }
 
@@ -156,6 +176,11 @@ class _CurveEditorState extends State<CurveEditor>
               width: side,
               height: side,
               child: GestureDetector(
+                // Hit-test only at press time, not during pan: a press that
+                // starts outside any handle is a no-op for the entire gesture.
+                // This matches the typical "grab and drag" mental model and
+                // avoids accidentally hijacking taps that started on the
+                // background but happened to cross a handle mid-drag.
                 onPanDown: (d) {
                   final h = _hitTestHandle(d.localPosition, size);
                   if (h != 0) setState(() => _draggingHandle = h);
@@ -183,13 +208,13 @@ class _CurveEditorState extends State<CurveEditor>
         ),
         const SizedBox(height: 10),
         Row(children: [
-          Expanded(child: _numField(0, 'x1', _x1)),
+          Expanded(child: _numField(0, 'x1', _x1, _x1Focus)),
           const SizedBox(width: 6),
-          Expanded(child: _numField(1, 'y1', _y1)),
+          Expanded(child: _numField(1, 'y1', _y1, _y1Focus)),
           const SizedBox(width: 6),
-          Expanded(child: _numField(2, 'x2', _x2)),
+          Expanded(child: _numField(2, 'x2', _x2, _x2Focus)),
           const SizedBox(width: 6),
-          Expanded(child: _numField(3, 'y2', _y2)),
+          Expanded(child: _numField(3, 'y2', _y2, _y2Focus)),
         ]),
         if (widget.showDurationSlider) ...[
           const SizedBox(height: 12),
@@ -209,13 +234,13 @@ class _CurveEditorState extends State<CurveEditor>
         Wrap(spacing: 6, runSpacing: 6, children: [
           for (final b in BuiltInCurves.all)
             _Chip(
-              key: ValueKey('curveEditor.chip.${b.id}'),
+              key: ValueKey('curveEditor.chip.builtin.${b.id}'),
               label: b.name,
               onTap: () => widget.onCurveChanged(b.curve),
             ),
           for (final s in _saved)
             _Chip(
-              key: ValueKey('curveEditor.chip.${s.id}'),
+              key: ValueKey('curveEditor.chip.saved.${s.id}'),
               label: s.name,
               onTap: () => widget.onCurveChanged(s.curve),
               onLongPress: () async {
@@ -259,11 +284,13 @@ class _CurveEditorState extends State<CurveEditor>
     );
   }
 
-  Widget _numField(int idx, String label, TextEditingController c) {
+  Widget _numField(
+      int idx, String label, TextEditingController c, FocusNode focus) {
     final keyPrefix = ['x1', 'y1', 'x2', 'y2'][idx];
     return TextField(
       key: ValueKey('curveEditor.${keyPrefix}Field'),
       controller: c,
+      focusNode: focus,
       keyboardType: const TextInputType.numberWithOptions(
           signed: true, decimal: true),
       textInputAction: TextInputAction.done,
