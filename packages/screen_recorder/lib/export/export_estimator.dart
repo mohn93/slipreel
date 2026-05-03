@@ -13,16 +13,15 @@ class ExportEstimator {
   /// fast and "0 seconds" reads as broken even if the math says so.
   Duration estimateExportTime(double durationSec) {
     final estimatedSeconds = durationSec / lastRealtimeMultiplier;
-    final clamped = estimatedSeconds < 0.5 ? 0.5 : estimatedSeconds;
-    return Duration(milliseconds: (clamped * 1000).round());
+    final floored = estimatedSeconds < 0.5 ? 0.5 : estimatedSeconds;
+    return Duration(milliseconds: (floored * 1000).round());
   }
 
-  /// Estimated output bytes. For [ExportFormat.mp4] this is
-  /// `bitrateKbps × durationSec / 8 × 1024` rounded to the nearest int.
-  /// For [ExportFormat.gif] we apply a calibration factor (0.6 for
-  /// now — palettegen + dither produces consistently smaller files
-  /// than naive bitrate arithmetic; refine the constant once Task 3's
-  /// pipeline ships and we have real measurements).
+  /// Estimated output bytes. For [ExportFormat.mp4] this is rounded
+  /// to the nearest int. For [ExportFormat.gif] we apply a calibration
+  /// factor (0.6 for now — palettegen + dither produces consistently
+  /// smaller files than naive bitrate arithmetic; refine the constant
+  /// once Task 3's pipeline ships and we have real measurements).
   int estimateOutputBytes({
     required double durationSec,
     required int bitrateKbps,
@@ -65,35 +64,25 @@ class ExportEstimator {
     return 'Estimation — Export time $timeStr — Output size $sizeStr';
   }
 
+  String _plural(int n, String unit) =>
+      n == 1 ? '1 $unit' : '$n ${unit}s';
+
   String _formatTime(Duration duration) {
-    final totalSeconds = duration.inMilliseconds / 1000;
-    final totalSecondsCeil = (totalSeconds).ceil();
+    final totalSeconds = (duration.inMilliseconds / 1000).ceil();
 
     if (totalSeconds < 60) {
-      return totalSecondsCeil == 1 ? '1 second' : '$totalSecondsCeil seconds';
+      return _plural(totalSeconds, 'second');
     }
 
-    if (totalSecondsCeil < 3600) {
-      final minutes = totalSecondsCeil ~/ 60;
-      final seconds = totalSecondsCeil % 60;
-      if (seconds == 0) {
-        return minutes == 1 ? '1 minute' : '$minutes minutes';
-      }
-      final minuteStr = minutes == 1 ? '1 minute' : '$minutes minutes';
-      final secondStr = seconds == 1 ? '1 second' : '$seconds seconds';
-      return '$minuteStr $secondStr';
+    if (totalSeconds < 3600) {
+      final m = totalSeconds ~/ 60;
+      final s = totalSeconds % 60;
+      return s == 0 ? _plural(m, 'minute') : '${_plural(m, 'minute')} ${_plural(s, 'second')}';
     }
 
-    final hours = totalSecondsCeil ~/ 3600;
-    final remainingSeconds = totalSecondsCeil % 3600;
-    final minutes = remainingSeconds ~/ 60;
-
-    if (minutes == 0) {
-      return hours == 1 ? '1 hour' : '$hours hours';
-    }
-    final hourStr = hours == 1 ? '1 hour' : '$hours hours';
-    final minuteStr = minutes == 1 ? '1 minute' : '$minutes minutes';
-    return '$hourStr $minuteStr';
+    final h = totalSeconds ~/ 3600;
+    final m = (totalSeconds % 3600) ~/ 60;
+    return m == 0 ? _plural(h, 'hour') : '${_plural(h, 'hour')} ${_plural(m, 'minute')}';
   }
 
   String _formatSize(int bytes) {

@@ -26,8 +26,8 @@ void main() {
       test('custom multiplier affects result', () {
         const estimator05x = ExportEstimator(lastRealtimeMultiplier: 0.5);
         final duration05x = estimator05x.estimateExportTime(1.0);
-        final duration07x = estimator.estimateExportTime(1.0);
-        expect(duration05x.inMilliseconds, greaterThan(duration07x.inMilliseconds));
+        // 1.0 / 0.5 = 2.0s
+        expect(duration05x.inMilliseconds, 2000);
       });
     });
 
@@ -38,7 +38,7 @@ void main() {
           bitrateKbps: 6000,
           format: ExportFormat.mp4,
         );
-        expect(bytes, closeTo(23040000, 1000));
+        expect(bytes, 23040000);
       });
 
       test('same params but format=GIF applies 0.6 calibration', () {
@@ -66,69 +66,74 @@ void main() {
     });
 
     group('formatLine', () {
-      test('short clip → exact format match', () {
-        final line = estimator.formatLine(
+      test('1-second clip with tiny output formats verbatim', () {
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final line = estimator1x.formatLine(
           durationSec: 1.0,
-          bitrateKbps: 256,
+          bitrateKbps: 1000,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('Estimation'));
-        expect(line, contains('Export time'));
-        expect(line, contains('Output size'));
+        // 1000 kbps × 1s / 8 × 1024 = 128000 bytes ≈ 125.0KB
+        expect(line, 'Estimation — Export time 1 second — Output size 125.0KB');
       });
 
       test('plural seconds format', () {
-        // At 0.7× multiplier, ~3.5s source → ~5s export time
-        final line = estimator.formatLine(
-          durationSec: 3.5,
+        // At 1.0× multiplier, 5s source → 5s export time
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final line = estimator1x.formatLine(
+          durationSec: 5.0,
           bitrateKbps: 256,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('seconds'));
+        expect(line, contains('5 seconds'));
       });
 
       test('singular second format', () {
-        // At 0.7× multiplier, ~0.35s source → ~0.5s export time (floored)
-        final line = estimator.formatLine(
-          durationSec: 0.35,
+        // At 1.0× multiplier, 1s source → 1s export time
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final line = estimator1x.formatLine(
+          durationSec: 1.0,
           bitrateKbps: 256,
           format: ExportFormat.mp4,
         );
         expect(line, contains('1 second'));
       });
 
-      test('90 seconds source → "2 minutes X seconds"', () {
-        // At 0.7×, 90s source → ~128s export time
-        final line = estimator.formatLine(
+      test('formatLine with minute and second components', () {
+        // At 1.0×, 90s source → 90s export time = 1 minute 30 seconds
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final line = estimator1x.formatLine(
           durationSec: 90.0,
           bitrateKbps: 256,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('minute'));
+        expect(line, contains('1 minute 30 seconds'));
       });
 
-      test('exactly 42s source → "1 minute" at 0.7×', () {
-        // 42 / 0.7 = 60s
-        const estimator70 = ExportEstimator(lastRealtimeMultiplier: 0.7);
-        final line = estimator70.formatLine(
-          durationSec: 42.0,
-          bitrateKbps: 256,
+      test('exactly 60s formats as "1 minute"', () {
+        // 60.0s @ 1.0× → 60s → expect "1 minute" not "60 seconds"
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final line = estimator1x.formatLine(
+          durationSec: 60.0,
+          bitrateKbps: 1000,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('1 minute'));
+        expect(line, contains('Export time 1 minute —'));
       });
 
-      test('1 hour source at 0.7× → multi-minute export', () {
-        final line = estimator.formatLine(
+      test('exactly 3600s formats as "1 hour"', () {
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final line = estimator1x.formatLine(
           durationSec: 3600.0,
-          bitrateKbps: 256,
+          bitrateKbps: 1000,
           format: ExportFormat.mp4,
         );
-        expect(line, contains('hour'));
+        expect(line, contains('Export time 1 hour —'));
       });
 
       test('size in KB band → "X.XKB"', () {
-        final line = estimator.formatLine(
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final line = estimator1x.formatLine(
           durationSec: 1.0,
           bitrateKbps: 128,
           format: ExportFormat.mp4,
@@ -136,8 +141,23 @@ void main() {
         expect(line, contains('KB'));
       });
 
+      test('exactly 1MB worth of bytes formats as "1.0MB"', () {
+        // 1MB = 1024 * 1024 bytes = 1048576 bytes
+        // bitrateKbps × durationSec / 8 × 1024 = 1048576
+        // → bitrateKbps × durationSec = 8192
+        // Use 8192 kbps × 1.0s (uses binary 1024)
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final line = estimator1x.formatLine(
+          durationSec: 1.0,
+          bitrateKbps: 8192,
+          format: ExportFormat.mp4,
+        );
+        expect(line, contains('— Output size 1.0MB'));
+      });
+
       test('size in GB band → "X.XGB"', () {
-        final line = estimator.formatLine(
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final line = estimator1x.formatLine(
           durationSec: 3600.0,
           bitrateKbps: 100000,
           format: ExportFormat.mp4,
@@ -145,22 +165,14 @@ void main() {
         expect(line, contains('GB'));
       });
 
-      test('size in MB band → "X.XMB"', () {
-        final line = estimator.formatLine(
-          durationSec: 30.0,
-          bitrateKbps: 6000,
-          format: ExportFormat.mp4,
-        );
-        expect(line, contains('MB'));
-      });
-
       test('format=GIF affects size only, not time', () {
-        final lineMP4 = estimator.formatLine(
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final lineMP4 = estimator1x.formatLine(
           durationSec: 30.0,
           bitrateKbps: 6000,
           format: ExportFormat.mp4,
         );
-        final lineGIF = estimator.formatLine(
+        final lineGIF = estimator1x.formatLine(
           durationSec: 30.0,
           bitrateKbps: 6000,
           format: ExportFormat.gif,
@@ -173,7 +185,8 @@ void main() {
       });
 
       test('very large bitrate + duration → handles size formatting correctly', () {
-        final line = estimator.formatLine(
+        const estimator1x = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final line = estimator1x.formatLine(
           durationSec: 300.0,
           bitrateKbps: 50000,
           format: ExportFormat.mp4,
