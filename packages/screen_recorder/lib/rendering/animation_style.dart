@@ -98,4 +98,20 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
         CursorAnimationStyle.rapid => const Duration(milliseconds: 350),
         CursorAnimationStyle.none => const Duration(milliseconds: 80),
       };
+
+  /// Re-tuning table: maps each preset to its FIR (window, curve) pair
+  /// so cursor smoothing has a single unified mental model with screen
+  /// curves. Smooth/Medium/Rapid use easeOutCubic with windows chosen
+  /// to match the legacy IIR per-frame lerp's 90% rise time. None
+  /// has a zero window (snap).
+  ({Duration window, Curve curve}) get fir => switch (this) {
+        CursorAnimationStyle.smooth =>
+          (window: const Duration(milliseconds: 450), curve: Curves.easeOutCubic),
+        CursorAnimationStyle.medium =>
+          (window: const Duration(milliseconds: 180), curve: Curves.easeOutCubic),
+        CursorAnimationStyle.rapid =>
+          (window: const Duration(milliseconds: 65), curve: Curves.easeOutCubic),
+        CursorAnimationStyle.none =>
+          (window: Duration.zero, curve: Curves.linear),
+      };
 }
