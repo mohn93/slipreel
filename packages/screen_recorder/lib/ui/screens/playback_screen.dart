@@ -332,13 +332,14 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         outputPath: out,
         sourceMetadata: meta,
         cursorRecording: cursorRec,
+        // The compositor reads everything else (zoom regions,
+        // wallpaper, cursor visuals, animation curves) off the live
+        // project state so the export matches the editor preview.
+        projectState: _captureProjectState(),
         bitrateKbps: preset.bitrateKbps,
         outputWidth: preset.width,
         outputHeight: preset.height,
         outputFps: preset.fps,
-        cursorSize: _cursorSize,
-        cursorStyle: _cursorStyle,
-        cursorClickEffect: _cursorClickEffect,
       );
       final summary = await pipeline.run();
       if (!mounted) return;

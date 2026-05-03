@@ -1,33 +1,40 @@
 // packages/screen_recorder/lib/export/export_pipeline.dart
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:ui' show Size;
+
 import '../models/cursor_recording.dart';
 import '../models/recording_metadata.dart';
-import '../rendering/cursor_click_effect.dart';
-import '../rendering/cursor_glyph.dart';
-import '../rendering/cursor_renderer.dart';
+import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
 import 'ffmpeg_decoder.dart';
 import 'ffmpeg_encoder.dart';
+import 'frame_compositor.dart';
 
-/// Orchestrates: decode source MP4 → composite cursor + effects → encode HW.
+/// Orchestrates: decode source MP4 → composite (wallpaper + frame +
+/// video + cursor + zoom) via [FrameCompositor] → encode HW.
+///
+/// The compositor renders at the framed `totalSize` (videoSize +
+/// effective padding) so the export matches the editor preview pixel
+/// for pixel; ffmpeg's `-vf scale=...,pad=...` then fits/letterboxes
+/// that into the user-chosen output preset.
 class ExportPipeline {
   final String sourcePath;
   final String outputPath;
   final RecordingMetadata sourceMetadata;
   final CursorRecording cursorRecording;
+
+  /// The full editor project — wallpaper, frame chrome, zoom regions,
+  /// animation configs, and cursor visuals. Loaded from the
+  /// `<videoPath>.editor.json` sidecar by the caller.
+  final EditorProjectState projectState;
+
   final int bitrateKbps;
 
   /// Desired output dimensions / frame rate (from the chosen ExportPreset).
   final int outputWidth;
   final int outputHeight;
   final int outputFps;
-
-  /// Cursor visual settings carried over from the editor.
-  final double cursorSize;
-  final CursorStyle cursorStyle;
-  final CursorClickEffect cursorClickEffect;
 
   // Cache for a single ffprobe result per pipeline instance.
   List<int>? _probedDims; // [width, height, fps]
@@ -37,13 +44,11 @@ class ExportPipeline {
     required this.outputPath,
     required this.sourceMetadata,
     required this.cursorRecording,
+    required this.projectState,
     required this.bitrateKbps,
     required this.outputWidth,
     required this.outputHeight,
     required this.outputFps,
-    this.cursorSize = 1.0,
-    this.cursorStyle = CursorStyle.modernDark,
-    this.cursorClickEffect = CursorClickEffect.ripple,
   });
 
   Future<ExportPerfSummary> run() async {
@@ -61,6 +66,14 @@ class ExportPipeline {
     final srcFps =
         probed[2] > 0 ? probed[2] : (sourceMetadata.fps > 0 ? sourceMetadata.fps : 30);
 
+    final compositor = FrameCompositor(
+      projectState: projectState,
+      cursorRecording: cursorRecording,
+      metadata: sourceMetadata,
+      videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
+      fps: srcFps,
+    );
+
     final decoder = FfmpegDecoder(
       inputPath: sourcePath,
       width: srcWidth,
@@ -73,50 +86,34 @@ class ExportPipeline {
       fps: outputFps,
       bitrateKbps: bitrateKbps,
       audioSourcePath: sourcePath,
-      sourceWidth: srcWidth,
-      sourceHeight: srcHeight,
+      // The encoder receives composed frames at totalSize (the framed
+      // output), not the source video resolution.
+      sourceWidth: compositor.totalSize.width.toInt(),
+      sourceHeight: compositor.totalSize.height.toInt(),
       sourceFps: srcFps,
+      pixelFormat: FfmpegPixelFormat.rgba,
     );
-
-    final cursorRenderer = CursorRenderer(
-      sizeMultiplier: cursorSize,
-      style: cursorStyle,
-      clickEffect: cursorClickEffect,
-    );
-    if (sourceMetadata.isPureSource && cursorRecording.count > 0) {
-      await cursorRenderer.initialize();
-    }
 
     await encoder.start();
 
     final wallSw = Stopwatch()..start();
     final compositeSw = Stopwatch();
-    int frameIndex = 0;
     int totalFrames = 0;
 
-    try {
-      await for (final raw in decoder.frames()) {
-        Uint8List composited = raw;
+    await for (final raw in decoder.frames()) {
+      compositeSw.start();
+      // Frame timestamp at the source rate. SCStream is VFR but ffmpeg
+      // re-times to a constant rate before piping out (see avg_frame_rate
+      // probe in _probeSource), so per-index timing is accurate.
+      final tsMicros = (1000000 * totalFrames) ~/ srcFps;
+      final composited = await compositor.compose(
+        videoFrameBgra: raw,
+        position: Duration(microseconds: tsMicros),
+      );
+      compositeSw.stop();
 
-        if (sourceMetadata.isPureSource && cursorRecording.count > 0) {
-          compositeSw.start();
-          final ts = ((1000000 * frameIndex) ~/ srcFps);
-          composited = await cursorRenderer.renderCursorOnFrame(
-            frameData: raw,
-            width: srcWidth,
-            height: srcHeight,
-            timestampMicros: ts,
-            cursorRecording: cursorRecording,
-          );
-          compositeSw.stop();
-        }
-
-        await encoder.writeFrame(composited);
-        frameIndex++;
-        totalFrames++;
-      }
-    } finally {
-      cursorRenderer.dispose();
+      await encoder.writeFrame(composited);
+      totalFrames++;
     }
 
     await encoder.finish();

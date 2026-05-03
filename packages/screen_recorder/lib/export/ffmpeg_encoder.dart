@@ -4,7 +4,21 @@ import 'dart:io';
 import 'dart:typed_data';
 import '../utils/app_logger.dart';
 
-/// Spawns `ffmpeg` to encode raw BGRA frames piped into its stdin.
+/// Pixel format of the raw frames arriving on the encoder's stdin.
+///
+/// `bgra` matches what the legacy decode→cursor-blit pipeline emits;
+/// `rgba` matches what `ui.Image.toByteData(format: rawRgba)` emits, so
+/// the FrameCompositor (which uses Flutter's Canvas) can pipe its output
+/// directly without a per-frame channel swap in Dart.
+enum FfmpegPixelFormat {
+  bgra('bgra'),
+  rgba('rgba');
+
+  const FfmpegPixelFormat(this.ffmpegName);
+  final String ffmpegName;
+}
+
+/// Spawns `ffmpeg` to encode raw BGRA/RGBA frames piped into its stdin.
 /// Tries `h264_videotoolbox` first; falls back to `libx264` if startup fails.
 ///
 /// [sourceWidth]/[sourceHeight] describe the raw frames arriving on stdin
@@ -19,15 +33,18 @@ class FfmpegEncoder {
   final int fps;
   final int bitrateKbps;
 
-  /// Dimensions of the raw BGRA frames piped into stdin (decoder/source res).
+  /// Dimensions of the raw frames piped into stdin (decoder/source res).
   final int sourceWidth;
   final int sourceHeight;
 
-  /// Frame rate of the BGRA stream arriving on stdin (decoder/source rate).
+  /// Frame rate of the stream arriving on stdin (decoder/source rate).
   /// Tells ffmpeg how to interpret stdin timing — must match the rate the
   /// decoder is actually producing frames at, not the preset's [fps], or
   /// the encoded video plays at the wrong speed.
   final int sourceFps;
+
+  /// Pixel format of frames arriving on stdin.
+  final FfmpegPixelFormat pixelFormat;
 
   /// Optional path to the source MP4 — its audio track is muxed into the
   /// output via `-c:a copy` (no re-encode).
@@ -52,6 +69,7 @@ class FfmpegEncoder {
     int? sourceWidth,
     int? sourceHeight,
     int? sourceFps,
+    this.pixelFormat = FfmpegPixelFormat.bgra,
   })  : sourceWidth = sourceWidth ?? width,
         sourceHeight = sourceHeight ?? height,
         sourceFps = sourceFps ?? fps;
@@ -67,7 +85,7 @@ class FfmpegEncoder {
       // wall time than it really does → encoded video runs slow or
       // fast even though it has the right number of frames.
       '-f', 'rawvideo',
-      '-pix_fmt', 'bgra',
+      '-pix_fmt', pixelFormat.ffmpegName,
       '-s', '${sourceWidth}x$sourceHeight',
       '-r', '$sourceFps',
       '-i', '-',
