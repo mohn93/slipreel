@@ -5,15 +5,16 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
-import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/models/export_settings.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/services/curve_library.dart';
+import 'package:screen_recorder/services/destination_handlers.dart';
 import 'package:screen_recorder/state/editor_project_state.dart';
 import 'package:screen_recorder/state/editor_project_store.dart';
+import 'package:screen_recorder/state/export_settings_store.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
@@ -22,9 +23,11 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_panel.dart';
 import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
 import 'package:screen_recorder/ui/widgets/transport/transport_buttons.dart';
 import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
-import 'package:screen_recorder/ui/widgets/export_dialog.dart';
+import 'package:screen_recorder/ui/widgets/export_dialog/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
 import 'package:screen_recorder/export/export_pipeline.dart';
+import 'package:screen_recorder/export/gif_export_pipeline.dart';
+import 'package:screen_recorder/export/ffmpeg_probe.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
 
@@ -292,35 +295,62 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     );
   }
 
-  // Transitional: legacy preset adapter. Removed in Task 9.
-  ExportResolution _resolutionFromPreset(ExportPreset p) {
-    if (p.height >= 2160) return ExportResolution.r4k;
-    if (p.height >= 1080) return ExportResolution.r1080p;
-    return ExportResolution.r720p;
-  }
+  Future<void> _export() async {
+    // Load persisted default settings.
+    final store = await ExportSettingsStore.resolveDefault();
+    final defaults = await store.load();
 
-  Future<void> _showExportDialog() async {
-    final preset = await showDialog<ExportPreset>(
-      context: context,
-      builder: (context) => const ExportDialog(),
+    if (!mounted) return;
+
+    // Load source metadata — needed for dialog (resolution capping, sub-label)
+    // and for the pipeline.
+    final meta = await RecordingMetadata.loadForVideo(widget.videoPath);
+    final sourceVideoSize =
+        Size(meta.widthPx.toDouble(), meta.heightPx.toDouble());
+
+    // Probe the video to get the authoritative duration.
+    final probed = await ffmpegProbe(
+      path: widget.videoPath,
+      metadataFps: meta.fps,
     );
-    if (preset == null || !mounted) return;
+    final videoDuration = probed.durationSec != null
+        ? Duration(milliseconds: (probed.durationSec! * 1000).round())
+        : Duration.zero;
 
-    // Resolve output path beside the source.
+    if (!mounted) return;
+
+    final settings = await showDialog<ExportSettings>(
+      context: context,
+      builder: (_) => ExportDialog(
+        initialSettings: defaults,
+        sourceVideoSize: sourceVideoSize,
+        videoDuration: videoDuration,
+      ),
+    );
+    if (settings == null || !mounted) return;
+
+    // Resolve destination handler.
+    final DestinationHandler handler = switch (settings.destination) {
+      ExportDestination.file => FileSaver(),
+      ExportDestination.clipboard => ClipboardCopier(),
+      ExportDestination.shareableLink => ShareableLinkPublisher(),
+    };
+
+    // Build suggested filename: <stem>_export_<ts>.<ext>
+    final ext = settings.format == ExportFormat.gif ? '.gif' : '.mp4';
     final src = File(widget.videoPath);
-    final dir = src.parent.path;
     final stem = src.uri.pathSegments.last.split('.').first;
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final out = '$dir/${stem}_export_${preset.name}_$ts.mp4';
+    final suggested = '${stem}_export_$ts$ext';
 
-    // Load source metadata + cursor sidecar (best-effort).
-    final meta = await RecordingMetadata.loadForVideo(widget.videoPath);
-    CursorRecording cursorRec;
-    try {
-      cursorRec = await CursorRecording.loadFromFile('${widget.videoPath}.cursor.json');
-    } catch (_) {
-      cursorRec = CursorRecording();
-    }
+    final outPath =
+        await handler.resolveOutputPath(suggestedFileName: suggested);
+    if (outPath == null || !mounted) return;
+
+    // Load cursor sidecar (best-effort).
+    final cursorRec = await CursorRecording.loadFromFile(
+            '${widget.videoPath}.cursor.json')
+        .catchError((_) => CursorRecording());
 
     if (!mounted) return;
     final progress = ValueNotifier<double?>(null);
@@ -359,36 +389,51 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       ),
     );
 
-    final settings = ExportSettings(
-      format: ExportFormat.mp4,
-      resolution: _resolutionFromPreset(preset),
-      compression: CompressionTier.web, // reasonable default for the legacy dialog
-      frameRate: preset.fps,
-      destination: ExportDestination.file,
-    );
-
     try {
-      final pipeline = ExportPipeline(
-        sourcePath: widget.videoPath,
-        outputPath: out,
-        sourceMetadata: meta,
-        cursorRecording: cursorRec,
-        // The compositor reads everything else (zoom regions,
-        // wallpaper, cursor visuals, animation curves) off the live
-        // project state so the export matches the editor preview.
-        projectState: _captureProjectState(),
-        settings: settings,
-      );
-      final summary = await pipeline.run(
-        onProgress: (p) => progress.value = p,
-      );
+      if (settings.format == ExportFormat.gif) {
+        final pipeline = GifExportPipeline(
+          sourcePath: widget.videoPath,
+          outputPath: outPath,
+          sourceMetadata: meta,
+          cursorRecording: cursorRec,
+          projectState: _captureProjectState(),
+          settings: settings,
+        );
+        await pipeline.run(onProgress: (p) => progress.value = p);
+      } else {
+        final pipeline = ExportPipeline(
+          sourcePath: widget.videoPath,
+          outputPath: outPath,
+          sourceMetadata: meta,
+          cursorRecording: cursorRec,
+          projectState: _captureProjectState(),
+          settings: settings,
+        );
+        await pipeline.run(onProgress: (p) => progress.value = p);
+      }
+
       if (!mounted) return;
       Navigator.of(context).pop(); // close progress dialog
+
+      // Persist settings minus the title (plan rule 5).
+      await store.save(settings.copyWith(clearTitle: true));
+
+      final result = await handler.deliver(outPath);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(summary.pass
-            ? 'Export complete: ${preset.name} (${summary.realtimeMultiple.toStringAsFixed(1)}× real-time)'
-            : 'Export complete (slower than real-time): $out'),
-        backgroundColor: summary.pass ? const Color(0xFF4CAF50) : Colors.orange,
+        content: Text(result.message),
+        backgroundColor: const Color(0xFF4CAF50),
+        action: result.revealPath != null
+            ? SnackBarAction(
+                label: 'Show in Finder',
+                onPressed: () {
+                  // macOS-only: reveal in Finder. No-op on other platforms.
+                  if (Platform.isMacOS) {
+                    Process.run('open', ['-R', result.revealPath!]);
+                  }
+                },
+              )
+            : null,
       ));
     } catch (e) {
       if (!mounted) return;
@@ -905,7 +950,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
 
               // Export button
               ElevatedButton.icon(
-                onPressed: _showExportDialog,
+                onPressed: _export,
                 icon: const Icon(Icons.file_download),
                 label: const Text('Export'),
                 style: ElevatedButton.styleFrom(
@@ -922,6 +967,4 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       ),
     );
   }
-
 }
-
