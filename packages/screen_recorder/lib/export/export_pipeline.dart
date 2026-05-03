@@ -92,8 +92,6 @@ class ExportPipeline {
     final srcWidth = probed.width;
     final srcHeight = probed.height;
 
-    // Derive output dimensions and bitrate from ExportSettings so callers
-    // supply one settings value rather than raw fields.
     final outDims = settings.resolution.dimensionsFor(
       Size(srcWidth.toDouble(), srcHeight.toDouble()),
     );

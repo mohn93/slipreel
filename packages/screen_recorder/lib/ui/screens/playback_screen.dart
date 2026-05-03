@@ -359,7 +359,6 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       ),
     );
 
-    // Transitional: legacy preset adapter. Removed in Task 9.
     final settings = ExportSettings(
       format: ExportFormat.mp4,
       resolution: _resolutionFromPreset(preset),

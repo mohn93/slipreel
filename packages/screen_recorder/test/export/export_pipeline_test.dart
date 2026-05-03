@@ -38,7 +38,7 @@ void main() {
       // r720p.dimensionsFor(320×240) → width = round(320*720/240) = 960 (even),
       // height = 720. This upscales the 320×240 fixture; the test's goal is
       // "produces a valid MP4 + sane summary", not pixel-exact dimensions.
-      final settings = const ExportSettings(
+      const settings = ExportSettings(
         format: ExportFormat.mp4,
         resolution: ExportResolution.r720p,
         compression: CompressionTier.web,
