@@ -13,16 +13,20 @@ class ZoomTransformer {
   /// [focalPoint] (in video coords) is what gets centered; pass the
   /// recorded cursor position for cursor-following zoom. When null, falls
   /// back to the zoom region's stored rect center.
+  ///
+  /// [rampCurve] shapes the zoom factor's enter/exit ramps. Defaults
+  /// to easeInOutQuad to match the original hand-rolled curve.
   Matrix4 getTransform({
     required Duration position,
     required ZoomRegion zoomRegion,
     required Size videoSize,
     Offset? focalPoint,
+    Curve rampCurve = Curves.easeInOutQuad,
   }) {
     if (!zoomRegion.isActive(position)) {
       return Matrix4.identity();
     }
-    final z = _calculateZoomFactor(position, zoomRegion);
+    final z = _calculateZoomFactor(position, zoomRegion, rampCurve);
     if (z == 1.0) return Matrix4.identity();
 
     final focal = focalPoint ?? zoomRegion.rect.center;
@@ -53,15 +57,13 @@ class ZoomTransformer {
     );
   }
 
-  double _easeInOutCurve(double t) =>
-      t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
-
   /// Three-phase zoom: ease-in over [enterDuration], hold at full
   /// zoomLevel for the middle, ease-out over [exitDuration]. If the
   /// requested enter+exit don't fit inside the region, both are scaled
   /// down proportionally so the shape is preserved (and the hold goes
   /// to zero in the limit).
-  double _calculateZoomFactor(Duration position, ZoomRegion z) {
+  double _calculateZoomFactor(
+      Duration position, ZoomRegion z, Curve curve) {
     final tIntoRegionUs =
         (position - z.startTime).inMicroseconds.clamp(0, z.duration.inMicroseconds);
     final regionUs = z.duration.inMicroseconds;
@@ -78,12 +80,12 @@ class ZoomTransformer {
 
     if (tIntoRegionUs < enterUs) {
       final t = enterUs == 0 ? 1.0 : tIntoRegionUs / enterUs;
-      return 1.0 + (z.zoomLevel - 1.0) * _easeInOutCurve(t);
+      return 1.0 + (z.zoomLevel - 1.0) * curve.transform(t);
     }
     final exitStartUs = regionUs - exitUs;
     if (tIntoRegionUs >= exitStartUs && exitUs > 0) {
       final t = ((tIntoRegionUs - exitStartUs) / exitUs).clamp(0.0, 1.0);
-      return 1.0 + (z.zoomLevel - 1.0) * (1 - _easeInOutCurve(t));
+      return 1.0 + (z.zoomLevel - 1.0) * (1 - curve.transform(t));
     }
     // Hold phase.
     return z.zoomLevel;

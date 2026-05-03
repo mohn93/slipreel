@@ -6,14 +6,17 @@ import '../../rendering/cursor_geometry.dart';
 import '../../rendering/cursor_glyph.dart';
 
 /// Paints the recorded cursor on top of the video at the player's current
-/// position. Reads positions from [CursorRecording] using the shared
-/// [cursorAt] geometry helper, so its math matches the export-time
-/// renderer; the actual glyph + click effects are drawn via
-/// [paintCursorWithEffects] so the preview and the exported video stay
-/// visually consistent.
+/// position. Takes a pre-computed [screenPos] (in screen-space pixels)
+/// so the parent can apply motion smoothing via a CursorMotionController
+/// — the painter itself stays stateless. Click events are still looked
+/// up against [cursorRecording] for the press-pulse + ripple.
+///
+/// The glyph + click effects are drawn via [paintCursorWithEffects] so
+/// the preview and the exported video stay visually consistent.
 class CursorOverlayPainter extends CustomPainter {
   final CursorRecording cursorRecording;
   final Duration position;
+  final Offset screenPos;
   final Size videoSize;
   final Size screenSize;
   final double sizeMultiplier;
@@ -23,6 +26,7 @@ class CursorOverlayPainter extends CustomPainter {
   CursorOverlayPainter({
     required this.cursorRecording,
     required this.position,
+    required this.screenPos,
     required this.videoSize,
     required this.screenSize,
     this.sizeMultiplier = 1.0,
@@ -32,11 +36,8 @@ class CursorOverlayPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pos = cursorAt(cursorRecording, position);
-    if (pos == null) return;
-
     final inVideo = screenToVideoSpace(
-      screenPos: Offset(pos.x, pos.y),
+      screenPos: screenPos,
       screenSize: screenSize,
       videoSize: videoSize,
     );
@@ -66,6 +67,7 @@ class CursorOverlayPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CursorOverlayPainter old) {
     return old.position != position ||
+        old.screenPos != screenPos ||
         old.cursorRecording != cursorRecording ||
         old.videoSize != videoSize ||
         old.screenSize != screenSize ||

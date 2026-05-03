@@ -6,7 +6,8 @@ import 'package:screen_recorder/ui/widgets/cursor_overlay_painter.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 void main() {
-  testWidgets('paints nothing when cursor recording is empty', (tester) async {
+  testWidgets('renders without throwing when given a screen position',
+      (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: SizedBox(
         width: 200,
@@ -15,6 +16,7 @@ void main() {
           painter: CursorOverlayPainter(
             cursorRecording: CursorRecording(),
             position: Duration.zero,
+            screenPos: const Offset(50, 25),
             videoSize: const Size(200, 100),
             screenSize: const Size(200, 100),
           ),
@@ -31,12 +33,14 @@ void main() {
     final a = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 100),
+      screenPos: const Offset(0, 0),
       videoSize: const Size(200, 100),
       screenSize: const Size(200, 100),
     );
     final b = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 200),
+      screenPos: const Offset(0, 0),
       videoSize: const Size(200, 100),
       screenSize: const Size(200, 100),
     );

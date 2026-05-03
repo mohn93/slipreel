@@ -7,6 +7,7 @@ import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_preset.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
+import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
@@ -18,6 +19,7 @@ import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_panel.dart';
 import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
+import 'package:screen_recorder/ui/widgets/zoom/cursor_motion_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
@@ -62,6 +64,13 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   double _cursorSize = 1.0;
   CursorStyle _cursorStyle = CursorStyle.modernDark;
   CursorClickEffect _cursorClickEffect = CursorClickEffect.ripple;
+  // Animation tab — screen + cursor styles + motion blur amount.
+  // motionBlur is captured but not yet rendered.
+  ScreenAnimationStyle _screenAnimationStyle =
+      ScreenAnimationStyle.smooth;
+  CursorAnimationStyle _cursorAnimationStyle =
+      CursorAnimationStyle.smooth;
+  double _motionBlur = 0;
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
@@ -74,6 +83,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   // last smoothed offset) lives in the controller so it can be unit-
   // tested without a widget tree.
   final ZoomFocalController _zoomFocalController = ZoomFocalController();
+  // Smooths the synthetic cursor's on-screen position toward the
+  // recorded path each frame, driven by _cursorAnimationStyle.
+  final CursorMotionController _cursorMotionController =
+      CursorMotionController();
   // Dev HUD: when on, draws a marker at the recorded cursor's video-pixel
   // position so we can visually confirm the zoom focal is tracking it.
   bool _showZoomDebug = false;
@@ -443,6 +456,15 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                           setState(() => _cursorStyle = s),
                       onCursorClickEffectChanged: (e) =>
                           setState(() => _cursorClickEffect = e),
+                      screenAnimationStyle: _screenAnimationStyle,
+                      cursorAnimationStyle: _cursorAnimationStyle,
+                      motionBlur: _motionBlur,
+                      onScreenAnimationStyleChanged: (s) =>
+                          setState(() => _screenAnimationStyle = s),
+                      onCursorAnimationStyleChanged: (s) => setState(
+                          () => _cursorAnimationStyle = s),
+                      onMotionBlurChanged: (v) =>
+                          setState(() => _motionBlur = v),
                       onZoomChanged: (index, next) {
                         setState(() => _zoomRegions[index] = next);
                       },
@@ -550,6 +572,14 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                 _cursorRecording.count > 0 &&
                 !_hideCursorOverlay;
 
+            final motion = showCursor
+                ? _cursorMotionController.update(
+                    position: pos,
+                    cursorRecording: _cursorRecording,
+                    smoothing: _cursorAnimationStyle.smoothing,
+                  )
+                : null;
+
             final composition = Stack(
               children: [
                 if (currentFrame.wallpaperCategory != null)
@@ -580,11 +610,12 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                         fit: StackFit.expand,
                         children: [
                           videoPlayer!,
-                          if (showCursor)
+                          if (motion != null)
                             CustomPaint(
                               painter: CursorOverlayPainter(
                                 cursorRecording: _cursorRecording,
                                 position: pos,
+                                screenPos: motion.screenPos,
                                 videoSize: videoSize,
                                 screenSize: videoSize,
                                 sizeMultiplier: _cursorSize,
@@ -624,6 +655,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
               position: pos,
               zoomRegions: _zoomRegions,
               cursorRecording: _cursorRecording,
+              smoothing: _cursorAnimationStyle.smoothing,
             );
             if (focalUpdate == null) return composition;
 
@@ -635,8 +667,8 @@ class _PlaybackScreenState extends State<PlaybackScreen>
             // level produces a visual snap.
             return TweenAnimationBuilder<double>(
               tween: Tween<double>(end: activeZoom.zoomLevel),
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
+              duration: _screenAnimationStyle.badgeDuration,
+              curve: _screenAnimationStyle.badgeCurve,
               child: composition,
               builder: (context, animatedZoom, transformChild) {
                 final tweenedRegion =
@@ -646,6 +678,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                   zoomRegion: tweenedRegion,
                   videoSize: videoSize,
                   focalPoint: focalForFrame,
+                  rampCurve: _screenAnimationStyle.rampCurve,
                 );
                 return Transform(
                   transform: transform,

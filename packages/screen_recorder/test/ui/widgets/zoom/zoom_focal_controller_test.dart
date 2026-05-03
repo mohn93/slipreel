@@ -305,5 +305,47 @@ void main() {
 
       expect(ctrl.smoothedFocal, update!.focal);
     });
+
+    test('repeated update() at the same position is idempotent', () {
+      // A parent setState (e.g. flipping an inspector toggle) can
+      // trigger an extra builder run for the same playhead before the
+      // next animation tick. Without caching, smoothing would advance
+      // twice in one frame and the focal would visibly jump. Verify
+      // a second call at the same position returns the cached focal
+      // and does not lerp again.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+      );
+      final cursor = _recordingAt([
+        (micros: 0, x: 100, y: 100),
+        (micros: 16000, x: 700, y: 600),
+      ]);
+
+      // Frame 1 — snap to the first cursor sample.
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+      );
+
+      // Frame 2 — lerp toward the new cursor sample.
+      final firstAtT2 = ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+      );
+
+      // Same position again (parent setState) — must return the same
+      // focal without advancing the lerp.
+      final secondAtT2 = ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [zoom],
+        cursorRecording: cursor,
+      );
+
+      expect(secondAtT2!.focal, firstAtT2!.focal);
+    });
   });
 }

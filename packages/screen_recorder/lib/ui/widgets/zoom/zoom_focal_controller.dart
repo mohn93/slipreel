@@ -29,6 +29,14 @@ class ZoomFocalController {
   ZoomRegion? _previousActiveZoom;
   Offset? _smoothedFocal;
 
+  /// Cached `(position → result)` for the most recent [update] call.
+  /// Calling again with the same [position] returns the cached value
+  /// without advancing smoothing — otherwise a parent setState that
+  /// triggers an extra builder run for the same frame would lerp the
+  /// focal twice and visibly jump the zoom Transform's translate.
+  Duration? _cachedPosition;
+  ZoomFocalUpdate? _cachedResult;
+
   /// Last smoothed focal returned. Exposed for the debug HUD that
   /// renders the focal as a hollow yellow ring.
   Offset? get smoothedFocal => _smoothedFocal;
@@ -36,16 +44,23 @@ class ZoomFocalController {
   /// Compute the smoothed focal for the current frame.
   ///
   /// Returns `null` when no zoom region is active at [position].
+  /// Idempotent for the same [position] — see [_cachedPosition].
   ZoomFocalUpdate? update({
     required Duration position,
     required List<ZoomRegion> zoomRegions,
     required CursorRecording cursorRecording,
     double smoothing = 0.18,
   }) {
+    if (_cachedPosition == position) {
+      return _cachedResult;
+    }
+    _cachedPosition = position;
+
     final activeZoom = _activeZoomAt(position, zoomRegions);
     if (activeZoom == null) {
       _previousActiveZoom = null;
       _smoothedFocal = null;
+      _cachedResult = null;
       return null;
     }
 
@@ -64,7 +79,9 @@ class ZoomFocalController {
           prev == null ? rawFocal : Offset.lerp(prev, rawFocal, smoothing)!;
     }
 
-    return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
+    _cachedResult =
+        ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
+    return _cachedResult;
   }
 
   /// Drop all smoothing state. Use when switching to a different
@@ -72,6 +89,8 @@ class ZoomFocalController {
   void reset() {
     _previousActiveZoom = null;
     _smoothedFocal = null;
+    _cachedPosition = null;
+    _cachedResult = null;
   }
 
   static ZoomRegion? _activeZoomAt(

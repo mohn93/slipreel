@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
@@ -48,6 +49,12 @@ class InspectorPanel extends StatefulWidget {
     this.onCursorSizeChanged,
     this.onCursorStyleChanged,
     this.onCursorClickEffectChanged,
+    this.screenAnimationStyle = ScreenAnimationStyle.smooth,
+    this.cursorAnimationStyle = CursorAnimationStyle.smooth,
+    this.motionBlur = 0,
+    this.onScreenAnimationStyleChanged,
+    this.onCursorAnimationStyleChanged,
+    this.onMotionBlurChanged,
   });
 
   final FrameSettingsProvider frameSettings;
@@ -74,6 +81,15 @@ class InspectorPanel extends StatefulWidget {
   final ValueChanged<double>? onCursorSizeChanged;
   final ValueChanged<CursorStyle>? onCursorStyleChanged;
   final ValueChanged<CursorClickEffect>? onCursorClickEffectChanged;
+
+  /// Screen + cursor animation styles drive zoom transitions and
+  /// focal smoothing on the playback canvas.
+  final ScreenAnimationStyle screenAnimationStyle;
+  final CursorAnimationStyle cursorAnimationStyle;
+  final double motionBlur;
+  final ValueChanged<ScreenAnimationStyle>? onScreenAnimationStyleChanged;
+  final ValueChanged<CursorAnimationStyle>? onCursorAnimationStyleChanged;
+  final ValueChanged<double>? onMotionBlurChanged;
 
   /// What's currently selected on the timeline. When non-null, the
   /// inspector enters context mode. Null returns to tab mode.
@@ -160,7 +176,16 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.captions => const CaptionsTab(),
         InspectorTab.audio => const AudioTab(),
         InspectorTab.shortcuts => const ShortcutsTab(),
-        InspectorTab.animation => const AnimationTab(),
+        InspectorTab.animation => AnimationTab(
+            screenStyle: widget.screenAnimationStyle,
+            onScreenStyleChanged:
+                widget.onScreenAnimationStyleChanged ?? (_) {},
+            cursorStyle: widget.cursorAnimationStyle,
+            onCursorStyleChanged:
+                widget.onCursorAnimationStyleChanged ?? (_) {},
+            motionBlur: widget.motionBlur,
+            onMotionBlurChanged: widget.onMotionBlurChanged ?? (_) {},
+          ),
       },
     );
   }
