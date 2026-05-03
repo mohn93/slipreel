@@ -36,14 +36,6 @@ class ZoomFocalController {
   Offset? _tweenTo;
   Duration? _tweenStartPosition;
 
-  /// Cached `(position → result)` for the most recent [update] call.
-  /// Calling again with the same [position] returns the cached value
-  /// without advancing the tween — otherwise a parent setState that
-  /// triggers an extra builder run for the same frame would advance
-  /// the focal twice and visibly jump.
-  Duration? _cachedPosition;
-  ZoomFocalUpdate? _cachedResult;
-
   /// Last computed focal. Exposed for the debug HUD that draws the
   /// focal as a hollow yellow ring.
   Offset? get smoothedFocal => _smoothedFocal;
@@ -51,7 +43,12 @@ class ZoomFocalController {
   /// Compute the focal for the current frame.
   ///
   /// Returns `null` when no zoom region is active at [position].
-  /// Idempotent for the same [position] — see [_cachedPosition].
+  /// Idempotent for the same set of inputs — repeated calls at the
+  /// same position with the same active zoom and cursor produce the
+  /// same focal (the tween logic only advances when the inputs
+  /// genuinely change), so settings edits at a paused position take
+  /// effect on the very next render rather than waiting for the
+  /// playhead to move.
   ///
   /// [cursor] is the cursor position in source-video pixels for this
   /// frame. Pass the same value the visible cursor sprite is drawn at
@@ -66,17 +63,11 @@ class ZoomFocalController {
     required Offset? cursor,
     required Size videoSize,
   }) {
-    if (_cachedPosition == position) {
-      return _cachedResult;
-    }
-    _cachedPosition = position;
-
     final activeZoom = _activeZoomAt(position, zoomRegions);
     if (activeZoom == null) {
       _previousActiveZoom = null;
       _smoothedFocal = null;
       _resetTween();
-      _cachedResult = null;
       return null;
     }
 
@@ -86,8 +77,7 @@ class ZoomFocalController {
       final initial = _initialTarget(activeZoom, cursor);
       _smoothedFocal = initial;
       _resetTween();
-      _cachedResult = ZoomFocalUpdate(zoom: activeZoom, focal: initial);
-      return _cachedResult;
+      return ZoomFocalUpdate(zoom: activeZoom, focal: initial);
     }
 
     // Step 1 — advance any in-flight tween before we look at the
@@ -144,9 +134,7 @@ class ZoomFocalController {
       }
     }
 
-    _cachedResult =
-        ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
-    return _cachedResult;
+    return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
   }
 
   /// Drop all smoothing state. Use when switching to a different
@@ -155,8 +143,6 @@ class ZoomFocalController {
     _previousActiveZoom = null;
     _smoothedFocal = null;
     _resetTween();
-    _cachedPosition = null;
-    _cachedResult = null;
   }
 
   // --- internals --------------------------------------------------

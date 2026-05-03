@@ -560,6 +560,57 @@ void main() {
     });
 
     test(
+        'editing a zoom region while paused at the same position takes '
+        'effect on the next update (no stale-cache hangover)', () {
+      // Regression for "settings on the side panel don't apply till I
+      // change them again to take effect": the controller used to
+      // cache by position only, so a setting edit at a paused playhead
+      // returned the focal computed under the old settings. Now the
+      // controller looks up the active zoom every call and snaps when
+      // a fresh ZoomRegion instance arrives — which is what
+      // copyWith() produces.
+      final ctrl = ZoomFocalController();
+      final initial = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        followCursor: true,
+      );
+
+      // Establish state at position P with the original zoom.
+      ctrl.update(
+        position: const Duration(milliseconds: 500),
+        zoomRegions: [initial],
+        cursor: const Offset(50, 50),
+        videoSize: _videoSize,
+      );
+
+      // User flips the zoom's followCursor toggle off — copyWith
+      // returns a fresh ZoomRegion instance with the same identity
+      // hash but different equality. The controller must pick up
+      // the change without the playhead moving.
+      final edited = initial.copyWith(followCursor: false);
+      final out = ctrl.update(
+        position: const Duration(milliseconds: 500), // same P
+        zoomRegions: [edited],
+        cursor: const Offset(50, 50),
+        videoSize: _videoSize,
+      );
+
+      // followCursor=false pins focal to rect.center = (50, 50).
+      // (Identical here to the earlier cursor coincidentally — what
+      // matters is the snap branch fired and the focal is now the
+      // rect.center even though only the toggle changed.)
+      expect(out!.focal, const Offset(50, 50));
+
+      // And the zoom in the result is the new instance, not the old.
+      expect(identical(out.zoom, edited), isTrue,
+          reason:
+              'controller must report the freshly-edited zoom region, '
+              'not the cached one from the previous call');
+    });
+
+    test(
         'cursor matches sprite when caller passes a smoothed cursor — '
         'no drift between camera and the visible cursor', () {
       // Regression: previously the controller looked up the cursor
