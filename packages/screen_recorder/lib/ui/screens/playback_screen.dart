@@ -14,6 +14,7 @@ import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
 import 'package:screen_recorder/rendering/wallpaper.dart';
+import 'package:screen_recorder/services/curve_library.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
@@ -91,6 +92,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   // Dev HUD: when on, draws a marker at the recorded cursor's video-pixel
   // position so we can visually confirm the zoom focal is tracking it.
   bool _showZoomDebug = false;
+  // Persistence for user-saved curves shown in the curve editor's
+  // Library row. One instance per playback screen so saves survive
+  // animation-tab rebuilds.
+  final FileCurveLibrary _curveLibrary = FileCurveLibrary();
 
   @override
   void initState() {
@@ -457,15 +462,31 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                           setState(() => _cursorStyle = s),
                       onCursorClickEffectChanged: (e) =>
                           setState(() => _cursorClickEffect = e),
-                      screenAnimationStyle: _screenAnimationStyle,
-                      cursorAnimationStyle: _cursorAnimationStyle,
+                      screenAnimationConfig:
+                          ScreenAnimationConfig.preset(_screenAnimationStyle),
+                      cursorAnimationConfig:
+                          CursorAnimationConfig.preset(_cursorAnimationStyle),
                       motionBlur: _motionBlur,
-                      onScreenAnimationStyleChanged: (s) =>
-                          setState(() => _screenAnimationStyle = s),
-                      onCursorAnimationStyleChanged: (s) => setState(
-                          () => _cursorAnimationStyle = s),
+                      // TODO(task-11): the playback state is still enum-only,
+                      // so a Custom config can't round-trip — we silently
+                      // drop it here. Task 11 lifts this state to
+                      // ScreenAnimationConfig/CursorAnimationConfig and
+                      // wires Custom into the canvas render.
+                      onScreenAnimationConfigChanged: (c) {
+                        final preset = c.preset;
+                        if (preset != null) {
+                          setState(() => _screenAnimationStyle = preset);
+                        }
+                      },
+                      onCursorAnimationConfigChanged: (c) {
+                        final preset = c.preset;
+                        if (preset != null) {
+                          setState(() => _cursorAnimationStyle = preset);
+                        }
+                      },
                       onMotionBlurChanged: (v) =>
                           setState(() => _motionBlur = v),
+                      curveLibrary: _curveLibrary,
                       onZoomChanged: (index, next) {
                         setState(() => _zoomRegions[index] = next);
                       },

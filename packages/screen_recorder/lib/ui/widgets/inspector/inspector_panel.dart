@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
+import 'package:screen_recorder/services/curve_library.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/clip_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';
@@ -49,12 +51,15 @@ class InspectorPanel extends StatefulWidget {
     this.onCursorSizeChanged,
     this.onCursorStyleChanged,
     this.onCursorClickEffectChanged,
-    this.screenAnimationStyle = ScreenAnimationStyle.smooth,
-    this.cursorAnimationStyle = CursorAnimationStyle.smooth,
+    this.screenAnimationConfig = const ScreenAnimationConfig.preset(
+        ScreenAnimationStyle.smooth),
+    this.cursorAnimationConfig = const CursorAnimationConfig.preset(
+        CursorAnimationStyle.smooth),
     this.motionBlur = 0,
-    this.onScreenAnimationStyleChanged,
-    this.onCursorAnimationStyleChanged,
+    this.onScreenAnimationConfigChanged,
+    this.onCursorAnimationConfigChanged,
     this.onMotionBlurChanged,
+    required this.curveLibrary,
   });
 
   final FrameSettingsProvider frameSettings;
@@ -82,14 +87,21 @@ class InspectorPanel extends StatefulWidget {
   final ValueChanged<CursorStyle>? onCursorStyleChanged;
   final ValueChanged<CursorClickEffect>? onCursorClickEffectChanged;
 
-  /// Screen + cursor animation styles drive zoom transitions and
-  /// focal smoothing on the playback canvas.
-  final ScreenAnimationStyle screenAnimationStyle;
-  final CursorAnimationStyle cursorAnimationStyle;
+  /// Screen + cursor animation configs drive zoom transitions and
+  /// focal smoothing on the playback canvas. Each config is either a
+  /// preset enum or a user-authored cubic bezier; the animation tab
+  /// chooses between them.
+  final ScreenAnimationConfig screenAnimationConfig;
+  final CursorAnimationConfig cursorAnimationConfig;
   final double motionBlur;
-  final ValueChanged<ScreenAnimationStyle>? onScreenAnimationStyleChanged;
-  final ValueChanged<CursorAnimationStyle>? onCursorAnimationStyleChanged;
+  final ValueChanged<ScreenAnimationConfig>? onScreenAnimationConfigChanged;
+  final ValueChanged<CursorAnimationConfig>? onCursorAnimationConfigChanged;
   final ValueChanged<double>? onMotionBlurChanged;
+
+  /// Persistence for user-saved curves shown in the curve editor's
+  /// Library row. Required so the inspector doesn't conjure its own
+  /// instance and lose entries between rebuilds.
+  final CurveLibrary curveLibrary;
 
   /// What's currently selected on the timeline. When non-null, the
   /// inspector enters context mode. Null returns to tab mode.
@@ -177,14 +189,16 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.audio => const AudioTab(),
         InspectorTab.shortcuts => const ShortcutsTab(),
         InspectorTab.animation => AnimationTab(
-            screenStyle: widget.screenAnimationStyle,
-            onScreenStyleChanged:
-                widget.onScreenAnimationStyleChanged ?? (_) {},
-            cursorStyle: widget.cursorAnimationStyle,
-            onCursorStyleChanged:
-                widget.onCursorAnimationStyleChanged ?? (_) {},
+            screenConfig: widget.screenAnimationConfig,
+            onScreenConfigChanged: (c) =>
+                widget.onScreenAnimationConfigChanged?.call(c),
+            cursorConfig: widget.cursorAnimationConfig,
+            onCursorConfigChanged: (c) =>
+                widget.onCursorAnimationConfigChanged?.call(c),
             motionBlur: widget.motionBlur,
-            onMotionBlurChanged: widget.onMotionBlurChanged ?? (_) {},
+            onMotionBlurChanged: (v) =>
+                widget.onMotionBlurChanged?.call(v),
+            library: widget.curveLibrary,
           ),
       },
     );

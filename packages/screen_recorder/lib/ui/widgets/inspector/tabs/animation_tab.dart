@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:screen_recorder/rendering/animation_config.dart';
+import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
+import 'package:screen_recorder/services/curve_library.dart';
+import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
+import 'package:screen_recorder/ui/widgets/inspector/curve_graph_painter.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Animation tab — screen / cursor animation styles + motion blur.
@@ -10,28 +15,38 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 class AnimationTab extends StatefulWidget {
   const AnimationTab({
     super.key,
-    required this.screenStyle,
-    required this.onScreenStyleChanged,
-    required this.cursorStyle,
-    required this.onCursorStyleChanged,
+    required this.screenConfig,
+    required this.onScreenConfigChanged,
+    required this.cursorConfig,
+    required this.onCursorConfigChanged,
     required this.motionBlur,
     required this.onMotionBlurChanged,
+    required this.library,
   });
 
-  final ScreenAnimationStyle screenStyle;
-  final ValueChanged<ScreenAnimationStyle> onScreenStyleChanged;
-  final CursorAnimationStyle cursorStyle;
-  final ValueChanged<CursorAnimationStyle> onCursorStyleChanged;
+  final ScreenAnimationConfig screenConfig;
+  final ValueChanged<ScreenAnimationConfig> onScreenConfigChanged;
+  final CursorAnimationConfig cursorConfig;
+  final ValueChanged<CursorAnimationConfig> onCursorConfigChanged;
   final double motionBlur;
   final ValueChanged<double> onMotionBlurChanged;
+  final CurveLibrary library;
 
   @override
   State<AnimationTab> createState() => _AnimationTabState();
 }
 
 class _AnimationTabState extends State<AnimationTab> {
-  static const _screenDefault = ScreenAnimationStyle.smooth;
-  static const _cursorDefault = CursorAnimationStyle.smooth;
+  /// Default seed curve for the Screen Custom tile when the user picks
+  /// it for the first time — matches CSS `ease-in-out` so the feel is
+  /// close to the Smooth preset.
+  static const _defaultScreenCustomCurve =
+      CubicBezierCurve(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0);
+
+  /// Default seed curve for the Cursor Custom tile — CSS `ease`, which
+  /// matches the Smooth cursor preset's feel.
+  static const _defaultCursorCustomCurve =
+      CubicBezierCurve(x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0);
 
   @override
   Widget build(BuildContext context) {
@@ -54,30 +69,53 @@ class _AnimationTabState extends State<AnimationTab> {
             for (final s in ScreenAnimationStyle.values)
               _AnimationOptionTile<ScreenAnimationStyle>(
                 value: s,
-                selected: widget.screenStyle,
+                selected: widget.screenConfig.preset,
                 label: s.label,
                 icon: _screenIcon(s),
                 previewCurve: s.previewCurve,
                 previewDuration: s.previewDuration,
-                onSelected: widget.onScreenStyleChanged,
+                onSelected: (s) => widget.onScreenConfigChanged(
+                    ScreenAnimationConfig.preset(s)),
                 size: 84,
               ),
+            _CustomTile(
+              selected: widget.screenConfig.isCustom,
+              curve: widget.screenConfig.customCurve ??
+                  _defaultScreenCustomCurve,
+              onTap: () => widget.onScreenConfigChanged(
+                ScreenAnimationConfig.custom(
+                  curve: widget.screenConfig.customCurve ??
+                      _defaultScreenCustomCurve,
+                  badgeDuration: widget.screenConfig.badgeDuration,
+                ),
+              ),
+              size: 84,
+            ),
           ],
         ),
-        const SizedBox(height: 12),
-        Text(
-          widget.screenStyle.description,
-          style: const TextStyle(
-            color: kInspectorMuted,
-            fontSize: 13,
-            height: 1.4,
+        if (widget.screenConfig.isCustom)
+          CurveEditor(
+            curve: widget.screenConfig.customCurve!,
+            duration: widget.screenConfig.badgeDuration,
+            durationLabel: 'Badge duration',
+            durationMin: const Duration(milliseconds: 100),
+            durationMax: const Duration(milliseconds: 1000),
+            onCurveChanged: (c) => widget.onScreenConfigChanged(
+              ScreenAnimationConfig.custom(
+                curve: c,
+                badgeDuration: widget.screenConfig.badgeDuration,
+              ),
+            ),
+            onDurationChanged: (d) => widget.onScreenConfigChanged(
+              ScreenAnimationConfig.custom(
+                curve: widget.screenConfig.customCurve!,
+                badgeDuration: d,
+              ),
+            ),
+            library: widget.library,
+            showDurationSlider: true,
           ),
-        ),
         const SizedBox(height: 12),
-        if (widget.screenStyle != _screenDefault)
-          _ResetButton(
-            onTap: () => widget.onScreenStyleChanged(_screenDefault),
-          ),
         const InspectorSectionDivider(),
         const Text(
           'Cursor animation style',
@@ -95,29 +133,65 @@ class _AnimationTabState extends State<AnimationTab> {
             for (final s in CursorAnimationStyle.values)
               _AnimationOptionTile<CursorAnimationStyle>(
                 value: s,
-                selected: widget.cursorStyle,
+                selected: widget.cursorConfig.preset,
                 label: s.label,
                 icon: _cursorIcon(s),
                 previewCurve: s.previewCurve,
                 previewDuration: s.previewDuration,
-                onSelected: widget.onCursorStyleChanged,
+                onSelected: (s) => widget.onCursorConfigChanged(
+                    CursorAnimationConfig.preset(s)),
                 size: 76,
               ),
+            _CustomTile(
+              selected: widget.cursorConfig.isCustom,
+              curve: widget.cursorConfig.customCurve ??
+                  _defaultCursorCustomCurve,
+              onTap: () => widget.onCursorConfigChanged(
+                CursorAnimationConfig.custom(
+                  curve: widget.cursorConfig.customCurve ??
+                      _defaultCursorCustomCurve,
+                  // The "None" preset reports a zero window; promote it
+                  // to a sensible default so the editor's slider has a
+                  // non-degenerate starting value when the user first
+                  // chooses Custom from None.
+                  window: widget.cursorConfig.window == Duration.zero
+                      ? const Duration(milliseconds: 300)
+                      : widget.cursorConfig.window,
+                ),
+              ),
+              size: 76,
+            ),
           ],
         ),
-        if (widget.cursorStyle != _cursorDefault) ...[
-          const SizedBox(height: 12),
-          _ResetButton(
-            onTap: () => widget.onCursorStyleChanged(_cursorDefault),
+        if (widget.cursorConfig.isCustom)
+          CurveEditor(
+            curve: widget.cursorConfig.customCurve!,
+            duration: widget.cursorConfig.window,
+            durationLabel: 'Catch-up window',
+            durationMin: Duration.zero,
+            durationMax: const Duration(milliseconds: 1500),
+            onCurveChanged: (c) => widget.onCursorConfigChanged(
+              CursorAnimationConfig.custom(
+                curve: c,
+                window: widget.cursorConfig.window,
+              ),
+            ),
+            onDurationChanged: (d) => widget.onCursorConfigChanged(
+              CursorAnimationConfig.custom(
+                curve: widget.cursorConfig.customCurve!,
+                window: d,
+              ),
+            ),
+            library: widget.library,
+            showDurationSlider: true,
           ),
-        ],
         const InspectorSectionDivider(),
         InspectorSlider(
           label: 'Motion blur',
           subtitle:
-              'While mouse cursor or screen is moving, cinematic '
-              'motion blur effect will be applied. (Coming soon — '
-              'value is captured but not yet rendered.)',
+              'While mouse cursor or screen is moving, cinematic motion '
+              'blur effect will be applied. (Coming soon — value is '
+              'captured but not yet rendered.)',
           value: widget.motionBlur,
           min: 0,
           max: 1,
@@ -173,7 +247,10 @@ class _AnimationOptionTile<T> extends StatefulWidget {
   });
 
   final T value;
-  final T selected;
+  // Nullable: when the parent's config is in custom mode, no preset is
+  // selected — rendered with `==` against null so all preset tiles
+  // appear unselected, which is correct.
+  final T? selected;
   final String label;
   final IconData icon;
   final Curve previewCurve;
@@ -271,6 +348,73 @@ class _AnimationOptionTileState<T> extends State<_AnimationOptionTile<T>>
   }
 }
 
+/// Tile that opens the inline curve editor. Renders a tiny preview of
+/// the user's current bezier as the tile's body so the tile reflects
+/// the curve they're about to edit (or just edited).
+class _CustomTile extends StatefulWidget {
+  const _CustomTile({
+    required this.selected,
+    required this.curve,
+    required this.onTap,
+    required this.size,
+  });
+
+  final bool selected;
+  final CubicBezierCurve curve;
+  final VoidCallback onTap;
+  final double size;
+
+  @override
+  State<_CustomTile> createState() => _CustomTileState();
+}
+
+class _CustomTileState extends State<_CustomTile> {
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: widget.onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: widget.size,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: widget.size,
+              decoration: BoxDecoration(
+                color: kInspectorPanel,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: widget.selected
+                      ? kInspectorAccent
+                      : kInspectorBorder,
+                  width: 1,
+                ),
+              ),
+              child: CustomPaint(
+                painter: CurveGraphPainter(
+                  curve: widget.curve,
+                  demoProgress: 0.5,
+                  draggingHandle: 0,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Custom',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _DemoTrack extends StatelessWidget {
   const _DemoTrack({required this.controller, required this.curve});
   final AnimationController controller;
@@ -330,35 +474,4 @@ class _DemoTrackPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DemoTrackPainter old) =>
       old.progress != progress;
-}
-
-class _ResetButton extends StatelessWidget {
-  const _ResetButton({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: kInspectorPanel,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kInspectorBorder),
-        ),
-        alignment: Alignment.center,
-        child: const Text(
-          'Reset',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
 }
