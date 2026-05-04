@@ -15,6 +15,8 @@ ZoomRegion _zoomAt({
   bool followCursor = true,
   FollowMode followMode = FollowMode.centered,
   double deadzoneRatio = 0.3,
+  Duration enterDuration = Duration.zero,
+  Duration exitDuration = Duration.zero,
   Duration followDuration = const Duration(milliseconds: 400),
   CubicBezierCurve? followCurve,
 }) {
@@ -23,8 +25,8 @@ ZoomRegion _zoomAt({
     startTime: startTime,
     duration: duration,
     zoomLevel: zoomLevel,
-    enterDuration: Duration.zero,
-    exitDuration: Duration.zero,
+    enterDuration: enterDuration,
+    exitDuration: exitDuration,
     followCursor: followCursor,
     followMode: followMode,
     deadzoneRatio: deadzoneRatio,
@@ -642,6 +644,110 @@ void main() {
       );
 
       expect(update!.focal, const Offset(540, 410));
+    });
+
+    test(
+        'tween started inside the enter ramp ends exactly when the '
+        'zoom ramp ends — sync, not stagger', () {
+      // 1.5s enter ramp, very short followDuration (300ms). If the
+      // sync logic is wrong, the focal lands at the cursor at +300ms
+      // and sits there for 1.2s while the zoom is still ramping in.
+      // With sync the tween extends to fill the full enter window.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        enterDuration: const Duration(milliseconds: 1500),
+        followDuration: const Duration(milliseconds: 300),
+      );
+
+      // Frame 0: cursor at A — focal snaps to cursor. No tween yet.
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(500, 400),
+        videoSize: _videoSize,
+      );
+
+      // 16ms in (still inside enter): cursor jumps to B. A tween
+      // starts here; with sync it should end at +1500ms (the enter
+      // ramp's end), not +316ms.
+      ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [zoom],
+        cursor: const Offset(900, 600),
+        videoSize: _videoSize,
+      );
+
+      // At +316ms (16ms tween-start + 300ms followDuration), the OLD
+      // behavior would have the focal already at (900, 600). Under
+      // sync, it should still be lerping (not yet at the target).
+      final mid = ctrl.update(
+        position: const Duration(milliseconds: 316),
+        zoomRegions: [zoom],
+        cursor: const Offset(900, 600),
+        videoSize: _videoSize,
+      );
+      expect(mid!.focal, isNot(const Offset(900, 600)),
+          reason: 'tween must not finish before the enter ramp');
+
+      // At +1500ms — the enter ramp's end — the tween must have
+      // landed: focal == B.
+      final end = ctrl.update(
+        position: const Duration(milliseconds: 1500),
+        zoomRegions: [zoom],
+        cursor: const Offset(900, 600),
+        videoSize: _videoSize,
+      );
+      expect(end!.focal, const Offset(900, 600),
+          reason:
+              'tween must land at target by the time the zoom ramp ends');
+    });
+
+    test(
+        'mid-zoom (post-enter) cursor moves still use the user-tuned '
+        'followDuration', () {
+      // The sync rule only fires inside the enter / exit ramps. Once
+      // we're in the hold phase, a fresh tween should run for exactly
+      // followDuration, not stretch to the end of the region.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 10),
+        enterDuration: const Duration(milliseconds: 500),
+        followDuration: const Duration(milliseconds: 400),
+      );
+
+      // Warm into the hold phase past the enter ramp.
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(500, 400),
+        videoSize: _videoSize,
+      );
+      ctrl.update(
+        position: const Duration(milliseconds: 600),
+        zoomRegions: [zoom],
+        cursor: const Offset(500, 400),
+        videoSize: _videoSize,
+      );
+
+      // Cursor jumps mid-hold; tween must complete in followDuration
+      // (400ms), not anything longer.
+      ctrl.update(
+        position: const Duration(milliseconds: 700),
+        zoomRegions: [zoom],
+        cursor: const Offset(900, 600),
+        videoSize: _videoSize,
+      );
+      final landed = ctrl.update(
+        // 700 + 400 = 1100 → tween should be done.
+        position: const Duration(milliseconds: 1100),
+        zoomRegions: [zoom],
+        cursor: const Offset(900, 600),
+        videoSize: _videoSize,
+      );
+      expect(landed!.focal, const Offset(900, 600));
     });
   });
 }

@@ -36,6 +36,11 @@ class ZoomFocalController {
   Offset? _tweenTo;
   Duration? _tweenStartPosition;
 
+  // Duration of the in-flight tween. May differ from
+  // `zoom.followDuration` when a tween starts mid-enter-ramp — see
+  // `_tweenDurationFor` for the sync rationale.
+  Duration? _tweenDuration;
+
   /// Last computed focal. Exposed for the debug HUD that draws the
   /// focal as a hollow yellow ring.
   Offset? get smoothedFocal => _smoothedFocal;
@@ -83,7 +88,7 @@ class ZoomFocalController {
     // Step 1 — advance any in-flight tween before we look at the
     // target so the deadzone check uses the freshest focal.
     if (_tweenStartPosition != null) {
-      final dur = activeZoom.followDuration;
+      final dur = _tweenDuration!;
       final elapsedMicros =
           position.inMicroseconds - _tweenStartPosition!.inMicroseconds;
       if (dur.inMicroseconds <= 0 || elapsedMicros >= dur.inMicroseconds) {
@@ -115,13 +120,15 @@ class ZoomFocalController {
         videoSize: videoSize,
       );
       if (shouldStart) {
-        if (activeZoom.followDuration.inMicroseconds <= 0) {
+        final dur = _tweenDurationFor(zoom: activeZoom, position: position);
+        if (dur.inMicroseconds <= 0) {
           // Zero-duration "snap" mode — apply this frame, no tween.
           _smoothedFocal = baseTarget;
         } else {
           _tweenFrom = _smoothedFocal;
           _tweenTo = baseTarget;
           _tweenStartPosition = position;
+          _tweenDuration = dur;
         }
       }
     } else {
@@ -151,6 +158,52 @@ class ZoomFocalController {
     _tweenFrom = null;
     _tweenTo = null;
     _tweenStartPosition = null;
+    _tweenDuration = null;
+  }
+
+  /// Pick a tween duration that keeps the camera pan and the zoom
+  /// ramp ending at the same instant.
+  ///
+  /// Inside the enter ramp the focal-follow tween is sized so it
+  /// completes exactly when the zoom factor hits [zoomLevel] — that
+  /// way the camera arriving at the cursor and the zoom finishing
+  /// look like one motion instead of two staggered ones. Same logic
+  /// for the exit ramp on the way back out. Mid-zoom (in the hold
+  /// phase) cursor moves keep using the user-tuned [followDuration]
+  /// because there's no co-running ramp to align with.
+  static Duration _tweenDurationFor({
+    required ZoomRegion zoom,
+    required Duration position,
+  }) {
+    final regionStartUs = zoom.startTime.inMicroseconds;
+    final tIntoRegionUs = position.inMicroseconds - regionStartUs;
+    final regionUs = zoom.duration.inMicroseconds;
+    if (tIntoRegionUs < 0 || regionUs <= 0) {
+      return zoom.followDuration;
+    }
+
+    var enterUs = zoom.enterDuration.inMicroseconds;
+    var exitUs = zoom.exitDuration.inMicroseconds;
+    final totalRamp = enterUs + exitUs;
+    if (totalRamp > regionUs && totalRamp > 0) {
+      // Match ZoomTransformer._calculateZoomFactor's proportional
+      // squeeze when the region can't fit both ramps at full length.
+      final scale = regionUs / totalRamp;
+      enterUs = (enterUs * scale).round();
+      exitUs = (exitUs * scale).round();
+    }
+
+    if (tIntoRegionUs < enterUs) {
+      return Duration(microseconds: enterUs - tIntoRegionUs);
+    }
+    final exitStartUs = regionUs - exitUs;
+    if (tIntoRegionUs >= exitStartUs && exitUs > 0) {
+      final remaining = regionUs - tIntoRegionUs;
+      return remaining > 0
+          ? Duration(microseconds: remaining)
+          : zoom.followDuration;
+    }
+    return zoom.followDuration;
   }
 
   static const double _moveEpsilonSq = 1e-4; // 0.01 px
