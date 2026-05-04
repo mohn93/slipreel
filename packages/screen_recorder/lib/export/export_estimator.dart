@@ -1,45 +1,63 @@
 import 'package:screen_recorder/models/compression_bitrate.dart';
 import 'package:screen_recorder/models/export_settings.dart';
 
+/// Pixel area (`1920 × 1080`) at which [ExportEstimator]'s
+/// [lastRealtimeMultiplier] is normalized. The time formula scales an
+/// export's predicted wall time by `outputArea / kBaselineAreaPixels`
+/// because the encoder + compositor are roughly linear in pixel count.
+const int kBaselineAreaPixels = 1920 * 1080;
+
 class ExportEstimator {
   const ExportEstimator({this.lastRealtimeMultiplier = 0.7});
 
-  /// Most-recent observed `realtimeMultiple` from the perf summary,
-  /// used as the time predictor. 0.7× is a conservative fallback for
-  /// the first-ever export (before we have a real measurement).
-  /// Assumed to have been measured at [kBaselineFrameRate]; the time
-  /// estimator scales off that baseline.
+  /// Observed `realtimeMultiple` normalized to [kBaselineFrameRate] +
+  /// [kBaselineAreaPixels]. 0.7× is a conservative fallback for the
+  /// first-ever export (before we have a real measurement); the
+  /// telemetry store overwrites this after every successful export.
   final double lastRealtimeMultiplier;
 
   /// Wall-clock seconds we estimate it'll take to encode a
-  /// [durationSec]-long source at [frameRate]. Time scales linearly
-  /// with fps because the compositor produces one frame per output
-  /// step — 60fps ≈ 2× wall time vs 30fps. Always ≥ 0.5s — the dialog
-  /// refreshes fast and "0 seconds" reads as broken even if the math
-  /// says so.
-  Duration estimateExportTime(double durationSec, {int frameRate = kBaselineFrameRate}) {
+  /// [durationSec]-long source at [frameRate] and [outputArea]. Time
+  /// scales linearly with both inputs because the compose+encode work
+  /// is roughly proportional to pixels-per-second — 4K is ~4× the work
+  /// of 1080p, 60fps is 2× the work of 30fps. Always ≥ 0.5s — the
+  /// dialog refreshes fast and "0 seconds" reads as broken even if the
+  /// math says so.
+  Duration estimateExportTime(
+    double durationSec, {
+    int frameRate = kBaselineFrameRate,
+    int outputArea = kBaselineAreaPixels,
+  }) {
     final fpsScale = frameRate / kBaselineFrameRate;
-    final estimatedSeconds = durationSec * fpsScale / lastRealtimeMultiplier;
+    final areaScale = outputArea / kBaselineAreaPixels;
+    final estimatedSeconds =
+        durationSec * fpsScale * areaScale / lastRealtimeMultiplier;
     final floored = estimatedSeconds < 0.5 ? 0.5 : estimatedSeconds;
     return Duration(milliseconds: (floored * 1000).round());
   }
 
-  /// Estimated output bytes. For [ExportFormat.mp4] this is rounded
-  /// to the nearest int. For [ExportFormat.gif] we apply a calibration
-  /// factor (0.6 for now — palettegen + dither produces consistently
-  /// smaller files than naive bitrate arithmetic; refine the constant
-  /// once Task 3's pipeline ships and we have real measurements).
+  /// Estimated output bytes. For [ExportFormat.mp4] this is video
+  /// bitrate × duration plus, when known, the audio stream's bytes
+  /// (the encoder muxes audio with `-c:a copy` so the source audio
+  /// passes through unchanged). For [ExportFormat.gif] we apply a 0.6
+  /// calibration factor against the naive bitrate arithmetic and skip
+  /// audio entirely (GIF strips it).
   int estimateOutputBytes({
     required double durationSec,
     required int bitrateKbps,
     required ExportFormat format,
+    int? audioBitrateKbps,
   }) {
-    final mp4Bytes = bitrateKbps * durationSec / 8 * 1024;
-    final bytes = mp4Bytes.round();
+    final videoBytes = bitrateKbps * durationSec / 8 * 1024;
 
     return switch (format) {
-      ExportFormat.mp4 => bytes,
-      ExportFormat.gif => (bytes * 0.6).round(),
+      ExportFormat.mp4 => () {
+        final audioBytes = audioBitrateKbps == null
+            ? 0.0
+            : audioBitrateKbps * durationSec / 8 * 1024;
+        return (videoBytes + audioBytes).round();
+      }(),
+      ExportFormat.gif => (videoBytes * 0.6).round(),
     };
   }
 
@@ -58,12 +76,19 @@ class ExportEstimator {
     required int bitrateKbps,
     required ExportFormat format,
     int frameRate = kBaselineFrameRate,
+    int outputArea = kBaselineAreaPixels,
+    int? audioBitrateKbps,
   }) {
-    final exportTime = estimateExportTime(durationSec, frameRate: frameRate);
+    final exportTime = estimateExportTime(
+      durationSec,
+      frameRate: frameRate,
+      outputArea: outputArea,
+    );
     final outputBytes = estimateOutputBytes(
       durationSec: durationSec,
       bitrateKbps: bitrateKbps,
       format: format,
+      audioBitrateKbps: audioBitrateKbps,
     );
 
     final timeStr = _formatTime(exportTime);

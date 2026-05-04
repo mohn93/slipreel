@@ -37,6 +37,16 @@ void main() {
         expect(at30.inSeconds, 10);
         expect(at60.inSeconds, 20);
       });
+
+      test('4K takes 4× the wall time of 1080p at the same fps', () {
+        const e = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final at1080 =
+            e.estimateExportTime(10.0, outputArea: 1920 * 1080);
+        final at4k =
+            e.estimateExportTime(10.0, outputArea: 3840 * 2160);
+        expect(at1080.inSeconds, 10);
+        expect(at4k.inSeconds, 40);
+      });
     });
 
     group('estimateOutputBytes', () {
@@ -47,6 +57,37 @@ void main() {
           format: ExportFormat.mp4,
         );
         expect(bytes, 23040000);
+      });
+
+      test('MP4 with audio bitrate adds the audio bytes to the total', () {
+        final mp4NoAudio = estimator.estimateOutputBytes(
+          durationSec: 30.0,
+          bitrateKbps: 6000,
+          format: ExportFormat.mp4,
+        );
+        final mp4WithAudio = estimator.estimateOutputBytes(
+          durationSec: 30.0,
+          bitrateKbps: 6000,
+          format: ExportFormat.mp4,
+          audioBitrateKbps: 128,
+        );
+        // 128 kbps × 30s / 8 × 1024 = 491,520 bytes added.
+        expect(mp4WithAudio - mp4NoAudio, 491520);
+      });
+
+      test('GIF ignores audio bitrate (no audio in GIFs)', () {
+        final gifNoAudio = estimator.estimateOutputBytes(
+          durationSec: 30.0,
+          bitrateKbps: 6000,
+          format: ExportFormat.gif,
+        );
+        final gifWithAudio = estimator.estimateOutputBytes(
+          durationSec: 30.0,
+          bitrateKbps: 6000,
+          format: ExportFormat.gif,
+          audioBitrateKbps: 128,
+        );
+        expect(gifWithAudio, gifNoAudio);
       });
 
       test('same params but format=GIF applies 0.6 calibration', () {

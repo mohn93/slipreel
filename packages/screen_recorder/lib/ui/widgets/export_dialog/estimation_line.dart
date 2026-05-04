@@ -14,6 +14,8 @@ class EstimationLine extends StatelessWidget {
     required this.bitrateKbps,
     required this.format,
     required this.frameRate,
+    required this.outputArea,
+    this.audioBitrateKbps,
     this.estimator = const ExportEstimator(),
   });
 
@@ -21,6 +23,8 @@ class EstimationLine extends StatelessWidget {
   final int bitrateKbps;
   final ExportFormat format;
   final int frameRate;
+  final int outputArea;
+  final int? audioBitrateKbps;
   final ExportEstimator estimator;
 
   @override
@@ -30,6 +34,8 @@ class EstimationLine extends StatelessWidget {
       bitrateKbps: bitrateKbps,
       format: format,
       frameRate: frameRate,
+      outputArea: outputArea,
+      audioBitrateKbps: audioBitrateKbps,
     );
 
     return Align(

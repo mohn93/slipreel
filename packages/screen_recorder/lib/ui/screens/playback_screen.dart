@@ -15,6 +15,9 @@ import 'package:screen_recorder/services/destination_handlers.dart';
 import 'package:screen_recorder/state/editor_project_state.dart';
 import 'package:screen_recorder/state/editor_project_store.dart';
 import 'package:screen_recorder/state/export_settings_store.dart';
+import 'package:screen_recorder/state/export_telemetry_store.dart';
+import 'package:screen_recorder/export/export_estimator.dart';
+import 'package:screen_recorder/models/compression_bitrate.dart';
 import 'package:screen_recorder/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
@@ -306,20 +309,25 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     final RecordingMetadata meta;
     final Duration videoDuration;
     final ExportSettingsStore store;
+    final ExportTelemetryStore telemetryStore;
+    final Size sourceVideoSize;
 
     try {
       store = await ExportSettingsStore.resolveDefault();
+      telemetryStore = await ExportTelemetryStore.resolveDefault();
       final defaults = await store.load();
+      final persistedMultiplier =
+          await telemetryStore.loadRealtimeMultiplier();
 
       if (!mounted) return;
 
       // Load source metadata — needed for dialog (resolution capping,
       // sub-label) and for the pipeline.
       meta = await RecordingMetadata.loadForVideo(widget.videoPath);
-      final sourceVideoSize =
+      sourceVideoSize =
           Size(meta.widthPx.toDouble(), meta.heightPx.toDouble());
 
-      // Probe the video to get the authoritative duration.
+      // Probe the video to get the authoritative duration + audio bitrate.
       final probed = await ffmpegProbe(
         path: widget.videoPath,
         metadataFps: meta.fps,
@@ -336,6 +344,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
           initialSettings: defaults,
           sourceVideoSize: sourceVideoSize,
           videoDuration: videoDuration,
+          audioBitrateKbps: probed.audioBitrateKbps,
+          estimator: ExportEstimator(
+            lastRealtimeMultiplier: persistedMultiplier ?? 0.7,
+          ),
           onRevealLastExport: _lastExportPath == null
               ? null
               : () => Process.run('open', ['-R', _lastExportPath!]),
@@ -444,33 +456,48 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       );
 
       try {
-        if (settings.format == ExportFormat.gif) {
-          final pipeline = GifExportPipeline(
-            sourcePath: widget.videoPath,
-            outputPath: outPath,
-            sourceMetadata: meta,
-            cursorRecording: cursorRec,
-            projectState: _captureProjectState(),
-            settings: settings,
-          );
-          await pipeline.run(onProgress: (p) => progress.value = p);
-        } else {
-          final pipeline = ExportPipeline(
-            sourcePath: widget.videoPath,
-            outputPath: outPath,
-            sourceMetadata: meta,
-            cursorRecording: cursorRec,
-            projectState: _captureProjectState(),
-            settings: settings,
-          );
-          await pipeline.run(onProgress: (p) => progress.value = p);
-        }
+        final summary = settings.format == ExportFormat.gif
+            ? await GifExportPipeline(
+                sourcePath: widget.videoPath,
+                outputPath: outPath,
+                sourceMetadata: meta,
+                cursorRecording: cursorRec,
+                projectState: _captureProjectState(),
+                settings: settings,
+              ).run(onProgress: (p) => progress.value = p)
+            : await ExportPipeline(
+                sourcePath: widget.videoPath,
+                outputPath: outPath,
+                sourceMetadata: meta,
+                cursorRecording: cursorRec,
+                projectState: _captureProjectState(),
+                settings: settings,
+              ).run(onProgress: (p) => progress.value = p);
 
         if (!mounted) return;
         Navigator.of(context).pop(); // close progress dialog
 
         // Persist settings minus the title (plan rule 5).
         await store.save(settings.copyWith(clearTitle: true));
+
+        // Normalize the observed realtime multiplier to the estimator's
+        // baseline (1080p @ 30fps) and persist it so the next dialog
+        // open uses the actual hardware rate. Skipped for GIF because
+        // its two-pass pipeline costs are dominated by palette work,
+        // not the linear pixels-per-second model the estimator assumes.
+        if (settings.format == ExportFormat.mp4 &&
+            summary.realtimeMultiple > 0) {
+          final outDims =
+              settings.resolution.dimensionsFor(sourceVideoSize);
+          final outArea = outDims.width * outDims.height;
+          final fpsScale = settings.frameRate / kBaselineFrameRate;
+          final areaScale = outArea / kBaselineAreaPixels;
+          final normalized =
+              summary.realtimeMultiple * fpsScale * areaScale;
+          unawaited(
+            telemetryStore.saveRealtimeMultiplier(normalized),
+          );
+        }
 
         final result = await handler.deliver(outPath);
         if (!mounted) return;

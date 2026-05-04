@@ -10,6 +10,8 @@ void main() {
     required int bitrateKbps,
     ExportFormat format = ExportFormat.mp4,
     int frameRate = 30,
+    int outputArea = 1920 * 1080,
+    int? audioBitrateKbps,
     ExportEstimator estimator = const ExportEstimator(),
   }) {
     return MaterialApp(
@@ -19,6 +21,8 @@ void main() {
           bitrateKbps: bitrateKbps,
           format: format,
           frameRate: frameRate,
+          outputArea: outputArea,
+          audioBitrateKbps: audioBitrateKbps,
           estimator: estimator,
         ),
       ),

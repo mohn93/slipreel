@@ -11,6 +11,7 @@ class FfmpegProbeResult {
     required this.fps,
     this.nbFrames,
     this.durationSec,
+    this.audioBitrateKbps,
   });
 
   final int width;
@@ -27,6 +28,12 @@ class FfmpegProbeResult {
 
   /// The `duration` field in seconds, if present.
   final double? durationSec;
+
+  /// Bitrate of the first audio stream in kbps, if the source has audio
+  /// and ffprobe could determine it. The encoder uses `-c:a copy` so the
+  /// audio bytes pass through unchanged into the output — callers add
+  /// `audioBitrateKbps × duration / 8 × 1024` to size estimates.
+  final int? audioBitrateKbps;
 }
 
 /// Runs `ffprobe` once on [path] and returns the resolved dimensions,
@@ -120,11 +127,40 @@ Future<FfmpegProbeResult> ffmpegProbe({
     'nb_frames=$nbFrames duration=$dur → using $fps fps',
   );
 
+  // Audio probe is a separate ffprobe call so the parser stays simple
+  // (one stream type per call). Failure here is non-fatal — files with
+  // no audio track or with an unreported bitrate just leave the field
+  // null, and the size estimator skips the audio adjustment.
+  final audioBitrateKbps = await _probeAudioBitrate(path);
+
   return FfmpegProbeResult(
     width: w,
     height: h,
     fps: fps,
     nbFrames: nbFrames,
     durationSec: dur,
+    audioBitrateKbps: audioBitrateKbps,
   );
+}
+
+Future<int?> _probeAudioBitrate(String path) async {
+  try {
+    final result = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'a:0',
+      '-show_entries', 'stream=bit_rate',
+      '-of', 'default=nw=1:nk=0',
+      path,
+    ]);
+    if (result.exitCode != 0) return null;
+    final output = (result.stdout as String).trim();
+    if (output.isEmpty) return null;
+    final eq = output.indexOf('=');
+    if (eq <= 0) return null;
+    final bps = int.tryParse(output.substring(eq + 1).trim());
+    if (bps == null || bps <= 0) return null;
+    return (bps / 1000).round();
+  } catch (_) {
+    return null;
+  }
 }

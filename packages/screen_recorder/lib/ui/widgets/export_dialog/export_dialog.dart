@@ -31,6 +31,7 @@ class ExportDialog extends StatefulWidget {
     required this.initialSettings,
     required this.sourceVideoSize,
     required this.videoDuration,
+    this.audioBitrateKbps,
     this.estimator = const ExportEstimator(),
     this.onRevealLastExport,
   });
@@ -45,6 +46,11 @@ class ExportDialog extends StatefulWidget {
 
   /// Length of the source clip — drives the estimation line.
   final Duration videoDuration;
+
+  /// Source audio bitrate (kbps) from `ffmpegProbe`. Added to the size
+  /// estimate for MP4 because the encoder muxes audio with `-c:a copy`.
+  /// Null if the source has no audio stream or the probe couldn't tell.
+  final int? audioBitrateKbps;
 
   final ExportEstimator estimator;
 
@@ -88,6 +94,11 @@ class _ExportDialogState extends State<ExportDialog> {
   );
 
   double get _durationSec => widget.videoDuration.inMilliseconds / 1000.0;
+
+  int get _outputArea {
+    final dims = _settings.resolution.dimensionsFor(widget.sourceVideoSize);
+    return (dims.width * dims.height).round();
+  }
 
   // ── Mutation handlers ─────────────────────────────────────────────────
 
@@ -316,6 +327,8 @@ class _ExportDialogState extends State<ExportDialog> {
       bitrateKbps: _bitrateKbps,
       format: _settings.format,
       frameRate: _settings.frameRate,
+      outputArea: _outputArea,
+      audioBitrateKbps: widget.audioBitrateKbps,
       estimator: widget.estimator,
     );
   }
