@@ -1,3 +1,4 @@
+import 'package:screen_recorder/models/compression_bitrate.dart';
 import 'package:screen_recorder/models/export_settings.dart';
 
 class ExportEstimator {
@@ -6,13 +7,19 @@ class ExportEstimator {
   /// Most-recent observed `realtimeMultiple` from the perf summary,
   /// used as the time predictor. 0.7× is a conservative fallback for
   /// the first-ever export (before we have a real measurement).
+  /// Assumed to have been measured at [kBaselineFrameRate]; the time
+  /// estimator scales off that baseline.
   final double lastRealtimeMultiplier;
 
   /// Wall-clock seconds we estimate it'll take to encode a
-  /// [durationSec]-long source. Always ≥ 0.5s — the dialog refreshes
-  /// fast and "0 seconds" reads as broken even if the math says so.
-  Duration estimateExportTime(double durationSec) {
-    final estimatedSeconds = durationSec / lastRealtimeMultiplier;
+  /// [durationSec]-long source at [frameRate]. Time scales linearly
+  /// with fps because the compositor produces one frame per output
+  /// step — 60fps ≈ 2× wall time vs 30fps. Always ≥ 0.5s — the dialog
+  /// refreshes fast and "0 seconds" reads as broken even if the math
+  /// says so.
+  Duration estimateExportTime(double durationSec, {int frameRate = kBaselineFrameRate}) {
+    final fpsScale = frameRate / kBaselineFrameRate;
+    final estimatedSeconds = durationSec * fpsScale / lastRealtimeMultiplier;
     final floored = estimatedSeconds < 0.5 ? 0.5 : estimatedSeconds;
     return Duration(milliseconds: (floored * 1000).round());
   }
@@ -50,8 +57,9 @@ class ExportEstimator {
     required double durationSec,
     required int bitrateKbps,
     required ExportFormat format,
+    int frameRate = kBaselineFrameRate,
   }) {
-    final exportTime = estimateExportTime(durationSec);
+    final exportTime = estimateExportTime(durationSec, frameRate: frameRate);
     final outputBytes = estimateOutputBytes(
       durationSec: durationSec,
       bitrateKbps: bitrateKbps,

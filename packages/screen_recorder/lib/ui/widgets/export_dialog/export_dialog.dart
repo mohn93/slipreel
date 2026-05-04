@@ -81,8 +81,11 @@ class _ExportDialogState extends State<ExportDialog> {
     };
   }
 
-  int get _bitrateKbps =>
-      compressionBitrate(_settings.resolution, _settings.compression);
+  int get _bitrateKbps => effectiveBitrateKbps(
+    _settings.resolution,
+    _settings.compression,
+    _settings.frameRate,
+  );
 
   double get _durationSec => widget.videoDuration.inMilliseconds / 1000.0;
 
@@ -312,6 +315,7 @@ class _ExportDialogState extends State<ExportDialog> {
       durationSec: _durationSec,
       bitrateKbps: _bitrateKbps,
       format: _settings.format,
+      frameRate: _settings.frameRate,
       estimator: widget.estimator,
     );
   }

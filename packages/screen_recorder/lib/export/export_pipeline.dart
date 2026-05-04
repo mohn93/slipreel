@@ -98,7 +98,11 @@ class ExportPipeline {
     final outWidth = outDims.width.toInt();
     final outHeight = outDims.height.toInt();
     final outFps = settings.frameRate;
-    final bitrateKbps = compressionBitrate(settings.resolution, settings.compression);
+    final bitrateKbps = effectiveBitrateKbps(
+      settings.resolution,
+      settings.compression,
+      settings.frameRate,
+    );
 
     // Drive the entire pipeline at the chosen output rate. The decoder
     // resamples the source (which may be VFR, e.g. SCStream skips

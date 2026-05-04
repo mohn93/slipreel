@@ -114,4 +114,38 @@ void main() {
       expect(settings.dither, 'none');
     });
   });
+
+  group('effectiveBitrateKbps', () {
+    test('returns the table value at the baseline rate (30fps)', () {
+      expect(
+        effectiveBitrateKbps(
+            ExportResolution.r1080p, CompressionTier.web, 30),
+        6000,
+      );
+    });
+
+    test('60fps doubles the bitrate vs 30fps', () {
+      expect(
+        effectiveBitrateKbps(
+            ExportResolution.r1080p, CompressionTier.web, 60),
+        12000,
+      );
+    });
+
+    test('15fps halves the bitrate vs 30fps', () {
+      expect(
+        effectiveBitrateKbps(
+            ExportResolution.r1080p, CompressionTier.web, 15),
+        3000,
+      );
+    });
+
+    test('clamps to ≥ 1 kbps for unrealistically low rates', () {
+      expect(
+        effectiveBitrateKbps(
+            ExportResolution.r720p, CompressionTier.webLow, 0),
+        1,
+      );
+    });
+  });
 }

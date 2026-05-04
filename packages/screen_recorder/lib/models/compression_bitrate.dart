@@ -1,5 +1,14 @@
 import 'package:screen_recorder/models/export_settings.dart';
 
+/// Frame rate at which [compressionBitrate]'s table values were tuned.
+/// `effectiveBitrateKbps` scales linearly off this baseline so that
+/// e.g. choosing 60fps actually doubles the bits/sec budget — without
+/// this scaling, h264 has half as many bits per frame at 60fps and the
+/// "Studio" / "Web" / etc. tier descriptions stop holding their promised
+/// quality. 30fps is the natural baseline because it's the most common
+/// recording rate.
+const int kBaselineFrameRate = 30;
+
 int compressionBitrate(ExportResolution resolution, CompressionTier tier) {
   return switch ((resolution, tier)) {
     (ExportResolution.r720p, CompressionTier.studio) => 8000,
@@ -15,6 +24,19 @@ int compressionBitrate(ExportResolution resolution, CompressionTier tier) {
     (ExportResolution.r4k, CompressionTier.web) => 20000,
     (ExportResolution.r4k, CompressionTier.webLow) => 10000,
   };
+}
+
+/// Bitrate the encoder should actually target for [frameRate], scaled
+/// linearly off the [kBaselineFrameRate] table value. Always at least
+/// 1 kbps to avoid degenerate outputs at unrealistically low rates.
+int effectiveBitrateKbps(
+  ExportResolution resolution,
+  CompressionTier tier,
+  int frameRate,
+) {
+  final base = compressionBitrate(resolution, tier);
+  final scaled = (base * frameRate / kBaselineFrameRate).round();
+  return scaled < 1 ? 1 : scaled;
 }
 
 class GifPaletteSettings {

@@ -9,6 +9,7 @@ void main() {
     required double durationSec,
     required int bitrateKbps,
     ExportFormat format = ExportFormat.mp4,
+    int frameRate = 30,
     ExportEstimator estimator = const ExportEstimator(),
   }) {
     return MaterialApp(
@@ -17,6 +18,7 @@ void main() {
           durationSec: durationSec,
           bitrateKbps: bitrateKbps,
           format: format,
+          frameRate: frameRate,
           estimator: estimator,
         ),
       ),

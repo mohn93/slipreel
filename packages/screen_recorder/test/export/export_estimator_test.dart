@@ -29,6 +29,14 @@ void main() {
         // 1.0 / 0.5 = 2.0s
         expect(duration05x.inMilliseconds, 2000);
       });
+
+      test('60fps takes 2× the wall time of 30fps at the same realtime mult', () {
+        const e = ExportEstimator(lastRealtimeMultiplier: 1.0);
+        final at30 = e.estimateExportTime(10.0, frameRate: 30);
+        final at60 = e.estimateExportTime(10.0, frameRate: 60);
+        expect(at30.inSeconds, 10);
+        expect(at60.inSeconds, 20);
+      });
     });
 
     group('estimateOutputBytes', () {
