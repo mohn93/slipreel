@@ -1,6 +1,7 @@
 import 'package:flutter/animation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
@@ -702,6 +703,87 @@ void main() {
       expect(end!.focal, const Offset(900, 600),
           reason:
               'tween must land at target by the time the zoom ramp ends');
+    });
+
+    test(
+        'focal AND zoom factor both finish on the exact frame the '
+        'enter ramp ends — no stagger, no overshoot', () {
+      // Ground-truth integration: drive the focal controller and the
+      // zoom transformer through the full enter ramp at 16ms ticks
+      // and assert that on the boundary frame the focal == cursor
+      // AND the zoom factor == zoomLevel. Anywhere strictly before
+      // that frame, neither is "done" yet.
+      final ctrl = ZoomFocalController();
+      final transformer = ZoomTransformer();
+      const enterMs = 1500;
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        enterDuration: const Duration(milliseconds: enterMs),
+        followDuration: const Duration(milliseconds: 300),
+      );
+
+      const target = Offset(900, 600);
+
+      // Frame 0: focal snaps to (500, 400).
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(500, 400),
+        videoSize: _videoSize,
+      );
+
+      // Frame 1: cursor jumps. A tween starts here, length = 1500-16ms.
+      ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [zoom],
+        cursor: target,
+        videoSize: _videoSize,
+      );
+
+      // Walk every frame until just before the ramp ends. Both the
+      // zoom factor must be < zoomLevel and the focal must be != target.
+      for (var ms = 32; ms < enterMs; ms += 16) {
+        final pos = Duration(milliseconds: ms);
+        final out = ctrl.update(
+          position: pos,
+          zoomRegions: [zoom],
+          cursor: target,
+          videoSize: _videoSize,
+        );
+        final z = transformer.getTransform(
+          position: pos,
+          zoomRegion: zoom,
+          videoSize: _videoSize,
+        );
+
+        expect(z.isIdentity(), isFalse,
+            reason: 'zoom should be ramping at t=${ms}ms');
+        // The transform isn't a pure scale because of the focal
+        // re-centering, but its scale-x entry is the zoom factor.
+        final zoomFactor = z.entry(0, 0);
+        expect(zoomFactor, lessThan(zoom.zoomLevel),
+            reason: 'zoom factor must not be at full zoom yet at t=${ms}ms');
+        expect(out!.focal, isNot(target),
+            reason: 'focal must not be at the cursor yet at t=${ms}ms');
+      }
+
+      // The boundary frame: enter ramp ends, focal lands on cursor,
+      // zoom factor reaches zoomLevel.
+      final endPos = const Duration(milliseconds: enterMs);
+      final outAtEnd = ctrl.update(
+        position: endPos,
+        zoomRegions: [zoom],
+        cursor: target,
+        videoSize: _videoSize,
+      );
+      final zAtEnd = transformer.getTransform(
+        position: endPos,
+        zoomRegion: zoom,
+        videoSize: _videoSize,
+      );
+      expect(outAtEnd!.focal, target);
+      expect(zAtEnd.entry(0, 0), zoom.zoomLevel);
     });
 
     test(
