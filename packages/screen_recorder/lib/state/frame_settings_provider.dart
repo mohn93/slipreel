@@ -94,4 +94,12 @@ class FrameSettingsProvider extends ChangeNotifier {
       name: 'Custom',
     ));
   }
+
+  /// Update the inset-ring width (canvas pixels). 0 disables the ring.
+  void updateInset(double inset) {
+    setFrame(_currentFrame.copyWith(
+      inset: inset,
+      name: 'Custom',
+    ));
+  }
 }

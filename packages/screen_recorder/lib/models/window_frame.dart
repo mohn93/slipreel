@@ -45,6 +45,16 @@ class WindowFrame {
   /// pixels). 0 means no blur.
   final double backgroundBlur;
 
+  /// Width of the lightened "inset" ring drawn between the wallpaper
+  /// and the video, in canvas pixels. Visually it looks like the video
+  /// is wrapped by a soft halo whose color is a lightened version of
+  /// the wallpaper's primary color, so the recording reads as floating
+  /// slightly above the wallpaper. 0 disables the ring.
+  ///
+  /// Capped at the smallest padding side at paint time — without
+  /// padding there's nowhere to draw it.
+  final double inset;
+
   const WindowFrame({
     required this.name,
     required this.padding,
@@ -58,6 +68,7 @@ class WindowFrame {
     this.wallpaperCategory,
     this.wallpaperIndex = 0,
     this.backgroundBlur = 0,
+    this.inset = 0,
   });
 
   /// Creates a frame with no decorations (transparent, no padding or effects)
@@ -151,6 +162,7 @@ class WindowFrame {
     String? wallpaperCategory,
     int? wallpaperIndex,
     double? backgroundBlur,
+    double? inset,
     bool clearWallpaper = false,
   }) {
     return WindowFrame(
@@ -168,6 +180,7 @@ class WindowFrame {
           : (wallpaperCategory ?? this.wallpaperCategory),
       wallpaperIndex: wallpaperIndex ?? this.wallpaperIndex,
       backgroundBlur: backgroundBlur ?? this.backgroundBlur,
+      inset: inset ?? this.inset,
     );
   }
 
@@ -194,6 +207,7 @@ class WindowFrame {
       'wallpaperCategory': wallpaperCategory,
       'wallpaperIndex': wallpaperIndex,
       'backgroundBlur': backgroundBlur,
+      'inset': inset,
     };
   }
 
@@ -228,6 +242,7 @@ class WindowFrame {
       wallpaperIndex: (json['wallpaperIndex'] as num?)?.toInt() ?? 0,
       backgroundBlur:
           (json['backgroundBlur'] as num?)?.toDouble() ?? 0,
+      inset: (json['inset'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -247,7 +262,8 @@ class WindowFrame {
         other.borderColor == borderColor &&
         other.wallpaperCategory == wallpaperCategory &&
         other.wallpaperIndex == wallpaperIndex &&
-        other.backgroundBlur == backgroundBlur;
+        other.backgroundBlur == backgroundBlur &&
+        other.inset == inset;
   }
 
   @override
@@ -265,6 +281,7 @@ class WindowFrame {
       wallpaperCategory,
       wallpaperIndex,
       backgroundBlur,
+      inset,
     );
   }
 

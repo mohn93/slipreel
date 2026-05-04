@@ -7,12 +7,9 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Background tab — wallpaper picker, blur, padding, corners, inset.
 ///
-/// Wallpaper category, tile, and blur write through to
-/// [FrameSettingsProvider] so the playback canvas re-renders live.
-/// Padding and rounded corners were already wired. Inset stays
-/// local-state-only — there's no layered "inset" concept in the
-/// model yet (it would shrink the video pill inside its rounded
-/// corners independent of the outer frame padding).
+/// All controls write through to [FrameSettingsProvider] so the
+/// playback canvas re-renders live and the change persists via the
+/// per-clip sidecar.
 class BackgroundTab extends StatefulWidget {
   const BackgroundTab({super.key, required this.frameSettings});
   final FrameSettingsProvider frameSettings;
@@ -27,8 +24,6 @@ class _BackgroundTabState extends State<BackgroundTab> {
   /// chip selection persists across rebuilds.
   late String _selectedCategory =
       widget.frameSettings.currentFrame.wallpaperCategory ?? 'macOS';
-
-  double _inset = 0;
 
   @override
   void initState() {
@@ -112,12 +107,15 @@ class _BackgroundTabState extends State<BackgroundTab> {
         const SizedBox(height: 24),
         InspectorSlider(
           label: 'Inset',
-          value: _inset,
+          subtitle: frame.inset > 0
+              ? '${frame.inset.toStringAsFixed(0)} px'
+              : 'Off',
+          value: frame.inset,
           min: 0,
-          max: 100,
-          onChanged: (v) => setState(() => _inset = v),
-          onReset: () => setState(() => _inset = 0),
-          canReset: _inset != 0,
+          max: 60,
+          onChanged: widget.frameSettings.updateInset,
+          onReset: () => widget.frameSettings.updateInset(0),
+          canReset: frame.inset != 0,
         ),
         const SizedBox(height: 24),
       ],

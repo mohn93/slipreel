@@ -288,5 +288,24 @@ void main() {
       expect(frame.backgroundColor, null);
       expect(frame.borderColor, null);
     });
+
+    test('inset defaults to 0 and round-trips through JSON', () {
+      final frame = WindowFrame.rounded().copyWith(inset: 18.5);
+      expect(WindowFrame.rounded().inset, 0);
+      expect(frame.inset, 18.5);
+
+      final reloaded = WindowFrame.fromJson(frame.toJson());
+      expect(reloaded.inset, 18.5);
+      expect(reloaded, frame);
+    });
+
+    test('inset is missing in legacy JSON → defaults to 0', () {
+      // Older sidecars saved before the inset field shipped should
+      // load cleanly with inset=0 rather than throwing.
+      final json = WindowFrame.rounded().toJson();
+      json.remove('inset');
+      final reloaded = WindowFrame.fromJson(json);
+      expect(reloaded.inset, 0);
+    });
   });
 }

@@ -116,3 +116,20 @@ BoxDecoration _solid(Random r) {
   final color = HSLColor.fromAHSL(1, hue, 0.55, 0.32).toColor();
   return BoxDecoration(color: color);
 }
+
+/// A single representative color for a wallpaper, used by the inset
+/// ring's color derivation. For gradient wallpapers we return the
+/// first stop (visually the "top" color); for solids the color itself.
+/// Falls back to neutral grey if the decoration shape is unknown.
+Color wallpaperRepresentativeColor(String category, int index) {
+  final dec = wallpaperDecoration(category, index);
+  final gradient = dec.gradient;
+  if (gradient is LinearGradient && gradient.colors.isNotEmpty) {
+    return gradient.colors.first;
+  }
+  if (gradient is RadialGradient && gradient.colors.isNotEmpty) {
+    return gradient.colors.first;
+  }
+  if (dec.color != null) return dec.color!;
+  return const Color(0xFF606070);
+}
