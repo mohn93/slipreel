@@ -100,6 +100,10 @@ class CursorOverlayPainter extends CustomPainter {
         Paint()..color = Colors.white.withValues(alpha: samples.alphas[i]),
       );
       canvas.translate(dx, dy);
+      // widgetPos is absolute; combined with the translate above it lands
+      // the stamp at widgetPos + (dx, dy). Each saveLayer/restore pair
+      // also pushes/pops the transform stack, so adjacent stamps' translates
+      // don't compound.
       paintCursorWithEffects(
         canvas,
         position: widgetPos,

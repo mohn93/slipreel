@@ -38,8 +38,10 @@ const _kMinSpeedPxPerSec = 1.0;
 /// `effective = sliderIntensity × clamp(|v| / referenceSpeed, 0, 1)`.
 /// Count grows from 1 at effective=0 to [maxStamps] at effective=1.
 /// Step magnitude grows from 0 to `maxReachPx / (count - 1)`.
-/// Alphas linearly taper from 1/Σ at the tail to count/Σ at the head
-/// (Σ = N(N+1)/2), then are normalized so the alpha sum is 1.0.
+/// Alphas linearly taper from `1/count` at the tail to `1.0` at the head.
+/// Not normalized to sum-to-1: with overlapping stamps (typical for
+/// blurred cursors) the head paints opaque over the tail so the cursor
+/// stays sharp; only the trailing region shows the dim tail.
 MotionBlurSamples computeMotionBlurSamples({
   required Offset velocityPxPerSec,
   required double sliderIntensity,
@@ -68,10 +70,14 @@ MotionBlurSamples computeMotionBlurSamples({
     -velocityPxPerSec.dy * invSpeed * stepMag,
   );
 
-  final sumWeights = count * (count + 1) / 2.0;
+  // Raw linear taper. Head (i=count-1) gets 1.0, tail (i=0) gets 1/count.
+  // Not normalized to sum=1: when stamps overlap (e.g. low-velocity, small
+  // step) the head paints opaque over the tail, leaving a sharp cursor
+  // with a faint trail rather than a washed-out blur. Sum-to-1 alphas
+  // looked physically correct only when stamps don't overlap.
   final alphas = List<double>.generate(
     count,
-    (i) => (i + 1) / sumWeights,
+    (i) => (i + 1) / count,
     growable: false,
   );
 

@@ -51,15 +51,18 @@ void main() {
       expect(s.stepPx.dx * (s.count - 1), closeTo(-12.0, 1e-6));
     });
 
-    test('alphas sum to 1.0', () {
+    test('alphas — head is 1.0, tail is 1/count, linear taper', () {
       final s = computeMotionBlurSamples(
         velocityPxPerSec: const Offset(2000, 0),
         sliderIntensity: 1.0,
         referenceSpeedPxPerSec: 2000,
         maxReachPx: 12,
       );
-      final sum = s.alphas.fold<double>(0, (a, b) => a + b);
-      expect(sum, closeTo(1.0, 1e-9));
+      // Head (last) is full alpha; tail (first) is the smallest. Not
+      // normalized: with overlapping stamps the head must stay opaque
+      // so the rendered cursor doesn't look washed out.
+      expect(s.alphas.last, closeTo(1.0, 1e-9));
+      expect(s.alphas.first, closeTo(1.0 / s.count, 1e-9));
     });
 
     test('alphas are monotonically increasing (tail dim → head bright)', () {
