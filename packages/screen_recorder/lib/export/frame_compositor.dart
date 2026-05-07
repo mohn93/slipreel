@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:screen_recorder/effects/motion_blur_screen.dart';
+import 'package:screen_recorder/effects/screen_pan_velocity_tracker.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
@@ -68,6 +70,7 @@ class FrameCompositor {
 
   final ZoomFocalController _focalController = ZoomFocalController();
   final CursorMotionController _motionController = CursorMotionController();
+  final ScreenPanVelocityTracker _screenPanTracker = ScreenPanVelocityTracker();
 
   WindowFrame get _frame => projectState.windowFrame;
 
@@ -134,10 +137,11 @@ class FrameCompositor {
       // arithmetic happens to land the focal at the alignment origin
       // because effPadding centers the video inside totalSize, so
       // `effPad.left - totalSize.width/2 = -videoSize.width/2`.
+      Matrix4 zoomTransform = Matrix4.identity();
       if (focalUpdate != null) {
         final ramp = focalUpdate.zoom.rampCurveOverride?.toFlutterCurve() ??
             projectState.screenAnimationConfig.rampCurve;
-        final transform = ZoomTransformer().getTransform(
+        zoomTransform = ZoomTransformer().getTransform(
           position: position,
           zoomRegion: focalUpdate.zoom,
           videoSize: videoSize,
@@ -145,16 +149,51 @@ class FrameCompositor {
           rampCurve: ramp,
         );
         canvas.translate(totalSize.width / 2, totalSize.height / 2);
-        canvas.transform(transform.storage);
+        canvas.transform(zoomTransform.storage);
         canvas.translate(-totalSize.width / 2, -totalSize.height / 2);
+      }
+
+      // Screen-pan velocity is computed AFTER the matrix is built (not
+      // applied to the canvas) so the velocity tracker sees the same
+      // matrix the preview's TweenAnimationBuilder ticks against.
+      final screenVelocity = _screenPanTracker.update(
+        transform: zoomTransform,
+        position: position,
+      );
+      final screenSigma = screenBlurSigma(
+        velocity: screenVelocity,
+        intensity: projectState.motionBlur,
+      );
+      // Guard: ensure both sigmas are > 0 to avoid degenerate
+      // ImageFilter.blur on Impeller (zero on one axis can assert).
+      final hasScreenBlur = screenSigma != Offset.zero &&
+          screenSigma.dx > 0 &&
+          screenSigma.dy > 0;
+      if (hasScreenBlur) {
+        canvas.saveLayer(
+          Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+          Paint()
+            ..imageFilter = ui.ImageFilter.blur(
+              sigmaX: screenSigma.dx,
+              sigmaY: screenSigma.dy,
+            ),
+        );
       }
 
       _paintWallpaper(canvas);
       _framePainter.paint(canvas, totalSize);
       _paintVideoFrame(canvas, videoImage);
       if (motion != null && !projectState.hideCursorOverlay) {
-        _paintCursor(canvas, position: position, screenPos: motion.screenPos);
+        _paintCursor(
+          canvas,
+          position: position,
+          screenPos: motion.screenPos,
+          velocity: motion.velocityPxPerSec,
+          intensity: projectState.motionBlur,
+        );
       }
+
+      if (hasScreenBlur) canvas.restore();
 
       final picture = recorder.endRecording();
       try {
@@ -239,6 +278,8 @@ class FrameCompositor {
     Canvas canvas, {
     required Duration position,
     required Offset screenPos,
+    required Offset velocity,
+    required double intensity,
   }) {
     canvas.save();
     canvas.translate(_effectivePadding.left, _effectivePadding.top);
@@ -251,6 +292,8 @@ class FrameCompositor {
       sizeMultiplier: projectState.cursorSize,
       style: projectState.cursorStyle,
       clickEffect: projectState.cursorClickEffect,
+      velocityPxPerSec: velocity,
+      motionBlurIntensity: intensity,
     );
     painter.paint(canvas, videoSize);
     canvas.restore();
