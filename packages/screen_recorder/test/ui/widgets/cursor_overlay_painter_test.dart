@@ -113,9 +113,9 @@ void main() {
     painter.paint(canvas, const Size(200, 100));
     final saveLayers = canvas.calls.where((c) => c.startsWith('saveLayer'));
     final restores = canvas.calls.where((c) => c == 'restore');
-    expect(saveLayers.length, 8,
-        reason: 'slider=1, max speed → 8 stamps.');
-    expect(restores.length, 8);
+    expect(saveLayers.length, 12,
+        reason: 'slider=1, max speed → 12 stamps.');
+    expect(restores.length, 12);
   });
 
   test('shouldRepaint reflects velocity and intensity changes', () {

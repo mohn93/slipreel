@@ -37,14 +37,14 @@ void main() {
       expect(s.count, 1);
     });
 
-    test('horizontal velocity at max speed, slider 1 → 8 stamps along -x', () {
+    test('horizontal velocity at max speed, slider 1 → 12 stamps along -x', () {
       final s = computeMotionBlurSamples(
         velocityPxPerSec: const Offset(2000, 0),
         sliderIntensity: 1.0,
         referenceSpeedPxPerSec: 2000,
         maxReachPx: 12,
       );
-      expect(s.count, 8);
+      expect(s.count, 12);
       expect(s.stepPx.dx, lessThan(0));
       expect(s.stepPx.dy, closeTo(0, 1e-9));
       // (count - 1) steps span maxReachPx exactly at max effective
@@ -84,7 +84,7 @@ void main() {
         referenceSpeedPxPerSec: 2000,
         maxReachPx: 12,
       );
-      expect(s.count, lessThanOrEqualTo(8));
+      expect(s.count, lessThanOrEqualTo(12));
       expect(s.stepPx.dx.abs() * (s.count - 1), lessThanOrEqualTo(12.0 + 1e-6));
     });
 
@@ -102,14 +102,14 @@ void main() {
     });
 
     test('count grows with effective intensity (1 + round((max-1) * eff))', () {
-      // effective = 0.5 → count = 1 + round(7 * 0.5) = 1 + 4 = 5  (sliderIntensity 0.5 at max ref speed)
+      // effective = 0.5 → count = 1 + round(11 * 0.5) = 1 + 6 = 7  (sliderIntensity 0.5 at max ref speed)
       final mid = computeMotionBlurSamples(
         velocityPxPerSec: const Offset(2000, 0),
         sliderIntensity: 0.5,
         referenceSpeedPxPerSec: 2000,
         maxReachPx: 12,
       );
-      expect(mid.count, 5);
+      expect(mid.count, 7);
     });
   });
 }

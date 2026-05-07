@@ -47,7 +47,7 @@ MotionBlurSamples computeMotionBlurSamples({
   required double sliderIntensity,
   required double referenceSpeedPxPerSec,
   required double maxReachPx,
-  int maxStamps = 8,
+  int maxStamps = 12,
 }) {
   if (sliderIntensity <= 0) return _noBlur;
   final speed = velocityPxPerSec.distance;
