@@ -43,6 +43,13 @@ class SmoothPlayheadController extends ChangeNotifier {
   /// keeps the playhead from glitching backward during playback.
   static const _backwardSeekThreshold = Duration(seconds: -1);
 
+  /// How close to `duration` a paused position has to be before we treat
+  /// it as end-of-clip and pin to duration. macOS / video_player report
+  /// the *last decoded frame's* timestamp at end-of-playback (often
+  /// 16–33ms below duration depending on source fps); without this
+  /// snap, the playhead visibly walks backward on the final frame.
+  static const _endOfClipTolerance = Duration(milliseconds: 100);
+
   /// The interpolated playhead position; safe to read every build.
   Duration get position => _smoothed;
 
@@ -51,12 +58,15 @@ class SmoothPlayheadController extends ChangeNotifier {
     final isPlaying = v.isPlaying;
 
     if (isPlaying != _wasPlaying) {
-      _basePosition = v.position;
+      final pos = isPlaying
+          ? v.position
+          : resolvePausedPosition(v.position, v.duration);
+      _basePosition = pos;
       _baseTimestamp = DateTime.now();
       _wasPlaying = isPlaying;
       _syncTickerToPlayState();
-      if (!isPlaying && _smoothed != v.position) {
-        _smoothed = v.position;
+      if (!isPlaying && _smoothed != pos) {
+        _smoothed = pos;
         notifyListeners();
       }
       return;
@@ -73,12 +83,33 @@ class SmoothPlayheadController extends ChangeNotifier {
       // Else: small backward drift is decode jitter — keep extrapolating
       // forward rather than snapping the playhead backward.
     } else {
-      // While paused the controller is the source of truth.
-      if (_smoothed != v.position) {
-        _smoothed = v.position;
+      // While paused the controller is the source of truth — except at
+      // end-of-clip, where the controller reports the last decoded
+      // frame's timestamp (slightly below duration). [resolvePausedPosition]
+      // pins to duration in that narrow window so the playhead doesn't
+      // walk backward on the final frame.
+      final pos = resolvePausedPosition(v.position, v.duration);
+      if (_smoothed != pos) {
+        _smoothed = pos;
         notifyListeners();
       }
     }
+  }
+
+  /// When paused, decide whether [position] should be reported as-is
+  /// or pinned to [duration]. End-of-clip pins to duration to avoid
+  /// the visible backward walk caused by `video_player` reporting the
+  /// last decoded frame's timestamp instead of the clip's nominal end.
+  ///
+  /// The tolerance is tight ([_endOfClipTolerance], 100ms) so an
+  /// intentional pause at e.g. 9.5s of a 10s clip is left alone — only
+  /// pauses inside the final frame are treated as end-of-clip.
+  @visibleForTesting
+  static Duration resolvePausedPosition(Duration position, Duration duration) {
+    if (duration <= Duration.zero) return position;
+    if (position > duration) return duration;
+    if (duration - position < _endOfClipTolerance) return duration;
+    return position;
   }
 
   void _syncTickerToPlayState() {
