@@ -166,9 +166,7 @@ class FrameCompositor {
       );
       // Guard: ensure both sigmas are > 0 to avoid degenerate
       // ImageFilter.blur on Impeller (zero on one axis can assert).
-      final hasScreenBlur = screenSigma != Offset.zero &&
-          screenSigma.dx > 0 &&
-          screenSigma.dy > 0;
+      final hasScreenBlur = screenSigma != Offset.zero;
       if (hasScreenBlur) {
         canvas.saveLayer(
           Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
