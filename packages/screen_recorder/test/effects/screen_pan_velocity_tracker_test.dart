@@ -1,11 +1,9 @@
-// ignore_for_file: depend_on_referenced_packages
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/effects/screen_pan_velocity_tracker.dart';
-import 'package:vector_math/vector_math_64.dart' show Vector3;
 
 Matrix4 _translation(double dx, double dy) =>
-    Matrix4.identity()..translateByVector3(Vector3(dx, dy, 0));
+    Matrix4.translationValues(dx, dy, 0);
 
 void main() {
   group('ScreenPanVelocityTracker', () {
