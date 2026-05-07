@@ -1,9 +1,9 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
-import 'package:screen_recorder/effects/motion_blur_screen.dart';
 import 'package:screen_recorder/effects/screen_pan_velocity_tracker.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
@@ -144,6 +144,59 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                   )
                 : null;
 
+            // Cursor target for the focal: predictive mode looks at
+            // the median of recent cursor samples (dwell location),
+            // every other mode tracks the FIR-smoothed sprite so the
+            // camera and the visible cursor never disagree.
+            final activeZoomForCursor =
+                _activeZoomAt(widget.zoomRegions, pos);
+            final cursorForFocal = activeZoomForCursor?.followMode ==
+                    FollowMode.predictive
+                ? medianCursorOver(
+                    recording: widget.cursorRecording,
+                    t: pos,
+                    window: activeZoomForCursor!.predictiveWindow,
+                  )
+                : motion?.screenPos;
+
+            final focalUpdate = _zoomFocalController.update(
+              position: pos,
+              zoomRegions: widget.zoomRegions,
+              cursor: cursorForFocal,
+              videoSize: videoSize,
+            );
+
+            // Compute combined viewport velocity (cursor scene motion +
+            // camera pan) so cursor stamps fire on cursor moves, camera
+            // pans, or both. When the camera tracks the cursor perfectly
+            // the two terms cancel and the streak collapses to zero.
+            final Offset combinedCursorVelocity;
+            if (focalUpdate != null) {
+              final zoomMatrix = _zoomTransformer.getTransform(
+                position: pos,
+                zoomRegion: focalUpdate.zoom,
+                videoSize: videoSize,
+                focalPoint: focalUpdate.focal,
+                rampCurve: focalUpdate.zoom.rampCurveOverride?.toFlutterCurve()
+                    ?? widget.screenAnimationConfig.rampCurve,
+              );
+              final screenVelocity = _screenPanTracker.update(
+                transform: zoomMatrix,
+                position: pos,
+              );
+              final zoomScale = math.max(1.0, zoomMatrix.entry(0, 0));
+              combinedCursorVelocity = (motion?.velocityPxPerSec ?? Offset.zero) +
+                  Offset(screenVelocity.dx / zoomScale, screenVelocity.dy / zoomScale);
+            } else {
+              // No zoom active — screen-pan velocity is zero; just use
+              // the cursor's own scene velocity.
+              _screenPanTracker.update(
+                transform: Matrix4.identity(),
+                position: pos,
+              );
+              combinedCursorVelocity = motion?.velocityPxPerSec ?? Offset.zero;
+            }
+
             final composition = Stack(
               children: [
                 if (currentFrame.wallpaperCategory != null)
@@ -197,7 +250,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                           sizeMultiplier: widget.cursorSize,
                           style: widget.cursorStyle,
                           clickEffect: widget.cursorClickEffect,
-                          velocityPxPerSec: motion.velocityPxPerSec,
+                          velocityPxPerSec: combinedCursorVelocity,
                           motionBlurIntensity: widget.motionBlur,
                         ),
                       ),
@@ -226,27 +279,6 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
               ],
             );
 
-            // Cursor target for the focal: predictive mode looks at
-            // the median of recent cursor samples (dwell location),
-            // every other mode tracks the FIR-smoothed sprite so the
-            // camera and the visible cursor never disagree.
-            final activeZoomForCursor =
-                _activeZoomAt(widget.zoomRegions, pos);
-            final cursorForFocal = activeZoomForCursor?.followMode ==
-                    FollowMode.predictive
-                ? medianCursorOver(
-                    recording: widget.cursorRecording,
-                    t: pos,
-                    window: activeZoomForCursor!.predictiveWindow,
-                  )
-                : motion?.screenPos;
-
-            final focalUpdate = _zoomFocalController.update(
-              position: pos,
-              zoomRegions: widget.zoomRegions,
-              cursor: cursorForFocal,
-              videoSize: videoSize,
-            );
             if (focalUpdate == null) return composition;
 
             final activeZoom = focalUpdate.zoom;
@@ -271,30 +303,12 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                   rampCurve: activeZoom.rampCurveOverride?.toFlutterCurve()
                       ?? widget.screenAnimationConfig.rampCurve,
                 );
-                final screenVelocity = _screenPanTracker.update(
-                  transform: transform,
-                  position: pos,
-                );
-                final sigma = screenBlurSigma(
-                  velocity: screenVelocity,
-                  intensity: widget.motionBlur,
-                );
-                // Blur applied pre-Transform: sigma is in composition-space px,
-                // consistent with frame_compositor's saveLayer path so preview
-                // and export stay visually aligned.
-                final blurredChild = (sigma == Offset.zero)
-                    ? transformChild
-                    : ImageFiltered(
-                        imageFilter: ui.ImageFilter.blur(
-                          sigmaX: sigma.dx,
-                          sigmaY: sigma.dy,
-                        ),
-                        child: transformChild,
-                      );
+                // Screen-pan tracker is now ticked in the AnimatedBuilder
+                // above (for combined velocity). Don't double-tick here.
                 return Transform(
                   transform: transform,
                   alignment: Alignment.center,
-                  child: blurredChild,
+                  child: transformChild,
                 );
               },
             );

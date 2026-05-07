@@ -65,8 +65,8 @@ class CursorOverlayPainter extends CustomPainter {
     final samples = computeMotionBlurSamples(
       velocityPxPerSec: velocityPxPerSec,
       sliderIntensity: motionBlurIntensity,
-      referenceSpeedPxPerSec: 2000,
-      maxReachPx: 12,
+      referenceSpeedPxPerSec: 1000,
+      maxReachPx: 16,
     );
 
     if (samples.count == 1) {

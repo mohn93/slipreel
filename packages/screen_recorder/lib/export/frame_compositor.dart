@@ -1,9 +1,9 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:screen_recorder/effects/motion_blur_screen.dart';
 import 'package:screen_recorder/effects/screen_pan_velocity_tracker.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
@@ -155,30 +155,19 @@ class FrameCompositor {
 
       // Screen-pan velocity is computed AFTER the matrix is built (not
       // applied to the canvas) so the velocity tracker sees the same
-      // matrix the preview's TweenAnimationBuilder ticks against.
+      // matrix the preview's AnimatedBuilder ticks against.
       final screenVelocity = _screenPanTracker.update(
         transform: zoomTransform,
         position: position,
       );
-      final screenSigma = screenBlurSigma(
-        velocity: screenVelocity,
-        intensity: projectState.motionBlur,
-      );
-      // Guard: skip the saveLayer overhead when the blur is zero on
-      // both axes. ImageFilter.blur accepts zero on one axis (no
-      // blur on that axis), so partial-axis blurs (horizontal-only
-      // or vertical-only pans) are valid and must not be suppressed.
-      final hasScreenBlur = screenSigma != Offset.zero;
-      if (hasScreenBlur) {
-        canvas.saveLayer(
-          Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
-          Paint()
-            ..imageFilter = ui.ImageFilter.blur(
-              sigmaX: screenSigma.dx,
-              sigmaY: screenSigma.dy,
-            ),
-        );
-      }
+
+      // Combine cursor scene velocity with camera pan velocity (converted
+      // to scene space by dividing by zoomScale) so the cursor streak
+      // fires on cursor moves, camera pans, or both. When the camera
+      // tracks the cursor perfectly the two terms cancel → no streak.
+      final zoomScale = math.max(1.0, zoomTransform.entry(0, 0));
+      final combinedCursorVelocity = (motion?.velocityPxPerSec ?? Offset.zero) +
+          Offset(screenVelocity.dx / zoomScale, screenVelocity.dy / zoomScale);
 
       _paintWallpaper(canvas);
       _framePainter.paint(canvas, totalSize);
@@ -188,12 +177,10 @@ class FrameCompositor {
           canvas,
           position: position,
           screenPos: motion.screenPos,
-          velocity: motion.velocityPxPerSec,
+          velocity: combinedCursorVelocity,
           intensity: projectState.motionBlur,
         );
       }
-
-      if (hasScreenBlur) canvas.restore();
 
       final picture = recorder.endRecording();
       try {
