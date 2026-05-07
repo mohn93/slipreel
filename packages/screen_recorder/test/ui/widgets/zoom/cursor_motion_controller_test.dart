@@ -202,6 +202,140 @@ void main() {
       expect(out!.screenPos.dx.isFinite, isTrue);
       expect(out.screenPos.dy.isFinite, isTrue);
     });
+
+    test('velocityPxPerSec is zero on the first call', () {
+      final ctrl = CursorMotionController();
+      final rec = _record([
+        (micros: 0, x: 0, y: 0, clicked: false),
+        (micros: 16667, x: 30, y: 0, clicked: false),
+      ]);
+      final out = ctrl.update(
+        position: const Duration(microseconds: 16667),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      expect(out!.velocityPxPerSec, Offset.zero);
+    });
+
+    test('two forward updates produce a non-zero velocity along the path', () {
+      final ctrl = CursorMotionController();
+      final rec = _record(List.generate(60, (i) => (
+            micros: i * 16667,
+            x: i * 30.0,
+            y: 0.0,
+            clicked: false,
+          )));
+      // First call seeds the controller.
+      ctrl.update(
+        position: const Duration(microseconds: 16667),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      // Second call — None preset bypasses FIR so velocity is exactly
+      // (Δx / Δt) on the raw samples: 30 px / 16.667 ms ≈ 1800 px/s.
+      final out = ctrl.update(
+        position: const Duration(microseconds: 33334),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      expect(out!.velocityPxPerSec.dx, closeTo(1800, 5));
+      expect(out.velocityPxPerSec.dy, closeTo(0, 1e-6));
+    });
+
+    test('backwards scrub returns zero velocity', () {
+      final ctrl = CursorMotionController();
+      final rec = _record(List.generate(60, (i) => (
+            micros: i * 16667,
+            x: i * 30.0,
+            y: 0.0,
+            clicked: false,
+          )));
+      ctrl.update(
+        position: const Duration(microseconds: 50000),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      final out = ctrl.update(
+        position: const Duration(microseconds: 16667), // earlier
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      expect(out!.velocityPxPerSec, Offset.zero);
+    });
+
+    test('reset clears velocity history — first call after reset returns zero', () {
+      final ctrl = CursorMotionController();
+      final rec = _record(List.generate(60, (i) => (
+            micros: i * 16667,
+            x: i * 30.0,
+            y: 0.0,
+            clicked: false,
+          )));
+      ctrl.update(
+        position: const Duration(microseconds: 16667),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      ctrl.update(
+        position: const Duration(microseconds: 33334),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      ctrl.reset();
+      final out = ctrl.update(
+        position: const Duration(microseconds: 50000),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      expect(out!.velocityPxPerSec, Offset.zero);
+    });
+
+    test('idempotent same-position call returns the same velocity (no state advance)', () {
+      final ctrl = CursorMotionController();
+      final rec = _record(List.generate(60, (i) => (
+            micros: i * 16667,
+            x: i * 30.0,
+            y: 0.0,
+            clicked: false,
+          )));
+      ctrl.update(
+        position: const Duration(microseconds: 16667),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      final out1 = ctrl.update(
+        position: const Duration(microseconds: 33334),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      final out1Again = ctrl.update(
+        position: const Duration(microseconds: 33334),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      expect(out1Again!.velocityPxPerSec, out1!.velocityPxPerSec);
+      // Stepping forward from here should compute against frame 33334,
+      // NOT against the duplicate call. If state had advanced on the
+      // duplicate, dt would be 0 here.
+      final out2 = ctrl.update(
+        position: const Duration(microseconds: 50001),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      expect(out2!.velocityPxPerSec.dx, closeTo(1800, 5));
+    });
   });
 }
 

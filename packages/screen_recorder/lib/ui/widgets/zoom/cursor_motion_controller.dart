@@ -30,6 +30,11 @@ class CursorMotionController {
   CursorMotionUpdate? _cachedResult;
   Object? _cachedConfigKey;
 
+  // Velocity tracking. Carries last *advanced* state so duplicate-
+  // position calls don't fake a Δt=0 step.
+  Duration? _velPrevPosition;
+  Offset? _velPrevScreenPos;
+
   CursorMotionUpdate? update({
     required Duration position,
     required CursorRecording cursorRecording,
@@ -50,9 +55,12 @@ class CursorMotionController {
         _cachedResult = null;
         return null;
       }
+      final screenPos = Offset(raw.x, raw.y);
+      final velocity = _computeVelocity(screenPos: screenPos, position: position);
       _cachedResult = CursorMotionUpdate(
-        screenPos: Offset(raw.x, raw.y),
+        screenPos: screenPos,
         isClicked: raw.isClicked,
+        velocityPxPerSec: velocity,
       );
       return _cachedResult;
     }
@@ -83,9 +91,12 @@ class CursorMotionController {
       return null;
     }
     final inv = 1.0 / accW;
+    final screenPos = Offset(accX * inv, accY * inv);
+    final velocity = _computeVelocity(screenPos: screenPos, position: position);
     _cachedResult = CursorMotionUpdate(
-      screenPos: Offset(accX * inv, accY * inv),
+      screenPos: screenPos,
       isClicked: clicked,
+      velocityPxPerSec: velocity,
     );
     return _cachedResult;
   }
@@ -94,6 +105,8 @@ class CursorMotionController {
     _cachedPosition = null;
     _cachedResult = null;
     _cachedConfigKey = null;
+    _velPrevPosition = null;
+    _velPrevScreenPos = null;
   }
 
   // --- internals --------------------------------------------------------
@@ -148,13 +161,50 @@ class CursorMotionController {
     _kernelWeights = weights;
     return weights;
   }
+
+  Offset _computeVelocity({
+    required Offset screenPos,
+    required Duration position,
+  }) {
+    final prevPos = _velPrevPosition;
+    final prevScreen = _velPrevScreenPos;
+    if (prevPos == null || prevScreen == null) {
+      _velPrevPosition = position;
+      _velPrevScreenPos = screenPos;
+      return Offset.zero;
+    }
+    if (position < prevPos) {
+      // Scrub backwards: re-anchor and report zero.
+      _velPrevPosition = position;
+      _velPrevScreenPos = screenPos;
+      return Offset.zero;
+    }
+    if (position == prevPos) {
+      // Same-frame rebuild — should be served from _cachedResult
+      // already, but guard the no-Δt case anyway.
+      return Offset.zero;
+    }
+    final dtUs = (position - prevPos).inMicroseconds;
+    final dx = screenPos.dx - prevScreen.dx;
+    final dy = screenPos.dy - prevScreen.dy;
+    final inv = 1e6 / dtUs;
+    _velPrevPosition = position;
+    _velPrevScreenPos = screenPos;
+    return Offset(dx * inv, dy * inv);
+  }
 }
 
 class CursorMotionUpdate {
   const CursorMotionUpdate({
     required this.screenPos,
     required this.isClicked,
+    required this.velocityPxPerSec,
   });
   final Offset screenPos;
   final bool isClicked;
+
+  /// Smoothed cursor velocity in screen-space pixels per second.
+  /// Zero on the first call, on backward scrubs, and whenever the
+  /// previous-frame state isn't trustworthy.
+  final Offset velocityPxPerSec;
 }
