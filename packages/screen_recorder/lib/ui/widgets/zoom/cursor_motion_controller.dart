@@ -53,6 +53,8 @@ class CursorMotionController {
       final raw = cursorAt(cursorRecording, position);
       if (raw == null) {
         _cachedResult = null;
+        _velPrevPosition = null;
+        _velPrevScreenPos = null;
         return null;
       }
       final screenPos = Offset(raw.x, raw.y);
@@ -88,6 +90,8 @@ class CursorMotionController {
     }
     if (accW == 0) {
       _cachedResult = null;
+      _velPrevPosition = null;
+      _velPrevScreenPos = null;
       return null;
     }
     final inv = 1.0 / accW;
@@ -180,8 +184,9 @@ class CursorMotionController {
       return Offset.zero;
     }
     if (position == prevPos) {
-      // Same-frame rebuild — should be served from _cachedResult
-      // already, but guard the no-Δt case anyway.
+      // Defensive: the outer update() early-returns on duplicate position
+      // via _cachedResult, so this branch cannot be reached under current
+      // calling contracts. Retained as a guard against future refactoring.
       return Offset.zero;
     }
     final dtUs = (position - prevPos).inMicroseconds;

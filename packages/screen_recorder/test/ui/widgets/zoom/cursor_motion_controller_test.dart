@@ -336,6 +336,96 @@ void main() {
       );
       expect(out2!.velocityPxPerSec.dx, closeTo(1800, 5));
     });
+
+    test('null-cursor gap re-anchors velocity — first non-null frame returns zero', () {
+      // Recording covers t=[0..16667us] only. Calls at later positions
+      // produce null because there's no sample to read.
+      final ctrl = CursorMotionController();
+      final rec = _record([
+        (micros: 0, x: 0, y: 0, clicked: false),
+      ]);
+      // Seed: returns the single sample (snap path) and anchors velocity state.
+      ctrl.update(
+        position: const Duration(microseconds: 0),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      // Long gap with empty recording → cursorAt returns null at far-future
+      // positions. (cursorAt's exact behavior is library-defined; if your
+      // recording yields a sample even past its last entry, this test still
+      // passes because the next step's velocity is computed from a tiny
+      // displacement, not a fabricated jump. The IMPORTANT assertion is the
+      // final one.)
+      final big = _record([
+        (micros: 0, x: 0, y: 0, clicked: false),
+        (micros: 100000, x: 1000, y: 0, clicked: false),
+      ]);
+      // Skip the gap: first call after seeding uses a NEW recording where
+      // the next sample lives 100ms / 1000px away from the seed. If the
+      // velocity tracker had stale anchors from the seed (t=0, x=0), it
+      // would compute v ≈ 1000 / 0.1 = 10000 px/s on the very first call
+      // with the new recording — but a forward-time NEW recording must
+      // ALSO be treated as the start of a new run. To make this test
+      // deterministic without depending on cursorAt's empty-window
+      // behavior, force a null-producing call between the two rather
+      // than relying on `rec`'s out-of-range behavior.
+      ctrl.update(
+        position: const Duration(microseconds: 50000),
+        cursorRecording: _record([]), // empty → cursorAt returns null
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      // Now feed a non-null sample at t=100ms with x=1000. Without the fix
+      // (Site A clearing _velPrev*), velocity = (1000 - 0) / (100000us)
+      // = 10000 px/s — a huge spike. With the fix, the previous frame's
+      // null return cleared the anchors, so this is treated as a first
+      // call and velocity = Offset.zero.
+      final out = ctrl.update(
+        position: const Duration(microseconds: 100000),
+        cursorRecording: big,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      expect(out!.velocityPxPerSec, Offset.zero,
+          reason: 'After a null-cursor gap, velocity must NOT spike on the '
+              'first resumed frame.');
+    });
+
+    test('FIR path also exposes velocity from the smoothed position', () {
+      final ctrl = CursorMotionController();
+      // Constant-velocity step: 30 px per 16.667 ms frame, so the
+      // smoothed velocity should converge near 1800 px/s.
+      final rec = _record(List.generate(60, (i) => (
+            micros: i * 16667,
+            x: i * 30.0,
+            y: 0.0,
+            clicked: false,
+          )));
+      // Step the FIR-smoothed controller several times so the kernel
+      // is fully primed (no cold-start under-weighting).
+      for (var t = 0; t < 30; t++) {
+        ctrl.update(
+          position: Duration(microseconds: t * 16667),
+          cursorRecording: rec,
+          config: const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+          fps: 60,
+        );
+      }
+      final out = ctrl.update(
+        position: const Duration(microseconds: 30 * 16667),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+        fps: 60,
+      );
+      // FIR introduces lag, so the smoothed velocity may be slightly
+      // below the raw 1800. Generous tolerance — we just want to
+      // confirm it's non-zero, directionally correct, and in the right
+      // ballpark (not the spike scale).
+      expect(out!.velocityPxPerSec.dx, greaterThan(500));
+      expect(out.velocityPxPerSec.dx, lessThan(2200));
+      expect(out.velocityPxPerSec.dy, closeTo(0, 1e-3));
+    });
   });
 }
 
