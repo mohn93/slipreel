@@ -160,28 +160,37 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                     child: SizedBox(
                       width: videoSize.width,
                       height: videoSize.height,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          videoPlayer!,
-                          if (showCursor && motion != null)
-                            CustomPaint(
-                              painter: CursorOverlayPainter(
-                                cursorRecording: widget.cursorRecording,
-                                position: pos,
-                                screenPos: motion.screenPos,
-                                videoSize: videoSize,
-                                screenSize: videoSize,
-                                sizeMultiplier: widget.cursorSize,
-                                style: widget.cursorStyle,
-                                clickEffect: widget.cursorClickEffect,
-                              ),
-                            ),
-                        ],
-                      ),
+                      child: videoPlayer!,
                     ),
                   ),
                 ),
+                // Cursor lives OUTSIDE the video's ClipRRect so its
+                // sprite can overflow into the surrounding padding /
+                // wallpaper when the cursor is near an edge — matches
+                // the export compositor which paints the cursor with
+                // no clip after restoring the video clip. The Stack's
+                // hardEdge default still keeps it inside totalSize.
+                if (showCursor && motion != null)
+                  Positioned(
+                    left: effPadding.left,
+                    top: effPadding.top,
+                    child: SizedBox(
+                      width: videoSize.width,
+                      height: videoSize.height,
+                      child: CustomPaint(
+                        painter: CursorOverlayPainter(
+                          cursorRecording: widget.cursorRecording,
+                          position: pos,
+                          screenPos: motion.screenPos,
+                          videoSize: videoSize,
+                          screenSize: videoSize,
+                          sizeMultiplier: widget.cursorSize,
+                          style: widget.cursorStyle,
+                          clickEffect: widget.cursorClickEffect,
+                        ),
+                      ),
+                    ),
+                  ),
                 if (widget.showZoomDebug)
                   Positioned(
                     left: currentFrame.padding.left,
