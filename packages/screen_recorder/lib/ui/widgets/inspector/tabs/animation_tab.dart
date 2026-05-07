@@ -10,8 +10,9 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 /// Animation tab — screen / cursor animation styles + motion blur.
 ///
 /// Screen and cursor styles write through to the playback render
-/// pipeline. Motion blur is still state-only (proper motion blur
-/// needs a separate cursor-trail or shader pass).
+/// pipeline. Motion blur drives directional cursor stamps + an
+/// anisotropic Gaussian on the screen layer; both are speed-gated so
+/// the slider only takes effect when something is actually moving.
 class AnimationTab extends StatefulWidget {
   const AnimationTab({
     super.key,
@@ -194,8 +195,7 @@ class _AnimationTabState extends State<AnimationTab> {
           label: 'Motion blur',
           subtitle:
               'While mouse cursor or screen is moving, cinematic motion '
-              'blur effect will be applied. (Coming soon — value is '
-              'captured but not yet rendered.)',
+              'blur effect will be applied.',
           value: widget.motionBlur,
           min: 0,
           max: 1,
