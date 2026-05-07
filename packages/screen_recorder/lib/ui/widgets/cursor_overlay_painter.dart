@@ -1,5 +1,6 @@
 // packages/screen_recorder/lib/ui/widgets/cursor_overlay_painter.dart
 import 'package:flutter/material.dart';
+import '../../effects/motion_blur_samples.dart';
 import '../../models/cursor_recording.dart';
 import '../../rendering/cursor_click_effect.dart';
 import '../../rendering/cursor_geometry.dart';
@@ -12,7 +13,10 @@ import '../../rendering/cursor_glyph.dart';
 /// up against [cursorRecording] for the press-pulse + ripple.
 ///
 /// The glyph + click effects are drawn via [paintCursorWithEffects] so
-/// the preview and the exported video stay visually consistent.
+/// the preview and the exported video stay visually consistent. When
+/// [motionBlurIntensity] is > 0 and [velocityPxPerSec] is non-trivial,
+/// the sprite is stamped multiple times along `−v̂` to produce a
+/// directional motion-blur trail.
 class CursorOverlayPainter extends CustomPainter {
   final CursorRecording cursorRecording;
   final Duration position;
@@ -22,6 +26,8 @@ class CursorOverlayPainter extends CustomPainter {
   final double sizeMultiplier;
   final CursorStyle style;
   final CursorClickEffect clickEffect;
+  final Offset velocityPxPerSec;
+  final double motionBlurIntensity;
 
   CursorOverlayPainter({
     required this.cursorRecording,
@@ -32,6 +38,8 @@ class CursorOverlayPainter extends CustomPainter {
     this.sizeMultiplier = 1.0,
     this.style = CursorStyle.modernDark,
     this.clickEffect = CursorClickEffect.ripple,
+    this.velocityPxPerSec = Offset.zero,
+    this.motionBlurIntensity = 0,
   });
 
   @override
@@ -54,14 +62,54 @@ class CursorOverlayPainter extends CustomPainter {
     final dt =
         microsSinceClick(cursorRecording, position.inMicroseconds);
 
-    paintCursorWithEffects(
-      canvas,
-      position: widgetPos,
-      baseDiameter: pxDiameter,
-      style: style,
-      microsSinceClick: dt,
-      effect: clickEffect,
+    final samples = computeMotionBlurSamples(
+      velocityPxPerSec: velocityPxPerSec,
+      sliderIntensity: motionBlurIntensity,
+      referenceSpeedPxPerSec: 2000,
+      maxReachPx: 12,
     );
+
+    if (samples.count == 1) {
+      paintCursorWithEffects(
+        canvas,
+        position: widgetPos,
+        baseDiameter: pxDiameter,
+        style: style,
+        microsSinceClick: dt,
+        effect: clickEffect,
+      );
+      return;
+    }
+
+    // Pad bounds by max stamp reach so stamps near canvas edges
+    // aren't clipped by the layer rect.
+    final reach = samples.stepPx.distance * (samples.count - 1);
+    final stampBounds = Rect.fromCircle(
+      center: widgetPos,
+      radius: pxDiameter * 1.5 + reach,
+    );
+
+    // Index 0 = oldest tail (lowest alpha, largest negative offset).
+    // Index count-1 = head (highest alpha, offset 0).
+    for (var i = 0; i < samples.count; i++) {
+      final tailIndex = samples.count - 1 - i;
+      final dx = samples.stepPx.dx * tailIndex;
+      final dy = samples.stepPx.dy * tailIndex;
+      canvas.saveLayer(
+        stampBounds,
+        Paint()..color = Colors.white.withValues(alpha: samples.alphas[i]),
+      );
+      canvas.translate(dx, dy);
+      paintCursorWithEffects(
+        canvas,
+        position: widgetPos,
+        baseDiameter: pxDiameter,
+        style: style,
+        microsSinceClick: dt,
+        effect: clickEffect,
+      );
+      canvas.restore();
+    }
   }
 
   @override
@@ -73,6 +121,8 @@ class CursorOverlayPainter extends CustomPainter {
         old.screenSize != screenSize ||
         old.sizeMultiplier != sizeMultiplier ||
         old.style != style ||
-        old.clickEffect != clickEffect;
+        old.clickEffect != clickEffect ||
+        old.velocityPxPerSec != velocityPxPerSec ||
+        old.motionBlurIntensity != motionBlurIntensity;
   }
 }
