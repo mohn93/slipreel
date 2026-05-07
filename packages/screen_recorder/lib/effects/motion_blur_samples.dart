@@ -56,6 +56,8 @@ MotionBlurSamples computeMotionBlurSamples({
   if (effective < _kEffectiveCutoff) return _noBlur;
 
   final count = 1 + ((maxStamps - 1) * effective).round();
+  // round() may collapse small effective values just above _kEffectiveCutoff to 0;
+  // this guard catches the gap between _kEffectiveCutoff (0.05) and 1.0/(maxStamps-1) ~0.143
   if (count <= 1) return _noBlur;
 
   final reach = effective * maxReachPx;
