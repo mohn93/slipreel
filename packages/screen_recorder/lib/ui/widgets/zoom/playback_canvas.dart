@@ -28,8 +28,9 @@ import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 /// active. Sized via AspectRatio + FittedBox so the canvas scales to
 /// fit its parent without distorting the source aspect ratio.
 ///
-/// Owns the three per-frame controllers — [ZoomTransformer],
-/// [ZoomFocalController], [CursorMotionController] — so the parent
+/// Owns four per-frame controllers — [ZoomTransformer],
+/// [ZoomFocalController], [CursorMotionController],
+/// [ScreenPanVelocityTracker] — so the parent
 /// screen doesn't need to manage their lifecycles or expose their
 /// state. Reads its inputs purely as widget props; settings flow in
 /// through [frameSettings] / [screenAnimationConfig] /
@@ -278,6 +279,9 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                   velocity: screenVelocity,
                   intensity: widget.motionBlur,
                 );
+                // Blur applied pre-Transform: sigma is in composition-space px,
+                // consistent with frame_compositor's saveLayer path so preview
+                // and export stay visually aligned.
                 final blurredChild = (sigma == Offset.zero)
                     ? transformChild
                     : ImageFiltered(
