@@ -24,6 +24,11 @@ class _RecordingCanvas implements ui.Canvas {
     calls.add('translate(${dx.toStringAsFixed(2)}, ${dy.toStringAsFixed(2)})');
   }
 
+  @override
+  void drawImage(ui.Image image, Offset offset, Paint paint) {
+    calls.add('drawImage(alpha=${paint.color.a.toStringAsFixed(3)})');
+  }
+
   // Unused-by-this-test methods all delegate to noOp. The painter
   // calls drawCircle / drawPath / drawLine etc. via paintCursorWithEffects;
   // we don't care what they do — we only count the stamp envelope.
@@ -78,7 +83,7 @@ void main() {
     expect(b.shouldRepaint(a), isTrue);
   });
 
-  test('motionBlurIntensity 0 → no saveLayer/restore wrapping (single direct paint)', () {
+  test('motionBlurIntensity 0 → no stamp envelope (single direct paint)', () {
     final rec = CursorRecording()
       ..addPosition(const CursorPosition(
           x: 0, y: 0, timestampMicros: 0, isClicked: false));
@@ -91,12 +96,14 @@ void main() {
     );
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(200, 100));
-    final stampOpens = canvas.calls.where((c) => c.startsWith('saveLayer'));
-    expect(stampOpens, isEmpty,
-        reason: 'No blur ⇒ painter draws directly without a stamp envelope.');
+    final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
+    final saveLayers = canvas.calls.where((c) => c.startsWith('saveLayer'));
+    expect(drawImages, isEmpty,
+        reason: 'No blur ⇒ painter draws directly, no pre-baked sprite.');
+    expect(saveLayers, isEmpty);
   });
 
-  test('motionBlurIntensity > 0 + velocity > 0 → N saveLayer/restore pairs', () {
+  test('motionBlurIntensity > 0 + velocity > 0 → N drawImage calls', () {
     final rec = CursorRecording()
       ..addPosition(const CursorPosition(
           x: 0, y: 0, timestampMicros: 0, isClicked: false));
@@ -111,11 +118,9 @@ void main() {
     );
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(200, 100));
-    final saveLayers = canvas.calls.where((c) => c.startsWith('saveLayer'));
-    final restores = canvas.calls.where((c) => c == 'restore');
-    expect(saveLayers.length, 12,
-        reason: 'slider=1, max speed → 12 stamps.');
-    expect(restores.length, 12);
+    final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
+    expect(drawImages.length, 40,
+        reason: 'slider=1, max speed → 40 stamps via pre-baked drawImage.');
   });
 
   test('shouldRepaint reflects velocity and intensity changes', () {

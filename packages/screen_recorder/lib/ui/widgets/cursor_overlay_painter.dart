@@ -1,4 +1,5 @@
 // packages/screen_recorder/lib/ui/widgets/cursor_overlay_painter.dart
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../../effects/motion_blur_samples.dart';
 import '../../models/cursor_recording.dart';
@@ -81,38 +82,57 @@ class CursorOverlayPainter extends CustomPainter {
       return;
     }
 
-    // Pad bounds by max stamp reach so stamps near canvas edges
-    // aren't clipped by the layer rect.
-    final reach = samples.stepPx.distance * (samples.count - 1);
-    final stampBounds = Rect.fromCircle(
-      center: widgetPos,
-      radius: pxDiameter * 1.5 + reach,
-    );
+    // Pre-bake the cursor sprite to a ui.Image so each stamp is a cheap
+    // drawImage instead of re-rendering circles/paths N times. This is
+    // what lets us afford ~40 stamps without tanking frame rate, and at
+    // that density the trail reads as a continuous smear rather than
+    // visible discrete cursor copies.
+    //
+    // Sprite buffer is generously sized for the click ripple, which can
+    // grow to a few cursor diameters during the press-pulse animation.
+    final spriteBufferSize = (pxDiameter * 4).ceil().toDouble();
+    final spriteBufferCenter =
+        Offset(spriteBufferSize / 2, spriteBufferSize / 2);
 
-    // Index 0 = oldest tail (lowest alpha, largest negative offset).
-    // Index count-1 = head (highest alpha, offset 0).
-    for (var i = 0; i < samples.count; i++) {
-      final tailIndex = samples.count - 1 - i;
-      final dx = samples.stepPx.dx * tailIndex;
-      final dy = samples.stepPx.dy * tailIndex;
-      canvas.saveLayer(
-        stampBounds,
-        Paint()..color = Colors.white.withValues(alpha: samples.alphas[i]),
-      );
-      canvas.translate(dx, dy);
-      // widgetPos is absolute; combined with the translate above it lands
-      // the stamp at widgetPos + (dx, dy). Each saveLayer/restore pair
-      // also pushes/pops the transform stack, so adjacent stamps' translates
-      // don't compound.
-      paintCursorWithEffects(
-        canvas,
-        position: widgetPos,
-        baseDiameter: pxDiameter,
-        style: style,
-        microsSinceClick: dt,
-        effect: clickEffect,
-      );
-      canvas.restore();
+    final recorder = ui.PictureRecorder();
+    final spriteCanvas = Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, spriteBufferSize, spriteBufferSize),
+    );
+    paintCursorWithEffects(
+      spriteCanvas,
+      position: spriteBufferCenter,
+      baseDiameter: pxDiameter,
+      style: style,
+      microsSinceClick: dt,
+      effect: clickEffect,
+    );
+    final picture = recorder.endRecording();
+    final spriteImage = picture.toImageSync(
+      spriteBufferSize.toInt(),
+      spriteBufferSize.toInt(),
+    );
+    picture.dispose();
+
+    try {
+      // Index 0 = oldest tail (lowest alpha, largest negative offset).
+      // Index count-1 = head (highest alpha, offset 0). Painting in this
+      // order means the head composites on top of the tail.
+      for (var i = 0; i < samples.count; i++) {
+        final tailIndex = samples.count - 1 - i;
+        final dx = samples.stepPx.dx * tailIndex;
+        final dy = samples.stepPx.dy * tailIndex;
+        canvas.drawImage(
+          spriteImage,
+          Offset(
+            widgetPos.dx + dx - spriteBufferCenter.dx,
+            widgetPos.dy + dy - spriteBufferCenter.dy,
+          ),
+          Paint()..color = Colors.white.withValues(alpha: samples.alphas[i]),
+        );
+      }
+    } finally {
+      spriteImage.dispose();
     }
   }
 
