@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:screen_recorder/effects/motion_blur_screen.dart';
+import 'package:screen_recorder/effects/screen_pan_velocity_tracker.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
@@ -49,6 +51,7 @@ class PlaybackCanvas extends StatefulWidget {
     required this.zoomRegions,
     required this.screenAnimationConfig,
     required this.cursorAnimationConfig,
+    required this.motionBlur,
   });
 
   final VideoPlayerController controller;
@@ -65,6 +68,11 @@ class PlaybackCanvas extends StatefulWidget {
   final ScreenAnimationConfig screenAnimationConfig;
   final CursorAnimationConfig cursorAnimationConfig;
 
+  /// Slider value 0..1 from the inspector's Animation tab. 0 means
+  /// "no motion blur" and short-circuits the screen ImageFilter and
+  /// the cursor multi-stamp path.
+  final double motionBlur;
+
   @override
   State<PlaybackCanvas> createState() => _PlaybackCanvasState();
 }
@@ -79,6 +87,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
   // recorded path each frame, driven by cursorAnimationConfig.
   final CursorMotionController _cursorMotionController =
       CursorMotionController();
+  final ScreenPanVelocityTracker _screenPanTracker = ScreenPanVelocityTracker();
 
   @override
   Widget build(BuildContext context) {
@@ -187,6 +196,8 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                           sizeMultiplier: widget.cursorSize,
                           style: widget.cursorStyle,
                           clickEffect: widget.cursorClickEffect,
+                          velocityPxPerSec: motion.velocityPxPerSec,
+                          motionBlurIntensity: widget.motionBlur,
                         ),
                       ),
                     ),
@@ -259,10 +270,27 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                   rampCurve: activeZoom.rampCurveOverride?.toFlutterCurve()
                       ?? widget.screenAnimationConfig.rampCurve,
                 );
+                final screenVelocity = _screenPanTracker.update(
+                  transform: transform,
+                  position: pos,
+                );
+                final sigma = screenBlurSigma(
+                  velocity: screenVelocity,
+                  intensity: widget.motionBlur,
+                );
+                final blurredChild = (sigma == Offset.zero)
+                    ? transformChild
+                    : ImageFiltered(
+                        imageFilter: ui.ImageFilter.blur(
+                          sigmaX: sigma.dx,
+                          sigmaY: sigma.dy,
+                        ),
+                        child: transformChild,
+                      );
                 return Transform(
                   transform: transform,
                   alignment: Alignment.center,
-                  child: transformChild,
+                  child: blurredChild,
                 );
               },
             );

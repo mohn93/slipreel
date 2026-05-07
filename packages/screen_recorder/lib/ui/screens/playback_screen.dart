@@ -73,7 +73,6 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   CursorStyle _cursorStyle = CursorStyle.modernDark;
   CursorClickEffect _cursorClickEffect = CursorClickEffect.ripple;
   // Animation tab — screen + cursor styles + motion blur amount.
-  // motionBlur is captured but not yet rendered.
   ScreenAnimationConfig _screenAnimationConfig =
       const ScreenAnimationConfig.preset(ScreenAnimationStyle.smooth);
   CursorAnimationConfig _cursorAnimationConfig =
@@ -786,6 +785,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       zoomRegions: _zoomRegions,
       screenAnimationConfig: _screenAnimationConfig,
       cursorAnimationConfig: _cursorAnimationConfig,
+      motionBlur: _motionBlur,
     );
   }
 
