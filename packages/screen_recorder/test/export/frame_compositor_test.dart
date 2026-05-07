@@ -223,6 +223,55 @@ void main() {
       expect(rgba0.length, 8 * 4 * 4);
       expect(rgba1.length, 8 * 4 * 4);
     });
+
+    test('compose with motionBlur=1 and a zooming pan produces a valid buffer', () async {
+      // Drives the saveLayer + ImageFilter branch by giving the
+      // compositor a zoom region whose focal pans across consecutive
+      // frames — that produces a non-zero translation velocity, which
+      // lights up screenBlurSigma. Test asserts the wrapped path
+      // doesn't throw and produces a buffer of the right length.
+      final zoom = ZoomRegion(
+        rect: const Rect.fromLTWH(160, 120, 80, 60),
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 500),
+        zoomLevel: 2.0,
+      );
+      final compositor = FrameCompositor(
+        projectState: EditorProjectState.defaults().copyForTest(
+          motionBlur: 1.0,
+          zoomRegions: [zoom],
+          windowFrame: const WindowFrame(
+            name: 'None',
+            padding: EdgeInsets.zero,
+            cornerRadius: 0,
+            shadowBlur: 0,
+            shadowOffset: Offset.zero,
+            shadowColor: Color(0x00000000),
+            borderWidth: 0,
+          ),
+        ),
+        cursorRecording: CursorRecording(),
+        metadata: _meta(),
+        videoSize: const Size(320, 240),
+        fps: 30,
+      );
+
+      final magenta = _solidBgra(320, 240, 0xFF, 0x00, 0xFF);
+      // First frame seeds the velocity tracker (zero velocity).
+      final r0 = await compositor.compose(
+        videoFrameBgra: magenta,
+        position: const Duration(milliseconds: 100),
+      );
+      // Second frame: by milliseconds 200, the zoom is mid-ramp so the
+      // translation has changed between the two calls — velocity is
+      // non-zero, screenBlurSigma is non-zero, and saveLayer fires.
+      final r1 = await compositor.compose(
+        videoFrameBgra: magenta,
+        position: const Duration(milliseconds: 200),
+      );
+      expect(r0.length, 320 * 240 * 4);
+      expect(r1.length, 320 * 240 * 4);
+    });
   });
 }
 

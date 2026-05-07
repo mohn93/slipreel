@@ -164,8 +164,10 @@ class FrameCompositor {
         velocity: screenVelocity,
         intensity: projectState.motionBlur,
       );
-      // Guard: ensure both sigmas are > 0 to avoid degenerate
-      // ImageFilter.blur on Impeller (zero on one axis can assert).
+      // Guard: skip the saveLayer overhead when the blur is zero on
+      // both axes. ImageFilter.blur accepts zero on one axis (no
+      // blur on that axis), so partial-axis blurs (horizontal-only
+      // or vertical-only pans) are valid and must not be suppressed.
       final hasScreenBlur = screenSigma != Offset.zero;
       if (hasScreenBlur) {
         canvas.saveLayer(
