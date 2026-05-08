@@ -8,29 +8,34 @@ uniform sampler2D uSprite;
 
 // Output rect size in pixels (matches the destination Rect.fromLTWH
 // passed to canvas.drawRect). The shader's FlutterFragCoord ranges
-// from (0, 0) to (uOutputSize.x, uOutputSize.y).
+// from (0, 0) to (uOutputSize.x, uOutputSize.y) — the painter
+// translates the canvas so the rect is at canvas origin, so this
+// holds under Skia's "fragCoord is canvas-local" semantics.
 uniform vec2 uOutputSize;
 
 // Unit vector along the cursor's instantaneous velocity. The trail
-// extends in the OPPOSITE direction of this vector.
+// extends in the OPPOSITE direction of this vector; the integration
+// itself sweeps along +uVelocityDir from the current fragment.
 uniform vec2 uVelocityDir;
 
-// Maximum trail reach in pixels. The trail fades from full alpha at
-// the cursor head to transparent at this distance behind it.
+// Total trail reach in pixels. The blur integrates the cursor's
+// presence at this fragment over an exposure window whose length is
+// reach pixels along uVelocityDir.
 uniform float uReachPx;
 
 out vec4 fragColor;
 
+// Number of samples along the line integral. 24 is enough that the
+// trail reads as a continuous smear at the trail lengths we use
+// (reach up to ~60px), without burning frames on a dense screen.
+const int kSamples = 24;
+
 void main() {
   vec2 fragCoord = FlutterFragCoord();
-  vec2 spriteCenter = uOutputSize * 0.5;
-  vec2 rel = fragCoord - spriteCenter;
 
-  // Always look up the cursor at its current position first. This
-  // captures the cursor sprite's actual silhouette wherever it lies,
-  // including parts of the body that extend behind the geometric
-  // center along the velocity vector (asymmetric cursors like the
-  // macOS arrow have body extending in one direction from the tip).
+  // Sharp lookup of the cursor at the current fragment. We composite
+  // this OVER the integrated trail at the end so the cursor body
+  // stays crisp regardless of how the integral fades it.
   vec2 cursorUv = fragCoord / uOutputSize;
   vec4 cursorAtCurrent = vec4(0.0);
   if (cursorUv.x >= 0.0 && cursorUv.x <= 1.0 &&
@@ -38,52 +43,58 @@ void main() {
     cursorAtCurrent = texture(uSprite, cursorUv);
   }
 
-  // No-trail short-circuit: when reach is sub-pixel the trail
-  // contribution is invisible AND the fade math (-s / uReachPx) would
-  // divide by zero. Returning the cursor sample alone here is
-  // pixel-identical to the no-blur direct paint, which lets the
-  // caller always route through the shader without producing a
-  // visible toggle when reach drops to zero (e.g. when smoothed
-  // velocity drops below the activation threshold).
+  // No-trail short-circuit: when reach is sub-pixel the integral is
+  // pixel-identical to just returning the cursor sample, so skip the
+  // sampling loop. Also avoids weightSum=0 / div-by-zero edge cases.
   if (uReachPx < 1.0) {
     fragColor = cursorAtCurrent;
     return;
   }
 
-  // Signed projection along velocity direction.
-  // s > 0 means the output pixel is FORWARD of the cursor center
-  //       (in the direction of motion).
-  // s < 0 means it's BEHIND the cursor center (in the trail region).
-  float s = dot(rel, uVelocityDir);
-
-  // Forward of cursor center: only the cursor itself contributes.
-  if (s >= 0.0) {
-    fragColor = cursorAtCurrent;
-    return;
-  }
-
-  // Behind cursor center: compute the trail contribution.
-  // Shifting the sample point FORWARD by |s| lands on the cursor's
-  // perpendicular cross-section through center, so the trail's
-  // cross-section matches the cursor's silhouette perpendicular to
-  // its motion vector.
-  vec2 samplePos = fragCoord + uVelocityDir * (-s);
-  vec2 trailUv = samplePos / uOutputSize;
+  // Linear motion blur via finite-step line integral along the
+  // velocity vector. For a cursor moving with velocity v whose center
+  // at time t was C(t) = C0 - v*t (t > 0 = past), an output pixel p
+  // is "covered" by the cursor at time t when sprite(p - C(t)) is
+  // non-transparent. Integrating that coverage over the exposure
+  // window gives:
+  //
+  //   fragColor(p) ∝ ∫ sprite(delta + v_dir * u) du   for u ∈ [0, reach]
+  //
+  // where delta = p - C0 (the relative position of p to the cursor's
+  // current center). Because the sprite is centered at spriteCenter
+  // in the buffer, sprite(q) = texture(uSprite, (spriteCenter + q) / size)
+  // and (spriteCenter + delta) is exactly fragCoord, so:
+  //
+  //   sampleUv = (fragCoord + v_dir * u) / uOutputSize
+  //
+  // Sweeping u from 0 to reach therefore means: for each output pixel,
+  // walk forward along the velocity vector and accumulate cursor
+  // coverage. Pixels behind the cursor will hit cursor body somewhere
+  // mid-sweep; pixels in front never do.
   vec4 trail = vec4(0.0);
-
-  if (trailUv.x >= 0.0 && trailUv.x <= 1.0 &&
-      trailUv.y >= 0.0 && trailUv.y <= 1.0) {
-    vec4 trailSample = texture(uSprite, trailUv);
-    // Linear fade from full at s=0 (head) to zero at s=-uReachPx
-    // (trail end). Sprite values are premultiplied-alpha, so scaling
-    // the whole vec4 is correct.
-    float fade = 1.0 - clamp(-s / uReachPx, 0.0, 1.0);
-    trail = trailSample * fade;
+  float weightSum = 0.0;
+  for (int i = 0; i < kSamples; i++) {
+    float u = uReachPx * (float(i) + 0.5) / float(kSamples);
+    vec2 samplePos = fragCoord + uVelocityDir * u;
+    vec2 sampleUv = samplePos / uOutputSize;
+    if (sampleUv.x >= 0.0 && sampleUv.x <= 1.0 &&
+        sampleUv.y >= 0.0 && sampleUv.y <= 1.0) {
+      // Triangular exposure profile: full weight at u=0 (where the
+      // cursor most-recently was) fading linearly to 0 at u=reach
+      // (the oldest, dimmest tail). This is what makes the streak
+      // taper visually rather than ending in a hard edge.
+      float weight = 1.0 - u / uReachPx;
+      trail += texture(uSprite, sampleUv) * weight;
+      weightSum += weight;
+    }
+  }
+  if (weightSum > 0.0) {
+    trail /= weightSum;
   }
 
-  // Composite the cursor over the trail. Premultiplied-alpha "over":
-  //   out = top + bottom * (1 - top.a)
-  // Where the cursor body is opaque (a≈1), the cursor pixel wins;
-  // where the cursor is transparent (a=0), the trail shows through.
+  // Composite the sharp current cursor over the integrated trail.
+  // Premultiplied-alpha "over": top + bottom*(1 - top.a). Where the
+  // cursor body is opaque, the cursor pixel wins (no blur of the body
+  // itself); where transparent, the trail shows through.
   fragColor = cursorAtCurrent + trail * (1.0 - cursorAtCurrent.a);
 }
