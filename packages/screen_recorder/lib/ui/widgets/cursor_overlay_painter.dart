@@ -165,13 +165,26 @@ class CursorOverlayPainter extends CustomPainter {
         shader.setFloat(3, velocityDir.dy);
         shader.setFloat(4, reach);
 
-        final destRect = Rect.fromLTWH(
+        // FlutterFragCoord under Skia is the canvas-local fragment
+        // position (after the canvas's CTM), NOT local to the rect
+        // being drawn. The shader's UV math `fragCoord / uOutputSize`
+        // therefore only lands in [0, 1] when the rect's local origin
+        // is at the canvas origin. Translate the canvas so the rect's
+        // top-left is at (0, 0) and draw at origin — fragCoord then
+        // ranges over [0, spriteBufferSize] as the shader assumes.
+        // Without this, the cursor only renders correctly when
+        // widgetPos happens to land within bufferSize of canvas (0,0)
+        // and is invisible everywhere else.
+        canvas.save();
+        canvas.translate(
           widgetPos.dx - spriteBufferCenter.dx,
           widgetPos.dy - spriteBufferCenter.dy,
-          spriteBufferSize,
-          spriteBufferSize,
         );
-        canvas.drawRect(destRect, Paint()..shader = shader);
+        canvas.drawRect(
+          Rect.fromLTWH(0, 0, spriteBufferSize, spriteBufferSize),
+          Paint()..shader = shader,
+        );
+        canvas.restore();
       } else {
         // Fallback: pre-baked drawImage multi-stamp. Used only when the
         // shader hasn't loaded yet (briefly at app startup) or when an
