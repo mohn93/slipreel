@@ -1,11 +1,9 @@
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:screen_recorder/effects/ema_velocity_filter.dart';
-import 'package:screen_recorder/effects/screen_pan_velocity_tracker.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
@@ -29,9 +27,8 @@ import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 /// active. Sized via AspectRatio + FittedBox so the canvas scales to
 /// fit its parent without distorting the source aspect ratio.
 ///
-/// Owns four per-frame controllers — [ZoomTransformer],
-/// [ZoomFocalController], [CursorMotionController],
-/// [ScreenPanVelocityTracker] — so the parent
+/// Owns three per-frame controllers — [ZoomTransformer],
+/// [ZoomFocalController], [CursorMotionController] — so the parent
 /// screen doesn't need to manage their lifecycles or expose their
 /// state. Reads its inputs purely as widget props; settings flow in
 /// through [frameSettings] / [screenAnimationConfig] /
@@ -89,10 +86,8 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
   // recorded path each frame, driven by cursorAnimationConfig.
   final CursorMotionController _cursorMotionController =
       CursorMotionController();
-  final ScreenPanVelocityTracker _screenPanTracker = ScreenPanVelocityTracker();
-  // Smooths the combined viewport velocity (cursor scene motion +
-  // camera pan) so the motion-blur trail's magnitude and direction
-  // don't flap on per-frame velocity noise.
+  // Smooths the cursor's scene velocity so the motion-blur trail's
+  // magnitude and direction don't flap on per-frame velocity noise.
   final EmaVelocityFilter _blurVelocityFilter = EmaVelocityFilter();
 
   @override
@@ -171,42 +166,17 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
               videoSize: videoSize,
             );
 
-            // Compute combined viewport velocity (cursor scene motion +
-            // camera pan) so cursor stamps fire on cursor moves, camera
-            // pans, or both. When the camera tracks the cursor perfectly
-            // the two terms cancel and the streak collapses to zero.
-            final Offset rawCombinedVelocity;
-            if (focalUpdate != null) {
-              final zoomMatrix = _zoomTransformer.getTransform(
-                position: pos,
-                zoomRegion: focalUpdate.zoom,
-                videoSize: videoSize,
-                focalPoint: focalUpdate.focal,
-                rampCurve: focalUpdate.zoom.rampCurveOverride?.toFlutterCurve()
-                    ?? widget.screenAnimationConfig.rampCurve,
-              );
-              final screenVelocity = _screenPanTracker.update(
-                transform: zoomMatrix,
-                position: pos,
-              );
-              final zoomScale = math.max(1.0, zoomMatrix.entry(0, 0));
-              rawCombinedVelocity = (motion?.velocityPxPerSec ?? Offset.zero) +
-                  Offset(screenVelocity.dx / zoomScale, screenVelocity.dy / zoomScale);
-            } else {
-              // No zoom active — screen-pan velocity is zero; just use
-              // the cursor's own scene velocity.
-              _screenPanTracker.update(
-                transform: Matrix4.identity(),
-                position: pos,
-              );
-              rawCombinedVelocity = motion?.velocityPxPerSec ?? Offset.zero;
-            }
-            // EMA-smooth before handing to the painter. Raw velocity
-            // crosses the activation threshold on noise alone at low
-            // intensity, and its unit-vector flaps when magnitude is
-            // small. Smoothing fixes both.
+            // Cursor motion blur reflects the cursor's INTRINSIC scene
+            // velocity only — i.e., the actual mouse movement. Camera
+            // pan from a zoom transition is not the cursor moving
+            // through space, so adding it here would streak the cursor
+            // every time the zoom ramps in/out even when the mouse is
+            // perfectly still, which reads as wrong. EMA-smooth so the
+            // trail's magnitude/direction don't flap on per-frame noise.
+            final rawCursorVelocity =
+                motion?.velocityPxPerSec ?? Offset.zero;
             final combinedCursorVelocity =
-                _blurVelocityFilter.filter(rawCombinedVelocity, pos);
+                _blurVelocityFilter.filter(rawCursorVelocity, pos);
 
             final composition = Stack(
               children: [
