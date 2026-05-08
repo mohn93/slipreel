@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// Built-in synthetic-cursor styles. The recorder no longer bakes the
@@ -78,44 +80,57 @@ void paintCursorGlyph(
   // arrow's vertical extent). The halo extends slightly outside this
   // box, which is the OS-pointer's actual visual footprint.
   final scale = diameter / _kBodyHeight;
-  Path buildPath(List<Offset> verts) {
-    final path = Path();
-    for (var i = 0; i < verts.length; i++) {
-      final v = verts[i];
-      final p = Offset(
+  // Corner radius in canvas pixels. Small enough that the tip and
+  // prong points still read as sharp at a glance, but large enough
+  // to remove the visible polygon edges on closer inspection.
+  final cornerRadius = diameter * 0.05;
+
+  Offset toCanvas(Offset v) => Offset(
         position.dx + (v.dx - _kBodyTip.dx) * scale,
         position.dy + (v.dy - _kBodyTip.dy) * scale,
       );
+
+  // Build a closed path through [verts] with each corner rounded by
+  // [cornerRadius] using a quadratic Bezier through the vertex. The
+  // radius is auto-clamped to half the shorter adjacent edge so two
+  // close corners don't crash into each other.
+  Path buildRoundedPath(List<Offset> verts) {
+    final pts = [for (final v in verts) toCanvas(v)];
+    final path = Path();
+    final n = pts.length;
+    for (var i = 0; i < n; i++) {
+      final prev = pts[(i - 1 + n) % n];
+      final curr = pts[i];
+      final next = pts[(i + 1) % n];
+      final inLen = (curr - prev).distance;
+      final outLen = (next - curr).distance;
+      final r = math.min(cornerRadius, math.min(inLen, outLen) * 0.5);
+      final inDir = (curr - prev) / inLen;
+      final outDir = (next - curr) / outLen;
+      final entry = curr - inDir * r;
+      final exit = curr + outDir * r;
       if (i == 0) {
-        path.moveTo(p.dx, p.dy);
+        path.moveTo(entry.dx, entry.dy);
       } else {
-        path.lineTo(p.dx, p.dy);
+        path.lineTo(entry.dx, entry.dy);
       }
+      path.quadraticBezierTo(curr.dx, curr.dy, exit.dx, exit.dy);
     }
     path.close();
     return path;
   }
 
-  final bodyPath = buildPath(_kBodyVertices);
+  final bodyPath = buildRoundedPath(_kBodyVertices);
 
   if (style == CursorStyle.classic) {
     // Exact macOS pointer: halo first (white), body second (black).
     // This dual-path approach is what the OS cursor uses — a thin
     // outer "shape" sitting under the inner body — and reproduces the
     // halo crispness that a single centered stroke can't match,
-    // especially around the sharp tip.
-    //
-    // The halo gets a small Gaussian softening (sigma ≈ 4% of body
-    // height) so its outer edge reads as a fuzzy glow rather than a
-    // crisp polygon — that's the slightly hazy halo effect the modern
-    // macOS pointer has when you look closely. Body stays sharp.
-    final haloPath = buildPath(_kHaloVertices);
-    canvas.drawPath(
-      haloPath,
-      Paint()
-        ..color = Colors.white
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, diameter * 0.04),
-    );
+    // especially around the sharp tip. Both paths get the same
+    // corner-radius rounding so the halo stays parallel to the body.
+    final haloPath = buildRoundedPath(_kHaloVertices);
+    canvas.drawPath(haloPath, Paint()..color = Colors.white);
     canvas.drawPath(bodyPath, Paint()..color = Colors.black);
     return;
   }
