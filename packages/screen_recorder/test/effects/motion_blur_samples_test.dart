@@ -15,9 +15,12 @@ void main() {
       expect(s.alphas, [closeTo(1.0, 1e-9)]);
     });
 
-    test('velocity below 1 px/s → single stamp regardless of slider', () {
+    test('velocity below 30 px/s → single stamp regardless of slider', () {
+      // Below the no-direction threshold the unit velocity vector is
+      // dominated by FIR-derivative noise, so we suppress the trail
+      // entirely rather than feeding the shader a noise direction.
       final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(0.4, 0),
+        velocityPxPerSec: const Offset(20, 0),
         sliderIntensity: 1.0,
         referenceSpeedPxPerSec: 2000,
         maxReachPx: 12,

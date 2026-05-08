@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:screen_recorder/effects/ema_velocity_filter.dart';
 import 'package:screen_recorder/effects/screen_pan_velocity_tracker.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
@@ -71,6 +72,9 @@ class FrameCompositor {
   final ZoomFocalController _focalController = ZoomFocalController();
   final CursorMotionController _motionController = CursorMotionController();
   final ScreenPanVelocityTracker _screenPanTracker = ScreenPanVelocityTracker();
+  // Mirrors the preview's EmaVelocityFilter so the export's blur
+  // smoothing matches what the user saw in the editor (WYSIWYG).
+  final EmaVelocityFilter _blurVelocityFilter = EmaVelocityFilter();
 
   WindowFrame get _frame => projectState.windowFrame;
 
@@ -166,8 +170,12 @@ class FrameCompositor {
       // fires on cursor moves, camera pans, or both. When the camera
       // tracks the cursor perfectly the two terms cancel → no streak.
       final zoomScale = math.max(1.0, zoomTransform.entry(0, 0));
-      final combinedCursorVelocity = (motion?.velocityPxPerSec ?? Offset.zero) +
+      final rawCombinedVelocity = (motion?.velocityPxPerSec ?? Offset.zero) +
           Offset(screenVelocity.dx / zoomScale, screenVelocity.dy / zoomScale);
+      // EMA-smooth so the trail's magnitude/direction don't flap on
+      // raw per-frame velocity noise — same filter the preview uses.
+      final combinedCursorVelocity =
+          _blurVelocityFilter.filter(rawCombinedVelocity, position);
 
       _paintWallpaper(canvas);
       _framePainter.paint(canvas, totalSize);

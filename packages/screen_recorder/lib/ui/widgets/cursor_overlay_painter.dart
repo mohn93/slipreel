@@ -74,14 +74,8 @@ class CursorOverlayPainter extends CustomPainter {
     final dt =
         microsSinceClick(cursorRecording, position.inMicroseconds);
 
-    final samples = computeMotionBlurSamples(
-      velocityPxPerSec: velocityPxPerSec,
-      sliderIntensity: motionBlurIntensity,
-      referenceSpeedPxPerSec: 600,
-      maxReachPx: 60,
-    );
-
-    if (samples.count == 1) {
+    // Slider all the way down: cheap direct paint, no shader / pre-bake.
+    if (motionBlurIntensity <= 0) {
       paintCursorWithEffects(
         canvas,
         position: widgetPos,
@@ -93,11 +87,24 @@ class CursorOverlayPainter extends CustomPainter {
       return;
     }
 
-    // Pre-bake the cursor sprite to a ui.Image so each stamp is a cheap
-    // drawImage instead of re-rendering circles/paths N times. This is
-    // what lets us afford ~40 stamps without tanking frame rate, and at
-    // that density the trail reads as a continuous smear rather than
-    // visible discrete cursor copies.
+    final samples = computeMotionBlurSamples(
+      velocityPxPerSec: velocityPxPerSec,
+      sliderIntensity: motionBlurIntensity,
+      referenceSpeedPxPerSec: 600,
+      maxReachPx: 60,
+    );
+
+    // No early-return on samples.count == 1: when intensity > 0 we
+    // always route through the shader path so the rendered cursor
+    // doesn't visibly toggle between "direct paint" and "shader
+    // pass-through" as velocity bobs around the activation threshold.
+    // The shader's reach<1 branch produces a pixel-identical result to
+    // direct paint, so this is purely a path-consolidation move.
+
+    // Pre-bake the cursor sprite to a ui.Image so the shader (and the
+    // multi-stamp fallback) can sample it cheaply. This also lets the
+    // shader render a continuous directional smear instead of stacked
+    // discrete cursor copies.
     //
     // Sprite buffer is generously sized for the click ripple, which can
     // grow to a few cursor diameters during the press-pulse animation.
@@ -138,11 +145,14 @@ class CursorOverlayPainter extends CustomPainter {
         final shader = program.fragmentShader();
         final velocity = velocityPxPerSec;
         final speed = velocity.distance;
-        // Defensive: if speed is zero we'd divide by zero below. Fall
-        // back to multi-stamp in that case (which itself short-circuits
-        // to single-stamp at zero velocity via samples.count==1, so
-        // this branch only fires with a real direction).
-        final velocityDir = Offset(velocity.dx / speed, velocity.dy / speed);
+        // When speed is zero (cursor paused, or below the activation
+        // threshold so samples collapsed to count==1) reach is also
+        // zero and the shader's reach<1 branch fires before it reads
+        // velocityDir. Pass an arbitrary unit vector to avoid NaN
+        // showing up in any backend that evaluates the uniform anyway.
+        final velocityDir = speed > 0
+            ? Offset(velocity.dx / speed, velocity.dy / speed)
+            : const Offset(1, 0);
 
         shader.setImageSampler(0, spriteImage);
         // Uniform layout (declaration order in the .frag file):

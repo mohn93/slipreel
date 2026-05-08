@@ -29,9 +29,12 @@ const _noBlur = MotionBlurSamples(
 /// saveLayer + multi-stamp loop for it.
 const _kEffectiveCutoff = 0.05;
 
-/// Velocities slower than this don't produce visible directional
-/// blur. Below it we report no blur regardless of slider value.
-const _kMinSpeedPxPerSec = 1.0;
+/// Velocities slower than this don't produce a perceptible directional
+/// streak AND the unit velocity vector becomes noise-dominated below
+/// it (a cursor "holding still" never has a stable direction). Below
+/// this we report no blur regardless of slider value, so the trail
+/// orientation can't flap around on near-stationary cursors.
+const _kMinSpeedPxPerSec = 30.0;
 
 /// Returns the per-stamp parameters for cursor motion blur.
 ///

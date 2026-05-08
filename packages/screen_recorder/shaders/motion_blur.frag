@@ -38,6 +38,18 @@ void main() {
     cursorAtCurrent = texture(uSprite, cursorUv);
   }
 
+  // No-trail short-circuit: when reach is sub-pixel the trail
+  // contribution is invisible AND the fade math (-s / uReachPx) would
+  // divide by zero. Returning the cursor sample alone here is
+  // pixel-identical to the no-blur direct paint, which lets the
+  // caller always route through the shader without producing a
+  // visible toggle when reach drops to zero (e.g. when smoothed
+  // velocity drops below the activation threshold).
+  if (uReachPx < 1.0) {
+    fragColor = cursorAtCurrent;
+    return;
+  }
+
   // Signed projection along velocity direction.
   // s > 0 means the output pixel is FORWARD of the cursor center
   //       (in the direction of motion).

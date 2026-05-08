@@ -123,6 +123,33 @@ void main() {
         reason: 'slider=1, max speed → 40 stamps via pre-baked drawImage.');
   });
 
+  test('motionBlurIntensity > 0 + velocity below threshold → 1 drawImage stamp '
+       '(no path divergence vs the no-blur direct paint)', () {
+    // Below the activation threshold (30 px/s) samples collapse to
+    // count==1, but intensity > 0 must still route through the
+    // pre-bake path so that smoothed velocity passing through the
+    // threshold doesn't cause a visible toggle between "no shader,
+    // sharp cursor" and "shader, blurred cursor". On the multi-stamp
+    // fallback this manifests as exactly one drawImage call (the
+    // head stamp), not zero.
+    final rec = CursorRecording()
+      ..addPosition(const CursorPosition(
+          x: 0, y: 0, timestampMicros: 0, isClicked: false));
+    final painter = CursorOverlayPainter(
+      cursorRecording: rec,
+      position: const Duration(milliseconds: 100),
+      screenPos: const Offset(50, 25),
+      videoSize: const Size(200, 100),
+      screenSize: const Size(200, 100),
+      velocityPxPerSec: const Offset(10, 0), // < 30 px/s threshold
+      motionBlurIntensity: 1.0,
+    );
+    final canvas = _RecordingCanvas();
+    painter.paint(canvas, const Size(200, 100));
+    final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
+    expect(drawImages.length, 1);
+  });
+
   test('shouldRepaint reflects velocity and intensity changes', () {
     final rec = CursorRecording()
       ..addPosition(const CursorPosition(

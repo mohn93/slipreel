@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:screen_recorder/effects/ema_velocity_filter.dart';
 import 'package:screen_recorder/effects/screen_pan_velocity_tracker.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
@@ -89,6 +90,10 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
   final CursorMotionController _cursorMotionController =
       CursorMotionController();
   final ScreenPanVelocityTracker _screenPanTracker = ScreenPanVelocityTracker();
+  // Smooths the combined viewport velocity (cursor scene motion +
+  // camera pan) so the motion-blur trail's magnitude and direction
+  // don't flap on per-frame velocity noise.
+  final EmaVelocityFilter _blurVelocityFilter = EmaVelocityFilter();
 
   @override
   Widget build(BuildContext context) {
@@ -170,7 +175,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
             // camera pan) so cursor stamps fire on cursor moves, camera
             // pans, or both. When the camera tracks the cursor perfectly
             // the two terms cancel and the streak collapses to zero.
-            final Offset combinedCursorVelocity;
+            final Offset rawCombinedVelocity;
             if (focalUpdate != null) {
               final zoomMatrix = _zoomTransformer.getTransform(
                 position: pos,
@@ -185,7 +190,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                 position: pos,
               );
               final zoomScale = math.max(1.0, zoomMatrix.entry(0, 0));
-              combinedCursorVelocity = (motion?.velocityPxPerSec ?? Offset.zero) +
+              rawCombinedVelocity = (motion?.velocityPxPerSec ?? Offset.zero) +
                   Offset(screenVelocity.dx / zoomScale, screenVelocity.dy / zoomScale);
             } else {
               // No zoom active — screen-pan velocity is zero; just use
@@ -194,8 +199,14 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                 transform: Matrix4.identity(),
                 position: pos,
               );
-              combinedCursorVelocity = motion?.velocityPxPerSec ?? Offset.zero;
+              rawCombinedVelocity = motion?.velocityPxPerSec ?? Offset.zero;
             }
+            // EMA-smooth before handing to the painter. Raw velocity
+            // crosses the activation threshold on noise alone at low
+            // intensity, and its unit-vector flaps when magnitude is
+            // small. Smoothing fixes both.
+            final combinedCursorVelocity =
+                _blurVelocityFilter.filter(rawCombinedVelocity, pos);
 
             final composition = Stack(
               children: [
