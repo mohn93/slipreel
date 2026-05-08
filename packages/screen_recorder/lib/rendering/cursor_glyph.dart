@@ -104,8 +104,18 @@ void paintCursorGlyph(
     // outer "shape" sitting under the inner body — and reproduces the
     // halo crispness that a single centered stroke can't match,
     // especially around the sharp tip.
+    //
+    // The halo gets a small Gaussian softening (sigma ≈ 4% of body
+    // height) so its outer edge reads as a fuzzy glow rather than a
+    // crisp polygon — that's the slightly hazy halo effect the modern
+    // macOS pointer has when you look closely. Body stays sharp.
     final haloPath = buildPath(_kHaloVertices);
-    canvas.drawPath(haloPath, Paint()..color = Colors.white);
+    canvas.drawPath(
+      haloPath,
+      Paint()
+        ..color = Colors.white
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, diameter * 0.04),
+    );
     canvas.drawPath(bodyPath, Paint()..color = Colors.black);
     return;
   }
