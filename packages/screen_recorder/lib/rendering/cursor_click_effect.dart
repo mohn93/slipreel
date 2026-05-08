@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../models/cursor_recording.dart';
 import 'cursor_glyph.dart';
 
@@ -160,6 +161,7 @@ void paintCursorGlyphWithPulse(
   required double baseDiameter,
   required CursorStyle style,
   required int? microsSinceClick,
+  CursorState state = CursorState.arrow,
 }) {
   final pulse = microsSinceClick == null
       ? 1.0
@@ -169,6 +171,7 @@ void paintCursorGlyphWithPulse(
     position: position,
     diameter: baseDiameter * pulse,
     style: style,
+    state: state,
   );
 }
 
@@ -181,6 +184,7 @@ void paintCursorWithEffects(
   required CursorStyle style,
   required int? microsSinceClick,
   CursorClickEffect effect = CursorClickEffect.none,
+  CursorState state = CursorState.arrow,
 }) {
   paintCursorRipple(
     canvas,
@@ -195,5 +199,6 @@ void paintCursorWithEffects(
     baseDiameter: baseDiameter,
     style: style,
     microsSinceClick: microsSinceClick,
+    state: state,
   );
 }

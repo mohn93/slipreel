@@ -233,6 +233,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                           clickEffect: widget.cursorClickEffect,
                           velocityPxPerSec: combinedCursorVelocity,
                           motionBlurIntensity: widget.motionBlur,
+                          cursorState: motion.state,
                         ),
                       ),
                     ),

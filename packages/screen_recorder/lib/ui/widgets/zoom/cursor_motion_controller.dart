@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/animation.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
@@ -63,6 +64,7 @@ class CursorMotionController {
         screenPos: screenPos,
         isClicked: raw.isClicked,
         velocityPxPerSec: velocity,
+        state: raw.state,
       );
       return _cachedResult;
     }
@@ -71,6 +73,7 @@ class CursorMotionController {
     final framePeriodMicros = (1000000 / fps).round();
 
     bool clicked = false;
+    CursorState headState = CursorState.arrow;
     double accX = 0;
     double accY = 0;
     double accW = 0;
@@ -85,8 +88,14 @@ class CursorMotionController {
       accY += s.y * weights[i];
       accW += weights[i];
       // Render the most-recent tap's click state — matches the legacy
-      // IIR behavior. Older taps don't extend the click visibly.
-      if (i == 0) clicked = s.isClicked;
+      // IIR behavior. Older taps don't extend the click visibly. Same
+      // rule for cursor state: averaging an "arrow" and an "I-beam"
+      // across a transition would produce neither, so we just use the
+      // head sample's state.
+      if (i == 0) {
+        clicked = s.isClicked;
+        headState = s.state;
+      }
     }
     if (accW == 0) {
       _cachedResult = null;
@@ -101,6 +110,7 @@ class CursorMotionController {
       screenPos: screenPos,
       isClicked: clicked,
       velocityPxPerSec: velocity,
+      state: headState,
     );
     return _cachedResult;
   }
@@ -204,6 +214,7 @@ class CursorMotionUpdate {
     required this.screenPos,
     required this.isClicked,
     required this.velocityPxPerSec,
+    this.state = CursorState.arrow,
   });
   final Offset screenPos;
   final bool isClicked;
@@ -212,4 +223,11 @@ class CursorMotionUpdate {
   /// Zero on the first call, on backward scrubs, and whenever the
   /// previous-frame state isn't trustworthy.
   final Offset velocityPxPerSec;
+
+  /// What the OS pointer looked like at the most-recent tap time
+  /// (taken from the head sample, not averaged across the FIR window —
+  /// state changes mid-window would average to nonsense). Lets the
+  /// painter pick the right glyph (I-beam over text, hand over a link,
+  /// etc.).
+  final CursorState state;
 }

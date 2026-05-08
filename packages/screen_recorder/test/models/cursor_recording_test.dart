@@ -52,6 +52,47 @@ void main() {
       await tempFile.delete();
     });
 
+    test('saves and loads cursor state alongside position', () async {
+      // End-to-end check that the new state field survives a full
+      // recording → save → load cycle. Without this the painter
+      // would see arrow on every frame even after the schema change.
+      final recording = CursorRecording();
+      recording.addPosition(CursorPosition(
+        x: 0, y: 0, timestampMicros: 0, state: CursorState.iBeam));
+      recording.addPosition(CursorPosition(
+        x: 1, y: 1, timestampMicros: 100, state: CursorState.pointingHand));
+
+      final tempFile = File(
+          'test_cursor_state_${DateTime.now().microsecondsSinceEpoch}.json');
+      try {
+        await recording.saveToFile(tempFile.path);
+        final loaded = await CursorRecording.loadFromFile(tempFile.path);
+        expect(loaded.count, 2);
+        expect(loaded.positions[0].state, CursorState.iBeam);
+        expect(loaded.positions[1].state, CursorState.pointingHand);
+      } finally {
+        if (await tempFile.exists()) await tempFile.delete();
+      }
+    });
+
+    test('loadFromFile defaults missing state to arrow (legacy recordings)',
+        () async {
+      // Legacy files predate the state field; their JSON has no
+      // 'state' key. Loading must succeed and pick arrow as default
+      // — anything else would silently corrupt how old clips render.
+      final tempFile = File(
+          'test_cursor_legacy_${DateTime.now().microsecondsSinceEpoch}.json');
+      try {
+        await tempFile.writeAsString(
+            '[{"x": 5.0, "y": 6.0, "timestampMicros": 0, "isClicked": false}]');
+        final loaded = await CursorRecording.loadFromFile(tempFile.path);
+        expect(loaded.count, 1);
+        expect(loaded.positions[0].state, CursorState.arrow);
+      } finally {
+        if (await tempFile.exists()) await tempFile.delete();
+      }
+    });
+
     test('should handle division by zero when timestamps are equal', () {
       final recording = CursorRecording();
 

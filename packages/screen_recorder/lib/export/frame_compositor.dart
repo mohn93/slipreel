@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:screen_recorder/effects/ema_velocity_filter.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
@@ -176,6 +177,7 @@ class FrameCompositor {
           screenPos: motion.screenPos,
           velocity: combinedCursorVelocity,
           intensity: projectState.motionBlur,
+          state: motion.state,
         );
       }
 
@@ -264,6 +266,7 @@ class FrameCompositor {
     required Offset screenPos,
     required Offset velocity,
     required double intensity,
+    required CursorState state,
   }) {
     canvas.save();
     canvas.translate(_effectivePadding.left, _effectivePadding.top);
@@ -278,6 +281,7 @@ class FrameCompositor {
       clickEffect: projectState.cursorClickEffect,
       velocityPxPerSec: velocity,
       motionBlurIntensity: intensity,
+      cursorState: state,
     );
     painter.paint(canvas, videoSize);
     canvas.restore();

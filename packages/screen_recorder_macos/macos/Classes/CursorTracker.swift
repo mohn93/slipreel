@@ -12,8 +12,11 @@ class CursorTracker: NSObject {
   private var lastMouseLocation: NSPoint = .zero
   private var isMouseDown = false
 
-  // Callback for cursor data
-  var onCursorUpdate: ((Double, Double, Int64, Bool) -> Void)?
+  // Callback for cursor data: x, y, timestampMicros, isClicked, stateWireName.
+  // The wire-name string matches CursorState.wireName on the Dart side
+  // (e.g. "arrow", "iBeam", "pointingHand"). "arrow" is the fallback
+  // for any cursor we don't recognise, so the field is always populated.
+  var onCursorUpdate: ((Double, Double, Int64, Bool, String) -> Void)?
   var onError: ((Error) -> Void)?
 
   // MARK: - Tracking Control
@@ -95,8 +98,42 @@ class CursorTracker: NSObject {
     // Get timestamp in microseconds
     let timestamp = getTimestampMicros()
 
+    // Identify which stock cursor the system is currently showing.
+    // Must run on the main thread because NSCursor APIs are
+    // main-thread-only — the timer's already on the main runloop, so
+    // this is a direct call.
+    let state = detectCursorStateName()
+
     // Send cursor data via callback
-    onCursorUpdate?(location.x, location.y, timestamp, isMouseDown)
+    onCursorUpdate?(location.x, location.y, timestamp, isMouseDown, state)
+  }
+
+  /// Compares NSCursor.currentSystem to each stock cursor instance and
+  /// returns the matching wire-name string. Falls back to "arrow" for
+  /// custom or unrecognised cursors.
+  ///
+  /// Stock NSCursor accessors (arrow, IBeamCursor, etc.) return
+  /// shared singletons, so pointer-equality is the cheapest reliable
+  /// match. NSCursor.currentSystem returns the cursor presently on
+  /// screen; if the active cursor is one of those singletons (which is
+  /// the case for system-set cursors over text fields, links, resize
+  /// handles, etc.) the comparison hits.
+  private func detectCursorStateName() -> String {
+    guard let cursor = NSCursor.currentSystem else { return "arrow" }
+    if cursor === NSCursor.iBeam { return "iBeam" }
+    if cursor === NSCursor.pointingHand { return "pointingHand" }
+    if cursor === NSCursor.crosshair { return "crosshair" }
+    if cursor === NSCursor.resizeUpDown { return "resizeNS" }
+    if cursor === NSCursor.resizeLeftRight { return "resizeEW" }
+    if cursor === NSCursor.openHand { return "openHand" }
+    if cursor === NSCursor.closedHand { return "closedHand" }
+    if cursor === NSCursor.operationNotAllowed { return "notAllowed" }
+    // NSCursor doesn't expose dedicated NESW/NWSE constants in stable
+    // AppKit (the diagonal resize cursors live in private API), so we
+    // can't pointer-match them today — they fall through to "arrow".
+    // Filing a follow-up if we want diagonal resize support: requires
+    // a custom comparison via the cursor's image data.
+    return "arrow"
   }
 
   private func handleMouseEvent(_ event: NSEvent) {

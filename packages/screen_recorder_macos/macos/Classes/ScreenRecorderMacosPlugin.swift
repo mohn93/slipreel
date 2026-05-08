@@ -237,14 +237,16 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           }
 
           // Set up cursor callback
-          cursorTracker?.onCursorUpdate = { [weak self] x, y, timestamp, isClicked in
+          cursorTracker?.onCursorUpdate = { [weak self] x, y, timestamp, isClicked, state in
             guard let self = self else { return }
             guard let handler = self.cursorStreamHandler else {
               print("[Plugin] Warning: Cursor data but no stream handler")
               return
             }
 
-            handler.sendCursorPosition(x: x, y: y, timestamp: timestamp, isClicked: isClicked)
+            handler.sendCursorPosition(
+              x: x, y: y, timestamp: timestamp, isClicked: isClicked, state: state
+            )
           }
 
           cursorTracker?.onError = { error in
@@ -482,14 +484,14 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
               videoWidthPx: captureWidth,
               videoHeightPx: captureHeight)
           }
-          cursorTracker?.onCursorUpdate = { [weak self] x, y, _, isClicked in
+          cursorTracker?.onCursorUpdate = { [weak self] x, y, _, isClicked, state in
             guard let self = self else { return }
             guard let frameStart = self.firstVideoFrameAt else { return }
             guard let videoMicros = FirstFrameTiming.videoMicros(
               now: Date(), since: frameStart) else { return }
             let (px, py) = self.cursorTransform?(x, y) ?? (x, y)
             self.cursorStreamHandler?.sendCursorPosition(
-              x: px, y: py, timestamp: videoMicros, isClicked: isClicked)
+              x: px, y: py, timestamp: videoMicros, isClicked: isClicked, state: state)
           }
           try cursorTracker?.startTracking(frequency: 60)
         }
@@ -859,7 +861,9 @@ class CursorStreamHandler: NSObject, FlutterStreamHandler {
     return nil
   }
 
-  func sendCursorPosition(x: Double, y: Double, timestamp: Int64, isClicked: Bool) {
+  func sendCursorPosition(
+    x: Double, y: Double, timestamp: Int64, isClicked: Bool, state: String = "arrow"
+  ) {
     guard isListening, let eventSink = eventSink else { return }
 
     // Validate data
@@ -872,7 +876,8 @@ class CursorStreamHandler: NSObject, FlutterStreamHandler {
       "x": x,
       "y": y,
       "timestampMicros": timestamp,
-      "isClicked": isClicked
+      "isClicked": isClicked,
+      "state": state
     ]
 
     DispatchQueue.main.async {

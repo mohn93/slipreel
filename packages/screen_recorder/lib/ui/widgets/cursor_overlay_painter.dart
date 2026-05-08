@@ -1,6 +1,7 @@
 // packages/screen_recorder/lib/ui/widgets/cursor_overlay_painter.dart
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../../effects/motion_blur_samples.dart';
 import '../../models/cursor_recording.dart';
 import '../../rendering/cursor_click_effect.dart';
@@ -29,6 +30,7 @@ class CursorOverlayPainter extends CustomPainter {
   final CursorClickEffect clickEffect;
   final Offset velocityPxPerSec;
   final double motionBlurIntensity;
+  final CursorState cursorState;
 
   CursorOverlayPainter({
     required this.cursorRecording,
@@ -41,6 +43,7 @@ class CursorOverlayPainter extends CustomPainter {
     this.clickEffect = CursorClickEffect.ripple,
     this.velocityPxPerSec = Offset.zero,
     this.motionBlurIntensity = 0,
+    this.cursorState = CursorState.arrow,
   });
 
   static ui.FragmentProgram? _motionBlurProgram;
@@ -115,6 +118,7 @@ class CursorOverlayPainter extends CustomPainter {
         baseDiameter: pxDiameter,
         style: style,
         microsSinceClick: dt,
+        state: cursorState,
       );
       return;
     }
@@ -177,6 +181,7 @@ class CursorOverlayPainter extends CustomPainter {
       baseDiameter: pxDiameter,
       style: style,
       microsSinceClick: dt,
+      state: cursorState,
     );
     final picture = recorder.endRecording();
     final spriteImage = picture.toImageSync(
@@ -270,6 +275,7 @@ class CursorOverlayPainter extends CustomPainter {
         old.style != style ||
         old.clickEffect != clickEffect ||
         old.velocityPxPerSec != velocityPxPerSec ||
-        old.motionBlurIntensity != motionBlurIntensity;
+        old.motionBlurIntensity != motionBlurIntensity ||
+        old.cursorState != cursorState;
   }
 }

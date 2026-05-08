@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+
+import 'cursor_state_glyphs.dart';
 
 /// Built-in synthetic-cursor styles. The recorder no longer bakes the
 /// OS pointer into video frames, so the editor and exporter both
@@ -52,12 +55,33 @@ const List<Offset> _kHaloVertices = [
 /// (matching the OS hot-spot), so the recorded cursor coordinates can
 /// be passed in unchanged. For the [CursorStyle.dot] style the circle
 /// is centered on [position] instead.
+///
+/// When [state] is anything other than [CursorState.arrow] AND the
+/// chosen [style] is [CursorStyle.classic], the rendering swaps the
+/// arrow polygon for the matching state glyph (I-beam, pointing
+/// hand, resize, etc.) — that's the live OS pointer the recorder
+/// captured. Other styles ignore [state] and always render their
+/// arrow form, since "Bold" / "Outlined" / "Modern Dark" are about
+/// stylising the arrow specifically.
 void paintCursorGlyph(
   Canvas canvas, {
   required Offset position,
   required double diameter,
   required CursorStyle style,
+  CursorState state = CursorState.arrow,
 }) {
+  // State-specific glyphs only apply when we're rendering the
+  // OS-accurate Classic style. Other styles are user-chosen
+  // arrow variants that should ignore the recorded state.
+  if (style == CursorStyle.classic && state != CursorState.arrow) {
+    paintStateGlyph(
+      canvas,
+      state: state,
+      position: position,
+      diameter: diameter,
+    );
+    return;
+  }
   if (style == CursorStyle.dot) {
     canvas.drawCircle(
       position,

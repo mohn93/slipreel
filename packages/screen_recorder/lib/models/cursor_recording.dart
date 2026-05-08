@@ -54,6 +54,11 @@ class CursorRecording {
       y: before.y + (after.y - before.y) * t,
       timestampMicros: timestampMicros,
       isClicked: before.isClicked || after.isClicked,
+      // State is a discrete attribute — we can't interpolate
+      // "halfway between arrow and I-beam". Use the closer sample's
+      // state so a transition flips at t=0.5 rather than averaging
+      // to nonsense.
+      state: t < 0.5 ? before.state : after.state,
     );
   }
 
@@ -112,6 +117,7 @@ class CursorRecording {
           y: p.y,
           timestampMicros: p.timestampMicros - base,
           isClicked: p.isClicked,
+          state: p.state,
         ));
       }
 
