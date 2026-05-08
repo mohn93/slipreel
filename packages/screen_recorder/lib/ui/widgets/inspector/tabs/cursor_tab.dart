@@ -212,13 +212,16 @@ class _CursorStylePreviewPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final isDot = style == CursorStyle.dot;
-    // Dot is centered and sized to fit the tile width; arrows are
-    // anchored near the top-left so the full arrow shape fits inside
-    // the tile naturally (same convention as the actual overlay).
+    // Dot is centered. Arrows: tip in the upper-left corner of the
+    // tile, with diameter sized so the full bounding box (h≈18 units,
+    // w≈12 units in the macOS-shape grid) fits inside the tile with
+    // a hair of margin.
     final position = isDot
         ? Offset(size.width / 2, size.height / 2)
-        : Offset(size.width * 0.15, size.height * 0.05);
-    final diameter = isDot ? size.shortestSide * 0.75 : size.height;
+        : Offset(size.width * 0.1, size.height * 0.02);
+    final diameter = isDot
+        ? size.shortestSide * 0.75
+        : size.height * 0.92;
     paintCursorGlyph(
       canvas,
       position: position,
