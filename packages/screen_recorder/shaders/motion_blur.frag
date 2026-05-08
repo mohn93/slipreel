@@ -33,21 +33,17 @@ const int kSamples = 24;
 void main() {
   vec2 fragCoord = FlutterFragCoord();
 
-  // Sharp lookup of the cursor at the current fragment. We composite
-  // this OVER the integrated trail at the end so the cursor body
-  // stays crisp regardless of how the integral fades it.
-  vec2 cursorUv = fragCoord / uOutputSize;
-  vec4 cursorAtCurrent = vec4(0.0);
-  if (cursorUv.x >= 0.0 && cursorUv.x <= 1.0 &&
-      cursorUv.y >= 0.0 && cursorUv.y <= 1.0) {
-    cursorAtCurrent = texture(uSprite, cursorUv);
-  }
-
   // No-trail short-circuit: when reach is sub-pixel the integral is
-  // pixel-identical to just returning the cursor sample, so skip the
-  // sampling loop. Also avoids weightSum=0 / div-by-zero edge cases.
+  // pixel-identical to just returning the cursor sample directly, so
+  // skip the sampling loop. Also avoids weightSum=0 / div-by-zero
+  // edge cases when reach rounds to 0.
   if (uReachPx < 1.0) {
-    fragColor = cursorAtCurrent;
+    vec2 uv = fragCoord / uOutputSize;
+    if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
+      fragColor = texture(uSprite, uv);
+    } else {
+      fragColor = vec4(0.0);
+    }
     return;
   }
 
@@ -92,9 +88,12 @@ void main() {
     trail /= weightSum;
   }
 
-  // Composite the sharp current cursor over the integrated trail.
-  // Premultiplied-alpha "over": top + bottom*(1 - top.a). Where the
-  // cursor body is opaque, the cursor pixel wins (no blur of the body
-  // itself); where transparent, the trail shows through.
-  fragColor = cursorAtCurrent + trail * (1.0 - cursorAtCurrent.a);
+  // The cursor body is the integral itself — a true time-average of
+  // cursor coverage along the motion path. During motion the body
+  // becomes semi-transparent with overlapping ghost copies (so the
+  // cursor visibly "blurs"); when reach drops below 1 the early
+  // return above returns the sharp sample. No OVER composite: that
+  // would force the body opaque and hide the blur on the cursor
+  // itself, leaving only the trail behind it visible.
+  fragColor = trail;
 }
