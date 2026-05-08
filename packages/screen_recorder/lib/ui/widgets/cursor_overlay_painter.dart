@@ -71,18 +71,50 @@ class CursorOverlayPainter extends CustomPainter {
     final pxDiameter =
         kCursorBaseDiameter * sizeMultiplier * (scaleX + scaleY) / 2;
 
-    final dt =
-        microsSinceClick(cursorRecording, position.inMicroseconds);
+    // The ripple ring's animation timing comes from the most recent
+    // click event, but its on-screen anchor is the cursor position AT
+    // THE TIME OF THE CLICK — not the live cursor. Without this the
+    // ring would track the cursor as the user moves the mouse mid-
+    // ripple, which makes it read as "the cursor is dragging the
+    // ring around" instead of "a click happened at this spot".
+    final clickEvent =
+        mostRecentClickEvent(cursorRecording, position.inMicroseconds);
+    final int? dt;
+    final Offset? rippleWidgetPos;
+    if (clickEvent == null) {
+      dt = null;
+      rippleWidgetPos = null;
+    } else {
+      final delta = position.inMicroseconds - clickEvent.timestampMicros;
+      dt = delta < 0 ? null : delta;
+      final clickInVideo = screenToVideoSpace(
+        screenPos: clickEvent.screenPos,
+        screenSize: screenSize,
+        videoSize: videoSize,
+      );
+      rippleWidgetPos =
+          Offset(clickInVideo.dx * scaleX, clickInVideo.dy * scaleY);
+    }
 
     // Slider all the way down: cheap direct paint, no shader / pre-bake.
+    // Ripple drawn first (anchored at click point), cursor on top
+    // (at the live position).
     if (motionBlurIntensity <= 0) {
-      paintCursorWithEffects(
+      if (rippleWidgetPos != null) {
+        paintCursorRipple(
+          canvas,
+          position: rippleWidgetPos,
+          baseDiameter: pxDiameter,
+          microsSinceClick: dt,
+          effect: clickEffect,
+        );
+      }
+      paintCursorGlyphWithPulse(
         canvas,
         position: widgetPos,
         baseDiameter: pxDiameter,
         style: style,
         microsSinceClick: dt,
-        effect: clickEffect,
       );
       return;
     }
@@ -104,15 +136,17 @@ class CursorOverlayPainter extends CustomPainter {
     // The click ripple is rendered DIRECTLY on the canvas (below the
     // shader output) rather than baked into the sprite, so the ring
     // stays anchored to the click point instead of smearing along the
-    // velocity vector. Skipped via an early no-op inside
-    // [paintCursorRipple] when no ripple is active.
-    paintCursorRipple(
-      canvas,
-      position: widgetPos,
-      baseDiameter: pxDiameter,
-      microsSinceClick: dt,
-      effect: clickEffect,
-    );
+    // velocity vector. Anchored at [rippleWidgetPos] (the cursor
+    // position when the click happened), not at the live cursor.
+    if (rippleWidgetPos != null) {
+      paintCursorRipple(
+        canvas,
+        position: rippleWidgetPos,
+        baseDiameter: pxDiameter,
+        microsSinceClick: dt,
+        effect: clickEffect,
+      );
+    }
 
     // Pre-bake just the cursor body (with press-pulse) to a ui.Image
     // so the shader can sample it cheaply. This also lets the shader

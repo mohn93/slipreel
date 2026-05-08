@@ -26,22 +26,38 @@ const int _pressDurationMicros = 250000;
 /// Total length of the ripple expansion+fade.
 const int _rippleDurationMicros = 350000;
 
-/// Returns the timestamp of the most recent false→true click transition
-/// at or before [timestampMicros], or null if no click has happened yet.
-/// Walks the recording from the start once per call — recordings are
-/// small enough that this isn't worth caching today.
-int? mostRecentClickAt(
+/// One click event: when it happened (false→true transition) and where
+/// the cursor was at that moment in screen-space. Returned by
+/// [mostRecentClickEvent] so the renderer can pin the ripple to the
+/// click site even after the cursor has moved on.
+class CursorClickEvent {
+  final int timestampMicros;
+  final Offset screenPos;
+  const CursorClickEvent({
+    required this.timestampMicros,
+    required this.screenPos,
+  });
+}
+
+/// Returns the most recent false→true click transition at or before
+/// [timestampMicros], or null if no click has happened yet. Walks the
+/// recording from the start once per call — recordings are small
+/// enough that this isn't worth caching today.
+CursorClickEvent? mostRecentClickEvent(
   CursorRecording recording,
   int timestampMicros,
 ) {
   final positions = recording.positions;
   if (positions.isEmpty) return null;
   bool? prevClicked;
-  int? mostRecent;
+  CursorClickEvent? mostRecent;
   for (final p in positions) {
     if (p.timestampMicros > timestampMicros) break;
     if (prevClicked == false && p.isClicked) {
-      mostRecent = p.timestampMicros;
+      mostRecent = CursorClickEvent(
+        timestampMicros: p.timestampMicros,
+        screenPos: Offset(p.x, p.y),
+      );
     }
     prevClicked = p.isClicked;
   }
@@ -54,9 +70,9 @@ int? microsSinceClick(
   CursorRecording recording,
   int timestampMicros,
 ) {
-  final ts = mostRecentClickAt(recording, timestampMicros);
-  if (ts == null) return null;
-  final delta = timestampMicros - ts;
+  final ev = mostRecentClickEvent(recording, timestampMicros);
+  if (ev == null) return null;
+  final delta = timestampMicros - ev.timestampMicros;
   return delta < 0 ? null : delta;
 }
 
