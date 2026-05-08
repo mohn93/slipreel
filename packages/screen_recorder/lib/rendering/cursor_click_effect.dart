@@ -109,31 +109,42 @@ RippleState? rippleAt(
   );
 }
 
-/// Paints the cursor glyph plus the always-on press-pulse and the
-/// optional ripple ring. The ripple is drawn underneath the glyph so
-/// the cursor stays sharp on top.
-void paintCursorWithEffects(
+/// Paints just the click ripple ring (or no-ops if no ripple is
+/// active). Split out from the glyph painter so the motion-blur path
+/// can render the ripple directly on the canvas — keeping the ring
+/// tied to the click point — while pre-baking only the cursor body
+/// into the sprite that gets smeared along the velocity vector.
+void paintCursorRipple(
+  Canvas canvas, {
+  required Offset position,
+  required double baseDiameter,
+  required int? microsSinceClick,
+  CursorClickEffect effect = CursorClickEffect.none,
+}) {
+  if (effect != CursorClickEffect.ripple || microsSinceClick == null) return;
+  final ripple = rippleAt(microsSinceClick, baseDiameter);
+  if (ripple == null) return;
+  canvas.drawCircle(
+    position,
+    ripple.radius,
+    Paint()
+      ..style = PaintingStyle.stroke
+      ..color = Colors.white.withValues(alpha: ripple.opacity)
+      ..strokeWidth = ripple.strokeWidth,
+  );
+}
+
+/// Paints the cursor glyph at [position] with the always-on press-pulse
+/// applied (cursor briefly shrinks then bounces on click). No ripple —
+/// callers that want the ring underneath should call [paintCursorRipple]
+/// before this.
+void paintCursorGlyphWithPulse(
   Canvas canvas, {
   required Offset position,
   required double baseDiameter,
   required CursorStyle style,
   required int? microsSinceClick,
-  CursorClickEffect effect = CursorClickEffect.none,
 }) {
-  if (effect == CursorClickEffect.ripple && microsSinceClick != null) {
-    final ripple = rippleAt(microsSinceClick, baseDiameter);
-    if (ripple != null) {
-      canvas.drawCircle(
-        position,
-        ripple.radius,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..color = Colors.white.withValues(alpha: ripple.opacity)
-          ..strokeWidth = ripple.strokeWidth,
-      );
-    }
-  }
-
   final pulse = microsSinceClick == null
       ? 1.0
       : pressPulseMultiplier(microsSinceClick);
@@ -142,5 +153,31 @@ void paintCursorWithEffects(
     position: position,
     diameter: baseDiameter * pulse,
     style: style,
+  );
+}
+
+/// Convenience wrapper: ripple underneath, glyph (with pulse) on top.
+/// Use this on rendering paths that don't apply motion blur.
+void paintCursorWithEffects(
+  Canvas canvas, {
+  required Offset position,
+  required double baseDiameter,
+  required CursorStyle style,
+  required int? microsSinceClick,
+  CursorClickEffect effect = CursorClickEffect.none,
+}) {
+  paintCursorRipple(
+    canvas,
+    position: position,
+    baseDiameter: baseDiameter,
+    microsSinceClick: microsSinceClick,
+    effect: effect,
+  );
+  paintCursorGlyphWithPulse(
+    canvas,
+    position: position,
+    baseDiameter: baseDiameter,
+    style: style,
+    microsSinceClick: microsSinceClick,
   );
 }

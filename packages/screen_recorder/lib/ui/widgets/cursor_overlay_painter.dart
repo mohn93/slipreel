@@ -101,22 +101,34 @@ class CursorOverlayPainter extends CustomPainter {
     // The shader's reach<1 branch produces a pixel-identical result to
     // direct paint, so this is purely a path-consolidation move.
 
-    // Pre-bake the cursor sprite to a ui.Image so the shader (and the
-    // multi-stamp fallback) can sample it cheaply. This also lets the
-    // shader render a continuous directional smear instead of stacked
+    // The click ripple is rendered DIRECTLY on the canvas (below the
+    // shader output) rather than baked into the sprite, so the ring
+    // stays anchored to the click point instead of smearing along the
+    // velocity vector. Skipped via an early no-op inside
+    // [paintCursorRipple] when no ripple is active.
+    paintCursorRipple(
+      canvas,
+      position: widgetPos,
+      baseDiameter: pxDiameter,
+      microsSinceClick: dt,
+      effect: clickEffect,
+    );
+
+    // Pre-bake just the cursor body (with press-pulse) to a ui.Image
+    // so the shader can sample it cheaply. This also lets the shader
+    // render a continuous directional smear instead of stacked
     // discrete cursor copies.
     //
-    // Buffer-size budget per side from cursor center:
-    //   - the ripple ring at peak reaches `2.5 * baseDiameter` (see
-    //     rippleAt in cursor_click_effect.dart) plus a couple pixels
-    //     of stroke margin — call it `~2.6 * pxDiameter`,
-    //   - the trail extends `reach` pixels in the velocity direction.
-    // We use a square buffer that fits both with a small safety margin,
-    // so a click that lands during a fast move doesn't get its ring
-    // sliced off at the buffer's edge.
+    // Buffer-size budget per side from the cursor's tip (which sits
+    // at the buffer's center): the macOS-shape glyph extends at most
+    // ~1.27 × pxDiameter from the tip in any direction (the body
+    // height plus halo overshoot), and the trail reaches `reach`
+    // pixels in the velocity direction. Use 1.5 × pxDiameter for the
+    // glyph budget so the round-joined halo and sub-pixel rendering
+    // never clip against the buffer edge.
     final reach = samples.stepPx.distance * (samples.count - 1);
     final spriteBufferSize =
-        (pxDiameter * 6 + reach * 2).ceil().toDouble();
+        (pxDiameter * 3 + reach * 2).ceil().toDouble();
     final spriteBufferCenter =
         Offset(spriteBufferSize / 2, spriteBufferSize / 2);
 
@@ -125,13 +137,12 @@ class CursorOverlayPainter extends CustomPainter {
       recorder,
       Rect.fromLTWH(0, 0, spriteBufferSize, spriteBufferSize),
     );
-    paintCursorWithEffects(
+    paintCursorGlyphWithPulse(
       spriteCanvas,
       position: spriteBufferCenter,
       baseDiameter: pxDiameter,
       style: style,
       microsSinceClick: dt,
-      effect: clickEffect,
     );
     final picture = recorder.endRecording();
     final spriteImage = picture.toImageSync(
