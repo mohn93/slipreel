@@ -43,6 +43,17 @@ class CursorOverlayPainter extends CustomPainter {
     this.motionBlurIntensity = 0,
   });
 
+  static ui.FragmentProgram? _motionBlurProgram;
+
+  /// Pre-loads the motion-blur fragment shader so the cursor painter
+  /// can use it on first paint. Call from `main()` before `runApp`.
+  /// Idempotent — subsequent calls return the cached program.
+  static Future<void> ensureMotionBlurProgramLoaded() async {
+    _motionBlurProgram ??= await ui.FragmentProgram.fromAsset(
+      'shaders/motion_blur.frag',
+    );
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final inVideo = screenToVideoSpace(
@@ -90,7 +101,12 @@ class CursorOverlayPainter extends CustomPainter {
     //
     // Sprite buffer is generously sized for the click ripple, which can
     // grow to a few cursor diameters during the press-pulse animation.
-    final spriteBufferSize = (pxDiameter * 4).ceil().toDouble();
+    // Trail length in pixels at the current intensity. The output rect
+    // for the shader (and the sprite buffer for fallback) must be big
+    // enough to contain both the cursor body and the full trail.
+    final reach = samples.stepPx.distance * (samples.count - 1);
+    final spriteBufferSize =
+        (pxDiameter * 4 + reach * 2).ceil().toDouble();
     final spriteBufferCenter =
         Offset(spriteBufferSize / 2, spriteBufferSize / 2);
 
@@ -115,21 +131,57 @@ class CursorOverlayPainter extends CustomPainter {
     picture.dispose();
 
     try {
-      // Index 0 = oldest tail (lowest alpha, largest negative offset).
-      // Index count-1 = head (highest alpha, offset 0). Painting in this
-      // order means the head composites on top of the tail.
-      for (var i = 0; i < samples.count; i++) {
-        final tailIndex = samples.count - 1 - i;
-        final dx = samples.stepPx.dx * tailIndex;
-        final dy = samples.stepPx.dy * tailIndex;
-        canvas.drawImage(
-          spriteImage,
-          Offset(
-            widgetPos.dx + dx - spriteBufferCenter.dx,
-            widgetPos.dy + dy - spriteBufferCenter.dy,
-          ),
-          Paint()..color = Colors.white.withValues(alpha: samples.alphas[i]),
+      final program = _motionBlurProgram;
+      if (program != null) {
+        // Shader path: one drawRect with a fragment shader that
+        // produces a continuous directional smear.
+        final shader = program.fragmentShader();
+        final velocity = velocityPxPerSec;
+        final speed = velocity.distance;
+        // Defensive: if speed is zero we'd divide by zero below. Fall
+        // back to multi-stamp in that case (which itself short-circuits
+        // to single-stamp at zero velocity via samples.count==1, so
+        // this branch only fires with a real direction).
+        final velocityDir = Offset(velocity.dx / speed, velocity.dy / speed);
+
+        shader.setImageSampler(0, spriteImage);
+        // Uniform layout (declaration order in the .frag file):
+        //   uniform vec2  uOutputSize    -> floats 0, 1
+        //   uniform vec2  uVelocityDir   -> floats 2, 3
+        //   uniform float uReachPx       -> float  4
+        shader.setFloat(0, spriteBufferSize);
+        shader.setFloat(1, spriteBufferSize);
+        shader.setFloat(2, velocityDir.dx);
+        shader.setFloat(3, velocityDir.dy);
+        shader.setFloat(4, reach);
+
+        final destRect = Rect.fromLTWH(
+          widgetPos.dx - spriteBufferCenter.dx,
+          widgetPos.dy - spriteBufferCenter.dy,
+          spriteBufferSize,
+          spriteBufferSize,
         );
+        canvas.drawRect(destRect, Paint()..shader = shader);
+      } else {
+        // Fallback: pre-baked drawImage multi-stamp. Used only when the
+        // shader hasn't loaded yet (briefly at app startup) or when an
+        // older Flutter SDK doesn't ship FragmentProgram.fromAsset.
+        // Index 0 = oldest tail (lowest alpha, largest negative offset).
+        // Index count-1 = head (highest alpha, offset 0). Painting in
+        // this order means the head composites on top of the tail.
+        for (var i = 0; i < samples.count; i++) {
+          final tailIndex = samples.count - 1 - i;
+          final dx = samples.stepPx.dx * tailIndex;
+          final dy = samples.stepPx.dy * tailIndex;
+          canvas.drawImage(
+            spriteImage,
+            Offset(
+              widgetPos.dx + dx - spriteBufferCenter.dx,
+              widgetPos.dy + dy - spriteBufferCenter.dy,
+            ),
+            Paint()..color = Colors.white.withValues(alpha: samples.alphas[i]),
+          );
+        }
       }
     } finally {
       spriteImage.dispose();
