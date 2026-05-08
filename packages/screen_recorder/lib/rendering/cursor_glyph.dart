@@ -17,6 +17,34 @@ enum CursorStyle {
 /// content; the inspector slider scales this up or down.
 const double kCursorBaseDiameter = 32;
 
+/// Design coordinates for the macOS pointer SVG (vendored from
+/// daviddarnes/mac-cursors `default.svg`). Two paths: a white halo
+/// drawn first, a black body drawn on top. Vertices listed clockwise
+/// starting from the tip. The body's tip at (1.000, 2.814) is the
+/// hot-spot — this is what the user clicks on, and what we anchor to
+/// the caller's [position] argument.
+const double _kBodyHeight = 14.186; // (17.000 - 2.814)
+const _kBodyTip = Offset(1.000, 2.814);
+const List<Offset> _kBodyVertices = [
+  Offset(1.000, 2.814),  // tip
+  Offset(9.025, 10.857), // right shoulder
+  Offset(5.421, 10.857), // inner shoulder
+  Offset(8.196, 16.059), // right-prong outer
+  Offset(6.431, 17.000), // right-prong tip
+  Offset(3.530, 11.560), // inner notch
+  Offset(1.000, 14.002), // left-prong tip
+];
+const List<Offset> _kHaloVertices = [
+  Offset(0.011, 0.407),  // halo tip
+  Offset(11.390, 11.815),// halo right shoulder
+  Offset(7.058, 11.815), // halo inner shoulder
+  Offset(9.626, 16.631), // halo right-prong outer
+  Offset(8.011, 17.470), // halo right-prong outer 2
+  Offset(6.148, 18.473), // halo right-prong tip
+  Offset(3.327, 13.201), // halo inner notch
+  Offset(0.011, 16.422), // halo left-prong tip
+];
+
 /// Draws a synthetic cursor onto [canvas] at [position] with the given
 /// [style]. For arrow styles the tip of the arrow lands on [position]
 /// (matching the OS hot-spot), so the recorded cursor coordinates can
@@ -45,47 +73,62 @@ void paintCursorGlyph(
     return;
   }
 
-  // Arrow shape — the macOS pointer polygon. Vertices follow a 10×16
-  // design grid, going clockwise from the top-left tip:
-  //   (0,0) tip → (10,10) right shoulder → (6,10) inner shoulder →
-  //   (9,15) right-prong corner → (6,16) right-prong tip →
-  //   (4,11) inner crease → (0,14) left-prong tip → close.
-  // The tip sits at (0, 0) of the bounding box, so [position] is the
-  // arrow's tip — matches the OS hot-spot exactly.
-  final h = diameter;
-  final w = diameter * 10 / 16;
-  final ox = position.dx;
-  final oy = position.dy;
-  final path = Path()
-    ..moveTo(ox + 0,           oy + 0)
-    ..lineTo(ox + w,           oy + h * 10 / 16)
-    ..lineTo(ox + w *  6 / 10, oy + h * 10 / 16)
-    ..lineTo(ox + w *  9 / 10, oy + h * 15 / 16)
-    ..lineTo(ox + w *  6 / 10, oy + h)
-    ..lineTo(ox + w *  4 / 10, oy + h * 11 / 16)
-    ..lineTo(ox + 0,           oy + h * 14 / 16)
-    ..close();
+  // Scale the macOS-design grid so the BLACK body's height equals
+  // [diameter] (matches prior behavior where `diameter` was the
+  // arrow's vertical extent). The halo extends slightly outside this
+  // box, which is the OS-pointer's actual visual footprint.
+  final scale = diameter / _kBodyHeight;
+  Path buildPath(List<Offset> verts) {
+    final path = Path();
+    for (var i = 0; i < verts.length; i++) {
+      final v = verts[i];
+      final p = Offset(
+        position.dx + (v.dx - _kBodyTip.dx) * scale,
+        position.dy + (v.dy - _kBodyTip.dy) * scale,
+      );
+      if (i == 0) {
+        path.moveTo(p.dx, p.dy);
+      } else {
+        path.lineTo(p.dx, p.dy);
+      }
+    }
+    path.close();
+    return path;
+  }
 
+  final bodyPath = buildPath(_kBodyVertices);
+
+  if (style == CursorStyle.classic) {
+    // Exact macOS pointer: halo first (white), body second (black).
+    // This dual-path approach is what the OS cursor uses — a thin
+    // outer "shape" sitting under the inner body — and reproduces the
+    // halo crispness that a single centered stroke can't match,
+    // especially around the sharp tip.
+    final haloPath = buildPath(_kHaloVertices);
+    canvas.drawPath(haloPath, Paint()..color = Colors.white);
+    canvas.drawPath(bodyPath, Paint()..color = Colors.black);
+    return;
+  }
+
+  // Other arrow styles share the macOS body shape but use a single
+  // fill+stroke rendering so each style's visual identity (bold,
+  // outlined, dark glyph) is preserved.
   final (Color fill, Color outline, double strokePx) = switch (style) {
-    // Classic: matches the modern macOS pointer — black fill with a
-    // thin white halo. The halo (achieved via a centered stroke) is
-    // what makes the cursor visible against any background.
-    CursorStyle.classic =>
-      (Colors.black, Colors.white, diameter / 24 * 1.6),
     CursorStyle.modernDark =>
       (Colors.white, Colors.black, diameter / 24 * 1.4),
     CursorStyle.bold => (Colors.white, Colors.white, 0.0),
     CursorStyle.outlined =>
       (Colors.white, Colors.black, diameter / 24 * 2.4),
-    CursorStyle.dot => (Colors.white, Colors.white, 0.0),
+    CursorStyle.classic => throw StateError('handled above'),
+    CursorStyle.dot => throw StateError('handled above'),
   };
 
   if (fill != Colors.transparent) {
-    canvas.drawPath(path, Paint()..color = fill);
+    canvas.drawPath(bodyPath, Paint()..color = fill);
   }
   if (strokePx > 0) {
     canvas.drawPath(
-      path,
+      bodyPath,
       Paint()
         ..style = PaintingStyle.stroke
         ..color = outline

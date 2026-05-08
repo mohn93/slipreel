@@ -212,16 +212,16 @@ class _CursorStylePreviewPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final isDot = style == CursorStyle.dot;
-    // Dot is centered. Arrows: tip in the upper-left corner of the
-    // tile, with diameter sized so the full bounding box (h≈18 units,
-    // w≈12 units in the macOS-shape grid) fits inside the tile with
-    // a hair of margin.
+    // Dot is centered. Arrows: tip is anchored slightly inside the
+    // upper-left of the tile so the white halo (which extends ~17%
+    // of the body height up-left from the tip and ~73% down-right
+    // along the diagonal) fits inside the tile.
     final position = isDot
         ? Offset(size.width / 2, size.height / 2)
-        : Offset(size.width * 0.1, size.height * 0.02);
+        : Offset(size.width * 0.15, size.height * 0.15);
     final diameter = isDot
         ? size.shortestSide * 0.75
-        : size.height * 0.92;
+        : size.height * 0.75;
     paintCursorGlyph(
       canvas,
       position: position,
