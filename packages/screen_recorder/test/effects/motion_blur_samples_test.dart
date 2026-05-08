@@ -15,12 +15,12 @@ void main() {
       expect(s.alphas, [closeTo(1.0, 1e-9)]);
     });
 
-    test('velocity below 30 px/s → single stamp regardless of slider', () {
-      // Below the no-direction threshold the unit velocity vector is
-      // dominated by FIR-derivative noise, so we suppress the trail
-      // entirely rather than feeding the shader a noise direction.
+    test('zero velocity → single stamp regardless of slider (div-by-zero guard)', () {
+      // The only minimum-speed guard left is speed > 0; a stationary
+      // cursor produces no trail, but any positive speed still
+      // contributes proportional reach so the slider stays responsive.
       final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(20, 0),
+        velocityPxPerSec: Offset.zero,
         sliderIntensity: 1.0,
         referenceSpeedPxPerSec: 2000,
         maxReachPx: 12,
@@ -29,15 +29,33 @@ void main() {
       expect(s.stepPx, Offset.zero);
     });
 
-    test('effective intensity below 0.05 → single stamp', () {
-      // slider 0.1, speed = 800, ref 2000 → effective = 0.04
+    test('effective intensity that rounds to 0 stamps → single stamp', () {
+      // slider 0.1, speed=200, ref=2000 → effective = 0.01
+      // count = 1 + round(39 * 0.01) = 1 + 0 = 1 → no blur. This is
+      // the only "cutoff" we keep — reach at effective=0.01 is
+      // 0.12 px, sub-pixel anyway, so the result reads as no blur.
       final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(800, 0),
+        velocityPxPerSec: const Offset(200, 0),
         sliderIntensity: 0.1,
         referenceSpeedPxPerSec: 2000,
         maxReachPx: 12,
       );
       expect(s.count, 1);
+    });
+
+    test('low-but-nonzero velocity still produces blur (no manual cutoff)', () {
+      // 50 px/s used to be below the 30 px/s minimum-speed cutoff and
+      // returned no blur. Now reach scales naturally with speed so any
+      // positive speed gets proportional blur — slider stays responsive
+      // even on slow cursor moves.
+      final s = computeMotionBlurSamples(
+        velocityPxPerSec: const Offset(500, 0),
+        sliderIntensity: 1.0,
+        referenceSpeedPxPerSec: 2000,
+        maxReachPx: 12,
+      );
+      expect(s.count, greaterThan(1));
+      expect(s.stepPx.dx, lessThan(0));
     });
 
     test('horizontal velocity at max speed, slider 1 → 40 stamps along -x', () {

@@ -14,14 +14,15 @@ import 'package:flutter/painting.dart';
 ///      flaps around even when the cursor is moving roughly straight.
 ///
 /// EMA with a time constant of [_tauSec] dampens both: a τ around
-/// 100 ms attenuates frame-rate-band noise while still tracking real
-/// velocity changes within ~3 frames.
+/// 60 ms attenuates frame-rate-band noise while letting blur ramp
+/// in/out within ~3-4 frames at 60 Hz, which feels responsive when
+/// the cursor starts/stops moving.
 ///
 /// The filter is time-aware: it uses the [Duration] gap between calls
 /// to compute alpha, so the smoothing behaves consistently regardless
 /// of the calling rate (60 Hz preview vs export at output FPS).
 class EmaVelocityFilter {
-  static const double _tauSec = 0.10;
+  static const double _tauSec = 0.06;
 
   /// Gaps larger than this re-seed instead of integrating — a long
   /// gap means the previous sample is too stale to blend against

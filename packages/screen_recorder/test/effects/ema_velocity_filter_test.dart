@@ -34,21 +34,19 @@ void main() {
       expect(out.dy, closeTo(0, 1e-9));
     });
 
-    test('repeated step settles toward steady-state value (~63% within τ)',
-        () {
+    test('repeated step settles toward steady-state (well past 1τ)', () {
       final f = EmaVelocityFilter();
       f.filter(Offset.zero, const Duration(milliseconds: 0));
-      // Apply a constant 1000 px/s input over many small steps.
-      // After ~τ (100ms) of integration the output should be near
-      // (1 - 1/e) ≈ 63% of the target.
+      // Apply a constant 1000 px/s input over many small steps. With
+      // τ=60ms, by t=96ms (1.6τ) the output should be 1 - exp(-1.6) ≈
+      // 79.8% of the target. Wide bounds keep this robust against
+      // small τ tuning.
       Offset out = Offset.zero;
       for (var t = 16; t <= 96; t += 16) {
         out = f.filter(const Offset(1000, 0), Duration(milliseconds: t));
       }
-      // 96ms of integration → 1 - exp(-0.96) ≈ 0.617. Allow generous
-      // tolerance for the discrete-vs-continuous gap.
-      expect(out.dx, greaterThan(500));
-      expect(out.dx, lessThan(750));
+      expect(out.dx, greaterThan(700));
+      expect(out.dx, lessThan(900));
     });
 
     test('backward position re-seeds (no negative-Δt blowup)', () {

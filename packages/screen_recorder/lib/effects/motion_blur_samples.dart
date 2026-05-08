@@ -24,18 +24,6 @@ const _noBlur = MotionBlurSamples(
   alphas: [1.0],
 );
 
-/// Tunables on the no-blur shortcut. A blur strength below 0.05
-/// renders identically to no blur to the eye, so we skip the
-/// saveLayer + multi-stamp loop for it.
-const _kEffectiveCutoff = 0.05;
-
-/// Velocities slower than this don't produce a perceptible directional
-/// streak AND the unit velocity vector becomes noise-dominated below
-/// it (a cursor "holding still" never has a stable direction). Below
-/// this we report no blur regardless of slider value, so the trail
-/// orientation can't flap around on near-stationary cursors.
-const _kMinSpeedPxPerSec = 30.0;
-
 /// Returns the per-stamp parameters for cursor motion blur.
 ///
 /// `effective = sliderIntensity × clamp(|v| / referenceSpeed, 0, 1)`.
@@ -45,6 +33,13 @@ const _kMinSpeedPxPerSec = 30.0;
 /// Not normalized to sum-to-1: with overlapping stamps (typical for
 /// blurred cursors) the head paints opaque over the tail so the cursor
 /// stays sharp; only the trailing region shows the dim tail.
+///
+/// No manual cutoffs on [sliderIntensity] or speed beyond zero — the
+/// natural rounding of `count` collapses sub-pixel-blur cases to count=1
+/// (no blur), and the shader's reach&lt;1 short-circuit makes that path
+/// pixel-identical to a sharp cursor. Removing the explicit cutoffs is
+/// what makes the slider feel responsive across its full 0..1 range
+/// instead of having a dead zone at the bottom for slow motion.
 MotionBlurSamples computeMotionBlurSamples({
   required Offset velocityPxPerSec,
   required double sliderIntensity,
@@ -54,15 +49,19 @@ MotionBlurSamples computeMotionBlurSamples({
 }) {
   if (sliderIntensity <= 0) return _noBlur;
   final speed = velocityPxPerSec.distance;
-  if (speed < _kMinSpeedPxPerSec) return _noBlur;
+  // Defensive: speed=0 would divide by zero in the stepPx computation
+  // below. A truly stationary cursor should produce no blur anyway, so
+  // this is the only "minimum speed" guard we need.
+  if (speed <= 0) return _noBlur;
 
   final effective =
       (sliderIntensity * speed / referenceSpeedPxPerSec).clamp(0.0, 1.0);
-  if (effective < _kEffectiveCutoff) return _noBlur;
-
   final count = 1 + ((maxStamps - 1) * effective).round();
-  // round() may collapse small effective values just above _kEffectiveCutoff to 0;
-  // this guard catches the gap between _kEffectiveCutoff (0.05) and 1.0/(maxStamps-1) ~0.143
+  // Natural cutoff: when effective is small enough that `round` collapses
+  // (maxStamps - 1) × effective to 0, count is 1 and there's no trail to
+  // sample. For maxStamps=40 this kicks in below effective ≈ 0.013, where
+  // the corresponding reach is also sub-pixel so a trail wouldn't be
+  // visible anyway.
   if (count <= 1) return _noBlur;
 
   final reach = effective * maxReachPx;

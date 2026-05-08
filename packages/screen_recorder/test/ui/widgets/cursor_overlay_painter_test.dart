@@ -123,15 +123,13 @@ void main() {
         reason: 'slider=1, max speed → 40 stamps via pre-baked drawImage.');
   });
 
-  test('motionBlurIntensity > 0 + velocity below threshold → 1 drawImage stamp '
-       '(no path divergence vs the no-blur direct paint)', () {
-    // Below the activation threshold (30 px/s) samples collapse to
-    // count==1, but intensity > 0 must still route through the
-    // pre-bake path so that smoothed velocity passing through the
-    // threshold doesn't cause a visible toggle between "no shader,
-    // sharp cursor" and "shader, blurred cursor". On the multi-stamp
-    // fallback this manifests as exactly one drawImage call (the
-    // head stamp), not zero.
+  test('motionBlurIntensity > 0 always pre-bakes — no path divergence', () {
+    // Intensity > 0 must always route through the pre-bake/shader
+    // path so the rendered cursor doesn't visibly toggle between
+    // "direct paint" and "shader" as velocity bobs around any
+    // threshold. On the multi-stamp fallback this manifests as
+    // drawImage being called at least once, regardless of how small
+    // the velocity is.
     final rec = CursorRecording()
       ..addPosition(const CursorPosition(
           x: 0, y: 0, timestampMicros: 0, isClicked: false));
@@ -141,13 +139,13 @@ void main() {
       screenPos: const Offset(50, 25),
       videoSize: const Size(200, 100),
       screenSize: const Size(200, 100),
-      velocityPxPerSec: const Offset(10, 0), // < 30 px/s threshold
+      velocityPxPerSec: const Offset(20, 0),
       motionBlurIntensity: 1.0,
     );
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(200, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
-    expect(drawImages.length, 1);
+    expect(drawImages.length, greaterThan(0));
   });
 
   test('shouldRepaint reflects velocity and intensity changes', () {
