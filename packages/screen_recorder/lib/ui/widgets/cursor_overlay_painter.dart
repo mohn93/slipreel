@@ -106,14 +106,17 @@ class CursorOverlayPainter extends CustomPainter {
     // shader render a continuous directional smear instead of stacked
     // discrete cursor copies.
     //
-    // Sprite buffer is generously sized for the click ripple, which can
-    // grow to a few cursor diameters during the press-pulse animation.
-    // Trail length in pixels at the current intensity. The output rect
-    // for the shader (and the sprite buffer for fallback) must be big
-    // enough to contain both the cursor body and the full trail.
+    // Buffer-size budget per side from cursor center:
+    //   - the ripple ring at peak reaches `2.5 * baseDiameter` (see
+    //     rippleAt in cursor_click_effect.dart) plus a couple pixels
+    //     of stroke margin — call it `~2.6 * pxDiameter`,
+    //   - the trail extends `reach` pixels in the velocity direction.
+    // We use a square buffer that fits both with a small safety margin,
+    // so a click that lands during a fast move doesn't get its ring
+    // sliced off at the buffer's edge.
     final reach = samples.stepPx.distance * (samples.count - 1);
     final spriteBufferSize =
-        (pxDiameter * 4 + reach * 2).ceil().toDouble();
+        (pxDiameter * 6 + reach * 2).ceil().toDouble();
     final spriteBufferCenter =
         Offset(spriteBufferSize / 2, spriteBufferSize / 2);
 
