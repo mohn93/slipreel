@@ -109,6 +109,26 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
     throw UnimplementedError('checkPermissions() has not been implemented.');
   }
 
+  /// Whether the host process is currently trusted by the macOS
+  /// Accessibility system. Required for cursor-state detection
+  /// (I-beam, pointing hand, resize, etc.) — without it the recorder
+  /// can still capture position and clicks but the [CursorPosition.state]
+  /// field always reports [CursorState.arrow].
+  Future<bool> isAccessibilityTrusted() {
+    throw UnimplementedError(
+        'isAccessibilityTrusted() has not been implemented.');
+  }
+
+  /// Triggers the macOS Accessibility permission prompt. After the
+  /// user grants access in System Settings the host process must
+  /// usually be relaunched for the trust state to update — callers
+  /// should re-check via [isAccessibilityTrusted] on next launch
+  /// rather than expecting an immediate change.
+  Future<void> requestAccessibilityPermission() {
+    throw UnimplementedError(
+        'requestAccessibilityPermission() has not been implemented.');
+  }
+
   // Real-time data streams
 
   /// Stream of video frames during recording

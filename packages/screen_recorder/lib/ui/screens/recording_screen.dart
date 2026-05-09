@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 import '../../state/recording_state.dart';
+import '../widgets/source_picker/accessibility_notice.dart';
 import '../widgets/source_picker/concurrent_loader.dart';
 import '../widgets/source_picker/permission_cta.dart';
 import '../widgets/source_picker/region_tab_content.dart';
@@ -155,6 +156,12 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       ),
       body: Column(
         children: [
+          // Show the Accessibility-permission notice above the source
+          // list whenever screen-recording itself is granted (if both
+          // are missing, the full-screen PermissionCta takes over and
+          // this row collapses since the body is Expanded). The notice
+          // self-hides once Accessibility is trusted.
+          if (!_permissionDenied) const AccessibilityNotice(),
           _buildSegmentedControl(),
           Expanded(child: _buildBody()),
           _buildBottomBar(),

@@ -1,3 +1,4 @@
+import ApplicationServices
 import Cocoa
 import FlutterMacOS
 import CoreMedia
@@ -103,6 +104,18 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       requestPermissions(result: result)
     case "checkPermissions":
       checkPermissions(result: result)
+    case "isAccessibilityTrusted":
+      result(AXIsProcessTrusted())
+    case "requestAccessibilityPermission":
+      // Pass `kAXTrustedCheckOptionPrompt = true` so macOS shows the
+      // "X would like to control this computer using accessibility
+      // features" dialog. The user has to flip the toggle in System
+      // Settings; macOS only updates the trust state after a relaunch
+      // of the host process.
+      let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue()
+      let options = [promptKey: true] as CFDictionary
+      _ = AXIsProcessTrustedWithOptions(options)
+      result(nil)
     default:
       result(FlutterMethodNotImplemented)
     }

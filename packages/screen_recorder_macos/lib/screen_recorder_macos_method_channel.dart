@@ -95,6 +95,21 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  Future<bool> isAccessibilityTrusted() async {
+    final result = await _recordingChannel.invokeMethod<bool>(
+      'isAccessibilityTrusted',
+    );
+    return result ?? false;
+  }
+
+  @override
+  Future<void> requestAccessibilityPermission() async {
+    await _recordingChannel.invokeMethod<void>(
+      'requestAccessibilityPermission',
+    );
+  }
+
+  @override
   Stream<FrameData> get frameStream {
     return _framesChannel.receiveBroadcastStream().map((event) {
       return FrameData.fromJson(Map<String, dynamic>.from(event as Map));
