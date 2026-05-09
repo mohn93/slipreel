@@ -73,16 +73,23 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     instance.cursorStreamHandler = CursorStreamHandler()
     cursorChannel.setStreamHandler(instance.cursorStreamHandler)
 
-    // Touch the Accessibility API once at plugin registration so
-    // macOS adds this app to System Settings → Privacy & Security →
-    // Accessibility immediately. Without this call, an app that has
-    // never invoked an AX API doesn't appear in the list at all —
-    // the user opens the pane, sees their other apps, and concludes
-    // ours isn't installable. AXIsProcessTrusted() is read-only and
-    // does NOT show the system prompt; it just registers us. The
-    // banner's "Open Accessibility settings" button still triggers
-    // the prompt + deep-link separately.
-    _ = AXIsProcessTrusted()
+    // Register the app with macOS's Accessibility TCC list at plugin
+    // load. Without this an app that has never asked for the permission
+    // doesn't appear in System Settings → Privacy & Security →
+    // Accessibility — the user opens the pane, doesn't see us, and
+    // concludes the permission can't be granted at all.
+    //
+    // Implementation notes:
+    //   * `AXIsProcessTrusted()` (read-only) does NOT register — it
+    //     just checks. We need `AXIsProcessTrustedWithOptions` for
+    //     TCC to add the entry.
+    //   * Pass `kAXTrustedCheckOptionPrompt: false` so we register
+    //     silently at startup. The banner's "Open Accessibility
+    //     settings" button calls this same API with prompt=true to
+    //     pop the modal when the user opts in.
+    let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue()
+    _ = AXIsProcessTrustedWithOptions(
+      [promptKey: false] as CFDictionary)
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
