@@ -1,6 +1,6 @@
 # Manual Testing Checklist
 
-This checklist should be completed when testing ScreenFlow Studio on each platform (macOS, Windows, Linux) to ensure feature parity and proper functionality.
+This checklist should be completed when testing Slipreel on each platform (macOS, Windows, Linux) to ensure feature parity and proper functionality.
 
 ## Pre-Testing Setup
 

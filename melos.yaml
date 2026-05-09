@@ -1,4 +1,4 @@
-name: screenflow_studio
+name: slipreel
 
 packages:
   - packages/**

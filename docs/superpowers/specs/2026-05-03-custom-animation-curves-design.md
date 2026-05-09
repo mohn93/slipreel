@@ -2,7 +2,7 @@
 
 **Status:** Approved
 **Date:** 2026-05-03
-**Owner:** ScreenFlow Studio editor
+**Owner:** Slipreel editor
 
 ## Goal
 
@@ -197,7 +197,7 @@ class NamedCurve {
 }
 ```
 
-Storage: `getApplicationSupportDirectory()/screenflow/curves.json`.
+Storage: `getApplicationSupportDirectory()/slipreel/curves.json`.
 
 ```json
 {

@@ -53,7 +53,7 @@ class FileCurveLibrary implements CurveLibrary {
     final resolved = _resolvedPath;
     if (resolved != null) return resolved;
     final dir = await getApplicationSupportDirectory();
-    final sub = Directory('${dir.path}/screenflow');
+    final sub = Directory('${dir.path}/slipreel');
     if (!await sub.exists()) {
       await sub.create(recursive: true);
     }

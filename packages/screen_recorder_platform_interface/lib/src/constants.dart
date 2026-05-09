@@ -1,16 +1,16 @@
 /// Method channel constants for screen recorder plugin
 class ScreenRecorderChannels {
   /// Main method channel for recording control and capability queries
-  static const String recording = 'com.screenflow_studio.screen_recorder/recording';
+  static const String recording = 'com.slipreel.screen_recorder/recording';
 
   /// Event channel for video frame stream
-  static const String frames = 'com.screenflow_studio.screen_recorder/frames';
+  static const String frames = 'com.slipreel.screen_recorder/frames';
 
   /// Event channel for audio sample stream
-  static const String audio = 'com.screenflow_studio.screen_recorder/audio';
+  static const String audio = 'com.slipreel.screen_recorder/audio';
 
   /// Event channel for cursor position stream
-  static const String cursor = 'com.screenflow_studio.screen_recorder/cursor';
+  static const String cursor = 'com.slipreel.screen_recorder/cursor';
 }
 
 /// Method names for the recording channel

@@ -126,7 +126,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E2E),
       appBar: AppBar(
-        title: const Text('Screen Flow',
+        title: const Text('Slipreel',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
         backgroundColor: const Color(0xFF2B2B3D),
         elevation: 0,

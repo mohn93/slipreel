@@ -111,7 +111,7 @@ class _AccessibilityNoticeState extends State<AccessibilityNotice>
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Grant Accessibility permission so Screen Flow can capture '
+                  'Grant Accessibility permission so Slipreel can capture '
                   'cursor changes — I-beam over text, pointing hand over '
                   'links, resize handles, etc. Recording works without it, '
                   'but the editor will only show the default arrow.',

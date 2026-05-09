@@ -7,10 +7,10 @@
 // The application's name. By default this is also the title of the Flutter window.
 // No space in the binary name to keep build paths quote-free; the
 // human-readable name lives in CFBundleDisplayName in Info.plist.
-PRODUCT_NAME = ScreenFlow
+PRODUCT_NAME = Slipreel
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.screenFlow
+PRODUCT_BUNDLE_IDENTIFIER = com.slipreel.app
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Slipreel. All rights reserved.

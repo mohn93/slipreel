@@ -6,16 +6,16 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 /// Linux implementation of the ScreenRecorderPlatform
 class ScreenRecorderLinux extends ScreenRecorderPlatform {
   static const MethodChannel _channel =
-      MethodChannel('com.screenflow_studio.screen_recorder/methods');
+      MethodChannel('com.slipreel.screen_recorder/methods');
 
   static const EventChannel _framesChannel =
-      EventChannel('com.screenflow_studio.screen_recorder/frames');
+      EventChannel('com.slipreel.screen_recorder/frames');
 
   static const EventChannel _cursorChannel =
-      EventChannel('com.screenflow_studio.screen_recorder/cursor');
+      EventChannel('com.slipreel.screen_recorder/cursor');
 
   static const EventChannel _audioChannel =
-      EventChannel('com.screenflow_studio.screen_recorder/audio');
+      EventChannel('com.slipreel.screen_recorder/audio');
 
   /// Registers this class as the default instance of [ScreenRecorderPlatform]
   static void registerWith() {

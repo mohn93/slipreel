@@ -1,6 +1,6 @@
 # Platform-Specific Behavior
 
-This document describes platform-specific behavior, differences, and limitations of the ScreenFlow Studio screen recording functionality.
+This document describes platform-specific behavior, differences, and limitations of the Slipreel screen recording functionality.
 
 ## macOS
 

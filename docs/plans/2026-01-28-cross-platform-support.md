@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Extend ScreenFlow Studio to support Windows and Linux platforms with native screen capture, maintaining feature parity with macOS implementation.
+**Goal:** Extend Slipreel to support Windows and Linux platforms with native screen capture, maintaining feature parity with macOS implementation.
 
 **Architecture:** Platform plugin pattern with Windows (Graphics Capture API) and Linux (PipeWire/X11) implementations. Shared platform interface ensures consistent API across platforms. Platform-specific cursor rendering and testing infrastructure.
 
@@ -18,7 +18,7 @@ Phase 8 brings cross-platform support with:
 - **Task 31**: Platform-specific cursor tracking and rendering
 - **Task 32**: Cross-platform testing and bug fixes
 
-This makes ScreenFlow Studio truly cross-platform, matching Screen Studio's reach.
+This makes Slipreel truly cross-platform, matching Screen Studio's reach.
 
 ---
 
@@ -113,10 +113,10 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 /// Windows implementation of the ScreenRecorderPlatform
 class ScreenRecorderWindows extends ScreenRecorderPlatform {
   static const MethodChannel _channel =
-      MethodChannel('com.screenflow_studio.screen_recorder/methods');
+      MethodChannel('com.slipreel.screen_recorder/methods');
 
   static const EventChannel _framesChannel =
-      EventChannel('com.screenflow_studio.screen_recorder/frames');
+      EventChannel('com.slipreel.screen_recorder/frames');
 
   /// Registers this class as the default instance of [ScreenRecorderPlatform]
   static void registerWith() {
@@ -669,7 +669,7 @@ void ScreenRecorderWindowsPlugin::RegisterWithRegistrar(
 
     auto method_channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
         registrar->messenger(),
-        "com.screenflow_studio.screen_recorder/methods",
+        "com.slipreel.screen_recorder/methods",
         &flutter::StandardMethodCodec::GetInstance());
 
     auto plugin = std::make_unique<ScreenRecorderWindowsPlugin>(registrar);
@@ -682,7 +682,7 @@ void ScreenRecorderWindowsPlugin::RegisterWithRegistrar(
     // Event channel for frames
     auto event_channel = std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
         registrar->messenger(),
-        "com.screenflow_studio.screen_recorder/frames",
+        "com.slipreel.screen_recorder/frames",
         &flutter::StandardMethodCodec::GetInstance());
 
     auto handler = std::make_unique<flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
@@ -1018,10 +1018,10 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 /// Linux implementation of the ScreenRecorderPlatform
 class ScreenRecorderLinux extends ScreenRecorderPlatform {
   static const MethodChannel _channel =
-      MethodChannel('com.screenflow_studio.screen_recorder/methods');
+      MethodChannel('com.slipreel.screen_recorder/methods');
 
   static const EventChannel _framesChannel =
-      EventChannel('com.screenflow_studio.screen_recorder/frames');
+      EventChannel('com.slipreel.screen_recorder/frames');
 
   /// Registers this class as the default instance of [ScreenRecorderPlatform]
   static void registerWith() {
@@ -1246,7 +1246,7 @@ PipeWireCaptureManager::~PipeWireCaptureManager() {
 bool PipeWireCaptureManager::Initialize() {
     pw_init(nullptr, nullptr);
 
-    loop_ = pw_thread_loop_new("screenflow-capture", nullptr);
+    loop_ = pw_thread_loop_new("slipreel-capture", nullptr);
     if (!loop_) {
         return false;
     }
@@ -1300,7 +1300,7 @@ bool PipeWireCaptureManager::StartCapture(const std::string& source_id, int fps,
     // Create stream
     stream_ = pw_stream_new_simple(
         pw_thread_loop_get_loop(loop_),
-        "screenflow-studio-capture",
+        "slipreel-capture",
         pw_properties_new(
             PW_KEY_MEDIA_TYPE, "Video",
             PW_KEY_MEDIA_CATEGORY, "Capture",

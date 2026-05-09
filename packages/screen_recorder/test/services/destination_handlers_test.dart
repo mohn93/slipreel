@@ -170,7 +170,7 @@ void main() {
         clipboardWrite: clipboard.write,
       );
 
-      const outputPath = '/tmp/screenflow_export_12345.mp4';
+      const outputPath = '/tmp/slipreel_export_12345.mp4';
       await copier.deliver(outputPath);
 
       expect(clipboard.lastText, outputPath);
@@ -182,7 +182,7 @@ void main() {
         clipboardWrite: clipboard.write,
       );
 
-      final result = await copier.deliver('/tmp/screenflow_export_12345.mp4');
+      final result = await copier.deliver('/tmp/slipreel_export_12345.mp4');
 
       expect(result.copiedToClipboard, isTrue);
     });
@@ -193,7 +193,7 @@ void main() {
         clipboardWrite: clipboard.write,
       );
 
-      final result = await copier.deliver('/tmp/screenflow_export_12345.mp4');
+      final result = await copier.deliver('/tmp/slipreel_export_12345.mp4');
 
       expect(result.message, isNotEmpty);
       // The message should tell the user the path was copied.
@@ -267,7 +267,7 @@ void main() {
         clipboardWrite: clipboard.write,
       );
 
-      const outputPath = '/tmp/screenflow_export_99999.mp4';
+      const outputPath = '/tmp/slipreel_export_99999.mp4';
       await publisher.deliver(outputPath);
 
       expect(clipboard.lastText, Uri.file(outputPath).toString());
@@ -280,7 +280,7 @@ void main() {
         clipboardWrite: clipboard.write,
       );
 
-      const outputPath = '/tmp/has space/screenflow_export.mp4';
+      const outputPath = '/tmp/has space/slipreel_export.mp4';
       await publisher.deliver(outputPath);
 
       final expectedUrl = Uri.file(outputPath).toString();
@@ -295,7 +295,7 @@ void main() {
         clipboardWrite: clipboard.write,
       );
 
-      final result = await publisher.deliver('/tmp/screenflow_export_99999.mp4');
+      final result = await publisher.deliver('/tmp/slipreel_export_99999.mp4');
 
       expect(result.copiedToClipboard, isTrue);
     });
@@ -306,7 +306,7 @@ void main() {
         clipboardWrite: clipboard.write,
       );
 
-      const outputPath = '/tmp/screenflow_export_99999.mp4';
+      const outputPath = '/tmp/slipreel_export_99999.mp4';
       final result = await publisher.deliver(outputPath);
 
       expect(result.revealPath, outputPath);
@@ -318,7 +318,7 @@ void main() {
         clipboardWrite: clipboard.write,
       );
 
-      final result = await publisher.deliver('/tmp/screenflow_export_99999.mp4');
+      final result = await publisher.deliver('/tmp/slipreel_export_99999.mp4');
 
       expect(result.message.toLowerCase(), contains('coming soon'));
     });

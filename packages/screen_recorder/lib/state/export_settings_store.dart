@@ -22,12 +22,12 @@ class ExportSettingsStore {
   static const int _currentSchemaVersion = 1;
   Future<void> _writeQueue = Future.value();
 
-  /// Resolve the production path: `<appSupport>/screenflow_studio/export_settings.json`.
+  /// Resolve the production path: `<appSupport>/slipreel/export_settings.json`.
   /// Uses `path_provider`'s `getApplicationSupportDirectory()`. Creates
   /// the parent directory if missing.
   static Future<ExportSettingsStore> resolveDefault() async {
     final appSupport = await getApplicationSupportDirectory();
-    final dir = Directory('${appSupport.path}/screenflow_studio');
+    final dir = Directory('${appSupport.path}/slipreel');
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }

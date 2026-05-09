@@ -1,5 +1,5 @@
-name: screenflow_studio_workspace
-description: A workspace for ScreenFlow Studio packages
+name: slipreel_workspace
+description: A workspace for Slipreel packages
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

@@ -1,8 +1,8 @@
-# ScreenFlow Studio - Flutter Implementation Plan
+# Slipreel - Flutter Implementation Plan
 
 ## Project Information
 
-**Project Name**: ScreenFlow Studio
+**Project Name**: Slipreel
 **Project Path**: `/Users/mohn93/Desktop/side_projects/screenflow_studio`
 **Target Platforms**: macOS, Windows, Linux (starting with macOS)
 

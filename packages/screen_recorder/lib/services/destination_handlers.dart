@@ -151,7 +151,7 @@ class ClipboardCopier implements DestinationHandler {
     final tmpDir = await _tempDirProvider();
     final ts = DateTime.now().microsecondsSinceEpoch;
     final n = _nonce++;
-    return p.join(tmpDir.path, 'screenflow_export_${ts}_$n$ext');
+    return p.join(tmpDir.path, 'slipreel_export_${ts}_$n$ext');
   }
 
   @override
@@ -203,7 +203,7 @@ class ShareableLinkPublisher implements DestinationHandler {
     final tmpDir = await _tempDirProvider();
     final ts = DateTime.now().microsecondsSinceEpoch;
     final n = _nonce++;
-    return p.join(tmpDir.path, 'screenflow_export_${ts}_$n$ext');
+    return p.join(tmpDir.path, 'slipreel_export_${ts}_$n$ext');
   }
 
   @override

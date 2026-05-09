@@ -175,7 +175,7 @@ class ScreenInfo {
 - `lib/ui/widgets/source_picker/permission_cta.dart` — "Grant screen recording permission" empty state.
 
 **Layout (top to bottom):**
-- AppBar: "ScreenFlow Studio" + refresh icon + (Windows tab only) "Show all" toggle.
+- AppBar: "Slipreel" + refresh icon + (Windows tab only) "Show all" toggle.
 - Segmented control: `[ Windows | Screens ]`. Default tab = Windows.
 - Body: `GridView` of `SourceTile`s. ~3 columns at ≥800pt wide, 2 columns under 600pt. Tile size ~240×180pt.
 - Bottom bar: unchanged from today (selected title + Record button + recording indicator).
@@ -205,7 +205,7 @@ class ScreenInfo {
 - Windows, strict filter, zero matches → "No app windows detected. Open a window you want to record, then tap refresh." + an inline hint to enable "Show all".
 - Windows, "Show all", zero matches → "No windows available. Tap refresh."
 - Screens → always ≥1 in practice; if listing fails entirely, show a generic error with retry.
-- Permission error from `listSources` → full-tab CTA: "ScreenFlow needs Screen Recording permission" + "Open System Settings" button that opens `x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture`. Refresh retries.
+- Permission error from `listSources` → full-tab CTA: "Slipreel needs Screen Recording permission" + "Open System Settings" button that opens `x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture`. Refresh retries.
 - Per-tile thumbnail error → silent fallback to icon placeholder; never blocks the rest of the grid.
 
 ## Recording-pipeline integration

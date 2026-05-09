@@ -1616,7 +1616,7 @@ class PermissionCta extends StatelessWidget {
             const Icon(Icons.lock_outline, size: 48, color: Colors.white54),
             const SizedBox(height: 16),
             const Text(
-              'ScreenFlow needs Screen Recording permission',
+              'Slipreel needs Screen Recording permission',
               style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
               textAlign: TextAlign.center,
             ),
@@ -2269,7 +2269,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E2E),
       appBar: AppBar(
-        title: const Text('ScreenFlow Studio',
+        title: const Text('Slipreel',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
         backgroundColor: const Color(0xFF2B2B3D),
         elevation: 0,

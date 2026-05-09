@@ -41,7 +41,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   public static func register(with registrar: FlutterPluginRegistrar) {
     // Main method channel for recording control
     let recordingChannel = FlutterMethodChannel(
-      name: "com.screenflow_studio.screen_recorder/recording",
+      name: "com.slipreel.screen_recorder/recording",
       binaryMessenger: registrar.messenger
     )
 
@@ -51,7 +51,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
     // Event channel for video frames
     let framesChannel = FlutterEventChannel(
-      name: "com.screenflow_studio.screen_recorder/frames",
+      name: "com.slipreel.screen_recorder/frames",
       binaryMessenger: registrar.messenger
     )
     instance.frameStreamHandler = FrameStreamHandler()
@@ -59,7 +59,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
     // Event channel for audio samples
     let audioChannel = FlutterEventChannel(
-      name: "com.screenflow_studio.screen_recorder/audio",
+      name: "com.slipreel.screen_recorder/audio",
       binaryMessenger: registrar.messenger
     )
     instance.audioStreamHandler = AudioStreamHandler()
@@ -67,7 +67,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
     // Event channel for cursor tracking
     let cursorChannel = FlutterEventChannel(
-      name: "com.screenflow_studio.screen_recorder/cursor",
+      name: "com.slipreel.screen_recorder/cursor",
       binaryMessenger: registrar.messenger
     )
     instance.cursorStreamHandler = CursorStreamHandler()

@@ -1283,7 +1283,7 @@ class PerfSampler {
 
   private var timer: DispatchSourceTimer?
   private var samples = Stats(cpuPctSamples: [], memBytesSamples: [])
-  private let queue = DispatchQueue(label: "com.screenflow_studio.perf_sampler")
+  private let queue = DispatchQueue(label: "com.slipreel.perf_sampler")
   private let lock = NSLock()
   private var cpuPctAccum: [Double] = []
   private var memBytesAccum: [UInt64] = []

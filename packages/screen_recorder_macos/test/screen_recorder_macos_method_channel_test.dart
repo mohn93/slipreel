@@ -6,7 +6,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   MethodChannelScreenRecorderMacos platform = MethodChannelScreenRecorderMacos();
-  const MethodChannel channel = MethodChannel('com.screenflow_studio.screen_recorder/recording');
+  const MethodChannel channel = MethodChannel('com.slipreel.screen_recorder/recording');
 
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(

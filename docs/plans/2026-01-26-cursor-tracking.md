@@ -249,7 +249,7 @@ Replace TODO comment (line 39) with cursor channel registration:
 ```swift
 // Event channel for cursor tracking
 let cursorChannel = FlutterEventChannel(
-  name: "com.screenflow_studio.screen_recorder/cursor",
+  name: "com.slipreel.screen_recorder/cursor",
   binaryMessenger: registrar.messenger
 )
 instance.cursorStreamHandler = CursorStreamHandler()
@@ -373,7 +373,7 @@ File: `packages/screen_recorder_macos/lib/screen_recorder_macos_method_channel.d
 Add event channel constant:
 ```dart
 static const EventChannel _cursorChannel = EventChannel(
-  'com.screenflow_studio.screen_recorder/cursor',
+  'com.slipreel.screen_recorder/cursor',
 );
 ```
 

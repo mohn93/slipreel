@@ -411,7 +411,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   public static func register(with registrar: FlutterPluginRegistrar) {
     // Main method channel for recording control
     let recordingChannel = FlutterMethodChannel(
-      name: "com.screenflow_studio.screen_recorder/recording",
+      name: "com.slipreel.screen_recorder/recording",
       binaryMessenger: registrar.messenger
     )
 
@@ -421,7 +421,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
     // Event channel for video frames
     let framesChannel = FlutterEventChannel(
-      name: "com.screenflow_studio.screen_recorder/frames",
+      name: "com.slipreel.screen_recorder/frames",
       binaryMessenger: registrar.messenger
     )
     instance.frameStreamHandler = FrameStreamHandler()
@@ -429,7 +429,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
     // Event channel for audio samples
     let audioChannel = FlutterEventChannel(
-      name: "com.screenflow_studio.screen_recorder/audio",
+      name: "com.slipreel.screen_recorder/audio",
       binaryMessenger: registrar.messenger
     )
     instance.audioStreamHandler = AudioStreamHandler()
@@ -631,7 +631,7 @@ class VideoEncoder {
 
     // Create temporary directory for frames and audio
     final tempBaseDir = await getTemporaryDirectory();
-    _tempDir = '${tempBaseDir.path}/screenflow_${DateTime.now().millisecondsSinceEpoch}';
+    _tempDir = '${tempBaseDir.path}/slipreel_${DateTime.now().millisecondsSinceEpoch}';
     await Directory(_tempDir!).create(recursive: true);
 
     _frameIndex = 0;

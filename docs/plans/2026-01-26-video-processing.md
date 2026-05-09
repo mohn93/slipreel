@@ -1501,7 +1501,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 
 ## Overview
 
-ScreenFlow Studio uses a hybrid encoding approach:
+Slipreel uses a hybrid encoding approach:
 - **Phase 4**: FFmpeg software encoding (current)
 - **Phase 9**: VideoToolbox hardware encoding (future)
 
