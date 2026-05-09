@@ -79,17 +79,31 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     // Accessibility — the user opens the pane, doesn't see us, and
     // concludes the permission can't be granted at all.
     //
-    // Implementation notes:
-    //   * `AXIsProcessTrusted()` (read-only) does NOT register — it
-    //     just checks. We need `AXIsProcessTrustedWithOptions` for
-    //     TCC to add the entry.
-    //   * Pass `kAXTrustedCheckOptionPrompt: false` so we register
-    //     silently at startup. The banner's "Open Accessibility
-    //     settings" button calls this same API with prompt=true to
-    //     pop the modal when the user opts in.
+    // We do BOTH things that empirically register an app with TCC:
+    //   1. `AXIsProcessTrustedWithOptions` with prompt=false. On most
+    //      macOS versions this alone is enough.
+    //   2. Actually attempt an AX API call (`AXUIElementCopyAttributeValue`
+    //      on the system-wide element). On stricter macOS versions
+    //      TCC only registers an app once it sees a real AX request.
+    //      The call returns kAXErrorAPIDisabled when untrusted; we
+    //      ignore the result, the side-effect (registration) is what
+    //      we're after.
+    //
+    // The banner's "Open Accessibility settings" button uses the same
+    // API with prompt=true to pop the modal when the user opts in.
     let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue()
-    _ = AXIsProcessTrustedWithOptions(
+    let trusted = AXIsProcessTrustedWithOptions(
       [promptKey: false] as CFDictionary)
+    var role: CFTypeRef?
+    _ = AXUIElementCopyAttributeValue(
+      AXUIElementCreateSystemWide(),
+      kAXRoleAttribute as CFString,
+      &role)
+    print(
+      "[ScreenRecorderMacosPlugin] Accessibility registered. "
+        + "trusted=\(trusted). If this is the first launch on this build, "
+        + "the app should now appear in System Settings → Privacy & Security "
+        + "→ Accessibility (relaunch required after granting).")
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
