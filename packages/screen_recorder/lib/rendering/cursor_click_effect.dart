@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../models/cursor_recording.dart';
@@ -162,17 +163,88 @@ void paintCursorGlyphWithPulse(
   required CursorStyle style,
   required int? microsSinceClick,
   CursorState state = CursorState.arrow,
+  double shadowIntensity = 0,
 }) {
   final pulse = microsSinceClick == null
       ? 1.0
       : pressPulseMultiplier(microsSinceClick);
+  final effectiveDiameter = baseDiameter * pulse;
+  if (shadowIntensity > 0) {
+    _paintCursorShadow(
+      canvas,
+      position: position,
+      diameter: effectiveDiameter,
+      style: style,
+      state: state,
+      intensity: shadowIntensity,
+    );
+  }
   paintCursorGlyph(
     canvas,
     position: position,
-    diameter: baseDiameter * pulse,
+    diameter: effectiveDiameter,
     style: style,
     state: state,
   );
+}
+
+/// Renders a soft drop shadow under the cursor by re-drawing the
+/// glyph onto a Gaussian-blurred + black-tinted layer, offset slightly
+/// down. Works uniformly for every cursor type (arrow, dot, I-beam,
+/// pointing-hand, resize, etc.) — we just delegate to [paintCursorGlyph]
+/// inside the layer, so whatever shape the foreground draws becomes
+/// the shadow's silhouette.
+///
+/// Parameters scale with [intensity] (0..1) so a single user-facing
+/// slider drives offset, blur radius, and opacity together. The base
+/// constants are tuned for the macOS cursor's typical drop-shadow
+/// look (subtle, mostly downward, narrow halo).
+void _paintCursorShadow(
+  Canvas canvas, {
+  required Offset position,
+  required double diameter,
+  required CursorStyle style,
+  required CursorState state,
+  required double intensity,
+}) {
+  final blurSigma = diameter * 0.10 * intensity + 1.0;
+  final offsetY = diameter * 0.08 * intensity;
+  final opacity = (0.55 * intensity).clamp(0.0, 0.7);
+
+  // The layer's bounds need to cover the cursor body + the blur's
+  // tail. A square of side ~3× diameter centred on [position] is
+  // generous enough for every glyph (the largest, the macOS arrow
+  // halo, runs ~1.3× diameter from the tip). null bounds would also
+  // work but force Skia into a slow path.
+  final layerBounds = Rect.fromCenter(
+    center: position + Offset(0, offsetY),
+    width: diameter * 3,
+    height: diameter * 3,
+  );
+
+  canvas.save();
+  canvas.translate(0, offsetY);
+  canvas.saveLayer(
+    layerBounds,
+    Paint()
+      ..imageFilter = ui.ImageFilter.blur(
+        sigmaX: blurSigma,
+        sigmaY: blurSigma,
+      )
+      ..colorFilter = ColorFilter.mode(
+        Color.fromRGBO(0, 0, 0, opacity),
+        BlendMode.srcIn,
+      ),
+  );
+  paintCursorGlyph(
+    canvas,
+    position: position,
+    diameter: diameter,
+    style: style,
+    state: state,
+  );
+  canvas.restore();
+  canvas.restore();
 }
 
 /// Convenience wrapper: ripple underneath, glyph (with pulse) on top.
@@ -185,6 +257,7 @@ void paintCursorWithEffects(
   required int? microsSinceClick,
   CursorClickEffect effect = CursorClickEffect.none,
   CursorState state = CursorState.arrow,
+  double shadowIntensity = 0,
 }) {
   paintCursorRipple(
     canvas,
@@ -200,5 +273,6 @@ void paintCursorWithEffects(
     style: style,
     microsSinceClick: microsSinceClick,
     state: state,
+    shadowIntensity: shadowIntensity,
   );
 }

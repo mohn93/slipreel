@@ -51,6 +51,7 @@ class PlaybackCanvas extends StatefulWidget {
     required this.screenAnimationConfig,
     required this.cursorAnimationConfig,
     required this.motionBlur,
+    required this.cursorShadow,
   });
 
   final VideoPlayerController controller;
@@ -71,6 +72,11 @@ class PlaybackCanvas extends StatefulWidget {
   /// "no motion blur" and short-circuits the screen ImageFilter and
   /// the cursor multi-stamp path.
   final double motionBlur;
+
+  /// Slider 0..1 from the cursor inspector. 0 disables the soft drop
+  /// shadow rendered under every cursor glyph; values closer to 1
+  /// push it further down with more blur and opacity.
+  final double cursorShadow;
 
   @override
   State<PlaybackCanvas> createState() => _PlaybackCanvasState();
@@ -234,6 +240,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                           velocityPxPerSec: combinedCursorVelocity,
                           motionBlurIntensity: widget.motionBlur,
                           cursorState: motion.state,
+                          cursorShadow: widget.cursorShadow,
                         ),
                       ),
                     ),

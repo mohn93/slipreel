@@ -78,6 +78,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   CursorAnimationConfig _cursorAnimationConfig =
       const CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
   double _motionBlur = 0;
+  double _cursorShadow = 0.4;
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
@@ -155,6 +156,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       _cursorClickEffect = saved.cursorClickEffect;
       _hideCursorOverlay = saved.hideCursorOverlay;
       _motionBlur = saved.motionBlur;
+      _cursorShadow = saved.cursorShadow;
       // Frame chrome (wallpaper, padding, corners, shadow, blur) is
       // also per-clip. Restore via setFrame BEFORE flipping the
       // _isInitialized flag so _persistProject won't fire on the
@@ -191,6 +193,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         cursorClickEffect: _cursorClickEffect,
         hideCursorOverlay: _hideCursorOverlay,
         motionBlur: _motionBlur,
+        cursorShadow: _cursorShadow,
         windowFrame: _frameSettings.currentFrame,
       );
 
@@ -679,6 +682,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                       cursorSize: _cursorSize,
                       cursorStyle: _cursorStyle,
                       cursorClickEffect: _cursorClickEffect,
+                      cursorShadow: _cursorShadow,
                       onCursorSizeChanged: (v) {
                         setState(() => _cursorSize = v);
                         _persistProject();
@@ -689,6 +693,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                       },
                       onCursorClickEffectChanged: (e) {
                         setState(() => _cursorClickEffect = e);
+                        _persistProject();
+                      },
+                      onCursorShadowChanged: (v) {
+                        setState(() => _cursorShadow = v);
                         _persistProject();
                       },
                       screenAnimationConfig: _screenAnimationConfig,
@@ -786,6 +794,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       screenAnimationConfig: _screenAnimationConfig,
       cursorAnimationConfig: _cursorAnimationConfig,
       motionBlur: _motionBlur,
+      cursorShadow: _cursorShadow,
     );
   }
 

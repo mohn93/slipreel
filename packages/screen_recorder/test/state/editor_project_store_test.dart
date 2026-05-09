@@ -53,6 +53,7 @@ void main() {
         cursorClickEffect: CursorClickEffect.none,
         hideCursorOverlay: true,
         motionBlur: 0.4,
+        cursorShadow: 0.65,
         windowFrame: WindowFrame.modern(),
       );
 
@@ -62,6 +63,7 @@ void main() {
       expect(restored.zoomRegions, state.zoomRegions);
       expect(restored.cursorSize, 1.75);
       expect(restored.cursorStyle, CursorStyle.bold);
+      expect(restored.cursorShadow, 0.65);
       expect(restored.cursorClickEffect, CursorClickEffect.none);
       expect(restored.hideCursorOverlay, isTrue);
       expect(restored.motionBlur, closeTo(0.4, 1e-9));
@@ -153,6 +155,7 @@ extension on EditorProjectState {
         cursorClickEffect: cursorClickEffect,
         hideCursorOverlay: hideCursorOverlay,
         motionBlur: motionBlur,
+        cursorShadow: cursorShadow,
         windowFrame: windowFrame,
       );
 
@@ -165,6 +168,7 @@ extension on EditorProjectState {
         cursorClickEffect: cursorClickEffect,
         hideCursorOverlay: hideCursorOverlay,
         motionBlur: motionBlur,
+        cursorShadow: cursorShadow,
         windowFrame: windowFrame,
       );
 }

@@ -31,6 +31,7 @@ class CursorOverlayPainter extends CustomPainter {
   final Offset velocityPxPerSec;
   final double motionBlurIntensity;
   final CursorState cursorState;
+  final double cursorShadow;
 
   CursorOverlayPainter({
     required this.cursorRecording,
@@ -44,6 +45,7 @@ class CursorOverlayPainter extends CustomPainter {
     this.velocityPxPerSec = Offset.zero,
     this.motionBlurIntensity = 0,
     this.cursorState = CursorState.arrow,
+    this.cursorShadow = 0,
   });
 
   static ui.FragmentProgram? _motionBlurProgram;
@@ -119,6 +121,7 @@ class CursorOverlayPainter extends CustomPainter {
         style: style,
         microsSinceClick: dt,
         state: cursorState,
+        shadowIntensity: cursorShadow,
       );
       return;
     }
@@ -160,13 +163,14 @@ class CursorOverlayPainter extends CustomPainter {
     // Buffer-size budget per side from the cursor's tip (which sits
     // at the buffer's center): the macOS-shape glyph extends at most
     // ~1.27 × pxDiameter from the tip in any direction (the body
-    // height plus halo overshoot), and the trail reaches `reach`
-    // pixels in the velocity direction. Use 1.5 × pxDiameter for the
-    // glyph budget so the round-joined halo and sub-pixel rendering
-    // never clip against the buffer edge.
+    // height plus halo overshoot); the drop shadow extends another
+    // ~0.5 × pxDiameter below at full intensity (offset + 3σ blur);
+    // the trail reaches `reach` pixels in the velocity direction.
+    // 4 × pxDiameter centred on the tip covers all of those without
+    // clipping, even at the inspector slider's maxima.
     final reach = samples.stepPx.distance * (samples.count - 1);
     final spriteBufferSize =
-        (pxDiameter * 3 + reach * 2).ceil().toDouble();
+        (pxDiameter * 4 + reach * 2).ceil().toDouble();
     final spriteBufferCenter =
         Offset(spriteBufferSize / 2, spriteBufferSize / 2);
 
@@ -182,6 +186,7 @@ class CursorOverlayPainter extends CustomPainter {
       style: style,
       microsSinceClick: dt,
       state: cursorState,
+      shadowIntensity: cursorShadow,
     );
     final picture = recorder.endRecording();
     final spriteImage = picture.toImageSync(
@@ -276,6 +281,7 @@ class CursorOverlayPainter extends CustomPainter {
         old.clickEffect != clickEffect ||
         old.velocityPxPerSec != velocityPxPerSec ||
         old.motionBlurIntensity != motionBlurIntensity ||
-        old.cursorState != cursorState;
+        old.cursorState != cursorState ||
+        old.cursorShadow != cursorShadow;
   }
 }

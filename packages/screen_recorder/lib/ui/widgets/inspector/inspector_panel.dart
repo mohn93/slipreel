@@ -48,9 +48,11 @@ class InspectorPanel extends StatefulWidget {
     this.cursorSize = 1.0,
     this.cursorStyle = CursorStyle.modernDark,
     this.cursorClickEffect = CursorClickEffect.ripple,
+    this.cursorShadow = 0,
     this.onCursorSizeChanged,
     this.onCursorStyleChanged,
     this.onCursorClickEffectChanged,
+    this.onCursorShadowChanged,
     this.screenAnimationConfig = const ScreenAnimationConfig.preset(
         ScreenAnimationStyle.smooth),
     this.cursorAnimationConfig = const CursorAnimationConfig.preset(
@@ -83,9 +85,14 @@ class InspectorPanel extends StatefulWidget {
   final double cursorSize;
   final CursorStyle cursorStyle;
   final CursorClickEffect cursorClickEffect;
+
+  /// Cursor drop-shadow strength, 0..1 (0 disables). See [EditorProjectState.cursorShadow].
+  final double cursorShadow;
+
   final ValueChanged<double>? onCursorSizeChanged;
   final ValueChanged<CursorStyle>? onCursorStyleChanged;
   final ValueChanged<CursorClickEffect>? onCursorClickEffectChanged;
+  final ValueChanged<double>? onCursorShadowChanged;
 
   /// Screen + cursor animation configs drive zoom transitions and
   /// focal smoothing on the playback canvas. Each config is either a
@@ -181,6 +188,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
             canHideCursor: widget.canHideCursor,
             onHideCursorChanged:
                 widget.onHideCursorChanged ?? (_) {},
+            shadow: widget.cursorShadow,
+            onShadowChanged: widget.onCursorShadowChanged ?? (_) {},
           ),
         InspectorTab.camera => const CameraTab(),
         InspectorTab.captions => const CaptionsTab(),

@@ -21,6 +21,8 @@ class CursorTab extends StatefulWidget {
     required this.hideCursor,
     required this.canHideCursor,
     required this.onHideCursorChanged,
+    required this.shadow,
+    required this.onShadowChanged,
   });
 
   final double size;
@@ -32,6 +34,8 @@ class CursorTab extends StatefulWidget {
   final bool hideCursor;
   final bool canHideCursor;
   final ValueChanged<bool> onHideCursorChanged;
+  final double shadow;
+  final ValueChanged<double> onShadowChanged;
 
   @override
   State<CursorTab> createState() => _CursorTabState();
@@ -56,6 +60,19 @@ class _CursorTabState extends State<CursorTab> {
           onReset: () => widget.onSizeChanged(1.0),
           canReset: widget.size != 1.0,
           subtitle: '${widget.size.toStringAsFixed(2)}×',
+        ),
+        const SizedBox(height: 20),
+        InspectorSlider(
+          label: 'Cursor shadow',
+          subtitle: widget.shadow > 0
+              ? '${(widget.shadow * 100).round()}%'
+              : 'Off',
+          value: widget.shadow,
+          min: 0,
+          max: 1,
+          onChanged: widget.onShadowChanged,
+          onReset: () => widget.onShadowChanged(0.4),
+          canReset: widget.shadow != 0.4,
         ),
         const InspectorSectionDivider(),
         const Text(

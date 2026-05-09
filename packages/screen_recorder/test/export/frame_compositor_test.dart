@@ -334,6 +334,7 @@ extension on EditorProjectState {
       cursorClickEffect: cursorClickEffect,
       hideCursorOverlay: hideCursorOverlay,
       motionBlur: motionBlur ?? this.motionBlur,
+      cursorShadow: cursorShadow,
       windowFrame: windowFrame ?? this.windowFrame,
     );
   }

@@ -282,6 +282,7 @@ class FrameCompositor {
       velocityPxPerSec: velocity,
       motionBlurIntensity: intensity,
       cursorState: state,
+      cursorShadow: projectState.cursorShadow,
     );
     painter.paint(canvas, videoSize);
     canvas.restore();

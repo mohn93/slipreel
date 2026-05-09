@@ -85,6 +85,7 @@ extension on EditorProjectState {
       cursorClickEffect: cursorClickEffect,
       hideCursorOverlay: hideCursorOverlay,
       motionBlur: motionBlur,
+      cursorShadow: cursorShadow,
       windowFrame: windowFrame ?? this.windowFrame,
     );
   }

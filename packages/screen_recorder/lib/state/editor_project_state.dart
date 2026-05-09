@@ -23,6 +23,7 @@ class EditorProjectState {
     required this.cursorClickEffect,
     required this.hideCursorOverlay,
     required this.motionBlur,
+    required this.cursorShadow,
     required this.windowFrame,
   });
 
@@ -41,6 +42,7 @@ class EditorProjectState {
         cursorClickEffect: CursorClickEffect.ripple,
         hideCursorOverlay: false,
         motionBlur: 0,
+        cursorShadow: 0.4,
         windowFrame: WindowFrame.rounded(),
       );
 
@@ -52,6 +54,14 @@ class EditorProjectState {
   final CursorClickEffect cursorClickEffect;
   final bool hideCursorOverlay;
   final double motionBlur;
+
+  /// Strength of the soft drop shadow rendered under the cursor glyph,
+  /// 0..1. 0 disables; values closer to 1 push the shadow further
+  /// down with more blur and opacity. Applies to every cursor type
+  /// (arrow, dot, I-beam, pointing-hand, …) so the cursor reads as
+  /// floating slightly above the recording.
+  final double cursorShadow;
+
   final WindowFrame windowFrame;
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
@@ -68,6 +78,7 @@ class EditorProjectState {
         'cursorClickEffect': cursorClickEffect.name,
         'hideCursorOverlay': hideCursorOverlay,
         'motionBlur': motionBlur,
+        'cursorShadow': cursorShadow,
         'windowFrame': windowFrame.toJson(),
       };
 
@@ -116,6 +127,8 @@ class EditorProjectState {
           (json['hideCursorOverlay'] as bool?) ?? defaults.hideCursorOverlay,
       motionBlur:
           (json['motionBlur'] as num?)?.toDouble() ?? defaults.motionBlur,
+      cursorShadow: (json['cursorShadow'] as num?)?.toDouble() ??
+          defaults.cursorShadow,
       windowFrame:
           frame != null ? WindowFrame.fromJson(frame) : defaults.windowFrame,
     );
