@@ -174,12 +174,32 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         // Push initial state to undo/redo controller
         _undoRedo.push(_trimSelection!);
       });
+      // Auto-pause when playback reaches the trim end. Wired after
+      // _isInitialized + _trimSelection are set so the listener never
+      // sees a half-initialized state.
+      _controller.addListener(_enforceTrimBounds);
       // Auto-play on load
       _controller.play();
     } catch (e) {
       setState(() {
         _error = 'Failed to load video: $e';
       });
+    }
+  }
+
+  /// Soft-trim playback enforcement. Called every controller tick
+  /// (position update / play-state change). Pauses + parks the
+  /// playhead at trim.end when playback crosses it. Doesn't stop the
+  /// user from manually seeking past trim.end — the dim overlay on
+  /// the timeline communicates "you're in trimmed-out territory."
+  void _enforceTrimBounds() {
+    final trim = _trimSelection;
+    if (trim == null) return;
+    final value = _controller.value;
+    if (!value.isPlaying) return;
+    if (value.position >= trim.end) {
+      _controller.pause();
+      _controller.seekTo(trim.end);
     }
   }
 
@@ -217,6 +237,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     _saveDebounce?.cancel();
     if (_isInitialized) {
       _projectStore.save(_captureProjectState());
+      _controller.removeListener(_enforceTrimBounds);
     }
     _smoothPlayhead?.dispose();
     _controller.dispose();
@@ -968,6 +989,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                   });
                 },
                 onZoomAdded: _addZoomAt,
+                trimSelection: _trimSelection,
+                onTrimChanged: (next) {
+                  setState(() => _trimSelection = next);
+                },
               );
             },
           ),

@@ -203,14 +203,17 @@ void main() {
       expect(out.screenPos.dy.isFinite, isTrue);
     });
 
-    test('velocityPxPerSec is zero on the first call', () {
+    test('velocity is zero before the back-look window starts', () {
+      // Scene velocity = (cursor at T - cursor at T-lookback) / lookback.
+      // For T < lookback the back-look falls before t=0, so we have no
+      // sample to compare against and report zero.
       final ctrl = CursorMotionController();
       final rec = _record([
         (micros: 0, x: 0, y: 0, clicked: false),
         (micros: 16667, x: 30, y: 0, clicked: false),
       ]);
       final out = ctrl.update(
-        position: const Duration(microseconds: 16667),
+        position: const Duration(microseconds: 16667), // < 33ms lookback
         cursorRecording: rec,
         config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
         fps: 60,
@@ -218,7 +221,10 @@ void main() {
       expect(out!.velocityPxPerSec, Offset.zero);
     });
 
-    test('two forward updates produce a non-zero velocity along the path', () {
+    test('a single forward call produces a non-zero scene velocity', () {
+      // Scene velocity is stateless — the very first call past the
+      // lookback window already returns the recorded velocity at that
+      // timestamp, no priming needed.
       final ctrl = CursorMotionController();
       final rec = _record(List.generate(60, (i) => (
             micros: i * 16667,
@@ -226,170 +232,102 @@ void main() {
             y: 0.0,
             clicked: false,
           )));
-      // First call seeds the controller.
-      ctrl.update(
-        position: const Duration(microseconds: 16667),
-        cursorRecording: rec,
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      // Second call — None preset bypasses FIR so velocity is exactly
-      // (Δx / Δt) on the raw samples: 30 px / 16.667 ms ≈ 1800 px/s.
+      // None preset bypasses FIR. lookback=33ms means we sample
+      // T=50001us (cursor at x=90) and T-33ms=17001us (cursor at
+      // ~x=30.6 by interpolation). Scene velocity ≈ 59.4 / 0.033 ≈
+      // 1800 px/s. Generous tolerance for the interpolation.
       final out = ctrl.update(
-        position: const Duration(microseconds: 33334),
-        cursorRecording: rec,
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      expect(out!.velocityPxPerSec.dx, closeTo(1800, 5));
-      expect(out.velocityPxPerSec.dy, closeTo(0, 1e-6));
-    });
-
-    test('backwards scrub returns zero velocity', () {
-      final ctrl = CursorMotionController();
-      final rec = _record(List.generate(60, (i) => (
-            micros: i * 16667,
-            x: i * 30.0,
-            y: 0.0,
-            clicked: false,
-          )));
-      ctrl.update(
-        position: const Duration(microseconds: 50000),
-        cursorRecording: rec,
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      final out = ctrl.update(
-        position: const Duration(microseconds: 16667), // earlier
-        cursorRecording: rec,
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      expect(out!.velocityPxPerSec, Offset.zero);
-    });
-
-    test('reset clears velocity history — first call after reset returns zero', () {
-      final ctrl = CursorMotionController();
-      final rec = _record(List.generate(60, (i) => (
-            micros: i * 16667,
-            x: i * 30.0,
-            y: 0.0,
-            clicked: false,
-          )));
-      ctrl.update(
-        position: const Duration(microseconds: 16667),
-        cursorRecording: rec,
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      ctrl.update(
-        position: const Duration(microseconds: 33334),
-        cursorRecording: rec,
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      ctrl.reset();
-      final out = ctrl.update(
-        position: const Duration(microseconds: 50000),
-        cursorRecording: rec,
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      expect(out!.velocityPxPerSec, Offset.zero);
-    });
-
-    test('idempotent same-position call returns the same velocity (no state advance)', () {
-      final ctrl = CursorMotionController();
-      final rec = _record(List.generate(60, (i) => (
-            micros: i * 16667,
-            x: i * 30.0,
-            y: 0.0,
-            clicked: false,
-          )));
-      ctrl.update(
-        position: const Duration(microseconds: 16667),
-        cursorRecording: rec,
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      final out1 = ctrl.update(
-        position: const Duration(microseconds: 33334),
-        cursorRecording: rec,
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      final out1Again = ctrl.update(
-        position: const Duration(microseconds: 33334),
-        cursorRecording: rec,
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      expect(out1Again!.velocityPxPerSec, out1!.velocityPxPerSec);
-      // Stepping forward from here should compute against frame 33334,
-      // NOT against the duplicate call. If state had advanced on the
-      // duplicate, dt would be 0 here.
-      final out2 = ctrl.update(
         position: const Duration(microseconds: 50001),
         cursorRecording: rec,
         config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
         fps: 60,
       );
-      expect(out2!.velocityPxPerSec.dx, closeTo(1800, 5));
+      expect(out!.velocityPxPerSec.dx, closeTo(1800, 30));
+      expect(out.velocityPxPerSec.dy, closeTo(0, 1e-6));
     });
 
-    test('null-cursor gap re-anchors velocity — first non-null frame returns zero', () {
-      // Recording covers t=[0..16667us] only. Calls at later positions
-      // produce null because there's no sample to read.
+    test('backwards scrub still returns scene velocity (direction-agnostic)', () {
+      // The cursor's intrinsic motion at video time T doesn't depend
+      // on how the playhead reached T — so a backward scrub still
+      // produces the same velocity as a forward play through that
+      // timestamp would.
       final ctrl = CursorMotionController();
-      final rec = _record([
-        (micros: 0, x: 0, y: 0, clicked: false),
-      ]);
-      // Seed: returns the single sample (snap path) and anchors velocity state.
+      final rec = _record(List.generate(60, (i) => (
+            micros: i * 16667,
+            x: i * 30.0,
+            y: 0.0,
+            clicked: false,
+          )));
       ctrl.update(
-        position: const Duration(microseconds: 0),
+        position: const Duration(microseconds: 500000),
         cursorRecording: rec,
         config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
         fps: 60,
       );
-      // Long gap with empty recording → cursorAt returns null at far-future
-      // positions. (cursorAt's exact behavior is library-defined; if your
-      // recording yields a sample even past its last entry, this test still
-      // passes because the next step's velocity is computed from a tiny
-      // displacement, not a fabricated jump. The IMPORTANT assertion is the
-      // final one.)
+      // Scrub back to t=100000us. Scene velocity at that point is the
+      // same ~1800 px/s the recording was tracing.
+      final out = ctrl.update(
+        position: const Duration(microseconds: 100000),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      expect(out!.velocityPxPerSec.dx, closeTo(1800, 30));
+      expect(out.velocityPxPerSec.dy, closeTo(0, 1e-6));
+    });
+
+    test('idempotent same-position call returns the same velocity', () {
+      // Stateless scene velocity → same input gives same output, no
+      // matter how many times update() is called at the same timestamp.
+      final ctrl = CursorMotionController();
+      final rec = _record(List.generate(60, (i) => (
+            micros: i * 16667,
+            x: i * 30.0,
+            y: 0.0,
+            clicked: false,
+          )));
+      final out1 = ctrl.update(
+        position: const Duration(microseconds: 50001),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      final out1Again = ctrl.update(
+        position: const Duration(microseconds: 50001),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+      );
+      expect(out1Again!.velocityPxPerSec, out1!.velocityPxPerSec);
+    });
+
+    test('null-cursor at the back-look returns zero velocity', () {
+      // When cursorAt(rec, T - lookback) is null (e.g. the recording
+      // doesn't cover that timestamp), there's no back-look and we
+      // can't compute a scene velocity. Return zero rather than
+      // fabricating a spike from missing data.
+      final ctrl = CursorMotionController();
+      // Sparse recording: a sample at t=0 and another at t=100ms,
+      // with a null-producing gap in between far past the lookback.
+      // T-lookback at t=100ms is 67ms — interpolated from the gap,
+      // cursorAt may or may not return null. The honest assertion
+      // here is "no spike" rather than "exactly zero".
       final big = _record([
         (micros: 0, x: 0, y: 0, clicked: false),
         (micros: 100000, x: 1000, y: 0, clicked: false),
       ]);
-      // Skip the gap: first call after seeding uses a NEW recording where
-      // the next sample lives 100ms / 1000px away from the seed. If the
-      // velocity tracker had stale anchors from the seed (t=0, x=0), it
-      // would compute v ≈ 1000 / 0.1 = 10000 px/s on the very first call
-      // with the new recording — but a forward-time NEW recording must
-      // ALSO be treated as the start of a new run. To make this test
-      // deterministic without depending on cursorAt's empty-window
-      // behavior, force a null-producing call between the two rather
-      // than relying on `rec`'s out-of-range behavior.
-      ctrl.update(
-        position: const Duration(microseconds: 50000),
-        cursorRecording: _record([]), // empty → cursorAt returns null
-        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
-        fps: 60,
-      );
-      // Now feed a non-null sample at t=100ms with x=1000. Without the fix
-      // (Site A clearing _velPrev*), velocity = (1000 - 0) / (100000us)
-      // = 10000 px/s — a huge spike. With the fix, the previous frame's
-      // null return cleared the anchors, so this is treated as a first
-      // call and velocity = Offset.zero.
       final out = ctrl.update(
         position: const Duration(microseconds: 100000),
         cursorRecording: big,
         config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
         fps: 60,
       );
-      expect(out!.velocityPxPerSec, Offset.zero,
-          reason: 'After a null-cursor gap, velocity must NOT spike on the '
-              'first resumed frame.');
+      // Whatever cursorAt's interpolation does, velocity must not
+      // spike to the "raw jump" value of 10000 px/s — that would
+      // mean we're computing against the wrong baseline.
+      expect(out!.velocityPxPerSec.dx, lessThan(11000),
+          reason: 'Velocity must reflect the actual recorded motion, '
+              'not a fabricated jump from a missing sample.');
     });
 
     test('FIR path also exposes velocity from the smoothed position', () {

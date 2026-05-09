@@ -831,5 +831,142 @@ void main() {
       );
       expect(landed!.focal, const Offset(900, 600));
     });
+
+    test(
+        'exit ramp stops following cursor and lerps focal to video centre '
+        'in lock-step with the zoom-out', () {
+      // Once the zoom starts unwinding, the viewport widens every frame
+      // and the user can already see where the cursor is heading. The
+      // controller should stop chasing the cursor AND smoothly migrate
+      // the focal toward the video centre so X and Y arrive there
+      // simultaneously when the zoom hits 1.0×. Without the lerp the
+      // per-axis clamp in ZoomTransformer pulls X and Y inward at
+      // different rates.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 1000),
+        enterDuration: const Duration(milliseconds: 100),
+        exitDuration: const Duration(milliseconds: 100),
+        followDuration: const Duration(milliseconds: 50),
+      );
+
+      // Frame 0 (start of region): snap to cursor at (100, 100).
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(100, 100),
+        videoSize: _videoSize,
+      );
+      // Frame at 300ms (in hold): cursor jumps — kicks off a tween.
+      ctrl.update(
+        position: const Duration(milliseconds: 300),
+        zoomRegions: [zoom],
+        cursor: const Offset(500, 500),
+        videoSize: _videoSize,
+      );
+      // Frame at 400ms (in hold, well past the 50ms followDuration):
+      // the tween has completed, focal is at (500, 500).
+      final inHold = ctrl.update(
+        position: const Duration(milliseconds: 400),
+        zoomRegions: [zoom],
+        cursor: const Offset(500, 500),
+        videoSize: _videoSize,
+      );
+      expect(inHold!.focal, const Offset(500, 500),
+          reason: 'sanity: tween should have completed by now');
+
+      // Frame at 950ms — halfway through the exit ramp at 900..1000ms.
+      // Cursor moves to (900, 900) but the controller ignores it. The
+      // focal lerps from (500, 500) toward videoCentre (960, 540) using
+      // the same curve the zoom factor uses, so X and Y interpolate at
+      // the same fraction: their progress along their respective ranges
+      // must match.
+      final midExit = ctrl.update(
+        position: const Duration(milliseconds: 950),
+        zoomRegions: [zoom],
+        cursor: const Offset(900, 900),
+        videoSize: _videoSize,
+      );
+      const startFocal = Offset(500, 500);
+      const centre = Offset(960, 540);
+      final progressX = (midExit!.focal.dx - startFocal.dx) /
+          (centre.dx - startFocal.dx);
+      final progressY = (midExit.focal.dy - startFocal.dy) /
+          (centre.dy - startFocal.dy);
+      expect(progressX, closeTo(progressY, 1e-9),
+          reason: 'X and Y must lerp at the same progress so they finish '
+              'together — that is the whole point of the explicit lerp.');
+      expect(progressX, greaterThan(0));
+      expect(progressX, lessThan(1));
+
+      // Frame at the very end of the exit ramp: focal must be exactly
+      // at video centre, regardless of the cursor's current position.
+      final endExit = ctrl.update(
+        position: const Duration(milliseconds: 1000),
+        zoomRegions: [zoom],
+        cursor: const Offset(900, 900),
+        videoSize: _videoSize,
+      );
+      expect(endExit!.focal.dx, closeTo(960, 1e-6),
+          reason: 'X must finish at video centre when the zoom hits 1.0×');
+      expect(endExit.focal.dy, closeTo(540, 1e-6),
+          reason: 'Y must finish at video centre when the zoom hits 1.0×');
+    });
+
+    test(
+        'backward scrub mid-tween snaps focal to the cursor at the new '
+        'position (no freeze on `_tweenFrom`)', () {
+      // Regression: when the user drags the playhead backward while a
+      // catch-up tween is in flight, `position - _tweenStartPosition`
+      // goes negative. Without the fix that branch clamps the
+      // interpolation t to 0 and the focal freezes at `_tweenFrom`
+      // regardless of where the cursor is at the new (earlier)
+      // timestamp. The fix snaps the focal to the cursor on any
+      // backward step.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        followDuration: const Duration(milliseconds: 400),
+      );
+
+      // Frame 0: snap to (100, 100).
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(100, 100),
+        videoSize: _videoSize,
+      );
+      // Frame at 16ms: cursor jumps — kicks off a tween toward (700, 700).
+      ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [zoom],
+        cursor: const Offset(700, 700),
+        videoSize: _videoSize,
+      );
+      // Frame at 100ms (mid-tween, before the 400ms followDuration
+      // elapses): tween is in flight.
+      ctrl.update(
+        position: const Duration(milliseconds: 100),
+        zoomRegions: [zoom],
+        cursor: const Offset(700, 700),
+        videoSize: _videoSize,
+      );
+
+      // User scrubs backward to t=50ms. At that timestamp the cursor
+      // sits at (400, 400) along the recorded path. Without the fix,
+      // the focal would stay frozen near `_tweenFrom` ≈ (100, 100).
+      final out = ctrl.update(
+        position: const Duration(milliseconds: 50),
+        zoomRegions: [zoom],
+        cursor: const Offset(400, 400),
+        videoSize: _videoSize,
+      );
+      expect(out!.focal, const Offset(400, 400),
+          reason: 'Backward scrub must snap the focal to the cursor at '
+              'the new position, not freeze on the in-flight tween\'s '
+              '`from` value.');
+    });
   });
 }

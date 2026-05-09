@@ -41,6 +41,21 @@ class ZoomFocalController {
   // `_tweenDurationFor` for the sync rationale.
   Duration? _tweenDuration;
 
+  // Last [position] passed to [update]. Used to detect backward
+  // scrubs so the controller can snap to the cursor instead of
+  // freezing on stale tween state. Large *forward* jumps are left
+  // to the existing deadzone logic — when the cursor is still inside
+  // the deadzone at the new position, the focal should hold (match
+  // forward-playback behavior). Only the backward case has no good
+  // continuation.
+  Duration? _lastUpdatePosition;
+
+  // Focal at the moment the exit ramp started. Captured once on the
+  // first frame inside the exit ramp; cleared whenever the controller
+  // leaves the exit ramp (zoom changes, scrubs back into the hold,
+  // etc.) so the next exit captures fresh.
+  Offset? _exitRampStartFocal;
+
   /// Last computed focal. Exposed for the debug HUD that draws the
   /// focal as a hollow yellow ring.
   Offset? get smoothedFocal => _smoothedFocal;
@@ -73,6 +88,8 @@ class ZoomFocalController {
       _previousActiveZoom = null;
       _smoothedFocal = null;
       _resetTween();
+      _exitRampStartFocal = null;
+      _lastUpdatePosition = position;
       return null;
     }
 
@@ -82,8 +99,24 @@ class ZoomFocalController {
       final initial = _initialTarget(activeZoom, cursor);
       _smoothedFocal = initial;
       _resetTween();
+      _exitRampStartFocal = null;
+      _lastUpdatePosition = position;
       return ZoomFocalUpdate(zoom: activeZoom, focal: initial);
     }
+
+    // Backward scrub: the tween's state assumes forward time
+    // progression, so mid-tween scrub-backwards leaves elapsed=negative
+    // and the focal frozen at `_tweenFrom`. Snap to the cursor at the
+    // new position and let forward motion re-establish smoothing.
+    if (_lastUpdatePosition != null && position < _lastUpdatePosition!) {
+      final snap = _initialTarget(activeZoom, cursor);
+      _smoothedFocal = snap;
+      _resetTween();
+      _exitRampStartFocal = null;
+      _lastUpdatePosition = position;
+      return ZoomFocalUpdate(zoom: activeZoom, focal: snap);
+    }
+    _lastUpdatePosition = position;
 
     // Step 1 — advance any in-flight tween before we look at the
     // target so the deadzone check uses the freshest focal.
@@ -100,6 +133,40 @@ class ZoomFocalController {
         _smoothedFocal = Offset.lerp(_tweenFrom, _tweenTo, eased)!;
       }
     }
+
+    // Inside the exit ramp the zoom factor is decreasing every frame,
+    // so the visible viewport keeps widening — the user can already
+    // see where the cursor is heading without the camera chasing it.
+    // Stop tracking the cursor here, but smoothly migrate the focal
+    // toward the video center so X and Y arrive simultaneously when
+    // the zoom hits 1.0×. Without this lerp the per-axis clamp in
+    // ZoomTransformer pulls X and Y inward at different rates (the
+    // axis with the larger frozen offset gets clamped first, the
+    // other one snaps to centre only on the final identity frame),
+    // which the user reads as "X moved, Y didn't, then Y jumped".
+    final exit = _exitRampWindow(activeZoom);
+    if (exit != null) {
+      final tIntoRegionUs =
+          position.inMicroseconds - activeZoom.startTime.inMicroseconds;
+      if (tIntoRegionUs >= exit.exitStartUs) {
+        _exitRampStartFocal ??= _smoothedFocal;
+        final tIntoExit = (tIntoRegionUs - exit.exitStartUs)
+            .clamp(0, exit.exitUs);
+        final tNorm =
+            exit.exitUs == 0 ? 1.0 : tIntoExit / exit.exitUs;
+        // Same curve the ZoomTransformer applies to the zoom factor
+        // (its rampCurve default). Keeping these in lock-step is what
+        // makes the recenter feel like part of the zoom-out instead
+        // of a separate motion.
+        final eased = Curves.easeInOutQuad.transform(tNorm.toDouble());
+        final centre = Offset(videoSize.width / 2, videoSize.height / 2);
+        _smoothedFocal = Offset.lerp(_exitRampStartFocal, centre, eased);
+        return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
+      }
+    }
+    // Outside the exit ramp — clear the captured anchor so the next
+    // entry into an exit ramp re-captures from a fresh position.
+    _exitRampStartFocal = null;
 
     // Step 2 — decide what the camera should aim at this frame.
     //
@@ -150,6 +217,8 @@ class ZoomFocalController {
     _previousActiveZoom = null;
     _smoothedFocal = null;
     _resetTween();
+    _exitRampStartFocal = null;
+    _lastUpdatePosition = null;
   }
 
   // --- internals --------------------------------------------------
@@ -159,6 +228,29 @@ class ZoomFocalController {
     _tweenTo = null;
     _tweenStartPosition = null;
     _tweenDuration = null;
+  }
+
+  /// Exit ramp window for [zoom] in microseconds-into-region — the
+  /// last [ZoomRegion.exitDuration] post-squeeze when enter+exit
+  /// exceed the region length. Returns null when there's no exit
+  /// ramp to enter (zero-length region or zero exit duration).
+  /// Mirrors the same squeeze math [_tweenDurationFor] uses so the
+  /// two stay in sync.
+  static ({int exitStartUs, int exitUs})? _exitRampWindow(ZoomRegion zoom) {
+    final regionUs = zoom.duration.inMicroseconds;
+    if (regionUs <= 0) return null;
+
+    var enterUs = zoom.enterDuration.inMicroseconds;
+    var exitUs = zoom.exitDuration.inMicroseconds;
+    final totalRamp = enterUs + exitUs;
+    if (totalRamp > regionUs && totalRamp > 0) {
+      final scale = regionUs / totalRamp;
+      enterUs = (enterUs * scale).round();
+      exitUs = (exitUs * scale).round();
+    }
+    if (exitUs <= 0) return null;
+    final exitStartUs = regionUs - exitUs;
+    return (exitStartUs: exitStartUs, exitUs: exitUs);
   }
 
   /// Pick a tween duration that keeps the camera pan and the zoom

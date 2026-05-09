@@ -33,16 +33,22 @@ class EmaVelocityFilter {
   Duration? _lastPosition;
 
   /// Returns the smoothed velocity for [raw] at [position]. Re-seeds
-  /// to [raw] on the first call, on backward [position], and across
-  /// gaps larger than [_maxGap].
+  /// to [raw] on the first call and across gaps larger than [_maxGap].
+  /// Backward scrubs are smoothed using `|dt|` for the time-aware
+  /// alpha — scene velocity is direction-agnostic, so the filter
+  /// shouldn't reset its history just because the user is moving
+  /// the playhead backwards through time.
   Offset filter(Offset raw, Duration position) {
     final last = _lastPosition;
-    if (last == null || position <= last || position - last > _maxGap) {
+    final gap = last == null
+        ? Duration.zero
+        : (position - last).abs();
+    if (last == null || gap > _maxGap) {
       _smoothed = raw;
       _lastPosition = position;
       return raw;
     }
-    final dtSec = (position - last).inMicroseconds / 1e6;
+    final dtSec = gap.inMicroseconds / 1e6;
     final alpha = 1.0 - math.exp(-dtSec / _tauSec);
     final prev = _smoothed!;
     final next = Offset(

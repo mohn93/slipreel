@@ -49,17 +49,26 @@ void main() {
       expect(out.dx, lessThan(900));
     });
 
-    test('backward position re-seeds (no negative-Δt blowup)', () {
+    test('backward position smooths using |Δt| (no negative-Δt blowup, no re-seed)',
+        () {
       final f = EmaVelocityFilter();
       f.filter(const Offset(100, 0), const Duration(milliseconds: 100));
-      // Scrub backward — the filter must NOT integrate against a
-      // negative Δt. Re-seeding to the new raw is the right behavior:
-      // the user just jumped to a new playback location.
+      // Scrub backward 50ms. Scene velocity is direction-agnostic —
+      // the filter should keep integrating using |Δt|, not re-seed.
+      // With τ=60ms and |Δt|=50ms, alpha ≈ 1 - exp(-50/60) ≈ 0.565
+      // and the output should land strictly between the previous
+      // smoothed (100) and the new raw (-500).
       final out = f.filter(
         const Offset(-500, 0),
         const Duration(milliseconds: 50),
       );
-      expect(out, const Offset(-500, 0));
+      expect(out.dx, lessThan(100),
+          reason: 'output should move toward raw (-500), not stay at 100');
+      expect(out.dx, greaterThan(-500),
+          reason: 'output should be partially smoothed, not re-seeded to raw');
+      expect(out.dy, closeTo(0, 1e-9));
+      // Sanity: must be finite (the bug was negative Δt → invalid alpha).
+      expect(out.dx.isFinite, isTrue);
     });
 
     test('large gap (> 500ms) re-seeds — stale prev is too old to blend', () {

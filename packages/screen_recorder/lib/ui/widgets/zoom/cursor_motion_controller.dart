@@ -31,10 +31,12 @@ class CursorMotionController {
   CursorMotionUpdate? _cachedResult;
   Object? _cachedConfigKey;
 
-  // Velocity tracking. Carries last *advanced* state so duplicate-
-  // position calls don't fake a Δt=0 step.
-  Duration? _velPrevPosition;
-  Offset? _velPrevScreenPos;
+  /// Back-look window for the scene-velocity finite difference. Two
+  /// frames at 60 Hz balances responsiveness against per-frame
+  /// recording noise. Direction-agnostic: a sample at T - lookback
+  /// always exists in the recording (or doesn't), regardless of how
+  /// the playhead reached T.
+  static const Duration _velocityLookback = Duration(milliseconds: 33);
 
   CursorMotionUpdate? update({
     required Duration position,
@@ -54,12 +56,13 @@ class CursorMotionController {
       final raw = cursorAt(cursorRecording, position);
       if (raw == null) {
         _cachedResult = null;
-        _velPrevPosition = null;
-        _velPrevScreenPos = null;
         return null;
       }
       final screenPos = Offset(raw.x, raw.y);
-      final velocity = _computeVelocity(screenPos: screenPos, position: position);
+      final velocity = _computeSceneVelocity(
+        position: position,
+        cursorRecording: cursorRecording,
+      );
       _cachedResult = CursorMotionUpdate(
         screenPos: screenPos,
         isClicked: raw.isClicked,
@@ -99,13 +102,14 @@ class CursorMotionController {
     }
     if (accW == 0) {
       _cachedResult = null;
-      _velPrevPosition = null;
-      _velPrevScreenPos = null;
       return null;
     }
     final inv = 1.0 / accW;
     final screenPos = Offset(accX * inv, accY * inv);
-    final velocity = _computeVelocity(screenPos: screenPos, position: position);
+    final velocity = _computeSceneVelocity(
+      position: position,
+      cursorRecording: cursorRecording,
+    );
     _cachedResult = CursorMotionUpdate(
       screenPos: screenPos,
       isClicked: clicked,
@@ -119,8 +123,6 @@ class CursorMotionController {
     _cachedPosition = null;
     _cachedResult = null;
     _cachedConfigKey = null;
-    _velPrevPosition = null;
-    _velPrevScreenPos = null;
   }
 
   // --- internals --------------------------------------------------------
@@ -176,36 +178,37 @@ class CursorMotionController {
     return weights;
   }
 
-  Offset _computeVelocity({
-    required Offset screenPos,
+  /// Scene velocity at video time [position]: the cursor's intrinsic
+  /// motion at that timestamp in the recording, regardless of how the
+  /// playhead got there. Stateless — sampling the raw recording at T
+  /// and `T − lookback` gives a stable, direction-agnostic estimate
+  /// (forward play, backward scrub, and hover-jumps all return the
+  /// same value at the same timestamp).
+  ///
+  /// Computed from RAW samples even on the FIR path: the trail's
+  /// direction reflects what the cursor was actually doing in the
+  /// recording, not the lagged smoothed position. The small
+  /// directional mismatch with the rendered (smoothed) cursor is
+  /// negligible at typical FIR window sizes and avoids the negative-
+  /// velocity bug that mixing smoothed-T with raw-(T-lookback)
+  /// introduces.
+  ///
+  /// Returns [Offset.zero] when the back-look falls before the start
+  /// of the recording or either sample is null.
+  Offset _computeSceneVelocity({
     required Duration position,
+    required CursorRecording cursorRecording,
   }) {
-    final prevPos = _velPrevPosition;
-    final prevScreen = _velPrevScreenPos;
-    if (prevPos == null || prevScreen == null) {
-      _velPrevPosition = position;
-      _velPrevScreenPos = screenPos;
-      return Offset.zero;
-    }
-    if (position < prevPos) {
-      // Scrub backwards: re-anchor and report zero.
-      _velPrevPosition = position;
-      _velPrevScreenPos = screenPos;
-      return Offset.zero;
-    }
-    if (position == prevPos) {
-      // Defensive: the outer update() early-returns on duplicate position
-      // via _cachedResult, so this branch cannot be reached under current
-      // calling contracts. Retained as a guard against future refactoring.
-      return Offset.zero;
-    }
-    final dtUs = (position - prevPos).inMicroseconds;
-    final dx = screenPos.dx - prevScreen.dx;
-    final dy = screenPos.dy - prevScreen.dy;
-    final inv = 1e6 / dtUs;
-    _velPrevPosition = position;
-    _velPrevScreenPos = screenPos;
-    return Offset(dx * inv, dy * inv);
+    if (position < _velocityLookback) return Offset.zero;
+    final currentSample = cursorAt(cursorRecording, position);
+    if (currentSample == null) return Offset.zero;
+    final prevSample =
+        cursorAt(cursorRecording, position - _velocityLookback);
+    if (prevSample == null) return Offset.zero;
+    final dxPx = currentSample.x - prevSample.x;
+    final dyPx = currentSample.y - prevSample.y;
+    final invDt = 1e6 / _velocityLookback.inMicroseconds;
+    return Offset(dxPx * invDt, dyPx * invDt);
   }
 }
 
