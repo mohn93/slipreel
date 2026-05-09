@@ -27,7 +27,7 @@ class PermissionCta extends StatelessWidget {
             const Icon(Icons.lock_outline, size: 48, color: Colors.white54),
             const SizedBox(height: 16),
             const Text(
-              'ScreenFlow needs Screen Recording permission',
+              'Screen Flow needs Screen Recording permission',
               style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,
