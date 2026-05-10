@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:screen_recorder/models/recording_history.dart';
+import 'package:screen_recorder/ui/screens/motion_blur_playground_screen.dart';
 import 'package:screen_recorder/ui/screens/playback_screen.dart';
 
 /// Lists previously recorded videos so the user can re-open or remove
@@ -65,6 +66,13 @@ class _RecentsScreenState extends State<RecentsScreen> {
     ));
   }
 
+  void _openPlayground(RecordingHistoryEntry e) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) =>
+          MotionBlurPlaygroundScreen(videoPath: e.videoPath),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -107,6 +115,7 @@ class _RecentsScreenState extends State<RecentsScreen> {
           entry: e,
           fileExists: exists,
           onOpen: exists ? () => _open(e) : null,
+          onLongPress: exists ? () => _openPlayground(e) : null,
           onRemove: () => _remove(e),
         );
       },
@@ -152,12 +161,14 @@ class _RecentTile extends StatelessWidget {
     required this.entry,
     required this.fileExists,
     required this.onOpen,
+    required this.onLongPress,
     required this.onRemove,
   });
 
   final RecordingHistoryEntry entry;
   final bool fileExists;
   final VoidCallback? onOpen;
+  final VoidCallback? onLongPress;
   final VoidCallback onRemove;
 
   @override
@@ -170,6 +181,7 @@ class _RecentTile extends StatelessWidget {
 
     return InkWell(
       onTap: onOpen,
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
