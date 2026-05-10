@@ -740,7 +740,15 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                         _persistProject();
                       },
                       onMotionBlurChanged: (v) {
-                        setState(() => _motionBlur = v);
+                        setState(() {
+                          _motionBlur = v;
+                          // Reset the advanced knobs whenever the
+                          // general slider moves so the user always
+                          // sees what `intensity = v` produces with
+                          // default tuning, not whatever experimental
+                          // values were dialed in earlier.
+                          _motionBlurTuning = MotionBlurTuning.defaults;
+                        });
                         _persistProject();
                       },
                       onMotionBlurTuningChanged: (t) {
