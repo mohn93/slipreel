@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:screen_recorder/effects/motion_blur_tuning.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
@@ -58,9 +59,11 @@ class InspectorPanel extends StatefulWidget {
     this.cursorAnimationConfig = const CursorAnimationConfig.preset(
         CursorAnimationStyle.smooth),
     this.motionBlur = 0,
+    this.motionBlurTuning = MotionBlurTuning.defaults,
     this.onScreenAnimationConfigChanged,
     this.onCursorAnimationConfigChanged,
     this.onMotionBlurChanged,
+    this.onMotionBlurTuningChanged,
     required this.curveLibrary,
   });
 
@@ -101,9 +104,11 @@ class InspectorPanel extends StatefulWidget {
   final ScreenAnimationConfig screenAnimationConfig;
   final CursorAnimationConfig cursorAnimationConfig;
   final double motionBlur;
+  final MotionBlurTuning motionBlurTuning;
   final ValueChanged<ScreenAnimationConfig>? onScreenAnimationConfigChanged;
   final ValueChanged<CursorAnimationConfig>? onCursorAnimationConfigChanged;
   final ValueChanged<double>? onMotionBlurChanged;
+  final ValueChanged<MotionBlurTuning>? onMotionBlurTuningChanged;
 
   /// Persistence for user-saved curves shown in the curve editor's
   /// Library row. Required so the inspector doesn't conjure its own
@@ -205,6 +210,9 @@ class _InspectorPanelState extends State<InspectorPanel> {
             motionBlur: widget.motionBlur,
             onMotionBlurChanged: (v) =>
                 widget.onMotionBlurChanged?.call(v),
+            motionBlurTuning: widget.motionBlurTuning,
+            onMotionBlurTuningChanged: (t) =>
+                widget.onMotionBlurTuningChanged?.call(t),
             library: widget.curveLibrary,
           ),
       },

@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../../effects/motion_blur_samples.dart';
+import '../../effects/motion_blur_tuning.dart';
 import '../../models/cursor_recording.dart';
 import '../../rendering/cursor_click_effect.dart';
 import '../../rendering/cursor_geometry.dart';
@@ -40,6 +41,9 @@ class CursorOverlayPainter extends CustomPainter {
   final double motionBlurIntensity;
   final CursorState cursorState;
   final double cursorShadow;
+  /// Live-tunable knobs for the motion-blur path. Defaults match the
+  /// values previously hardcoded as `static const` on this class.
+  final MotionBlurTuning tuning;
   /// Device pixel ratio of the surface this painter renders into.
   /// The motion-blur path bakes the cursor to a `ui.Image`; without
   /// oversampling by [devicePixelRatio] the bake ends up at logical
@@ -61,6 +65,7 @@ class CursorOverlayPainter extends CustomPainter {
     this.motionBlurIntensity = 0,
     this.cursorState = CursorState.arrow,
     this.cursorShadow = 0,
+    this.tuning = MotionBlurTuning.defaults,
     this.devicePixelRatio = 1.0,
   });
 
@@ -325,72 +330,12 @@ class CursorOverlayPainter extends CustomPainter {
     }
   }
 
-  /// Virtual shutter window at slider=1.0. ~1.5× the velocity sampling
-  /// lookback; slider scales it linearly from 0 to this maximum.
-  static const double _maxExposureSeconds = 0.05;
-
-  /// Reject the trail when any pair of consecutive recording samples
-  /// that overlaps the exposure window is more than this far apart.
-  ///
-  /// macOS records cursor samples at ~60 Hz (≈16 ms apart). Real
-  /// recordings see frame jitter up to ~30 ms. Anything past 50 ms
-  /// is a hiccup — cursor disappeared (focus change, app switch,
-  /// hidden-cursor toggle) — and `cursorAt`'s linear interpolation
-  /// across that gap fabricates a path through unknown ground.
-  /// Drawing a smear along that fabricated path is exactly the
-  /// "trail in places the cursor wasn't" artifact, so we drop the
-  /// trail entirely and let the cursor render sharp.
-  static const int _maxSampleGapMicros = 50000;
-
-  /// Above this per-pair displacement (in video pixels), the post-idle
-  /// warp check kicks in. Real fast cursor motion can hit 200 px in a
-  /// single 16-ms sample interval, so this is intentionally just above
-  /// slow-to-moderate motion — the displacement alone isn't suspicious,
-  /// only its combination with a long preceding-pair gap.
-  static const double _largePairDispPx = 100.0;
-
-  /// If a "fast" sample-pair's IMMEDIATELY PRECEDING pair has a gap
-  /// of at least this many micros, the fast pair is treated as a
-  /// system warp (focus change / app switch / cursor teleport)
-  /// rather than real human motion. The signature: cursor sat idle
-  /// for ≥80 ms and then "moved" >100 px between two samples that
-  /// happen to be close together in time. Real flicks have small
-  /// preceding gaps (because they're sustained dense motion); only
-  /// system warps land an isolated burst right after a long idle.
-  static const int _postIdleThresholdMicros = 80000;
-
-  /// Hard cap on the rendered trail length in widget pixels.
-  ///
-  /// Even with the velocity taper applied, a fast flick's chord can
-  /// still be ~200 px and visually feel "too dramatic" — the smear
-  /// reads as a streak across the frame instead of motion blur on
-  /// the cursor itself. 150 px keeps the blur tight to the cursor
-  /// even at peak velocity. Tunable per visual taste.
-  static const double _maxTrailPx = 150.0;
-
-  /// Lookback for the "instantaneous" velocity used to taper the
-  /// trail during deceleration. One 60-Hz frame is the natural unit:
-  /// short enough that it reacts within ~16 ms of a cursor stop,
-  /// long enough to filter sub-frame jitter.
-  static const int _recentVelocityLookbackMicros = 16667;
-
-  /// Velocity below which no motion blur draws at all (in widget
-  /// pixels per second). Casual cursor motion (slow drag, hover,
-  /// reading-pace movement) sits below this — drawing a smear on
-  /// top of slow motion reads as "the blur is firing when it
-  /// shouldn't" because the eye doesn't expect blur on motions it
-  /// can clearly track.
-  static const double _vTriggerLowPxPerSec = 500.0;
-
-  /// Velocity at which the motion blur reaches full strength. Between
-  /// [_vTriggerLowPxPerSec] and this, the trail length is multiplied
-  /// by a smoothstep ramp so the blur fades in instead of popping
-  /// on/off at the threshold (which would flicker on jitter).
-  static const double _vTriggerHighPxPerSec = 1500.0;
-
   /// Trail vector for the shader/fallback in widget pixels: direction
   /// is the chord between `cursorAt(T)` and `cursorAt(T − exposure)`,
-  /// magnitude is min(chord length, [_maxTrailPx]).
+  /// magnitude is min(chord length, recent-velocity × exposure,
+  /// [tuning.maxTrailPx]) further multiplied by the velocity-trigger
+  /// smoothstep ramp from [tuning.vTriggerLowPxPerSec] to
+  /// [tuning.vTriggerHighPxPerSec].
   ///
   /// Returns [Offset.zero] when there's no blur to render — the slider
   /// is at 0, the lookback falls before the recording start, the
@@ -398,7 +343,8 @@ class CursorOverlayPainter extends CustomPainter {
   /// fabricating a phantom path, or the chord is sub-pixel.
   Offset _trailVectorForBlur({required double scaleX, required double scaleY}) {
     if (motionBlurIntensity <= 0) return Offset.zero;
-    final exposureSec = motionBlurIntensity * _maxExposureSeconds;
+    final maxExposureSec = tuning.maxExposureMs / 1000.0;
+    final exposureSec = motionBlurIntensity * maxExposureSec;
     if (exposureSec <= 0) return Offset.zero;
     final exposureMicros = (exposureSec * 1e6).round();
     final tEnd = position.inMicroseconds;
@@ -407,6 +353,10 @@ class CursorOverlayPainter extends CustomPainter {
 
     final raw = cursorRecording.positions;
     if (raw.length < 2) return Offset.zero;
+    final maxSampleGapMicros = (tuning.maxSampleGapMs * 1000).round();
+    final largePairDispPx = tuning.largePairDispPx;
+    final postIdleThresholdMicros =
+        (tuning.postIdleThresholdMs * 1000).round();
 
     // Walk the consecutive sample pairs that overlap [tStart, tEnd]
     // and reject the trail when either:
@@ -430,15 +380,15 @@ class CursorOverlayPainter extends CustomPainter {
       final curT = raw[i].timestampMicros;
       if (curT <= tStart) continue;
       if (prevT >= tEnd) break;
-      if (curT - prevT > _maxSampleGapMicros) return Offset.zero;
+      if (curT - prevT > maxSampleGapMicros) return Offset.zero;
 
       final dxPair = raw[i].x - raw[i - 1].x;
       final dyPair = raw[i].y - raw[i - 1].y;
       if (dxPair * dxPair + dyPair * dyPair >
-              _largePairDispPx * _largePairDispPx &&
+              largePairDispPx * largePairDispPx &&
           i >= 2) {
         final prevPairGap = prevT - raw[i - 2].timestampMicros;
-        if (prevPairGap >= _postIdleThresholdMicros) return Offset.zero;
+        if (prevPairGap >= postIdleThresholdMicros) return Offset.zero;
       }
     }
 
@@ -474,7 +424,8 @@ class CursorOverlayPainter extends CustomPainter {
     // enough to clearly track). Between low and high, the trail
     // length is multiplied by a smoothstep so the blur fades in
     // instead of popping on/off.
-    final vLookback = position.inMicroseconds - _recentVelocityLookbackMicros;
+    final velocityLookbackMicros = (tuning.velocityLookbackMs * 1000).round();
+    final vLookback = position.inMicroseconds - velocityLookbackMicros;
     final lookbackSample = vLookback >= 0
         ? cursorAt(cursorRecording, Duration(microseconds: vLookback))
         : null;
@@ -485,16 +436,22 @@ class CursorOverlayPainter extends CustomPainter {
       final vDyVideo = currentSample.y - lookbackSample.y;
       final vDxWidget = vDxVideo * scaleX;
       final vDyWidget = vDyVideo * scaleY;
-      final lookbackSec = _recentVelocityLookbackMicros / 1e6;
+      final lookbackSec = velocityLookbackMicros / 1e6;
       final vRecentMag =
           math.sqrt(vDxWidget * vDxWidget + vDyWidget * vDyWidget) /
               lookbackSec;
       final vTLen = vRecentMag * exposureSec;
       if (vTLen < effectiveLen) effectiveLen = vTLen;
 
-      final triggerT = ((vRecentMag - _vTriggerLowPxPerSec) /
-              (_vTriggerHighPxPerSec - _vTriggerLowPxPerSec))
-          .clamp(0.0, 1.0);
+      final triggerSpan =
+          (tuning.vTriggerHighPxPerSec - tuning.vTriggerLowPxPerSec)
+              .abs();
+      // If the user squashes low ≈ high, fall back to a hard
+      // threshold (no ramp band) instead of dividing by zero.
+      final triggerT = triggerSpan < 1
+          ? (vRecentMag >= tuning.vTriggerHighPxPerSec ? 1.0 : 0.0)
+          : ((vRecentMag - tuning.vTriggerLowPxPerSec) / triggerSpan)
+              .clamp(0.0, 1.0);
       // Smoothstep: 3t² - 2t³. Hermite interpolation, zero
       // derivative at both ends — no visible kink at threshold
       // boundaries while the ramp is active.
@@ -506,7 +463,7 @@ class CursorOverlayPainter extends CustomPainter {
     if (effectiveLen < 1) return Offset.zero;
 
     // Hard cap on absolute pixels regardless of source.
-    if (effectiveLen > _maxTrailPx) effectiveLen = _maxTrailPx;
+    if (effectiveLen > tuning.maxTrailPx) effectiveLen = tuning.maxTrailPx;
 
     // Project the cap (effectiveLen) onto the chord direction.
     final scale = effectiveLen / chordLen;
@@ -527,6 +484,7 @@ class CursorOverlayPainter extends CustomPainter {
         old.motionBlurIntensity != motionBlurIntensity ||
         old.cursorState != cursorState ||
         old.cursorShadow != cursorShadow ||
+        old.tuning != tuning ||
         old.devicePixelRatio != devicePixelRatio;
   }
 }

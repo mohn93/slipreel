@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import 'package:screen_recorder/effects/motion_blur_tuning.dart';
 import 'package:screen_recorder/models/trim_selection.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/models/export_settings.dart';
@@ -78,6 +79,12 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   CursorAnimationConfig _cursorAnimationConfig =
       const CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
   double _motionBlur = 0;
+  // Live-tunable knobs for the cursor motion-blur path. Exposed in
+  // the Animation tab's "Advanced motion blur settings" collapsible
+  // for debugging — defaults match what ships in production. Not
+  // persisted: a fresh load resets them, so the saved video always
+  // renders against the production constants.
+  MotionBlurTuning _motionBlurTuning = MotionBlurTuning.defaults;
   double _cursorShadow = 0.4;
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
@@ -723,6 +730,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                       screenAnimationConfig: _screenAnimationConfig,
                       cursorAnimationConfig: _cursorAnimationConfig,
                       motionBlur: _motionBlur,
+                      motionBlurTuning: _motionBlurTuning,
                       onScreenAnimationConfigChanged: (c) {
                         setState(() => _screenAnimationConfig = c);
                         _persistProject();
@@ -734,6 +742,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                       onMotionBlurChanged: (v) {
                         setState(() => _motionBlur = v);
                         _persistProject();
+                      },
+                      onMotionBlurTuningChanged: (t) {
+                        setState(() => _motionBlurTuning = t);
+                        // Tuning is debug-only — not persisted.
                       },
                       curveLibrary: _curveLibrary,
                       onZoomChanged: (index, next) {
@@ -815,6 +827,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       screenAnimationConfig: _screenAnimationConfig,
       cursorAnimationConfig: _cursorAnimationConfig,
       motionBlur: _motionBlur,
+      motionBlurTuning: _motionBlurTuning,
       cursorShadow: _cursorShadow,
       // _hoverFrozenPosition is set on the first hover-seek and
       // cleared on hover-end, so it's a precise "we're scrubbing,

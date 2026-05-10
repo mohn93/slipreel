@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:screen_recorder/effects/ema_velocity_filter.dart';
+import 'package:screen_recorder/effects/motion_blur_tuning.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
@@ -51,6 +52,7 @@ class PlaybackCanvas extends StatefulWidget {
     required this.screenAnimationConfig,
     required this.cursorAnimationConfig,
     required this.motionBlur,
+    required this.motionBlurTuning,
     required this.cursorShadow,
     required this.isHoverScrubbing,
   });
@@ -73,6 +75,10 @@ class PlaybackCanvas extends StatefulWidget {
   /// "no motion blur" and short-circuits the screen ImageFilter and
   /// the cursor multi-stamp path.
   final double motionBlur;
+
+  /// Live-tunable knobs for the motion-blur path (debug UI). See
+  /// [MotionBlurTuning] for the available levers.
+  final MotionBlurTuning motionBlurTuning;
 
   /// Slider 0..1 from the cursor inspector. 0 disables the soft drop
   /// shadow rendered under every cursor glyph; values closer to 1
@@ -254,6 +260,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                           clickEffect: widget.cursorClickEffect,
                           velocityPxPerSec: combinedCursorVelocity,
                           motionBlurIntensity: widget.motionBlur,
+                          tuning: widget.motionBlurTuning,
                           cursorState: motion.state,
                           cursorShadow: widget.cursorShadow,
                           // Pass dpr so the motion-blur bake is at
