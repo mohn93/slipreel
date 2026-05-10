@@ -163,6 +163,13 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       _cursorClickEffect = saved.cursorClickEffect;
       _hideCursorOverlay = saved.hideCursorOverlay;
       _motionBlur = saved.motionBlur;
+      // Initial tuning mirrors what the general slider implies, so
+      // the advanced knob lands on the right starting position the
+      // first time the user opens the panel after a load.
+      _motionBlurTuning = MotionBlurTuning.defaults.copyWith(
+        maxExposureMs:
+            _motionBlur * MotionBlurTuning.defaults.maxExposureMs,
+      );
       _cursorShadow = saved.cursorShadow;
       // Frame chrome (wallpaper, padding, corners, shadow, blur) is
       // also per-clip. Restore via setFrame BEFORE flipping the
@@ -742,12 +749,18 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                       onMotionBlurChanged: (v) {
                         setState(() {
                           _motionBlur = v;
-                          // Reset the advanced knobs whenever the
-                          // general slider moves so the user always
-                          // sees what `intensity = v` produces with
-                          // default tuning, not whatever experimental
-                          // values were dialed in earlier.
-                          _motionBlurTuning = MotionBlurTuning.defaults;
+                          // The general slider IS the exposure dial:
+                          // drive `maxExposureMs` directly so the
+                          // user can see the advanced knob track the
+                          // general one in real time. Other knobs
+                          // snap back to defaults — they're not
+                          // intensity-scaled, so there's nothing
+                          // sensible to mirror them with.
+                          _motionBlurTuning =
+                              MotionBlurTuning.defaults.copyWith(
+                            maxExposureMs: v *
+                                MotionBlurTuning.defaults.maxExposureMs,
+                          );
                         });
                         _persistProject();
                       },

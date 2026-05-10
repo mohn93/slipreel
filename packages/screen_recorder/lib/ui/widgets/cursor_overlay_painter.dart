@@ -342,9 +342,14 @@ class CursorOverlayPainter extends CustomPainter {
   /// recording is too sparse for cursorAt to interpolate without
   /// fabricating a phantom path, or the chord is sub-pixel.
   Offset _trailVectorForBlur({required double scaleX, required double scaleY}) {
+    // [motionBlurIntensity] is the on/off gate; the actual exposure
+    // window comes from [tuning.maxExposureMs]. The parent screen
+    // synchronises maxExposureMs to the general slider's value
+    // (intensity × default-max), so dragging the general slider also
+    // visibly drags the "Max exposure" advanced knob — there's no
+    // hidden multiplier left inside the painter.
     if (motionBlurIntensity <= 0) return Offset.zero;
-    final maxExposureSec = tuning.maxExposureMs / 1000.0;
-    final exposureSec = motionBlurIntensity * maxExposureSec;
+    final exposureSec = tuning.maxExposureMs / 1000.0;
     if (exposureSec <= 0) return Offset.zero;
     final exposureMicros = (exposureSec * 1e6).round();
     final tEnd = position.inMicroseconds;
