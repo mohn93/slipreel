@@ -13,6 +13,7 @@ class MotionBlurTuning {
     this.vTriggerLowPxPerSec = 500.0,
     this.vTriggerHighPxPerSec = 1500.0,
     this.velocityLookbackMs = 16.667,
+    this.gateLookbackMs = 20.0,
     this.maxSampleGapMs = 50.0,
     this.largePairDispPx = 100.0,
     this.postIdleThresholdMs = 80.0,
@@ -35,9 +36,14 @@ class MotionBlurTuning {
   final double vTriggerHighPxPerSec;
 
   /// Lookback for the "instantaneous" velocity used to taper the trail
-  /// during deceleration AND to drive the trigger ramp (ms). One
-  /// 60-Hz frame ≈ 16.67 ms.
+  /// during deceleration (ms). One 60-Hz frame ≈ 16.67 ms.
   final double velocityLookbackMs;
+
+  /// Lookback for the velocity that drives the trigger smoothstep
+  /// ramp (ms). Kept separate from [velocityLookbackMs] so the gate
+  /// can respond quickly to motion start/stop (short window) while
+  /// the trail-length taper still uses a longer, smoother window.
+  final double gateLookbackMs;
 
   /// Reject the trail when any pair of consecutive recording samples
   /// that overlaps the exposure window is more than this far apart in
@@ -63,6 +69,7 @@ class MotionBlurTuning {
     double? vTriggerLowPxPerSec,
     double? vTriggerHighPxPerSec,
     double? velocityLookbackMs,
+    double? gateLookbackMs,
     double? maxSampleGapMs,
     double? largePairDispPx,
     double? postIdleThresholdMs,
@@ -73,6 +80,7 @@ class MotionBlurTuning {
       vTriggerLowPxPerSec: vTriggerLowPxPerSec ?? this.vTriggerLowPxPerSec,
       vTriggerHighPxPerSec: vTriggerHighPxPerSec ?? this.vTriggerHighPxPerSec,
       velocityLookbackMs: velocityLookbackMs ?? this.velocityLookbackMs,
+      gateLookbackMs: gateLookbackMs ?? this.gateLookbackMs,
       maxSampleGapMs: maxSampleGapMs ?? this.maxSampleGapMs,
       largePairDispPx: largePairDispPx ?? this.largePairDispPx,
       postIdleThresholdMs: postIdleThresholdMs ?? this.postIdleThresholdMs,
@@ -87,6 +95,7 @@ class MotionBlurTuning {
         vTriggerLowPxPerSec == other.vTriggerLowPxPerSec &&
         vTriggerHighPxPerSec == other.vTriggerHighPxPerSec &&
         velocityLookbackMs == other.velocityLookbackMs &&
+        gateLookbackMs == other.gateLookbackMs &&
         maxSampleGapMs == other.maxSampleGapMs &&
         largePairDispPx == other.largePairDispPx &&
         postIdleThresholdMs == other.postIdleThresholdMs;
@@ -99,6 +108,7 @@ class MotionBlurTuning {
         vTriggerLowPxPerSec,
         vTriggerHighPxPerSec,
         velocityLookbackMs,
+        gateLookbackMs,
         maxSampleGapMs,
         largePairDispPx,
         postIdleThresholdMs,

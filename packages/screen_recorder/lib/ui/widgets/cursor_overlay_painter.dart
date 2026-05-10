@@ -335,7 +335,10 @@ class CursorOverlayPainter extends CustomPainter {
   /// magnitude is min(chord length, recent-velocity × exposure,
   /// [tuning.maxTrailPx]) further multiplied by the velocity-trigger
   /// smoothstep ramp from [tuning.vTriggerLowPxPerSec] to
-  /// [tuning.vTriggerHighPxPerSec].
+  /// [tuning.vTriggerHighPxPerSec]. The trail taper and the trigger
+  /// ramp use separate lookback windows ([tuning.velocityLookbackMs]
+  /// and [tuning.gateLookbackMs]) so the gate can respond to current
+  /// speed while the taper still smooths jitter.
   ///
   /// Returns [Offset.zero] when there's no blur to render — the slider
   /// is at 0, the lookback falls before the recording start, the
@@ -429,13 +432,18 @@ class CursorOverlayPainter extends CustomPainter {
     // enough to clearly track). Between low and high, the trail
     // length is multiplied by a smoothstep so the blur fades in
     // instead of popping on/off.
+    // Trail taper uses [velocityLookbackMs] — a longer window
+    // smooths jitter out of the decel-tail cap. The trigger ramp
+    // uses [gateLookbackMs] — a short window so the gate opens
+    // immediately when motion starts and closes only after motion
+    // has actually stopped (instead of riding the long-window
+    // average through the tail of every move).
     final velocityLookbackMicros = (tuning.velocityLookbackMs * 1000).round();
     final vLookback = position.inMicroseconds - velocityLookbackMicros;
     final lookbackSample = vLookback >= 0
         ? cursorAt(cursorRecording, Duration(microseconds: vLookback))
         : null;
     double effectiveLen = chordLen;
-    double triggerRamp = 1.0;
     if (lookbackSample != null) {
       final vDxVideo = currentSample.x - lookbackSample.x;
       final vDyVideo = currentSample.y - lookbackSample.y;
@@ -447,6 +455,22 @@ class CursorOverlayPainter extends CustomPainter {
               lookbackSec;
       final vTLen = vRecentMag * exposureSec;
       if (vTLen < effectiveLen) effectiveLen = vTLen;
+    }
+
+    final gateLookbackMicros = (tuning.gateLookbackMs * 1000).round();
+    final gateLookback = position.inMicroseconds - gateLookbackMicros;
+    final gateSample = gateLookback >= 0
+        ? cursorAt(cursorRecording, Duration(microseconds: gateLookback))
+        : null;
+    double triggerRamp = 1.0;
+    if (gateSample != null && gateLookbackMicros > 0) {
+      final gDxVideo = currentSample.x - gateSample.x;
+      final gDyVideo = currentSample.y - gateSample.y;
+      final gDxWidget = gDxVideo * scaleX;
+      final gDyWidget = gDyVideo * scaleY;
+      final gateSec = gateLookbackMicros / 1e6;
+      final vGateMag =
+          math.sqrt(gDxWidget * gDxWidget + gDyWidget * gDyWidget) / gateSec;
 
       final triggerSpan =
           (tuning.vTriggerHighPxPerSec - tuning.vTriggerLowPxPerSec)
@@ -454,8 +478,8 @@ class CursorOverlayPainter extends CustomPainter {
       // If the user squashes low ≈ high, fall back to a hard
       // threshold (no ramp band) instead of dividing by zero.
       final triggerT = triggerSpan < 1
-          ? (vRecentMag >= tuning.vTriggerHighPxPerSec ? 1.0 : 0.0)
-          : ((vRecentMag - tuning.vTriggerLowPxPerSec) / triggerSpan)
+          ? (vGateMag >= tuning.vTriggerHighPxPerSec ? 1.0 : 0.0)
+          : ((vGateMag - tuning.vTriggerLowPxPerSec) / triggerSpan)
               .clamp(0.0, 1.0);
       // Smoothstep: 3t² - 2t³. Hermite interpolation, zero
       // derivative at both ends — no visible kink at threshold

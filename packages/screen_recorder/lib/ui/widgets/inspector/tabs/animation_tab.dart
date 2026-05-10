@@ -325,10 +325,9 @@ class _MotionBlurTuningPanel extends StatelessWidget {
         InspectorSlider(
           label: 'Velocity lookback (ms) — '
               '${tuning.velocityLookbackMs.toStringAsFixed(1)}',
-          subtitle: 'How far back to sample for the "instantaneous" '
-              'velocity that drives the trigger ramp and the '
-              'deceleration taper. Shorter = more reactive (and '
-              'jitterier).',
+          subtitle: 'Window for the velocity that caps the trail '
+              'during deceleration. Longer = smoother decay, '
+              'shorter = more reactive.',
           value: tuning.velocityLookbackMs,
           min: 4,
           max: 100,
@@ -338,6 +337,21 @@ class _MotionBlurTuningPanel extends StatelessWidget {
               velocityLookbackMs: _defaults.velocityLookbackMs)),
           canReset:
               tuning.velocityLookbackMs != _defaults.velocityLookbackMs,
+        ),
+        const SizedBox(height: 16),
+        InspectorSlider(
+          label: 'Gate lookback (ms) — '
+              '${tuning.gateLookbackMs.toStringAsFixed(1)}',
+          subtitle: 'Window for the velocity that drives the '
+              'trigger ramp. Shorter = gate opens/closes with '
+              'current speed instead of a long average.',
+          value: tuning.gateLookbackMs,
+          min: 4,
+          max: 100,
+          onChanged: (v) => onChanged(tuning.copyWith(gateLookbackMs: v)),
+          onReset: () => onChanged(
+              tuning.copyWith(gateLookbackMs: _defaults.gateLookbackMs)),
+          canReset: tuning.gateLookbackMs != _defaults.gateLookbackMs,
         ),
         const SizedBox(height: 24),
         const _TuningGroupHeader('Path safeguards'),
