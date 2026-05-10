@@ -26,57 +26,63 @@ const _noBlur = MotionBlurSamples(
 
 /// Returns the per-stamp parameters for cursor motion blur.
 ///
-/// `effective = sliderIntensity × clamp(|v| / referenceSpeed, 0, 1)`.
-/// Count grows from 1 at effective=0 to [maxStamps] at effective=1.
-/// Step magnitude grows from 0 to `maxReachPx / (count - 1)`.
-/// Alphas linearly taper from `1/count` at the tail to `1.0` at the head.
-/// Not normalized to sum-to-1: with overlapping stamps (typical for
-/// blurred cursors) the head paints opaque over the tail so the cursor
-/// stays sharp; only the trailing region shows the dim tail.
+/// **Path-displacement model.** The caller passes in [trailVectorPx]:
+/// the cursor's actual recorded displacement (`cursorAt(T) −
+/// cursorAt(T − exposure)`) over the virtual shutter window. The
+/// trail's direction is that vector's direction; the trail's length
+/// is that vector's magnitude. Slider/exposure logic lives at the
+/// call site so this function stays a pure "displacement → render
+/// parameters" mapping.
 ///
-/// No manual cutoffs on [sliderIntensity] or speed beyond zero — the
-/// natural rounding of `count` collapses sub-pixel-blur cases to count=1
-/// (no blur), and the shader's reach&lt;1 short-circuit makes that path
-/// pixel-identical to a sharp cursor. Removing the explicit cutoffs is
-/// what makes the slider feel responsive across its full 0..1 range
-/// instead of having a dead zone at the bottom for slow motion.
+/// Why displacement, not `velocity × exposure`? Velocity at T is
+/// instantaneous (sampled over a short lookback). When the cursor
+/// suddenly accelerates, instantaneous velocity is much higher than
+/// the average velocity over the exposure window, and `v × t`
+/// overshoots the cursor's actual displacement — the trail extends
+/// over ground the cursor never crossed. Sampling the recording at
+/// both ends of the exposure window gives the actual chord, so the
+/// trail can never be longer than where the cursor really was.
+///
+/// Stamp count is sized to the reach (~1 stamp per 2 px so
+/// consecutive stamps overlap on a typical cursor body), capped at
+/// [maxStamps] so the fallback path's per-frame work stays bounded.
+/// Alphas linearly taper from `1/count` at the tail to `1.0` at the
+/// head — not normalized to sum-to-1, so overlapping stamps leave
+/// the head opaque (cursor stays sharp) and only the trailing region
+/// shows the dim tail.
+///
+/// Sub-pixel trail vectors collapse to count = 1 and the shader's
+/// reach &lt; 1 branch produces the sharp cursor.
 MotionBlurSamples computeMotionBlurSamples({
-  required Offset velocityPxPerSec,
-  required double sliderIntensity,
-  required double referenceSpeedPxPerSec,
-  required double maxReachPx,
+  required Offset trailVectorPx,
   int maxStamps = 40,
 }) {
-  if (sliderIntensity <= 0) return _noBlur;
-  final speed = velocityPxPerSec.distance;
-  // Defensive: speed=0 would divide by zero in the stepPx computation
-  // below. A truly stationary cursor should produce no blur anyway, so
-  // this is the only "minimum speed" guard we need.
-  if (speed <= 0) return _noBlur;
+  final length = trailVectorPx.distance;
+  // Defensive: zero-length trail would divide by zero in the stepPx
+  // computation below. A stationary cursor (no displacement during
+  // exposure) correctly renders no blur anyway.
+  if (length <= 0) return _noBlur;
 
-  final effective =
-      (sliderIntensity * speed / referenceSpeedPxPerSec).clamp(0.0, 1.0);
-  final count = 1 + ((maxStamps - 1) * effective).round();
-  // Natural cutoff: when effective is small enough that `round` collapses
-  // (maxStamps - 1) × effective to 0, count is 1 and there's no trail to
-  // sample. For maxStamps=40 this kicks in below effective ≈ 0.013, where
-  // the corresponding reach is also sub-pixel so a trail wouldn't be
-  // visible anyway.
+  // Stamp count grows with reach (~1 stamp per 2 px so consecutive
+  // stamps overlap on a 32-px cursor body), capped at maxStamps so
+  // a long-reach trail doesn't burn frames on the fallback's
+  // discrete-stamp path. The shader uses fixed kSamples internally
+  // and isn't affected by this clamp.
+  final count = ((length / 2).round() + 1).clamp(1, maxStamps);
   if (count <= 1) return _noBlur;
 
-  final reach = effective * maxReachPx;
-  final stepMag = reach / (count - 1);
-  final invSpeed = 1.0 / speed;
+  final stepMag = length / (count - 1);
+  final invLen = 1.0 / length;
+  // Stamps step BACKWARD along the trail direction (head at the
+  // current position, tail at where the cursor was at T - exposure).
   final stepPx = Offset(
-    -velocityPxPerSec.dx * invSpeed * stepMag,
-    -velocityPxPerSec.dy * invSpeed * stepMag,
+    -trailVectorPx.dx * invLen * stepMag,
+    -trailVectorPx.dy * invLen * stepMag,
   );
 
   // Raw linear taper. Head (i=count-1) gets 1.0, tail (i=0) gets 1/count.
-  // Not normalized to sum=1: when stamps overlap (e.g. low-velocity, small
-  // step) the head paints opaque over the tail, leaving a sharp cursor
-  // with a faint trail rather than a washed-out blur. Sum-to-1 alphas
-  // looked physically correct only when stamps don't overlap.
+  // Not normalized to sum=1: with overlapping stamps the head paints
+  // opaque over the tail so the rendered cursor stays sharp.
   final alphas = List<double>.generate(
     count,
     (i) => (i + 1) / count,

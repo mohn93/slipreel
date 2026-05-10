@@ -269,11 +269,24 @@ class _AnimationOptionTile<T> extends StatefulWidget {
 
 class _AnimationOptionTileState<T> extends State<_AnimationOptionTile<T>>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-    vsync: this,
-    duration: widget.previewDuration,
-  );
+  // Created eagerly in initState rather than via a `late final` field
+  // initializer — a lazy field would only construct on first access,
+  // and if the tile was never hovered before its parent unmounts the
+  // initializer would run inside dispose(), where creating a Ticker
+  // (via SingleTickerProviderStateMixin) calls
+  // getInheritedWidgetOfExactType on a deactivated element and throws
+  // "Looking up a deactivated widget's ancestor is unsafe."
+  late final AnimationController _ctrl;
   bool _hover = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: widget.previewDuration,
+    );
+  }
 
   @override
   void didUpdateWidget(_AnimationOptionTile<T> old) {

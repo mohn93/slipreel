@@ -1,136 +1,101 @@
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/effects/motion_blur_samples.dart';
 
 void main() {
   group('computeMotionBlurSamples', () {
-    test('slider 0 → single stamp regardless of velocity', () {
-      final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(5000, 0),
-        sliderIntensity: 0,
-        referenceSpeedPxPerSec: 2000,
-        maxReachPx: 12,
-      );
+    test('zero trail vector → single stamp (stationary cursor or slider 0)',
+        () {
+      final s = computeMotionBlurSamples(trailVectorPx: Offset.zero);
       expect(s.count, 1);
       expect(s.stepPx, Offset.zero);
       expect(s.alphas, [closeTo(1.0, 1e-9)]);
     });
 
-    test('zero velocity → single stamp regardless of slider (div-by-zero guard)', () {
-      // The only minimum-speed guard left is speed > 0; a stationary
-      // cursor produces no trail, but any positive speed still
-      // contributes proportional reach so the slider stays responsive.
+    test('sub-pixel trail collapses to a single stamp (no fake trail)', () {
+      // 0.4 px displacement rounds to 0 stamp steps → count = 1.
       final s = computeMotionBlurSamples(
-        velocityPxPerSec: Offset.zero,
-        sliderIntensity: 1.0,
-        referenceSpeedPxPerSec: 2000,
-        maxReachPx: 12,
-      );
-      expect(s.count, 1);
-      expect(s.stepPx, Offset.zero);
-    });
-
-    test('effective intensity that rounds to 0 stamps → single stamp', () {
-      // slider 0.1, speed=200, ref=2000 → effective = 0.01
-      // count = 1 + round(39 * 0.01) = 1 + 0 = 1 → no blur. This is
-      // the only "cutoff" we keep — reach at effective=0.01 is
-      // 0.12 px, sub-pixel anyway, so the result reads as no blur.
-      final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(200, 0),
-        sliderIntensity: 0.1,
-        referenceSpeedPxPerSec: 2000,
-        maxReachPx: 12,
+        trailVectorPx: const Offset(0.4, 0),
       );
       expect(s.count, 1);
     });
 
-    test('low-but-nonzero velocity still produces blur (no manual cutoff)', () {
-      // 50 px/s used to be below the 30 px/s minimum-speed cutoff and
-      // returned no blur. Now reach scales naturally with speed so any
-      // positive speed gets proportional blur — slider stays responsive
-      // even on slow cursor moves.
+    test('low-but-nonzero trail still produces blur (no manual cutoff)', () {
+      // 25 px trail → ~13 stamps.
       final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(500, 0),
-        sliderIntensity: 1.0,
-        referenceSpeedPxPerSec: 2000,
-        maxReachPx: 12,
+        trailVectorPx: const Offset(25, 0),
       );
       expect(s.count, greaterThan(1));
       expect(s.stepPx.dx, lessThan(0));
     });
 
-    test('horizontal velocity at max speed, slider 1 → 40 stamps along -x', () {
+    test('reach equals the trail vector\'s magnitude (path-displacement model)',
+        () {
+      // 30 px trail along +x. (count - 1) × stepMag must span exactly 30 px.
       final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(2000, 0),
-        sliderIntensity: 1.0,
-        referenceSpeedPxPerSec: 2000,
-        maxReachPx: 12,
+        trailVectorPx: const Offset(30, 0),
       );
-      expect(s.count, 40);
       expect(s.stepPx.dx, lessThan(0));
       expect(s.stepPx.dy, closeTo(0, 1e-9));
-      // (count - 1) steps span maxReachPx exactly at max effective
-      expect(s.stepPx.dx * (s.count - 1), closeTo(-12.0, 1e-6));
+      expect(s.stepPx.dx * (s.count - 1), closeTo(-30.0, 1e-6));
     });
 
     test('alphas — head is 1.0, tail is 1/count, linear taper', () {
       final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(2000, 0),
-        sliderIntensity: 1.0,
-        referenceSpeedPxPerSec: 2000,
-        maxReachPx: 12,
+        trailVectorPx: const Offset(60, 0),
       );
-      // Head (last) is full alpha; tail (first) is the smallest. Not
-      // normalized: with overlapping stamps the head must stay opaque
-      // so the rendered cursor doesn't look washed out.
       expect(s.alphas.last, closeTo(1.0, 1e-9));
       expect(s.alphas.first, closeTo(1.0 / s.count, 1e-9));
     });
 
     test('alphas are monotonically increasing (tail dim → head bright)', () {
       final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(2000, 0),
-        sliderIntensity: 1.0,
-        referenceSpeedPxPerSec: 2000,
-        maxReachPx: 12,
+        trailVectorPx: const Offset(60, 0),
       );
       for (var i = 1; i < s.alphas.length; i++) {
         expect(s.alphas[i], greaterThan(s.alphas[i - 1]));
       }
     });
 
-    test('supersonic velocity is clamped — no >maxStamps stamps, no >maxReach offset', () {
-      final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(20000, 0),
-        sliderIntensity: 1.0,
-        referenceSpeedPxPerSec: 2000,
-        maxReachPx: 12,
+    test(
+        'long trail vector extends reach linearly with magnitude — no upper '
+        'cap, matches the cursor\'s actual motion', () {
+      // Doubling the trail vector doubles the reach.
+      final at30 = computeMotionBlurSamples(
+        trailVectorPx: const Offset(30, 0),
       );
-      expect(s.count, lessThanOrEqualTo(40));
-      expect(s.stepPx.dx.abs() * (s.count - 1), lessThanOrEqualTo(12.0 + 1e-6));
+      final at60 = computeMotionBlurSamples(
+        trailVectorPx: const Offset(60, 0),
+      );
+      final reachAt30 = at30.stepPx.dx.abs() * (at30.count - 1);
+      final reachAt60 = at60.stepPx.dx.abs() * (at60.count - 1);
+      expect(reachAt60 / reachAt30, closeTo(2.0, 0.05),
+          reason: '2× trail magnitude = 2× reach');
     });
 
-    test('45-degree velocity → step direction is exactly -v_hat', () {
+    test('45-degree trail vector → step direction is exactly -trail_hat', () {
       final s = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(1500, 1500), // |v| ≈ 2121
-        sliderIntensity: 1.0,
-        referenceSpeedPxPerSec: 2000,
-        maxReachPx: 12,
+        trailVectorPx: const Offset(40, 40),
       );
-      // step direction should be (-1/√2, -1/√2)
       final mag = s.stepPx.distance;
       expect(s.stepPx.dx / mag, closeTo(-1 / 1.41421356, 1e-3));
       expect(s.stepPx.dy / mag, closeTo(-1 / 1.41421356, 1e-3));
     });
 
-    test('count grows with effective intensity (1 + round((max-1) * eff))', () {
-      // effective = 0.6 → count = 1 + round(39 * 0.6) = 1 + round(23.4) = 1 + 23 = 24  (sliderIntensity 0.6 at max ref speed)
+    test('count is sized to reach (~1 stamp per 2 px), capped at maxStamps', () {
+      // 18 px trail → count = round(9) + 1 = 10
       final mid = computeMotionBlurSamples(
-        velocityPxPerSec: const Offset(2000, 0),
-        sliderIntensity: 0.6,
-        referenceSpeedPxPerSec: 2000,
-        maxReachPx: 12,
+        trailVectorPx: const Offset(18, 0),
       );
-      expect(mid.count, 24);
+      expect(mid.count, 10);
+
+      // 500 px trail would round to 251 stamps; capped at 40.
+      final huge = computeMotionBlurSamples(
+        trailVectorPx: const Offset(500, 0),
+      );
+      expect(huge.count, 40);
+      // Reach is preserved end-to-end even when count is clamped.
+      expect(huge.stepPx.dx.abs() * (huge.count - 1), closeTo(500.0, 1e-6));
     });
   });
 }

@@ -23,12 +23,33 @@ uniform vec2 uVelocityDir;
 // reach pixels along uVelocityDir.
 uniform float uReachPx;
 
+// Sprite texture's pixel size — used by the inlined bilinear blocks
+// below. Passed from the painter so the shader works with whatever
+// oversample factor the painter chose (dpr-scaled bake) without
+// needing textureSize() (not available in SkSL).
+uniform vec2 uSpriteSize;
+
 out vec4 fragColor;
 
-// Number of samples along the line integral. 24 is enough that the
-// trail reads as a continuous smear at the trail lengths we use
-// (reach up to ~60px), without burning frames on a dense screen.
-const int kSamples = 24;
+// Number of samples along the line integral. 40 is dense enough that
+// consecutive samples overlap on a 32-px cursor body even at the
+// painter's max reach (60 px), so the trail reads as a continuous
+// smear instead of stacked discrete copies.
+const int kSamples = 40;
+
+// Inverse of (kSamples - 1), pre-computed to avoid a divide inside
+// the hot loop. Used for both the per-sample u-position and the
+// raised-cosine weight.
+const float kInvSamplesM1 = 1.0 / float(kSamples - 1);
+
+const float PI = 3.14159265359;
+
+// SkSL doesn't allow `shader`/`sampler2D` as function parameters, so
+// the bilinear sampling is inlined at each call site below. The
+// shape: blend the four neighbour texels weighted by the fractional
+// part of the UV in pixel-space — guarantees backend-independent
+// smoothness regardless of whether the auto-sampler runs nearest
+// (Impeller) or linear (Skia).
 
 void main() {
   vec2 fragCoord = FlutterFragCoord();
@@ -40,7 +61,18 @@ void main() {
   if (uReachPx < 1.0) {
     vec2 uv = fragCoord / uOutputSize;
     if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
-      fragColor = texture(uSprite, uv);
+      // Inlined bilinear sample of uSprite at uv.
+      vec2 px0 = uv * uSpriteSize - 0.5;
+      vec2 i0 = floor(px0);
+      vec2 f0 = px0 - i0;
+      vec2 invSize = 1.0 / uSpriteSize;
+      vec4 c00 = texture(uSprite, (i0 + vec2(0.5, 0.5)) * invSize);
+      vec4 c10 = texture(uSprite, (i0 + vec2(1.5, 0.5)) * invSize);
+      vec4 c01 = texture(uSprite, (i0 + vec2(0.5, 1.5)) * invSize);
+      vec4 c11 = texture(uSprite, (i0 + vec2(1.5, 1.5)) * invSize);
+      vec4 cx0 = mix(c00, c10, f0.x);
+      vec4 cx1 = mix(c01, c11, f0.x);
+      fragColor = mix(cx0, cx1, f0.y);
     } else {
       fragColor = vec4(0.0);
     }
@@ -69,18 +101,32 @@ void main() {
   // mid-sweep; pixels in front never do.
   vec4 trail = vec4(0.0);
   float weightSum = 0.0;
+  vec2 invSpriteSize = 1.0 / uSpriteSize;
   for (int i = 0; i < kSamples; i++) {
-    float u = uReachPx * (float(i) + 0.5) / float(kSamples);
+    float t = float(i) * kInvSamplesM1; // [0, 1] across the trail
+    float u = uReachPx * t;
     vec2 samplePos = fragCoord + uVelocityDir * u;
     vec2 sampleUv = samplePos / uOutputSize;
     if (sampleUv.x >= 0.0 && sampleUv.x <= 1.0 &&
         sampleUv.y >= 0.0 && sampleUv.y <= 1.0) {
-      // Triangular exposure profile: full weight at u=0 (where the
-      // cursor most-recently was) fading linearly to 0 at u=reach
-      // (the oldest, dimmest tail). This is what makes the streak
-      // taper visually rather than ending in a hard edge.
-      float weight = 1.0 - u / uReachPx;
-      trail += texture(uSprite, sampleUv) * weight;
+      // Raised-cosine (Hann) exposure profile: full weight at u=0
+      // (where the cursor most-recently was) easing smoothly to 0
+      // at u=reach (the oldest, dimmest tail). Avoids the hard
+      // leading-edge of a triangular taper — the streak fades in
+      // and out without a visible discontinuity at the head.
+      float weight = 0.5 + 0.5 * cos(PI * t);
+      // Inlined bilinear sample of uSprite at sampleUv.
+      vec2 px = sampleUv * uSpriteSize - 0.5;
+      vec2 ti = floor(px);
+      vec2 f = px - ti;
+      vec4 c00 = texture(uSprite, (ti + vec2(0.5, 0.5)) * invSpriteSize);
+      vec4 c10 = texture(uSprite, (ti + vec2(1.5, 0.5)) * invSpriteSize);
+      vec4 c01 = texture(uSprite, (ti + vec2(0.5, 1.5)) * invSpriteSize);
+      vec4 c11 = texture(uSprite, (ti + vec2(1.5, 1.5)) * invSpriteSize);
+      vec4 cx0 = mix(c00, c10, f.x);
+      vec4 cx1 = mix(c01, c11, f.x);
+      vec4 sampled = mix(cx0, cx1, f.y);
+      trail += sampled * weight;
       weightSum += weight;
     }
   }

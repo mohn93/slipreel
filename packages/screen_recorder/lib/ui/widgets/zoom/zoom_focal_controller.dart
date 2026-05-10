@@ -82,6 +82,7 @@ class ZoomFocalController {
     required List<ZoomRegion> zoomRegions,
     required Offset? cursor,
     required Size videoSize,
+    bool forceSnap = false,
   }) {
     final activeZoom = _activeZoomAt(position, zoomRegions);
     if (activeZoom == null) {
@@ -104,11 +105,15 @@ class ZoomFocalController {
       return ZoomFocalUpdate(zoom: activeZoom, focal: initial);
     }
 
-    // Backward scrub: the tween's state assumes forward time
-    // progression, so mid-tween scrub-backwards leaves elapsed=negative
-    // and the focal frozen at `_tweenFrom`. Snap to the cursor at the
-    // new position and let forward motion re-establish smoothing.
-    if (_lastUpdatePosition != null && position < _lastUpdatePosition!) {
+    // [forceSnap] / backward scrub: the tween's state assumes forward
+    // time progression, so mid-tween scrub-backwards leaves
+    // elapsed=negative and the focal frozen at `_tweenFrom`. Snap to
+    // the cursor at the new position and let forward motion re-
+    // establish smoothing. [forceSnap] gives the caller (hover-scrub
+    // preview) a way to opt in to the same direction-agnostic snap so
+    // forward and backward hover land on the same focal at the same T.
+    if (forceSnap ||
+        (_lastUpdatePosition != null && position < _lastUpdatePosition!)) {
       final snap = _initialTarget(activeZoom, cursor);
       _smoothedFocal = snap;
       _resetTween();

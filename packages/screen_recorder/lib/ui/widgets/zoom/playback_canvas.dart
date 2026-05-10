@@ -52,6 +52,7 @@ class PlaybackCanvas extends StatefulWidget {
     required this.cursorAnimationConfig,
     required this.motionBlur,
     required this.cursorShadow,
+    required this.isHoverScrubbing,
   });
 
   final VideoPlayerController controller;
@@ -77,6 +78,14 @@ class PlaybackCanvas extends StatefulWidget {
   /// shadow rendered under every cursor glyph; values closer to 1
   /// push it further down with more blur and opacity.
   final double cursorShadow;
+
+  /// True when the user is hover-scrubbing the timeline (mouse hover,
+  /// no real playback running). The cursor- and zoom-related stateful
+  /// smoothers (EMA velocity, focal-tween catch-up) are bypassed in
+  /// this mode so the preview at any timestamp T is deterministic —
+  /// a forward and a backward approach to the same T render the same
+  /// frame, matching what the user expects from a scrub preview.
+  final bool isHoverScrubbing;
 
   @override
   State<PlaybackCanvas> createState() => _PlaybackCanvasState();
@@ -170,6 +179,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
               zoomRegions: widget.zoomRegions,
               cursor: cursorForFocal,
               videoSize: videoSize,
+              forceSnap: widget.isHoverScrubbing,
             );
 
             // Cursor motion blur reflects the cursor's INTRINSIC scene
@@ -178,11 +188,16 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
             // through space, so adding it here would streak the cursor
             // every time the zoom ramps in/out even when the mouse is
             // perfectly still, which reads as wrong. EMA-smooth so the
-            // trail's magnitude/direction don't flap on per-frame noise.
+            // trail's magnitude/direction don't flap on per-frame noise
+            // — except during hover-scrub, where the smoother's history
+            // would make the same timestamp render differently
+            // depending on whether the user approached it from the
+            // left or the right.
             final rawCursorVelocity =
                 motion?.velocityPxPerSec ?? Offset.zero;
-            final combinedCursorVelocity =
-                _blurVelocityFilter.filter(rawCursorVelocity, pos);
+            final combinedCursorVelocity = widget.isHoverScrubbing
+                ? rawCursorVelocity
+                : _blurVelocityFilter.filter(rawCursorVelocity, pos);
 
             final composition = Stack(
               children: [

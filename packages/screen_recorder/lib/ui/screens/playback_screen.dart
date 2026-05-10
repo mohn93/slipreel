@@ -816,6 +816,12 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       cursorAnimationConfig: _cursorAnimationConfig,
       motionBlur: _motionBlur,
       cursorShadow: _cursorShadow,
+      // _hoverFrozenPosition is set on the first hover-seek and
+      // cleared on hover-end, so it's a precise "we're scrubbing,
+      // not playing" signal. The canvas uses it to bypass stateful
+      // smoothers (EMA velocity, focal tween) so forward and backward
+      // hover render the same frame at the same timestamp.
+      isHoverScrubbing: _hoverFrozenPosition != null,
     );
   }
 

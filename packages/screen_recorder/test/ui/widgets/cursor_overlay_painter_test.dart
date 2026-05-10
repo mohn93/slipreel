@@ -112,53 +112,62 @@ void main() {
     expect(saveLayers, isEmpty);
   });
 
-  test('motionBlurIntensity > 0 + velocity > 0 → N drawImage calls', () {
+  test(
+      'motionBlurIntensity > 0 with cursor displacement during exposure → '
+      'N drawImage calls', () {
+    // The painter computes the trail from cursorAt(T) and
+    // cursorAt(T - exposure). Sample at t=100ms; exposure at slider 1
+    // is 50ms; lookback hits t=50ms. We seed the recording with a
+    // 100-px x-axis displacement between those two timestamps so the
+    // trail length is 100 px and the fallback path emits the maximum
+    // 40 stamps.
     final rec = CursorRecording()
       ..addPosition(const CursorPosition(
-          x: 0, y: 0, timestampMicros: 0, isClicked: false));
+          x: 0, y: 0, timestampMicros: 50000, isClicked: false))
+      ..addPosition(const CursorPosition(
+          x: 100, y: 0, timestampMicros: 100000, isClicked: false));
     final painter = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 100),
       screenPos: const Offset(50, 25),
       videoSize: const Size(200, 100),
       screenSize: const Size(200, 100),
-      velocityPxPerSec: const Offset(2000, 0),
       motionBlurIntensity: 1.0,
     );
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(200, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
     expect(drawImages.length, 40,
-        reason: 'slider=1, max speed → 40 stamps via pre-baked drawImage.');
+        reason: 'slider=1 + 100 px exposure displacement → 40 stamps via '
+            'pre-baked drawImage.');
   });
 
   test(
-      'motionBlurIntensity > 0 + velocity below activation → direct paint '
-      '(no bake)', () {
-    // Below the activation speed the blur math collapses to a single
-    // stamp (no trail). Going through the pre-bake/shader path in
-    // that case is wasted work AND the baked sprite gets visibly
-    // pixelated when an outer Transform.scale (active zoom region)
-    // upsamples the layer — vector direct paint stays crisp because
-    // commands re-execute at the destination resolution. The painter
-    // therefore early-returns to direct paint when samples.count == 1.
+      'motionBlurIntensity > 0 with no recorded displacement during '
+      'exposure → direct paint (no bake)', () {
+    // Cursor stationary inside the exposure window: trail vector = 0,
+    // count = 1, painter early-returns to direct paint. The bake/
+    // shader path would have made the static cursor look pixelated
+    // under an active zoom transform, so this short-circuit matters.
     final rec = CursorRecording()
       ..addPosition(const CursorPosition(
-          x: 0, y: 0, timestampMicros: 0, isClicked: false));
+          x: 50, y: 25, timestampMicros: 0, isClicked: false))
+      ..addPosition(const CursorPosition(
+          x: 50, y: 25, timestampMicros: 100000, isClicked: false));
     final painter = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 100),
       screenPos: const Offset(50, 25),
       videoSize: const Size(200, 100),
       screenSize: const Size(200, 100),
-      velocityPxPerSec: const Offset(1, 0), // far below activation
       motionBlurIntensity: 1.0,
     );
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(200, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
     expect(drawImages, isEmpty,
-        reason: 'count==1 must skip the bake/shader path entirely.');
+        reason: 'No displacement in the exposure window must skip the '
+            'bake/shader path entirely.');
   });
 
   test('shouldRepaint reflects velocity and intensity changes', () {

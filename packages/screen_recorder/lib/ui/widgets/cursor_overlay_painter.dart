@@ -8,6 +8,10 @@ import '../../rendering/cursor_click_effect.dart';
 import '../../rendering/cursor_geometry.dart';
 import '../../rendering/cursor_glyph.dart';
 
+// `cursorAt` (the time-based recording lookup with linear interp) lives
+// in cursor_geometry.dart and is already imported above via the
+// rendering/cursor_geometry export chain.
+
 /// Paints the recorded cursor on top of the video at the player's current
 /// position. Takes a pre-computed [screenPos] (in screen-space pixels)
 /// so the parent can apply motion smoothing via a CursorMotionController
@@ -110,10 +114,22 @@ class CursorOverlayPainter extends CustomPainter {
           Offset(clickInVideo.dx * scaleX, clickInVideo.dy * scaleY);
     }
 
-    // Slider all the way down: cheap direct paint, no shader / pre-bake.
+    // Trail vector = cursor's actual recorded displacement over the
+    // virtual shutter window. Sampling the raw recording at both
+    // ends of the exposure means the trail length never exceeds the
+    // cursor's real path — even on sudden accelerations where the
+    // instantaneous velocity is much higher than the average over
+    // the window.
+    final trailVector = _trailVectorForBlur(
+      scaleX: scaleX,
+      scaleY: scaleY,
+    );
+
+    // Slider all the way down (or no recorded displacement during
+    // the exposure): cheap direct paint, no shader / pre-bake.
     // Ripple drawn first (anchored at click point), cursor on top
     // (at the live position).
-    if (motionBlurIntensity <= 0) {
+    if (motionBlurIntensity <= 0 || trailVector.distance < 1) {
       if (rippleWidgetPos != null) {
         paintCursorRipple(
           canvas,
@@ -136,10 +152,7 @@ class CursorOverlayPainter extends CustomPainter {
     }
 
     final samples = computeMotionBlurSamples(
-      velocityPxPerSec: velocityPxPerSec,
-      sliderIntensity: motionBlurIntensity,
-      referenceSpeedPxPerSec: 600,
-      maxReachPx: 60,
+      trailVectorPx: trailVector,
     );
 
     // When the math collapsed to "no blur" (cursor stopped, or the
@@ -251,15 +264,14 @@ class CursorOverlayPainter extends CustomPainter {
         // Shader path: one drawRect with a fragment shader that
         // produces a continuous directional smear.
         final shader = program.fragmentShader();
-        final velocity = velocityPxPerSec;
-        final speed = velocity.distance;
-        // When speed is zero (cursor paused, or below the activation
-        // threshold so samples collapsed to count==1) reach is also
-        // zero and the shader's reach<1 branch fires before it reads
-        // velocityDir. Pass an arbitrary unit vector to avoid NaN
-        // showing up in any backend that evaluates the uniform anyway.
-        final velocityDir = speed > 0
-            ? Offset(velocity.dx / speed, velocity.dy / speed)
+        // Trail direction is the unit vector along the recorded
+        // displacement. When length is zero the count==1 short-circuit
+        // above already returned, so this division is safe — but pass
+        // an arbitrary unit vector if it ever becomes zero so any
+        // backend that evaluates the uniform doesn't see NaN.
+        final trailLen = trailVector.distance;
+        final trailDir = trailLen > 0
+            ? Offset(trailVector.dx / trailLen, trailVector.dy / trailLen)
             : const Offset(1, 0);
 
         shader.setImageSampler(0, spriteImage);
@@ -267,11 +279,17 @@ class CursorOverlayPainter extends CustomPainter {
         //   uniform vec2  uOutputSize    -> floats 0, 1
         //   uniform vec2  uVelocityDir   -> floats 2, 3
         //   uniform float uReachPx       -> float  4
+        //   uniform vec2  uSpriteSize    -> floats 5, 6
         shader.setFloat(0, spriteBufferSize);
         shader.setFloat(1, spriteBufferSize);
-        shader.setFloat(2, velocityDir.dx);
-        shader.setFloat(3, velocityDir.dy);
+        shader.setFloat(2, trailDir.dx);
+        shader.setFloat(3, trailDir.dy);
         shader.setFloat(4, reach);
+        // Sprite is dpr-oversampled — the shader's bilinear math
+        // needs the texture's actual texel count, not the canvas-
+        // logical buffer size.
+        shader.setFloat(5, spriteBufferPixelSize.toDouble());
+        shader.setFloat(6, spriteBufferPixelSize.toDouble());
 
         // FlutterFragCoord under Skia is the canvas-local fragment
         // position (after the canvas's CTM), NOT local to the rect
@@ -331,6 +349,72 @@ class CursorOverlayPainter extends CustomPainter {
     } finally {
       spriteImage.dispose();
     }
+  }
+
+  /// Virtual shutter window at slider=1.0. ~1.5× the velocity sampling
+  /// lookback (33 ms in [CursorMotionController]); slider scales it
+  /// linearly from 0 to this maximum. Tuning this changes how
+  /// dramatic the trail is at any given speed.
+  static const double _maxExposureSeconds = 0.05;
+
+  /// Upper bound on the chord between `cursorAt(T)` and
+  /// `cursorAt(T − exposure)` before we treat the result as a
+  /// teleport instead of a trail.
+  ///
+  /// Sustained cursor motion at 6000 px/s for the full 50 ms exposure
+  /// covers ~300 px — already an extreme flick. A chord longer than
+  /// that means the recording has a sample gap (cursor toggled out
+  /// and back, app focus change, etc.) and `cursorAt`'s linear
+  /// interpolation has fabricated a path through points the cursor
+  /// never actually crossed. Drawing a smear there is exactly the
+  /// "trail in places the cursor wasn't" artifact, so we drop the
+  /// trail entirely for that frame and let the cursor render sharp.
+  static const double _maxTrailPx = 300.0;
+
+  /// Cursor's actual recorded displacement vector over the virtual
+  /// shutter window — the trail's direction and length come from this.
+  ///
+  /// Sampling the raw recording at both [position] and
+  /// [position] − exposure means the trail can never be longer than
+  /// the cursor's real path, even when the cursor suddenly accelerates.
+  /// Using `velocity × exposure` instead would overshoot in those
+  /// cases (instantaneous velocity at T is much higher than the
+  /// average over the exposure window) and the trail would extend
+  /// over ground the cursor never crossed.
+  ///
+  /// Returns `Offset.zero` when the slider is at 0, the lookback
+  /// falls before the start of the recording, or either sample is
+  /// null. Either condition routes the painter to the direct-paint
+  /// no-blur branch.
+  Offset _trailVectorForBlur({required double scaleX, required double scaleY}) {
+    if (motionBlurIntensity <= 0) return Offset.zero;
+    final exposureSec = motionBlurIntensity * _maxExposureSeconds;
+    if (exposureSec <= 0) return Offset.zero;
+    final exposureMicros = (exposureSec * 1e6).round();
+    final lookback = position.inMicroseconds - exposureMicros;
+    if (lookback < 0) return Offset.zero;
+
+    final currentSample = cursorAt(cursorRecording, position);
+    final prevSample =
+        cursorAt(cursorRecording, Duration(microseconds: lookback));
+    if (currentSample == null || prevSample == null) return Offset.zero;
+
+    final dxVideo = currentSample.x - prevSample.x;
+    final dyVideo = currentSample.y - prevSample.y;
+    // Teleport guard: if the chord exceeds what real cursor motion
+    // can cover during the exposure, the recording has a gap and
+    // cursorAt has linearly interpolated a path the cursor never
+    // actually traced. Drop the trail rather than smearing through
+    // those phantom positions.
+    if (dxVideo * dxVideo + dyVideo * dyVideo >
+        _maxTrailPx * _maxTrailPx) {
+      return Offset.zero;
+    }
+
+    // Recording stores video-pixel coordinates. Scale to widget pixels
+    // so the trail vector matches the units the shader/painter use
+    // when drawing into the canvas (= scaleX/Y times video coords).
+    return Offset(dxVideo * scaleX, dyVideo * scaleY);
   }
 
   @override
