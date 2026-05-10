@@ -323,29 +323,6 @@ class CursorOverlayPainter extends CustomPainter {
     } finally {
       spriteImage.dispose();
     }
-
-    // Paint the cursor sharp at the head on top of the smear. The
-    // shader's per-pixel integration dims the head proportionally
-    // to how briefly the cursor occupied each pixel during the
-    // exposure window — at fast motion the cursor body itself can
-    // come out at ~15% alpha, which reads as "the cursor is barely
-    // visible and the blur stops to show". Painting the cursor
-    // crisp on top of the shader output gives the expected
-    // "sharp cursor + smear behind" reading regardless of speed.
-    // The fallback path's last stamp is already opaque, so this
-    // overlay is just slightly redundant there (transient — used
-    // only at app startup before the shader loads).
-    if (_motionBlurProgram != null) {
-      paintCursorGlyphWithPulse(
-        canvas,
-        position: widgetPos,
-        baseDiameter: pxDiameter,
-        style: style,
-        microsSinceClick: dt,
-        state: cursorState,
-        shadowIntensity: cursorShadow,
-      );
-    }
   }
 
   /// Virtual shutter window at slider=1.0. ~1.5× the velocity sampling
@@ -396,6 +373,20 @@ class CursorOverlayPainter extends CustomPainter {
   /// short enough that it reacts within ~16 ms of a cursor stop,
   /// long enough to filter sub-frame jitter.
   static const int _recentVelocityLookbackMicros = 16667;
+
+  /// Velocity below which no motion blur draws at all (in widget
+  /// pixels per second). Casual cursor motion (slow drag, hover,
+  /// reading-pace movement) sits below this — drawing a smear on
+  /// top of slow motion reads as "the blur is firing when it
+  /// shouldn't" because the eye doesn't expect blur on motions it
+  /// can clearly track.
+  static const double _vTriggerLowPxPerSec = 500.0;
+
+  /// Velocity at which the motion blur reaches full strength. Between
+  /// [_vTriggerLowPxPerSec] and this, the trail length is multiplied
+  /// by a smoothstep ramp so the blur fades in instead of popping
+  /// on/off at the threshold (which would flicker on jitter).
+  static const double _vTriggerHighPxPerSec = 1500.0;
 
   /// Trail vector for the shader/fallback in widget pixels: direction
   /// is the chord between `cursorAt(T)` and `cursorAt(T − exposure)`,
@@ -477,11 +468,18 @@ class CursorOverlayPainter extends CustomPainter {
     // the chord is the smaller of the two (cursor only just started
     // moving), so the chord wins — no overshoot. At constant
     // velocity the two values are equal, so the cap is a no-op.
+    //
+    // Velocity-trigger ramp: below [_vTriggerLowPxPerSec] no blur
+    // draws at all (the eye doesn't expect blur on motion slow
+    // enough to clearly track). Between low and high, the trail
+    // length is multiplied by a smoothstep so the blur fades in
+    // instead of popping on/off.
     final vLookback = position.inMicroseconds - _recentVelocityLookbackMicros;
     final lookbackSample = vLookback >= 0
         ? cursorAt(cursorRecording, Duration(microseconds: vLookback))
         : null;
     double effectiveLen = chordLen;
+    double triggerRamp = 1.0;
     if (lookbackSample != null) {
       final vDxVideo = currentSample.x - lookbackSample.x;
       final vDyVideo = currentSample.y - lookbackSample.y;
@@ -493,7 +491,17 @@ class CursorOverlayPainter extends CustomPainter {
               lookbackSec;
       final vTLen = vRecentMag * exposureSec;
       if (vTLen < effectiveLen) effectiveLen = vTLen;
+
+      final triggerT = ((vRecentMag - _vTriggerLowPxPerSec) /
+              (_vTriggerHighPxPerSec - _vTriggerLowPxPerSec))
+          .clamp(0.0, 1.0);
+      // Smoothstep: 3t² - 2t³. Hermite interpolation, zero
+      // derivative at both ends — no visible kink at threshold
+      // boundaries while the ramp is active.
+      triggerRamp = triggerT * triggerT * (3 - 2 * triggerT);
     }
+    if (triggerRamp <= 0) return Offset.zero;
+    effectiveLen *= triggerRamp;
 
     if (effectiveLen < 1) return Offset.zero;
 
