@@ -1,4 +1,5 @@
 // packages/screen_recorder/lib/ui/widgets/cursor_overlay_painter.dart
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
@@ -21,8 +22,11 @@ import '../../rendering/cursor_glyph.dart';
 /// The glyph + click effects are drawn via [paintCursorWithEffects] so
 /// the preview and the exported video stay visually consistent. When
 /// [motionBlurIntensity] is > 0 and the cursor moved during the virtual
-/// shutter window, the sprite is stamped along the cursor's actual
-/// recorded polyline to produce a path-aware motion-blur trail.
+/// shutter window, the cursor sprite is smeared along the chord of its
+/// recorded path to produce a motion-blur trail. A pre-pass over the raw
+/// recording rejects the trail when sample density inside the window is
+/// too sparse to reconstruct the cursor's actual motion (cursorAt would
+/// otherwise fabricate a phantom path through unknown ground).
 class CursorOverlayPainter extends CustomPainter {
   final CursorRecording cursorRecording;
   final Duration position;
@@ -39,7 +43,9 @@ class CursorOverlayPainter extends CustomPainter {
   /// Device pixel ratio of the surface this painter renders into.
   /// The motion-blur path bakes the cursor to a `ui.Image`; without
   /// oversampling by [devicePixelRatio] the bake ends up at logical
-  /// resolution and stamp draws look stepped on Retina displays.
+  /// resolution and the shader's image sampler produces visibly
+  /// stepped texel-doubling along the trail on Retina displays.
+  /// 1.0 is a safe fallback (export pipeline / non-retina screens).
   final double devicePixelRatio;
 
   CursorOverlayPainter({
@@ -57,6 +63,17 @@ class CursorOverlayPainter extends CustomPainter {
     this.cursorShadow = 0,
     this.devicePixelRatio = 1.0,
   });
+
+  static ui.FragmentProgram? _motionBlurProgram;
+
+  /// Pre-loads the motion-blur fragment shader so the cursor painter
+  /// can use it on first paint. Call from `main()` before `runApp`.
+  /// Idempotent — subsequent calls return the cached program.
+  static Future<void> ensureMotionBlurProgramLoaded() async {
+    _motionBlurProgram ??= await ui.FragmentProgram.fromAsset(
+      'shaders/motion_blur.frag',
+    );
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -100,29 +117,58 @@ class CursorOverlayPainter extends CustomPainter {
           Offset(clickInVideo.dx * scaleX, clickInVideo.dy * scaleY);
     }
 
-    // Path-aware trail: list of polyline points (in widget pixels)
-    // tracing the cursor's actual recorded motion across the exposure
-    // window, with the head anchored to widgetPos. Returns null when
-    // there's no blur to render — slider at 0, no displacement, lookback
-    // before the recording start, OR a recording-sample gap that would
-    // cause cursorAt to fabricate a phantom path through unknown ground.
-    final polyline = _trailPolylineForBlur(
-      widgetPos: widgetPos,
+    // Trail vector: the cursor's recorded chord across the virtual
+    // shutter window in widget pixels, capped at [_maxTrailPx]. Returns
+    // [Offset.zero] for "no blur to render" (slider 0, no displacement,
+    // recording too sparse, lookback before recording start, etc.).
+    //
+    // The path-aware gap rejection is what lets us trust the chord:
+    // when the recording has dense samples covering the entire window,
+    // the chord is anchored to ground the cursor actually crossed, so
+    // the smear can't extend to positions the cursor wasn't at. When
+    // any consecutive-sample interval that overlaps the window exceeds
+    // [_maxSampleGapMicros], cursorAt's interpolation across that gap
+    // would fabricate a phantom path — we drop the trail entirely
+    // rather than smear through unknown ground.
+    final trailVector = _trailVectorForBlur(
       scaleX: scaleX,
       scaleY: scaleY,
     );
 
-    final stamps = polyline == null
-        ? const <MotionBlurStamp>[]
-        : sampleMotionBlurStamps(polyline: polyline);
+    // Slider all the way down (or recording too sparse / no displacement
+    // during the exposure): cheap direct paint, no shader / pre-bake.
+    // This branch also keeps the cursor sharp under an active zoom
+    // transform — the bake/shader path rasterizes the sprite to a
+    // ui.Image, and a wrapping Transform.scale upscales that bitmap
+    // (jaggy edges) instead of re-executing the vector commands.
+    if (motionBlurIntensity <= 0 || trailVector.distance < 1) {
+      if (rippleWidgetPos != null) {
+        paintCursorRipple(
+          canvas,
+          position: rippleWidgetPos,
+          baseDiameter: pxDiameter,
+          microsSinceClick: dt,
+          effect: clickEffect,
+        );
+      }
+      paintCursorGlyphWithPulse(
+        canvas,
+        position: widgetPos,
+        baseDiameter: pxDiameter,
+        style: style,
+        microsSinceClick: dt,
+        state: cursorState,
+        shadowIntensity: cursorShadow,
+      );
+      return;
+    }
 
-    // Direct paint when there's no blur to render (slider 0, sub-pixel
-    // displacement, sample gap, etc.). This branch also keeps the
-    // cursor sharp under an active zoom: the stamp/bake path
-    // rasterizes the sprite to a ui.Image first, and that image gets
-    // upscaled by any wrapping Transform.scale; direct vector commands
-    // re-execute at the destination resolution.
-    if (stamps.length < 2) {
+    final samples = computeMotionBlurSamples(
+      trailVectorPx: trailVector,
+    );
+
+    // Math collapsed to "no blur" (sub-pixel chord). Direct paint.
+    if (samples.count == 1) {
       if (rippleWidgetPos != null) {
         paintCursorRipple(
           canvas,
@@ -145,9 +191,9 @@ class CursorOverlayPainter extends CustomPainter {
     }
 
     // The click ripple is rendered DIRECTLY on the canvas (below the
-    // cursor stamps) rather than baked into the sprite, so the ring
+    // shader output) rather than baked into the sprite, so the ring
     // stays anchored to the click point instead of smearing along the
-    // motion path.
+    // motion vector.
     if (rippleWidgetPos != null) {
       paintCursorRipple(
         canvas,
@@ -158,21 +204,28 @@ class CursorOverlayPainter extends CustomPainter {
       );
     }
 
-    // Bake one cursor sprite (with press-pulse) into a ui.Image so
-    // the multi-stamp loop only re-rasterizes vectors once per frame.
+    // Pre-bake just the cursor body (with press-pulse) to a ui.Image so
+    // the shader can sample it cheaply, and so the fallback path's
+    // multi-stamp loop only re-rasterizes vectors once per frame.
     //
-    // Buffer-size budget: the macOS-shape glyph extends at most ~1.27
+    // Buffer-size budget per side from the cursor's tip (which sits at
+    // the buffer's center): the macOS-shape glyph extends at most ~1.27
     // × pxDiameter from the tip in any direction (body height + halo
     // overshoot); the drop shadow extends another ~0.5 × pxDiameter
-    // below. 4 × pxDiameter centred on the tip covers all of those
-    // without clipping.
-    final spriteBufferSize = (pxDiameter * 4).ceil().toDouble();
+    // below at full intensity (offset + 3σ blur); the trail reaches
+    // `reach` pixels in the velocity direction. 4 × pxDiameter centred
+    // on the tip covers all of those without clipping, even at the
+    // inspector slider's maxima.
+    final reach = samples.stepPx.distance * (samples.count - 1);
+    final spriteBufferSize =
+        (pxDiameter * 4 + reach * 2).ceil().toDouble();
     final spriteBufferCenter =
         Offset(spriteBufferSize / 2, spriteBufferSize / 2);
     // Oversample the bake by devicePixelRatio so the texture has
-    // enough texels for FilterQuality.high to land a unique value per
-    // output device pixel — without this, retina displays show
-    // 2-px-wide stepped edges along the trail.
+    // enough texels for the shader's bilinear sampling to land a
+    // unique value per output device pixel. Without this the bake is
+    // at logical resolution; on a 2× retina display the shader sees
+    // half the texels it needs and produces stepped edges.
     final dpr = devicePixelRatio <= 0 ? 1.0 : devicePixelRatio;
     final spriteBufferPixelSize = (spriteBufferSize * dpr).ceil();
 
@@ -204,29 +257,66 @@ class CursorOverlayPainter extends CustomPainter {
     picture.dispose();
 
     try {
-      final spriteSrcRect = Rect.fromLTWH(
-        0,
-        0,
-        spriteBufferPixelSize.toDouble(),
-        spriteBufferPixelSize.toDouble(),
-      );
-      // Draw tail-first so the head composites on top. stamps[0] is
-      // the dimmest tail (alpha = 1/count); stamps.last is the
-      // opaque head (alpha = 1.0) at widgetPos.
-      for (final s in stamps) {
-        canvas.drawImageRect(
-          spriteImage,
-          spriteSrcRect,
-          Rect.fromLTWH(
-            s.position.dx - spriteBufferCenter.dx,
-            s.position.dy - spriteBufferCenter.dy,
-            spriteBufferSize,
-            spriteBufferSize,
-          ),
-          Paint()
-            ..color = Colors.white.withValues(alpha: s.alpha)
-            ..filterQuality = FilterQuality.high,
+      final program = _motionBlurProgram;
+      if (program != null) {
+        // Shader path: one drawRect with a fragment shader that
+        // produces a continuous directional smear.
+        final shader = program.fragmentShader();
+        final trailLen = trailVector.distance;
+        final trailDir = trailLen > 0
+            ? Offset(trailVector.dx / trailLen, trailVector.dy / trailLen)
+            : const Offset(1, 0);
+
+        shader.setImageSampler(0, spriteImage);
+        shader.setFloat(0, spriteBufferSize);
+        shader.setFloat(1, spriteBufferSize);
+        shader.setFloat(2, trailDir.dx);
+        shader.setFloat(3, trailDir.dy);
+        shader.setFloat(4, reach);
+        shader.setFloat(5, spriteBufferPixelSize.toDouble());
+        shader.setFloat(6, spriteBufferPixelSize.toDouble());
+
+        // FlutterFragCoord is canvas-local under Skia. Translate the
+        // canvas so the rect's top-left is at (0, 0), draw at origin.
+        canvas.save();
+        canvas.translate(
+          widgetPos.dx - spriteBufferCenter.dx,
+          widgetPos.dy - spriteBufferCenter.dy,
         );
+        canvas.drawRect(
+          Rect.fromLTWH(0, 0, spriteBufferSize, spriteBufferSize),
+          Paint()..shader = shader,
+        );
+        canvas.restore();
+      } else {
+        // Fallback: pre-baked drawImage multi-stamp. Used only when
+        // the shader hasn't loaded yet (briefly at app startup) or
+        // when a Flutter SDK without FragmentProgram.fromAsset runs
+        // this code (older test harnesses).
+        final spriteSrcRect = Rect.fromLTWH(
+          0,
+          0,
+          spriteBufferPixelSize.toDouble(),
+          spriteBufferPixelSize.toDouble(),
+        );
+        for (var i = 0; i < samples.count; i++) {
+          final tailIndex = samples.count - 1 - i;
+          final dx = samples.stepPx.dx * tailIndex;
+          final dy = samples.stepPx.dy * tailIndex;
+          canvas.drawImageRect(
+            spriteImage,
+            spriteSrcRect,
+            Rect.fromLTWH(
+              widgetPos.dx + dx - spriteBufferCenter.dx,
+              widgetPos.dy + dy - spriteBufferCenter.dy,
+              spriteBufferSize,
+              spriteBufferSize,
+            ),
+            Paint()
+              ..color = Colors.white.withValues(alpha: samples.alphas[i])
+              ..filterQuality = FilterQuality.high,
+          );
+        }
       }
     } finally {
       spriteImage.dispose();
@@ -234,97 +324,84 @@ class CursorOverlayPainter extends CustomPainter {
   }
 
   /// Virtual shutter window at slider=1.0. ~1.5× the velocity sampling
-  /// lookback (33 ms in [CursorMotionController]); slider scales it
-  /// linearly from 0 to this maximum. Tuning this changes how
-  /// dramatic the trail is at any given speed.
+  /// lookback; slider scales it linearly from 0 to this maximum.
   static const double _maxExposureSeconds = 0.05;
 
   /// Reject the trail when any pair of consecutive recording samples
   /// that overlaps the exposure window is more than this far apart.
   ///
   /// macOS records cursor samples at ~60 Hz (≈16 ms apart). Real
-  /// recordings see frame jitter up to ~30 ms. Anything past 50 ms is
-  /// a hiccup — cursor disappeared (focus change, app switch, hidden-
-  /// cursor toggle) — and `cursorAt`'s linear interpolation across
-  /// that interval fabricates a path through unknown ground. Drawing
-  /// stamps along that fabricated path is exactly the "trail in
-  /// places the cursor wasn't" artifact, so we drop the trail entirely
-  /// and let the cursor render sharp.
+  /// recordings see frame jitter up to ~30 ms. Anything past 50 ms
+  /// is a hiccup — cursor disappeared (focus change, app switch,
+  /// hidden-cursor toggle) — and `cursorAt`'s linear interpolation
+  /// across that gap fabricates a path through unknown ground.
+  /// Drawing a smear along that fabricated path is exactly the
+  /// "trail in places the cursor wasn't" artifact, so we drop the
+  /// trail entirely and let the cursor render sharp.
   static const int _maxSampleGapMicros = 50000;
 
-  /// Returns the cursor's recorded polyline across the virtual shutter
-  /// window in widget pixels, with the HEAD point anchored at
-  /// [widgetPos]. Every stamp drawn along this polyline lands on a
-  /// piecewise-linear segment between two real recorded samples (or one
-  /// real + one interpolated endpoint), so the trail can never extend
-  /// to a position the cursor wasn't actually at.
+  /// Hard cap on the rendered trail length in widget pixels.
   ///
-  /// Returns `null` when:
-  /// - the slider is at 0,
-  /// - the exposure lookback falls before the start of the recording,
-  /// - the recording has fewer than two samples, or
-  /// - any pair of consecutive recording samples that overlaps the
-  ///   exposure window is more than [_maxSampleGapMicros] apart (the
-  ///   gap-based phantom-path guard).
+  /// Even when the recording is dense and gap-rejection passes, a
+  /// genuinely fast flick can produce a chord longer than what reads
+  /// as "natural blur" — the smear extends most of the way across the
+  /// frame. Capping the visible trail at [_maxTrailPx] turns those
+  /// extreme cases into a fixed-length blur in the motion direction
+  /// rather than a screen-spanning streak.
+  static const double _maxTrailPx = 300.0;
+
+  /// Trail vector for the shader/fallback in widget pixels: direction
+  /// is the chord between `cursorAt(T)` and `cursorAt(T − exposure)`,
+  /// magnitude is min(chord length, [_maxTrailPx]).
   ///
-  /// Anchoring the head at [widgetPos] means the bright head stamp
-  /// covers the visible (parent-smoothed) cursor position, even when
-  /// the parent's smoothing leads/lags the raw recording slightly.
-  List<Offset>? _trailPolylineForBlur({
-    required Offset widgetPos,
-    required double scaleX,
-    required double scaleY,
-  }) {
-    if (motionBlurIntensity <= 0) return null;
+  /// Returns [Offset.zero] when there's no blur to render — the slider
+  /// is at 0, the lookback falls before the recording start, the
+  /// recording is too sparse for cursorAt to interpolate without
+  /// fabricating a phantom path, or the chord is sub-pixel.
+  Offset _trailVectorForBlur({required double scaleX, required double scaleY}) {
+    if (motionBlurIntensity <= 0) return Offset.zero;
     final exposureSec = motionBlurIntensity * _maxExposureSeconds;
-    if (exposureSec <= 0) return null;
+    if (exposureSec <= 0) return Offset.zero;
     final exposureMicros = (exposureSec * 1e6).round();
     final tEnd = position.inMicroseconds;
     final tStart = tEnd - exposureMicros;
-    if (tStart < 0) return null;
+    if (tStart < 0) return Offset.zero;
 
     final raw = cursorRecording.positions;
-    if (raw.length < 2) return null;
+    if (raw.length < 2) return Offset.zero;
 
     // Reject the trail whenever a pair of consecutive recording
     // samples that overlaps [tStart, tEnd] is wider than the
-    // expected cadence. Use the RAW recording's timestamps here, not
-    // the polyline's — interpolated endpoints carry the requested
-    // time, not the underlying gap.
+    // expected cadence — we don't trust cursorAt's interpolation
+    // across that gap.
     for (var i = 1; i < raw.length; i++) {
       final prevT = raw[i - 1].timestampMicros;
       final curT = raw[i].timestampMicros;
       if (curT <= tStart) continue;
       if (prevT >= tEnd) break;
-      if (curT - prevT > _maxSampleGapMicros) return null;
+      if (curT - prevT > _maxSampleGapMicros) return Offset.zero;
     }
 
-    final endSample = cursorAt(cursorRecording, position);
-    final startSample = cursorAt(
-      cursorRecording,
-      Duration(microseconds: tStart),
-    );
-    if (endSample == null || startSample == null) return null;
+    final currentSample = cursorAt(cursorRecording, position);
+    final prevSample =
+        cursorAt(cursorRecording, Duration(microseconds: tStart));
+    if (currentSample == null || prevSample == null) return Offset.zero;
 
-    // Point sequence in time order: interpolated start + every recorded
-    // sample strictly inside the window + interpolated end.
-    final pts = <CursorPosition>[
-      startSample,
-      for (final p in raw)
-        if (p.timestampMicros > tStart && p.timestampMicros < tEnd) p,
-      endSample,
-    ];
+    // Chord in video pixels, then convert to widget pixels.
+    final dxVideo = currentSample.x - prevSample.x;
+    final dyVideo = currentSample.y - prevSample.y;
+    final dxWidget = dxVideo * scaleX;
+    final dyWidget = dyVideo * scaleY;
+    final lenWidget = math.sqrt(dxWidget * dxWidget + dyWidget * dyWidget);
 
-    // Anchor the polyline so the head (last point) coincides with
-    // widgetPos. dxOffset/dyOffset is the constant shift applied to
-    // every recorded video-coord point so the head video-coord maps
-    // exactly to widgetPos.
-    final dxOffset = widgetPos.dx - endSample.x * scaleX;
-    final dyOffset = widgetPos.dy - endSample.y * scaleY;
-    return [
-      for (final p in pts)
-        Offset(p.x * scaleX + dxOffset, p.y * scaleY + dyOffset),
-    ];
+    if (lenWidget < 1) return Offset.zero;
+
+    // Cap the rendered trail length but keep direction intact.
+    if (lenWidget > _maxTrailPx) {
+      final scale = _maxTrailPx / lenWidget;
+      return Offset(dxWidget * scale, dyWidget * scale);
+    }
+    return Offset(dxWidget, dyWidget);
   }
 
   @override

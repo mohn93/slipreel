@@ -1,68 +1,97 @@
 import 'package:flutter/painting.dart';
 
-/// One stamp emitted by [sampleMotionBlurStamps]: where to draw the
-/// cursor sprite, and what alpha to apply. Coordinates are in the same
-/// space as the input polyline (typically widget pixels).
-class MotionBlurStamp {
-  const MotionBlurStamp({required this.position, required this.alpha});
+/// Result of [computeMotionBlurSamples]: how many stamps to draw, the
+/// per-stamp offset (so consecutive stamps step backwards along the
+/// motion vector), and the alpha to assign each stamp. Tail at index
+/// 0 (dimmest), head at index [count] - 1 (brightest, offset 0).
+class MotionBlurSamples {
+  const MotionBlurSamples({
+    required this.count,
+    required this.stepPx,
+    required this.alphas,
+  });
 
-  final Offset position;
-  final double alpha;
+  final int count;
+  final Offset stepPx;
+  final List<double> alphas;
 }
 
-/// Distributes up to [maxStamps] cursor stamps evenly along [polyline]
-/// by arc length and returns the position + alpha of each.
+/// Single-stamp result reused for the no-blur short-circuit so callers
+/// can branch on `samples.count == 1`.
+const _noBlur = MotionBlurSamples(
+  count: 1,
+  stepPx: Offset.zero,
+  alphas: [1.0],
+);
+
+/// Returns the per-stamp parameters for cursor motion blur.
 ///
-/// **Path-aware motion blur.** The caller passes the cursor's recorded
-/// path during the virtual shutter window. Every emitted stamp lies on
-/// that polyline, so the trail can never extend to a position the
-/// cursor wasn't actually at — even when the cursor curves or
-/// reverses inside the window. The polyline's first point is the tail
-/// (oldest sample); the last is the head (current position).
+/// **Path-displacement model.** The caller passes in [trailVectorPx]:
+/// the cursor's actual recorded displacement (`cursorAt(T) −
+/// cursorAt(T − exposure)`) over the virtual shutter window. The
+/// trail's direction is that vector's direction; the trail's length
+/// is that vector's magnitude. Slider/exposure logic lives at the
+/// call site so this function stays a pure "displacement → render
+/// parameters" mapping.
 ///
-/// Stamps are spaced uniformly by arc length (~1 stamp per 2 px so
-/// consecutive cursor-body stamps overlap on a typical 32-px cursor)
-/// and capped at [maxStamps] to bound per-frame work. Alphas linearly
-/// taper from `1/count` at the tail to `1.0` at the head, so the head
-/// composites opaque over the trail and the cursor stays sharp.
+/// Why displacement, not `velocity × exposure`? Velocity at T is
+/// instantaneous (sampled over a short lookback). When the cursor
+/// suddenly accelerates, instantaneous velocity is much higher than
+/// the average velocity over the exposure window, and `v × t`
+/// overshoots the cursor's actual displacement — the trail extends
+/// over ground the cursor never crossed. Sampling the recording at
+/// both ends of the exposure window gives the actual chord, so the
+/// trail can never be longer than where the cursor really was.
 ///
-/// Returns an empty list when the polyline has fewer than 2 points or
-/// total arc length is sub-pixel — caller treats this as "no blur"
-/// and short-circuits to direct paint.
-List<MotionBlurStamp> sampleMotionBlurStamps({
-  required List<Offset> polyline,
+/// Stamp count is sized to the reach (~1 stamp per 2 px so
+/// consecutive stamps overlap on a typical cursor body), capped at
+/// [maxStamps] so the fallback path's per-frame work stays bounded.
+/// Alphas linearly taper from `1/count` at the tail to `1.0` at the
+/// head — not normalized to sum-to-1, so overlapping stamps leave
+/// the head opaque (cursor stays sharp) and only the trailing region
+/// shows the dim tail.
+///
+/// Sub-pixel trail vectors collapse to count = 1 and the shader's
+/// reach &lt; 1 branch produces the sharp cursor.
+MotionBlurSamples computeMotionBlurSamples({
+  required Offset trailVectorPx,
   int maxStamps = 40,
 }) {
-  if (polyline.length < 2) return const [];
+  final length = trailVectorPx.distance;
+  // Defensive: zero-length trail would divide by zero in the stepPx
+  // computation below. A stationary cursor (no displacement during
+  // exposure) correctly renders no blur anyway.
+  if (length <= 0) return _noBlur;
 
-  final cum = List<double>.filled(polyline.length, 0);
-  for (var i = 1; i < polyline.length; i++) {
-    cum[i] = cum[i - 1] + (polyline[i] - polyline[i - 1]).distance;
-  }
-  final total = cum.last;
+  // Stamp count grows with reach (~1 stamp per 2 px so consecutive
+  // stamps overlap on a 32-px cursor body), capped at maxStamps so
+  // a long-reach trail doesn't burn frames on the fallback's
+  // discrete-stamp path. The shader uses fixed kSamples internally
+  // and isn't affected by this clamp.
+  final count = ((length / 2).round() + 1).clamp(1, maxStamps);
+  if (count <= 1) return _noBlur;
 
-  // Stamp count grows with reach (~1 stamp per 2 px), capped at
-  // maxStamps. count == 1 means the path is sub-pixel: no blur.
-  final count = ((total / 2).round() + 1).clamp(1, maxStamps);
-  if (count <= 1) return const [];
+  final stepMag = length / (count - 1);
+  final invLen = 1.0 / length;
+  // Stamps step BACKWARD along the trail direction (head at the
+  // current position, tail at where the cursor was at T - exposure).
+  final stepPx = Offset(
+    -trailVectorPx.dx * invLen * stepMag,
+    -trailVectorPx.dy * invLen * stepMag,
+  );
 
-  final stamps = <MotionBlurStamp>[];
-  for (var i = 0; i < count; i++) {
-    // Arc-length parameter from 0 (tail) to total (head).
-    final s = (i / (count - 1)) * total;
-    // Find the polyline segment containing s. count <= 40 so the
-    // total cost of these scans is bounded.
-    var seg = 1;
-    while (seg < polyline.length - 1 && cum[seg] < s) {
-      seg++;
-    }
-    final segLen = cum[seg] - cum[seg - 1];
-    final t = segLen > 0 ? (s - cum[seg - 1]) / segLen : 0.0;
-    final pos = Offset(
-      polyline[seg - 1].dx + (polyline[seg].dx - polyline[seg - 1].dx) * t,
-      polyline[seg - 1].dy + (polyline[seg].dy - polyline[seg - 1].dy) * t,
-    );
-    stamps.add(MotionBlurStamp(position: pos, alpha: (i + 1) / count));
-  }
-  return stamps;
+  // Raw linear taper. Head (i=count-1) gets 1.0, tail (i=0) gets 1/count.
+  // Not normalized to sum=1: with overlapping stamps the head paints
+  // opaque over the tail so the rendered cursor stays sharp.
+  final alphas = List<double>.generate(
+    count,
+    (i) => (i + 1) / count,
+    growable: false,
+  );
+
+  return MotionBlurSamples(
+    count: count,
+    stepPx: stepPx,
+    alphas: alphas,
+  );
 }
