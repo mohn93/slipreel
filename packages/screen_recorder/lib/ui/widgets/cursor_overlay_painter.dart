@@ -367,6 +367,12 @@ class CursorOverlayPainter extends CustomPainter {
   /// rather than a screen-spanning streak.
   static const double _maxTrailPx = 300.0;
 
+  /// Lookback for the "instantaneous" velocity used to taper the
+  /// trail during deceleration. One 60-Hz frame is the natural unit:
+  /// short enough that it reacts within ~16 ms of a cursor stop,
+  /// long enough to filter sub-frame jitter.
+  static const int _recentVelocityLookbackMicros = 16667;
+
   /// Trail vector for the shader/fallback in widget pixels: direction
   /// is the chord between `cursorAt(T)` and `cursorAt(T − exposure)`,
   /// magnitude is min(chord length, [_maxTrailPx]).
@@ -426,21 +432,53 @@ class CursorOverlayPainter extends CustomPainter {
         cursorAt(cursorRecording, Duration(microseconds: tStart));
     if (currentSample == null || prevSample == null) return Offset.zero;
 
-    // Chord in video pixels, then convert to widget pixels.
+    // Chord in video pixels, then convert to widget pixels. Direction
+    // of the trail is the chord direction — that's the cursor's
+    // actual recorded path, so the smear runs along ground the
+    // cursor crossed.
     final dxVideo = currentSample.x - prevSample.x;
     final dyVideo = currentSample.y - prevSample.y;
     final dxWidget = dxVideo * scaleX;
     final dyWidget = dyVideo * scaleY;
-    final lenWidget = math.sqrt(dxWidget * dxWidget + dyWidget * dyWidget);
+    final chordLen = math.sqrt(dxWidget * dxWidget + dyWidget * dyWidget);
 
-    if (lenWidget < 1) return Offset.zero;
+    if (chordLen < 1) return Offset.zero;
 
-    // Cap the rendered trail length but keep direction intact.
-    if (lenWidget > _maxTrailPx) {
-      final scale = _maxTrailPx / lenWidget;
-      return Offset(dxWidget * scale, dyWidget * scale);
+    // Velocity-tapered length: cap the trail at the distance the
+    // cursor would cover at its CURRENT (most-recent-frame) velocity
+    // over the exposure window. This shortens the trail during
+    // deceleration so the smear tracks where the cursor is now,
+    // instead of dragging the chord all the way back to where the
+    // cursor was when it was still moving fast. During acceleration
+    // the chord is the smaller of the two (cursor only just started
+    // moving), so the chord wins — no overshoot. At constant
+    // velocity the two values are equal, so the cap is a no-op.
+    final vLookback = position.inMicroseconds - _recentVelocityLookbackMicros;
+    final lookbackSample = vLookback >= 0
+        ? cursorAt(cursorRecording, Duration(microseconds: vLookback))
+        : null;
+    double effectiveLen = chordLen;
+    if (lookbackSample != null) {
+      final vDxVideo = currentSample.x - lookbackSample.x;
+      final vDyVideo = currentSample.y - lookbackSample.y;
+      final vDxWidget = vDxVideo * scaleX;
+      final vDyWidget = vDyVideo * scaleY;
+      final lookbackSec = _recentVelocityLookbackMicros / 1e6;
+      final vRecentMag =
+          math.sqrt(vDxWidget * vDxWidget + vDyWidget * vDyWidget) /
+              lookbackSec;
+      final vTLen = vRecentMag * exposureSec;
+      if (vTLen < effectiveLen) effectiveLen = vTLen;
     }
-    return Offset(dxWidget, dyWidget);
+
+    if (effectiveLen < 1) return Offset.zero;
+
+    // Hard cap on absolute pixels regardless of source.
+    if (effectiveLen > _maxTrailPx) effectiveLen = _maxTrailPx;
+
+    // Project the cap (effectiveLen) onto the chord direction.
+    final scale = effectiveLen / chordLen;
+    return Offset(dxWidget * scale, dyWidget * scale);
   }
 
   @override
