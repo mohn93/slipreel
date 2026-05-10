@@ -292,7 +292,9 @@ class CursorOverlayPainter extends CustomPainter {
         // Fallback: pre-baked drawImage multi-stamp. Used only when
         // the shader hasn't loaded yet (briefly at app startup) or
         // when a Flutter SDK without FragmentProgram.fromAsset runs
-        // this code (older test harnesses).
+        // this code (older test harnesses). The last (head) stamp's
+        // alpha is 1.0, so the cursor body stays opaque without an
+        // additional sharp paint.
         final spriteSrcRect = Rect.fromLTWH(
           0,
           0,
@@ -320,6 +322,29 @@ class CursorOverlayPainter extends CustomPainter {
       }
     } finally {
       spriteImage.dispose();
+    }
+
+    // Paint the cursor sharp at the head on top of the smear. The
+    // shader's per-pixel integration dims the head proportionally
+    // to how briefly the cursor occupied each pixel during the
+    // exposure window — at fast motion the cursor body itself can
+    // come out at ~15% alpha, which reads as "the cursor is barely
+    // visible and the blur stops to show". Painting the cursor
+    // crisp on top of the shader output gives the expected
+    // "sharp cursor + smear behind" reading regardless of speed.
+    // The fallback path's last stamp is already opaque, so this
+    // overlay is just slightly redundant there (transient — used
+    // only at app startup before the shader loads).
+    if (_motionBlurProgram != null) {
+      paintCursorGlyphWithPulse(
+        canvas,
+        position: widgetPos,
+        baseDiameter: pxDiameter,
+        style: style,
+        microsSinceClick: dt,
+        state: cursorState,
+        shadowIntensity: cursorShadow,
+      );
     }
   }
 
