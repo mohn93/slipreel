@@ -359,13 +359,12 @@ class CursorOverlayPainter extends CustomPainter {
 
   /// Hard cap on the rendered trail length in widget pixels.
   ///
-  /// Even when the recording is dense and gap-rejection passes, a
-  /// genuinely fast flick can produce a chord longer than what reads
-  /// as "natural blur" — the smear extends most of the way across the
-  /// frame. Capping the visible trail at [_maxTrailPx] turns those
-  /// extreme cases into a fixed-length blur in the motion direction
-  /// rather than a screen-spanning streak.
-  static const double _maxTrailPx = 300.0;
+  /// Even with the velocity taper applied, a fast flick's chord can
+  /// still be ~200 px and visually feel "too dramatic" — the smear
+  /// reads as a streak across the frame instead of motion blur on
+  /// the cursor itself. 150 px keeps the blur tight to the cursor
+  /// even at peak velocity. Tunable per visual taste.
+  static const double _maxTrailPx = 150.0;
 
   /// Lookback for the "instantaneous" velocity used to taper the
   /// trail during deceleration. One 60-Hz frame is the natural unit:
