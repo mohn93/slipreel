@@ -340,6 +340,23 @@ class CursorOverlayPainter extends CustomPainter {
   /// trail entirely and let the cursor render sharp.
   static const int _maxSampleGapMicros = 50000;
 
+  /// Above this per-pair displacement (in video pixels), the post-idle
+  /// warp check kicks in. Real fast cursor motion can hit 200 px in a
+  /// single 16-ms sample interval, so this is intentionally just above
+  /// slow-to-moderate motion — the displacement alone isn't suspicious,
+  /// only its combination with a long preceding-pair gap.
+  static const double _largePairDispPx = 100.0;
+
+  /// If a "fast" sample-pair's IMMEDIATELY PRECEDING pair has a gap
+  /// of at least this many micros, the fast pair is treated as a
+  /// system warp (focus change / app switch / cursor teleport)
+  /// rather than real human motion. The signature: cursor sat idle
+  /// for ≥80 ms and then "moved" >100 px between two samples that
+  /// happen to be close together in time. Real flicks have small
+  /// preceding gaps (because they're sustained dense motion); only
+  /// system warps land an isolated burst right after a long idle.
+  static const int _postIdleThresholdMicros = 80000;
+
   /// Hard cap on the rendered trail length in widget pixels.
   ///
   /// Even when the recording is dense and gap-rejection passes, a
@@ -370,16 +387,38 @@ class CursorOverlayPainter extends CustomPainter {
     final raw = cursorRecording.positions;
     if (raw.length < 2) return Offset.zero;
 
-    // Reject the trail whenever a pair of consecutive recording
-    // samples that overlaps [tStart, tEnd] is wider than the
-    // expected cadence — we don't trust cursorAt's interpolation
-    // across that gap.
+    // Walk the consecutive sample pairs that overlap [tStart, tEnd]
+    // and reject the trail when either:
+    //   (a) the pair's TIME gap exceeds [_maxSampleGapMicros] — the
+    //       cursor disappeared from event capture, and cursorAt's
+    //       linear interpolation across that interval fabricates
+    //       a phantom path through unknown ground; or
+    //   (b) the pair's POSITION displacement exceeds
+    //       [_largePairDispPx] AND the immediately preceding pair
+    //       had a gap of ≥[_postIdleThresholdMicros] — the cursor
+    //       sat idle then "warped" to a new position in a single
+    //       sample interval. That's a system action (focus change,
+    //       app switch, cursor reposition) rather than real human
+    //       motion; cursorAt would interpolate across the warp
+    //       pair the same way a long time-gap would, just at
+    //       finer time resolution. Drawing a smear through those
+    //       interpolated positions is the "trail in places the
+    //       cursor wasn't" artifact.
     for (var i = 1; i < raw.length; i++) {
       final prevT = raw[i - 1].timestampMicros;
       final curT = raw[i].timestampMicros;
       if (curT <= tStart) continue;
       if (prevT >= tEnd) break;
       if (curT - prevT > _maxSampleGapMicros) return Offset.zero;
+
+      final dxPair = raw[i].x - raw[i - 1].x;
+      final dyPair = raw[i].y - raw[i - 1].y;
+      if (dxPair * dxPair + dyPair * dyPair >
+              _largePairDispPx * _largePairDispPx &&
+          i >= 2) {
+        final prevPairGap = prevT - raw[i - 2].timestampMicros;
+        if (prevPairGap >= _postIdleThresholdMicros) return Offset.zero;
+      }
     }
 
     final currentSample = cursorAt(cursorRecording, position);

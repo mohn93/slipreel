@@ -202,6 +202,79 @@ void main() {
             'stamps along a fabricated linearly-interpolated path.');
   });
 
+  test(
+      'motionBlurIntensity > 0 with post-idle position warp in window → '
+      'direct paint (warp guard)', () {
+    // The recording from the user's bug report:
+    //   sample[i-2] at t=0    (x, y)
+    //   sample[i-1] at t=200  (x, y)   ← 200 ms idle, no motion
+    //   sample[i]   at t=224  (x+150, y)   ← 150 px jump in 24 ms
+    //
+    // The 24 ms gap is below the time-gap threshold (50 ms), so the
+    // gap-time check passes the (i-1, i) pair. But cursorAt would
+    // happily interpolate across that 150 px warp and drag the trail
+    // through phantom positions. The post-idle warp guard recognises
+    // the pattern (large displacement preceded by ≥80 ms idle pair)
+    // and drops the trail.
+    final rec = CursorRecording()
+      ..addPosition(const CursorPosition(
+          x: 1000, y: 0, timestampMicros: 0, isClicked: false))
+      ..addPosition(const CursorPosition(
+          x: 1000, y: 0, timestampMicros: 200000, isClicked: false))
+      ..addPosition(const CursorPosition(
+          x: 1150, y: 0, timestampMicros: 224000, isClicked: false));
+    final painter = CursorOverlayPainter(
+      cursorRecording: rec,
+      position: const Duration(milliseconds: 250),
+      screenPos: const Offset(50, 25),
+      videoSize: const Size(2000, 100),
+      screenSize: const Size(2000, 100),
+      motionBlurIntensity: 1.0,
+    );
+    final canvas = _RecordingCanvas();
+    painter.paint(canvas, const Size(2000, 100));
+    final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
+    expect(drawImages, isEmpty,
+        reason: 'A 150 px jump in a single sample interval right after '
+            '200 ms of idle is a system warp, not real motion. The '
+            'trail must drop to avoid smearing through fabricated '
+            'intermediate positions.');
+  });
+
+  test(
+      'motionBlurIntensity > 0 with sustained fast motion (no idle before) → '
+      'trail draws normally', () {
+    // The mirror case: same large per-pair displacement but the
+    // preceding pair had a SHORT gap, meaning the cursor was already
+    // moving fast — a real flick, not a warp. The trail should draw
+    // (40 stamps via the fallback path).
+    final rec = CursorRecording();
+    // Dense stream at 16.7 ms cadence with 20 px per pair (under the
+    // 100 px large-displacement threshold) so the previous pair gap
+    // never triggers the post-idle check.
+    for (var i = 0; i <= 5; i++) {
+      rec.addPosition(CursorPosition(
+        x: 1000 + i * 20.0,
+        y: 0,
+        timestampMicros: 50000 + i * 16700,
+        isClicked: false,
+      ));
+    }
+    final painter = CursorOverlayPainter(
+      cursorRecording: rec,
+      position: const Duration(milliseconds: 100),
+      screenPos: const Offset(50, 25),
+      videoSize: const Size(2000, 100),
+      screenSize: const Size(2000, 100),
+      motionBlurIntensity: 1.0,
+    );
+    final canvas = _RecordingCanvas();
+    painter.paint(canvas, const Size(2000, 100));
+    final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
+    expect(drawImages, isNotEmpty,
+        reason: 'Dense fast motion is a real flick — trail must draw.');
+  });
+
   test('shouldRepaint reflects velocity and intensity changes', () {
     final rec = CursorRecording()
       ..addPosition(const CursorPosition(
