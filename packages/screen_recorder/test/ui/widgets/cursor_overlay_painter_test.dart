@@ -29,10 +29,10 @@ class _RecordingCanvas implements ui.Canvas {
     calls.add('drawImage(alpha=${paint.color.a.toStringAsFixed(3)})');
   }
 
-  // The motion-blur fallback uses drawImageRect (not drawImage) so it
-  // can map a dpr-scaled bake onto a logical-sized destination. Record
-  // it under the same `drawImage(...)` prefix so existing stamp-count
-  // assertions keep working.
+  // The motion-blur path uses drawImageRect (not drawImage) so it can
+  // map a dpr-scaled bake onto a logical-sized destination. Record it
+  // under the same `drawImage(...)` prefix so stamp-count assertions
+  // can use a single filter.
   @override
   void drawImageRect(ui.Image image, Rect src, Rect dst, Paint paint) {
     calls.add('drawImage(alpha=${paint.color.a.toStringAsFixed(3)})');
@@ -113,19 +113,20 @@ void main() {
   });
 
   test(
-      'motionBlurIntensity > 0 with cursor displacement during exposure → '
-      'N drawImage calls', () {
-    // The painter computes the trail from cursorAt(T) and
-    // cursorAt(T - exposure). Sample at t=100ms; exposure at slider 1
-    // is 50ms; lookback hits t=50ms. We seed the recording with a
-    // 100-px x-axis displacement between those two timestamps so the
-    // trail length is 100 px and the fallback path emits the maximum
-    // 40 stamps.
-    final rec = CursorRecording()
-      ..addPosition(const CursorPosition(
-          x: 0, y: 0, timestampMicros: 50000, isClicked: false))
-      ..addPosition(const CursorPosition(
-          x: 100, y: 0, timestampMicros: 100000, isClicked: false));
+      'motionBlurIntensity > 0 with dense recorded displacement → '
+      'full stamp envelope of 40 draws', () {
+    // Dense recording at 10 ms cadence (well under the 50 ms gap
+    // threshold) with 20 px between samples → 100 px polyline arc
+    // length. count = round(100/2) + 1 = 51, capped at maxStamps = 40.
+    final rec = CursorRecording();
+    for (var i = 0; i <= 5; i++) {
+      rec.addPosition(CursorPosition(
+        x: i * 20.0,
+        y: 0,
+        timestampMicros: 50000 + i * 10000,
+        isClicked: false,
+      ));
+    }
     final painter = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 100),
@@ -138,22 +139,26 @@ void main() {
     painter.paint(canvas, const Size(200, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
     expect(drawImages.length, 40,
-        reason: 'slider=1 + 100 px exposure displacement → 40 stamps via '
-            'pre-baked drawImage.');
+        reason: 'slider=1 + 100 px polyline → 40 stamps via drawImageRect.');
   });
 
   test(
-      'motionBlurIntensity > 0 with no recorded displacement during '
-      'exposure → direct paint (no bake)', () {
-    // Cursor stationary inside the exposure window: trail vector = 0,
-    // count = 1, painter early-returns to direct paint. The bake/
-    // shader path would have made the static cursor look pixelated
-    // under an active zoom transform, so this short-circuit matters.
-    final rec = CursorRecording()
-      ..addPosition(const CursorPosition(
-          x: 50, y: 25, timestampMicros: 0, isClicked: false))
-      ..addPosition(const CursorPosition(
-          x: 50, y: 25, timestampMicros: 100000, isClicked: false));
+      'motionBlurIntensity > 0 with stationary cursor across exposure → '
+      'direct paint (no bake)', () {
+    // Dense recording where every sample is at the same (50, 25)
+    // position. Polyline arc length = 0, count = 1, painter
+    // short-circuits to direct paint. Important for the "cursor
+    // stopped under active zoom" case — stamp/bake path would route
+    // through a ui.Image and look stepped under upscaling.
+    final rec = CursorRecording();
+    for (var i = 0; i <= 5; i++) {
+      rec.addPosition(CursorPosition(
+        x: 50,
+        y: 25,
+        timestampMicros: 50000 + i * 10000,
+        isClicked: false,
+      ));
+    }
     final painter = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 100),
@@ -166,8 +171,35 @@ void main() {
     painter.paint(canvas, const Size(200, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
     expect(drawImages, isEmpty,
-        reason: 'No displacement in the exposure window must skip the '
-            'bake/shader path entirely.');
+        reason: 'Zero arc length must skip the bake/stamp path entirely.');
+  });
+
+  test(
+      'motionBlurIntensity > 0 but recording has a sample gap > 50ms → '
+      'direct paint (gap-based phantom-path guard)', () {
+    // Two samples 100 ms apart with the exposure window (50 ms)
+    // landing entirely inside that gap. cursorAt would linearly
+    // interpolate between them — fabricating a path through unknown
+    // ground — so the painter rejects the trail and draws direct.
+    final rec = CursorRecording()
+      ..addPosition(const CursorPosition(
+          x: 0, y: 0, timestampMicros: 0, isClicked: false))
+      ..addPosition(const CursorPosition(
+          x: 200, y: 0, timestampMicros: 100000, isClicked: false));
+    final painter = CursorOverlayPainter(
+      cursorRecording: rec,
+      position: const Duration(milliseconds: 100),
+      screenPos: const Offset(50, 25),
+      videoSize: const Size(200, 100),
+      screenSize: const Size(200, 100),
+      motionBlurIntensity: 1.0,
+    );
+    final canvas = _RecordingCanvas();
+    painter.paint(canvas, const Size(200, 100));
+    final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
+    expect(drawImages, isEmpty,
+        reason: 'Wide sample gap must drop the trail to avoid drawing '
+            'stamps along a fabricated linearly-interpolated path.');
   });
 
   test('shouldRepaint reflects velocity and intensity changes', () {
