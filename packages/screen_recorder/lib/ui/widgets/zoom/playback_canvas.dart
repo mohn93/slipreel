@@ -241,6 +241,12 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                           motionBlurIntensity: widget.motionBlur,
                           cursorState: motion.state,
                           cursorShadow: widget.cursorShadow,
+                          // Pass dpr so the motion-blur bake is at
+                          // device resolution, otherwise the smear
+                          // shows nearest-filter texel doubling on
+                          // retina displays.
+                          devicePixelRatio:
+                              MediaQuery.of(context).devicePixelRatio,
                         ),
                       ),
                     ),

@@ -32,6 +32,14 @@ class CursorOverlayPainter extends CustomPainter {
   final double motionBlurIntensity;
   final CursorState cursorState;
   final double cursorShadow;
+  /// Device pixel ratio of the surface this painter renders into.
+  /// The motion-blur path bakes the cursor to a `ui.Image`; without
+  /// oversampling by [devicePixelRatio] the bake ends up at logical
+  /// resolution and the shader's image sampler (which uses NEAREST
+  /// by default in Flutter's FragmentShader) produces visibly
+  /// stepped texel-doubling along the trail on Retina displays.
+  /// 1.0 is a safe fallback (export pipeline / non-retina screens).
+  final double devicePixelRatio;
 
   CursorOverlayPainter({
     required this.cursorRecording,
@@ -46,6 +54,7 @@ class CursorOverlayPainter extends CustomPainter {
     this.motionBlurIntensity = 0,
     this.cursorState = CursorState.arrow,
     this.cursorShadow = 0,
+    this.devicePixelRatio = 1.0,
   });
 
   static ui.FragmentProgram? _motionBlurProgram;
@@ -133,12 +142,37 @@ class CursorOverlayPainter extends CustomPainter {
       maxReachPx: 60,
     );
 
-    // No early-return on samples.count == 1: when intensity > 0 we
-    // always route through the shader path so the rendered cursor
-    // doesn't visibly toggle between "direct paint" and "shader
-    // pass-through" as velocity bobs around the activation threshold.
-    // The shader's reach<1 branch produces a pixel-identical result to
-    // direct paint, so this is purely a path-consolidation move.
+    // When the math collapsed to "no blur" (cursor stopped, or the
+    // effective intensity rounds down to a single stamp), bail to
+    // direct paint. The shader path bakes the cursor into a ui.Image
+    // first; the bake is pixel-identical to direct paint at the
+    // canvas, but once an active zoom region wraps this widget in a
+    // Transform.scale, the layer sampler upscales the baked bitmap
+    // (jaggy edges) while vector commands re-execute at the
+    // destination resolution (crisp). The threshold-toggle concern
+    // only matters during actual motion; below the activation speed
+    // there's no blur to draw anyway, so the path switch is invisible.
+    if (samples.count == 1) {
+      if (rippleWidgetPos != null) {
+        paintCursorRipple(
+          canvas,
+          position: rippleWidgetPos,
+          baseDiameter: pxDiameter,
+          microsSinceClick: dt,
+          effect: clickEffect,
+        );
+      }
+      paintCursorGlyphWithPulse(
+        canvas,
+        position: widgetPos,
+        baseDiameter: pxDiameter,
+        style: style,
+        microsSinceClick: dt,
+        state: cursorState,
+        shadowIntensity: cursorShadow,
+      );
+      return;
+    }
 
     // The click ripple is rendered DIRECTLY on the canvas (below the
     // shader output) rather than baked into the sprite, so the ring
@@ -173,12 +207,28 @@ class CursorOverlayPainter extends CustomPainter {
         (pxDiameter * 4 + reach * 2).ceil().toDouble();
     final spriteBufferCenter =
         Offset(spriteBufferSize / 2, spriteBufferSize / 2);
+    // Oversample the bake by devicePixelRatio so the texture has
+    // enough texels for the shader's nearest-filter sampling to land
+    // a unique value per output device pixel. Without this the bake
+    // is at logical resolution; on a 2× retina display the shader
+    // sees half the texels it needs and produces 2-px-wide stepped
+    // edges along the trail.
+    final dpr = devicePixelRatio <= 0 ? 1.0 : devicePixelRatio;
+    final spriteBufferPixelSize = (spriteBufferSize * dpr).ceil();
 
     final recorder = ui.PictureRecorder();
     final spriteCanvas = Canvas(
       recorder,
-      Rect.fromLTWH(0, 0, spriteBufferSize, spriteBufferSize),
+      Rect.fromLTWH(
+        0,
+        0,
+        spriteBufferPixelSize.toDouble(),
+        spriteBufferPixelSize.toDouble(),
+      ),
     );
+    // Scale the recording so cursor commands issued in logical
+    // coordinates rasterize into the dpr-scaled buffer at high res.
+    spriteCanvas.scale(dpr);
     paintCursorGlyphWithPulse(
       spriteCanvas,
       position: spriteBufferCenter,
@@ -190,8 +240,8 @@ class CursorOverlayPainter extends CustomPainter {
     );
     final picture = recorder.endRecording();
     final spriteImage = picture.toImageSync(
-      spriteBufferSize.toInt(),
-      spriteBufferSize.toInt(),
+      spriteBufferPixelSize,
+      spriteBufferPixelSize,
     );
     picture.dispose();
 
@@ -250,17 +300,31 @@ class CursorOverlayPainter extends CustomPainter {
         // Index 0 = oldest tail (lowest alpha, largest negative offset).
         // Index count-1 = head (highest alpha, offset 0). Painting in
         // this order means the head composites on top of the tail.
+        // drawImageRect maps the dpr-scaled bake (src) onto the
+        // logical-sized destination, with FilterQuality.high so the
+        // downsample/upsample doesn't show as nearest-neighbor blocks.
+        final spriteSrcRect = Rect.fromLTWH(
+          0,
+          0,
+          spriteBufferPixelSize.toDouble(),
+          spriteBufferPixelSize.toDouble(),
+        );
         for (var i = 0; i < samples.count; i++) {
           final tailIndex = samples.count - 1 - i;
           final dx = samples.stepPx.dx * tailIndex;
           final dy = samples.stepPx.dy * tailIndex;
-          canvas.drawImage(
+          canvas.drawImageRect(
             spriteImage,
-            Offset(
+            spriteSrcRect,
+            Rect.fromLTWH(
               widgetPos.dx + dx - spriteBufferCenter.dx,
               widgetPos.dy + dy - spriteBufferCenter.dy,
+              spriteBufferSize,
+              spriteBufferSize,
             ),
-            Paint()..color = Colors.white.withValues(alpha: samples.alphas[i]),
+            Paint()
+              ..color = Colors.white.withValues(alpha: samples.alphas[i])
+              ..filterQuality = FilterQuality.high,
           );
         }
       }
@@ -282,6 +346,7 @@ class CursorOverlayPainter extends CustomPainter {
         old.velocityPxPerSec != velocityPxPerSec ||
         old.motionBlurIntensity != motionBlurIntensity ||
         old.cursorState != cursorState ||
-        old.cursorShadow != cursorShadow;
+        old.cursorShadow != cursorShadow ||
+        old.devicePixelRatio != devicePixelRatio;
   }
 }

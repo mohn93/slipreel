@@ -29,6 +29,15 @@ class _RecordingCanvas implements ui.Canvas {
     calls.add('drawImage(alpha=${paint.color.a.toStringAsFixed(3)})');
   }
 
+  // The motion-blur fallback uses drawImageRect (not drawImage) so it
+  // can map a dpr-scaled bake onto a logical-sized destination. Record
+  // it under the same `drawImage(...)` prefix so existing stamp-count
+  // assertions keep working.
+  @override
+  void drawImageRect(ui.Image image, Rect src, Rect dst, Paint paint) {
+    calls.add('drawImage(alpha=${paint.color.a.toStringAsFixed(3)})');
+  }
+
   // Unused-by-this-test methods all delegate to noOp. The painter
   // calls drawCircle / drawPath / drawLine etc. via paintCursorWithEffects;
   // we don't care what they do — we only count the stamp envelope.
@@ -123,13 +132,16 @@ void main() {
         reason: 'slider=1, max speed → 40 stamps via pre-baked drawImage.');
   });
 
-  test('motionBlurIntensity > 0 always pre-bakes — no path divergence', () {
-    // Intensity > 0 must always route through the pre-bake/shader
-    // path so the rendered cursor doesn't visibly toggle between
-    // "direct paint" and "shader" as velocity bobs around any
-    // threshold. On the multi-stamp fallback this manifests as
-    // drawImage being called at least once, regardless of how small
-    // the velocity is.
+  test(
+      'motionBlurIntensity > 0 + velocity below activation → direct paint '
+      '(no bake)', () {
+    // Below the activation speed the blur math collapses to a single
+    // stamp (no trail). Going through the pre-bake/shader path in
+    // that case is wasted work AND the baked sprite gets visibly
+    // pixelated when an outer Transform.scale (active zoom region)
+    // upsamples the layer — vector direct paint stays crisp because
+    // commands re-execute at the destination resolution. The painter
+    // therefore early-returns to direct paint when samples.count == 1.
     final rec = CursorRecording()
       ..addPosition(const CursorPosition(
           x: 0, y: 0, timestampMicros: 0, isClicked: false));
@@ -139,13 +151,14 @@ void main() {
       screenPos: const Offset(50, 25),
       videoSize: const Size(200, 100),
       screenSize: const Size(200, 100),
-      velocityPxPerSec: const Offset(20, 0),
+      velocityPxPerSec: const Offset(1, 0), // far below activation
       motionBlurIntensity: 1.0,
     );
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(200, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
-    expect(drawImages.length, greaterThan(0));
+    expect(drawImages, isEmpty,
+        reason: 'count==1 must skip the bake/shader path entirely.');
   });
 
   test('shouldRepaint reflects velocity and intensity changes', () {
