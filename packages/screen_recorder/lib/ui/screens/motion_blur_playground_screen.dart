@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import 'package:screen_recorder/effects/accumulation_cursor_painter.dart';
 import 'package:screen_recorder/effects/motion_blur_tuning.dart';
+import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/window_frame.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
@@ -65,6 +66,15 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   bool _chromeOn = true;
   bool _zoomsOn = true;
 
+  // Frame-blur mode state. The captured scene image is rasterized
+  // from the RepaintBoundary in postFrameCallback and consumed by
+  // the next paint (≈ 16 ms lag).
+  ui.FragmentProgram? _sceneBlurProgram;
+  ui.Image? _capturedScene;
+  final GlobalKey _sceneBoundaryKey = GlobalKey();
+  final ZoomTransformer _zoomTransformer = ZoomTransformer();
+  double _frameBlurSampleCount = 16;
+
   @override
   void initState() {
     super.initState();
@@ -95,6 +105,12 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       // Default to a chromed frame so the wallpaper backdrop is visible
       // — that's the realistic preview context.
       _frameSettings.setFrame(WindowFrame.rounded());
+      // Load the scene motion blur shader. Used by the frameBlur mode
+      // to apply a radial motion smear to a captured snapshot of the
+      // composition. Loaded lazily so the playground doesn't block
+      // startup waiting for it.
+      _sceneBlurProgram =
+          await ui.FragmentProgram.fromAsset('shaders/scene_motion_blur.frag');
       if (!mounted) return;
       setState(() => _ready = true);
     } catch (e) {
@@ -114,6 +130,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     _smoothPlayhead?.dispose();
     _controller.dispose();
     _frameSettings.dispose();
+    _capturedScene?.dispose();
     super.dispose();
   }
 
@@ -185,6 +202,14 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   }
 
   Widget _buildLeft() {
+    // After this frame is on screen, capture the composition into
+    // _capturedScene so the *next* frame's post-process pass has
+    // something to apply the radial blur shader to. Cheap: only
+    // active in frame-blur mode, only when we have an active zoom
+    // (when no zoom is happening the shader short-circuits anyway).
+    if (_mode == _RenderMode.frameBlur) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _captureScene());
+    }
     return Column(
       children: [
         Expanded(
@@ -192,13 +217,107 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             padding: const EdgeInsets.all(16),
             child: RepaintBoundary(
               key: _captureKey,
-              child: _buildCanvas(),
+              child: _mode == _RenderMode.frameBlur
+                  ? _buildFrameBlurCanvas()
+                  : _buildCanvas(),
             ),
           ),
         ),
         _buildTransport(),
       ],
     );
+  }
+
+  /// Composition rendered into a RepaintBoundary so we can capture
+  /// it to a ui.Image each frame, then drawn AGAIN through a
+  /// fragment-shader-equipped CustomPaint that consumes the image
+  /// and applies a radial motion-blur smear. The captured image
+  /// has a one-frame lag relative to live state — acceptable for
+  /// the preview because the scene only changes between frames
+  /// anyway.
+  Widget _buildFrameBlurCanvas() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dpr = MediaQuery.of(context).devicePixelRatio;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            // Bottom layer: render the composition normally into the
+            // boundary we capture from. Hidden visually under the
+            // shader overlay (which fills the same rect).
+            RepaintBoundary(
+              key: _sceneBoundaryKey,
+              child: _buildCanvas(),
+            ),
+            // Top layer: the captured frame, redrawn through the
+            // radial motion-blur shader. Until we've captured at
+            // least one frame, falls through to the bottom layer.
+            if (_capturedScene != null && _sceneBlurProgram != null)
+              IgnorePointer(
+                child: CustomPaint(
+                  painter: _SceneMotionBlurPainter(
+                    image: _capturedScene!,
+                    program: _sceneBlurProgram!,
+                    scaleDelta: _computeScaleDelta(),
+                    sampleCount: _frameBlurSampleCount.round(),
+                    devicePixelRatio: dpr,
+                  ),
+                  size: Size(constraints.maxWidth, constraints.maxHeight),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _captureScene() {
+    if (!mounted) return;
+    final boundary = _sceneBoundaryKey.currentContext?.findRenderObject()
+        as RenderRepaintBoundary?;
+    if (boundary == null || boundary.debugNeedsPaint) return;
+    try {
+      final dpr = MediaQuery.of(context).devicePixelRatio;
+      final image = boundary.toImageSync(pixelRatio: dpr);
+      _capturedScene?.dispose();
+      _capturedScene = image;
+    } catch (_) {
+      // Capture can fail mid-layout — skip this frame.
+    }
+  }
+
+  /// `1 - S_prev / S_now`. Positive ⇒ zoom ramping in (scene scales
+  /// outward from the focal); negative ⇒ ramping out (scene shrinks
+  /// toward the focal). Zero ⇒ no motion, shader passes the captured
+  /// image through unchanged.
+  double _computeScaleDelta() {
+    if (!_zoomsOn) return 0.0;
+    final now = (_smoothPlayhead?.position) ?? _controller.value.position;
+    final exposure =
+        Duration(microseconds: (_accumExposureMs * 1000).round());
+    final prev = now - exposure;
+    final w = (_metadata?.widthPx ?? 1728).toDouble();
+    final h = (_metadata?.heightPx ?? 1117).toDouble();
+    final size = Size(w, h);
+    final scaleNow = _zoomScaleAt(now, size);
+    final scalePrev = _zoomScaleAt(prev, size);
+    if (scaleNow == 0) return 0;
+    return 1.0 - scalePrev / scaleNow;
+  }
+
+  double _zoomScaleAt(Duration t, Size videoSize) {
+    if (!_zoomsOn) return 1.0;
+    for (final region in _demoZooms()) {
+      if (region.isActive(t)) {
+        final m = _zoomTransformer.getTransform(
+          position: t,
+          zoomRegion: region,
+          videoSize: videoSize,
+        );
+        return m.storage[0]; // matches Matrix4 column-major x-scale
+      }
+    }
+    return 1.0;
   }
 
   /// Single canvas for both modes — the only differences are
@@ -377,6 +496,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
           ),
           const SizedBox(height: 16),
           if (_mode == _RenderMode.accumulation) _accumulationKnobs(),
+          if (_mode == _RenderMode.frameBlur) _frameBlurKnobs(),
           if (_mode == _RenderMode.shader)
             MotionBlurTuningPanel(
               tuning: _tuning,
@@ -395,7 +515,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
           segments: const [
             ButtonSegment(value: _RenderMode.shader, label: Text('Shader')),
             ButtonSegment(
-                value: _RenderMode.accumulation, label: Text('Accumulation')),
+                value: _RenderMode.accumulation, label: Text('Cursor accum.')),
+            ButtonSegment(
+                value: _RenderMode.frameBlur, label: Text('Frame blur')),
           ],
           selected: {_mode},
           onSelectionChanged: (s) => setState(() => _mode = s.first),
@@ -426,6 +548,63 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
           ],
         ),
       ],
+    );
+  }
+
+  Widget _frameBlurKnobs() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2B2B3D),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('FRAME BLUR (POST-PROCESS)',
+              style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 11,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          Text('Exposure (ms) — ${_accumExposureMs.toStringAsFixed(0)}',
+              style: const TextStyle(color: Colors.white)),
+          Slider(
+            value: _accumExposureMs,
+            min: 4,
+            max: 200,
+            onChanged: (v) => setState(() => _accumExposureMs = v),
+          ),
+          Text('Shader taps — ${_frameBlurSampleCount.round()}',
+              style: const TextStyle(color: Colors.white)),
+          Slider(
+            value: _frameBlurSampleCount,
+            min: 2,
+            max: 32,
+            divisions: 30,
+            onChanged: (v) => setState(() => _frameBlurSampleCount = v),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'scaleDelta now = ${_computeScaleDelta().toStringAsFixed(4)}',
+            style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 11,
+                fontFamily: 'monospace'),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Captures the composition each frame, then redraws it '
+            'through a radial directional-blur shader. Per pixel: '
+            'motion = (pixel - centre) × scaleDelta; sample [taps] '
+            'points along that vector, average. scaleDelta ≠ 0 only '
+            'during a zoom ramp, so a static-camera section passes '
+            'through unchanged.',
+            style: TextStyle(color: Colors.white54, fontSize: 11, height: 1.4),
+          ),
+        ],
+      ),
     );
   }
 
@@ -478,7 +657,59 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   }
 }
 
-enum _RenderMode { shader, accumulation }
+enum _RenderMode { shader, accumulation, frameBlur }
+
+/// Draws a captured snapshot of the composition through the
+/// scene-motion-blur fragment shader. The shader smears each pixel
+/// radially outward from the canvas centre by an amount proportional
+/// to [scaleDelta], simulating the per-pixel motion vector of a
+/// zoom transition.
+class _SceneMotionBlurPainter extends CustomPainter {
+  _SceneMotionBlurPainter({
+    required this.image,
+    required this.program,
+    required this.scaleDelta,
+    required this.sampleCount,
+    required this.devicePixelRatio,
+  });
+
+  final ui.Image image;
+  final ui.FragmentProgram program;
+  final double scaleDelta;
+  final int sampleCount;
+  final double devicePixelRatio;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final dpr = devicePixelRatio <= 0 ? 1.0 : devicePixelRatio;
+    final shader = program.fragmentShader()
+      ..setImageSampler(0, image)
+      ..setFloat(0, size.width * dpr)
+      ..setFloat(1, size.height * dpr)
+      ..setFloat(2, size.width * dpr / 2)
+      ..setFloat(3, size.height * dpr / 2)
+      ..setFloat(4, scaleDelta)
+      ..setFloat(5, sampleCount.toDouble());
+    // Draw into the logical (un-DPR-scaled) widget rect; the shader
+    // is parameterised in image pixels (captured at full dpr) but
+    // outputs at the canvas's logical resolution.
+    canvas.save();
+    canvas.scale(1.0 / dpr);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width * dpr, size.height * dpr),
+      Paint()..shader = shader,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _SceneMotionBlurPainter old) {
+    return old.image != image ||
+        old.scaleDelta != scaleDelta ||
+        old.sampleCount != sampleCount ||
+        old.devicePixelRatio != devicePixelRatio;
+  }
+}
 
 /// Live numeric readouts of what the painter is computing at the
 /// current scrubber position. Independent computation — doesn't peek

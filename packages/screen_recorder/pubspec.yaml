@@ -90,6 +90,7 @@ flutter:
 
   shaders:
     - shaders/motion_blur.frag
+    - shaders/scene_motion_blur.frag
 
   # To add assets to your application, add an assets section, like this:
   assets:
