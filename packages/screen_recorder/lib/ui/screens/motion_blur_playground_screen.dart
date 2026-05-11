@@ -81,6 +81,14 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   // motion blur. 16 ms ≈ one 60 Hz frame interval ≈ 360° shutter,
   // matches what a real camera would produce.
   double _frameBlurExposureMs = 16.0;
+  // Cap on the translation vector magnitude in logical pixels.
+  // The raw `S_prev × (F_prev − F_now)` formula can spike to many
+  // hundreds of pixels during fast cursor flicks because we use
+  // raw cursorAt() as the focal, while production's focal smoother
+  // (FIR + follow tween) limits how fast the camera can actually
+  // track. The cap approximates that limit without porting the
+  // smoother's stateful logic.
+  double _frameBlurMaxTranslation = 60.0;
 
   @override
   void initState() {
@@ -371,7 +379,14 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     final fNow = _focalAt(now, size);
     final fPrev = _focalAt(prev, size);
     final sPrev = _zoomScaleAt(prev, size);
-    return (fPrev - fNow) * sPrev;
+    final raw = (fPrev - fNow) * sPrev;
+    // Clamp the magnitude so a fast cursor flick can't blow the
+    // smear up to several hundred pixels — see comment on the
+    // _frameBlurMaxTranslation field.
+    if (raw.distance > _frameBlurMaxTranslation) {
+      return raw * (_frameBlurMaxTranslation / raw.distance);
+    }
+    return raw;
   }
 
   /// Single canvas for both modes — the only differences are
@@ -650,6 +665,16 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             max: 32,
             divisions: 30,
             onChanged: (v) => setState(() => _frameBlurSampleCount = v),
+          ),
+          Text(
+              'Max translation (px) — ${_frameBlurMaxTranslation.toStringAsFixed(0)}',
+              style: const TextStyle(color: Colors.white)),
+          Slider(
+            value: _frameBlurMaxTranslation,
+            min: 5,
+            max: 300,
+            onChanged: (v) =>
+                setState(() => _frameBlurMaxTranslation = v),
           ),
           const SizedBox(height: 4),
           Text(
