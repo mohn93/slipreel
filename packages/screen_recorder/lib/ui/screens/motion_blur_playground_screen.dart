@@ -344,21 +344,39 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   }
 
   /// Focal point in video pixels at time [t]. For a cursor-following
-  /// region, approximates production's smoothed focal with the raw
-  /// cursor position — the FIR lag inside ZoomFocalController is on
-  /// the order of a few frames and gets washed out over a 16 ms
-  /// exposure window.
+  /// region, approximates production's smoothed focal with a moving
+  /// average of the cursor over the last ~400 ms — matches the
+  /// follow-duration of `ZoomFocalController` so the focal's
+  /// frame-to-frame velocity stays close to what the actual rendered
+  /// camera does. Using raw `cursorAt(t)` made every cursor flick
+  /// trigger a full-frame blur even though the rendered camera
+  /// barely moved.
   Offset _focalAt(Duration t, Size videoSize) {
     final defaultFocal = videoSize.center(Offset.zero);
     if (!_zoomsOn) return defaultFocal;
     for (final region in _demoZooms()) {
       if (!region.isActive(t)) continue;
       if (!region.followCursor) return region.rect.center;
-      final s = cursorAt(_cursorRecording, t);
-      if (s == null) return region.rect.center;
+      // Uniform mean over [t-400ms, t]. Production uses an FIR with
+      // a similar response shape; the mean is close enough and
+      // doesn't need any per-frame state.
+      const windowMs = 400;
+      const samples = 12;
+      var sx = 0.0, sy = 0.0, count = 0;
+      for (var i = 0; i < samples; i++) {
+        final lookback = (windowMs * i / (samples - 1)).round();
+        final ti = t - Duration(milliseconds: lookback);
+        if (ti.isNegative) continue;
+        final s = cursorAt(_cursorRecording, ti);
+        if (s == null) continue;
+        sx += s.x;
+        sy += s.y;
+        count++;
+      }
+      if (count == 0) return region.rect.center;
       return Offset(
-        s.x.toDouble().clamp(0, videoSize.width),
-        s.y.toDouble().clamp(0, videoSize.height),
+        (sx / count).clamp(0, videoSize.width),
+        (sy / count).clamp(0, videoSize.height),
       );
     }
     return defaultFocal;
