@@ -413,15 +413,29 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   /// transform all flow through PlaybackCanvas the same way they
   /// would in production.
   Widget _buildCanvas() {
-    // Frame blur is a post-process pass that runs on top of the
-    // composition; it composes naturally with the accumulation
-    // cursor (cursor stamps land inside the composition, then the
-    // captured image gets smeared during a zoom ramp). So both
-    // accumulation and frameBlur modes use the accumulation
-    // cursor painter — only shader mode keeps the legacy path.
+    // Per-mode cursor pipeline:
+    //
+    //   shader      → legacy chord-stretched single sprite.
+    //   accumulation → multi-stamp cursor accumulation (cursor-
+    //                  driven blur for static-camera moments).
+    //   frameBlur   → cursor renders SHARPLY (single stamp). The
+    //                 post-process radial+translation shader is the
+    //                 sole motion-blur layer, applied uniformly to
+    //                 the captured composition (cursor + everything
+    //                 else). Matches how Screen Studio's reference
+    //                 clip handles cursor blur — the cursor smears
+    //                 only when the camera does, not when the
+    //                 cursor moves on a static view.
     final blurMode = _mode == _RenderMode.shader
         ? CursorBlurMode.shader
         : CursorBlurMode.accumulation;
+    // In frameBlur mode, force sampleCount=1 so the accumulation
+    // painter draws a single sharp stamp at the current cursor
+    // position — no cursor-specific smear, everything goes through
+    // the post-process pass.
+    final effectiveSampleCount = _mode == _RenderMode.frameBlur
+        ? 1
+        : _accumSampleCount;
     // Sync chrome toggle into the frame provider. setFrame is a no-op
     // when the frame matches, so doing it from build is fine.
     final desiredFrame = _chromeOn ? WindowFrame.rounded() : WindowFrame.none();
@@ -454,7 +468,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       isHoverScrubbing: false,
       cursorBlurMode: blurMode,
       accumulationExposureMs: _accumExposureMs,
-      accumulationSampleCount: _accumSampleCount,
+      accumulationSampleCount: effectiveSampleCount,
     );
   }
 
