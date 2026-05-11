@@ -58,7 +58,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   // prototype that stamps the cursor at sub-frame positions.
   _RenderMode _mode = _RenderMode.shader;
   double _accumExposureMs = 40.0;
-  int _accumSampleCount = 8;
+  int _accumSampleCount = 32;
 
   @override
   void initState() {
@@ -81,6 +81,12 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
           SmoothPlayheadController(videoController: _controller, vsync: this);
       _controller.setVolume(0);
       _controller.addListener(_onTick);
+      // Also tick off the smoothPlayhead — it runs an internal Ticker
+      // at animation-frame rate (60 Hz) while playing, whereas the
+      // VideoPlayerController only emits position updates a few times
+      // per second. Without this the canvas redrew at controller pace
+      // and looked like ~5–10 fps.
+      _smoothPlayhead!.addListener(_onTick);
       if (!mounted) return;
       setState(() => _ready = true);
     } catch (e) {
@@ -96,6 +102,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   @override
   void dispose() {
     _controller.removeListener(_onTick);
+    _smoothPlayhead?.removeListener(_onTick);
     _smoothPlayhead?.dispose();
     _controller.dispose();
     _frameSettings.dispose();
