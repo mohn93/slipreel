@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:screen_recorder/effects/accumulation_cursor_painter.dart';
 import 'package:screen_recorder/effects/motion_blur_tuning.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
@@ -52,6 +53,12 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   MotionBlurTuning _tuning = MotionBlurTuning.defaults;
   double _motionBlur = 1.0;
   final GlobalKey _captureKey = GlobalKey();
+
+  // Render mode: legacy shader/stretched-smear OR the new accumulation
+  // prototype that stamps the cursor at sub-frame positions.
+  _RenderMode _mode = _RenderMode.shader;
+  double _accumExposureMs = 40.0;
+  int _accumSampleCount = 8;
 
   @override
   void initState() {
@@ -170,32 +177,81 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             padding: const EdgeInsets.all(16),
             child: RepaintBoundary(
               key: _captureKey,
-              child: PlaybackCanvas(
-                controller: _controller,
-                smoothPlayhead: _smoothPlayhead,
-                frameSettings: _frameSettings,
-                metadata: _metadata,
-                cursorRecording: _cursorRecording,
-                hideCursorOverlay: false,
-                cursorSize: 1.0,
-                cursorStyle: CursorStyle.classic,
-                cursorClickEffect: CursorClickEffect.none,
-                showZoomDebug: false,
-                zoomRegions: const <ZoomRegion>[],
-                screenAnimationConfig: const ScreenAnimationConfig.preset(
-                    ScreenAnimationStyle.smooth),
-                cursorAnimationConfig: const CursorAnimationConfig.preset(
-                    CursorAnimationStyle.smooth),
-                motionBlur: _motionBlur,
-                motionBlurTuning: _tuning,
-                cursorShadow: 0.0,
-                isHoverScrubbing: false,
-              ),
+              child: _mode == _RenderMode.shader
+                  ? _buildShaderCanvas()
+                  : _buildAccumulationCanvas(),
             ),
           ),
         ),
         _buildTransport(),
       ],
+    );
+  }
+
+  /// The production rendering path — kept for A/B against the new
+  /// accumulation prototype.
+  Widget _buildShaderCanvas() {
+    return PlaybackCanvas(
+      controller: _controller,
+      smoothPlayhead: _smoothPlayhead,
+      frameSettings: _frameSettings,
+      metadata: _metadata,
+      cursorRecording: _cursorRecording,
+      hideCursorOverlay: false,
+      cursorSize: 1.0,
+      cursorStyle: CursorStyle.classic,
+      cursorClickEffect: CursorClickEffect.none,
+      showZoomDebug: false,
+      zoomRegions: const <ZoomRegion>[],
+      screenAnimationConfig:
+          const ScreenAnimationConfig.preset(ScreenAnimationStyle.smooth),
+      cursorAnimationConfig:
+          const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+      motionBlur: _motionBlur,
+      motionBlurTuning: _tuning,
+      cursorShadow: 0.0,
+      isHoverScrubbing: false,
+    );
+  }
+
+  /// Minimal raw-video + accumulation-cursor canvas used to iterate
+  /// on the new blur math without the rest of the playback pipeline
+  /// (zoom transforms, frame chrome, etc.) interfering. Matches the
+  /// shader-canvas aspect ratio so PNG dumps compare 1:1.
+  Widget _buildAccumulationCanvas() {
+    final videoSize = Size(
+      _metadata?.widthPx.toDouble() ?? _controller.value.size.width,
+      _metadata?.heightPx.toDouble() ?? _controller.value.size.height,
+    );
+    final aspect = _controller.value.aspectRatio;
+    return AspectRatio(
+      aspectRatio: aspect,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final dpr = MediaQuery.of(context).devicePixelRatio;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              VideoPlayer(_controller),
+              if (_motionBlur > 0)
+                CustomPaint(
+                  painter: AccumulationCursorPainter(
+                    cursorRecording: _cursorRecording,
+                    position: (_smoothPlayhead?.position) ??
+                        _controller.value.position,
+                    videoSize: videoSize,
+                    exposureMs: _accumExposureMs * _motionBlur,
+                    sampleCount: _accumSampleCount,
+                    sizeMultiplier: 1.0,
+                    style: CursorStyle.classic,
+                    devicePixelRatio: dpr,
+                  ),
+                  size: Size(constraints.maxWidth, constraints.maxHeight),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -272,13 +328,16 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _modeToggle(),
+          const SizedBox(height: 16),
           _ReadoutsCard(
             position: _controller.value.position,
             cursorRecording: _cursorRecording,
             tuning: _tuning,
             videoSize: _metadata == null
                 ? const Size(1, 1)
-                : Size(_metadata!.widthPx.toDouble(), _metadata!.heightPx.toDouble()),
+                : Size(_metadata!.widthPx.toDouble(),
+                    _metadata!.heightPx.toDouble()),
           ),
           const SizedBox(height: 16),
           Slider(
@@ -293,15 +352,79 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
                 style: TextStyle(color: Colors.white54, fontSize: 12)),
           ),
           const SizedBox(height: 16),
-          MotionBlurTuningPanel(
-            tuning: _tuning,
-            onChanged: (t) => setState(() => _tuning = t),
+          if (_mode == _RenderMode.accumulation) _accumulationKnobs(),
+          if (_mode == _RenderMode.shader)
+            MotionBlurTuningPanel(
+              tuning: _tuning,
+              onChanged: (t) => setState(() => _tuning = t),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modeToggle() {
+    return SegmentedButton<_RenderMode>(
+      segments: const [
+        ButtonSegment(value: _RenderMode.shader, label: Text('Shader')),
+        ButtonSegment(
+            value: _RenderMode.accumulation, label: Text('Accumulation')),
+      ],
+      selected: {_mode},
+      onSelectionChanged: (s) => setState(() => _mode = s.first),
+    );
+  }
+
+  Widget _accumulationKnobs() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2B2B3D),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('ACCUMULATION',
+              style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 11,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          Text('Exposure (ms) — ${_accumExposureMs.toStringAsFixed(0)}',
+              style: const TextStyle(color: Colors.white)),
+          Slider(
+            value: _accumExposureMs,
+            min: 4,
+            max: 200,
+            onChanged: (v) => setState(() => _accumExposureMs = v),
+          ),
+          Text('Sub-frame samples — $_accumSampleCount',
+              style: const TextStyle(color: Colors.white)),
+          Slider(
+            value: _accumSampleCount.toDouble(),
+            min: 1,
+            max: 32,
+            divisions: 31,
+            onChanged: (v) => setState(() => _accumSampleCount = v.round()),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'For each output frame, the cursor sprite is stamped at '
+            "[sampleCount] sub-frame timestamps across [exposure] ms, "
+            "each at 1/sampleCount alpha. Stationary stamps sum back "
+            "to alpha=1; motion spreads them along the actual recorded "
+            "path.",
+            style: TextStyle(color: Colors.white54, fontSize: 11, height: 1.4),
           ),
         ],
       ),
     );
   }
 }
+
+enum _RenderMode { shader, accumulation }
 
 /// Live numeric readouts of what the painter is computing at the
 /// current scrubber position. Independent computation — doesn't peek
