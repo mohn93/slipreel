@@ -51,6 +51,13 @@ uniform float uSampleCount;
 uniform float uSharpRadiusPx;
 uniform float uTransitionPx;
 
+// Uniform translation (in image pixels) covering camera pan
+// during the exposure window. Non-zero when a cursor-following
+// zoom is moving the focal between frames, even if scale is
+// constant. Same value for every pixel because a rigid camera
+// pan moves all pixels by the same amount.
+uniform vec2 uTranslation;
+
 out vec4 fragColor;
 
 // Compile-time tap budget. Tune up if you need smoother smears at
@@ -64,8 +71,9 @@ void main() {
 
   // No motion → just pass through the captured scene. Cheap and
   // exact; also keeps the cursor accumulation layer that draws ON
-  // TOP of this pass crisp when nothing is moving.
-  if (abs(uScaleDelta) < 0.0001) {
+  // TOP of this pass crisp when nothing is moving. "No motion"
+  // now means both scale and pan are negligible.
+  if (abs(uScaleDelta) < 0.0001 && length(uTranslation) < 0.5) {
     fragColor = texture(uScene, uv);
     return;
   }
@@ -84,7 +92,11 @@ void main() {
     return;
   }
 
-  vec2 motion = (fragCoord - uFocal) * uScaleDelta * blurStrength;
+  // Motion = radial (scale change, centred on focal) + translation
+  // (rigid pan, same for every pixel). Both scaled by the sharp-
+  // focal mask so the eye-target stays clean.
+  vec2 motion = ((fragCoord - uFocal) * uScaleDelta + uTranslation)
+      * blurStrength;
   vec4 sum = vec4(0.0);
   for (int i = 0; i < kMaxSamples; i++) {
     float fi = float(i);

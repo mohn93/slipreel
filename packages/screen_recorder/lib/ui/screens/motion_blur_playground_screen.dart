@@ -273,6 +273,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
                     image: _capturedScene!,
                     program: _sceneBlurProgram!,
                     scaleDelta: _computeScaleDelta(),
+                    translation: _computeTranslation(),
                     sampleCount: _frameBlurSampleCount.round(),
                     sharpRadiusPx: _frameBlurSharpRadius,
                     transitionPx: _frameBlurTransition,
@@ -334,6 +335,46 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       }
     }
     return 1.0;
+  }
+
+  /// Focal point in video pixels at time [t]. For a cursor-following
+  /// region, approximates production's smoothed focal with the raw
+  /// cursor position — the FIR lag inside ZoomFocalController is on
+  /// the order of a few frames and gets washed out over a 16 ms
+  /// exposure window.
+  Offset _focalAt(Duration t, Size videoSize) {
+    final defaultFocal = videoSize.center(Offset.zero);
+    if (!_zoomsOn) return defaultFocal;
+    for (final region in _demoZooms()) {
+      if (!region.isActive(t)) continue;
+      if (!region.followCursor) return region.rect.center;
+      final s = cursorAt(_cursorRecording, t);
+      if (s == null) return region.rect.center;
+      return Offset(
+        s.x.toDouble().clamp(0, videoSize.width),
+        s.y.toDouble().clamp(0, videoSize.height),
+      );
+    }
+    return defaultFocal;
+  }
+
+  /// Translation component of the per-frame motion blur in logical
+  /// pixels: `S_prev × (F_prev − F_now)`. Captures rigid camera pan
+  /// when the focal is moving — even during the hold phase of a
+  /// zoom region where the scale is constant.
+  Offset _computeTranslation() {
+    if (!_zoomsOn) return Offset.zero;
+    final now = (_smoothPlayhead?.position) ?? _controller.value.position;
+    final exposure =
+        Duration(microseconds: (_frameBlurExposureMs * 1000).round());
+    final prev = now - exposure;
+    final w = (_metadata?.widthPx ?? 1728).toDouble();
+    final h = (_metadata?.heightPx ?? 1117).toDouble();
+    final size = Size(w, h);
+    final fNow = _focalAt(now, size);
+    final fPrev = _focalAt(prev, size);
+    final sPrev = _zoomScaleAt(prev, size);
+    return (fPrev - fNow) * sPrev;
   }
 
   /// Single canvas for both modes — the only differences are
@@ -633,7 +674,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            'scaleDelta now = ${_computeScaleDelta().toStringAsFixed(4)}',
+            'scaleDelta = ${_computeScaleDelta().toStringAsFixed(4)}\n'
+            'translation = (${_computeTranslation().dx.toStringAsFixed(1)}, '
+            '${_computeTranslation().dy.toStringAsFixed(1)}) px',
             style: const TextStyle(
                 color: Colors.white70,
                 fontSize: 11,
@@ -715,6 +758,7 @@ class _SceneMotionBlurPainter extends CustomPainter {
     required this.image,
     required this.program,
     required this.scaleDelta,
+    required this.translation,
     required this.sampleCount,
     required this.sharpRadiusPx,
     required this.transitionPx,
@@ -724,6 +768,7 @@ class _SceneMotionBlurPainter extends CustomPainter {
   final ui.Image image;
   final ui.FragmentProgram program;
   final double scaleDelta;
+  final Offset translation;
   final int sampleCount;
   final double sharpRadiusPx;
   final double transitionPx;
@@ -744,7 +789,10 @@ class _SceneMotionBlurPainter extends CustomPainter {
       // Scaled by dpr so the slider value (in logical px) matches the
       // shader's pixel coords.
       ..setFloat(6, sharpRadiusPx * dpr)
-      ..setFloat(7, transitionPx * dpr);
+      ..setFloat(7, transitionPx * dpr)
+      // Translation in image pixels = translation in logical px × dpr.
+      ..setFloat(8, translation.dx * dpr)
+      ..setFloat(9, translation.dy * dpr);
     // Draw into the logical (un-DPR-scaled) widget rect; the shader
     // is parameterised in image pixels (captured at full dpr) but
     // outputs at the canvas's logical resolution.
@@ -761,6 +809,7 @@ class _SceneMotionBlurPainter extends CustomPainter {
   bool shouldRepaint(covariant _SceneMotionBlurPainter old) {
     return old.image != image ||
         old.scaleDelta != scaleDelta ||
+        old.translation != translation ||
         old.sampleCount != sampleCount ||
         old.sharpRadiusPx != sharpRadiusPx ||
         old.transitionPx != transitionPx ||
