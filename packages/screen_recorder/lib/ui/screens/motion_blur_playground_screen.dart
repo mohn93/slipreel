@@ -416,26 +416,18 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     // Per-mode cursor pipeline:
     //
     //   shader      → legacy chord-stretched single sprite.
-    //   accumulation → multi-stamp cursor accumulation (cursor-
-    //                  driven blur for static-camera moments).
-    //   frameBlur   → cursor renders SHARPLY (single stamp). The
-    //                 post-process radial+translation shader is the
-    //                 sole motion-blur layer, applied uniformly to
-    //                 the captured composition (cursor + everything
-    //                 else). Matches how Screen Studio's reference
-    //                 clip handles cursor blur — the cursor smears
-    //                 only when the camera does, not when the
-    //                 cursor moves on a static view.
+    //   accumulation → multi-stamp cursor accumulation.
+    //   frameBlur   → cursor uses accumulation too AND the
+    //                 post-process radial+translation shader runs
+    //                 on top. The cursor smears via its sub-frame
+    //                 stamps; the frame post-process adds camera-
+    //                 motion smear on top. Frame-blur translation
+    //                 is now driven by a 400 ms smoothed focal
+    //                 (matches production's smoother), so cursor
+    //                 flicks no longer trigger huge frame smear.
     final blurMode = _mode == _RenderMode.shader
         ? CursorBlurMode.shader
         : CursorBlurMode.accumulation;
-    // In frameBlur mode, force sampleCount=1 so the accumulation
-    // painter draws a single sharp stamp at the current cursor
-    // position — no cursor-specific smear, everything goes through
-    // the post-process pass.
-    final effectiveSampleCount = _mode == _RenderMode.frameBlur
-        ? 1
-        : _accumSampleCount;
     // Sync chrome toggle into the frame provider. setFrame is a no-op
     // when the frame matches, so doing it from build is fine.
     final desiredFrame = _chromeOn ? WindowFrame.rounded() : WindowFrame.none();
@@ -468,7 +460,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       isHoverScrubbing: false,
       cursorBlurMode: blurMode,
       accumulationExposureMs: _accumExposureMs,
-      accumulationSampleCount: effectiveSampleCount,
+      accumulationSampleCount: _accumSampleCount,
     );
   }
 

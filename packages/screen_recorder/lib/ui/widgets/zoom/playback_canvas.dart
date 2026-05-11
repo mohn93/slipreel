@@ -59,6 +59,8 @@ class PlaybackCanvas extends StatefulWidget {
     this.cursorBlurMode = CursorBlurMode.shader,
     this.accumulationExposureMs = 40.0,
     this.accumulationSampleCount = 32,
+    this.accumulationCameraFocalAt,
+    this.accumulationCameraScaleAt,
   });
 
   final VideoPlayerController controller;
@@ -113,6 +115,17 @@ class PlaybackCanvas extends StatefulWidget {
 
   /// Number of sub-frame stamps for [CursorBlurMode.accumulation].
   final int accumulationSampleCount;
+
+  /// Optional camera-state lookup for camera-aware sub-frame
+  /// cursor stamping (focal at any sub-frame time, video coords).
+  /// Pair with [accumulationCameraScaleAt]. When both are provided,
+  /// the painter places stamps at the cursor's *viewport* position
+  /// at each sub-frame time — so cursor-following zooms keep the
+  /// cursor visually stationary on screen instead of trailing
+  /// based on raw video-pixel positions. The playground sets these
+  /// up in Frame-blur mode.
+  final Offset Function(Duration)? accumulationCameraFocalAt;
+  final double Function(Duration)? accumulationCameraScaleAt;
 
   @override
   State<PlaybackCanvas> createState() => _PlaybackCanvasState();
@@ -285,6 +298,18 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                                 cursorState: motion.state,
                                 devicePixelRatio:
                                     MediaQuery.of(context).devicePixelRatio,
+                                // Camera-aware sub-frame stamping:
+                                // pass the current focal/scale (from the
+                                // focalUpdate computed above) and the
+                                // playground's sub-frame lookups so each
+                                // stamp lands at the cursor's *viewport*
+                                // position at that sub-frame time. Falls
+                                // back to legacy raw-cursor positioning
+                                // when the callbacks aren't provided.
+                                currentFocalVideo: focalUpdate?.focal,
+                                currentScale: focalUpdate?.zoom.zoomLevel ?? 1.0,
+                                focalAt: widget.accumulationCameraFocalAt,
+                                scaleAt: widget.accumulationCameraScaleAt,
                               )
                             : CursorOverlayPainter(
                                 cursorRecording: widget.cursorRecording,

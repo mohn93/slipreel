@@ -36,6 +36,10 @@ class AccumulationCursorPainter extends CustomPainter {
     this.style = CursorStyle.classic,
     this.cursorState = CursorState.arrow,
     this.devicePixelRatio = 2.0,
+    this.currentFocalVideo,
+    this.currentScale = 1.0,
+    this.focalAt,
+    this.scaleAt,
   });
 
   final CursorRecording cursorRecording;
@@ -47,6 +51,23 @@ class AccumulationCursorPainter extends CustomPainter {
   final CursorStyle style;
   final CursorState cursorState;
   final double devicePixelRatio;
+
+  /// Current camera focal in video coords. Pair with [currentScale]
+  /// and the two callbacks below to enable camera-aware sub-frame
+  /// positioning — each stamp lands where the cursor *visually*
+  /// was at that sub-frame time, given the camera state at that
+  /// time. When null, stamps land at the cursor's raw video
+  /// position (legacy behaviour; correct when there's no zoom).
+  final Offset? currentFocalVideo;
+
+  /// Current camera scale (zoom factor at the painted frame).
+  final double currentScale;
+
+  /// Camera focal lookup at arbitrary sub-frame times (video coords).
+  final Offset Function(Duration)? focalAt;
+
+  /// Camera scale lookup at arbitrary sub-frame times.
+  final double Function(Duration)? scaleAt;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -91,13 +112,50 @@ class AccumulationCursorPainter extends CustomPainter {
       spritePxSize.toDouble(),
     );
 
+    // Camera-aware sub-frame positioning is active only when all of
+    // currentFocalVideo / focalAt / scaleAt are provided. Otherwise
+    // we fall back to the legacy "stamp at the cursor's raw video
+    // position" behaviour, which is correct when there's no zoom
+    // transform applied above the painter.
+    final cameraAware = currentFocalVideo != null &&
+        focalAt != null &&
+        scaleAt != null &&
+        currentScale > 0;
+    final fNow = currentFocalVideo ?? Offset.zero;
+    final sNow = currentScale;
+
     for (var i = 0; i < sampleCount; i++) {
       final t = position.inMicroseconds - i * dtMicros;
       if (t < 0) continue;
       final sample = cursorAt(cursorRecording, Duration(microseconds: t));
       if (sample == null) continue;
 
-      final widgetPos = Offset(sample.x * scaleX, sample.y * scaleY);
+      // Where should this stamp land in the painter's widget coords?
+      // - Legacy: cursor's raw video position. Correct when nothing
+      //   above the painter is transforming.
+      // - Camera-aware: solve for the widget_pos that, after the
+      //   parent's current Transform (alignment=center, scale=sNow,
+      //   focal=fNow), produces the viewport position where the
+      //   cursor *visually* was at sub-frame time t — given the
+      //   camera state at t. Result:
+      //     widget_pos = fNow + (S_i / sNow) * (cursor_i - F_i)
+      Offset cursorVideo;
+      if (cameraAware) {
+        final ti = Duration(microseconds: t);
+        final fI = focalAt!(ti);
+        final sI = scaleAt!(ti);
+        final s = sNow == 0 ? 1.0 : sI / sNow;
+        cursorVideo = fNow +
+            Offset(
+              (sample.x - fI.dx) * s,
+              (sample.y - fI.dy) * s,
+            );
+      } else {
+        cursorVideo = Offset(sample.x.toDouble(), sample.y.toDouble());
+      }
+
+      final widgetPos =
+          Offset(cursorVideo.dx * scaleX, cursorVideo.dy * scaleY);
       canvas.drawImageRect(
         spriteImage,
         srcRect,
@@ -124,7 +182,11 @@ class AccumulationCursorPainter extends CustomPainter {
         old.sizeMultiplier != sizeMultiplier ||
         old.style != style ||
         old.cursorState != cursorState ||
-        old.devicePixelRatio != devicePixelRatio;
+        old.devicePixelRatio != devicePixelRatio ||
+        old.currentFocalVideo != currentFocalVideo ||
+        old.currentScale != currentScale ||
+        old.focalAt != focalAt ||
+        old.scaleAt != scaleAt;
   }
 }
 
