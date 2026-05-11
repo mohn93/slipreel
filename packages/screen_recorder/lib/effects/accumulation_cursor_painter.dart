@@ -58,77 +58,59 @@ class AccumulationCursorPainter extends CustomPainter {
     final pxDiameter =
         kCursorBaseDiameter * sizeMultiplier * (scaleX + scaleY) / 2;
 
-    // Bake the cursor sprite once per paint. Buffer is sized to leave
-    // ~2 cursor-widths of padding around the glyph (halo / shadow /
-    // any overshoot from state glyphs).
+    // Buffer is sized to leave ~2 cursor-widths of padding around the
+    // glyph (halo / shadow / any overshoot from state glyphs).
     final spriteBufferSize = (pxDiameter * 4).ceil().toDouble();
     final spriteCenter = Offset(spriteBufferSize / 2, spriteBufferSize / 2);
     final dpr = devicePixelRatio <= 0 ? 1.0 : devicePixelRatio;
     final spritePxSize = (spriteBufferSize * dpr).ceil();
 
-    final recorder = ui.PictureRecorder();
-    final spriteCanvas = Canvas(
-      recorder,
-      Rect.fromLTWH(
-        0,
-        0,
-        spritePxSize.toDouble(),
-        spritePxSize.toDouble(),
-      ),
-    );
-    spriteCanvas.scale(dpr);
-    paintCursorGlyphWithPulse(
-      spriteCanvas,
-      position: spriteCenter,
-      baseDiameter: pxDiameter,
+    final spriteImage = _spriteCache.get(
+      pxDiameter: pxDiameter,
+      dpr: dpr,
       style: style,
-      microsSinceClick: null,
       state: cursorState,
+      bufferPx: spritePxSize,
+      bufferLogical: spriteBufferSize,
+      spriteCenter: spriteCenter,
     );
-    final picture = recorder.endRecording();
-    final spriteImage = picture.toImageSync(spritePxSize, spritePxSize);
-    picture.dispose();
 
-    try {
-      final exposureMicros = (exposureMs * 1000).round();
-      // Sub-frame interval. sampleCount=1 → just the current frame.
-      final dtMicros =
-          sampleCount <= 1 ? 0 : (exposureMicros ~/ (sampleCount - 1));
-      // Even alpha-weighted integration: every substep contributes
-      // 1/N. A stationary cursor's stamps stack and sum to alpha = 1.
-      // A moving cursor smears with peak per-position alpha = 1/N.
-      final alphaPerStamp = 1.0 / sampleCount;
+    final exposureMicros = (exposureMs * 1000).round();
+    // Sub-frame interval. sampleCount=1 → just the current frame.
+    final dtMicros =
+        sampleCount <= 1 ? 0 : (exposureMicros ~/ (sampleCount - 1));
+    // Even alpha-weighted integration: every substep contributes
+    // 1/N. A stationary cursor's stamps stack and sum to alpha = 1.
+    // A moving cursor smears with peak per-position alpha = 1/N.
+    final alphaPerStamp = 1.0 / sampleCount;
 
-      final srcRect = Rect.fromLTWH(
-        0,
-        0,
-        spritePxSize.toDouble(),
-        spritePxSize.toDouble(),
+    final srcRect = Rect.fromLTWH(
+      0,
+      0,
+      spritePxSize.toDouble(),
+      spritePxSize.toDouble(),
+    );
+
+    for (var i = 0; i < sampleCount; i++) {
+      final t = position.inMicroseconds - i * dtMicros;
+      if (t < 0) continue;
+      final sample = cursorAt(cursorRecording, Duration(microseconds: t));
+      if (sample == null) continue;
+
+      final widgetPos = Offset(sample.x * scaleX, sample.y * scaleY);
+      canvas.drawImageRect(
+        spriteImage,
+        srcRect,
+        Rect.fromLTWH(
+          widgetPos.dx - spriteCenter.dx,
+          widgetPos.dy - spriteCenter.dy,
+          spriteBufferSize,
+          spriteBufferSize,
+        ),
+        Paint()
+          ..color = Colors.white.withValues(alpha: alphaPerStamp)
+          ..filterQuality = FilterQuality.high,
       );
-
-      for (var i = 0; i < sampleCount; i++) {
-        final t = position.inMicroseconds - i * dtMicros;
-        if (t < 0) continue;
-        final sample = cursorAt(cursorRecording, Duration(microseconds: t));
-        if (sample == null) continue;
-
-        final widgetPos = Offset(sample.x * scaleX, sample.y * scaleY);
-        canvas.drawImageRect(
-          spriteImage,
-          srcRect,
-          Rect.fromLTWH(
-            widgetPos.dx - spriteCenter.dx,
-            widgetPos.dy - spriteCenter.dy,
-            spriteBufferSize,
-            spriteBufferSize,
-          ),
-          Paint()
-            ..color = Colors.white.withValues(alpha: alphaPerStamp)
-            ..filterQuality = FilterQuality.high,
-        );
-      }
-    } finally {
-      spriteImage.dispose();
     }
   }
 
@@ -145,3 +127,62 @@ class AccumulationCursorPainter extends CustomPainter {
         old.devicePixelRatio != devicePixelRatio;
   }
 }
+
+/// Process-wide singleton cache for the baked cursor sprite. The sprite
+/// shape is a pure function of (diameter, dpr, style, state) — none of
+/// which change frame-to-frame in typical playback — so we bake once
+/// and reuse for every paint until one of those changes. Without this
+/// cache the painter was calling `picture.toImageSync` on every video
+/// tick (60 Hz), which stalls the UI thread.
+class _SpriteCache {
+  ui.Image? _image;
+  double? _diameter;
+  double? _dpr;
+  CursorStyle? _style;
+  CursorState? _state;
+  int? _bufferPx;
+
+  ui.Image get({
+    required double pxDiameter,
+    required double dpr,
+    required CursorStyle style,
+    required CursorState state,
+    required int bufferPx,
+    required double bufferLogical,
+    required Offset spriteCenter,
+  }) {
+    final hit = _image != null &&
+        _diameter == pxDiameter &&
+        _dpr == dpr &&
+        _style == style &&
+        _state == state &&
+        _bufferPx == bufferPx;
+    if (hit) return _image!;
+    _image?.dispose();
+    final recorder = ui.PictureRecorder();
+    final c = Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, bufferPx.toDouble(), bufferPx.toDouble()),
+    );
+    c.scale(dpr);
+    paintCursorGlyphWithPulse(
+      c,
+      position: spriteCenter,
+      baseDiameter: pxDiameter,
+      style: style,
+      microsSinceClick: null,
+      state: state,
+    );
+    final pic = recorder.endRecording();
+    _image = pic.toImageSync(bufferPx, bufferPx);
+    pic.dispose();
+    _diameter = pxDiameter;
+    _dpr = dpr;
+    _style = style;
+    _state = state;
+    _bufferPx = bufferPx;
+    return _image!;
+  }
+}
+
+final _spriteCache = _SpriteCache();
