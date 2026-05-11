@@ -66,7 +66,6 @@ void main() {
   float activeF = clamp(uSampleCount, 2.0, kMaxSamplesF);
   vec2 motion = (fragCoord - uFocal) * uScaleDelta;
   vec4 sum = vec4(0.0);
-  float weightSum = 0.0;
   for (int i = 0; i < kMaxSamples; i++) {
     float fi = float(i);
     // Constant trip count, conditional contribution. SkSL refuses
@@ -76,12 +75,18 @@ void main() {
       float t = fi / (activeF - 1.0);
       vec2 samplePos = fragCoord - motion * t;
       vec2 sampleUv = samplePos / uOutputSize;
-      if (sampleUv.x >= 0.0 && sampleUv.x <= 1.0 &&
-          sampleUv.y >= 0.0 && sampleUv.y <= 1.0) {
-        sum += texture(uScene, sampleUv);
-        weightSum += 1.0;
-      }
+      // Edge-clamp instead of skipping out-of-bound samples: when
+      // the back-in-time position falls outside the captured
+      // viewport (typical at the edges during a zoom-out), return
+      // the nearest visible pixel's colour rather than nothing.
+      // Bleeds the edge colour inward so near-edge regions get
+      // *some* smear — pixels literally on the edge still won't
+      // blur because all their samples clamp to the same edge
+      // colour, but it's noticeably better than the previous
+      // black/skip behaviour.
+      vec2 clampedUv = clamp(sampleUv, vec2(0.0), vec2(1.0));
+      sum += texture(uScene, clampedUv);
     }
   }
-  fragColor = weightSum > 0.0 ? sum / weightSum : texture(uScene, uv);
+  fragColor = sum / activeF;
 }
