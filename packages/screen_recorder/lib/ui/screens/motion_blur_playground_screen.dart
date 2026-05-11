@@ -74,6 +74,13 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   final GlobalKey _sceneBoundaryKey = GlobalKey();
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
   double _frameBlurSampleCount = 16;
+  // Frame-blur uses its own exposure window because the cursor-
+  // accumulation default (40 ms) is too aggressive for whole-frame
+  // radial blur — 40 ms during a zoom ramp can smear edges by 40+
+  // pixels and the result looks more like a screen wipe than a
+  // motion blur. 16 ms ≈ one 60 Hz frame interval ≈ 360° shutter,
+  // matches what a real camera would produce.
+  double _frameBlurExposureMs = 16.0;
 
   @override
   void initState() {
@@ -294,7 +301,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     if (!_zoomsOn) return 0.0;
     final now = (_smoothPlayhead?.position) ?? _controller.value.position;
     final exposure =
-        Duration(microseconds: (_accumExposureMs * 1000).round());
+        Duration(microseconds: (_frameBlurExposureMs * 1000).round());
     final prev = now - exposure;
     final w = (_metadata?.widthPx ?? 1728).toDouble();
     final h = (_metadata?.heightPx ?? 1117).toDouble();
@@ -379,6 +386,11 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     final w = (_metadata?.widthPx ?? 1728).toDouble();
     final h = (_metadata?.heightPx ?? 1117).toDouble();
     return [
+      // Cursor-following is disabled so the focal is a fixed point
+      // (the region's centre). With a stationary focal, the
+      // radial-only shader is mathematically exact — no missing
+      // translation component. Re-enable per-region if you want to
+      // stress-test the limitation.
       ZoomRegion(
         rect: Rect.fromCenter(
           center: Offset(w * 0.5, h * 0.4),
@@ -389,6 +401,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
         duration: const Duration(milliseconds: 3000),
         zoomLevel: 1.8,
         videoBounds: Size(w, h),
+        followCursor: false,
       ),
       ZoomRegion(
         rect: Rect.fromCenter(
@@ -400,6 +413,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
         duration: const Duration(milliseconds: 2500),
         zoomLevel: 2.0,
         videoBounds: Size(w, h),
+        followCursor: false,
       ),
     ];
   }
@@ -574,13 +588,13 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
                   letterSpacing: 1.2,
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
-          Text('Exposure (ms) — ${_accumExposureMs.toStringAsFixed(0)}',
+          Text('Exposure (ms) — ${_frameBlurExposureMs.toStringAsFixed(0)}',
               style: const TextStyle(color: Colors.white)),
           Slider(
-            value: _accumExposureMs,
-            min: 4,
-            max: 200,
-            onChanged: (v) => setState(() => _accumExposureMs = v),
+            value: _frameBlurExposureMs,
+            min: 2,
+            max: 80,
+            onChanged: (v) => setState(() => _frameBlurExposureMs = v),
           ),
           Text('Shader taps — ${_frameBlurSampleCount.round()}',
               style: const TextStyle(color: Colors.white)),
