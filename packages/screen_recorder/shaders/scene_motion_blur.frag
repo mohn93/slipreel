@@ -44,6 +44,13 @@ uniform float uScaleDelta;
 // indices >= uSampleCount.
 uniform float uSampleCount;
 
+// Radius around the focal (in pixels) within which the blur is
+// fully suppressed. Beyond this radius the blur ramps in via
+// smoothstep over a transition zone, reaching full strength at
+// uSharpRadiusPx + uTransitionPx. 0 ⇒ blur everywhere as before.
+uniform float uSharpRadiusPx;
+uniform float uTransitionPx;
+
 out vec4 fragColor;
 
 // Compile-time tap budget. Tune up if you need smoother smears at
@@ -64,7 +71,20 @@ void main() {
   }
 
   float activeF = clamp(uSampleCount, 2.0, kMaxSamplesF);
-  vec2 motion = (fragCoord - uFocal) * uScaleDelta;
+
+  // Sharp-focal mask: pixels close to the focal stay sharp, blur
+  // ramps in as the radius grows. Keeps the area the eye is most
+  // likely focused on (the zoom target) from looking smeared.
+  float r = length(fragCoord - uFocal);
+  float blurStrength = uSharpRadiusPx > 0.0
+      ? smoothstep(uSharpRadiusPx, uSharpRadiusPx + max(uTransitionPx, 1.0), r)
+      : 1.0;
+  if (blurStrength <= 0.0) {
+    fragColor = texture(uScene, uv);
+    return;
+  }
+
+  vec2 motion = (fragCoord - uFocal) * uScaleDelta * blurStrength;
   vec4 sum = vec4(0.0);
   for (int i = 0; i < kMaxSamples; i++) {
     float fi = float(i);

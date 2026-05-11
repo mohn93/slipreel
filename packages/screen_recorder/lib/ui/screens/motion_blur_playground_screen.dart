@@ -81,6 +81,13 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   // motion blur. 16 ms ≈ one 60 Hz frame interval ≈ 360° shutter,
   // matches what a real camera would produce.
   double _frameBlurExposureMs = 16.0;
+  // Radius around the focal (in widget pixels) where the blur is
+  // fully suppressed. Pixels within this radius stay sharp; beyond
+  // it the blur ramps in via smoothstep. Default 80 ≈ a generous
+  // cursor-and-target area kept clean.
+  double _frameBlurSharpRadius = 80.0;
+  // Width of the sharp→blurred transition zone in pixels.
+  double _frameBlurTransition = 80.0;
 
   @override
   void initState() {
@@ -267,6 +274,8 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
                     program: _sceneBlurProgram!,
                     scaleDelta: _computeScaleDelta(),
                     sampleCount: _frameBlurSampleCount.round(),
+                    sharpRadiusPx: _frameBlurSharpRadius,
+                    transitionPx: _frameBlurTransition,
                     devicePixelRatio: dpr,
                   ),
                   size: Size(constraints.maxWidth, constraints.maxHeight),
@@ -385,12 +394,13 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   List<ZoomRegion> _demoZooms() {
     final w = (_metadata?.widthPx ?? 1728).toDouble();
     final h = (_metadata?.heightPx ?? 1117).toDouble();
+    // Cursor-following is left on (default) so the demo matches
+    // the original preview behaviour. The shader's radial model
+    // doesn't account for the per-frame focal translation that
+    // cursor-following adds — for now that small directional
+    // mismatch is accepted as the price of matching production
+    // camera motion.
     return [
-      // Cursor-following is disabled so the focal is a fixed point
-      // (the region's centre). With a stationary focal, the
-      // radial-only shader is mathematically exact — no missing
-      // translation component. Re-enable per-region if you want to
-      // stress-test the limitation.
       ZoomRegion(
         rect: Rect.fromCenter(
           center: Offset(w * 0.5, h * 0.4),
@@ -401,7 +411,6 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
         duration: const Duration(milliseconds: 3000),
         zoomLevel: 1.8,
         videoBounds: Size(w, h),
-        followCursor: false,
       ),
       ZoomRegion(
         rect: Rect.fromCenter(
@@ -413,7 +422,6 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
         duration: const Duration(milliseconds: 2500),
         zoomLevel: 2.0,
         videoBounds: Size(w, h),
-        followCursor: false,
       ),
     ];
   }
@@ -605,6 +613,24 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             divisions: 30,
             onChanged: (v) => setState(() => _frameBlurSampleCount = v),
           ),
+          Text(
+              'Sharp focal radius (px) — ${_frameBlurSharpRadius.toStringAsFixed(0)}',
+              style: const TextStyle(color: Colors.white)),
+          Slider(
+            value: _frameBlurSharpRadius,
+            min: 0,
+            max: 400,
+            onChanged: (v) => setState(() => _frameBlurSharpRadius = v),
+          ),
+          Text(
+              'Sharp→blur transition (px) — ${_frameBlurTransition.toStringAsFixed(0)}',
+              style: const TextStyle(color: Colors.white)),
+          Slider(
+            value: _frameBlurTransition,
+            min: 1,
+            max: 300,
+            onChanged: (v) => setState(() => _frameBlurTransition = v),
+          ),
           const SizedBox(height: 4),
           Text(
             'scaleDelta now = ${_computeScaleDelta().toStringAsFixed(4)}',
@@ -690,6 +716,8 @@ class _SceneMotionBlurPainter extends CustomPainter {
     required this.program,
     required this.scaleDelta,
     required this.sampleCount,
+    required this.sharpRadiusPx,
+    required this.transitionPx,
     required this.devicePixelRatio,
   });
 
@@ -697,6 +725,8 @@ class _SceneMotionBlurPainter extends CustomPainter {
   final ui.FragmentProgram program;
   final double scaleDelta;
   final int sampleCount;
+  final double sharpRadiusPx;
+  final double transitionPx;
   final double devicePixelRatio;
 
   @override
@@ -709,7 +739,12 @@ class _SceneMotionBlurPainter extends CustomPainter {
       ..setFloat(2, size.width * dpr / 2)
       ..setFloat(3, size.height * dpr / 2)
       ..setFloat(4, scaleDelta)
-      ..setFloat(5, sampleCount.toDouble());
+      ..setFloat(5, sampleCount.toDouble())
+      // Sharp focal radius / transition zone — see scene_motion_blur.frag.
+      // Scaled by dpr so the slider value (in logical px) matches the
+      // shader's pixel coords.
+      ..setFloat(6, sharpRadiusPx * dpr)
+      ..setFloat(7, transitionPx * dpr);
     // Draw into the logical (un-DPR-scaled) widget rect; the shader
     // is parameterised in image pixels (captured at full dpr) but
     // outputs at the canvas's logical resolution.
@@ -727,6 +762,8 @@ class _SceneMotionBlurPainter extends CustomPainter {
     return old.image != image ||
         old.scaleDelta != scaleDelta ||
         old.sampleCount != sampleCount ||
+        old.sharpRadiusPx != sharpRadiusPx ||
+        old.transitionPx != transitionPx ||
         old.devicePixelRatio != devicePixelRatio;
   }
 }
