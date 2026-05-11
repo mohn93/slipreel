@@ -298,11 +298,18 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   /// outward from the focal); negative ⇒ ramping out (scene shrinks
   /// toward the focal). Zero ⇒ no motion, shader passes the captured
   /// image through unchanged.
+  /// Effective exposure window for the frame blur. Scaled by the
+  /// master motion-blur intensity so the top slider mutes both
+  /// cursor accumulation AND frame blur together — when intensity
+  /// is 0, exposure goes to 0 so scaleDelta and translation both
+  /// collapse to 0 (no blur).
+  Duration get _effectiveFrameBlurExposure => Duration(
+      microseconds: (_frameBlurExposureMs * _motionBlur * 1000).round());
+
   double _computeScaleDelta() {
     if (!_zoomsOn) return 0.0;
     final now = (_smoothPlayhead?.position) ?? _controller.value.position;
-    final exposure =
-        Duration(microseconds: (_frameBlurExposureMs * 1000).round());
+    final exposure = _effectiveFrameBlurExposure;
     final prev = now - exposure;
     final w = (_metadata?.widthPx ?? 1728).toDouble();
     final h = (_metadata?.heightPx ?? 1117).toDouble();
@@ -356,8 +363,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   Offset _computeTranslation() {
     if (!_zoomsOn) return Offset.zero;
     final now = (_smoothPlayhead?.position) ?? _controller.value.position;
-    final exposure =
-        Duration(microseconds: (_frameBlurExposureMs * 1000).round());
+    final exposure = _effectiveFrameBlurExposure;
     final prev = now - exposure;
     final w = (_metadata?.widthPx ?? 1728).toDouble();
     final h = (_metadata?.heightPx ?? 1117).toDouble();
