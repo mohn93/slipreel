@@ -38,43 +38,49 @@ uniform vec2 uFocal;
 // motion ⇒ no blur (early return short-circuits the loop).
 uniform float uScaleDelta;
 
-// Number of taps along the motion vector, baked as a float since
-// SkSL doesn't support integer uniforms cleanly. Cast to int
-// inside main.
+// How many of the [kMaxSamples] tap slots are "active". SkSL
+// requires loop bounds to be compile-time constants, so the loop
+// always runs [kMaxSamples] iterations and skips contribution for
+// indices >= uSampleCount.
 uniform float uSampleCount;
 
 out vec4 fragColor;
+
+// Compile-time tap budget. Tune up if you need smoother smears at
+// the cost of fragment-shader work per pixel.
+const int kMaxSamples = 32;
+const float kMaxSamplesF = 32.0;
 
 void main() {
   vec2 fragCoord = FlutterFragCoord();
   vec2 uv = fragCoord / uOutputSize;
 
   // No motion → just pass through the captured scene. Cheap and
-  // exact; also keeps the cursor accumulation layer that draws
-  // ON TOP of this pass crisp when nothing's moving.
+  // exact; also keeps the cursor accumulation layer that draws ON
+  // TOP of this pass crisp when nothing is moving.
   if (abs(uScaleDelta) < 0.0001) {
     fragColor = texture(uScene, uv);
     return;
   }
 
+  float activeF = clamp(uSampleCount, 2.0, kMaxSamplesF);
   vec2 motion = (fragCoord - uFocal) * uScaleDelta;
-  int N = int(uSampleCount);
-  if (N < 2) {
-    fragColor = texture(uScene, uv);
-    return;
-  }
-  float invN = 1.0 / float(N);
   vec4 sum = vec4(0.0);
   float weightSum = 0.0;
-  for (int i = 0; i < N; i++) {
-    // t = 0 → current frame (no offset); t = 1 → one exposure ago.
-    float t = float(i) / float(N - 1);
-    vec2 samplePos = fragCoord - motion * t;
-    vec2 sampleUv = samplePos / uOutputSize;
-    if (sampleUv.x >= 0.0 && sampleUv.x <= 1.0 &&
-        sampleUv.y >= 0.0 && sampleUv.y <= 1.0) {
-      sum += texture(uScene, sampleUv);
-      weightSum += 1.0;
+  for (int i = 0; i < kMaxSamples; i++) {
+    float fi = float(i);
+    // Constant trip count, conditional contribution. SkSL refuses
+    // to compile a `for (int i = 0; i < N; ...)` where N comes
+    // from a uniform.
+    if (fi < activeF) {
+      float t = fi / (activeF - 1.0);
+      vec2 samplePos = fragCoord - motion * t;
+      vec2 sampleUv = samplePos / uOutputSize;
+      if (sampleUv.x >= 0.0 && sampleUv.x <= 1.0 &&
+          sampleUv.y >= 0.0 && sampleUv.y <= 1.0) {
+        sum += texture(uScene, sampleUv);
+        weightSum += 1.0;
+      }
     }
   }
   fragColor = weightSum > 0.0 ? sum / weightSum : texture(uScene, uv);
