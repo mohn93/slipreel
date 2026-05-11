@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:screen_recorder/effects/accumulation_cursor_painter.dart';
 import 'package:screen_recorder/effects/ema_velocity_filter.dart';
 import 'package:screen_recorder/effects/motion_blur_tuning.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
@@ -55,6 +56,9 @@ class PlaybackCanvas extends StatefulWidget {
     required this.motionBlurTuning,
     required this.cursorShadow,
     required this.isHoverScrubbing,
+    this.cursorBlurMode = CursorBlurMode.shader,
+    this.accumulationExposureMs = 40.0,
+    this.accumulationSampleCount = 32,
   });
 
   final VideoPlayerController controller;
@@ -92,6 +96,23 @@ class PlaybackCanvas extends StatefulWidget {
   /// a forward and a backward approach to the same T render the same
   /// frame, matching what the user expects from a scrub preview.
   final bool isHoverScrubbing;
+
+  /// Which cursor motion-blur pipeline to use. [CursorBlurMode.shader]
+  /// is the production path: a chord-stretched single sprite produced
+  /// by the motion-blur fragment program. [CursorBlurMode.accumulation]
+  /// is the new path: the cursor sprite is stamped at sub-frame
+  /// positions across the exposure window with 1/N alpha each, so
+  /// the smear follows the actual recorded path (the cinematic
+  /// motion-blur approach Screen Studio uses). The playground wires
+  /// this up so we can A/B both pipelines under the full chrome +
+  /// zoom transform.
+  final CursorBlurMode cursorBlurMode;
+
+  /// Virtual shutter window for [CursorBlurMode.accumulation] in ms.
+  final double accumulationExposureMs;
+
+  /// Number of sub-frame stamps for [CursorBlurMode.accumulation].
+  final int accumulationSampleCount;
 
   @override
   State<PlaybackCanvas> createState() => _PlaybackCanvasState();
@@ -249,27 +270,43 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                       width: videoSize.width,
                       height: videoSize.height,
                       child: CustomPaint(
-                        painter: CursorOverlayPainter(
-                          cursorRecording: widget.cursorRecording,
-                          position: pos,
-                          screenPos: motion.screenPos,
-                          videoSize: videoSize,
-                          screenSize: videoSize,
-                          sizeMultiplier: widget.cursorSize,
-                          style: widget.cursorStyle,
-                          clickEffect: widget.cursorClickEffect,
-                          velocityPxPerSec: combinedCursorVelocity,
-                          motionBlurIntensity: widget.motionBlur,
-                          tuning: widget.motionBlurTuning,
-                          cursorState: motion.state,
-                          cursorShadow: widget.cursorShadow,
-                          // Pass dpr so the motion-blur bake is at
-                          // device resolution, otherwise the smear
-                          // shows nearest-filter texel doubling on
-                          // retina displays.
-                          devicePixelRatio:
-                              MediaQuery.of(context).devicePixelRatio,
-                        ),
+                        painter: widget.cursorBlurMode ==
+                                CursorBlurMode.accumulation
+                            ? AccumulationCursorPainter(
+                                cursorRecording: widget.cursorRecording,
+                                position: pos,
+                                videoSize: videoSize,
+                                exposureMs:
+                                    widget.accumulationExposureMs *
+                                        widget.motionBlur,
+                                sampleCount: widget.accumulationSampleCount,
+                                sizeMultiplier: widget.cursorSize,
+                                style: widget.cursorStyle,
+                                cursorState: motion.state,
+                                devicePixelRatio:
+                                    MediaQuery.of(context).devicePixelRatio,
+                              )
+                            : CursorOverlayPainter(
+                                cursorRecording: widget.cursorRecording,
+                                position: pos,
+                                screenPos: motion.screenPos,
+                                videoSize: videoSize,
+                                screenSize: videoSize,
+                                sizeMultiplier: widget.cursorSize,
+                                style: widget.cursorStyle,
+                                clickEffect: widget.cursorClickEffect,
+                                velocityPxPerSec: combinedCursorVelocity,
+                                motionBlurIntensity: widget.motionBlur,
+                                tuning: widget.motionBlurTuning,
+                                cursorState: motion.state,
+                                cursorShadow: widget.cursorShadow,
+                                // Pass dpr so the motion-blur bake is at
+                                // device resolution, otherwise the smear
+                                // shows nearest-filter texel doubling on
+                                // retina displays.
+                                devicePixelRatio: MediaQuery.of(context)
+                                    .devicePixelRatio,
+                              ),
                       ),
                     ),
                   ),

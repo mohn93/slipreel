@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import 'package:screen_recorder/effects/accumulation_cursor_painter.dart';
 import 'package:screen_recorder/effects/motion_blur_tuning.dart';
+import 'package:screen_recorder/models/window_frame.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
@@ -60,6 +61,10 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   double _accumExposureMs = 40.0;
   int _accumSampleCount = 32;
 
+  // Scene-level toggles so we can see the blur with realistic context.
+  bool _chromeOn = true;
+  bool _zoomsOn = true;
+
   @override
   void initState() {
     super.initState();
@@ -87,6 +92,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       // per second. Without this the canvas redrew at controller pace
       // and looked like ~5–10 fps.
       _smoothPlayhead!.addListener(_onTick);
+      // Default to a chromed frame so the wallpaper backdrop is visible
+      // — that's the realistic preview context.
+      _frameSettings.setFrame(WindowFrame.rounded());
       if (!mounted) return;
       setState(() => _ready = true);
     } catch (e) {
@@ -184,9 +192,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             padding: const EdgeInsets.all(16),
             child: RepaintBoundary(
               key: _captureKey,
-              child: _mode == _RenderMode.shader
-                  ? _buildShaderCanvas()
-                  : _buildAccumulationCanvas(),
+              child: _buildCanvas(),
             ),
           ),
         ),
@@ -195,9 +201,25 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     );
   }
 
-  /// The production rendering path — kept for A/B against the new
-  /// accumulation prototype.
-  Widget _buildShaderCanvas() {
+  /// Single canvas for both modes — the only differences are
+  /// [cursorBlurMode] (shader vs accumulation), the optional chrome
+  /// frame, and the demo zoom regions. Wallpaper / padding / zoom
+  /// transform all flow through PlaybackCanvas the same way they
+  /// would in production.
+  Widget _buildCanvas() {
+    final blurMode = _mode == _RenderMode.accumulation
+        ? CursorBlurMode.accumulation
+        : CursorBlurMode.shader;
+    // Sync chrome toggle into the frame provider. setFrame is a no-op
+    // when the frame matches, so doing it from build is fine.
+    final desiredFrame = _chromeOn ? WindowFrame.rounded() : WindowFrame.none();
+    if (_frameSettings.currentFrame != desiredFrame) {
+      // Defer mutation so we don't notifyListeners inside build.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _frameSettings.setFrame(desiredFrame);
+      });
+    }
     return PlaybackCanvas(
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
@@ -209,7 +231,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       cursorStyle: CursorStyle.classic,
       cursorClickEffect: CursorClickEffect.none,
       showZoomDebug: false,
-      zoomRegions: const <ZoomRegion>[],
+      zoomRegions: _zoomsOn ? _demoZooms() : const <ZoomRegion>[],
       screenAnimationConfig:
           const ScreenAnimationConfig.preset(ScreenAnimationStyle.smooth),
       cursorAnimationConfig:
@@ -218,48 +240,43 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       motionBlurTuning: _tuning,
       cursorShadow: 0.0,
       isHoverScrubbing: false,
+      cursorBlurMode: blurMode,
+      accumulationExposureMs: _accumExposureMs,
+      accumulationSampleCount: _accumSampleCount,
     );
   }
 
-  /// Minimal raw-video + accumulation-cursor canvas used to iterate
-  /// on the new blur math without the rest of the playback pipeline
-  /// (zoom transforms, frame chrome, etc.) interfering. Matches the
-  /// shader-canvas aspect ratio so PNG dumps compare 1:1.
-  Widget _buildAccumulationCanvas() {
-    final videoSize = Size(
-      _metadata?.widthPx.toDouble() ?? _controller.value.size.width,
-      _metadata?.heightPx.toDouble() ?? _controller.value.size.height,
-    );
-    final aspect = _controller.value.aspectRatio;
-    return AspectRatio(
-      aspectRatio: aspect,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final dpr = MediaQuery.of(context).devicePixelRatio;
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              VideoPlayer(_controller),
-              if (_motionBlur > 0)
-                CustomPaint(
-                  painter: AccumulationCursorPainter(
-                    cursorRecording: _cursorRecording,
-                    position: (_smoothPlayhead?.position) ??
-                        _controller.value.position,
-                    videoSize: videoSize,
-                    exposureMs: _accumExposureMs * _motionBlur,
-                    sampleCount: _accumSampleCount,
-                    sizeMultiplier: 1.0,
-                    style: CursorStyle.classic,
-                    devicePixelRatio: dpr,
-                  ),
-                  size: Size(constraints.maxWidth, constraints.maxHeight),
-                ),
-            ],
-          );
-        },
+  /// A pair of demo zoom regions so we can see how the cursor blur
+  /// interacts with camera transitions. Tuned for the canned recording
+  /// (1728×1117, 16s long): one zoom early to show the enter ramp,
+  /// one late to bracket the fast cursor flick around 13.2s.
+  List<ZoomRegion> _demoZooms() {
+    final w = (_metadata?.widthPx ?? 1728).toDouble();
+    final h = (_metadata?.heightPx ?? 1117).toDouble();
+    return [
+      ZoomRegion(
+        rect: Rect.fromCenter(
+          center: Offset(w * 0.5, h * 0.4),
+          width: w * 0.3,
+          height: h * 0.3,
+        ),
+        startTime: const Duration(milliseconds: 1500),
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 1.8,
+        videoBounds: Size(w, h),
       ),
-    );
+      ZoomRegion(
+        rect: Rect.fromCenter(
+          center: Offset(w * 0.48, h * 0.6),
+          width: w * 0.25,
+          height: h * 0.25,
+        ),
+        startTime: const Duration(milliseconds: 12500),
+        duration: const Duration(milliseconds: 2500),
+        zoomLevel: 2.0,
+        videoBounds: Size(w, h),
+      ),
+    ];
   }
 
   Widget _buildTransport() {
@@ -371,14 +388,44 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   }
 
   Widget _modeToggle() {
-    return SegmentedButton<_RenderMode>(
-      segments: const [
-        ButtonSegment(value: _RenderMode.shader, label: Text('Shader')),
-        ButtonSegment(
-            value: _RenderMode.accumulation, label: Text('Accumulation')),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SegmentedButton<_RenderMode>(
+          segments: const [
+            ButtonSegment(value: _RenderMode.shader, label: Text('Shader')),
+            ButtonSegment(
+                value: _RenderMode.accumulation, label: Text('Accumulation')),
+          ],
+          selected: {_mode},
+          onSelectionChanged: (s) => setState(() => _mode = s.first),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Chrome',
+                    style: TextStyle(color: Colors.white, fontSize: 13)),
+                value: _chromeOn,
+                onChanged: (v) => setState(() => _chromeOn = v),
+              ),
+            ),
+            Expanded(
+              child: SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Zooms',
+                    style: TextStyle(color: Colors.white, fontSize: 13)),
+                value: _zoomsOn,
+                onChanged: (v) => setState(() => _zoomsOn = v),
+              ),
+            ),
+          ],
+        ),
       ],
-      selected: {_mode},
-      onSelectionChanged: (s) => setState(() => _mode = s.first),
     );
   }
 

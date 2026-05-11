@@ -186,3 +186,18 @@ class _SpriteCache {
 }
 
 final _spriteCache = _SpriteCache();
+
+/// Which cursor motion-blur pipeline to use.
+enum CursorBlurMode {
+  /// Production path: chord-stretched single sprite produced by the
+  /// motion-blur fragment program. Fast but the smear runs in a
+  /// straight line along the chord regardless of the actual cursor
+  /// path, and the velocity gate is a brittle smoothstep ramp.
+  shader,
+
+  /// Cinematic accumulation: cursor sprite stamped at sub-frame
+  /// positions across the exposure window with 1/N alpha each.
+  /// Smear follows the actual recorded path; no velocity ramps,
+  /// no chord extrapolation.
+  accumulation,
+}
