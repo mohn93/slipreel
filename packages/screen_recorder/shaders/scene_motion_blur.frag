@@ -44,13 +44,6 @@ uniform float uScaleDelta;
 // indices >= uSampleCount.
 uniform float uSampleCount;
 
-// Radius around the focal (in pixels) within which the blur is
-// fully suppressed. Beyond this radius the blur ramps in via
-// smoothstep over a transition zone, reaching full strength at
-// uSharpRadiusPx + uTransitionPx. 0 ⇒ blur everywhere as before.
-uniform float uSharpRadiusPx;
-uniform float uTransitionPx;
-
 // Uniform translation (in image pixels) covering camera pan
 // during the exposure window. Non-zero when a cursor-following
 // zoom is moving the focal between frames, even if scale is
@@ -80,23 +73,12 @@ void main() {
 
   float activeF = clamp(uSampleCount, 2.0, kMaxSamplesF);
 
-  // Sharp-focal mask: pixels close to the focal stay sharp, blur
-  // ramps in as the radius grows. Keeps the area the eye is most
-  // likely focused on (the zoom target) from looking smeared.
-  float r = length(fragCoord - uFocal);
-  float blurStrength = uSharpRadiusPx > 0.0
-      ? smoothstep(uSharpRadiusPx, uSharpRadiusPx + max(uTransitionPx, 1.0), r)
-      : 1.0;
-  if (blurStrength <= 0.0) {
-    fragColor = texture(uScene, uv);
-    return;
-  }
-
   // Motion = radial (scale change, centred on focal) + translation
-  // (rigid pan, same for every pixel). Both scaled by the sharp-
-  // focal mask so the eye-target stays clean.
-  vec2 motion = ((fragCoord - uFocal) * uScaleDelta + uTranslation)
-      * blurStrength;
+  // (rigid pan, same for every pixel). The radial term is naturally
+  // zero at the focal, so the centre stays sharp during a pure zoom
+  // ramp; the translation term is uniform across the frame so a
+  // pure pan smears every pixel equally.
+  vec2 motion = (fragCoord - uFocal) * uScaleDelta + uTranslation;
   vec4 sum = vec4(0.0);
   for (int i = 0; i < kMaxSamples; i++) {
     float fi = float(i);
