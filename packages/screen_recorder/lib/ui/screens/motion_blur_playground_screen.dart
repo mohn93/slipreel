@@ -326,9 +326,15 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   /// transform all flow through PlaybackCanvas the same way they
   /// would in production.
   Widget _buildCanvas() {
-    final blurMode = _mode == _RenderMode.accumulation
-        ? CursorBlurMode.accumulation
-        : CursorBlurMode.shader;
+    // Frame blur is a post-process pass that runs on top of the
+    // composition; it composes naturally with the accumulation
+    // cursor (cursor stamps land inside the composition, then the
+    // captured image gets smeared during a zoom ramp). So both
+    // accumulation and frameBlur modes use the accumulation
+    // cursor painter — only shader mode keeps the legacy path.
+    final blurMode = _mode == _RenderMode.shader
+        ? CursorBlurMode.shader
+        : CursorBlurMode.accumulation;
     // Sync chrome toggle into the frame provider. setFrame is a no-op
     // when the frame matches, so doing it from build is fine.
     final desiredFrame = _chromeOn ? WindowFrame.rounded() : WindowFrame.none();
