@@ -222,6 +222,13 @@ class _RecentTile extends StatelessWidget {
                 ],
               ),
             ),
+            if (fileExists && onLongPress != null)
+              IconButton(
+                tooltip: 'Open in motion-blur playground',
+                icon: const Icon(Icons.tune, size: 18),
+                color: Colors.white54,
+                onPressed: onLongPress,
+              ),
             if (!fileExists)
               TextButton(
                 onPressed: onRemove,
