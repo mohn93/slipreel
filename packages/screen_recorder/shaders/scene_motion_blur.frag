@@ -51,6 +51,16 @@ uniform float uSampleCount;
 // pan moves all pixels by the same amount.
 uniform vec2 uTranslation;
 
+// Power-curve exponent for the speed → smear relationship.
+// p = 1 → linear (smear ∝ speed). p > 1 → super-linear: slow
+// motions blur less than linear, fast motions blur more (more
+// cinematic dynamic range). p < 1 → sub-linear, opposite
+// emphasis. The reference magnitude `uSpeedCurveRefPx` is the
+// pivot — motion at that magnitude gives the same smear at any
+// exponent value.
+uniform float uSpeedCurveExp;
+uniform float uSpeedCurveRefPx;
+
 out vec4 fragColor;
 
 // Compile-time tap budget. 64 lets the smear stay continuous even
@@ -81,6 +91,14 @@ void main() {
   // uniform across the frame so a pure pan smears every pixel
   // equally.
   vec2 motion = (fragCoord - uFocal) * uScaleDelta + uTranslation;
+  // Apply the speed curve. p == 1 leaves motion untouched (linear).
+  // p > 1 boosts large motions and dampens small motions relative
+  // to a reference magnitude.
+  float motionMag = length(motion);
+  if (motionMag > 0.001 && uSpeedCurveExp != 1.0 && uSpeedCurveRefPx > 0.001) {
+    float scale = pow(motionMag / uSpeedCurveRefPx, uSpeedCurveExp - 1.0);
+    motion *= scale;
+  }
   vec4 sum = vec4(0.0);
   float weightSum = 0.0;
   for (int i = 0; i < kMaxSamples; i++) {
