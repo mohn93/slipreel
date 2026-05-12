@@ -228,16 +228,15 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   }
 
   Widget _buildLeft() {
-    // Snapshot the playhead THIS build is running at. PlaybackCanvas
-    // (rendered just below) will read smoothPlayhead.position at
-    // roughly the same instant for its own composition render, so
-    // this value matches the playhead the captured image will reflect.
+    // Snapshot the playhead THIS build is running at, snapped to the
+    // recording's video-frame boundary. When paused, smoothPlayhead
+    // can wobble by a few ms across frames due to video-controller
+    // micro-jitter; snapping to a frame boundary collapses that
+    // wobble onto the same discrete value, so the captured playhead
+    // is stable per actual video frame. Shader uniforms then stop
+    // shimmering.
     if (_mode == _RenderMode.frameBlur) {
-      _buildTimePlayhead =
-          (_smoothPlayhead?.position) ?? _controller.value.position;
-      // After this frame is on screen, capture the composition into
-      // _capturedScene so the *next* frame's post-process pass has
-      // something to apply the radial blur shader to.
+      _buildTimePlayhead = _frameAlignedPlayhead();
       WidgetsBinding.instance.addPostFrameCallback((_) => _captureScene());
     }
     return Column(
@@ -335,6 +334,18 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   /// outward from the focal); negative ⇒ ramping out (scene shrinks
   /// toward the focal). Zero ⇒ no motion, shader passes the captured
   /// image through unchanged.
+  /// Current playhead snapped to the recording's video-frame boundary
+  /// (floor). Eliminates microsecond-level wobble in smoothPlayhead
+  /// that propagates into scaleDelta/translation as visible jitter.
+  Duration _frameAlignedPlayhead() {
+    final raw =
+        (_smoothPlayhead?.position) ?? _controller.value.position;
+    final fps = _metadata?.fps ?? 60;
+    final frameMicros = (1e6 / fps).round();
+    final frameIndex = raw.inMicroseconds ~/ frameMicros;
+    return Duration(microseconds: frameIndex * frameMicros);
+  }
+
   /// Effective exposure window for the frame blur. Scaled by the
   /// master motion-blur intensity so the top slider mutes both
   /// cursor accumulation AND frame blur together — when intensity
@@ -345,7 +356,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
 
   double _computeScaleDelta([Duration? at]) {
     if (!_zoomsOn) return 0.0;
-    final now = at ?? (_smoothPlayhead?.position) ?? _controller.value.position;
+    final now = at ?? _frameAlignedPlayhead();
     final exposure = _effectiveFrameBlurExposure;
     final prev = now - exposure;
     final w = (_metadata?.widthPx ?? 1728).toDouble();
@@ -416,7 +427,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   /// zoom region where the scale is constant.
   Offset _computeTranslation([Duration? at]) {
     if (!_zoomsOn) return Offset.zero;
-    final now = at ?? (_smoothPlayhead?.position) ?? _controller.value.position;
+    final now = at ?? _frameAlignedPlayhead();
     final exposure = _effectiveFrameBlurExposure;
     final prev = now - exposure;
     final w = (_metadata?.widthPx ?? 1728).toDouble();
@@ -734,8 +745,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
           ),
           const SizedBox(height: 4),
           () {
-            final liveT =
-                (_smoothPlayhead?.position) ?? _controller.value.position;
+            final liveT = _frameAlignedPlayhead();
             final sdLive = _computeScaleDelta();
             final trLive = _computeTranslation();
             final sdCap = _computeScaleDelta(_capturedPlayhead);
