@@ -76,6 +76,12 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   // playhead, so the smear matches the captured content's state
   // (eliminates the 1-frame mismatch that produces jitter).
   Duration _capturedPlayhead = Duration.zero;
+  // Build-time playhead snapshot. Used to track the playhead that
+  // matches the live composition's current render — so when we
+  // capture in postFrameCallback we can record THIS value as the
+  // captured playhead rather than the slightly-later playhead that
+  // smoothPlayhead would report post-paint.
+  Duration _buildTimePlayhead = Duration.zero;
   final GlobalKey _sceneBoundaryKey = GlobalKey();
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
   double _frameBlurSampleCount = 48;
@@ -222,12 +228,16 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   }
 
   Widget _buildLeft() {
-    // After this frame is on screen, capture the composition into
-    // _capturedScene so the *next* frame's post-process pass has
-    // something to apply the radial blur shader to. Cheap: only
-    // active in frame-blur mode, only when we have an active zoom
-    // (when no zoom is happening the shader short-circuits anyway).
+    // Snapshot the playhead THIS build is running at. PlaybackCanvas
+    // (rendered just below) will read smoothPlayhead.position at
+    // roughly the same instant for its own composition render, so
+    // this value matches the playhead the captured image will reflect.
     if (_mode == _RenderMode.frameBlur) {
+      _buildTimePlayhead =
+          (_smoothPlayhead?.position) ?? _controller.value.position;
+      // After this frame is on screen, capture the composition into
+      // _capturedScene so the *next* frame's post-process pass has
+      // something to apply the radial blur shader to.
       WidgetsBinding.instance.addPostFrameCallback((_) => _captureScene());
     }
     return Column(
@@ -310,12 +320,11 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       final image = boundary.toImageSync(pixelRatio: dpr);
       _capturedScene?.dispose();
       _capturedScene = image;
-      // Snapshot the playhead at the moment of capture. The shader's
-      // motion uniforms in the next frame will be computed from this
-      // value, not the live playhead, so the smear direction/magnitude
-      // matches the captured content's state exactly.
-      _capturedPlayhead =
-          (_smoothPlayhead?.position) ?? _controller.value.position;
+      // Use the BUILD-time playhead, not the current (post-paint)
+      // playhead. The captured image's content was rendered with
+      // the build-time playhead, so matching uniforms to that value
+      // gives a frame-for-frame consistent shader output.
+      _capturedPlayhead = _buildTimePlayhead;
     } catch (_) {
       // Capture can occasionally fail mid-layout — keep the previous
       // capture so we don't flash a blank frame.
