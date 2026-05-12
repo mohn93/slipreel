@@ -53,23 +53,22 @@ uniform vec2 uTranslation;
 
 out vec4 fragColor;
 
-// Compile-time tap budget. Tune up if you need smoother smears at
-// the cost of fragment-shader work per pixel.
-const int kMaxSamples = 32;
-const float kMaxSamplesF = 32.0;
+// Compile-time tap budget. 64 lets the smear stay continuous even
+// when the motion vector spans a large fraction of the frame —
+// per-tap step ≤ 2 image pixels at the cap, no discrete-stamp
+// stair-stepping visible.
+const int kMaxSamples = 64;
+const float kMaxSamplesF = 64.0;
 
 void main() {
   vec2 fragCoord = FlutterFragCoord();
   vec2 uv = fragCoord / uOutputSize;
 
-  // No motion → just pass through the captured scene. Cheap and
-  // exact; also keeps the cursor accumulation layer that draws ON
-  // TOP of this pass crisp when nothing is moving. "No motion"
-  // now means both scale and pan are negligible.
-  if (abs(uScaleDelta) < 0.0001 && length(uTranslation) < 0.5) {
-    fragColor = texture(uScene, uv);
-    return;
-  }
+  // No early return for "no motion" — with zero motion every tap
+  // samples the same texel, so the averaged result is bit-identical
+  // to a straight texture(uScene, uv) lookup. Avoiding the branch
+  // removes the visible flicker that used to happen whenever the
+  // smoothed focal's tiny epsilon noise crossed the threshold.
 
   float activeF = clamp(uSampleCount, 2.0, kMaxSamplesF);
 
@@ -80,6 +79,7 @@ void main() {
   // pure pan smears every pixel equally.
   vec2 motion = (fragCoord - uFocal) * uScaleDelta + uTranslation;
   vec4 sum = vec4(0.0);
+  float weightSum = 0.0;
   for (int i = 0; i < kMaxSamples; i++) {
     float fi = float(i);
     // Constant trip count, conditional contribution. SkSL refuses
@@ -89,18 +89,18 @@ void main() {
       float t = fi / (activeF - 1.0);
       vec2 samplePos = fragCoord - motion * t;
       vec2 sampleUv = samplePos / uOutputSize;
-      // Edge-clamp instead of skipping out-of-bound samples: when
-      // the back-in-time position falls outside the captured
-      // viewport (typical at the edges during a zoom-out), return
-      // the nearest visible pixel's colour rather than nothing.
-      // Bleeds the edge colour inward so near-edge regions get
-      // *some* smear — pixels literally on the edge still won't
-      // blur because all their samples clamp to the same edge
-      // colour, but it's noticeably better than the previous
-      // black/skip behaviour.
-      vec2 clampedUv = clamp(sampleUv, vec2(0.0), vec2(1.0));
-      sum += texture(uScene, clampedUv);
+      // Skip out-of-bound samples (don't contribute, don't count).
+      // The result at an edge pixel comes from only its in-bound
+      // taps — fewer contributions ⇒ less smear at the edges,
+      // which gives the hard rectangular cut Screen Studio's
+      // preview has instead of the edge-colour bleed that
+      // clamp-to-edge produced.
+      if (sampleUv.x >= 0.0 && sampleUv.x <= 1.0 &&
+          sampleUv.y >= 0.0 && sampleUv.y <= 1.0) {
+        sum += texture(uScene, sampleUv);
+        weightSum += 1.0;
+      }
     }
   }
-  fragColor = sum / activeF;
+  fragColor = weightSum > 0.0 ? sum / weightSum : texture(uScene, uv);
 }

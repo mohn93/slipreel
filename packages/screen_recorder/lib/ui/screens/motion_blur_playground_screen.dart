@@ -73,7 +73,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   ui.Image? _capturedScene;
   final GlobalKey _sceneBoundaryKey = GlobalKey();
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
-  double _frameBlurSampleCount = 16;
+  double _frameBlurSampleCount = 48;
   // Frame-blur uses its own exposure window because the cursor-
   // accumulation default (40 ms) is too aggressive for whole-frame
   // radial blur — 40 ms during a zoom ramp can smear edges by 40+
@@ -686,8 +686,8 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
           Slider(
             value: _frameBlurSampleCount,
             min: 2,
-            max: 32,
-            divisions: 30,
+            max: 64,
+            divisions: 62,
             onChanged: (v) => setState(() => _frameBlurSampleCount = v),
           ),
           Text(
