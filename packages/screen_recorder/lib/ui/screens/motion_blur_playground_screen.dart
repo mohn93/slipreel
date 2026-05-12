@@ -291,14 +291,19 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     if (!mounted) return;
     final boundary = _sceneBoundaryKey.currentContext?.findRenderObject()
         as RenderRepaintBoundary?;
-    if (boundary == null || boundary.debugNeedsPaint) return;
+    if (boundary == null) return;
     try {
+      // Don't gate on boundary.debugNeedsPaint — toImageSync forces a
+      // repaint internally if the layer is dirty, so skipping was
+      // turning some frames into stale-image gaps that read as
+      // jitter. Always capture; catch the rare exception.
       final dpr = MediaQuery.of(context).devicePixelRatio;
       final image = boundary.toImageSync(pixelRatio: dpr);
       _capturedScene?.dispose();
       _capturedScene = image;
     } catch (_) {
-      // Capture can fail mid-layout — skip this frame.
+      // Capture can occasionally fail mid-layout — keep the previous
+      // capture so we don't flash a blank frame.
     }
   }
 
