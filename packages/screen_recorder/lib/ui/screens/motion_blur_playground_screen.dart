@@ -228,14 +228,10 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   }
 
   Widget _buildLeft() {
-    // Snapshot the playhead THIS build is running at, snapped to the
-    // recording's video-frame boundary. When paused, smoothPlayhead
-    // can wobble by a few ms across frames due to video-controller
-    // micro-jitter; snapping to a frame boundary collapses that
-    // wobble onto the same discrete value, so the captured playhead
-    // is stable per actual video frame. Shader uniforms then stop
-    // shimmering.
     if (_mode == _RenderMode.frameBlur) {
+      // Refresh the stabilized playhead first; everything downstream
+      // (live readout, captured playhead, shader uniforms) reads it.
+      _refreshStablePlayhead();
       _buildTimePlayhead = _frameAlignedPlayhead();
       WidgetsBinding.instance.addPostFrameCallback((_) => _captureScene());
     }
@@ -334,17 +330,37 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   /// outward from the focal); negative ⇒ ramping out (scene shrinks
   /// toward the focal). Zero ⇒ no motion, shader passes the captured
   /// image through unchanged.
-  /// Current playhead snapped to the recording's video-frame boundary
-  /// (floor). Eliminates microsecond-level wobble in smoothPlayhead
-  /// that propagates into scaleDelta/translation as visible jitter.
-  Duration _frameAlignedPlayhead() {
-    final raw =
-        (_smoothPlayhead?.position) ?? _controller.value.position;
-    final fps = _metadata?.fps ?? 60;
-    final frameMicros = (1e6 / fps).round();
-    final frameIndex = raw.inMicroseconds ~/ frameMicros;
-    return Duration(microseconds: frameIndex * frameMicros);
+  /// Stabilized playhead used everywhere the frame-blur math reads
+  /// "current time". Updated by [_refreshStablePlayhead] at the
+  /// start of every build.
+  Duration _stablePlayhead = Duration.zero;
+
+  /// Updates [_stablePlayhead] based on the current playback state:
+  ///
+  ///   - PLAYING: advance smoothly with smoothPlayhead (the natural
+  ///     per-vsync interpolation looks fine in motion).
+  ///   - PAUSED: lock the playhead. Only release the lock if the
+  ///     incoming raw playhead deviates by more than 100 ms (the
+  ///     user must have scrubbed). Without this lock,
+  ///     micro-jitter from the video controller (~1–3 ms per
+  ///     frame, occasionally crossing a video-frame boundary)
+  ///     leaks into scaleDelta/translation and the shader output.
+  void _refreshStablePlayhead() {
+    final raw = (_smoothPlayhead?.position) ?? _controller.value.position;
+    if (!_controller.value.isPlaying) {
+      final diff =
+          (raw.inMicroseconds - _stablePlayhead.inMicroseconds).abs();
+      if (_stablePlayhead == Duration.zero || diff > 100000) {
+        _stablePlayhead = raw;
+      }
+      return;
+    }
+    _stablePlayhead = raw;
   }
+
+  /// Current stabilized playhead — see [_refreshStablePlayhead] for
+  /// when it locks vs follows.
+  Duration _frameAlignedPlayhead() => _stablePlayhead;
 
   /// Effective exposure window for the frame blur. Scaled by the
   /// master motion-blur intensity so the top slider mutes both
