@@ -724,15 +724,29 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
                 setState(() => _frameBlurMaxTranslation = v),
           ),
           const SizedBox(height: 4),
-          Text(
-            'scaleDelta = ${_computeScaleDelta().toStringAsFixed(4)}\n'
-            'translation = (${_computeTranslation().dx.toStringAsFixed(1)}, '
-            '${_computeTranslation().dy.toStringAsFixed(1)}) px',
-            style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 11,
-                fontFamily: 'monospace'),
-          ),
+          () {
+            final liveT =
+                (_smoothPlayhead?.position) ?? _controller.value.position;
+            final sdLive = _computeScaleDelta();
+            final trLive = _computeTranslation();
+            final sdCap = _computeScaleDelta(_capturedPlayhead);
+            final trCap = _computeTranslation(_capturedPlayhead);
+            return Text(
+              'live   t=${(liveT.inMicroseconds / 1e6).toStringAsFixed(4)}\n'
+              '       scaleD=${sdLive.toStringAsFixed(7)}\n'
+              '       trans =(${trLive.dx.toStringAsFixed(3)}, '
+              '${trLive.dy.toStringAsFixed(3)}) |${trLive.distance.toStringAsFixed(3)}|\n'
+              'cap    t=${(_capturedPlayhead.inMicroseconds / 1e6).toStringAsFixed(4)}\n'
+              '       scaleD=${sdCap.toStringAsFixed(7)}\n'
+              '       trans =(${trCap.dx.toStringAsFixed(3)}, '
+              '${trCap.dy.toStringAsFixed(3)}) |${trCap.distance.toStringAsFixed(3)}|\n'
+              'gap    ${((liveT - _capturedPlayhead).inMicroseconds / 1000).toStringAsFixed(2)}ms',
+              style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 10,
+                  fontFamily: 'monospace'),
+            );
+          }(),
           const SizedBox(height: 8),
           const Text(
             'Captures the composition each frame, then redraws it '
