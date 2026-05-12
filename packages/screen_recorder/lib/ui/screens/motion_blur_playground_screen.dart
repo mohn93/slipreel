@@ -71,6 +71,11 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   // the next paint (≈ 16 ms lag).
   ui.FragmentProgram? _sceneBlurProgram;
   ui.Image? _capturedScene;
+  // Playhead at the time _capturedScene was captured. Shader
+  // uniforms are computed from THIS playhead, not the current
+  // playhead, so the smear matches the captured content's state
+  // (eliminates the 1-frame mismatch that produces jitter).
+  Duration _capturedPlayhead = Duration.zero;
   final GlobalKey _sceneBoundaryKey = GlobalKey();
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
   double _frameBlurSampleCount = 48;
@@ -273,8 +278,12 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
                   painter: _SceneMotionBlurPainter(
                     image: _capturedScene!,
                     program: _sceneBlurProgram!,
-                    scaleDelta: _computeScaleDelta(),
-                    translation: _computeTranslation(),
+                    // Uniforms computed at the captured playhead, NOT
+                    // the live playhead. Smear matches captured
+                    // content's state — eliminates the 1-frame
+                    // mismatch that produced per-frame oscillation.
+                    scaleDelta: _computeScaleDelta(_capturedPlayhead),
+                    translation: _computeTranslation(_capturedPlayhead),
                     sampleCount: _frameBlurSampleCount.round(),
                     devicePixelRatio: dpr,
                   ),
@@ -301,6 +310,12 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       final image = boundary.toImageSync(pixelRatio: dpr);
       _capturedScene?.dispose();
       _capturedScene = image;
+      // Snapshot the playhead at the moment of capture. The shader's
+      // motion uniforms in the next frame will be computed from this
+      // value, not the live playhead, so the smear direction/magnitude
+      // matches the captured content's state exactly.
+      _capturedPlayhead =
+          (_smoothPlayhead?.position) ?? _controller.value.position;
     } catch (_) {
       // Capture can occasionally fail mid-layout — keep the previous
       // capture so we don't flash a blank frame.
@@ -319,9 +334,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   Duration get _effectiveFrameBlurExposure => Duration(
       microseconds: (_frameBlurExposureMs * _motionBlur * 1000).round());
 
-  double _computeScaleDelta() {
+  double _computeScaleDelta([Duration? at]) {
     if (!_zoomsOn) return 0.0;
-    final now = (_smoothPlayhead?.position) ?? _controller.value.position;
+    final now = at ?? (_smoothPlayhead?.position) ?? _controller.value.position;
     final exposure = _effectiveFrameBlurExposure;
     final prev = now - exposure;
     final w = (_metadata?.widthPx ?? 1728).toDouble();
@@ -390,9 +405,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   /// pixels: `S_prev × (F_prev − F_now)`. Captures rigid camera pan
   /// when the focal is moving — even during the hold phase of a
   /// zoom region where the scale is constant.
-  Offset _computeTranslation() {
+  Offset _computeTranslation([Duration? at]) {
     if (!_zoomsOn) return Offset.zero;
-    final now = (_smoothPlayhead?.position) ?? _controller.value.position;
+    final now = at ?? (_smoothPlayhead?.position) ?? _controller.value.position;
     final exposure = _effectiveFrameBlurExposure;
     final prev = now - exposure;
     final w = (_metadata?.widthPx ?? 1728).toDouble();
