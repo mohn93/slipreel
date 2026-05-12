@@ -51,15 +51,6 @@ uniform float uSampleCount;
 // pan moves all pixels by the same amount.
 uniform vec2 uTranslation;
 
-// Soft motion gate: per-pixel motion vectors below uGateLowPx in
-// magnitude produce no blur; above uGateHighPx they produce full
-// blur; between is a smoothstep ramp. Compensates for the
-// perceptual non-linearity where any visible smear reads as
-// "sudden trigger" — sub-2-px smear looks sharp anyway, so we
-// clip it to exactly sharp and let bigger smears ramp in.
-uniform float uGateLowPx;
-uniform float uGateHighPx;
-
 out vec4 fragColor;
 
 // Compile-time tap budget. 64 lets the smear stay continuous even
@@ -82,21 +73,14 @@ void main() {
   float activeF = clamp(uSampleCount, 2.0, kMaxSamplesF);
 
   // Motion = radial (scale change, centred on focal) + translation
-  // (rigid pan, same for every pixel). The radial term is naturally
-  // zero at the focal, so the centre stays sharp during a pure zoom
-  // ramp; the translation term is uniform across the frame so a
-  // pure pan smears every pixel equally.
+  // (rigid pan, same for every pixel). Each term is the camera's
+  // *actual displacement over the shutter window*: smear length =
+  // motion velocity × shutter time. Linear in speed, no thresholds.
+  // The radial term is naturally zero at the focal, so the centre
+  // stays sharp during a pure zoom ramp; the translation term is
+  // uniform across the frame so a pure pan smears every pixel
+  // equally.
   vec2 motion = (fragCoord - uFocal) * uScaleDelta + uTranslation;
-  // Per-pixel soft motion gate. Pixels whose motion vector is below
-  // uGateLowPx in magnitude are sharp (no blur); above uGateHighPx
-  // they get the full motion vector; between, a smoothstep ramp.
-  // For radial blur this means the centre of the frame stays sharp
-  // until zoom velocity is meaningful, then the smear opens up from
-  // the outside in.
-  float motionMag = length(motion);
-  float gate = smoothstep(uGateLowPx, max(uGateHighPx, uGateLowPx + 0.001),
-      motionMag);
-  motion *= gate;
   vec4 sum = vec4(0.0);
   float weightSum = 0.0;
   for (int i = 0; i < kMaxSamples; i++) {

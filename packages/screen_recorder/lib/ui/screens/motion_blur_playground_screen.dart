@@ -89,14 +89,6 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   // track. The cap approximates that limit without porting the
   // smoother's stateful logic.
   double _frameBlurMaxTranslation = 60.0;
-  // Soft motion gate (in logical px). Per-pixel motion magnitudes
-  // below `_frameBlurGateLow` produce no blur; above
-  // `_frameBlurGateHigh` produce full blur; between, smoothstep.
-  // Compensates for the perceptual non-linearity where tiny smears
-  // (~1–3 px) read as a "sudden trigger" instead of as the natural
-  // limit of zero motion.
-  double _frameBlurGateLow = 2.0;
-  double _frameBlurGateHigh = 8.0;
 
   @override
   void initState() {
@@ -284,8 +276,6 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
                     scaleDelta: _computeScaleDelta(),
                     translation: _computeTranslation(),
                     sampleCount: _frameBlurSampleCount.round(),
-                    gateLowPx: _frameBlurGateLow,
-                    gateHighPx: _frameBlurGateHigh,
                     devicePixelRatio: dpr,
                   ),
                   size: Size(constraints.maxWidth, constraints.maxHeight),
@@ -604,10 +594,14 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             max: 1,
             onChanged: (v) => setState(() => _motionBlur = v),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8),
-            child: Text('Motion blur intensity (0..1)',
-                style: TextStyle(color: Colors.white54, fontSize: 12)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+                'Master intensity — ${(_motionBlur * 100).toStringAsFixed(0)}%\n'
+                'Scales the effective shutter window for every blur '
+                'effect (cursor, zoom, pan). 0 = no blur. Smear length '
+                '= speed × (intensity × shutter time).',
+                style: const TextStyle(color: Colors.white54, fontSize: 11)),
           ),
           const SizedBox(height: 16),
           if (_mode == _RenderMode.accumulation) _accumulationKnobs(),
@@ -683,7 +677,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
                   letterSpacing: 1.2,
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
-          Text('Exposure (ms) — ${_frameBlurExposureMs.toStringAsFixed(0)}',
+          Text('Shutter (ms) — ${_frameBlurExposureMs.toStringAsFixed(0)}',
               style: const TextStyle(color: Colors.white)),
           Slider(
             value: _frameBlurExposureMs,
@@ -709,33 +703,6 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             max: 300,
             onChanged: (v) =>
                 setState(() => _frameBlurMaxTranslation = v),
-          ),
-          Text(
-              'Gate low (px) — ${_frameBlurGateLow.toStringAsFixed(1)}',
-              style: const TextStyle(color: Colors.white)),
-          Slider(
-            value: _frameBlurGateLow,
-            min: 0,
-            max: 20,
-            onChanged: (v) => setState(() {
-              _frameBlurGateLow = v;
-              if (_frameBlurGateHigh < v + 0.5) {
-                _frameBlurGateHigh = v + 0.5;
-              }
-            }),
-          ),
-          Text(
-              'Gate high (px) — ${_frameBlurGateHigh.toStringAsFixed(1)}',
-              style: const TextStyle(color: Colors.white)),
-          Slider(
-            value: _frameBlurGateHigh,
-            min: 1,
-            max: 50,
-            onChanged: (v) => setState(() {
-              _frameBlurGateHigh = v < _frameBlurGateLow + 0.5
-                  ? _frameBlurGateLow + 0.5
-                  : v;
-            }),
           ),
           const SizedBox(height: 4),
           Text(
@@ -779,7 +746,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
                   letterSpacing: 1.2,
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
-          Text('Exposure (ms) — ${_accumExposureMs.toStringAsFixed(0)}',
+          Text('Shutter (ms) — ${_accumExposureMs.toStringAsFixed(0)}',
               style: const TextStyle(color: Colors.white)),
           Slider(
             value: _accumExposureMs,
@@ -825,8 +792,6 @@ class _SceneMotionBlurPainter extends CustomPainter {
     required this.scaleDelta,
     required this.translation,
     required this.sampleCount,
-    required this.gateLowPx,
-    required this.gateHighPx,
     required this.devicePixelRatio,
   });
 
@@ -835,8 +800,6 @@ class _SceneMotionBlurPainter extends CustomPainter {
   final double scaleDelta;
   final Offset translation;
   final int sampleCount;
-  final double gateLowPx;
-  final double gateHighPx;
   final double devicePixelRatio;
 
   @override
@@ -852,11 +815,7 @@ class _SceneMotionBlurPainter extends CustomPainter {
       ..setFloat(5, sampleCount.toDouble())
       // Translation in image pixels = translation in logical px × dpr.
       ..setFloat(6, translation.dx * dpr)
-      ..setFloat(7, translation.dy * dpr)
-      // Soft motion gate, in image pixels (slider values are logical
-      // px × dpr).
-      ..setFloat(8, gateLowPx * dpr)
-      ..setFloat(9, gateHighPx * dpr);
+      ..setFloat(7, translation.dy * dpr);
     // Draw into the logical (un-DPR-scaled) widget rect; the shader
     // is parameterised in image pixels (captured at full dpr) but
     // outputs at the canvas's logical resolution.
@@ -875,8 +834,6 @@ class _SceneMotionBlurPainter extends CustomPainter {
         old.scaleDelta != scaleDelta ||
         old.translation != translation ||
         old.sampleCount != sampleCount ||
-        old.gateLowPx != gateLowPx ||
-        old.gateHighPx != gateHighPx ||
         old.devicePixelRatio != devicePixelRatio;
   }
 }
