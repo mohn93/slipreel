@@ -349,39 +349,38 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   }
 
   /// Focal point in video pixels at time [t]. For a cursor-following
-  /// region, approximates production's smoothed focal with a moving
-  /// average of the cursor over the last ~400 ms — matches the
-  /// follow-duration of `ZoomFocalController` so the focal's
-  /// frame-to-frame velocity stays close to what the actual rendered
-  /// camera does. Using raw `cursorAt(t)` made every cursor flick
-  /// trigger a full-frame blur even though the rendered camera
-  /// barely moved.
+  /// region, approximates production's smoothed focal with a
+  /// **fixed-lag** cursor lookup — `focal(t) = cursorAt(t - lag)`.
+  ///
+  /// Previously we used a moving average over the last 400 ms. That
+  /// produced sub-pixel noise per frame because the 12 sample times
+  /// shifted forward by 16 ms each frame, and `cursorAt`'s linear-
+  /// interpolation between recorded cursor samples produced slightly
+  /// different averages every frame. The noise propagated into the
+  /// `translation` uniform and made the shader smear sub-pixel-shimmer
+  /// every frame — visible as jitter on high-contrast edges.
+  ///
+  /// Fixed-lag is bit-stable when the cursor was stationary at the
+  /// lagged time (so `focal_now == focal_prev` exactly ⇒ zero
+  /// translation ⇒ no shader noise) and smoothly evolves when the
+  /// cursor was moving.
   Offset _focalAt(Duration t, Size videoSize) {
     final defaultFocal = videoSize.center(Offset.zero);
     if (!_zoomsOn) return defaultFocal;
     for (final region in _demoZooms()) {
       if (!region.isActive(t)) continue;
       if (!region.followCursor) return region.rect.center;
-      // Uniform mean over [t-400ms, t]. Production uses an FIR with
-      // a similar response shape; the mean is close enough and
-      // doesn't need any per-frame state.
-      const windowMs = 400;
-      const samples = 12;
-      var sx = 0.0, sy = 0.0, count = 0;
-      for (var i = 0; i < samples; i++) {
-        final lookback = (windowMs * i / (samples - 1)).round();
-        final ti = t - Duration(milliseconds: lookback);
-        if (ti.isNegative) continue;
-        final s = cursorAt(_cursorRecording, ti);
-        if (s == null) continue;
-        sx += s.x;
-        sy += s.y;
-        count++;
-      }
-      if (count == 0) return region.rect.center;
+      // 200 ms ≈ half of production's 400 ms follow duration. The
+      // rendered camera lags the cursor by roughly half its follow
+      // window in steady state; this matches without needing the
+      // controller's full stateful tween.
+      final laggedT = t - const Duration(milliseconds: 200);
+      if (laggedT.isNegative) return region.rect.center;
+      final s = cursorAt(_cursorRecording, laggedT);
+      if (s == null) return region.rect.center;
       return Offset(
-        (sx / count).clamp(0, videoSize.width),
-        (sy / count).clamp(0, videoSize.height),
+        s.x.toDouble().clamp(0, videoSize.width),
+        s.y.toDouble().clamp(0, videoSize.height),
       );
     }
     return defaultFocal;
