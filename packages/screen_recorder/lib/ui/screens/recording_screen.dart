@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 import '../../state/recording_state.dart';
-import '../widgets/source_picker/accessibility_notice.dart';
 import '../widgets/source_picker/concurrent_loader.dart';
 import '../widgets/source_picker/permission_cta.dart';
 import '../widgets/source_picker/region_tab_content.dart';
@@ -58,10 +57,22 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       });
     } on PlatformException catch (e) {
       if (!mounted) return;
+      // Primary signal: the Swift side classifies a Screen Recording
+      // (TCC) denial as `PERMISSION_DENIED`. Substring matching on the
+      // localised message is the fallback for older plugin builds and
+      // for any TCC error that slips through with a different code —
+      // Apple has shipped at least three different wordings across
+      // recent macOS releases ("permission denied", "declined TCCs",
+      // "user declined"), so we accept any of those signals.
+      final code = e.code;
+      final msg = e.message?.toLowerCase() ?? '';
+      final denied = code == 'PERMISSION_DENIED' ||
+          msg.contains('permission') ||
+          msg.contains('declined') ||
+          msg.contains('tcc');
       setState(() {
-        _permissionDenied =
-            e.message?.toLowerCase().contains('permission') ?? false;
-        _error = _permissionDenied ? null : (e.message ?? e.code);
+        _permissionDenied = denied;
+        _error = denied ? null : (e.message ?? e.code);
         _loading = false;
       });
     } catch (e) {
@@ -121,6 +132,28 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
           builder: (_) => PlaybackScreen(videoPath: next.videoPath!),
         ));
       }
+      // Surface recording failures via a SnackBar so the user can see
+      // what went wrong without dropping to the terminal. The error
+      // state is recoverable — clicking Record again clears it.
+      if (previous?.status != RecordingStatus.error &&
+          next.status == RecordingStatus.error &&
+          next.error != null) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: const Color(0xFF7A1F1F),
+          duration: const Duration(seconds: 8),
+          content: Text(
+            next.error!,
+            style: const TextStyle(color: Colors.white),
+          ),
+          action: SnackBarAction(
+            label: 'Dismiss',
+            textColor: Colors.white,
+            onPressed: () =>
+                ScaffoldMessenger.of(context).hideCurrentSnackBar(),
+          ),
+        ));
+      }
     });
 
     return Scaffold(
@@ -156,12 +189,11 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       ),
       body: Column(
         children: [
-          // Show the Accessibility-permission notice above the source
-          // list whenever screen-recording itself is granted (if both
-          // are missing, the full-screen PermissionCta takes over and
-          // this row collapses since the body is Expanded). The notice
-          // self-hides once Accessibility is trusted.
-          if (!_permissionDenied) const AccessibilityNotice(),
+          // (Accessibility-permission notice removed — cursor-state
+          // classification now reads the cursor image directly from
+          // the WindowServer via private CG APIs, so it works for
+          // every app regardless of AX semantics and doesn't need
+          // the Accessibility permission anymore.)
           _buildSegmentedControl(),
           Expanded(child: _buildBody()),
           _buildBottomBar(),

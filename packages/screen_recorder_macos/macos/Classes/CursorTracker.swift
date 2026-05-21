@@ -1,9 +1,74 @@
-import ApplicationServices
 import Cocoa
 import Foundation
 import QuartzCore
 
-/// Tracks cursor position and click events at high frequency
+// MARK: - Private CoreGraphics symbols
+//
+// These read the live cursor image directly from the WindowServer
+// regardless of which app drew the cursor. They've been used by
+// macOS screen recorders (OBS, Loom, CleanShot, Screen Studio…) for
+// over a decade and have been stable across every shipping macOS
+// release — but they're undocumented and Apple moved them between
+// frameworks over the years (CoreGraphics → SkyLight on newer
+// macOS). To avoid pinning ourselves to one location, we resolve
+// both symbols at runtime via `dlsym`, falling back through every
+// framework they've ever lived in. If a future macOS removes them
+// entirely the lookup returns `nil` and `detectCursorStateName`
+// degrades to holding the last detected state instead of crashing.
+//
+// `@convention(c)` makes the typealiases callable from Swift; the
+// function-pointer cast is the same trick `os_unfair_lock` and
+// other Apple-internal helpers use when they ship through dlsym.
+
+private typealias _CGSConnectionID = Int32
+private typealias _CGSMainConnectionIDFn = @convention(c) ()
+  -> _CGSConnectionID
+private typealias _CGSCopyCurrentCursorImageFn = @convention(c) (
+  _CGSConnectionID
+) -> Unmanaged<CGImage>?
+
+/// Search RTLD_DEFAULT first (everything currently loaded — usually
+/// catches CGS symbols because AppKit pulls SkyLight in at launch),
+/// then fall back to explicit `dlopen` on every framework path the
+/// CGS namespace has been spotted in over the years.
+private func _resolveCGSPrivate(_ name: String) -> UnsafeMutableRawPointer? {
+  let rtldDefault = UnsafeMutableRawPointer(bitPattern: -2)
+  if let sym = dlsym(rtldDefault, name) {
+    return sym
+  }
+  let candidates = [
+    "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight",
+    "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics",
+    "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/CoreGraphics.framework/CoreGraphics",
+  ]
+  for path in candidates {
+    guard let handle = dlopen(path, RTLD_LAZY) else { continue }
+    if let sym = dlsym(handle, name) { return sym }
+  }
+  return nil
+}
+
+private let _cgsMainConnectionID: _CGSMainConnectionIDFn? = {
+  guard let sym = _resolveCGSPrivate("CGSMainConnectionID") else { return nil }
+  return unsafeBitCast(sym, to: _CGSMainConnectionIDFn.self)
+}()
+
+private let _cgsCopyCurrentCursorImage: _CGSCopyCurrentCursorImageFn? = {
+  guard let sym = _resolveCGSPrivate("CGSCopyCurrentCursorImage")
+  else { return nil }
+  return unsafeBitCast(sym, to: _CGSCopyCurrentCursorImageFn.self)
+}()
+
+/// Tracks cursor position and click events at high frequency.
+///
+/// Cursor *type* (arrow vs hand vs I-beam vs resize…) is classified
+/// by sampling the live system cursor image via the private
+/// `CGSCopyCurrentCursorImage` API and matching it against a library
+/// of pre-fingerprinted `NSCursor` reference images. This works for
+/// any cursor the OS is drawing — Flutter / Electron / web apps,
+/// custom `pointingHandCursor` calls, Safari links — without needing
+/// the Accessibility permission and without caring about the recorded
+/// app's AX semantics.
 class CursorTracker: NSObject {
   // MARK: - Properties
 
@@ -14,20 +79,123 @@ class CursorTracker: NSObject {
   private var lastMouseLocation: NSPoint = .zero
   private var isMouseDown = false
 
-  // Throttle AX-based cursor-state queries. AXUIElementCopyElementAtPosition
-  // costs a few ms per call (cross-process IPC into the hovered app),
-  // so running it at the 60 Hz position-sample rate would burn ~10%
-  // CPU just for cursor state. We re-query at most every
+  // Throttle cursor-image classification. Each call is cheap
+  // (~tens of microseconds for `CGSCopyCurrentCursorImage` plus the
+  // 8×8 grayscale resample) but there's no value in re-classifying
+  // every 60 Hz position sample — the cursor type only changes when
+  // the user moves into a new element. We re-query at most every
   // [stateQueryIntervalSec] seconds OR when the cursor has moved more
   // than [stateQueryMoveThresholdPx] pixels since the last query —
-  // whichever comes first. State changes are gated on hover transitions
-  // (entering a text field, etc.) which always involve a cursor move
-  // first, so this rarely misses one.
+  // whichever fires first.
   private static let stateQueryIntervalSec: CFTimeInterval = 0.10
   private static let stateQueryMoveThresholdPx: Double = 4
   private var lastStateQueryTime: CFTimeInterval = 0
   private var lastStateQueryLocation: NSPoint = .zero
   private var lastDetectedStateName: String = "arrow"
+  // Count of diagnostic samples printed so far. Caps the log spam at
+  // ~60 queries (≈6 s at the 10 Hz throttle) so we can diagnose what
+  // the classifier is seeing without flooding the console.
+  private var diagnosticSampleCount: Int = 0
+
+  // Pre-computed perceptual fingerprints for every stock NSCursor we
+  // recognise. Each entry is a 64-bit "average hash": the cursor
+  // image is resized to 8×8 grayscale, the average pixel value is
+  // computed, and every pixel becomes one bit (1 if brighter than the
+  // average, 0 otherwise). Live cursor images are hashed the same way
+  // and matched by Hamming distance. The stock cursors differ by far
+  // more than 8 bits from each other, so a Hamming threshold of 8
+  // cleanly separates "recognised" from "unknown custom cursor".
+  //
+  // `static let` is thread-safe (dispatch_once underneath) so every
+  // tracker instance shares the same library.
+  private static let cursorLibrary: [(String, UInt64)] = buildCursorLibrary()
+
+  private static func buildCursorLibrary() -> [(String, UInt64)] {
+    // CursorState wire names — must match `CursorState.wireName` on
+    // the Dart side (see screen_recorder_platform_interface).
+    var entries: [(String, NSCursor)] = [
+      ("arrow", .arrow),
+      ("iBeam", .iBeam),
+      ("pointingHand", .pointingHand),
+      ("crosshair", .crosshair),
+      ("resizeNS", .resizeUpDown),
+      ("resizeEW", .resizeLeftRight),
+      ("openHand", .openHand),
+      ("closedHand", .closedHand),
+      ("notAllowed", .operationNotAllowed),
+    ]
+    // Diagonal resize cursors have no public NSCursor accessor — Apple
+    // ships them through private selectors that have existed since
+    // 10.7. We pick them up via respondsToSelector + performSelector
+    // so a future macOS that removes them just gracefully falls back
+    // to the existing polygon glyph on the Dart side. No crash, no
+    // App-Store rejection risk because we don't link against private
+    // symbols; we just message-send by name at runtime.
+    if let nesw = privateResizeCursor(selector: "_windowResizeNorthEastSouthWestCursor") {
+      entries.append(("resizeNESW", nesw))
+    }
+    if let nwse = privateResizeCursor(selector: "_windowResizeNorthWestSouthEastCursor") {
+      entries.append(("resizeNWSE", nwse))
+    }
+    return entries.compactMap { (name, cursor) in
+      guard let cg = cursor.image.cgImage(
+        forProposedRect: nil, context: nil, hints: nil)
+      else { return nil }
+      return (name, averageHash(of: cg))
+    }
+  }
+
+  /// Resolve a private NSCursor class selector by name. Returns nil
+  /// when the selector isn't present on the running macOS, so callers
+  /// can just `if let` the result and skip the entry. We dispatch via
+  /// `AnyObject` because perform(_:) is an NSObjectProtocol instance
+  /// method — sending it to `NSCursor.self` (the class metaobject)
+  /// invokes the class method living on the metaclass, which is what
+  /// `_windowResizeNorthEastSouthWestCursor` and friends are.
+  static func privateResizeCursor(selector name: String) -> NSCursor? {
+    let cursorClass: AnyObject = NSCursor.self
+    let sel = Selector(name)
+    guard cursorClass.responds(to: sel) else { return nil }
+    return cursorClass.perform(sel)?.takeUnretainedValue() as? NSCursor
+  }
+
+  /// 8×8 average-hash of a CGImage in grayscale. Resilient to size,
+  /// retina scaling, and minor anti-aliasing differences between the
+  /// live WindowServer cursor and the NSCursor reference image — both
+  /// inputs collapse into the same 64-bit fingerprint regardless of
+  /// original dimensions.
+  private static func averageHash(of cgImage: CGImage) -> UInt64 {
+    let w = 8
+    let h = 8
+    var pixels = [UInt8](repeating: 0, count: w * h)
+    let cs = CGColorSpaceCreateDeviceGray()
+    guard
+      let ctx = CGContext(
+        data: &pixels,
+        width: w,
+        height: h,
+        bitsPerComponent: 8,
+        bytesPerRow: w,
+        space: cs,
+        bitmapInfo: CGImageAlphaInfo.none.rawValue
+      )
+    else { return 0 }
+    ctx.interpolationQuality = .medium
+    ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+    let avg = pixels.reduce(0) { $0 + Int($1) } / pixels.count
+    var hash: UInt64 = 0
+    for (i, p) in pixels.enumerated() {
+      if Int(p) > avg { hash |= UInt64(1) &<< UInt64(i) }
+    }
+    return hash
+  }
+
+  /// Hamming distance — count of differing bits between two hashes.
+  /// Smaller = more visually similar. The `^.nonzeroBitCount` trick
+  /// is O(1) on every modern CPU (POPCNT instruction).
+  private static func hammingDistance(_ a: UInt64, _ b: UInt64) -> Int {
+    return (a ^ b).nonzeroBitCount
+  }
 
   // Callback for cursor data: x, y, timestampMicros, isClicked, stateWireName.
   // The wire-name string matches CursorState.wireName on the Dart side
@@ -45,17 +213,16 @@ class CursorTracker: NSObject {
       throw CursorTrackerError.alreadyTracking
     }
 
-    // Cursor-state detection uses the Accessibility API; without that
-    // permission we can still track position/click, but every state
-    // sample will fall through to "arrow". Log once at startup so the
-    // user knows why their I-beam / pointing-hand transitions aren't
-    // being captured, without spamming the log per frame.
-    if !AXIsProcessTrusted() {
-      print(
-        "[CursorTracker] Accessibility permission not granted — cursor state "
-          + "(I-beam, pointing hand, resize, etc.) won't be captured. "
-          + "Grant access in System Settings > Privacy & Security > Accessibility.")
-    }
+    // Force lazy init of the cursor fingerprint library on the main
+    // thread. The underlying NSCursor → CGImage extraction is safest
+    // here (Cocoa drawing); touching it now means the first cursor
+    // sample doesn't pay the build cost.
+    let libSize = Self.cursorLibrary.count
+    diagnosticSampleCount = 0
+    print(
+      "[CursorState] init: libSize=\(libSize) "
+        + "cgsCidResolved=\(_cgsMainConnectionID != nil) "
+        + "cgsCopyResolved=\(_cgsCopyCurrentCursorImage != nil)")
 
     // Set up position sampling timer. We explicitly schedule on the main
     // runloop because startTracking can be called from a Task whose
@@ -128,33 +295,25 @@ class CursorTracker: NSObject {
     let timestamp = getTimestampMicros()
 
     // Identify which stock cursor the system is currently showing.
-    // Must run on the main thread because NSCursor APIs are
-    // main-thread-only — the timer's already on the main runloop, so
-    // this is a direct call.
     let state = detectCursorStateName()
 
     // Send cursor data via callback
     onCursorUpdate?(location.x, location.y, timestamp, isMouseDown, state)
   }
 
-  /// Returns the wire-name of the cursor state at [location] by
-  /// asking the Accessibility API which UI element the user is
-  /// hovering over and mapping its role to a cursor.
+  /// Reads the live cursor image from the WindowServer via the
+  /// private `CGSCopyCurrentCursorImage` API and classifies it
+  /// against [cursorLibrary]. Works for every cursor the OS is
+  /// drawing — Flutter / Electron / web apps, plain native apps,
+  /// Safari links, custom `pointingHandCursor` calls — because the
+  /// classification works on the visual rendering, not on AX
+  /// semantics.
   ///
-  /// Why AX and not NSCursor.currentSystem: `NSCursor.currentSystem`
-  /// only reports the cursor inside the recorder's own window context.
-  /// Hovering over a text field in Safari, Notes, or any other app
-  /// always returns the recorder process's idle arrow — useless for
-  /// a screen recorder. The system-wide AXUIElement
-  /// (`AXUIElementCreateSystemWide`) plus `AXUIElementCopyElementAtPosition`
-  /// works cross-app: it walks the host app's UI tree and tells us
-  /// the role of the element under the cursor regardless of which
-  /// app owns it.
+  /// Returns the last detected state on failure (private API removed,
+  /// permission revoked) so the recording doesn't suddenly snap to
+  /// arrow if a frame fails.
   ///
-  /// Requires the Accessibility permission. Without it AX returns
-  /// `kAXErrorCannotComplete` / nil and we fall back to "arrow".
-  ///
-  /// Throttled internally — see [stateQueryIntervalSec].
+  /// Throttled — see [stateQueryIntervalSec] / [stateQueryMoveThresholdPx].
   private func detectCursorStateName() -> String {
     let now = CACurrentMediaTime()
     let location = NSEvent.mouseLocation
@@ -169,77 +328,71 @@ class CursorTracker: NSObject {
     lastStateQueryTime = now
     lastStateQueryLocation = location
 
-    let detected = queryAccessibilityCursorStateName(at: location)
+    // Try sources in order of preference:
+    //   1. NSCursor.currentSystem — public API. On macOS 11+ Apple
+    //      documents this as the system-wide cursor "regardless of
+    //      whether your app set it." Historical builds returned the
+    //      caller's process cursor instead, which is why this code
+    //      previously fell through to AX; modern macOS appears to
+    //      honour the documented behaviour.
+    //   2. CGSCopyCurrentCursorImage (private, dlsym-resolved) —
+    //      fallback for older macOS / sandboxed configs where
+    //      currentSystem returns the wrong cursor.
+    var sourceUsed = "none"
+    var cgImage: CGImage?
+    if let sys = NSCursor.currentSystem,
+      let cg = sys.image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    {
+      cgImage = cg
+      sourceUsed = "NSCursor.currentSystem"
+    } else if let cidFn = _cgsMainConnectionID,
+      let copyFn = _cgsCopyCurrentCursorImage,
+      let unmanaged = copyFn(cidFn())
+    {
+      cgImage = unmanaged.takeRetainedValue()
+      sourceUsed = "CGSCopyCurrentCursorImage"
+    }
+
+    guard let liveImage = cgImage else {
+      // Neither source produced anything. Hold the last state to
+      // avoid visible flicker.
+      return lastDetectedStateName
+    }
+    let liveHash = Self.averageHash(of: liveImage)
+
+    // Find the closest library entry by Hamming distance. Below
+    // [acceptanceThreshold] the cursor is one of our recognised
+    // shapes; above it the cursor is something custom (a game cursor,
+    // an animated spinner mid-frame, …) and we fall through to "arrow"
+    // so the rendered overlay defaults to the user's chosen arrow style.
+    var bestName = "arrow"
+    var bestDistance = Int.max
+    for (name, hash) in Self.cursorLibrary {
+      let d = Self.hammingDistance(hash, liveHash)
+      if d < bestDistance {
+        bestDistance = d
+        bestName = name
+      }
+    }
+    let acceptanceThreshold = 8  // out of 64 bits
+    let detected = bestDistance <= acceptanceThreshold ? bestName : "arrow"
+
+    if diagnosticSampleCount < 60 {
+      print(
+        "[CursorState] sample #\(diagnosticSampleCount) "
+          + "src=\(sourceUsed) "
+          + "dims=\(liveImage.width)×\(liveImage.height) "
+          + "best=\(bestName) distance=\(bestDistance) "
+          + "detected=\(detected)")
+      diagnosticSampleCount += 1
+    } else if detected != lastDetectedStateName {
+      // After the initial dump, only log transitions.
+      print(
+        "[CursorState] changed → \(detected) "
+          + "(best=\(bestName), distance=\(bestDistance), src=\(sourceUsed))")
+    }
     lastDetectedStateName = detected
     return detected
-  }
-
-  /// AX-coordinates space query. NSEvent.mouseLocation gives Cocoa
-  /// coordinates (origin bottom-left of the main display); AX expects
-  /// CG / Quartz coordinates (origin top-left of the screen the point
-  /// falls on). Flips Y using the screen the point lies in, then walks
-  /// up to 3 ancestors so a hit on a child Text node still resolves
-  /// to its parent text field's role.
-  private func queryAccessibilityCursorStateName(at cocoaLocation: NSPoint)
-    -> String
-  {
-    let screen = NSScreen.screens.first(where: { $0.frame.contains(cocoaLocation) })
-      ?? NSScreen.main
-    guard let screen = screen else { return "arrow" }
-    let axX = cocoaLocation.x
-    let axY = screen.frame.maxY - cocoaLocation.y
-
-    let system = AXUIElementCreateSystemWide()
-    var element: AXUIElement?
-    let result = AXUIElementCopyElementAtPosition(
-      system, Float(axX), Float(axY), &element)
-    guard result == .success, var current = element else { return "arrow" }
-
-    // Walk up at most 3 ancestors looking for a role that maps to a
-    // non-arrow cursor. Some apps wrap text fields in nameless groups
-    // and the leaf element under the cursor may be a child Text or
-    // similar — its parent is the AXTextField we actually want.
-    for _ in 0..<3 {
-      var roleRef: CFTypeRef?
-      let roleResult = AXUIElementCopyAttributeValue(
-        current, kAXRoleAttribute as CFString, &roleRef)
-      if roleResult == .success, let role = roleRef as? String {
-        let mapped = mapAXRoleToCursorStateName(role)
-        if mapped != "arrow" {
-          return mapped
-        }
-      }
-
-      var parentRef: CFTypeRef?
-      let parentResult = AXUIElementCopyAttributeValue(
-        current, kAXParentAttribute as CFString, &parentRef)
-      guard parentResult == .success, let parent = parentRef else { break }
-      // The AX API guarantees the parent attribute is an AXUIElement
-      // when the call succeeds. Force-bridge via CFTypeID check to
-      // avoid crashing on misbehaving 3rd-party AX providers.
-      guard CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
-      current = (parent as! AXUIElement)
-    }
-    return "arrow"
-  }
-
-  /// Maps an AX role string (e.g. "AXTextField") to a CursorState
-  /// wire name. Conservative: anything we don't have a confident
-  /// mapping for falls through to "arrow" rather than guessing.
-  private func mapAXRoleToCursorStateName(_ role: String) -> String {
-    switch role {
-    case "AXTextField", "AXTextArea", "AXSecureTextField",
-      "AXSearchField", "AXComboBox":
-      return "iBeam"
-    case "AXLink":
-      return "pointingHand"
-    case "AXSplitter":
-      // AX doesn't tell us splitter orientation reliably; pick EW
-      // since horizontal splitters (sidebar dividers) are most common.
-      return "resizeEW"
-    default:
-      return "arrow"
-    }
   }
 
   private func handleMouseEvent(_ event: NSEvent) {
@@ -278,6 +431,10 @@ class CursorTracker: NSObject {
 enum CursorTrackerError: LocalizedError {
   case alreadyTracking
   case notTracking
+  // Kept for source-compat with external callers. The new cursor-image
+  // classification path doesn't require any extra permission beyond
+  // the Screen Recording entitlement that the recorder already needs,
+  // so nothing in this file throws this case anymore.
   case permissionDenied
 
   var errorDescription: String? {
@@ -287,7 +444,7 @@ enum CursorTrackerError: LocalizedError {
     case .notTracking:
       return "No cursor tracking session is active."
     case .permissionDenied:
-      return "Accessibility permission denied. Please grant permission in System Preferences > Privacy & Security > Accessibility."
+      return "Cursor tracking permission denied."
     }
   }
 }

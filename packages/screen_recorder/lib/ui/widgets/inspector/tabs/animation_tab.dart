@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:screen_recorder/effects/motion_blur_tuning.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
@@ -7,7 +6,6 @@ import 'package:screen_recorder/services/curve_library.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_graph_painter.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
-import 'package:screen_recorder/ui/widgets/inspector/motion_blur_tuning_panel.dart';
 
 /// Animation tab — screen / cursor animation styles + motion blur.
 ///
@@ -24,8 +22,12 @@ class AnimationTab extends StatefulWidget {
     required this.onCursorConfigChanged,
     required this.motionBlur,
     required this.onMotionBlurChanged,
-    required this.motionBlurTuning,
-    required this.onMotionBlurTuningChanged,
+    required this.cursorMovementBlur,
+    required this.onCursorMovementBlurChanged,
+    required this.screenMovementBlur,
+    required this.onScreenMovementBlurChanged,
+    required this.screenZoomBlur,
+    required this.onScreenZoomBlurChanged,
     required this.library,
   });
 
@@ -35,8 +37,12 @@ class AnimationTab extends StatefulWidget {
   final ValueChanged<CursorAnimationConfig> onCursorConfigChanged;
   final double motionBlur;
   final ValueChanged<double> onMotionBlurChanged;
-  final MotionBlurTuning motionBlurTuning;
-  final ValueChanged<MotionBlurTuning> onMotionBlurTuningChanged;
+  final double cursorMovementBlur;
+  final ValueChanged<double> onCursorMovementBlurChanged;
+  final double screenMovementBlur;
+  final ValueChanged<double> onScreenMovementBlurChanged;
+  final double screenZoomBlur;
+  final ValueChanged<double> onScreenZoomBlurChanged;
   final CurveLibrary library;
 
   @override
@@ -47,13 +53,21 @@ class _AnimationTabState extends State<AnimationTab> {
   /// Default seed curve for the Screen Custom tile when the user picks
   /// it for the first time — matches CSS `ease-in-out` so the feel is
   /// close to the Smooth preset.
-  static const _defaultScreenCustomCurve =
-      CubicBezierCurve(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0);
+  static const _defaultScreenCustomCurve = CubicBezierCurve(
+    x1: 0.42,
+    y1: 0.0,
+    x2: 0.58,
+    y2: 1.0,
+  );
 
   /// Default seed curve for the Cursor Custom tile — CSS `ease`, which
   /// matches the Smooth cursor preset's feel.
-  static const _defaultCursorCustomCurve =
-      CubicBezierCurve(x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0);
+  static const _defaultCursorCustomCurve = CubicBezierCurve(
+    x1: 0.25,
+    y1: 0.1,
+    x2: 0.25,
+    y2: 1.0,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -85,16 +99,18 @@ class _AnimationTabState extends State<AnimationTab> {
                 previewCurve: s.previewCurve,
                 previewDuration: s.previewDuration,
                 onSelected: (s) => widget.onScreenConfigChanged(
-                    ScreenAnimationConfig.preset(s)),
+                  ScreenAnimationConfig.preset(s),
+                ),
                 size: 84,
               ),
             _CustomTile(
               selected: widget.screenConfig.isCustom,
-              curve: widget.screenConfig.customCurve ??
-                  _defaultScreenCustomCurve,
+              curve:
+                  widget.screenConfig.customCurve ?? _defaultScreenCustomCurve,
               onTap: () => widget.onScreenConfigChanged(
                 ScreenAnimationConfig.custom(
-                  curve: widget.screenConfig.customCurve ??
+                  curve:
+                      widget.screenConfig.customCurve ??
                       _defaultScreenCustomCurve,
                   badgeDuration: widget.screenConfig.badgeDuration,
                 ),
@@ -149,16 +165,24 @@ class _AnimationTabState extends State<AnimationTab> {
                 previewCurve: s.previewCurve,
                 previewDuration: s.previewDuration,
                 onSelected: (s) => widget.onCursorConfigChanged(
-                    CursorAnimationConfig.preset(s)),
+                  CursorAnimationConfig.preset(s),
+                ),
                 size: 76,
               ),
             _CustomTile(
-              selected: widget.cursorConfig.isCustom,
-              curve: widget.cursorConfig.customCurve ??
-                  _defaultCursorCustomCurve,
+              // Only treat the "Custom" tile as selected when the
+              // active config is specifically a custom *curve*. The
+              // cursor tab's spring sliders also produce an
+              // `isCustom == true` config (custom-spring variant),
+              // but that path has no curve to edit and doesn't
+              // belong to this tile.
+              selected: widget.cursorConfig.customCurve != null,
+              curve:
+                  widget.cursorConfig.customCurve ?? _defaultCursorCustomCurve,
               onTap: () => widget.onCursorConfigChanged(
                 CursorAnimationConfig.custom(
-                  curve: widget.cursorConfig.customCurve ??
+                  curve:
+                      widget.cursorConfig.customCurve ??
                       _defaultCursorCustomCurve,
                   // The "None" preset reports a zero window; promote it
                   // to a sensible default so the editor's slider has a
@@ -173,7 +197,7 @@ class _AnimationTabState extends State<AnimationTab> {
             ),
           ],
         ),
-        if (widget.cursorConfig.isCustom)
+        if (widget.cursorConfig.customCurve != null)
           CurveEditor(
             curve: widget.cursorConfig.customCurve!,
             duration: widget.cursorConfig.window,
@@ -202,9 +226,9 @@ class _AnimationTabState extends State<AnimationTab> {
           subtitle:
               'While mouse cursor or screen is moving, cinematic motion '
               'blur effect will be applied.',
-          value: widget.motionBlur,
+          value: widget.motionBlur.clamp(0.0, 0.5),
           min: 0,
-          max: 1,
+          max: 0.5,
           onChanged: widget.onMotionBlurChanged,
           onReset: () => widget.onMotionBlurChanged(0),
           canReset: widget.motionBlur != 0,
@@ -212,9 +236,41 @@ class _AnimationTabState extends State<AnimationTab> {
         const SizedBox(height: 24),
         InspectorCollapsible(
           title: 'Advanced motion blur settings',
-          child: MotionBlurTuningPanel(
-            tuning: widget.motionBlurTuning,
-            onChanged: widget.onMotionBlurTuningChanged,
+          child: Column(
+            children: [
+              InspectorSlider(
+                label: 'Cursor movement',
+                subtitle: 'Caps blur from the cursor path.',
+                value: widget.cursorMovementBlur.clamp(0.0, 1.0),
+                min: 0,
+                max: 1,
+                onChanged: widget.onCursorMovementBlurChanged,
+                onReset: () => widget.onCursorMovementBlurChanged(1),
+                canReset: widget.cursorMovementBlur != 1,
+              ),
+              const SizedBox(height: 16),
+              InspectorSlider(
+                label: 'Screen movement',
+                subtitle: 'Caps blur from camera pan / focal movement.',
+                value: widget.screenMovementBlur.clamp(0.0, 1.0),
+                min: 0,
+                max: 1,
+                onChanged: widget.onScreenMovementBlurChanged,
+                onReset: () => widget.onScreenMovementBlurChanged(1),
+                canReset: widget.screenMovementBlur != 1,
+              ),
+              const SizedBox(height: 16),
+              InspectorSlider(
+                label: 'Screen zoom',
+                subtitle: 'Caps radial blur from zoom ramps.',
+                value: widget.screenZoomBlur.clamp(0.0, 1.0),
+                min: 0,
+                max: 1,
+                onChanged: widget.onScreenZoomBlurChanged,
+                onReset: () => widget.onScreenZoomBlurChanged(1),
+                canReset: widget.screenZoomBlur != 1,
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 24),
@@ -222,20 +278,18 @@ class _AnimationTabState extends State<AnimationTab> {
     );
   }
 
-  static IconData _screenIcon(ScreenAnimationStyle s) =>
-      switch (s) {
-        ScreenAnimationStyle.focused => Icons.adjust,
-        ScreenAnimationStyle.smooth => Icons.timeline,
-      };
+  static IconData _screenIcon(ScreenAnimationStyle s) => switch (s) {
+    ScreenAnimationStyle.focused => Icons.adjust,
+    ScreenAnimationStyle.smooth => Icons.timeline,
+  };
 
   static IconData _cursorIcon(CursorAnimationStyle s) => switch (s) {
-        CursorAnimationStyle.smooth => Icons.touch_app_outlined,
-        CursorAnimationStyle.medium => Icons.swipe,
-        CursorAnimationStyle.rapid => Icons.bolt,
-        CursorAnimationStyle.none => Icons.near_me,
-      };
+    CursorAnimationStyle.smooth => Icons.touch_app_outlined,
+    CursorAnimationStyle.medium => Icons.swipe,
+    CursorAnimationStyle.rapid => Icons.bolt,
+    CursorAnimationStyle.none => Icons.near_me,
+  };
 }
-
 
 /// Tile that defaults to icon + label, but on hover swaps the icon
 /// for an animated horizontal track previewing the option's curve.
@@ -285,10 +339,7 @@ class _AnimationOptionTileState<T> extends State<_AnimationOptionTile<T>>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: widget.previewDuration,
-    );
+    _ctrl = AnimationController(vsync: this, duration: widget.previewDuration);
   }
 
   @override
@@ -336,20 +387,14 @@ class _AnimationOptionTileState<T> extends State<_AnimationOptionTile<T>>
                   color: kInspectorPanel,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isSelected
-                        ? kInspectorAccent
-                        : kInspectorBorder,
+                    color: isSelected ? kInspectorAccent : kInspectorBorder,
                     width: 1,
                   ),
                 ),
                 alignment: Alignment.center,
                 child: _hover
-                    ? _DemoTrack(
-                        controller: _ctrl,
-                        curve: widget.previewCurve,
-                      )
-                    : Icon(widget.icon,
-                        color: Colors.white, size: 22),
+                    ? _DemoTrack(controller: _ctrl, curve: widget.previewCurve)
+                    : Icon(widget.icon, color: Colors.white, size: 22),
               ),
               const SizedBox(height: 6),
               Text(
@@ -400,9 +445,7 @@ class _CustomTile extends StatelessWidget {
                 color: kInspectorPanel,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: selected
-                      ? kInspectorAccent
-                      : kInspectorBorder,
+                  color: selected ? kInspectorAccent : kInspectorBorder,
                   width: 1,
                 ),
               ),
@@ -471,11 +514,7 @@ class _DemoTrackPainter extends CustomPainter {
     );
 
     final dotX = left.dx + (right.dx - left.dx) * progress.clamp(0.0, 1.0);
-    canvas.drawCircle(
-      Offset(dotX, y),
-      6,
-      Paint()..color = kInspectorAccent,
-    );
+    canvas.drawCircle(Offset(dotX, y), 6, Paint()..color = kInspectorAccent);
     canvas.drawCircle(
       Offset(dotX, y),
       6,

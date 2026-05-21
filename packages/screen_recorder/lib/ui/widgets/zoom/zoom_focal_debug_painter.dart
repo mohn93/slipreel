@@ -1,25 +1,39 @@
 import 'package:flutter/material.dart';
 
 import 'package:screen_recorder/models/cursor_recording.dart';
+import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
 
 /// Dev HUD painter overlaid on the playback canvas. Renders the recorded
-/// cursor trail, the raw cursor at the current playhead, and the
-/// smoothed zoom focal point so we can visually confirm the focal is
-/// tracking the cursor as expected. Toggled by the dev "show zoom debug"
-/// flag in playback_screen.
+/// cursor trail, the raw cursor at the current playhead, the smoothed
+/// zoom focal point, the bounded-mode deadzone box around the focal,
+/// and a text readout of the controller's live state (follow mode,
+/// deadzone ratio, `_inFlight`, spring velocity) so we can diagnose
+/// "the camera is moving when it shouldn't" complaints by reading
+/// ground truth straight off the screen.
 class ZoomFocalDebugPainter extends CustomPainter {
   ZoomFocalDebugPainter({
     required this.cursorRecording,
     required this.position,
     required this.videoSize,
     required this.smoothedFocal,
+    required this.activeZoom,
+    required this.inFlight,
+    required this.focalVelocity,
   });
 
   final CursorRecording cursorRecording;
   final Duration position;
   final Size videoSize;
   final Offset? smoothedFocal;
+  /// The zoom the controller is currently treating as active, or null
+  /// when the playhead is between regions. Useful for cross-checking
+  /// against whatever the inspector panel is *showing*: if the
+  /// inspector shows zoom #2 but this prints zoom #1, the user is
+  /// editing the wrong region.
+  final ZoomRegion? activeZoom;
+  final bool inFlight;
+  final Offset focalVelocity;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -64,6 +78,31 @@ class ZoomFocalDebugPainter extends CustomPainter {
 
     if (smoothedFocal != null) {
       final f = Offset(smoothedFocal!.dx * scaleX, smoothedFocal!.dy * scaleY);
+      // Deadzone box (bounded mode only): magenta when idle, green
+      // while the gate is bypassed (`_inFlight`). Drawn first so the
+      // focal crosshair sits on top.
+      final z = activeZoom;
+      if (z != null &&
+          z.followCursor &&
+          z.followMode == FollowMode.bounded &&
+          z.deadzoneRatio > 0 &&
+          videoSize.width > 0 &&
+          videoSize.height > 0) {
+        final dzW = (videoSize.width / z.zoomLevel) * z.deadzoneRatio;
+        final dzH = (videoSize.height / z.zoomLevel) * z.deadzoneRatio;
+        final dzRect = Rect.fromCenter(
+          center: f,
+          width: dzW * scaleX,
+          height: dzH * scaleY,
+        );
+        final dzPaint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = inFlight
+              ? const Color(0xCC00E676) // green — gate bypassed
+              : const Color(0xCCFF00C8); // magenta — gate active
+        canvas.drawRect(dzRect, dzPaint);
+      }
       // Smoothed focal: hollow yellow ring + crosshair.
       final ringPaint = Paint()
         ..style = PaintingStyle.stroke
@@ -74,50 +113,11 @@ class ZoomFocalDebugPainter extends CustomPainter {
       canvas.drawLine(Offset(f.dx, f.dy - 18), Offset(f.dx, f.dy + 18), ringPaint);
     }
 
-    // Text readout — top-left of the video.
-    final readout = StringBuffer();
-    readout.writeln('samples: ${cursorRecording.count}');
-    if (raw == null) {
-      readout.writeln('cursor: <none at this time>');
-    } else {
-      readout.writeln('cursor: ${raw.x.toStringAsFixed(0)}, ${raw.y.toStringAsFixed(0)} px');
-    }
-    if (smoothedFocal != null) {
-      readout.writeln(
-          'focal:  ${smoothedFocal!.dx.toStringAsFixed(0)}, ${smoothedFocal!.dy.toStringAsFixed(0)} px');
-    } else {
-      readout.writeln('focal:  <no active zoom>');
-    }
-    if (cursorRecording.positions.isNotEmpty) {
-      final xs = cursorRecording.positions.map((p) => p.x);
-      final ys = cursorRecording.positions.map((p) => p.y);
-      readout.writeln(
-          'x rng:  ${xs.reduce((a, b) => a < b ? a : b).toStringAsFixed(0)} … ${xs.reduce((a, b) => a > b ? a : b).toStringAsFixed(0)}');
-      readout.writeln(
-          'y rng:  ${ys.reduce((a, b) => a < b ? a : b).toStringAsFixed(0)} … ${ys.reduce((a, b) => a > b ? a : b).toStringAsFixed(0)}');
-    }
-    readout.write('video:  ${videoSize.width.toStringAsFixed(0)} × ${videoSize.height.toStringAsFixed(0)}');
-    final tp = TextPainter(
-      text: TextSpan(
-        text: readout.toString(),
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontFeatures: [FontFeature.tabularFigures()],
-          shadows: [
-            Shadow(color: Colors.black, blurRadius: 4),
-          ],
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final pad = 6.0;
-    final bg = Rect.fromLTWH(8, 8, tp.width + pad * 2, tp.height + pad * 2);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(bg, const Radius.circular(4)),
-      Paint()..color = const Color(0xAA000000),
-    );
-    tp.paint(canvas, Offset(bg.left + pad, bg.top + pad));
+    // Text readout intentionally NOT drawn here — it now lives in a
+    // sibling Flutter widget ([ZoomDebugReadoutPanel]) positioned
+    // outside the video frame in the playback canvas's outer Stack,
+    // so the diagnostic numbers don't sit on top of the playback
+    // pixels we're trying to inspect.
   }
 
   @override
@@ -125,5 +125,155 @@ class ZoomFocalDebugPainter extends CustomPainter {
       old.position != position ||
       old.cursorRecording != cursorRecording ||
       old.videoSize != videoSize ||
-      old.smoothedFocal != smoothedFocal;
+      old.smoothedFocal != smoothedFocal ||
+      old.activeZoom != activeZoom ||
+      old.inFlight != inFlight ||
+      old.focalVelocity != focalVelocity;
+}
+
+/// Immutable snapshot of the zoom controller's state at one frame —
+/// the payload the playback canvas pushes out via a `ValueNotifier`
+/// so the debug readout can render at screen-fixed coordinates,
+/// outside the zoom Transform that warps the canvas itself.
+class ZoomDebugSnapshot {
+  const ZoomDebugSnapshot({
+    required this.cursor,
+    required this.smoothedFocal,
+    required this.activeZoom,
+    required this.inFlight,
+    required this.focalVelocity,
+    required this.cursorVelocity,
+    required this.videoSize,
+    required this.cursorSampleCount,
+    required this.position,
+    this.cursorXRange,
+    this.cursorYRange,
+    this.lastSnapReason,
+    this.lastSnapAt,
+  });
+
+  final Offset? cursor;
+  final Offset? smoothedFocal;
+  final ZoomRegion? activeZoom;
+  final bool inFlight;
+  final Offset focalVelocity;
+  /// Cursor's intrinsic scene velocity in source-video px/s. This is
+  /// the value the bounded-mode gate consults for "is the cursor at
+  /// rest?" — if a snap is happening when the user reports the cursor
+  /// as stopped, this tells us whether the gate sees a real velocity
+  /// spike (e.g. from a click-injected sample landing 2 px off the
+  /// trajectory) or whether the cursor is genuinely at rest and the
+  /// snap is coming from somewhere downstream.
+  final Offset cursorVelocity;
+  final Size videoSize;
+  final int cursorSampleCount;
+  final Duration position;
+  final (double, double)? cursorXRange;
+  final (double, double)? cursorYRange;
+  final String? lastSnapReason;
+  final Duration? lastSnapAt;
+}
+
+/// Text readout sibling for [ZoomFocalDebugPainter]. Rendered as a
+/// regular Flutter widget rather than baked into the painter so it
+/// can be positioned OUTSIDE the video frame — sitting on top of the
+/// playback pixels was hiding the very behaviour we needed to read.
+class ZoomDebugReadoutPanel extends StatelessWidget {
+  const ZoomDebugReadoutPanel({
+    super.key,
+    required this.cursor,
+    required this.smoothedFocal,
+    required this.activeZoom,
+    required this.inFlight,
+    required this.focalVelocity,
+    required this.cursorVelocity,
+    required this.videoSize,
+    required this.cursorSampleCount,
+    required this.position,
+    this.cursorXRange,
+    this.cursorYRange,
+    this.lastSnapReason,
+    this.lastSnapAt,
+  });
+
+  final Offset? cursor;
+  final Offset? smoothedFocal;
+  final ZoomRegion? activeZoom;
+  final bool inFlight;
+  final Offset focalVelocity;
+  final Offset cursorVelocity;
+  final Size videoSize;
+  final int cursorSampleCount;
+  final Duration position;
+  final (double, double)? cursorXRange;
+  final (double, double)? cursorYRange;
+  final String? lastSnapReason;
+  final Duration? lastSnapAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = <String>[];
+    lines.add('samples: $cursorSampleCount');
+    if (cursor == null) {
+      lines.add('cursor: <none at this time>');
+    } else {
+      lines.add(
+          'cursor: ${cursor!.dx.toStringAsFixed(0)}, ${cursor!.dy.toStringAsFixed(0)} px');
+    }
+    if (smoothedFocal != null) {
+      lines.add(
+          'focal:  ${smoothedFocal!.dx.toStringAsFixed(0)}, ${smoothedFocal!.dy.toStringAsFixed(0)} px');
+    } else {
+      lines.add('focal:  <no active zoom>');
+    }
+    final z = activeZoom;
+    if (z != null) {
+      lines.add('mode:   ${z.followMode.name}'
+          '${z.followCursor ? "" : " (followCursor=off)"}');
+      lines.add('dz:     ${(z.deadzoneRatio * 100).toStringAsFixed(0)}%'
+          '   zoom: ${z.zoomLevel.toStringAsFixed(1)}×'
+          '   t: ${z.followDuration.inMilliseconds}ms');
+      lines.add('inFlight: ${inFlight ? "YES (gate bypassed)" : "no"}'
+          '   |v|: ${focalVelocity.distance.toStringAsFixed(1)} px/s');
+      lines.add('cursorV: ${cursorVelocity.distance.toStringAsFixed(1)} px/s'
+          '   (gate release < 80)');
+    }
+    if (lastSnapReason != null && lastSnapAt != null) {
+      final ageMs = position.inMicroseconds - lastSnapAt!.inMicroseconds;
+      final ageStr = ageMs < 0
+          ? '? ms (future)'
+          : ageMs < 1000 * 1000
+              ? '${(ageMs / 1000).toStringAsFixed(0)} ms ago'
+              : '${(ageMs / 1e6).toStringAsFixed(1)} s ago';
+      lines.add('snap:   $lastSnapReason  ($ageStr)');
+    }
+    if (cursorXRange != null && cursorYRange != null) {
+      lines.add('x rng:  ${cursorXRange!.$1.toStringAsFixed(0)}'
+          ' … ${cursorXRange!.$2.toStringAsFixed(0)}');
+      lines.add('y rng:  ${cursorYRange!.$1.toStringAsFixed(0)}'
+          ' … ${cursorYRange!.$2.toStringAsFixed(0)}');
+    }
+    lines.add(
+        'video:  ${videoSize.width.toStringAsFixed(0)} × ${videoSize.height.toStringAsFixed(0)}');
+    return IgnorePointer(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xCC000000),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+              color: const Color(0x44FFFFFF), width: 0.5),
+        ),
+        child: Text(
+          lines.join('\n'),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            height: 1.35,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+        ),
+      ),
+    );
+  }
 }

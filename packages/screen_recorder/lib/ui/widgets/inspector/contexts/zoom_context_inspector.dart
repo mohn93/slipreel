@@ -97,15 +97,19 @@ class ZoomContextInspector extends StatelessWidget {
                     subtitle:
                         '${(zoom.deadzoneRatio * 100).round()}% of '
                         'the visible viewport. Cursor stays inside → '
-                        'camera holds; outside → camera re-centers.',
+                        'camera holds; outside → camera re-centers. '
+                        'At 100% the deadzone fills the framed area; '
+                        'past 100% it extends beyond the viewport, so '
+                        'the cursor has to wander past the framed area '
+                        'before the camera reacts.',
                     value: zoom.deadzoneRatio,
                     min: 0.1,
-                    max: 0.6,
+                    max: 1.5,
                     onChanged: (v) =>
                         onChanged(zoom.copyWith(deadzoneRatio: v)),
                     onReset: () =>
-                        onChanged(zoom.copyWith(deadzoneRatio: 0.3)),
-                    canReset: (zoom.deadzoneRatio - 0.3).abs() > 1e-6,
+                        onChanged(zoom.copyWith(deadzoneRatio: 0.8)),
+                    canReset: (zoom.deadzoneRatio - 0.8).abs() > 1e-6,
                   ),
                 ],
                 if (zoom.followMode == FollowMode.predictive) ...[
@@ -134,8 +138,8 @@ class ZoomContextInspector extends StatelessWidget {
                 InspectorSlider(
                   label: 'Follow duration',
                   subtitle:
-                      '${zoom.followDuration.inMilliseconds} ms to '
-                      'catch up to a new target',
+                      '${zoom.followDuration.inMilliseconds} ms for the '
+                      'camera to settle on a new target',
                   value:
                       zoom.followDuration.inMilliseconds.toDouble(),
                   min: 100,
@@ -144,41 +148,10 @@ class ZoomContextInspector extends StatelessWidget {
                       followDuration:
                           Duration(milliseconds: v.toInt()))),
                   onReset: () => onChanged(zoom.copyWith(
-                      followDuration: const Duration(milliseconds: 400))),
+                      followDuration: const Duration(milliseconds: 700))),
                   canReset: zoom.followDuration !=
-                      const Duration(milliseconds: 400),
+                      const Duration(milliseconds: 700),
                 ),
-                const SizedBox(height: 16),
-                InspectorToggle(
-                  label: 'Follow curve override',
-                  subtitle:
-                      'Shape the catch-up easing. Default is '
-                      'easeOutCubic.',
-                  value: zoom.followCurve != null,
-                  onChanged: (v) {
-                    if (v) {
-                      onChanged(zoom.copyWith(
-                        followCurve: const CubicBezierCurve(
-                            x1: 0.215, y1: 0.61, x2: 0.355, y2: 1.0),
-                      ));
-                    } else {
-                      onChanged(zoom.copyWith(clearFollowCurve: true));
-                    }
-                  },
-                ),
-                if (zoom.followCurve != null)
-                  CurveEditor(
-                    curve: zoom.followCurve!,
-                    duration: Duration.zero,
-                    durationLabel: '',
-                    durationMin: Duration.zero,
-                    durationMax: Duration.zero,
-                    onCurveChanged: (c) =>
-                        onChanged(zoom.copyWith(followCurve: c)),
-                    onDurationChanged: (_) {},
-                    library: curveLibrary,
-                    showDurationSlider: false,
-                  ),
               ],
               const InspectorSectionDivider(),
               InspectorSlider(

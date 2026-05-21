@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../models/cursor_recording.dart';
 import 'cursor_glyph.dart';
+import 'spring_config.dart';
 
 /// Visual click-feedback options shown by the inspector's *Click effect*
 /// picker. The press-pulse (size shrink-then-overshoot animation) plays
@@ -21,9 +23,11 @@ extension CursorClickEffectLabel on CursorClickEffect {
       };
 }
 
-/// Total length of the always-on press pulse — long enough to read but
-/// short enough to feel snappy.
-const int _pressDurationMicros = 250000;
+/// The cursor's scale factor while the mouse button is held. Below 1.0
+/// so the click reads as a press; tuned to match macOS's own subtle
+/// shrink. Press and release durations come from the spring's
+/// settling time — there are no fixed timing constants any more.
+const double _heldMultiplier = 0.86;
 
 /// Total length of the ripple expansion+fade.
 const int _rippleDurationMicros = 350000;
@@ -78,19 +82,80 @@ int? microsSinceClick(
   return delta < 0 ? null : delta;
 }
 
-/// Always-on press-pulse multiplier: cursor shrinks slightly, overshoots
-/// past 1.0, and settles back. Returns 1.0 outside the animation window.
-double pressPulseMultiplier(int microsSinceClick) {
-  if (microsSinceClick < 0 || microsSinceClick >= _pressDurationMicros) {
-    return 1.0;
+/// Microseconds since the most recent button-release event (true→false
+/// transition), or null if no release has happened yet at
+/// [timestampMicros]. Walks the recording from the start once per
+/// call; recordings are small enough this isn't worth caching.
+int? microsSinceRelease(
+  CursorRecording recording,
+  int timestampMicros,
+) {
+  final positions = recording.positions;
+  if (positions.isEmpty) return null;
+  bool? prevClicked;
+  int? lastReleaseMicros;
+  for (final p in positions) {
+    if (p.timestampMicros > timestampMicros) break;
+    if (prevClicked == true && !p.isClicked) {
+      lastReleaseMicros = p.timestampMicros;
+    }
+    prevClicked = p.isClicked;
   }
-  final t = microsSinceClick / _pressDurationMicros;
-  // Damped sine: dip first, slight overshoot, return to 1. Amplitude
-  // tuned so the dip lands around 0.88 and the bounce around 1.04.
-  return 1.0 -
-      0.18 *
-          math.sin(2 * math.pi * t) *
-          math.exp(-1.8 * t);
+  if (lastReleaseMicros == null) return null;
+  final delta = timestampMicros - lastReleaseMicros;
+  return delta < 0 ? null : delta;
+}
+
+/// Press-pulse multiplier, evaluated in closed form from a single
+/// [SpringSimulation] re-targeted on each button event. The cursor
+/// shrinks toward [_heldMultiplier] while the button is down (so a
+/// long click stays visibly pressed for as long as the user holds it)
+/// and chases back to 1.0 after release. With the default `snappy`
+/// spring the press and release both settle in ~150–200 ms; dropping
+/// the damping ratio below 1.0 introduces bounce on release.
+///
+/// Closed-form means: no per-frame state, deterministic at any
+/// playhead position, scrub-friendly.
+///
+/// [microsSinceClick]   — time since the most recent press-down event,
+///                        or null if none has happened. Larger values
+///                        are older.
+/// [microsSinceRelease] — time since the most recent release event, or
+///                        null if the button has never been released
+///                        since recording start. Treated as "still
+///                        held" when greater than [microsSinceClick].
+/// [spring]             — tuning. [ClickSpring.snappy] by default.
+double pressPulseMultiplier({
+  required int? microsSinceClick,
+  required int? microsSinceRelease,
+  ClickSpring spring = ClickSpring.snappy,
+}) {
+  if (microsSinceClick == null || microsSinceClick < 0) return 1.0;
+
+  final desc = spring.toDescription();
+  final stillHeld = microsSinceRelease == null ||
+      microsSinceRelease > microsSinceClick;
+
+  if (stillHeld) {
+    // Press phase. Spring starts at rest at 1.0, targets _heldMultiplier.
+    final t = microsSinceClick / 1e6;
+    final sim = SpringSimulation(desc, 1.0, _heldMultiplier, 0.0);
+    return sim.x(t);
+  }
+
+  // Release phase. We need the spring's state at the moment of
+  // release to start the release simulation from. Evaluate the press
+  // spring at the hold duration to get (size, velocity) at release,
+  // then run a release spring from that state toward 1.0.
+  final holdT = (microsSinceClick - microsSinceRelease) / 1e6;
+  final pressSim = SpringSimulation(desc, 1.0, _heldMultiplier, 0.0);
+  final sizeAtRelease = pressSim.x(holdT);
+  final velAtRelease = pressSim.dx(holdT);
+
+  final releaseT = microsSinceRelease / 1e6;
+  final releaseSim =
+      SpringSimulation(desc, sizeAtRelease, 1.0, velAtRelease);
+  return releaseSim.x(releaseT);
 }
 
 /// State for the expanding ripple ring at a given moment, or null when
@@ -152,22 +217,26 @@ void paintCursorRipple(
   );
 }
 
-/// Paints the cursor glyph at [position] with the always-on press-pulse
-/// applied (cursor briefly shrinks then bounces on click). No ripple —
-/// callers that want the ring underneath should call [paintCursorRipple]
-/// before this.
+/// Paints the cursor glyph at [position] with the press-pulse applied
+/// (cursor shrinks while held, snaps back with a small bounce on
+/// release). No ripple — callers that want the ring underneath should
+/// call [paintCursorRipple] before this.
 void paintCursorGlyphWithPulse(
   Canvas canvas, {
   required Offset position,
   required double baseDiameter,
   required CursorStyle style,
   required int? microsSinceClick,
+  int? microsSinceRelease,
+  ClickSpring clickSpring = ClickSpring.snappy,
   CursorState state = CursorState.arrow,
   double shadowIntensity = 0,
 }) {
-  final pulse = microsSinceClick == null
-      ? 1.0
-      : pressPulseMultiplier(microsSinceClick);
+  final pulse = pressPulseMultiplier(
+    microsSinceClick: microsSinceClick,
+    microsSinceRelease: microsSinceRelease,
+    spring: clickSpring,
+  );
   final effectiveDiameter = baseDiameter * pulse;
   if (shadowIntensity > 0) {
     _paintCursorShadow(
@@ -255,6 +324,8 @@ void paintCursorWithEffects(
   required double baseDiameter,
   required CursorStyle style,
   required int? microsSinceClick,
+  int? microsSinceRelease,
+  ClickSpring clickSpring = ClickSpring.snappy,
   CursorClickEffect effect = CursorClickEffect.none,
   CursorState state = CursorState.arrow,
   double shadowIntensity = 0,
@@ -272,6 +343,8 @@ void paintCursorWithEffects(
     baseDiameter: baseDiameter,
     style: style,
     microsSinceClick: microsSinceClick,
+    microsSinceRelease: microsSinceRelease,
+    clickSpring: clickSpring,
     state: state,
     shadowIntensity: shadowIntensity,
   );

@@ -21,8 +21,6 @@ void main() {
         followMode: FollowMode.predictive,
         deadzoneRatio: 0.42,
         followDuration: const Duration(milliseconds: 600),
-        followCurve:
-            const CubicBezierCurve(x1: 0.0, y1: 1.0, x2: 1.0, y2: 0.0),
         predictiveWindow: const Duration(milliseconds: 2200),
       );
 
@@ -31,7 +29,7 @@ void main() {
       expect(restored, original);
     });
 
-    test('round-trips a minimal region without curve overrides', () {
+    test('round-trips a minimal region without ramp curve override', () {
       final original = ZoomRegion(
         rect: const Rect.fromLTWH(0, 0, 100, 100),
         startTime: Duration.zero,
@@ -42,7 +40,6 @@ void main() {
       final restored = ZoomRegion.fromJson(original.toJson());
       expect(restored, original);
       expect(restored.rampCurveOverride, isNull);
-      expect(restored.followCurve, isNull);
     });
 
     test('rejects unknown FollowMode names', () {
@@ -76,10 +73,38 @@ void main() {
 
       final restored = ZoomRegion.fromJson(json);
       expect(restored.followMode, FollowMode.bounded);
-      expect(restored.deadzoneRatio, 0.3);
-      expect(restored.followDuration, const Duration(milliseconds: 400));
+      // Default bumped from 0.3 → 0.8 alongside the slider cap going
+      // from 1.0 → 1.5 — "the camera holds unless the cursor really
+      // wanders" is the new out-of-the-box feel.
+      expect(restored.deadzoneRatio, 0.8);
+      // Default bumped from 400 → 700 ms in the same release that
+      // softened the follow curve to easeInOutCubic — longer
+      // duration + symmetric easing keeps fast cursor flicks from
+      // reading as a camera jolt.
+      expect(restored.followDuration, const Duration(milliseconds: 700));
       expect(restored.predictiveWindow, const Duration(milliseconds: 1500));
       expect(restored.followCursor, true);
+    });
+
+    test('legacy followSmoothing / followCurve keys load without error', () {
+      // Earlier builds wrote a `followSmoothing` slider value and an
+      // optional `followCurve` bezier into the JSON. Both knobs were
+      // dropped when the focal controller switched to a critically-
+      // damped spring; old sidecar files must still load. fromJson
+      // simply does not consult those keys — Dart map lookups for
+      // absent keys return null and are otherwise inert.
+      final json = ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 1),
+        zoomLevel: 2.0,
+      ).toJson();
+      json['followSmoothing'] = 0.42;
+      json['followCurve'] = const CubicBezierCurve(
+              x1: 0.1, y1: 0.2, x2: 0.3, y2: 0.4)
+          .toJson();
+
+      expect(() => ZoomRegion.fromJson(json), returnsNormally);
     });
   });
 }

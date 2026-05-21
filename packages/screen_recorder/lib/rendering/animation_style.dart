@@ -1,4 +1,5 @@
 import 'package:flutter/animation.dart';
+import 'package:screen_recorder/rendering/spring_config.dart';
 
 /// Screen-level animation style picked from the Animation tab. Drives
 /// the zoom-level tween that runs when a region's zoom magnitude
@@ -99,11 +100,9 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
         CursorAnimationStyle.none => const Duration(milliseconds: 80),
       };
 
-  /// Re-tuning table: maps each preset to its FIR (window, curve) pair
-  /// so cursor smoothing has a single unified mental model with screen
-  /// curves. Smooth/Medium/Rapid use easeOutCubic with windows chosen
-  /// to match the legacy IIR per-frame lerp's 90% rise time. None
-  /// has a zero window (snap).
+  /// Re-tuning table: maps each preset to its FIR (window, curve) pair.
+  /// Retained only so legacy JSON projects round-trip — the active
+  /// motion path no longer uses FIR. New projects use [motionSpring].
   ({Duration window, Curve curve}) get fir => switch (this) {
         CursorAnimationStyle.smooth =>
           (window: const Duration(milliseconds: 450), curve: Curves.easeOutCubic),
@@ -113,5 +112,22 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
           (window: const Duration(milliseconds: 65), curve: Curves.easeOutCubic),
         CursorAnimationStyle.none =>
           (window: Duration.zero, curve: Curves.linear),
+      };
+
+  /// Spring parameters that drive the cursor's motion chase. Stiffness
+  /// is tuned so each preset's perceived "settle time" is similar to
+  /// the legacy FIR's: Smooth chases lazily, Rapid is nearly instant,
+  /// None snaps. All presets default to critical damping (ratio = 1.0)
+  /// — no overshoot. Dragging the Springs section sliders in the
+  /// cursor tab switches the config to a custom spring that overrides
+  /// these.
+  MotionSpring get motionSpring => switch (this) {
+        CursorAnimationStyle.smooth =>
+          const MotionSpring(stiffness: 180, damping: 1.0),
+        CursorAnimationStyle.medium =>
+          const MotionSpring(stiffness: 380, damping: 1.0),
+        CursorAnimationStyle.rapid =>
+          const MotionSpring(stiffness: 900, damping: 1.0),
+        CursorAnimationStyle.none => MotionSpring.snap,
       };
 }

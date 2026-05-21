@@ -110,6 +110,21 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  Future<Map<String, StockCursorImage>> getStockCursorImages() async {
+    final raw = await _recordingChannel
+        .invokeMapMethod<String, dynamic>('getStockCursorImages');
+    if (raw == null) return const {};
+    final out = <String, StockCursorImage>{};
+    for (final entry in raw.entries) {
+      final inner = entry.value;
+      if (inner is Map) {
+        out[entry.key] = StockCursorImage.fromMap(inner);
+      }
+    }
+    return out;
+  }
+
+  @override
   Stream<FrameData> get frameStream {
     return _framesChannel.receiveBroadcastStream().map((event) {
       return FrameData.fromJson(Map<String, dynamic>.from(event as Map));

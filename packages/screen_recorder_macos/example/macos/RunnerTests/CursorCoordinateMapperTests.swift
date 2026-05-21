@@ -167,4 +167,103 @@ final class CursorCoordinateMapperTests: XCTestCase {
     XCTAssertEqual(p.x, 100, accuracy: 1e-6)
     XCTAssertEqual(p.y, 0, accuracy: 1e-6)
   }
+
+  // MARK: - mapForWindow
+
+  /// Window 800×600 at Quartz (200, 100) on a 1920×1080 primary
+  /// display, non-retina. Cursor at the window's top-left corner (in
+  /// Cocoa coords: x=200, y=primaryHeight−windowY=980) must map to
+  /// video (0, 0).
+  func testWindowCursorAtTopLeftMapsToVideoOrigin() {
+    let p = CursorCoordinateMapper.mapForWindow(
+      cursorGlobalX: 200, cursorGlobalY: 980,
+      windowQuartzX: 200, windowQuartzY: 100,
+      primaryScreenHeightPts: 1080,
+      pixelsPerPointX: 1.0, pixelsPerPointY: 1.0)
+    XCTAssertEqual(p.x, 0, accuracy: 1e-6)
+    XCTAssertEqual(p.y, 0, accuracy: 1e-6)
+  }
+
+  /// Same window, cursor at the bottom-right corner. Window's bottom-
+  /// right in Quartz is (1000, 700); in Cocoa that's (1000, 380). Must
+  /// land on the video's far corner (800, 600).
+  func testWindowCursorAtBottomRightMapsToVideoFarCorner() {
+    let p = CursorCoordinateMapper.mapForWindow(
+      cursorGlobalX: 1000, cursorGlobalY: 380,
+      windowQuartzX: 200, windowQuartzY: 100,
+      primaryScreenHeightPts: 1080,
+      pixelsPerPointX: 1.0, pixelsPerPointY: 1.0)
+    XCTAssertEqual(p.x, 800, accuracy: 1e-6)
+    XCTAssertEqual(p.y, 600, accuracy: 1e-6)
+  }
+
+  /// Cursor in the centre of the window — sanity for the linear
+  /// interior.
+  func testWindowCursorAtCenter() {
+    // Center in Quartz: (200+400, 100+300) = (600, 400).
+    // Center in Cocoa: (600, 1080−400) = (600, 680).
+    let p = CursorCoordinateMapper.mapForWindow(
+      cursorGlobalX: 600, cursorGlobalY: 680,
+      windowQuartzX: 200, windowQuartzY: 100,
+      primaryScreenHeightPts: 1080,
+      pixelsPerPointX: 1.0, pixelsPerPointY: 1.0)
+    XCTAssertEqual(p.x, 400, accuracy: 1e-6)
+    XCTAssertEqual(p.y, 300, accuracy: 1e-6)
+  }
+
+  /// Retina capture: 800×600-pt window captured at 1600×1200 px (×2
+  /// backing). Cursor at the window's centre → video pixel (800, 600).
+  func testWindowRetinaScale() {
+    let p = CursorCoordinateMapper.mapForWindow(
+      cursorGlobalX: 600, cursorGlobalY: 680,
+      windowQuartzX: 200, windowQuartzY: 100,
+      primaryScreenHeightPts: 1080,
+      pixelsPerPointX: 2.0, pixelsPerPointY: 2.0)
+    XCTAssertEqual(p.x, 800, accuracy: 1e-6)
+    XCTAssertEqual(p.y, 600, accuracy: 1e-6)
+  }
+
+  /// Live-tracking sanity: the window dragged from (200, 100) to
+  /// (500, 50). Cursor stays at the window's top-left throughout; the
+  /// mapped output must remain (0, 0) at both positions because the
+  /// closure calls fetchWindowBounds on each sample (the mapper is
+  /// pure — the plugin's closure is what's live).
+  func testWindowDraggedKeepsTopLeftMapping() {
+    // Before drag: window at (200, 100). Cursor at top-left → Cocoa
+    // (200, 980).
+    let beforeDrag = CursorCoordinateMapper.mapForWindow(
+      cursorGlobalX: 200, cursorGlobalY: 980,
+      windowQuartzX: 200, windowQuartzY: 100,
+      primaryScreenHeightPts: 1080,
+      pixelsPerPointX: 1.0, pixelsPerPointY: 1.0)
+    XCTAssertEqual(beforeDrag.x, 0, accuracy: 1e-6)
+    XCTAssertEqual(beforeDrag.y, 0, accuracy: 1e-6)
+
+    // After drag: window at (500, 50). Cursor at top-left → Cocoa
+    // (500, 1030). Same (0, 0) output.
+    let afterDrag = CursorCoordinateMapper.mapForWindow(
+      cursorGlobalX: 500, cursorGlobalY: 1030,
+      windowQuartzX: 500, windowQuartzY: 50,
+      primaryScreenHeightPts: 1080,
+      pixelsPerPointX: 1.0, pixelsPerPointY: 1.0)
+    XCTAssertEqual(afterDrag.x, 0, accuracy: 1e-6)
+    XCTAssertEqual(afterDrag.y, 0, accuracy: 1e-6)
+  }
+
+  /// Window on a secondary display arranged ABOVE the primary. In
+  /// Quartz, the secondary occupies negative Y; the Cocoa→Quartz flip
+  /// must still produce the right window-relative coordinate.
+  func testWindowOnSecondaryDisplayAbovePrimary() {
+    // Primary: 1920×1080 at Quartz (0, 0). Secondary above primary:
+    // Quartz (0, -900) to (1280, 0). Window at (100, -800), size
+    // 1280×720. Cursor at window's top-left: Quartz (100, -800) →
+    // Cocoa (100, 1080 − (−800)) = (100, 1880).
+    let p = CursorCoordinateMapper.mapForWindow(
+      cursorGlobalX: 100, cursorGlobalY: 1880,
+      windowQuartzX: 100, windowQuartzY: -800,
+      primaryScreenHeightPts: 1080,
+      pixelsPerPointX: 1.0, pixelsPerPointY: 1.0)
+    XCTAssertEqual(p.x, 0, accuracy: 1e-6)
+    XCTAssertEqual(p.y, 0, accuracy: 1e-6)
+  }
 }

@@ -16,77 +16,78 @@ ExportSettings _gifSettings({
   CompressionTier compression = CompressionTier.web,
   int frameRate = 10,
 }) => ExportSettings(
-      format: ExportFormat.gif,
-      resolution: resolution,
-      compression: compression,
-      frameRate: frameRate,
-      destination: ExportDestination.file,
-    );
+  format: ExportFormat.gif,
+  resolution: resolution,
+  compression: compression,
+  frameRate: frameRate,
+  destination: ExportDestination.file,
+);
 
 EditorProjectState _bareState() => EditorProjectState.defaults().copyForTest(
-      windowFrame: const WindowFrame(
-        name: 'None',
-        padding: EdgeInsets.zero,
-        cornerRadius: 0,
-        shadowBlur: 0,
-        shadowOffset: Offset.zero,
-        shadowColor: Color(0x00000000),
-        borderWidth: 0,
-      ),
-    );
+  windowFrame: const WindowFrame(
+    name: 'None',
+    padding: EdgeInsets.zero,
+    cornerRadius: 0,
+    shadowBlur: 0,
+    shadowOffset: Offset.zero,
+    shadowColor: Color(0x00000000),
+    borderWidth: 0,
+  ),
+);
 
 RecordingMetadata _metadata() => RecordingMetadata(
-      isPureSource: true,
-      recordedAt: DateTime.now(),
-      widthPx: 320,
-      heightPx: 240,
-      fps: 30,
-    );
+  isPureSource: true,
+  recordedAt: DateTime.now(),
+  widthPx: 320,
+  heightPx: 240,
+  fps: 30,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('GifExportPipeline', () {
-    test('end-to-end produces a non-empty valid GIF on the test fixture',
-        () async {
-      final tmp = Directory.systemTemp.createTempSync('gif_pipe_e2e');
-      final outPath = '${tmp.path}/out.gif';
-
-      try {
-        final pipeline = GifExportPipeline(
-          sourcePath: 'test/fixtures/sample_recording.mp4',
-          outputPath: outPath,
-          sourceMetadata: _metadata(),
-          cursorRecording: CursorRecording(),
-          projectState: _bareState(),
-          settings: _gifSettings(),
-        );
-
-        final summary = await pipeline.run();
-
-        // File exists and is non-empty.
-        final file = File(outPath);
-        expect(file.existsSync(), isTrue);
-        expect(summary.outputBytes, greaterThan(0));
-
-        // First 6 bytes must be GIF87a or GIF89a.
-        final header = file.readAsBytesSync().sublist(0, 6);
-        final headerStr = String.fromCharCodes(header);
-        expect(
-          headerStr == 'GIF87a' || headerStr == 'GIF89a',
-          isTrue,
-          reason: 'Expected GIF magic bytes, got: $headerStr',
-        );
-
-        // Sanity: < 5 MB for a 1-second 720p GIF.
-        expect(summary.outputBytes, lessThan(5 * 1024 * 1024));
-      } finally {
-        tmp.deleteSync(recursive: true);
-      }
-    });
-
     test(
-        'onProgress is monotonically non-decreasing, ends at 1.0, '
+      'end-to-end produces a non-empty valid GIF on the test fixture',
+      () async {
+        final tmp = Directory.systemTemp.createTempSync('gif_pipe_e2e');
+        final outPath = '${tmp.path}/out.gif';
+
+        try {
+          final pipeline = GifExportPipeline(
+            sourcePath: 'test/fixtures/sample_recording.mp4',
+            outputPath: outPath,
+            sourceMetadata: _metadata(),
+            cursorRecording: CursorRecording(),
+            projectState: _bareState(),
+            settings: _gifSettings(),
+          );
+
+          final summary = await pipeline.run();
+
+          // File exists and is non-empty.
+          final file = File(outPath);
+          expect(file.existsSync(), isTrue);
+          expect(summary.outputBytes, greaterThan(0));
+
+          // First 6 bytes must be GIF87a or GIF89a.
+          final header = file.readAsBytesSync().sublist(0, 6);
+          final headerStr = String.fromCharCodes(header);
+          expect(
+            headerStr == 'GIF87a' || headerStr == 'GIF89a',
+            isTrue,
+            reason: 'Expected GIF magic bytes, got: $headerStr',
+          );
+
+          // Sanity: < 5 MB for a 1-second 720p GIF.
+          expect(summary.outputBytes, lessThan(5 * 1024 * 1024));
+        } finally {
+          tmp.deleteSync(recursive: true);
+        }
+      },
+    );
+
+    test('onProgress is monotonically non-decreasing, ends at 1.0, '
         'reports values in both pass-1 and pass-2 ranges', () async {
       final tmp = Directory.systemTemp.createTempSync('gif_pipe_prog');
       final outPath = '${tmp.path}/out.gif';
@@ -103,9 +104,7 @@ void main() {
           settings: _gifSettings(),
         );
 
-        await pipeline.run(
-          onProgress: (p) => progressValues.add(p),
-        );
+        await pipeline.run(onProgress: (p) => progressValues.add(p));
 
         expect(progressValues, isNotEmpty);
 
@@ -114,7 +113,8 @@ void main() {
           expect(
             progressValues[i],
             greaterThanOrEqualTo(progressValues[i - 1]),
-            reason: 'Progress went backwards at index $i: '
+            reason:
+                'Progress went backwards at index $i: '
                 '${progressValues[i - 1]} → ${progressValues[i]}',
           );
         }
@@ -259,10 +259,7 @@ void main() {
           settings: _gifSettings(),
         );
 
-        await expectLater(
-          pipeline.run(),
-          throwsA(isA<Exception>()),
-        );
+        await expectLater(pipeline.run(), throwsA(isA<Exception>()));
       } finally {
         tmp.deleteSync(recursive: true);
       }
@@ -307,7 +304,12 @@ extension on EditorProjectState {
       cursorClickEffect: cursorClickEffect,
       hideCursorOverlay: hideCursorOverlay,
       motionBlur: motionBlur,
+      cursorMovementBlur: cursorMovementBlur,
+      screenMovementBlur: screenMovementBlur,
+      screenZoomBlur: screenZoomBlur,
       cursorShadow: cursorShadow,
+      clickSpring: clickSpring,
+      cursorDelay: cursorDelay,
       windowFrame: windowFrame ?? this.windowFrame,
     );
   }

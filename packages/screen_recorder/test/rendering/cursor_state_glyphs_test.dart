@@ -60,13 +60,16 @@ void main() {
       }
     });
 
-    test('paintCursorGlyph dispatches to state glyph for Classic + non-arrow',
-        () {
-      // When style=Classic, the painter switches to state-specific
-      // glyphs. Other styles ignore state and always render the arrow.
-      // Verify both paths execute without throwing for every state.
+    test('paintCursorGlyph dispatches to the state glyph for every arrow '
+        'style + non-arrow state', () {
+      // Every arrow style (Classic, Modern Dark, Bold, Outlined) must
+      // swap to the state-specific glyph when the recorded cursor was
+      // something other than the arrow — hovering over a link should
+      // show a pointing hand regardless of which arrow style the user
+      // picked. Dot is the one exception (minimal abstract style) and
+      // stays a circle no matter what.
       for (final state in CursorState.values) {
-        for (final style in [CursorStyle.classic, CursorStyle.modernDark]) {
+        for (final style in CursorStyle.values) {
           final recorder = ui.PictureRecorder();
           final canvas = Canvas(
             recorder,

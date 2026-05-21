@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import 'package:screen_recorder/effects/accumulation_cursor_painter.dart';
 import 'package:screen_recorder/effects/motion_blur_tuning.dart';
+import 'package:screen_recorder/effects/scene_motion_blur.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/window_frame.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
@@ -18,10 +19,14 @@ import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
+import 'package:screen_recorder/rendering/frame_painter.dart';
+import 'package:screen_recorder/rendering/spring_config.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/motion_blur_tuning_panel.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
+import 'package:screen_recorder/ui/widgets/zoom/cursor_motion_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
+import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
 
 /// A dev-only screen for iterating on the cursor motion-blur algorithm
 /// without rebuilding the entire editor every time. Loads a recording
@@ -52,19 +57,41 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   String? _error;
 
   // Playground state — local, never persisted.
+  //
+  // Slider ranges intentionally smaller than 1.0 to keep the maximum
+  // visual blur within a tasteful range — at master × channel × base
+  // exposure, going past 50% master pushed the smear into "screen
+  // wipe" territory rather than cinematic motion blur. Channel knobs
+  // still span 0–100% so the user can lean one channel harder than
+  // the others, but the master caps the combined intensity.
+  static const double _maxMotionBlurIntensity = 0.5;
   MotionBlurTuning _tuning = MotionBlurTuning.defaults;
-  double _motionBlur = 1.0;
+  // Default at half the new max so the playground opens with a
+  // moderate amount of blur to see, not at the saturated cap.
+  double _motionBlur = 0.25;
   final GlobalKey _captureKey = GlobalKey();
 
-  // Render mode: legacy shader/stretched-smear OR the new accumulation
-  // prototype that stamps the cursor at sub-frame positions.
+  // Render mode: legacy shader/stretched-smear, cursor accumulation,
+  // or whole-frame post-process passes driven by renderer-known motion.
   _RenderMode _mode = _RenderMode.shader;
   double _accumExposureMs = 40.0;
   int _accumSampleCount = 32;
+  // Peak Gaussian σ (px) for the cursor-type-change "vanish into a glow"
+  // crossfade. 0 disables it.
+  double _cursorTypeChangeBlurSigma = 4.0;
+  double _cursorMovementBlur = 1.0;
+  double _screenMovementBlur = 1.0;
+  double _screenZoomBlur = 1.0;
 
   // Scene-level toggles so we can see the blur with realistic context.
   bool _chromeOn = true;
   bool _zoomsOn = true;
+
+  // Scene Pass renderer: legacy single-velocity directional shader vs.
+  // true accumulation that re-stamps the captured composition under N
+  // sub-frame transforms (mirrors the cursor accumulation approach).
+  SceneBlurMode _sceneBlurMode = SceneBlurMode.shader;
+  int _sceneAccumSampleCount = 16;
 
   // Frame-blur mode state. The captured scene image is rasterized
   // from the RepaintBoundary in postFrameCallback and consumed by
@@ -84,6 +111,16 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   Duration _buildTimePlayhead = Duration.zero;
   final GlobalKey _sceneBoundaryKey = GlobalKey();
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
+  final CursorMotionController _sceneCursorMotionController =
+      CursorMotionController();
+  final ZoomFocalController _sceneZoomFocalController = ZoomFocalController();
+  final List<_SceneCameraSample> _sceneCameraHistory = <_SceneCameraSample>[];
+  Duration? _lastSceneCameraQueryPosition;
+  Duration? _lastSceneMotionPlayhead;
+  double _sceneScaleDelta = 0;
+  Offset _sceneTranslation = Offset.zero;
+  double _capturedSceneScaleDelta = 0;
+  Offset _capturedSceneTranslation = Offset.zero;
   double _frameBlurSampleCount = 48;
   // Frame-blur uses its own exposure window because the cursor-
   // accumulation default (40 ms) is too aggressive for whole-frame
@@ -107,6 +144,8 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   double _frameBlurSpeedCurveExp = 1.0;
   double _frameBlurSpeedCurveRefPx = 10.0;
 
+  bool _pendingCapturePaint = false;
+
   @override
   void initState() {
     super.initState();
@@ -120,12 +159,15 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       _metadata = await RecordingMetadata.loadForVideo(widget.videoPath);
       try {
         _cursorRecording = await CursorRecording.loadFromFile(
-            '${widget.videoPath}.cursor.json');
+          '${widget.videoPath}.cursor.json',
+        );
       } catch (_) {
         _cursorRecording = CursorRecording();
       }
-      _smoothPlayhead =
-          SmoothPlayheadController(videoController: _controller, vsync: this);
+      _smoothPlayhead = SmoothPlayheadController(
+        videoController: _controller,
+        vsync: this,
+      );
       _controller.setVolume(0);
       _controller.addListener(_onTick);
       // Also tick off the smoothPlayhead — it runs an internal Ticker
@@ -141,8 +183,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       // to apply a radial motion smear to a captured snapshot of the
       // composition. Loaded lazily so the playground doesn't block
       // startup waiting for it.
-      _sceneBlurProgram =
-          await ui.FragmentProgram.fromAsset('shaders/scene_motion_blur.frag');
+      _sceneBlurProgram = await ui.FragmentProgram.fromAsset(
+        'shaders/scene_motion_blur.frag',
+      );
       if (!mounted) return;
       setState(() => _ready = true);
     } catch (e) {
@@ -170,15 +213,18 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     final fps = _metadata?.fps ?? 60;
     final frameMicros = (1e6 / fps).round();
     final cur = _controller.value.position.inMicroseconds;
-    final next = (cur + delta * frameMicros)
-        .clamp(0, _controller.value.duration.inMicroseconds);
+    final next = (cur + delta * frameMicros).clamp(
+      0,
+      _controller.value.duration.inMicroseconds,
+    );
     _controller.pause();
     _controller.seekTo(Duration(microseconds: next));
   }
 
   Future<void> _dumpFrame() async {
-    final boundary = _captureKey.currentContext?.findRenderObject()
-        as RenderRepaintBoundary?;
+    final boundary =
+        _captureKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
     if (boundary == null) return;
     final image = await boundary.toImage(pixelRatio: 2);
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -186,11 +232,16 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     if (bytes == null) return;
     final ts = _controller.value.position.inMilliseconds;
     final home = Platform.environment['HOME'] ?? '/tmp';
-    final out = File('$home/Desktop/playground_${ts.toString().padLeft(6, '0')}ms.png');
+    final out = File(
+      '$home/Desktop/playground_${ts.toString().padLeft(6, '0')}ms.png',
+    );
     await out.writeAsBytes(bytes.buffer.asUint8List());
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Saved ${out.path}'), duration: const Duration(seconds: 2)),
+      SnackBar(
+        content: Text('Saved ${out.path}'),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 
@@ -200,7 +251,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       return Scaffold(
         backgroundColor: const Color(0xFF1E1E2E),
         appBar: AppBar(title: const Text('Motion blur playground')),
-        body: Center(child: Text(_error!, style: const TextStyle(color: Colors.white))),
+        body: Center(
+          child: Text(_error!, style: const TextStyle(color: Colors.white)),
+        ),
       );
     }
     if (!_ready) {
@@ -234,7 +287,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   }
 
   Widget _buildLeft() {
-    if (_mode == _RenderMode.frameBlur) {
+    if (_usesSceneCapture) {
       // Refresh the stabilized playhead first; everything downstream
       // (live readout, captured playhead, shader uniforms) reads it.
       _refreshStablePlayhead();
@@ -248,8 +301,8 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             padding: const EdgeInsets.all(16),
             child: RepaintBoundary(
               key: _captureKey,
-              child: _mode == _RenderMode.frameBlur
-                  ? _buildFrameBlurCanvas()
+              child: _usesSceneCapture
+                  ? _buildSceneCaptureCanvas()
                   : _buildCanvas(),
             ),
           ),
@@ -259,31 +312,48 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     );
   }
 
+  bool get _usesSceneCapture => _usesSceneShader;
+
+  // The playground's external capture-and-shader pipeline is used for
+  // both the legacy frame-blur prototype AND the recommended scene-pass
+  // mode. PlaybackCanvas has its own internal scene blur, but it lags
+  // one frame behind the body (postFrameCallback capture) which makes
+  // it visibly jitter during scrubs and knob drags — the playground's
+  // pipeline doesn't have the same problem here, so we route through
+  // it. The PlaybackCanvas's scene blur is disabled by passing
+  // screenMovementBlur=0 and screenZoomBlur=0 in scene-pass mode,
+  // preventing the double-application that previously made the knob's
+  // 1–100% range look identical.
+  bool get _usesSceneShader =>
+      _mode == _RenderMode.frameBlur || _mode == _RenderMode.scenePass;
+
   /// Composition rendered into a RepaintBoundary so we can capture
   /// it to a ui.Image each frame, then drawn AGAIN through a
   /// fragment-shader-equipped CustomPaint that consumes the image
-  /// and applies a radial motion-blur smear. The captured image
-  /// has a one-frame lag relative to live state — acceptable for
-  /// the preview because the scene only changes between frames
-  /// anyway.
-  Widget _buildFrameBlurCanvas() {
+  /// and applies a radial + translation motion-blur smear. The
+  /// captured image has a one-frame lag relative to live state —
+  /// acceptable for the preview because the scene only changes
+  /// between frames anyway.
+  Widget _buildSceneCaptureCanvas() {
     return LayoutBuilder(
       builder: (context, constraints) {
         final dpr = MediaQuery.of(context).devicePixelRatio;
+        final outputSize = Size(constraints.maxWidth, constraints.maxHeight);
+        _updateSceneMotionSignal(outputSize);
         return Stack(
           fit: StackFit.expand,
           children: [
             // Bottom layer: render the composition normally into the
             // boundary we capture from. Hidden visually under the
             // shader overlay (which fills the same rect).
-            RepaintBoundary(
-              key: _sceneBoundaryKey,
-              child: _buildCanvas(),
-            ),
+            RepaintBoundary(key: _sceneBoundaryKey, child: _buildCanvas()),
             // Top layer: the captured frame, redrawn through the
-            // radial motion-blur shader. Until we've captured at
-            // least one frame, falls through to the bottom layer.
-            if (_capturedScene != null && _sceneBlurProgram != null)
+            // radial+translation motion-blur shader. Until at least
+            // one frame is captured, the bottom live composition
+            // shows through.
+            if (_usesSceneShader &&
+                _capturedScene != null &&
+                _sceneBlurProgram != null)
               IgnorePointer(
                 child: CustomPaint(
                   painter: _SceneMotionBlurPainter(
@@ -293,8 +363,8 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
                     // the live playhead. Smear matches captured
                     // content's state — eliminates the 1-frame
                     // mismatch that produced per-frame oscillation.
-                    scaleDelta: _computeScaleDelta(_capturedPlayhead),
-                    translation: _computeTranslation(_capturedPlayhead),
+                    scaleDelta: _capturedSceneScaleDelta,
+                    translation: _capturedSceneTranslation,
                     sampleCount: _frameBlurSampleCount.round(),
                     speedCurveExp: _frameBlurSpeedCurveExp,
                     speedCurveRefPx: _frameBlurSpeedCurveRefPx,
@@ -311,8 +381,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
 
   void _captureScene() {
     if (!mounted) return;
-    final boundary = _sceneBoundaryKey.currentContext?.findRenderObject()
-        as RenderRepaintBoundary?;
+    final boundary =
+        _sceneBoundaryKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
     if (boundary == null) return;
     try {
       // Don't gate on boundary.debugNeedsPaint — toImageSync forces a
@@ -321,13 +392,19 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       // jitter. Always capture; catch the rare exception.
       final dpr = MediaQuery.of(context).devicePixelRatio;
       final image = boundary.toImageSync(pixelRatio: dpr);
-      _capturedScene?.dispose();
-      _capturedScene = image;
       // Use the BUILD-time playhead, not the current (post-paint)
       // playhead. The captured image's content was rendered with
       // the build-time playhead, so matching uniforms to that value
       // gives a frame-for-frame consistent shader output.
+      _capturedScene?.dispose();
+      _capturedScene = image;
       _capturedPlayhead = _buildTimePlayhead;
+      _capturedSceneScaleDelta = _sceneScaleDelta;
+      _capturedSceneTranslation = _sceneTranslation;
+      if (_pendingCapturePaint) {
+        _pendingCapturePaint = false;
+        if (mounted) setState(() {});
+      }
     } catch (_) {
       // Capture can occasionally fail mid-layout — keep the previous
       // capture so we don't flash a blank frame.
@@ -356,8 +433,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   void _refreshStablePlayhead() {
     final raw = (_smoothPlayhead?.position) ?? _controller.value.position;
     if (!_controller.value.isPlaying) {
-      final diff =
-          (raw.inMicroseconds - _stablePlayhead.inMicroseconds).abs();
+      final diff = (raw.inMicroseconds - _stablePlayhead.inMicroseconds).abs();
       if (_stablePlayhead == Duration.zero || diff > 100000) {
         _stablePlayhead = raw;
       }
@@ -370,18 +446,337 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   /// when it locks vs follows.
   Duration _frameAlignedPlayhead() => _stablePlayhead;
 
-  /// Effective exposure window for the frame blur. Scaled by the
-  /// master motion-blur intensity so the top slider mutes both
-  /// cursor accumulation AND frame blur together — when intensity
-  /// is 0, exposure goes to 0 so scaleDelta and translation both
-  /// collapse to 0 (no blur).
-  Duration get _effectiveFrameBlurExposure => Duration(
-      microseconds: (_frameBlurExposureMs * _motionBlur * 1000).round());
+  void _updateSceneMotionSignal(Size outputSize) {
+    final current = _currentSceneCameraSample(outputSize);
+    _appendSceneCameraSample(current);
+
+    final rawScaleDelta = _rawSceneScaleDelta(current);
+    final rawTranslation = _rawSceneTranslation(current);
+    _smoothSceneMotionSignal(
+      position: current.position,
+      rawScaleDelta: rawScaleDelta,
+      rawTranslation: rawTranslation,
+    );
+  }
+
+  _SceneCameraSample _currentSceneCameraSample(Size outputSize) {
+    final position = _buildTimePlayhead;
+    _prepareSceneCameraControllers(position);
+
+    final videoSize = _metadata == null
+        ? const Size(1728, 1117)
+        : Size(_metadata!.widthPx.toDouble(), _metadata!.heightPx.toDouble());
+    final totalSize = FramePainter.calculateTotalSize(
+      frame: _frameSettings.currentFrame,
+      videoSize: videoSize,
+    );
+    final fitScale = _sceneFitScale(outputSize, totalSize);
+    final centre = videoSize.center(Offset.zero);
+
+    if (!_zoomsOn) {
+      _sceneZoomFocalController.update(
+        position: position,
+        zoomRegions: const <ZoomRegion>[],
+        cursor: null,
+        videoSize: videoSize,
+      );
+      return _SceneCameraSample(
+        position: position,
+        focal: centre,
+        scale: 1,
+        fitScale: fitScale,
+      );
+    }
+
+    final zooms = _demoZooms();
+    final activeZoomForCursor = _activeZoomAt(zooms, position);
+    final hasCursorData =
+        (_metadata?.isPureSource ?? true) && _cursorRecording.count > 0;
+    final motion = hasCursorData
+        ? _sceneCursorMotionController.update(
+            position: position,
+            cursorRecording: _cursorRecording,
+            config: const CursorAnimationConfig.preset(
+              CursorAnimationStyle.smooth,
+            ),
+            fps: _metadata?.fps ?? 60,
+          )
+        : null;
+
+    final cursorForFocal =
+        activeZoomForCursor?.followMode == FollowMode.predictive
+        ? medianCursorOver(
+            recording: _cursorRecording,
+            t: position,
+            window: activeZoomForCursor!.predictiveWindow,
+          )
+        : motion?.screenPos;
+
+    final focalUpdate = _sceneZoomFocalController.update(
+      position: position,
+      zoomRegions: zooms,
+      cursor: cursorForFocal,
+      videoSize: videoSize,
+    );
+
+    if (focalUpdate == null) {
+      return _SceneCameraSample(
+        position: position,
+        focal: centre,
+        scale: 1,
+        fitScale: fitScale,
+      );
+    }
+
+    final activeZoom = focalUpdate.zoom;
+    final transform = _zoomTransformer.getTransform(
+      position: position,
+      zoomRegion: activeZoom,
+      videoSize: videoSize,
+      focalPoint: focalUpdate.focal,
+      rampCurve:
+          activeZoom.rampCurveOverride?.toFlutterCurve() ??
+          const ScreenAnimationConfig.preset(
+            ScreenAnimationStyle.smooth,
+          ).rampCurve,
+    );
+
+    return _SceneCameraSample(
+      position: position,
+      focal: focalUpdate.focal,
+      scale: transform.storage[0],
+      fitScale: fitScale,
+    );
+  }
+
+  void _prepareSceneCameraControllers(Duration position) {
+    final last = _lastSceneCameraQueryPosition;
+    if (last != null) {
+      final dt = position.inMicroseconds - last.inMicroseconds;
+      if (dt < 0 || dt > 100000) {
+        _sceneCursorMotionController.reset();
+        _sceneZoomFocalController.reset();
+        _sceneCameraHistory.clear();
+        _lastSceneMotionPlayhead = null;
+        _sceneScaleDelta = 0;
+        _sceneTranslation = Offset.zero;
+      }
+    }
+    _lastSceneCameraQueryPosition = position;
+  }
+
+  double _sceneFitScale(Size outputSize, Size naturalSize) {
+    if (outputSize.width <= 0 ||
+        outputSize.height <= 0 ||
+        naturalSize.width <= 0 ||
+        naturalSize.height <= 0) {
+      return 1.0;
+    }
+    return math.min(
+      outputSize.width / naturalSize.width,
+      outputSize.height / naturalSize.height,
+    );
+  }
+
+  void _appendSceneCameraSample(_SceneCameraSample sample) {
+    if (_sceneCameraHistory.isNotEmpty) {
+      final last = _sceneCameraHistory.last;
+      if (sample.position == last.position) {
+        _sceneCameraHistory[_sceneCameraHistory.length - 1] = sample;
+        return;
+      }
+      if (sample.position < last.position) {
+        _sceneCameraHistory.clear();
+      }
+    }
+
+    _sceneCameraHistory.add(sample);
+    final oldestAllowed = sample.position - const Duration(milliseconds: 700);
+    while (_sceneCameraHistory.length > 2 &&
+        _sceneCameraHistory.first.position < oldestAllowed) {
+      _sceneCameraHistory.removeAt(0);
+    }
+  }
+
+  double _rawSceneScaleDelta(_SceneCameraSample current) {
+    final exposure = _effectiveScreenZoomExposure;
+    if (exposure <= Duration.zero || current.scale == 0) return 0;
+
+    final prev =
+        _sceneCameraSampleAt(current.position - exposure) ??
+        _approxSceneCameraSampleAt(
+          current.position - exposure,
+          current.fitScale,
+        );
+    return 1.0 - prev.scale / current.scale;
+  }
+
+  Offset _rawSceneTranslation(_SceneCameraSample current) {
+    final exposure = _effectiveScreenMovementExposure;
+    if (exposure <= Duration.zero) return Offset.zero;
+
+    final prev =
+        _sceneCameraSampleAt(current.position - exposure) ??
+        _approxSceneCameraSampleAt(
+          current.position - exposure,
+          current.fitScale,
+        );
+
+    final raw = (prev.focal - current.focal) * prev.scale * current.fitScale;
+    if (raw.distance > _frameBlurMaxTranslation) {
+      return raw * (_frameBlurMaxTranslation / raw.distance);
+    }
+    return raw;
+  }
+
+  _SceneCameraSample? _sceneCameraSampleAt(Duration position) {
+    if (_sceneCameraHistory.isEmpty) return null;
+    if (position == _sceneCameraHistory.last.position) {
+      return _sceneCameraHistory.last;
+    }
+    if (position < _sceneCameraHistory.first.position ||
+        position > _sceneCameraHistory.last.position) {
+      return null;
+    }
+
+    for (var i = 1; i < _sceneCameraHistory.length; i++) {
+      final a = _sceneCameraHistory[i - 1];
+      final b = _sceneCameraHistory[i];
+      if (position == a.position) return a;
+      if (position == b.position) return b;
+      if (position > a.position && position < b.position) {
+        final span = b.position.inMicroseconds - a.position.inMicroseconds;
+        if (span <= 0) return b;
+        final t = (position.inMicroseconds - a.position.inMicroseconds) / span;
+        return _SceneCameraSample(
+          position: position,
+          focal: Offset.lerp(a.focal, b.focal, t)!,
+          scale: ui.lerpDouble(a.scale, b.scale, t)!,
+          fitScale: ui.lerpDouble(a.fitScale, b.fitScale, t)!,
+        );
+      }
+    }
+    return null;
+  }
+
+  _SceneCameraSample _approxSceneCameraSampleAt(
+    Duration position,
+    double fitScale,
+  ) {
+    final videoSize = _metadata == null
+        ? const Size(1728, 1117)
+        : Size(_metadata!.widthPx.toDouble(), _metadata!.heightPx.toDouble());
+    return _SceneCameraSample(
+      position: position,
+      focal: _focalAt(position, videoSize),
+      scale: _zoomScaleAt(position, videoSize),
+      fitScale: fitScale,
+    );
+  }
+
+  void _smoothSceneMotionSignal({
+    required Duration position,
+    required double rawScaleDelta,
+    required Offset rawTranslation,
+  }) {
+    final last = _lastSceneMotionPlayhead;
+    final dtUs = last == null
+        ? 0
+        : position.inMicroseconds - last.inMicroseconds;
+    final snap =
+        !_controller.value.isPlaying ||
+        last == null ||
+        dtUs <= 0 ||
+        dtUs > 100000;
+
+    if (snap) {
+      _sceneScaleDelta = rawScaleDelta;
+      _sceneTranslation = rawTranslation;
+      _lastSceneMotionPlayhead = position;
+      return;
+    }
+
+    final dtMs = dtUs / 1000.0;
+    final scaleChangingDirection =
+        _sceneScaleDelta.abs() > 0.0001 &&
+        rawScaleDelta.abs() > 0.0001 &&
+        (_sceneScaleDelta.sign != rawScaleDelta.sign);
+    final scaleTauMs = scaleChangingDirection
+        ? 45.0
+        : rawScaleDelta.abs() > _sceneScaleDelta.abs()
+        ? 55.0
+        : 120.0;
+    final translationChangingDirection =
+        _sceneTranslation.distance > 0.01 &&
+        rawTranslation.distance > 0.01 &&
+        _dot(_sceneTranslation, rawTranslation) < 0;
+    final translationTauMs = translationChangingDirection
+        ? 45.0
+        : rawTranslation.distance > _sceneTranslation.distance
+        ? 55.0
+        : 120.0;
+
+    _sceneScaleDelta = ui.lerpDouble(
+      _sceneScaleDelta,
+      rawScaleDelta,
+      _emaAlpha(dtMs, scaleTauMs),
+    )!;
+    _sceneTranslation = Offset.lerp(
+      _sceneTranslation,
+      rawTranslation,
+      _emaAlpha(dtMs, translationTauMs),
+    )!;
+    _lastSceneMotionPlayhead = position;
+  }
+
+  double _emaAlpha(double dtMs, double tauMs) {
+    if (tauMs <= 0) return 1;
+    return 1 - math.exp(-dtMs / tauMs);
+  }
+
+  double _dot(Offset a, Offset b) => a.dx * b.dx + a.dy * b.dy;
+
+  void _resetSceneMotionTracking() {
+    _sceneCursorMotionController.reset();
+    _sceneZoomFocalController.reset();
+    _sceneCameraHistory.clear();
+    _lastSceneCameraQueryPosition = null;
+    _lastSceneMotionPlayhead = null;
+    _sceneScaleDelta = 0;
+    _sceneTranslation = Offset.zero;
+    _capturedSceneScaleDelta = 0;
+    _capturedSceneTranslation = Offset.zero;
+  }
+
+  /// Effective exposure window for camera pan / screen movement.
+  /// Master intensity scales the per-channel cap, so dragging the
+  /// top slider preserves the relative Cursor / Screen movement /
+  /// Screen zoom balance set in the advanced knobs.
+  Duration get _effectiveScreenMovementExposure => Duration(
+    microseconds:
+        (_frameBlurExposureMs *
+                _motionBlur *
+                (_mode == _RenderMode.scenePass ? _screenMovementBlur : 1.0) *
+                1000)
+            .round(),
+  );
+
+  /// Effective exposure window for zoom scale blur. Kept separate
+  /// from movement so a user can have punchy pan streaks without
+  /// over-smearing radial zooms, or the opposite.
+  Duration get _effectiveScreenZoomExposure => Duration(
+    microseconds:
+        (_frameBlurExposureMs *
+                _motionBlur *
+                (_mode == _RenderMode.scenePass ? _screenZoomBlur : 1.0) *
+                1000)
+            .round(),
+  );
 
   double _computeScaleDelta([Duration? at]) {
     if (!_zoomsOn) return 0.0;
     final now = at ?? _frameAlignedPlayhead();
-    final exposure = _effectiveFrameBlurExposure;
+    final exposure = _effectiveScreenZoomExposure;
     final prev = now - exposure;
     final w = (_metadata?.widthPx ?? 1728).toDouble();
     final h = (_metadata?.heightPx ?? 1117).toDouble();
@@ -452,7 +847,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   Offset _computeTranslation([Duration? at]) {
     if (!_zoomsOn) return Offset.zero;
     final now = at ?? _frameAlignedPlayhead();
-    final exposure = _effectiveFrameBlurExposure;
+    final exposure = _effectiveScreenMovementExposure;
     final prev = now - exposure;
     final w = (_metadata?.widthPx ?? 1728).toDouble();
     final h = (_metadata?.heightPx ?? 1117).toDouble();
@@ -470,7 +865,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     return raw;
   }
 
-  /// Single canvas for both modes — the only differences are
+  /// Single canvas for all cursor/scene modes — the differences are
   /// [cursorBlurMode] (shader vs accumulation), the optional chrome
   /// frame, and the demo zoom regions. Wallpaper / padding / zoom
   /// transform all flow through PlaybackCanvas the same way they
@@ -480,17 +875,19 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     //
     //   shader      → legacy chord-stretched single sprite.
     //   accumulation → multi-stamp cursor accumulation.
-    //   frameBlur   → cursor uses accumulation too AND the
+    //   frameBlur /
+    //   scenePass   → cursor uses accumulation too AND the
     //                 post-process radial+translation shader runs
     //                 on top. The cursor smears via its sub-frame
     //                 stamps; the frame post-process adds camera-
     //                 motion smear on top. Frame-blur translation
-    //                 is now driven by a 400 ms smoothed focal
-    //                 (matches production's smoother), so cursor
-    //                 flicks no longer trigger huge frame smear.
+    //                 is now driven by a smoothed focal approximation,
+    //                 so cursor flicks no longer trigger huge frame
+    //                 smear.
     final blurMode = _mode == _RenderMode.shader
         ? CursorBlurMode.shader
         : CursorBlurMode.accumulation;
+    final inScenePass = _mode == _RenderMode.scenePass;
     // Sync chrome toggle into the frame provider. setFrame is a no-op
     // when the frame matches, so doing it from build is fine.
     final desiredFrame = _chromeOn ? WindowFrame.rounded() : WindowFrame.none();
@@ -508,22 +905,53 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       metadata: _metadata,
       cursorRecording: _cursorRecording,
       hideCursorOverlay: false,
-      cursorSize: 1.0,
+      cursorSize: inScenePass ? 4.0 : 1.0,
       cursorStyle: CursorStyle.classic,
       cursorClickEffect: CursorClickEffect.none,
       showZoomDebug: false,
       zoomRegions: _zoomsOn ? _demoZooms() : const <ZoomRegion>[],
-      screenAnimationConfig:
-          const ScreenAnimationConfig.preset(ScreenAnimationStyle.smooth),
-      cursorAnimationConfig:
-          const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+      screenAnimationConfig: const ScreenAnimationConfig.preset(
+        ScreenAnimationStyle.smooth,
+      ),
+      cursorAnimationConfig: const CursorAnimationConfig.preset(
+        CursorAnimationStyle.smooth,
+      ),
+      // Master intensity. Per-channel knobs (cursor / screen movement /
+      // screen zoom) are forwarded separately below. In scene-pass mode
+      // the playground applies its OWN scene blur externally (see
+      // `_buildSceneCaptureCanvas`), so we disable PlaybackCanvas's
+      // internal scene blur by passing 0 for the screen channels —
+      // otherwise both layers would scale with the same knob and the
+      // result would be either double-applied (saturated) or jittery
+      // from the internal pipeline's 1-frame capture lag during
+      // scrubs/knob drags. The cursor channel stays live because
+      // cursor accumulation runs entirely inside PlaybackCanvas (no
+      // capture lag — it stamps from the recording).
       motionBlur: _motionBlur,
+      cursorMovementBlur: inScenePass ? _cursorMovementBlur : 1.0,
+      screenMovementBlur: inScenePass ? 0.0 : 1.0,
+      screenZoomBlur: inScenePass ? 0.0 : 1.0,
       motionBlurTuning: _tuning,
       cursorShadow: 0.0,
+      clickSpring: ClickSpring.snappy,
       isHoverScrubbing: false,
       cursorBlurMode: blurMode,
-      accumulationExposureMs: _accumExposureMs,
+      // In scene mode the cursor sprite is 4× bigger (~128 video px at
+      // sizeMultiplier=4), so the trail has to be hundreds of pixels
+      // long before it pokes visibly past the sprite. At typical UI
+      // cursor velocity (~300–700 px/s), 150 ms exposure produces a
+      // 45–105 px trail — still inside or barely past the sprite,
+      // which is why every knob position 1–100% looked the same.
+      // Bumping the base to 300 ms gives 90–210 px trail at the same
+      // velocities — clearly past the sprite at moderate motion, and
+      // the knob's 0–200% range now maps to 0–600 ms of exposure.
+      accumulationExposureMs: inScenePass ? 300.0 : _accumExposureMs,
       accumulationSampleCount: _accumSampleCount,
+      cursorTypeChangeBlurSigmaPx: _cursorTypeChangeBlurSigma,
+      sceneBlurMode: _mode == _RenderMode.scenePass
+          ? _sceneBlurMode
+          : SceneBlurMode.shader,
+      sceneAccumSampleCount: _sceneAccumSampleCount,
     );
   }
 
@@ -566,6 +994,13 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     ];
   }
 
+  ZoomRegion? _activeZoomAt(List<ZoomRegion> zooms, Duration t) {
+    for (final zoom in zooms) {
+      if (zoom.isActive(t)) return zoom;
+    }
+    return null;
+  }
+
   Widget _buildTransport() {
     final pos = _controller.value.position;
     final dur = _controller.value.duration;
@@ -591,8 +1026,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
               ),
               IconButton(
                 icon: Icon(
-                    _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: Colors.white),
+                  _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                  color: Colors.white,
+                ),
                 onPressed: () {
                   if (_controller.value.isPlaying) {
                     _controller.pause();
@@ -615,7 +1051,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
               Text(
                 '${(posMs / 1000).toStringAsFixed(3)}s / ${(durMs / 1000).toStringAsFixed(2)}s',
                 style: const TextStyle(
-                    color: Colors.white70, fontFamily: 'monospace'),
+                  color: Colors.white70,
+                  fontFamily: 'monospace',
+                ),
               ),
             ],
           ),
@@ -647,32 +1085,43 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             tuning: _tuning,
             videoSize: _metadata == null
                 ? const Size(1, 1)
-                : Size(_metadata!.widthPx.toDouble(),
-                    _metadata!.heightPx.toDouble()),
+                : Size(
+                    _metadata!.widthPx.toDouble(),
+                    _metadata!.heightPx.toDouble(),
+                  ),
           ),
           const SizedBox(height: 16),
           Slider(
-            value: _motionBlur,
+            value: _motionBlur.clamp(0.0, _maxMotionBlurIntensity),
             min: 0,
-            max: 1,
-            onChanged: (v) => setState(() => _motionBlur = v),
+            max: _maxMotionBlurIntensity,
+            divisions: 50,
+            onChanged: (v) => _updatePlaygroundState(() => _motionBlur = v),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
-                'Master intensity — ${(_motionBlur * 100).toStringAsFixed(0)}%\n'
-                'Scales the effective shutter window for every blur '
-                'effect (cursor, zoom, pan). 0 = no blur. Smear length '
-                '= speed × (intensity × shutter time).',
-                style: const TextStyle(color: Colors.white54, fontSize: 11)),
+              'Master intensity — ${(_motionBlur * 100).toStringAsFixed(0)}%\n'
+              'Caps at 50%; multiplies the Cursor / Screen movement / '
+              'Screen zoom channels below. Going past 50% pushes the '
+              'smear from "motion blur" into "screen wipe" territory.',
+              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            ),
           ),
           const SizedBox(height: 16),
           if (_mode == _RenderMode.accumulation) _accumulationKnobs(),
           if (_mode == _RenderMode.frameBlur) _frameBlurKnobs(),
+          if (_mode == _RenderMode.scenePass) ...[
+            _recommendedStackNote(),
+            const SizedBox(height: 16),
+            _sceneRendererToggle(),
+            const SizedBox(height: 16),
+            _screenStudioChannelKnobs(),
+          ],
           if (_mode == _RenderMode.shader)
             MotionBlurTuningPanel(
               tuning: _tuning,
-              onChanged: (t) => setState(() => _tuning = t),
+              onChanged: (t) => _updatePlaygroundState(() => _tuning = t),
             ),
         ],
       ),
@@ -685,14 +1134,34 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       children: [
         SegmentedButton<_RenderMode>(
           segments: const [
-            ButtonSegment(value: _RenderMode.shader, label: Text('Shader')),
             ButtonSegment(
-                value: _RenderMode.accumulation, label: Text('Cursor accum.')),
+              value: _RenderMode.shader,
+              label: Text('Shader'),
+              tooltip: 'Legacy cursor shader',
+            ),
             ButtonSegment(
-                value: _RenderMode.frameBlur, label: Text('Frame blur')),
+              value: _RenderMode.accumulation,
+              label: Text('Cursor'),
+              tooltip: 'Cursor accumulation only',
+            ),
+            ButtonSegment(
+              value: _RenderMode.frameBlur,
+              label: Text('Frame'),
+              tooltip: 'Original frame-blur prototype',
+            ),
+            ButtonSegment(
+              value: _RenderMode.scenePass,
+              label: Text('Scene'),
+              tooltip: 'Recommended whole-frame scene pass',
+            ),
           ],
           selected: {_mode},
-          onSelectionChanged: (s) => setState(() => _mode = s.first),
+          onSelectionChanged: (s) => _setMode(s.first),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _modeDescription,
+          style: const TextStyle(color: Colors.white54, fontSize: 11),
         ),
         const SizedBox(height: 8),
         Row(
@@ -701,25 +1170,234 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
               child: SwitchListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Chrome',
-                    style: TextStyle(color: Colors.white, fontSize: 13)),
+                title: const Text(
+                  'Chrome',
+                  style: TextStyle(color: Colors.white, fontSize: 13),
+                ),
                 value: _chromeOn,
-                onChanged: (v) => setState(() => _chromeOn = v),
+                onChanged: (v) => _updatePlaygroundState(() => _chromeOn = v),
               ),
             ),
             Expanded(
               child: SwitchListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Zooms',
-                    style: TextStyle(color: Colors.white, fontSize: 13)),
+                title: const Text(
+                  'Zooms',
+                  style: TextStyle(color: Colors.white, fontSize: 13),
+                ),
                 value: _zoomsOn,
-                onChanged: (v) => setState(() => _zoomsOn = v),
+                onChanged: (v) => _updatePlaygroundState(() {
+                  _zoomsOn = v;
+                  _resetSceneMotionTracking();
+                }),
               ),
             ),
           ],
         ),
       ],
+    );
+  }
+
+  void _setMode(_RenderMode mode) {
+    if (mode == _mode) return;
+    setState(() {
+      _mode = mode;
+      _capturedScene?.dispose();
+      _capturedScene = null;
+      _capturedPlayhead = Duration.zero;
+      _resetSceneMotionTracking();
+      _pendingCapturePaint = _usesSceneCapture;
+    });
+  }
+
+  void _updatePlaygroundState(VoidCallback update) {
+    setState(() {
+      update();
+      if (_usesSceneCapture) _pendingCapturePaint = true;
+    });
+  }
+
+  String get _modeDescription {
+    switch (_mode) {
+      case _RenderMode.shader:
+        return 'Legacy cursor-only shader. Fast straight-line smear for the cursor sprite.';
+      case _RenderMode.accumulation:
+        return 'Cursor-only accumulation. Stamps the cursor along its recorded path.';
+      case _RenderMode.frameBlur:
+        return 'Original whole-frame prototype. Captures the composition and runs the scene shader.';
+      case _RenderMode.scenePass:
+        return 'Screen Studio-style stack. Cursor, screen movement, and screen zoom blur are controlled separately.';
+    }
+  }
+
+  Widget _recommendedStackNote() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2B2B3D),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        'SCREEN STUDIO-STYLE STACK\n\n'
+        'Only renderer-known motion is blurred: cursor movement, camera '
+        'pan/screen movement, and camera zoom. If the camera is still and '
+        'the recorded app contents move internally, those pixels stay sharp.',
+        style: TextStyle(color: Colors.white70, fontSize: 11, height: 1.35),
+      ),
+    );
+  }
+
+  Widget _sceneRendererToggle() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2B2B3D),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'SCENE RENDERER',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SegmentedButton<SceneBlurMode>(
+            segments: const [
+              ButtonSegment(
+                value: SceneBlurMode.shader,
+                label: Text('Shader'),
+                tooltip: 'Single-velocity directional smear',
+              ),
+              ButtonSegment(
+                value: SceneBlurMode.accumulation,
+                label: Text('Accum'),
+                tooltip: 'N sub-frame stamps of the captured composition',
+              ),
+            ],
+            selected: {_sceneBlurMode},
+            onSelectionChanged: (s) =>
+                _updatePlaygroundState(() => _sceneBlurMode = s.first),
+          ),
+          if (_sceneBlurMode == SceneBlurMode.accumulation) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Sub-frame stamps — $_sceneAccumSampleCount',
+              style: const TextStyle(color: Colors.white),
+            ),
+            Slider(
+              value: _sceneAccumSampleCount.toDouble(),
+              min: 2,
+              max: 48,
+              divisions: 46,
+              onChanged: (v) => _updatePlaygroundState(
+                () => _sceneAccumSampleCount = v.round(),
+              ),
+            ),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            _sceneBlurMode == SceneBlurMode.shader
+                ? 'Shader: one (scaleDelta, translation) vector applied uniformly across the captured composition. Linear smear — fast, single direction.'
+                : 'Accumulation: re-stamps the captured composition under N sub-frame transforms with 1/N alpha each, additively. Smear follows the actual camera trajectory (curves with cursor-following pan, ramps with the zoom curve). N image draws per frame.',
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _screenStudioChannelKnobs() {
+    Widget channelSlider({
+      required String label,
+      required double value,
+      required ValueChanged<double> onChanged,
+    }) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label — ${(value * 100).toStringAsFixed(0)}%',
+            style: const TextStyle(color: Colors.white),
+          ),
+          Slider(
+            value: value.clamp(0.0, 1.0),
+            min: 0,
+            max: 1,
+            divisions: 100,
+            onChanged: onChanged,
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2B2B3D),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'ADVANCED CHANNEL CAPS',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          channelSlider(
+            label: 'Cursor movement',
+            value: _cursorMovementBlur,
+            onChanged: (v) =>
+                _updatePlaygroundState(() => _cursorMovementBlur = v),
+          ),
+          channelSlider(
+            label: 'Screen movement',
+            value: _screenMovementBlur,
+            onChanged: (v) =>
+                _updatePlaygroundState(() => _screenMovementBlur = v),
+          ),
+          channelSlider(
+            label: 'Screen zoom',
+            value: _screenZoomBlur,
+            onChanged: (v) => _updatePlaygroundState(() => _screenZoomBlur = v),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Effective cursor: ${(_motionBlur * _cursorMovementBlur * 100).toStringAsFixed(0)}%\n'
+            'Cursor exposure: ${(300.0 * _motionBlur * _cursorMovementBlur).toStringAsFixed(1)} ms (base 300 in Scene)\n'
+            'Effective movement shutter: ${(_effectiveScreenMovementExposure.inMicroseconds / 1000).toStringAsFixed(1)} ms\n'
+            'Effective zoom shutter: ${(_effectiveScreenZoomExposure.inMicroseconds / 1000).toStringAsFixed(1)} ms',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 10,
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'The master intensity multiplies these caps. Cursor movement '
+            'drives cursor accumulation; screen movement drives camera-pan '
+            'translation blur; screen zoom drives radial scale blur.',
+            style: TextStyle(color: Colors.white54, fontSize: 11, height: 1.4),
+          ),
+        ],
+      ),
     );
   }
 
@@ -733,39 +1411,49 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('FRAME BLUR (POST-PROCESS)',
-              style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 11,
-                  letterSpacing: 1.2,
-                  fontWeight: FontWeight.w600)),
+          const Text(
+            'FRAME BLUR (POST-PROCESS)',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 12),
-          Text('Shutter (ms) — ${_frameBlurExposureMs.toStringAsFixed(0)}',
-              style: const TextStyle(color: Colors.white)),
+          Text(
+            'Shutter (ms) — ${_frameBlurExposureMs.toStringAsFixed(0)}',
+            style: const TextStyle(color: Colors.white),
+          ),
           Slider(
             value: _frameBlurExposureMs,
             min: 2,
             max: 80,
-            onChanged: (v) => setState(() => _frameBlurExposureMs = v),
+            onChanged: (v) =>
+                _updatePlaygroundState(() => _frameBlurExposureMs = v),
           ),
-          Text('Shader taps — ${_frameBlurSampleCount.round()}',
-              style: const TextStyle(color: Colors.white)),
+          Text(
+            'Shader taps — ${_frameBlurSampleCount.round()}',
+            style: const TextStyle(color: Colors.white),
+          ),
           Slider(
             value: _frameBlurSampleCount,
             min: 2,
             max: 64,
             divisions: 62,
-            onChanged: (v) => setState(() => _frameBlurSampleCount = v),
+            onChanged: (v) =>
+                _updatePlaygroundState(() => _frameBlurSampleCount = v),
           ),
           Text(
-              'Max translation (px) — ${_frameBlurMaxTranslation.toStringAsFixed(0)}',
-              style: const TextStyle(color: Colors.white)),
+            'Max translation (px) — ${_frameBlurMaxTranslation.toStringAsFixed(0)}',
+            style: const TextStyle(color: Colors.white),
+          ),
           Slider(
             value: _frameBlurMaxTranslation,
             min: 5,
             max: 300,
             onChanged: (v) =>
-                setState(() => _frameBlurMaxTranslation = v),
+                _updatePlaygroundState(() => _frameBlurMaxTranslation = v),
           ),
           Text(
             'Speed curve (p) — ${_frameBlurSpeedCurveExp.toStringAsFixed(2)}',
@@ -776,7 +1464,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             min: 0.5,
             max: 3.0,
             onChanged: (v) =>
-                setState(() => _frameBlurSpeedCurveExp = v),
+                _updatePlaygroundState(() => _frameBlurSpeedCurveExp = v),
           ),
           Text(
             'Speed curve ref (px) — ${_frameBlurSpeedCurveRefPx.toStringAsFixed(0)}',
@@ -787,7 +1475,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             min: 1,
             max: 60,
             onChanged: (v) =>
-                setState(() => _frameBlurSpeedCurveRefPx = v),
+                _updatePlaygroundState(() => _frameBlurSpeedCurveRefPx = v),
           ),
           const SizedBox(height: 4),
           () {
@@ -807,9 +1495,10 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
               '${trCap.dy.toStringAsFixed(3)}) |${trCap.distance.toStringAsFixed(3)}|\n'
               'gap    ${((liveT - _capturedPlayhead).inMicroseconds / 1000).toStringAsFixed(2)}ms',
               style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 10,
-                  fontFamily: 'monospace'),
+                color: Colors.white70,
+                fontSize: 10,
+                fontFamily: 'monospace',
+              ),
             );
           }(),
           const SizedBox(height: 8),
@@ -837,29 +1526,38 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('ACCUMULATION',
-              style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 11,
-                  letterSpacing: 1.2,
-                  fontWeight: FontWeight.w600)),
+          const Text(
+            'ACCUMULATION',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 12),
-          Text('Shutter (ms) — ${_accumExposureMs.toStringAsFixed(0)}',
-              style: const TextStyle(color: Colors.white)),
+          Text(
+            'Shutter (ms) — ${_accumExposureMs.toStringAsFixed(0)}',
+            style: const TextStyle(color: Colors.white),
+          ),
           Slider(
             value: _accumExposureMs,
             min: 4,
             max: 200,
-            onChanged: (v) => setState(() => _accumExposureMs = v),
+            onChanged: (v) =>
+                _updatePlaygroundState(() => _accumExposureMs = v),
           ),
-          Text('Sub-frame samples — $_accumSampleCount',
-              style: const TextStyle(color: Colors.white)),
+          Text(
+            'Sub-frame samples — $_accumSampleCount',
+            style: const TextStyle(color: Colors.white),
+          ),
           Slider(
             value: _accumSampleCount.toDouble(),
             min: 1,
             max: 32,
             divisions: 31,
-            onChanged: (v) => setState(() => _accumSampleCount = v.round()),
+            onChanged: (v) =>
+                _updatePlaygroundState(() => _accumSampleCount = v.round()),
           ),
           const SizedBox(height: 4),
           const Text(
@@ -870,13 +1568,50 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
             "path.",
             style: TextStyle(color: Colors.white54, fontSize: 11, height: 1.4),
           ),
+          const SizedBox(height: 16),
+          Text(
+            'Type-change blur σ — '
+            '${_cursorTypeChangeBlurSigma.toStringAsFixed(1)} px',
+            style: const TextStyle(color: Colors.white),
+          ),
+          Slider(
+            value: _cursorTypeChangeBlurSigma,
+            min: 0,
+            max: 16,
+            onChanged: (v) =>
+                _updatePlaygroundState(() => _cursorTypeChangeBlurSigma = v),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            "When the recorded cursor state changes (arrow→I-beam→hand), "
+            "stamps near the change get a Gaussian blur that peaks at the "
+            "boundary and tapers to 0 across the exposure window. The "
+            "cursor visibly dissolves into a soft glow and re-condenses "
+            "as the new type, instead of hard-cutting between sprites. "
+            "Set to 0 to disable.",
+            style: TextStyle(color: Colors.white54, fontSize: 11, height: 1.4),
+          ),
         ],
       ),
     );
   }
 }
 
-enum _RenderMode { shader, accumulation, frameBlur }
+enum _RenderMode { shader, accumulation, frameBlur, scenePass }
+
+class _SceneCameraSample {
+  const _SceneCameraSample({
+    required this.position,
+    required this.focal,
+    required this.scale,
+    required this.fitScale,
+  });
+
+  final Duration position;
+  final Offset focal;
+  final double scale;
+  final double fitScale;
+}
 
 /// Draws a captured snapshot of the composition through the
 /// scene-motion-blur fragment shader. The shader smears each pixel
@@ -974,26 +1709,31 @@ class _ReadoutsCard extends StatelessWidget {
     final t = position;
     final cur = cursorAt(cursorRecording, t);
     final exposureSec = tuning.maxExposureMs / 1000.0;
-    final expStart =
-        Duration(microseconds: t.inMicroseconds - (exposureSec * 1e6).round());
+    final expStart = Duration(
+      microseconds: t.inMicroseconds - (exposureSec * 1e6).round(),
+    );
     final vLook = Duration(
-        microseconds:
-            t.inMicroseconds - (tuning.velocityLookbackMs * 1000).round());
+      microseconds:
+          t.inMicroseconds - (tuning.velocityLookbackMs * 1000).round(),
+    );
     final gLook = Duration(
-        microseconds:
-            t.inMicroseconds - (tuning.gateLookbackMs * 1000).round());
-    final prevExp =
-        expStart.inMicroseconds >= 0 ? cursorAt(cursorRecording, expStart) : null;
-    final prevV =
-        vLook.inMicroseconds >= 0 ? cursorAt(cursorRecording, vLook) : null;
-    final prevG =
-        gLook.inMicroseconds >= 0 ? cursorAt(cursorRecording, gLook) : null;
+      microseconds: t.inMicroseconds - (tuning.gateLookbackMs * 1000).round(),
+    );
+    final prevExp = expStart.inMicroseconds >= 0
+        ? cursorAt(cursorRecording, expStart)
+        : null;
+    final prevV = vLook.inMicroseconds >= 0
+        ? cursorAt(cursorRecording, vLook)
+        : null;
+    final prevG = gLook.inMicroseconds >= 0
+        ? cursorAt(cursorRecording, gLook)
+        : null;
 
     double chord = 0;
     if (cur != null && prevExp != null) {
-      chord = math.sqrt(
-        math.pow(cur.x - prevExp.x, 2) + math.pow(cur.y - prevExp.y, 2),
-      ).toDouble();
+      chord = math
+          .sqrt(math.pow(cur.x - prevExp.x, 2) + math.pow(cur.y - prevExp.y, 2))
+          .toDouble();
     }
     double vTaper = 0;
     if (cur != null && prevV != null) {
@@ -1010,7 +1750,10 @@ class _ReadoutsCard extends StatelessWidget {
       vGate = (d / (tuning.gateLookbackMs / 1000.0)).toDouble();
     }
     final ramp = _smoothstep(
-        tuning.vTriggerLowPxPerSec, tuning.vTriggerHighPxPerSec, vGate);
+      tuning.vTriggerLowPxPerSec,
+      tuning.vTriggerHighPxPerSec,
+      vGate,
+    );
     final taperLen = vTaper * exposureSec;
     final lenBeforeRamp = math.min<double>(chord, taperLen);
     final lenAfterRamp = lenBeforeRamp * ramp;
@@ -1034,26 +1777,41 @@ class _ReadoutsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('READOUTS',
-                style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 11,
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.w600)),
+            const Text(
+              'READOUTS',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 11,
+                letterSpacing: 1.2,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 8),
             Text('t          ${fmt(t.inMicroseconds / 1e6, 3)} s'),
-            Text(cur == null
-                ? 'pos        — (no sample)'
-                : 'pos        (${fmt(cur.x.toDouble())}, ${fmt(cur.y.toDouble())}) of ${videoSize.width.toInt()}×${videoSize.height.toInt()}'),
+            Text(
+              cur == null
+                  ? 'pos        — (no sample)'
+                  : 'pos        (${fmt(cur.x.toDouble())}, ${fmt(cur.y.toDouble())}) of ${videoSize.width.toInt()}×${videoSize.height.toInt()}',
+            ),
             const Divider(color: Colors.white12),
-            Text('chord      ${fmt(chord)} px  (exposure ${fmt(tuning.maxExposureMs, 0)}ms)'),
-            Text('v_taper    ${fmt(vTaper, 0)} px/s  (lookback ${fmt(tuning.velocityLookbackMs)}ms)'),
-            Text('v_gate     ${fmt(vGate, 0)} px/s  (lookback ${fmt(tuning.gateLookbackMs)}ms)'),
+            Text(
+              'chord      ${fmt(chord)} px  (exposure ${fmt(tuning.maxExposureMs, 0)}ms)',
+            ),
+            Text(
+              'v_taper    ${fmt(vTaper, 0)} px/s  (lookback ${fmt(tuning.velocityLookbackMs)}ms)',
+            ),
+            Text(
+              'v_gate     ${fmt(vGate, 0)} px/s  (lookback ${fmt(tuning.gateLookbackMs)}ms)',
+            ),
             const Divider(color: Colors.white12),
-            Text('ramp       ${fmt(ramp, 3)}  (${fmt(tuning.vTriggerLowPxPerSec, 0)}→${fmt(tuning.vTriggerHighPxPerSec, 0)} px/s)'),
+            Text(
+              'ramp       ${fmt(ramp, 3)}  (${fmt(tuning.vTriggerLowPxPerSec, 0)}→${fmt(tuning.vTriggerHighPxPerSec, 0)} px/s)',
+            ),
             Text('taper_len  ${fmt(taperLen)} px  (v_taper × exposure)'),
             Text('len/ramp   ${fmt(lenAfterRamp)} px'),
-            Text('final_len  ${fmt(lenCapped)} px  (cap ${fmt(tuning.maxTrailPx, 0)})'),
+            Text(
+              'final_len  ${fmt(lenCapped)} px  (cap ${fmt(tuning.maxTrailPx, 0)})',
+            ),
           ],
         ),
       ),

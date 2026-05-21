@@ -1,9 +1,6 @@
-import 'package:flutter/animation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
-import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
 
 const Size _videoSize = Size(1920, 1080);
@@ -11,7 +8,10 @@ const Size _videoSize = Size(1920, 1080);
 ZoomRegion _zoomAt({
   required Duration startTime,
   required Duration duration,
-  Rect rect = const Rect.fromLTWH(100, 100, 200, 200),
+  // Centred on the origin so the first-frame snap (focal := rect.center)
+  // matches the (0,0) cursor positions most tests start from. Tests
+  // that care about a specific rect.center override this explicitly.
+  Rect rect = const Rect.fromLTRB(0, 0, 0, 0),
   double zoomLevel = 2.0,
   bool followCursor = true,
   FollowMode followMode = FollowMode.centered,
@@ -19,7 +19,6 @@ ZoomRegion _zoomAt({
   Duration enterDuration = Duration.zero,
   Duration exitDuration = Duration.zero,
   Duration followDuration = const Duration(milliseconds: 400),
-  CubicBezierCurve? followCurve,
 }) {
   return ZoomRegion(
     rect: rect,
@@ -32,8 +31,36 @@ ZoomRegion _zoomAt({
     followMode: followMode,
     deadzoneRatio: deadzoneRatio,
     followDuration: followDuration,
-    followCurve: followCurve,
   );
+}
+
+/// Walk the focal controller forward from `from` to `to` at 16 ms
+/// frame intervals, holding [cursor] constant. Returns the final
+/// update. The spring needs sufficient sub-stepping resolution to
+/// settle, and most tests want "after N ms, where is the focal" not
+/// "after one large dt jump" — driving frame-by-frame mirrors real
+/// playback dt and gives the spring enough integration time to
+/// approach its target.
+ZoomFocalUpdate? _drive(
+  ZoomFocalController ctrl,
+  ZoomRegion zoom, {
+  required Duration from,
+  required Duration to,
+  required Offset cursor,
+  Duration step = const Duration(milliseconds: 16),
+}) {
+  ZoomFocalUpdate? last;
+  var t = from + step;
+  while (t <= to) {
+    last = ctrl.update(
+      position: t,
+      zoomRegions: [zoom],
+      cursor: cursor,
+      videoSize: _videoSize,
+    );
+    t += step;
+  }
+  return last;
 }
 
 void main() {
@@ -56,7 +83,13 @@ void main() {
       expect(ctrl.smoothedFocal, isNull);
     });
 
-    test('snaps to cursor position on the first frame of a zoom', () {
+    test(
+        'first frame of a zoom snaps to the rect centre — regardless of '
+        'cursor position', () {
+      // The user drew a zoom rect around a specific area; the camera
+      // should frame *that area* when the zoom kicks in. The bounded
+      // gate (followCursor + dz) then decides whether to chase the
+      // cursor or stay put.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
@@ -73,8 +106,9 @@ void main() {
 
       expect(update, isNotNull);
       expect(update!.zoom, same(zoom));
-      expect(update.focal, const Offset(500, 400),
-          reason: 'first frame of a zoom must snap, not lerp');
+      expect(update.focal, const Offset(50, 50),
+          reason: 'first frame of a zoom must land on rect.center, '
+              'not on the cursor');
     });
 
     test('falls back to rect.center when no cursor sample exists', () {
@@ -97,37 +131,71 @@ void main() {
     });
 
     test(
-        'snaps focal when crossing into a different zoom region '
-        'instead of lerping across the screen', () {
+        'crossing into a different zoom region spring-chases the new '
+        'rect, no instant snap', () {
+      // All-spring policy: crossing from one zoom region to another
+      // is just another change of target. The spring carries the
+      // focal smoothly from zoomA's rect.center toward zoomB's
+      // rect.center — no teleport. We don't expect the focal to be
+      // *at* zoomB.rect.center on the very first frame of zoomB; we
+      // expect it to be advancing toward it from the previous spring
+      // state.
       final ctrl = ZoomFocalController();
       final zoomA = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 1),
-        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        rect: const Rect.fromLTWH(0, 0, 100, 100), // center (50, 50)
       );
       final zoomB = _zoomAt(
         startTime: const Duration(seconds: 1),
         duration: const Duration(seconds: 1),
-        rect: const Rect.fromLTWH(900, 800, 100, 100),
+        rect: const Rect.fromLTWH(900, 800, 100, 100), // center (950, 850)
       );
 
-      ctrl.update(
-        position: Duration.zero,
+      // Settle the spring on zoomA at (50, 50).
+      _drive(
+        ctrl,
+        zoomA,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 800),
+        cursor: const Offset(50, 50),
+      );
+      final endOfA = ctrl.update(
+        position: const Duration(milliseconds: 999),
         zoomRegions: [zoomA, zoomB],
         cursor: const Offset(50, 50),
         videoSize: _videoSize,
       );
+      expect(endOfA!.focal.dx, closeTo(50, 2));
+      expect(endOfA.focal.dy, closeTo(50, 2));
 
+      // First frame in zoomB: spring continues from ~(50, 50). It is
+      // NOT instantly at (950, 850).
       final crossover = ctrl.update(
-        position: const Duration(milliseconds: 1500),
+        position: const Duration(milliseconds: 1016),
         zoomRegions: [zoomA, zoomB],
         cursor: const Offset(950, 850),
         videoSize: _videoSize,
       );
-
       expect(crossover, isNotNull);
       expect(crossover!.zoom, same(zoomB));
-      expect(crossover.focal, const Offset(950, 850));
+      expect(crossover.focal.dx, lessThan(200),
+          reason: 'spring must still be near zoomA.center on the '
+              'very first frame of zoomB — not snapped to zoomB.center');
+      expect(crossover.focal.dy, lessThan(200));
+
+      // After driving inside zoomB for a while (staying within its
+      // 1000–2000 ms active window), the spring should have made
+      // meaningful progress toward zoomB.center.
+      final settled = _drive(
+        ctrl,
+        zoomB,
+        from: const Duration(milliseconds: 1016),
+        to: const Duration(milliseconds: 1980),
+        cursor: const Offset(950, 850),
+      );
+      expect(settled!.focal.dx, greaterThan(700),
+          reason: 'spring should have advanced well toward zoomB.center');
     });
 
     test(
@@ -167,6 +235,7 @@ void main() {
         cursor: const Offset(850, 850),
         videoSize: _videoSize,
       );
+      // zoomLate's rect.center == (850, 850).
       expect(reEntry!.focal, const Offset(850, 850));
     });
 
@@ -175,6 +244,7 @@ void main() {
       final zoom = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 2),
+        rect: const Rect.fromLTRB(100, 100, 100, 100),
       );
 
       ctrl.update(
@@ -183,6 +253,7 @@ void main() {
         cursor: const Offset(100, 100),
         videoSize: _videoSize,
       );
+      // First call snaps focal to rect.center == (100, 100).
       expect(ctrl.smoothedFocal, const Offset(100, 100));
 
       ctrl.reset();
@@ -194,7 +265,8 @@ void main() {
         cursor: const Offset(200, 200),
         videoSize: _videoSize,
       );
-      expect(update!.focal, const Offset(200, 200));
+      // After reset, next update re-snaps to rect.center, not cursor.
+      expect(update!.focal, const Offset(100, 100));
     });
 
     test('exposes the current smoothed focal for debug HUDs', () {
@@ -265,6 +337,61 @@ void main() {
       expect(out!.focal, const Offset(400, 250));
     });
 
+    test(
+        'stiff spring + jittering cursor inside a large deadzone — focal '
+        'holds (no slow drift toward the cursor)', () {
+      // Regression for "camera slowly drifts toward the cursor" with
+      // followDuration=100 ms (stiff spring) and a wide deadzone. The
+      // prior velocity-bypass would let a sub-pixel post-snap twitch
+      // push speed above the threshold and leave the deadzone gate
+      // permanently disengaged, so even tiny cursor wanders ended up
+      // moving the camera. With the [_inFlight] flag the gate only
+      // disengages on a real deadzone exit.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        zoomLevel: 2.0,
+        followMode: FollowMode.bounded,
+        deadzoneRatio: 1.01,
+        followDuration: const Duration(milliseconds: 100),
+        // rect.center placed at the cursor's starting position so the
+        // initial snap (focal := rect.center) coincides with the
+        // cursor — exactly the steady-state we want to verify holds.
+        rect: const Rect.fromLTRB(960, 540, 960, 540),
+      );
+
+      // Snap to rect.center == (960, 540).
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(960, 540),
+        videoSize: _videoSize,
+      );
+      // Walk the cursor randomly within ~50 px of the snap point
+      // (well inside the dz half-width ≈ 485 px). The focal must not
+      // move from where it snapped.
+      const wanderRadius = 50.0;
+      var seed = 1.0;
+      for (var ms = 16; ms <= 2000; ms += 16) {
+        // Deterministic pseudo-random walk so test outcomes are stable.
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        final dx = (seed / 2147483648 - 0.5) * 2 * wanderRadius;
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        final dy = (seed / 2147483648 - 0.5) * 2 * wanderRadius;
+        final out = ctrl.update(
+          position: Duration(milliseconds: ms),
+          zoomRegions: [zoom],
+          cursor: Offset(960 + dx, 540 + dy),
+          videoSize: _videoSize,
+        );
+        // Focal must stay exactly at the snap point (no drift).
+        expect(out!.focal.dx, closeTo(960, 1e-9),
+            reason: 'focal must not drift inside a wide deadzone (t=${ms}ms)');
+        expect(out.focal.dy, closeTo(540, 1e-9));
+      }
+    });
+
     test('bounded follow holds focal while cursor stays inside the deadzone',
         () {
       final ctrl = ZoomFocalController();
@@ -274,6 +401,9 @@ void main() {
         zoomLevel: 2.0,
         followMode: FollowMode.bounded,
         deadzoneRatio: 0.3,
+        // rect.center coincides with the initial cursor so the snap
+        // lands inside the deadzone immediately.
+        rect: const Rect.fromLTRB(960, 540, 960, 540),
       );
 
       ctrl.update(
@@ -299,15 +429,18 @@ void main() {
       expect(f3!.focal, const Offset(960, 540));
     });
 
-    // --- duration / curve tween ------------------------------------------
+    // --- spring dynamics --------------------------------------------------
 
-    test(
-        'tween reaches captured target after followDuration with '
-        'easeOutCubic default', () {
+    test('spring reaches target within ~3× settle time', () {
+      // The spring is critically damped → no overshoot. After
+      // ~3 × followDuration it should be within a couple of pixels
+      // of the cursor target. This replaces the old tween test's
+      // "exact arrival at followDuration" assertion since a critically-
+      // damped spring is only ~95% there at one settle time.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
-        duration: const Duration(seconds: 2),
+        duration: const Duration(seconds: 5),
         followDuration: const Duration(milliseconds: 400),
       );
 
@@ -317,22 +450,19 @@ void main() {
         cursor: const Offset(0, 0),
         videoSize: _videoSize,
       );
-      // Frame 2 — cursor jumps. Tween starts.
-      ctrl.update(
-        position: const Duration(milliseconds: 16),
-        zoomRegions: [zoom],
+      // Drive the controller from t=0 to t=1.5s (≈ 3.75× settle time)
+      // with the cursor at (100, 0). After 3× the camera should be
+      // visually arrived (within a few px of the cursor).
+      final settled = _drive(
+        ctrl,
+        zoom,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 1500),
         cursor: const Offset(100, 0),
-        videoSize: _videoSize,
-      );
-      final settled = ctrl.update(
-        position: const Duration(milliseconds: 16 + 400),
-        zoomRegions: [zoom],
-        cursor: const Offset(100, 0),
-        videoSize: _videoSize,
       );
 
-      expect(settled!.focal.dx, closeTo(100, 1e-6));
-      expect(settled.focal.dy, closeTo(0, 1e-6));
+      expect(settled!.focal.dx, closeTo(100, 2));
+      expect(settled.focal.dy, closeTo(0, 2));
     });
 
     test('followDuration=0 snaps the focal to the cursor each frame',
@@ -360,11 +490,16 @@ void main() {
       expect(f2!.focal, const Offset(200, 0));
     });
 
-    test('mid-tween retarget keeps elapsed and from but updates to', () {
+    test('spring chases the latest cursor target, not earlier ones', () {
+      // Cursor sweeps 0 → 100 → 200 over the first 200 ms. The spring
+      // should end up homing in on (200, 0), not the intermediate
+      // (100, 0). Given the spring chases each frame's target, by the
+      // time we've driven for 3× settle time past the second jump the
+      // focal should be very close to 200.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
-        duration: const Duration(seconds: 2),
+        duration: const Duration(seconds: 5),
         followDuration: const Duration(milliseconds: 400),
       );
 
@@ -374,38 +509,40 @@ void main() {
         cursor: const Offset(0, 0),
         videoSize: _videoSize,
       );
-      ctrl.update(
-        position: const Duration(milliseconds: 16),
-        zoomRegions: [zoom],
+      // First leg: 0 → 100 over the first 200 ms.
+      _drive(
+        ctrl,
+        zoom,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 200),
         cursor: const Offset(100, 0),
-        videoSize: _videoSize,
       );
-      ctrl.update(
-        position: const Duration(milliseconds: 200),
-        zoomRegions: [zoom],
+      // Second leg: target jumps to (200, 0). Drive long enough for
+      // the spring to settle on the new target (~3× settle = 1200 ms).
+      final settled = _drive(
+        ctrl,
+        zoom,
+        from: const Duration(milliseconds: 200),
+        to: const Duration(milliseconds: 200 + 1500),
         cursor: const Offset(200, 0),
-        videoSize: _videoSize,
-      );
-      final settled = ctrl.update(
-        position: const Duration(milliseconds: 16 + 400),
-        zoomRegions: [zoom],
-        cursor: const Offset(200, 0),
-        videoSize: _videoSize,
       );
 
-      expect(settled!.focal.dx, closeTo(200, 1e-6),
-          reason: 'tween must re-aim at the latest cursor target');
+      expect(settled!.focal.dx, closeTo(200, 2),
+          reason: 'spring must home in on the latest cursor target');
     });
 
     test(
-        'tween runs to completion even when cursor briefly re-enters the '
-        'moving deadzone (no mid-tween abort)', () {
-      // Earlier the controller aborted the tween whenever the moving
-      // deadzone briefly re-contained the cursor. During steady cursor
-      // motion that triggered every frame, producing visible jitter.
-      // The deadzone is now a *trigger* for starting tweens only —
-      // once a tween is in flight it runs to completion, re-aiming at
-      // the cursor every frame. Pin that semantics in.
+        'cursor returning inside the moving deadzone stops the chase '
+        '(leash semantic, not full re-center)', () {
+      // The bounded gate is purely positional. The moment the cursor
+      // sits inside the deadzone box around the current focal, the
+      // spring's target switches back to the focal — so the spring
+      // decelerates from whatever velocity it had and the focal
+      // settles somewhere *between* the original snap point and the
+      // cursor's transient excursion. It does NOT keep chasing all
+      // the way to the cursor's mid-chase position. This is the
+      // "leash" behaviour: as soon as the cursor is comfortably in
+      // the leash, the camera holds.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
@@ -414,9 +551,10 @@ void main() {
         followMode: FollowMode.bounded,
         deadzoneRatio: 0.3,
         followDuration: const Duration(milliseconds: 400),
+        rect: const Rect.fromLTRB(960, 540, 960, 540),
       );
 
-      // Initial focal at (960, 540).
+      // Initial focal at rect.center = (960, 540).
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoom],
@@ -424,142 +562,146 @@ void main() {
         videoSize: _videoSize,
       );
       // Cursor exits the initial deadzone (range 816..1104 around
-      // (960, 540)) at (1200, 540) → tween starts.
-      ctrl.update(
-        position: const Duration(milliseconds: 16),
-        zoomRegions: [zoom],
+      // (960, 540)) at (1200, 540) → spring starts chasing right.
+      _drive(
+        ctrl,
+        zoom,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 100),
         cursor: const Offset(1200, 540),
-        videoSize: _videoSize,
       );
-      // Mid-tween the cursor returns to (1000, 540) — inside the
-      // initial deadzone, but the focal has moved on. Old logic
-      // aborted here; new logic re-aims `to` to (1000, 540).
-      ctrl.update(
-        position: const Duration(milliseconds: 100),
-        zoomRegions: [zoom],
+      // Cursor returns to (1000, 540). The deadzone around the
+      // current focal (~1000–1100) easily contains (1000, 540), so
+      // the gate flips back to "hold" and the spring decelerates.
+      final settled = _drive(
+        ctrl,
+        zoom,
+        from: const Duration(milliseconds: 100),
+        to: const Duration(milliseconds: 100 + 1500),
         cursor: const Offset(1000, 540),
-        videoSize: _videoSize,
-      );
-      // After full followDuration since the tween began (16 + 400 ms)
-      // the focal must equal the latest cursor target (1000, 540).
-      final settled = ctrl.update(
-        position: const Duration(milliseconds: 16 + 400),
-        zoomRegions: [zoom],
-        cursor: const Offset(1000, 540),
-        videoSize: _videoSize,
       );
 
-      expect(settled!.focal.dx, closeTo(1000, 1e-6));
-      expect(settled.focal.dy, closeTo(540, 1e-6));
+      // Focal ends somewhere between the snap (960) and the original
+      // chase target (1200). It must NOT have continued all the way
+      // to the cursor's transient position — that would be the
+      // "commit to chase" semantic we're explicitly rejecting.
+      expect(settled!.focal.dx, greaterThan(960));
+      expect(settled.focal.dx, lessThan(1200));
+      expect(settled.focal.dy, closeTo(540, 1));
     });
 
     test(
-        'after a tween completes, the deadzone re-engages around the '
+        'after the spring settles, the deadzone re-engages around the '
         'new focal so further small cursor moves are ignored', () {
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 10),
         zoomLevel: 2.0,
         followMode: FollowMode.bounded,
         deadzoneRatio: 0.3,
         followDuration: const Duration(milliseconds: 400),
       );
 
-      // Snap then trigger a tween out to (1200, 540).
+      // Snap, then drive the spring out toward (1200, 540). With the
+      // leash semantic the spring stops as soon as the cursor enters
+      // the moving dz around the focal — i.e., when focal arrives at
+      // roughly (cursor - dz_halfwidth). For 1920px video at zoom 2×
+      // and dz=0.3, dz half-width = 1920/2 * 0.3 / 2 = 144px, so the
+      // focal settles in the band [cursor - 144, cursor].
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoom],
         cursor: const Offset(960, 540),
         videoSize: _videoSize,
       );
-      ctrl.update(
-        position: const Duration(milliseconds: 16),
-        zoomRegions: [zoom],
+      final finished = _drive(
+        ctrl,
+        zoom,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 3000),
         cursor: const Offset(1200, 540),
-        videoSize: _videoSize,
       );
-      // Let the tween finish at the captured target.
-      final finished = ctrl.update(
-        position: const Duration(milliseconds: 16 + 400),
-        zoomRegions: [zoom],
-        cursor: const Offset(1200, 540),
-        videoSize: _videoSize,
-      );
-      expect(finished!.focal.dx, closeTo(1200, 1e-6));
+      // Cursor must now sit inside the dz around the resting focal —
+      // the "comfortable in the leash" invariant.
+      expect(finished!.focal.dx, lessThanOrEqualTo(1200));
+      expect(finished.focal.dx, greaterThanOrEqualTo(1056));
 
-      // New deadzone is centered on (1200, 540), half-width 144 →
-      // range 1056..1344. A cursor at (1180, 540) sits inside, so
-      // the focal must hold; no fresh tween should start.
-      final still = ctrl.update(
-        position: const Duration(milliseconds: 500),
-        zoomRegions: [zoom],
+      // Cursor at (1180, 540): also inside the dz around the resting
+      // focal, so the spring should not pick up a fresh chase.
+      final still = _drive(
+        ctrl,
+        zoom,
+        from: const Duration(milliseconds: 3000),
+        to: const Duration(milliseconds: 3500),
         cursor: const Offset(1180, 540),
-        videoSize: _videoSize,
       );
-      expect(still!.focal.dx, closeTo(1200, 1e-6),
+      expect(still!.focal.dx, closeTo(finished.focal.dx, 2),
           reason: 'cursor inside the new deadzone — focal should hold');
     });
 
-    test('followCurve override shapes the tween progress', () {
-      final dur = const Duration(milliseconds: 400);
-
-      final linearZoom = _zoomAt(
+    test(
+        'tweaking a non-structural field mid-flight does not snap the '
+        'spring (no jolt while dragging an inspector slider)', () {
+      // copyWith() returns a fresh ZoomRegion instance every time the
+      // user nudges an inspector slider. The controller used to treat
+      // any fresh instance as "new zoom" and snap the focal — that
+      // produced a visible jolt on every continuous-drag tick. The
+      // snap path now fires only when one of the structural fields
+      // changes (startTime, rect, followCursor, followMode); knobs
+      // like deadzoneRatio / followDuration / enter+exitDuration /
+      // zoomLevel / predictiveWindow flow through silently.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
         startTime: Duration.zero,
-        duration: const Duration(seconds: 2),
-        followDuration: dur,
-        followCurve:
-            const CubicBezierCurve(x1: 0, y1: 0, x2: 1, y2: 1),
+        duration: const Duration(seconds: 5),
+        followMode: FollowMode.bounded,
+        deadzoneRatio: 0.3,
+        followDuration: const Duration(milliseconds: 400),
       );
-      final ctrlA = ZoomFocalController();
-      ctrlA.update(
+      ctrl.update(
         position: Duration.zero,
-        zoomRegions: [linearZoom],
-        cursor: const Offset(0, 0),
+        zoomRegions: [zoom],
+        cursor: const Offset(960, 540),
         videoSize: _videoSize,
       );
-      ctrlA.update(
-        position: const Duration(milliseconds: 16),
-        zoomRegions: [linearZoom],
-        cursor: const Offset(100, 0),
+      // Spring is mid-chase toward (1200, 540) after ~96 ms (the last
+      // frame _drive emits at the 16 ms step before passing 100 ms).
+      _drive(
+        ctrl,
+        zoom,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 100),
+        cursor: const Offset(1200, 540),
+      );
+      // Stamp the focal at the exact playhead the edit will arrive on
+      // (position: 96 ms — same as _drive's last tick) so dt is 0 on
+      // the edit call and we can compare focals directly.
+      final beforeEdit = ctrl.update(
+        position: const Duration(milliseconds: 96),
+        zoomRegions: [zoom],
+        cursor: const Offset(1200, 540),
         videoSize: _videoSize,
       );
-      final linearMid = ctrlA.update(
-        position: const Duration(milliseconds: 16 + 200),
-        zoomRegions: [linearZoom],
-        cursor: const Offset(100, 0),
-        videoSize: _videoSize,
-      );
-      expect(linearMid!.focal.dx, closeTo(50, 0.5));
+      final focalBefore = beforeEdit!.focal;
 
-      final easeZoom = _zoomAt(
-        startTime: Duration.zero,
-        duration: const Duration(seconds: 2),
-        followDuration: dur,
-      );
-      final ctrlB = ZoomFocalController();
-      ctrlB.update(
-        position: Duration.zero,
-        zoomRegions: [easeZoom],
-        cursor: const Offset(0, 0),
+      // User drags the deadzone slider — copyWith returns a new
+      // instance with a different deadzoneRatio. Same playhead, same
+      // cursor. The focal must NOT snap to the cursor; it must
+      // continue from `focalBefore` unchanged (dt is zero on this
+      // re-evaluation).
+      final edited = zoom.copyWith(deadzoneRatio: 0.6);
+      final afterEdit = ctrl.update(
+        position: const Duration(milliseconds: 96),
+        zoomRegions: [edited],
+        cursor: const Offset(1200, 540),
         videoSize: _videoSize,
       );
-      ctrlB.update(
-        position: const Duration(milliseconds: 16),
-        zoomRegions: [easeZoom],
-        cursor: const Offset(100, 0),
-        videoSize: _videoSize,
-      );
-      final easeMid = ctrlB.update(
-        position: const Duration(milliseconds: 16 + 200),
-        zoomRegions: [easeZoom],
-        cursor: const Offset(100, 0),
-        videoSize: _videoSize,
-      );
-
-      // Curves.easeOutCubic ≈ 0.875 at t=0.5 (Cubic-bezier
-      // approximation of 1-(1-t)^3, not the analytical curve).
-      expect(easeMid!.focal.dx, closeTo(87.5, 0.5));
+      expect(afterEdit!.focal.dx, closeTo(focalBefore.dx, 1e-6),
+          reason: 'non-structural edit must not reset the spring');
+      expect(afterEdit.focal.dy, closeTo(focalBefore.dy, 1e-6));
+      // And the new instance is what the controller reports back.
+      expect(identical(afterEdit.zoom, edited), isTrue);
     });
 
     test(
@@ -648,150 +790,11 @@ void main() {
     });
 
     test(
-        'tween started inside the enter ramp ends exactly when the '
-        'zoom ramp ends — sync, not stagger', () {
-      // 1.5s enter ramp, very short followDuration (300ms). If the
-      // sync logic is wrong, the focal lands at the cursor at +300ms
-      // and sits there for 1.2s while the zoom is still ramping in.
-      // With sync the tween extends to fill the full enter window.
-      final ctrl = ZoomFocalController();
-      final zoom = _zoomAt(
-        startTime: Duration.zero,
-        duration: const Duration(seconds: 5),
-        enterDuration: const Duration(milliseconds: 1500),
-        followDuration: const Duration(milliseconds: 300),
-      );
-
-      // Frame 0: cursor at A — focal snaps to cursor. No tween yet.
-      ctrl.update(
-        position: Duration.zero,
-        zoomRegions: [zoom],
-        cursor: const Offset(500, 400),
-        videoSize: _videoSize,
-      );
-
-      // 16ms in (still inside enter): cursor jumps to B. A tween
-      // starts here; with sync it should end at +1500ms (the enter
-      // ramp's end), not +316ms.
-      ctrl.update(
-        position: const Duration(milliseconds: 16),
-        zoomRegions: [zoom],
-        cursor: const Offset(900, 600),
-        videoSize: _videoSize,
-      );
-
-      // At +316ms (16ms tween-start + 300ms followDuration), the OLD
-      // behavior would have the focal already at (900, 600). Under
-      // sync, it should still be lerping (not yet at the target).
-      final mid = ctrl.update(
-        position: const Duration(milliseconds: 316),
-        zoomRegions: [zoom],
-        cursor: const Offset(900, 600),
-        videoSize: _videoSize,
-      );
-      expect(mid!.focal, isNot(const Offset(900, 600)),
-          reason: 'tween must not finish before the enter ramp');
-
-      // At +1500ms — the enter ramp's end — the tween must have
-      // landed: focal == B.
-      final end = ctrl.update(
-        position: const Duration(milliseconds: 1500),
-        zoomRegions: [zoom],
-        cursor: const Offset(900, 600),
-        videoSize: _videoSize,
-      );
-      expect(end!.focal, const Offset(900, 600),
-          reason:
-              'tween must land at target by the time the zoom ramp ends');
-    });
-
-    test(
-        'focal AND zoom factor both finish on the exact frame the '
-        'enter ramp ends — no stagger, no overshoot', () {
-      // Ground-truth integration: drive the focal controller and the
-      // zoom transformer through the full enter ramp at 16ms ticks
-      // and assert that on the boundary frame the focal == cursor
-      // AND the zoom factor == zoomLevel. Anywhere strictly before
-      // that frame, neither is "done" yet.
-      final ctrl = ZoomFocalController();
-      final transformer = ZoomTransformer();
-      const enterMs = 1500;
-      final zoom = _zoomAt(
-        startTime: Duration.zero,
-        duration: const Duration(seconds: 5),
-        enterDuration: const Duration(milliseconds: enterMs),
-        followDuration: const Duration(milliseconds: 300),
-      );
-
-      const target = Offset(900, 600);
-
-      // Frame 0: focal snaps to (500, 400).
-      ctrl.update(
-        position: Duration.zero,
-        zoomRegions: [zoom],
-        cursor: const Offset(500, 400),
-        videoSize: _videoSize,
-      );
-
-      // Frame 1: cursor jumps. A tween starts here, length = 1500-16ms.
-      ctrl.update(
-        position: const Duration(milliseconds: 16),
-        zoomRegions: [zoom],
-        cursor: target,
-        videoSize: _videoSize,
-      );
-
-      // Walk every frame until just before the ramp ends. Both the
-      // zoom factor must be < zoomLevel and the focal must be != target.
-      for (var ms = 32; ms < enterMs; ms += 16) {
-        final pos = Duration(milliseconds: ms);
-        final out = ctrl.update(
-          position: pos,
-          zoomRegions: [zoom],
-          cursor: target,
-          videoSize: _videoSize,
-        );
-        final z = transformer.getTransform(
-          position: pos,
-          zoomRegion: zoom,
-          videoSize: _videoSize,
-        );
-
-        expect(z.isIdentity(), isFalse,
-            reason: 'zoom should be ramping at t=${ms}ms');
-        // The transform isn't a pure scale because of the focal
-        // re-centering, but its scale-x entry is the zoom factor.
-        final zoomFactor = z.entry(0, 0);
-        expect(zoomFactor, lessThan(zoom.zoomLevel),
-            reason: 'zoom factor must not be at full zoom yet at t=${ms}ms');
-        expect(out!.focal, isNot(target),
-            reason: 'focal must not be at the cursor yet at t=${ms}ms');
-      }
-
-      // The boundary frame: enter ramp ends, focal lands on cursor,
-      // zoom factor reaches zoomLevel.
-      final endPos = const Duration(milliseconds: enterMs);
-      final outAtEnd = ctrl.update(
-        position: endPos,
-        zoomRegions: [zoom],
-        cursor: target,
-        videoSize: _videoSize,
-      );
-      final zAtEnd = transformer.getTransform(
-        position: endPos,
-        zoomRegion: zoom,
-        videoSize: _videoSize,
-      );
-      expect(outAtEnd!.focal, target);
-      expect(zAtEnd.entry(0, 0), zoom.zoomLevel);
-    });
-
-    test(
-        'mid-zoom (post-enter) cursor moves still use the user-tuned '
-        'followDuration', () {
-      // The sync rule only fires inside the enter / exit ramps. Once
-      // we're in the hold phase, a fresh tween should run for exactly
-      // followDuration, not stretch to the end of the region.
+        'mid-zoom (post-enter) cursor moves drive the spring with the '
+        'user-tuned settle time', () {
+      // After the enter ramp the spring chases cursor moves using the
+      // user-tuned [followDuration] as its settle time. Drive long
+      // enough (≈3× settle) and the focal must land on the cursor.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
@@ -800,36 +803,33 @@ void main() {
         followDuration: const Duration(milliseconds: 400),
       );
 
-      // Warm into the hold phase past the enter ramp.
+      // Snap, then drive past the enter ramp with the cursor steady so
+      // the spring settles in the starting region.
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoom],
         cursor: const Offset(500, 400),
         videoSize: _videoSize,
       );
-      ctrl.update(
-        position: const Duration(milliseconds: 600),
-        zoomRegions: [zoom],
+      _drive(
+        ctrl,
+        zoom,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 600),
         cursor: const Offset(500, 400),
-        videoSize: _videoSize,
       );
 
-      // Cursor jumps mid-hold; tween must complete in followDuration
-      // (400ms), not anything longer.
-      ctrl.update(
-        position: const Duration(milliseconds: 700),
-        zoomRegions: [zoom],
+      // Cursor jumps mid-hold; drive 3× settle time and the spring
+      // must home in on the new cursor target.
+      final landed = _drive(
+        ctrl,
+        zoom,
+        from: const Duration(milliseconds: 600),
+        to: const Duration(milliseconds: 600 + 1500),
         cursor: const Offset(900, 600),
-        videoSize: _videoSize,
       );
-      final landed = ctrl.update(
-        // 700 + 400 = 1100 → tween should be done.
-        position: const Duration(milliseconds: 1100),
-        zoomRegions: [zoom],
-        cursor: const Offset(900, 600),
-        videoSize: _videoSize,
-      );
-      expect(landed!.focal, const Offset(900, 600));
+      expect(landed!.focal.dx, closeTo(900, 3));
+      expect(landed.focal.dy, closeTo(600, 3));
     });
 
     test(
@@ -858,37 +858,33 @@ void main() {
         cursor: const Offset(100, 100),
         videoSize: _videoSize,
       );
-      // Frame at 300ms (in hold): cursor jumps — kicks off a tween.
-      ctrl.update(
-        position: const Duration(milliseconds: 300),
-        zoomRegions: [zoom],
+      // Drive into the hold phase with the cursor at (500, 500) so the
+      // spring settles there. _drive ticks 16 ms frames between 0 and
+      // 400 ms — well past followDuration × 3 — leaving the spring
+      // essentially at (500, 500) when the exit ramp starts.
+      final inHold = _drive(
+        ctrl,
+        zoom,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 400),
         cursor: const Offset(500, 500),
-        videoSize: _videoSize,
       );
-      // Frame at 400ms (in hold, well past the 50ms followDuration):
-      // the tween has completed, focal is at (500, 500).
-      final inHold = ctrl.update(
-        position: const Duration(milliseconds: 400),
-        zoomRegions: [zoom],
-        cursor: const Offset(500, 500),
-        videoSize: _videoSize,
-      );
-      expect(inHold!.focal, const Offset(500, 500),
-          reason: 'sanity: tween should have completed by now');
+      expect(inHold!.focal.dx, closeTo(500, 1),
+          reason: 'sanity: spring should have settled by now');
+      expect(inHold.focal.dy, closeTo(500, 1));
 
       // Frame at 950ms — halfway through the exit ramp at 900..1000ms.
       // Cursor moves to (900, 900) but the controller ignores it. The
-      // focal lerps from (500, 500) toward videoCentre (960, 540) using
-      // the same curve the zoom factor uses, so X and Y interpolate at
-      // the same fraction: their progress along their respective ranges
-      // must match.
+      // focal lerps from the captured exit-start focal toward
+      // videoCentre (960, 540) using the same curve the zoom factor
+      // uses, so X and Y interpolate at the same fraction.
       final midExit = ctrl.update(
         position: const Duration(milliseconds: 950),
         zoomRegions: [zoom],
         cursor: const Offset(900, 900),
         videoSize: _videoSize,
       );
-      const startFocal = Offset(500, 500);
+      final startFocal = inHold.focal;
       const centre = Offset(960, 540);
       final progressX = (midExit!.focal.dx - startFocal.dx) /
           (centre.dx - startFocal.dx);
@@ -915,58 +911,205 @@ void main() {
     });
 
     test(
-        'backward scrub mid-tween snaps focal to the cursor at the new '
-        'position (no freeze on `_tweenFrom`)', () {
-      // Regression: when the user drags the playhead backward while a
-      // catch-up tween is in flight, `position - _tweenStartPosition`
-      // goes negative. Without the fix that branch clamps the
-      // interpolation t to 0 and the focal freezes at `_tweenFrom`
-      // regardless of where the cursor is at the new (earlier)
-      // timestamp. The fix snaps the focal to the cursor on any
-      // backward step.
+        'meaningful backward scrub mid-flight keeps focal in place and '
+        'just zeros the spring velocity', () {
+      // Under the all-spring policy the focal never teleports — not
+      // even on a user-intended scrub. Instead the controller zeros
+      // the spring's velocity (so stale momentum from before the
+      // discontinuity doesn't carry forward) and leaves the position
+      // alone. The next forward frame's spring step then accelerates
+      // from rest toward whatever target the gate decides.
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 5),
         followDuration: const Duration(milliseconds: 400),
+        rect: const Rect.fromLTRB(123, 456, 123, 456),
       );
 
-      // Frame 0: snap to (100, 100).
+      // Init at rect.center, then drive forward chasing a cursor at
+      // (700, 700) so the spring builds velocity.
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoom],
         cursor: const Offset(100, 100),
         videoSize: _videoSize,
       );
-      // Frame at 16ms: cursor jumps — kicks off a tween toward (700, 700).
-      ctrl.update(
-        position: const Duration(milliseconds: 16),
-        zoomRegions: [zoom],
+      final beforeScrub = _drive(
+        ctrl,
+        zoom,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 600),
         cursor: const Offset(700, 700),
-        videoSize: _videoSize,
       );
-      // Frame at 100ms (mid-tween, before the 400ms followDuration
-      // elapses): tween is in flight.
-      ctrl.update(
-        position: const Duration(milliseconds: 100),
-        zoomRegions: [zoom],
-        cursor: const Offset(700, 700),
-        videoSize: _videoSize,
-      );
+      final focalBeforeScrub = beforeScrub!.focal;
+      // Spring should have built non-trivial velocity by now.
+      expect(ctrl.focalVelocity.distance, greaterThan(10));
 
-      // User scrubs backward to t=50ms. At that timestamp the cursor
-      // sits at (400, 400) along the recorded path. Without the fix,
-      // the focal would stay frozen near `_tweenFrom` ≈ (100, 100).
+      // User scrubs backward by 550 ms (well above the 200 ms floor).
       final out = ctrl.update(
         position: const Duration(milliseconds: 50),
         zoomRegions: [zoom],
         cursor: const Offset(400, 400),
         videoSize: _videoSize,
       );
-      expect(out!.focal, const Offset(400, 400),
-          reason: 'Backward scrub must snap the focal to the cursor at '
-              'the new position, not freeze on the in-flight tween\'s '
-              '`from` value.');
+      // Focal stays where it was — no teleport.
+      expect(out!.focal.dx, closeTo(focalBeforeScrub.dx, 1));
+      expect(out.focal.dy, closeTo(focalBeforeScrub.dy, 1));
+      // Velocity is zeroed so the next forward step doesn't carry
+      // stale momentum.
+      expect(ctrl.focalVelocity.dx, 0);
+      expect(ctrl.focalVelocity.dy, 0);
+    });
+
+    test(
+        'small backward jitter (≤200 ms) does NOT snap — that case is '
+        'usually a hover-scrub commit, not a user-intended seek', () {
+      // Regression for "camera suddenly centres on my cursor every
+      // time I click somewhere": the playhead can hiccup backwards
+      // by a few tens of ms on a hover-scrub commit, and we used to
+      // treat that as a real backward seek and snap. With the 200 ms
+      // floor, the spring just continues from its current focal and
+      // the visible camera motion stays smooth.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        followDuration: const Duration(milliseconds: 400),
+      );
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(100, 100),
+        videoSize: _videoSize,
+      );
+      final before = _drive(
+        ctrl,
+        zoom,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 200),
+        cursor: const Offset(700, 700),
+      );
+      final focalBefore = before!.focal;
+
+      // 80 ms backward jitter, cursor changes a lot — if the snap
+      // path fired, focal would teleport to (400, 400). It must NOT.
+      final out = ctrl.update(
+        position: const Duration(milliseconds: 120),
+        zoomRegions: [zoom],
+        cursor: const Offset(400, 400),
+        videoSize: _videoSize,
+      );
+      expect(out!.focal.dx, closeTo(focalBefore.dx, 1),
+          reason: 'small backward jitter must not snap the focal');
+      expect(out.focal.dy, closeTo(focalBefore.dy, 1));
+    });
+
+    // --- spring-specific dynamics tests ---------------------------------
+
+    test('spring picks up velocity when it starts chasing a target', () {
+      // The focal should advance toward the target each frame even
+      // before settle time elapses — otherwise the spring isn't
+      // actually being stepped.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        followDuration: const Duration(milliseconds: 400),
+      );
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(0, 0),
+        videoSize: _videoSize,
+      );
+      final f1 = ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [zoom],
+        cursor: const Offset(500, 0),
+        videoSize: _videoSize,
+      );
+      final f2 = ctrl.update(
+        position: const Duration(milliseconds: 32),
+        zoomRegions: [zoom],
+        cursor: const Offset(500, 0),
+        videoSize: _videoSize,
+      );
+      // Focal advanced toward target on each frame, monotonically.
+      expect(f1!.focal.dx, greaterThan(0));
+      expect(f2!.focal.dx, greaterThan(f1.focal.dx));
+      // And nowhere near the target after just 32 ms (settle = 400 ms),
+      // so we know we're integrating, not snapping.
+      expect(f2.focal.dx, lessThan(150));
+    });
+
+    test('spring chasing a moving target stays monotonic — no overshoot',
+        () {
+      // Critical damping means no oscillation. Walk the cursor at a
+      // constant rightward velocity and verify the focal stays behind
+      // the cursor the whole time AND advances each frame.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 5),
+        followDuration: const Duration(milliseconds: 400),
+      );
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(0, 0),
+        videoSize: _videoSize,
+      );
+      var lastX = 0.0;
+      for (var ms = 16; ms <= 1000; ms += 16) {
+        // Cursor moves at 0.5 px/ms = 500 px/s.
+        final cursorX = ms * 0.5;
+        final out = ctrl.update(
+          position: Duration(milliseconds: ms),
+          zoomRegions: [zoom],
+          cursor: Offset(cursorX, 0),
+          videoSize: _videoSize,
+        );
+        expect(out!.focal.dx, greaterThanOrEqualTo(lastX),
+            reason: 'focal must advance monotonically (no oscillation) '
+                'at t=${ms}ms');
+        expect(out.focal.dx, lessThanOrEqualTo(cursorX + 1),
+            reason: 'focal must not pass the cursor at t=${ms}ms');
+        lastX = out.focal.dx;
+      }
+    });
+
+    test('large dt between calls does not blow up the spring', () {
+      // After a pause-resume or scrub, the next update may carry a
+      // multi-second gap. The total-dt cap (250 ms) plus sub-stepping
+      // must keep the integration stable — the focal must NOT go to
+      // NaN, infinity, or shoot past the target by orders of magnitude.
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 30),
+        followDuration: const Duration(milliseconds: 400),
+      );
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: const Offset(0, 0),
+        videoSize: _videoSize,
+      );
+      // Massive forward jump (5 s) with the cursor 1000 px away.
+      final out = ctrl.update(
+        position: const Duration(seconds: 5),
+        zoomRegions: [zoom],
+        cursor: const Offset(1000, 0),
+        videoSize: _videoSize,
+      );
+      expect(out!.focal.dx.isFinite, isTrue);
+      expect(out.focal.dy.isFinite, isTrue);
+      // The dt cap means the spring only integrates 250 ms worth on
+      // this call (well short of settle). Focal must lie strictly
+      // between the start (0) and the target (1000).
+      expect(out.focal.dx, greaterThan(0));
+      expect(out.focal.dx, lessThan(1000));
     });
   });
 }

@@ -9,6 +9,7 @@ import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
+import 'package:screen_recorder/rendering/spring_config.dart';
 import 'package:screen_recorder/state/editor_project_state.dart';
 import 'package:screen_recorder/state/editor_project_store.dart';
 
@@ -36,24 +37,29 @@ void main() {
             zoomLevel: 2.5,
             followMode: FollowMode.predictive,
             predictiveWindow: const Duration(milliseconds: 1200),
-            followCurve:
-                const CubicBezierCurve(x1: 0.2, y1: 0.0, x2: 0.8, y2: 1.0),
           ),
         ],
-        screenAnimationConfig:
-            ScreenAnimationConfig.custom(
-          curve:
-              const CubicBezierCurve(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0),
+        screenAnimationConfig: ScreenAnimationConfig.custom(
+          curve: const CubicBezierCurve(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0),
           badgeDuration: const Duration(milliseconds: 420),
         ),
-        cursorAnimationConfig:
-            const CursorAnimationConfig.preset(CursorAnimationStyle.rapid),
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.rapid,
+        ),
         cursorSize: 1.75,
         cursorStyle: CursorStyle.bold,
         cursorClickEffect: CursorClickEffect.none,
         hideCursorOverlay: true,
+        // Values stay within the recalibrated caps (master 0–0.5,
+        // channels 0–1.0). The fromJson path clamps anything past
+        // these to the cap — see the legacy-clamp test further down.
         motionBlur: 0.4,
+        cursorMovementBlur: 0.7,
+        screenMovementBlur: 0.85,
+        screenZoomBlur: 0.95,
         cursorShadow: 0.65,
+        clickSpring: const ClickSpring(stiffness: 420, damping: 0.7),
+        cursorDelay: const Duration(milliseconds: 120),
         windowFrame: WindowFrame.modern(),
       );
 
@@ -67,14 +73,45 @@ void main() {
       expect(restored.cursorClickEffect, CursorClickEffect.none);
       expect(restored.hideCursorOverlay, isTrue);
       expect(restored.motionBlur, closeTo(0.4, 1e-9));
+      expect(restored.cursorMovementBlur, closeTo(0.7, 1e-9));
+      expect(restored.screenMovementBlur, closeTo(0.85, 1e-9));
+      expect(restored.screenZoomBlur, closeTo(0.95, 1e-9));
+      expect(restored.clickSpring.stiffness, closeTo(420, 1e-9));
+      expect(restored.clickSpring.damping, closeTo(0.7, 1e-9));
+      expect(restored.cursorDelay, const Duration(milliseconds: 120));
       expect(restored.windowFrame, WindowFrame.modern());
+    });
+
+    test('legacy JSON without cursorDelayMicros falls back to the default', () {
+      // Recordings saved before the cursor-delay knob landed must
+      // continue to load — the new field reads as the default 50 ms.
+      final json = EditorProjectState.defaults().toJson();
+      json.remove('cursorDelayMicros');
+      final restored = EditorProjectState.fromJson(json);
+      expect(restored.cursorDelay, EditorProjectState.defaults().cursorDelay);
+    });
+
+    test('legacy motion-blur values past the new caps are clamped', () {
+      // Recordings saved before the motion-blur ranges were rescaled
+      // (master 0–2 → 0–0.5, channels 0–2 → 0–1) might serialize
+      // values past the new caps. fromJson must clamp so the smear
+      // doesn't blow out and the sliders don't reject the value.
+      final json = EditorProjectState.defaults().toJson();
+      json['motionBlur'] = 1.8;
+      json['cursorMovementBlur'] = 1.95;
+      json['screenMovementBlur'] = 1.5;
+      json['screenZoomBlur'] = 2.0;
+      final restored = EditorProjectState.fromJson(json);
+      expect(restored.motionBlur, closeTo(0.5, 1e-9));
+      expect(restored.cursorMovementBlur, closeTo(1.0, 1e-9));
+      expect(restored.screenMovementBlur, closeTo(1.0, 1e-9));
+      expect(restored.screenZoomBlur, closeTo(1.0, 1e-9));
     });
 
     test('refuses to load a future schemaVersion', () {
       final state = EditorProjectState.defaults();
       final json = state.toJson();
-      json['schemaVersion'] =
-          EditorProjectState.currentSchemaVersion + 1;
+      json['schemaVersion'] = EditorProjectState.currentSchemaVersion + 1;
 
       expect(
         () => EditorProjectState.fromJson(json),
@@ -88,7 +125,7 @@ void main() {
       final store = EditorProjectStore(videoPath: videoPath);
       final state = await store.load();
       expect(state.zoomRegions, isEmpty);
-      expect(state.cursorSize, 1.0);
+      expect(state.cursorSize, 2.0);
       expect(state.cursorStyle, CursorStyle.modernDark);
     });
 
@@ -109,15 +146,15 @@ void main() {
       // Garbage in → defaults out (the editor doesn't have anything
       // useful to do with a half-written sidecar; better to start
       // fresh than crash on launch).
-      File(EditorProjectStore(videoPath: videoPath).sidecarPath)
-          .writeAsStringSync('not json {{{');
+      File(
+        EditorProjectStore(videoPath: videoPath).sidecarPath,
+      ).writeAsStringSync('not json {{{');
       final store = EditorProjectStore(videoPath: videoPath);
       final state = await store.load();
       expect(state.zoomRegions, isEmpty);
     });
 
-    test('rapid concurrent saves serialize and the last one wins',
-        () async {
+    test('rapid concurrent saves serialize and the last one wins', () async {
       // Mutation queue guarantees ordering. Without it two saves
       // racing on rename() can produce mixed file content or fail
       // outright on some filesystems.
@@ -140,35 +177,45 @@ void main() {
 
 extension on EditorProjectState {
   EditorProjectState copyAsZoomedExample() => EditorProjectState(
-        zoomRegions: [
-          ZoomRegion(
-            rect: const Rect.fromLTWH(0, 0, 50, 50),
-            startTime: const Duration(milliseconds: 100),
-            duration: const Duration(seconds: 1),
-            zoomLevel: 3.0,
-          ),
-        ],
-        screenAnimationConfig: screenAnimationConfig,
-        cursorAnimationConfig: cursorAnimationConfig,
-        cursorSize: 2.0,
-        cursorStyle: cursorStyle,
-        cursorClickEffect: cursorClickEffect,
-        hideCursorOverlay: hideCursorOverlay,
-        motionBlur: motionBlur,
-        cursorShadow: cursorShadow,
-        windowFrame: windowFrame,
-      );
+    zoomRegions: [
+      ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 50, 50),
+        startTime: const Duration(milliseconds: 100),
+        duration: const Duration(seconds: 1),
+        zoomLevel: 3.0,
+      ),
+    ],
+    screenAnimationConfig: screenAnimationConfig,
+    cursorAnimationConfig: cursorAnimationConfig,
+    cursorSize: 2.0,
+    cursorStyle: cursorStyle,
+    cursorClickEffect: cursorClickEffect,
+    hideCursorOverlay: hideCursorOverlay,
+    motionBlur: motionBlur,
+    cursorMovementBlur: cursorMovementBlur,
+    screenMovementBlur: screenMovementBlur,
+    screenZoomBlur: screenZoomBlur,
+    cursorShadow: cursorShadow,
+    clickSpring: clickSpring,
+    cursorDelay: cursorDelay,
+    windowFrame: windowFrame,
+  );
 
   EditorProjectState copyWithCursorSize(double size) => EditorProjectState(
-        zoomRegions: zoomRegions,
-        screenAnimationConfig: screenAnimationConfig,
-        cursorAnimationConfig: cursorAnimationConfig,
-        cursorSize: size,
-        cursorStyle: cursorStyle,
-        cursorClickEffect: cursorClickEffect,
-        hideCursorOverlay: hideCursorOverlay,
-        motionBlur: motionBlur,
-        cursorShadow: cursorShadow,
-        windowFrame: windowFrame,
-      );
+    zoomRegions: zoomRegions,
+    screenAnimationConfig: screenAnimationConfig,
+    cursorAnimationConfig: cursorAnimationConfig,
+    cursorSize: size,
+    cursorStyle: cursorStyle,
+    cursorClickEffect: cursorClickEffect,
+    hideCursorOverlay: hideCursorOverlay,
+    motionBlur: motionBlur,
+    cursorMovementBlur: cursorMovementBlur,
+    screenMovementBlur: screenMovementBlur,
+    screenZoomBlur: screenZoomBlur,
+    cursorShadow: cursorShadow,
+    clickSpring: clickSpring,
+    cursorDelay: cursorDelay,
+    windowFrame: windowFrame,
+  );
 }

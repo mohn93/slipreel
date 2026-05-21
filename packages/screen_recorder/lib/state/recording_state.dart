@@ -62,8 +62,13 @@ class RecordingState {
 
   bool get isRecording => status == RecordingStatus.recording;
   bool get isProcessing => status == RecordingStatus.processing;
+  // [error] is recoverable — the next `startRecording` call clears
+  // `error` and resets `status` to `recording`. Excluding error here
+  // would soft-lock the Record button after any failed attempt.
   bool get canStartRecording =>
-      status == RecordingStatus.idle || status == RecordingStatus.completed;
+      status == RecordingStatus.idle ||
+      status == RecordingStatus.completed ||
+      status == RecordingStatus.error;
 }
 
 class RecordingController extends StateNotifier<RecordingState> {

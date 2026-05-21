@@ -56,13 +56,15 @@ const List<Offset> _kHaloVertices = [
 /// be passed in unchanged. For the [CursorStyle.dot] style the circle
 /// is centered on [position] instead.
 ///
-/// When [state] is anything other than [CursorState.arrow] AND the
-/// chosen [style] is [CursorStyle.classic], the rendering swaps the
-/// arrow polygon for the matching state glyph (I-beam, pointing
-/// hand, resize, etc.) — that's the live OS pointer the recorder
-/// captured. Other styles ignore [state] and always render their
-/// arrow form, since "Bold" / "Outlined" / "Modern Dark" are about
-/// stylising the arrow specifically.
+/// When [state] is anything other than [CursorState.arrow], the
+/// rendering swaps the styled arrow for the matching state glyph
+/// (I-beam, pointing hand, resize, etc.) — that's the live OS
+/// pointer the recorder captured. The user's [style] selection only
+/// affects the arrow form; once macOS switches the pointer to a
+/// hand or I-beam the styled-arrow distinction no longer applies
+/// (macOS itself swaps the cursor wholesale, it doesn't stylise the
+/// resize glyph). [CursorStyle.dot] is the one exception: it's the
+/// "minimal abstract" style and stays a circle regardless of state.
 void paintCursorGlyph(
   Canvas canvas, {
   required Offset position,
@@ -70,10 +72,11 @@ void paintCursorGlyph(
   required CursorStyle style,
   CursorState state = CursorState.arrow,
 }) {
-  // State-specific glyphs only apply when we're rendering the
-  // OS-accurate Classic style. Other styles are user-chosen
-  // arrow variants that should ignore the recorded state.
-  if (style == CursorStyle.classic && state != CursorState.arrow) {
+  // State-specific glyphs apply to every arrow style: hovering over
+  // a link in the recording shows a pointing hand, hovering over a
+  // text field shows an I-beam, etc., regardless of whether the
+  // user picked Classic, Modern Dark, Bold, or Outlined.
+  if (style != CursorStyle.dot && state != CursorState.arrow) {
     paintStateGlyph(
       canvas,
       state: state,

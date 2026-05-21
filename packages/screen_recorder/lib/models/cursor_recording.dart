@@ -14,8 +14,19 @@ class CursorRecording {
     _positions.add(position);
   }
 
-  /// Get cursor position at specific timestamp (interpolated if needed)
-  CursorPosition? getPositionAt(int timestampMicros) {
+  /// Get cursor position at the given timestamp.
+  ///
+  /// Default behavior linearly interpolates between the two
+  /// surrounding recorded samples — gives smooth sub-frame motion when
+  /// the editor's frame timing doesn't align exactly with the 60 Hz
+  /// recorder. Pass `nearestSample: true` to skip interpolation and
+  /// return the closer of the two surrounding samples instead — used
+  /// by the None ("snap") cursor preset so the rendered cursor lands
+  /// on the exact recorded grid with no in-between smoothing.
+  CursorPosition? getPositionAt(
+    int timestampMicros, {
+    bool nearestSample = false,
+  }) {
     if (_positions.isEmpty) return null;
 
     // Binary search to find insertion point
@@ -39,6 +50,12 @@ class CursorRecording {
 
     if (before == null) return after;
     if (after == null) return before;
+
+    if (nearestSample) {
+      final distBefore = timestampMicros - before.timestampMicros;
+      final distAfter = after.timestampMicros - timestampMicros;
+      return distBefore <= distAfter ? before : after;
+    }
 
     // Division by zero check
     if (before.timestampMicros == after.timestampMicros) {

@@ -9,6 +9,7 @@ import '../../models/cursor_recording.dart';
 import '../../rendering/cursor_click_effect.dart';
 import '../../rendering/cursor_geometry.dart';
 import '../../rendering/cursor_glyph.dart';
+import '../../rendering/spring_config.dart';
 
 // `cursorAt` (the time-based recording lookup with linear interp) lives
 // in cursor_geometry.dart and is already imported above via the
@@ -41,6 +42,10 @@ class CursorOverlayPainter extends CustomPainter {
   final double motionBlurIntensity;
   final CursorState cursorState;
   final double cursorShadow;
+  /// Spring controlling the press-pulse size animation. Tuned in the
+  /// Springs section of the cursor tab; default is snappy / critically
+  /// damped so the press reads as instant.
+  final ClickSpring clickSpring;
   /// Live-tunable knobs for the motion-blur path. Defaults match the
   /// values previously hardcoded as `static const` on this class.
   final MotionBlurTuning tuning;
@@ -65,6 +70,7 @@ class CursorOverlayPainter extends CustomPainter {
     this.motionBlurIntensity = 0,
     this.cursorState = CursorState.arrow,
     this.cursorShadow = 0,
+    this.clickSpring = ClickSpring.snappy,
     this.tuning = MotionBlurTuning.defaults,
     this.devicePixelRatio = 1.0,
   });
@@ -121,6 +127,12 @@ class CursorOverlayPainter extends CustomPainter {
       rippleWidgetPos =
           Offset(clickInVideo.dx * scaleX, clickInVideo.dy * scaleY);
     }
+    // Release time drives the press-pulse's release-out phase. Until
+    // the button releases, the press pulse holds the cursor at the
+    // pressed scale so a long click reads as a press for as long as
+    // the user holds it (instead of bouncing back after 250ms).
+    final dtRelease =
+        microsSinceRelease(cursorRecording, position.inMicroseconds);
 
     // Trail vector: the cursor's recorded chord across the virtual
     // shutter window in widget pixels, capped at [_maxTrailPx]. Returns
@@ -251,6 +263,8 @@ class CursorOverlayPainter extends CustomPainter {
       baseDiameter: pxDiameter,
       style: style,
       microsSinceClick: dt,
+      microsSinceRelease: dtRelease,
+      clickSpring: clickSpring,
       state: cursorState,
       shadowIntensity: cursorShadow,
     );
@@ -513,6 +527,7 @@ class CursorOverlayPainter extends CustomPainter {
         old.motionBlurIntensity != motionBlurIntensity ||
         old.cursorState != cursorState ||
         old.cursorShadow != cursorShadow ||
+        old.clickSpring != clickSpring ||
         old.tuning != tuning ||
         old.devicePixelRatio != devicePixelRatio;
   }

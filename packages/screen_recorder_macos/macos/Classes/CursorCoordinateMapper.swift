@@ -56,4 +56,41 @@ enum CursorCoordinateMapper {
     let yPx = (yInDisplayPts - regionLocalYPts) * backingScale
     return (xPx, yPx)
   }
+
+  /// Map a cursor point captured during a window recording.
+  ///
+  /// SCStream's window capture writes a framebuffer with `videoWidthPx`
+  /// × `videoHeightPx` of pixels covering the window's contents at the
+  /// initial window size. The cursor needs to land in that pixel space,
+  /// top-left origin.
+  ///
+  /// The window's origin (`windowQuartzX/Y`) is fetched live from
+  /// `CGWindowListCopyWindowInfo` on every cursor sample so dragging
+  /// the window during recording stays correctly tracked.
+  /// `CGWindowBounds` uses Quartz screen coordinates — top-left of the
+  /// primary display — while `NSEvent.mouseLocation` (the `gx`, `gy`
+  /// inputs) uses Cocoa coordinates with the primary display's
+  /// bottom-left at the origin; the conversion uses
+  /// `primaryScreenHeightPts` to flip Y between the two systems.
+  ///
+  /// `pixelsPerPointX/Y` are the framebuffer's pixels-per-point ratio,
+  /// fixed at recording start. Resizing the window mid-recording is
+  /// out of scope — the SCStream framebuffer dimensions are locked at
+  /// start, so a resize produces an already-distorted video.
+  static func mapForWindow(
+    cursorGlobalX gx: Double,
+    cursorGlobalY gy: Double,
+    windowQuartzX qx: Double,
+    windowQuartzY qy: Double,
+    primaryScreenHeightPts: Double,
+    pixelsPerPointX: Double,
+    pixelsPerPointY: Double
+  ) -> (x: Double, y: Double) {
+    let cursorQuartzX = gx
+    let cursorQuartzY = primaryScreenHeightPts - gy
+    let xInWindowPts = cursorQuartzX - qx
+    let yInWindowPts = cursorQuartzY - qy
+    return (xInWindowPts * pixelsPerPointX,
+            yInWindowPts * pixelsPerPointY)
+  }
 }

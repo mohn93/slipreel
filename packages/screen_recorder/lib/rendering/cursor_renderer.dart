@@ -6,6 +6,7 @@ import '../effects/background_effect.dart';
 import '../utils/app_logger.dart';
 import 'cursor_click_effect.dart';
 import 'cursor_glyph.dart';
+import 'spring_config.dart';
 
 /// Renders cursor overlay on video frames during export. The glyph is
 /// drawn programmatically via [paintCursorWithEffects] so the exported
@@ -15,12 +16,14 @@ class CursorRenderer {
   final double sizeMultiplier;
   final CursorStyle style;
   final CursorClickEffect clickEffect;
+  final ClickSpring clickSpring;
   BackgroundEffect? _backgroundEffect;
 
   CursorRenderer({
     this.sizeMultiplier = 1.0,
     this.style = CursorStyle.modernDark,
     this.clickEffect = CursorClickEffect.ripple,
+    this.clickSpring = ClickSpring.snappy,
   });
 
   /// No-op kept for source-compat with earlier asset-loading API.
@@ -76,12 +79,15 @@ class CursorRenderer {
       // export, screen-space matches video-space (we encode at the
       // capture's native dimensions).
       final dt = microsSinceClick(cursorRecording, timestampMicros);
+      final dtRelease = microsSinceRelease(cursorRecording, timestampMicros);
       paintCursorWithEffects(
         canvas,
         position: ui.Offset(cursorPos.x, cursorPos.y),
         baseDiameter: kCursorBaseDiameter * sizeMultiplier,
         style: style,
         microsSinceClick: dt,
+        microsSinceRelease: dtRelease,
+        clickSpring: clickSpring,
         effect: clickEffect,
       );
 

@@ -3,6 +3,7 @@ import Cocoa
 import FlutterMacOS
 import CoreMedia
 import CoreVideo
+import ScreenCaptureKit
 
 public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var recordingChannel: FlutterMethodChannel?
@@ -136,6 +137,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       requestPermissions(result: result)
     case "checkPermissions":
       checkPermissions(result: result)
+    case "getStockCursorImages":
+      getStockCursorImages(result: result)
     case "isAccessibilityTrusted":
       result(AXIsProcessTrusted())
     case "requestAccessibilityPermission":
@@ -444,6 +447,15 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
     Task {
       do {
+        // Defensive teardown of any leftover subsystems from a
+        // previous failed start. Without this, audio capture (or
+        // cursor tracker / screen capture) left half-running by an
+        // earlier crash would block this attempt with "already
+        // capturing". canStartRecording on the Flutter side already
+        // prevents legitimate double-Records — so anything alive here
+        // is stale state we want gone.
+        await self.tearDownPartialLiveRecording()
+
         let isWindow = source == "window"
         var actualSourceId = sourceId
         if actualSourceId == nil && !isWindow {
@@ -521,11 +533,17 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           // recording so cursor data lands in the same coordinate space
           // as the captured video frames. Computed on @MainActor because
           // it touches NSScreen.screens.
+          //
+          // Snapshot `regionSelection` (a `var` higher in this scope)
+          // into a `let` before crossing into the MainActor closure —
+          // capturing a `var` in concurrent code is an error under the
+          // Swift 6 language mode.
+          let regionForTransform = regionSelection
           self.cursorTransform = await MainActor.run {
             self.makeCursorTransform(
               source: source,
               sourceId: finalSourceId,
-              region: regionSelection,
+              region: regionForTransform,
               videoWidthPx: captureWidth,
               videoHeightPx: captureHeight)
           }
@@ -557,11 +575,67 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
         result(true)
       } catch {
+        // Roll back any subsystems that already started. Without this,
+        // a partial failure leaves audio capture / cursor tracking /
+        // screen capture running, and the *next* Record click bails
+        // immediately with "already capturing" from whichever one
+        // got the furthest. Each helper guards its own state so this
+        // is safe to call regardless of how far the startup got.
+        await self.tearDownPartialLiveRecording()
         result(FlutterError(code: "LIVE_START_FAILED",
                             message: "Failed to start live recording: \(error.localizedDescription)",
                             details: nil))
       }
     }
+  }
+
+  /// Best-effort teardown of every live-recording subsystem. Called
+  /// from the start-path catch to clean up after a partial failure,
+  /// so the next Record click sees a clean slate.
+  ///
+  /// Mirrors the structure of `stopLiveRecording`'s success path but
+  /// every step is wrapped in optional / state guards: it's normal
+  /// for some of these subsystems to be nil here (the failure may
+  /// have happened before they were created).
+  private func tearDownPartialLiveRecording() async {
+    print("[tearDown] entering — "
+      + "captureManager=\(captureManager != nil) "
+      + "audioMgr=\(audioCaptureManager != nil)(active=\(audioCaptureManager?.isCaptureActive() ?? false)) "
+      + "cursorTracker=\(cursorTracker != nil)(tracking=\(cursorTracker?.isCurrentlyTracking() ?? false)) "
+      + "writer=\(liveWriter != nil) encoder=\(liveEncoder != nil)")
+    if let cm = captureManager {
+      try? await cm.stopCapture()
+      captureManager = nil
+    }
+    if let am = audioCaptureManager {
+      // Stop unconditionally — even if isCaptureActive() reports
+      // false, leftover AVAudioEngine state from a half-aborted start
+      // can still trip the next attempt's `alreadyCapturing` guard.
+      am.onSampleBufferReceived = nil
+      am.onAudioReceived = nil
+      am.onError = nil
+      am.stopCapture()
+      audioCaptureManager = nil
+    }
+    if let ct = cursorTracker {
+      ct.onCursorUpdate = nil
+      if ct.isCurrentlyTracking() { ct.stopTracking() }
+      cursorTracker = nil
+    }
+    cursorTransform = nil
+    firstVideoFrameAt = nil
+    if let enc = liveEncoder {
+      enc.finalize()
+      liveEncoder = nil
+    }
+    if let writer = liveWriter {
+      writer.stop { _ in /* discard partial file */ }
+      liveWriter = nil
+    }
+    perfSampler = nil
+    liveStartTime = nil
+    await MainActor.run { RegionRecordingIndicator.shared.hide() }
+    print("[tearDown] done")
   }
 
   private func stopLiveRecording(result: @escaping FlutterResult) {
@@ -655,14 +729,25 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       guard let screen = NSScreen.screens.first(where: {
         ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
           as? CGDirectDisplayID) == r.displayId
-      }) else { return nil }
+      }) else {
+        print("[CursorTransform] area branch BAILED — "
+          + "no NSScreen matches displayId=\(r.displayId). "
+          + "Cursor will be in raw global coords.")
+        return nil
+      }
       let displayMinX = Double(screen.frame.minX)
       let displayMaxY = Double(screen.frame.maxY)
       let scale = Double(screen.backingScaleFactor)
       let regionXPx = Double(r.x)
       let regionYPx = Double(r.y)
+      print("[CursorTransform] area branch INITIALISED — "
+        + "displayId=\(r.displayId) "
+        + "displayMinX=\(displayMinX) displayMaxY=\(displayMaxY) "
+        + "regionPx=(\(regionXPx), \(regionYPx), \(r.widthPx)×\(r.heightPx)) "
+        + "scale=\(scale)")
+      let sampleCounter = SampleCounter()
       return { gx, gy in
-        CursorCoordinateMapper.mapForArea(
+        let mapped = CursorCoordinateMapper.mapForArea(
           cursorGlobalX: gx,
           cursorGlobalY: gy,
           displayMinX: displayMinX,
@@ -670,6 +755,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           backingScale: scale,
           regionXPx: regionXPx,
           regionYPx: regionYPx)
+        let n = sampleCounter.bump()
+        if n <= 30 {
+          print("[CursorTransform/area] #\(n) "
+            + "global=(\(gx), \(gy)) → px=(\(mapped.x), \(mapped.y))")
+        }
+        return mapped
       }
     }
 
@@ -686,8 +777,14 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       let displayHeightPts = Double(screen.frame.height)
       let widthPx = videoWidthPx
       let heightPx = videoHeightPx
+      print("[CursorTransform] screen branch INITIALISED — "
+        + "displayId=\(displayId) "
+        + "displayMin=(\(displayMinX),?) displayMax=(?,\(displayMaxY)) "
+        + "displayPts=\(displayWidthPts)×\(displayHeightPts) "
+        + "videoPx=\(widthPx)×\(heightPx)")
+      let sampleCounter = SampleCounter()
       return { gx, gy in
-        CursorCoordinateMapper.mapForScreen(
+        let mapped = CursorCoordinateMapper.mapForScreen(
           cursorGlobalX: gx,
           cursorGlobalY: gy,
           displayMinX: displayMinX,
@@ -696,13 +793,210 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           displayHeightPts: displayHeightPts,
           videoWidthPx: widthPx,
           videoHeightPx: heightPx)
+        let n = sampleCounter.bump()
+        if n <= 30 {
+          print("[CursorTransform/screen] #\(n) "
+            + "global=(\(gx), \(gy)) → px=(\(mapped.x), \(mapped.y))")
+        }
+        return mapped
       }
     }
 
-    // Window capture: SCWindow.frame is async to fetch and the window
-    // can move during recording. Skip for v1; cursor data is left in
-    // global-points form and the editor will fall back to rect.center
-    // for that source type.
+    // Window capture: live-track the window's origin from
+    // `CGWindowListCopyWindowInfo` on every cursor sample so dragging
+    // the window during recording stays correctly mapped. Pixels-per-
+    // point comes from the framebuffer dimensions (locked at start)
+    // divided by the window's *initial* size — SCStream's framebuffer
+    // dims don't update if the user resizes the window mid-recording,
+    // so the math wouldn't be meaningful for that case anyway.
+    print("[CursorTransform] makeCursorTransform "
+      + "source=\(source) sourceId=\(sourceId) "
+      + "videoPx=\(videoWidthPx)×\(videoHeightPx)")
+    if source == "window", let idRaw = UInt32(sourceId) {
+      let windowID = CGWindowID(idRaw)
+      guard let initialBounds = Self.fetchWindowBoundsPts(windowID: windowID),
+            initialBounds.width > 0, initialBounds.height > 0
+      else {
+        print("[CursorTransform] window branch BAILED — "
+          + "fetchWindowBoundsPts returned nil or zero size for "
+          + "windowID=\(windowID). Cursor will be in raw global coords.")
+        return nil
+      }
+      // Primary display's height in points — the anchor that converts
+      // Cocoa (bottom-left of primary) to Quartz (top-left of primary).
+      // CGWindowBounds is Quartz; NSEvent.mouseLocation is Cocoa.
+      let primaryScreenHeightPts = Double(
+        NSScreen.screens.first(where: {
+          $0.frame.origin.x == 0 && $0.frame.origin.y == 0
+        })?.frame.height
+          ?? NSScreen.main?.frame.height
+          ?? 0)
+      let pixelsPerPointX =
+        Double(videoWidthPx) / Double(initialBounds.width)
+      let pixelsPerPointY =
+        Double(videoHeightPx) / Double(initialBounds.height)
+      print("[CursorTransform] window branch INITIALISED — "
+        + "windowID=\(windowID) "
+        + "initialBounds=\(initialBounds) "
+        + "primaryHeight=\(primaryScreenHeightPts) "
+        + "ppp=(\(pixelsPerPointX), \(pixelsPerPointY))")
+      // Throttle per-sample logs so we don't flood the console at
+      // 60 Hz — log only the first ~30 samples (≈0.5 s of recording).
+      let sampleCounter = SampleCounter()
+      return { gx, gy in
+        // Live-fetch the window's current bounds. If the window
+        // disappeared (closed mid-recording), fall back to the last
+        // known origin — better than crashing, and the recording will
+        // stop shortly anyway.
+        let liveBounds =
+          Self.fetchWindowBoundsPts(windowID: windowID) ?? initialBounds
+        let mapped = CursorCoordinateMapper.mapForWindow(
+          cursorGlobalX: gx,
+          cursorGlobalY: gy,
+          windowQuartzX: Double(liveBounds.origin.x),
+          windowQuartzY: Double(liveBounds.origin.y),
+          primaryScreenHeightPts: primaryScreenHeightPts,
+          pixelsPerPointX: pixelsPerPointX,
+          pixelsPerPointY: pixelsPerPointY)
+        let n = sampleCounter.bump()
+        if n <= 30 {
+          print("[CursorTransform] #\(n) "
+            + "global=(\(gx), \(gy)) "
+            + "winQuartz=(\(liveBounds.origin.x), \(liveBounds.origin.y)) "
+            + "winSize=(\(liveBounds.size.width), \(liveBounds.size.height)) "
+            + "→ px=(\(mapped.x), \(mapped.y))")
+        }
+        return mapped
+      }
+    }
+    print("[CursorTransform] no branch matched — "
+      + "cursor will be in raw global coords")
+    return nil
+  }
+
+  /// Thread-safe counter so the diagnostic log inside the cursor
+  /// transform closure (called on the main thread from the cursor
+  /// timer) can throttle itself to a finite number of samples.
+  private final class SampleCounter {
+    private var n = 0
+    func bump() -> Int {
+      n += 1
+      return n
+    }
+  }
+
+  /// Extract every stock `NSCursor` we render as a PNG + hot-spot
+  /// and ship to Dart. The renderer caches these `ui.Image`s and
+  /// blits them directly instead of approximating each cursor with a
+  /// hand-coded polygon — pixel-identical to what macOS draws, scales
+  /// cleanly via `Canvas.drawImageRect`. Called once at app start.
+  ///
+  /// Wire format: `{ stateName: { png: Uint8List, hotX: Double,
+  /// hotY: Double, width: Int, height: Int } }`. State names match
+  /// `CursorState.wireName` on the Dart side; missing entries fall
+  /// back to the polygon path.
+  private func getStockCursorImages(result: @escaping FlutterResult) {
+    var entries: [(String, NSCursor)] = [
+      ("arrow", .arrow),
+      ("iBeam", .iBeam),
+      ("pointingHand", .pointingHand),
+      ("crosshair", .crosshair),
+      ("resizeNS", .resizeUpDown),
+      ("resizeEW", .resizeLeftRight),
+      ("openHand", .openHand),
+      ("closedHand", .closedHand),
+      ("notAllowed", .operationNotAllowed),
+    ]
+    // Diagonal resize cursors come from private NSCursor selectors —
+    // see CursorTracker.privateResizeCursor for the rationale. We
+    // gate them behind responds(to:) so a future macOS that removes
+    // the selectors silently falls back to the polygon glyph.
+    if let nesw = CursorTracker.privateResizeCursor(
+      selector: "_windowResizeNorthEastSouthWestCursor")
+    {
+      entries.append(("resizeNESW", nesw))
+    }
+    if let nwse = CursorTracker.privateResizeCursor(
+      selector: "_windowResizeNorthWestSouthEastCursor")
+    {
+      entries.append(("resizeNWSE", nwse))
+    }
+    var payload: [String: [String: Any]] = [:]
+    for (name, cursor) in entries {
+      let image = cursor.image
+      let hotSpot = cursor.hotSpot
+      // NSImage carries multiple bitmap representations (1x and 2x
+      // on Retina). We pick the largest pixel-dimension one so the
+      // rendered cursor stays crisp when the user dials up the
+      // cursor-size slider.
+      let bestRep: NSImageRep? = image.representations
+        .compactMap { $0 as? NSBitmapImageRep }
+        .max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh })
+        ?? image.representations.first
+      // Convert to PNG bytes via NSBitmapImageRep — works for both
+      // bitmap reps and vector reps (rasterized at the size we ask).
+      var pngData: Data?
+      var pixelWidth = Int(image.size.width)
+      var pixelHeight = Int(image.size.height)
+      if let bitmap = bestRep as? NSBitmapImageRep {
+        pngData = bitmap.representation(using: .png, properties: [:])
+        pixelWidth = bitmap.pixelsWide
+        pixelHeight = bitmap.pixelsHigh
+      } else if let cg = image.cgImage(
+        forProposedRect: nil, context: nil, hints: nil)
+      {
+        let bitmap = NSBitmapImageRep(cgImage: cg)
+        pngData = bitmap.representation(using: .png, properties: [:])
+        pixelWidth = bitmap.pixelsWide
+        pixelHeight = bitmap.pixelsHigh
+      }
+      guard let png = pngData else { continue }
+      payload[name] = [
+        "png": FlutterStandardTypedData(bytes: png),
+        // Hot-spot is in NSImage points; the renderer scales it
+        // alongside the cursor diameter so the click point stays
+        // aligned to the user's cursor position regardless of size.
+        "hotX": Double(hotSpot.x),
+        "hotY": Double(hotSpot.y),
+        "imageWidth": Double(image.size.width),
+        "imageHeight": Double(image.size.height),
+        "pixelWidth": pixelWidth,
+        "pixelHeight": pixelHeight,
+      ]
+    }
+    result(payload)
+  }
+
+  /// Synchronous lookup of a window's bounds (Quartz coordinates,
+  /// points). Cheap — `CGWindowListCopyWindowInfo` with a single
+  /// window ID hits the WindowServer with the smallest possible query.
+  /// Called on every cursor sample (60 Hz) to track windows that the
+  /// user is dragging during recording.
+  ///
+  /// `.optionIncludingWindow` is meant to be used *alone* — combining
+  /// it with `.optionOnScreenOnly` turns the meaning into
+  /// "this-window OR on-screen", and `list.first` then returns some
+  /// unrelated on-screen window. We still walk the list and match by
+  /// `kCGWindowNumber` defensively in case the option-flag semantics
+  /// shift in a future macOS.
+  ///
+  /// `kCGWindowBounds` values bridge to NSNumber of varying numeric
+  /// kinds — sometimes Int, sometimes Double — so cast through
+  /// `NSDictionary` + `CGRect(dictionaryRepresentation:)` rather than
+  /// fishing out individual `CGFloat`s.
+  private static func fetchWindowBoundsPts(windowID: CGWindowID) -> CGRect? {
+    guard let list = CGWindowListCopyWindowInfo(
+      .optionIncludingWindow, windowID) as? [[String: Any]]
+    else { return nil }
+    for info in list {
+      let id = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value
+      guard id == windowID else { continue }
+      guard let boundsAny = info[kCGWindowBounds as String],
+            let boundsDict = boundsAny as? NSDictionary,
+            let rect = CGRect(dictionaryRepresentation: boundsDict)
+      else { continue }
+      return rect
+    }
     return nil
   }
 
@@ -737,11 +1031,45 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         let lists = try await SourceCatalog.listSources(strictFilter: strict)
         result(["windows": lists.windows, "screens": lists.screens])
       } catch {
-        result(FlutterError(code: "DISCOVERY_FAILED",
-                            message: "listSources failed: \(error.localizedDescription)",
-                            details: nil))
+        result(Self.classifyListSourcesError(error))
       }
     }
+  }
+
+  /// Map a `SCShareableContent` failure to a stable `FlutterError` code.
+  ///
+  /// `SCShareableContent` throws when the user has not granted the
+  /// Screen Recording (TCC) entitlement. Apple's error wording — and
+  /// even its localised description — drifts across OS versions ("The
+  /// user declined TCCs..." on Sequoia, "Screen recording permission
+  /// denied..." on Sonoma, etc.), so the Dart side cannot reliably
+  /// substring-match on the message. Instead we surface a fixed
+  /// `PERMISSION_DENIED` code here and leave the freeform message in
+  /// place for diagnostics.
+  ///
+  /// We detect TCC denial in two ways:
+  ///   1. NSError domain that mentions ScreenCaptureKit — covers
+  ///      `SCStreamErrorDomain` and any future near-equivalents.
+  ///   2. A `tcc` / `declined` / `permission` keyword in the localised
+  ///      description — belt-and-suspenders in case Apple ever throws
+  ///      a domain-less error.
+  private static func classifyListSourcesError(_ error: Error) -> FlutterError {
+    let ns = error as NSError
+    let domain = ns.domain
+    let desc = ns.localizedDescription.lowercased()
+    let looksLikeTcc =
+        domain.contains("ScreenCaptureKit") ||
+        desc.contains("tcc") ||
+        desc.contains("declined") ||
+        desc.contains("permission")
+    if looksLikeTcc {
+      return FlutterError(code: "PERMISSION_DENIED",
+                          message: ns.localizedDescription,
+                          details: nil)
+    }
+    return FlutterError(code: "DISCOVERY_FAILED",
+                        message: "listSources failed: \(ns.localizedDescription)",
+                        details: nil)
   }
 
   private func captureThumbnail(call: FlutterMethodCall, result: @escaping FlutterResult) {

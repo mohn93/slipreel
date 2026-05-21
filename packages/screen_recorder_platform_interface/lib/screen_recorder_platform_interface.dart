@@ -17,3 +17,4 @@ export 'src/models/screen_info.dart';
 export 'src/models/source_list.dart';
 export 'src/models/window_info.dart';
 export 'src/models/region_selection.dart';
+export 'src/models/stock_cursor_image.dart';

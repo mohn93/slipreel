@@ -126,8 +126,7 @@ void main() {
       expect(rgba[i + 3], 0xFF, reason: 'A');
     });
 
-    test(
-        'compose with a "None"-frame zoom region centers the focal at '
+    test('compose with a "None"-frame zoom region centers the focal at '
         'totalSize.center', () async {
       // Zoom 2× pinned to the right half of the video. With a None
       // frame totalSize == videoSize, so the focal in the zoomed
@@ -179,109 +178,118 @@ void main() {
       const cx = 320 ~/ 2;
       const cy = 240 ~/ 2;
       final i = (cy * 320 + cx) * 4;
-      expect(rgba[i + 0], greaterThan(rgba[i + 2]),
-          reason: 'R should dominate B at the focal center');
+      expect(
+        rgba[i + 0],
+        greaterThan(rgba[i + 2]),
+        reason: 'R should dominate B at the focal center',
+      );
     });
 
-    test('compose with motionBlur=1 still returns RGBA bytes sized to totalSize', () async {
-      // Smoke test for the screen-blur saveLayer + ImageFilter wrap.
-      // We don't pixel-assert the blur (that's covered by the
-      // helper unit tests) — we just confirm the wrapped path
-      // produces a buffer of the right length and doesn't throw.
-      final compositor = FrameCompositor(
-        projectState: EditorProjectState.defaults().copyForTest(
-          motionBlur: 1.0,
-          windowFrame: const WindowFrame(
-            name: 'None',
-            padding: EdgeInsets.zero,
-            cornerRadius: 0,
-            shadowBlur: 0,
-            shadowOffset: Offset.zero,
-            shadowColor: Color(0x00000000),
-            borderWidth: 0,
+    test(
+      'compose with motionBlur=1 still returns RGBA bytes sized to totalSize',
+      () async {
+        // Smoke test for the screen-blur saveLayer + ImageFilter wrap.
+        // We don't pixel-assert the blur (that's covered by the
+        // helper unit tests) — we just confirm the wrapped path
+        // produces a buffer of the right length and doesn't throw.
+        final compositor = FrameCompositor(
+          projectState: EditorProjectState.defaults().copyForTest(
+            motionBlur: 1.0,
+            windowFrame: const WindowFrame(
+              name: 'None',
+              padding: EdgeInsets.zero,
+              cornerRadius: 0,
+              shadowBlur: 0,
+              shadowOffset: Offset.zero,
+              shadowColor: Color(0x00000000),
+              borderWidth: 0,
+            ),
           ),
-        ),
-        cursorRecording: CursorRecording(),
-        metadata: _meta(),
-        videoSize: const Size(8, 4),
-        fps: 30,
-      );
+          cursorRecording: CursorRecording(),
+          metadata: _meta(),
+          videoSize: const Size(8, 4),
+          fps: 30,
+        );
 
-      final magenta = _solidBgra(8, 4, 0xFF, 0x00, 0xFF);
-      // First frame seeds the velocity tracker (zero velocity → no
-      // ImageFilter wrap). Second frame at non-zero position would
-      // see zero translation (no zoom in this fixture) → still no
-      // wrap. Either way: no crash, buffer of expected length.
-      final rgba0 = await compositor.compose(
-        videoFrameBgra: magenta,
-        position: Duration.zero,
-      );
-      final rgba1 = await compositor.compose(
-        videoFrameBgra: magenta,
-        position: const Duration(milliseconds: 33),
-      );
-      expect(rgba0.length, 8 * 4 * 4);
-      expect(rgba1.length, 8 * 4 * 4);
-    });
+        final magenta = _solidBgra(8, 4, 0xFF, 0x00, 0xFF);
+        // First frame seeds the velocity tracker (zero velocity → no
+        // ImageFilter wrap). Second frame at non-zero position would
+        // see zero translation (no zoom in this fixture) → still no
+        // wrap. Either way: no crash, buffer of expected length.
+        final rgba0 = await compositor.compose(
+          videoFrameBgra: magenta,
+          position: Duration.zero,
+        );
+        final rgba1 = await compositor.compose(
+          videoFrameBgra: magenta,
+          position: const Duration(milliseconds: 33),
+        );
+        expect(rgba0.length, 8 * 4 * 4);
+        expect(rgba1.length, 8 * 4 * 4);
+      },
+    );
 
-    test('compose with motionBlur=1 and a zooming pan produces a valid buffer', () async {
-      // Drives the saveLayer + ImageFilter branch by giving the
-      // compositor a zoom region whose focal pans across consecutive
-      // frames — that produces a non-zero translation velocity, which
-      // lights up screenBlurSigma. Test asserts the wrapped path
-      // doesn't throw and produces a buffer of the right length.
-      final zoom = ZoomRegion(
-        rect: const Rect.fromLTWH(160, 120, 80, 60),
-        startTime: Duration.zero,
-        duration: const Duration(milliseconds: 500),
-        zoomLevel: 2.0,
-      );
-      final compositor = FrameCompositor(
-        projectState: EditorProjectState.defaults().copyForTest(
-          motionBlur: 1.0,
-          zoomRegions: [zoom],
-          windowFrame: const WindowFrame(
-            name: 'None',
-            padding: EdgeInsets.zero,
-            cornerRadius: 0,
-            shadowBlur: 0,
-            shadowOffset: Offset.zero,
-            shadowColor: Color(0x00000000),
-            borderWidth: 0,
+    test(
+      'compose with motionBlur=1 and a zooming pan produces a valid buffer',
+      () async {
+        // Drives the saveLayer + ImageFilter branch by giving the
+        // compositor a zoom region whose focal pans across consecutive
+        // frames — that produces a non-zero translation velocity, which
+        // lights up screenBlurSigma. Test asserts the wrapped path
+        // doesn't throw and produces a buffer of the right length.
+        final zoom = ZoomRegion(
+          rect: const Rect.fromLTWH(160, 120, 80, 60),
+          startTime: Duration.zero,
+          duration: const Duration(milliseconds: 500),
+          zoomLevel: 2.0,
+        );
+        final compositor = FrameCompositor(
+          projectState: EditorProjectState.defaults().copyForTest(
+            motionBlur: 1.0,
+            zoomRegions: [zoom],
+            windowFrame: const WindowFrame(
+              name: 'None',
+              padding: EdgeInsets.zero,
+              cornerRadius: 0,
+              shadowBlur: 0,
+              shadowOffset: Offset.zero,
+              shadowColor: Color(0x00000000),
+              borderWidth: 0,
+            ),
           ),
-        ),
-        cursorRecording: CursorRecording(),
-        metadata: _meta(),
-        videoSize: const Size(320, 240),
-        fps: 30,
-      );
+          cursorRecording: CursorRecording(),
+          metadata: _meta(),
+          videoSize: const Size(320, 240),
+          fps: 30,
+        );
 
-      final magenta = _solidBgra(320, 240, 0xFF, 0x00, 0xFF);
-      // First frame seeds the velocity tracker (zero velocity).
-      final r0 = await compositor.compose(
-        videoFrameBgra: magenta,
-        position: const Duration(milliseconds: 100),
-      );
-      // Second frame: by milliseconds 200, the zoom is mid-ramp so the
-      // translation has changed between the two calls — velocity is
-      // non-zero, screenBlurSigma is non-zero, and saveLayer fires.
-      final r1 = await compositor.compose(
-        videoFrameBgra: magenta,
-        position: const Duration(milliseconds: 200),
-      );
-      expect(r0.length, 320 * 240 * 4);
-      expect(r1.length, 320 * 240 * 4);
-    });
+        final magenta = _solidBgra(320, 240, 0xFF, 0x00, 0xFF);
+        // First frame seeds the velocity tracker (zero velocity).
+        final r0 = await compositor.compose(
+          videoFrameBgra: magenta,
+          position: const Duration(milliseconds: 100),
+        );
+        // Second frame: by milliseconds 200, the zoom is mid-ramp so the
+        // translation has changed between the two calls — velocity is
+        // non-zero, screenBlurSigma is non-zero, and saveLayer fires.
+        final r1 = await compositor.compose(
+          videoFrameBgra: magenta,
+          position: const Duration(milliseconds: 200),
+        );
+        expect(r0.length, 320 * 240 * 4);
+        expect(r1.length, 320 * 240 * 4);
+      },
+    );
   });
 }
 
 RecordingMetadata _meta() => RecordingMetadata(
-      isPureSource: true,
-      recordedAt: DateTime.now(),
-      widthPx: 320,
-      heightPx: 240,
-      fps: 30,
-    );
+  isPureSource: true,
+  recordedAt: DateTime.now(),
+  widthPx: 320,
+  heightPx: 240,
+  fps: 30,
+);
 
 Uint8List _solidBgra(int w, int h, int b, int g, int r, [int a = 0xFF]) {
   final px = w * h;
@@ -334,7 +342,12 @@ extension on EditorProjectState {
       cursorClickEffect: cursorClickEffect,
       hideCursorOverlay: hideCursorOverlay,
       motionBlur: motionBlur ?? this.motionBlur,
+      cursorMovementBlur: cursorMovementBlur,
+      screenMovementBlur: screenMovementBlur,
+      screenZoomBlur: screenZoomBlur,
       cursorShadow: cursorShadow,
+      clickSpring: clickSpring,
+      cursorDelay: cursorDelay,
       windowFrame: windowFrame ?? this.windowFrame,
     );
   }

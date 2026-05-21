@@ -1,5 +1,9 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+
+import 'cursor_image_cache.dart';
 
 /// Glyph rendering for non-arrow cursor states (I-beam, pointing hand,
 /// resize variants, etc.).
@@ -30,6 +34,15 @@ void paintStateGlyph(
   required Offset position,
   required double diameter,
 }) {
+  // Prefer the OS-accurate bitmap if [CursorImageCache.load] has
+  // populated one for this state. Falls through to the hand-coded
+  // polygon path only when the cache is empty (still loading, or
+  // the host platform doesn't expose its cursor bitmaps).
+  final cached = CursorImageCache.imageFor(state);
+  if (cached != null) {
+    _paintStockCursorImage(canvas, position, diameter, cached);
+    return;
+  }
   switch (state) {
     case CursorState.iBeam:
       _paintGlyph(canvas, position, diameter, _kIBeam);
@@ -85,6 +98,39 @@ class _GlyphSpec {
     required this.designHeight,
     this.haloFraction = 0.10,
   });
+}
+
+/// Blits a `CachedCursorImage` so the cursor's hot-spot aligns with
+/// [position] and the bitmap's height equals [diameter]. Uses
+/// `FilterQuality.medium` so down-scaled cursors stay crisp without
+/// the muddiness of `low` or the overhead of `high`.
+void _paintStockCursorImage(
+  Canvas canvas,
+  Offset position,
+  double diameter,
+  CachedCursorImage cached,
+) {
+  // Match the polygon path's reference axis: scale so the image's
+  // logical height equals the user's chosen cursor diameter.
+  final scale = diameter / cached.imageHeight;
+  final destWidth = cached.imageWidth * scale;
+  final destHeight = cached.imageHeight * scale;
+  // Anchor the destination rect so (hotSpot × scale) lands on
+  // `position` — the recorded cursor coordinate is the click point,
+  // and that's where the cursor's hot-spot should sit.
+  final dstLeft = position.dx - cached.hotSpotX * scale;
+  final dstTop = position.dy - cached.hotSpotY * scale;
+  canvas.drawImageRect(
+    cached.image,
+    Rect.fromLTWH(
+      0,
+      0,
+      cached.image.width.toDouble(),
+      cached.image.height.toDouble(),
+    ),
+    Rect.fromLTWH(dstLeft, dstTop, destWidth, destHeight),
+    Paint()..filterQuality = ui.FilterQuality.medium,
+  );
 }
 
 void _paintGlyph(Canvas canvas, Offset position, double diameter, _GlyphSpec spec) {

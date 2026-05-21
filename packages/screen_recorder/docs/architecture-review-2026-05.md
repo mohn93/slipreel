@@ -1,0 +1,170 @@
+# Architecture Review — 2026-05
+
+Multi-agent sweep covering: zoom/cursor motion pipeline, rendering pipeline,
+export pipeline, state management, UI layer, and top-level package
+architecture. Findings consolidated below; checkboxes track ongoing fixes.
+
+---
+
+## Cross-cutting themes
+
+### 1. Duplicate "render the scene" pipelines — **critical**
+
+Live preview (`PlaybackCanvas.build`) and export (`FrameCompositor.compose`)
+are parallel implementations of the same scene-state plumbing. They have
+already silently drifted:
+
+- Export omits `cursorVelocity` → bounded gate releases too early →
+  export camera path differs from preview (`frame_compositor.dart:148-153`).
+- Export uses legacy `CursorOverlayPainter`; preview uses
+  `AccumulationCursorPainter` → cursor blur is not WYSIWYG
+  (`frame_compositor.dart:532-549`).
+- Export omits `clickSpring` → press-pulse differs.
+- Zoom-level `TweenAnimationBuilder` is widget-only → mid-region zoom
+  tweens don't render in export.
+- `PlaybackCanvas._subFrameTransformAt` / `_approxSceneSampleAt`
+  (`playback_canvas.dart:954-1064`) re-implement focal math statelessly
+  — third copy of "where is the camera at t".
+
+### 2. God-objects — **critical**
+
+- `_PlaybackScreenState`: 1374 lines, ~25 mutable fields, **42 `setState`
+  calls**; every slider tick rebuilds the entire screen including the
+  PlaybackCanvas.
+- `MotionBlurPlaygroundScreen`: 1820 lines.
+- `InspectorPanel`: 30+ constructor params (prop-drill at maximum).
+- `screen_recorder` package: 105 Dart files mixing engine + shell.
+- `FrameCompositor.compose()`: 180-line monolith.
+- `_resolveTarget` mutates `_inFlight` (resolver with side effects).
+
+### 3. State architecture half-finished — **critical**
+
+- Recording uses Riverpod `StateNotifier` (clean).
+- Editor uses raw `setState` god-object.
+- `FrameSettingsProvider` uses `ChangeNotifier` per-screen.
+- `UndoRedoController` exists but **only tracks trim** — Cmd-Z silently
+  does nothing for zoom/animation/cursor edits. The undo UI is a lie.
+- `_ClipLocalState` (playback speed, fade) is inspector-local — silently
+  lost on rebuild.
+- No timeline / multi-track model — captions, audio, multi-clip cannot
+  be added without re-architecting.
+
+### 4. Three cursor painters with diverged logic — **major**
+
+`CursorRenderer` (export), `AccumulationCursorPainter` (preview blur),
+`CursorOverlayPainter` (preview shader + legacy export). Ripple,
+sprite baking, diameter math, coordinate mapping duplicated 3×.
+
+- **Export ripple anchored to current cursor, not click position**
+  (`cursor_renderer.dart:83-92`) — same bug already fixed in preview is
+  still shipping in MP4 exports.
+- **Accumulation press-pulse lost on cached sprites** — sprite cache key
+  omits `microsSinceClick` (`accumulation_cursor_painter.dart:402-446`).
+- `CursorOverlayPainter` re-bakes the sprite via `toImageSync` every
+  frame on the motion-blur branch (`:249-276`).
+
+### 5. Layer violation: export ↔ UI — **major**
+
+`lib/export/frame_compositor.dart:20-22` imports
+`ui/widgets/cursor_overlay_painter.dart` + `ui/widgets/zoom/*`. The
+headless render pipeline depends on the widget tree. Blocks any future
+headless CLI exporter, cloud worker, or engine extraction.
+
+### 6. Performance hotpaths — **major**
+
+- `mostRecentClickEvent` / `microsSinceRelease` walk the entire cursor
+  recording every frame, per painter (`cursor_click_effect.dart:52-107`).
+  O(N) × 3 painters × 60fps.
+- `shouldRepaint` compares closures (`focalAt`, `scaleAt`) by identity →
+  permanently true on every parent rebuild
+  (`accumulation_cursor_painter.dart:82-84, 384-385`).
+- `compose()` does 3× `PictureRecorder → toImage` per frame even when
+  no scene blur is active.
+
+### 7. Tuning buried — **major**
+
+16+ hand-tuned magic numbers scattered across 4 files. Designer
+iteration loop is "edit Dart → recompile → relaunch" for every tweak.
+No JSON / preset profiles.
+
+---
+
+## Concrete bugs (verified by reviewers)
+
+| # | Bug | File:line | Severity |
+|---|---|---|---|
+| 1 | Export ripple anchored to current cursor not click pos | `cursor_renderer.dart:83-92` | High — ships in MP4 |
+| 2 | Export bounded-mode gate releases early (`cursorVelocity = 0`) | `frame_compositor.dart:148-153` | High — silent path divergence |
+| 3 | Export uses legacy `CursorOverlayPainter` not `AccumulationCursorPainter` | `frame_compositor.dart:532-549` | High — WYSIWYG break |
+| 4 | Accumulation press-pulse lost on cached sprites | `accumulation_cursor_painter.dart:402-446` | High |
+| 5 | Undo only covers trim; zoom/anim/cursor edits silently ignored | `playback_screen.dart:70,158,233` | High — broken UI affordance |
+| 6 | `_ClipLocalState` (speed/fade) never persists | `inspector_panel.dart:182,408-412` | Medium — silent data loss |
+| 7 | Deadzone centered on lagging `currentFocal` not target → slow-cursor flap | `zoom_focal_controller.dart:484-489` | Medium |
+| 8 | Hold detection by `Offset` equality → fp residual flips damping mid-frame | `zoom_focal_controller.dart:359` | Medium |
+| 9 | `shouldRepaint` permanently true from lambda identity | `accumulation_cursor_painter.dart:82-84` | Medium |
+| 10 | Scrub threshold mismatch: canvas 100 ms vs focal 200 ms | `playback_canvas.dart:367-375` vs `zoom_focal_controller.dart:93` | Low |
+
+---
+
+## Product / scalability risks
+
+- **FFmpeg shelled out, not bundled** — every shipped build needs
+  OS-specific binaries + correct licensing (pubspec.yaml has a TODO).
+- **No auth/licensing, no crash reporting, no telemetry sink** —
+  Sentry/Crashlytics/etc. all absent.
+- **Windows/Linux platform packages exist but aren't wired** — only
+  macOS is in `pubspec.yaml`, despite CI claiming to test all three
+  on Flutter 3.16.0 (ancient).
+- **No schema migration switchboard** — `EditorProjectState.fromJson`
+  has a "throw if newer" guard and field-level defaults, no
+  `_v1to2`/`_v2to3` chain. First rename breaks loads.
+- **Stock `flutter_lints`, no import-boundary enforcement** — nothing
+  prevents the export-imports-ui leak from recurring.
+- **No timeline container** — `EditorProjectState` is a flat
+  single-clip bag. Captions, audio tracks, multi-clip all blocked.
+
+---
+
+## Refactor roadmap
+
+P0 = retires the largest class of bugs / unblocks future surfaces.
+P1 = high-leverage but narrower. P2 = scaffolding for product growth.
+
+### P0 — fixes recurring preview/export drift class of bugs
+
+- [ ] **P0-1 — Unified scene builder** (Task #239)
+  Extract `ScenePassBuilder.buildFrame(t) → (motion, cursor, focal,
+  sceneSignal, cursorVelocity, activeZoom)` consumed by both
+  `PlaybackCanvas` and `FrameCompositor`. Kills bugs #1–#3 in one pass.
+
+- [ ] **P0-2 — Editor state to Riverpod Notifier** (Task #240)
+  Drain 25 fields out of `_PlaybackScreenState`, drop the 30-param
+  InspectorPanel, fix per-tick whole-screen rebuilds, give undo/redo
+  a real subject.
+
+- [ ] **P0-3 — Extract `slipreel_engine` package** (Task #241)
+  Move `models/`, `rendering/`, `effects/`, `export/` into a sibling
+  package with zero Flutter UI imports. Invert
+  `frame_compositor.dart:20-22` dependency. Add import-boundary lint.
+
+### P1
+
+- [ ] **P1-4 — Unified `paintCursor()` entry point** (Task #242)
+- [ ] **P1-5 — `FollowStrategy` interface** (Task #243)
+- [ ] **P1-6 — Cached cursor event lookups** (Task #244)
+- [ ] **P1-7 — State-shaped undo/redo** (Task #245, blocked by P0-2)
+
+### P2
+
+- [ ] **P2-8 — Centralized tuning JSON + presets** (Task #246)
+- [ ] **P2-9 — Schema migration switchboard** (Task #247)
+- [ ] **P2-10 — Timeline container for multi-track** (Task #248)
+
+---
+
+## Progress log
+
+(Append-only. Newest at top. Each entry: date — task ID — what changed
+— commit SHA(s).)
+
+- 2026-05-21 — review intake — created this doc + tasks #239–#248.

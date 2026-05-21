@@ -11,6 +11,7 @@ import 'models/recording_settings.dart';
 import 'models/region_selection.dart';
 import 'models/screen_info.dart';
 import 'models/source_list.dart';
+import 'models/stock_cursor_image.dart';
 import 'models/window_info.dart';
 
 /// The interface that platform-specific implementations must extend.
@@ -127,6 +128,22 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   Future<void> requestAccessibilityPermission() {
     throw UnimplementedError(
         'requestAccessibilityPermission() has not been implemented.');
+  }
+
+  /// Fetch every stock cursor image macOS ships, so the renderer can
+  /// blit the OS-accurate bitmap instead of hand-coded polygons.
+  ///
+  /// Returns a map keyed by [CursorState.wireName] (e.g. `"arrow"`,
+  /// `"pointingHand"`, `"iBeam"`, …) → `StockCursorImage`. The map
+  /// is empty on platforms that don't implement this yet — callers
+  /// should fall back to their own polygon rendering for missing
+  /// entries.
+  ///
+  /// Called once at app startup; the result is cached as `ui.Image`s
+  /// by the cursor renderer.
+  Future<Map<String, StockCursorImage>> getStockCursorImages() {
+    throw UnimplementedError(
+        'getStockCursorImages() has not been implemented.');
   }
 
   // Real-time data streams

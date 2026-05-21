@@ -65,6 +65,10 @@ dependencies:
   # Path manipulation — replaces inline _basename/_fileExtension helpers
   path: ^1.9.0
 
+  # Declarative, physics-first animations. Used for the CTA spinner that
+  # rotates inside the Export button while an export is running.
+  cue: ^0.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -96,6 +100,8 @@ flutter:
   assets:
     - assets/cursors/default_cursor.png
     - assets/cursors/click_cursor.png
+    - assets/wallpapers/macos/
+    - assets/wallpapers/spring/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

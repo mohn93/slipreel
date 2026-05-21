@@ -36,7 +36,12 @@ enum FollowMode {
 class ZoomRegion {
   static const Duration _defaultEnter = Duration(milliseconds: 500);
   static const Duration _defaultExit = Duration(milliseconds: 500);
-  static const Duration _defaultFollow = Duration(milliseconds: 400);
+  // Catch-up tween duration. 400 ms was the original value; bumped to
+  // 700 ms because the shorter duration peaked the focal velocity in
+  // the middle of a tween (~2× average) high enough that fast cursor
+  // flicks read as a camera jolt. 700 ms keeps the camera responsive
+  // without amplifying the cursor's velocity into a visible jump.
+  static const Duration _defaultFollow = Duration(milliseconds: 700);
   static const Duration _defaultPredictiveWindow =
       Duration(milliseconds: 1500);
 
@@ -73,14 +78,13 @@ class ZoomRegion {
   /// responsive.
   final Duration predictiveWindow;
 
-  /// How long the focal takes to catch up to a new target (cursor
-  /// after a deadzone exit, or rect.center when [followCursor] is
-  /// toggled off). Zero or negative ⇒ snap.
+  /// How long the focal takes to catch up to a new target.
+  ///
+  /// Interpreted by [ZoomFocalController] as the critically-damped
+  /// spring's *settle time*: the camera is ≈95% of the way to a new
+  /// target after one [followDuration], fully arrived after ≈3×.
+  /// Zero or negative ⇒ snap.
   final Duration followDuration;
-
-  /// Optional curve shaping the catch-up tween. `null` ⇒ the system
-  /// default (`Curves.easeOutCubic`).
-  final CubicBezierCurve? followCurve;
 
   ZoomRegion({
     required Rect rect,
@@ -93,9 +97,8 @@ class ZoomRegion {
     this.rampCurveOverride,
     this.followCursor = true,
     this.followMode = FollowMode.bounded,
-    double deadzoneRatio = 0.3,
+    double deadzoneRatio = 0.8,
     Duration? followDuration,
-    this.followCurve,
     Duration? predictiveWindow,
   })  : assert(duration > Duration.zero, 'Duration must be positive'),
         rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
@@ -108,7 +111,7 @@ class ZoomRegion {
             (exitDuration ?? _defaultExit).isNegative
                 ? Duration.zero
                 : (exitDuration ?? _defaultExit),
-        deadzoneRatio = deadzoneRatio.clamp(0.0, 1.0),
+        deadzoneRatio = deadzoneRatio.clamp(0.0, 1.5),
         followDuration = (followDuration ?? _defaultFollow).isNegative
             ? Duration.zero
             : (followDuration ?? _defaultFollow),
@@ -154,8 +157,6 @@ class ZoomRegion {
     FollowMode? followMode,
     double? deadzoneRatio,
     Duration? followDuration,
-    CubicBezierCurve? followCurve,
-    bool clearFollowCurve = false,
     Duration? predictiveWindow,
   }) {
     return ZoomRegion(
@@ -173,8 +174,6 @@ class ZoomRegion {
       followMode: followMode ?? this.followMode,
       deadzoneRatio: deadzoneRatio ?? this.deadzoneRatio,
       followDuration: followDuration ?? this.followDuration,
-      followCurve:
-          clearFollowCurve ? null : (followCurve ?? this.followCurve),
       predictiveWindow: predictiveWindow ?? this.predictiveWindow,
     );
   }
@@ -198,7 +197,6 @@ class ZoomRegion {
       'followMode': followMode.name,
       'deadzoneRatio': deadzoneRatio,
       'followDurationMicros': followDuration.inMicroseconds,
-      if (followCurve != null) 'followCurve': followCurve!.toJson(),
       'predictiveWindowMicros': predictiveWindow.inMicroseconds,
     };
   }
@@ -243,7 +241,7 @@ class ZoomRegion {
       final c = AnimationCurve.fromJson(j);
       if (c is! CubicBezierCurve) {
         throw const FormatException(
-            'ZoomRegion.fromJson: curve override must be a bezier');
+            'ZoomRegion.fromJson: ramp curve override must be a bezier');
       }
       return c;
     }
@@ -259,10 +257,8 @@ class ZoomRegion {
           json['rampCurveOverride'] as Map<String, dynamic>?),
       followCursor: (json['followCursor'] as bool?) ?? true,
       followMode: mode,
-      deadzoneRatio: (json['deadzoneRatio'] as num?)?.toDouble() ?? 0.3,
+      deadzoneRatio: (json['deadzoneRatio'] as num?)?.toDouble() ?? 0.8,
       followDuration: optMicros('followDurationMicros'),
-      followCurve:
-          parseBezier(json['followCurve'] as Map<String, dynamic>?),
       predictiveWindow: optMicros('predictiveWindowMicros'),
     );
   }
@@ -292,7 +288,6 @@ class ZoomRegion {
           followMode == other.followMode &&
           deadzoneRatio == other.deadzoneRatio &&
           followDuration == other.followDuration &&
-          followCurve == other.followCurve &&
           predictiveWindow == other.predictiveWindow;
 
   @override
@@ -308,7 +303,6 @@ class ZoomRegion {
         followMode,
         deadzoneRatio,
         followDuration,
-        followCurve,
         predictiveWindow,
       );
 }

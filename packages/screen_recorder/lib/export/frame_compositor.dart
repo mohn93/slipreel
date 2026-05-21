@@ -3,8 +3,11 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:screen_recorder/effects/ema_velocity_filter.dart';
+import 'package:screen_recorder/effects/motion_blur_tuning.dart';
+import 'package:screen_recorder/effects/scene_motion_blur.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
@@ -35,18 +38,20 @@ class FrameCompositor {
     required this.metadata,
     required this.videoSize,
     required this.fps,
-  })  : _framePainter = FramePainter(
-          frame: projectState.windowFrame,
-          videoSize: videoSize,
-        ),
-        totalSize = _evenSize(FramePainter.calculateTotalSize(
-          frame: projectState.windowFrame,
-          videoSize: videoSize,
-        )),
-        _effectivePadding = FramePainter.effectivePadding(
-          projectState.windowFrame.padding,
-          videoSize,
-        );
+  }) : _framePainter = FramePainter(
+         frame: projectState.windowFrame,
+         videoSize: videoSize,
+       ),
+       totalSize = _evenSize(
+         FramePainter.calculateTotalSize(
+           frame: projectState.windowFrame,
+           videoSize: videoSize,
+         ),
+       ),
+       _effectivePadding = FramePainter.effectivePadding(
+         projectState.windowFrame.padding,
+         videoSize,
+       );
 
   final EditorProjectState projectState;
   final CursorRecording cursorRecording;
@@ -70,9 +75,25 @@ class FrameCompositor {
 
   final ZoomFocalController _focalController = ZoomFocalController();
   final CursorMotionController _motionController = CursorMotionController();
+  final ZoomTransformer _zoomTransformer = ZoomTransformer();
+  final SceneMotionBlurController _sceneMotionBlurController =
+      SceneMotionBlurController();
   // Mirrors the preview's EmaVelocityFilter so the export's blur
   // smoothing matches what the user saw in the editor (WYSIWYG).
   final EmaVelocityFilter _blurVelocityFilter = EmaVelocityFilter();
+  ui.FragmentProgram? _sceneBlurProgram;
+  // The wallpaper is rendered once per export and reused for every
+  // composited frame, since the wallpaper inputs (category/index/blur/
+  // totalSize) don't change between calls to [compose]. Doing this
+  // saves ~one image rasterization per frame.
+  ui.Image? _cachedWallpaperImage;
+  String? _cachedWallpaperKey;
+
+  static const double _sceneBlurExposureMs = 16.0;
+  static const double _sceneBlurMaxTranslation = 60.0;
+  static const int _sceneBlurSampleCount = 48;
+  static const double _sceneBlurSpeedCurveExp = 1.0;
+  static const double _sceneBlurSpeedCurveRefPx = 10.0;
 
   WindowFrame get _frame => projectState.windowFrame;
 
@@ -107,6 +128,8 @@ class FrameCompositor {
               cursorRecording: cursorRecording,
               config: projectState.cursorAnimationConfig,
               fps: fps,
+              cursorDelay: projectState.cursorDelay,
+              postProcess: projectState.cursorPostProcess,
             )
           : null;
 
@@ -129,10 +152,6 @@ class FrameCompositor {
         videoSize: videoSize,
       );
 
-      final recorder = ui.PictureRecorder();
-      final canvas = ui.Canvas(recorder,
-          Rect.fromLTWH(0, 0, totalSize.width, totalSize.height));
-
       // Apply the zoom Transform around totalSize/2, matching the
       // preview's `Transform(alignment: Alignment.center, ...)`.
       // The matrix's translation is built against videoSize/2; the
@@ -141,19 +160,23 @@ class FrameCompositor {
       // `effPad.left - totalSize.width/2 = -videoSize.width/2`.
       Matrix4 zoomTransform = Matrix4.identity();
       if (focalUpdate != null) {
-        final ramp = focalUpdate.zoom.rampCurveOverride?.toFlutterCurve() ??
+        final ramp =
+            focalUpdate.zoom.rampCurveOverride?.toFlutterCurve() ??
             projectState.screenAnimationConfig.rampCurve;
-        zoomTransform = ZoomTransformer().getTransform(
+        zoomTransform = _zoomTransformer.getTransform(
           position: position,
           zoomRegion: focalUpdate.zoom,
           videoSize: videoSize,
           focalPoint: focalUpdate.focal,
           rampCurve: ramp,
         );
-        canvas.translate(totalSize.width / 2, totalSize.height / 2);
-        canvas.transform(zoomTransform.storage);
-        canvas.translate(-totalSize.width / 2, -totalSize.height / 2);
       }
+
+      final sceneSignal = _updateSceneMotionSignal(
+        position: position,
+        focal: focalUpdate?.focal ?? videoSize.center(Offset.zero),
+        scale: zoomTransform.storage[0],
+      );
 
       // Cursor motion blur reflects the cursor's INTRINSIC scene
       // velocity only — i.e., the actual mouse movement. Camera pan
@@ -162,75 +185,312 @@ class FrameCompositor {
       // the mouse is still). EMA-smooth so the trail's magnitude /
       // direction don't flap on per-frame velocity noise — same
       // filter the preview uses.
-      final rawCursorVelocity =
-          motion?.velocityPxPerSec ?? Offset.zero;
-      final combinedCursorVelocity =
-          _blurVelocityFilter.filter(rawCursorVelocity, position);
+      final rawCursorVelocity = motion?.velocityPxPerSec ?? Offset.zero;
+      final combinedCursorVelocity = _blurVelocityFilter.filter(
+        rawCursorVelocity,
+        position,
+      );
 
-      _paintWallpaper(canvas);
-      _framePainter.paint(canvas, totalSize);
-      _paintVideoFrame(canvas, videoImage);
+      // Render the FOREGROUND (frame chrome + video + cursor) with the
+      // zoom transform applied. The wallpaper is rendered separately
+      // below — it's "sticky" and never goes through the zoom Transform
+      // or the scene-blur shader, mirroring PlaybackCanvas's behaviour.
+      final fgRecorder = ui.PictureRecorder();
+      final fgCanvas = ui.Canvas(
+        fgRecorder,
+        Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+      );
+
+      if (focalUpdate != null) {
+        fgCanvas.translate(totalSize.width / 2, totalSize.height / 2);
+        fgCanvas.transform(zoomTransform.storage);
+        fgCanvas.translate(-totalSize.width / 2, -totalSize.height / 2);
+      }
+
+      _framePainter.paint(fgCanvas, totalSize);
+      _paintVideoFrame(fgCanvas, videoImage);
       if (motion != null && !projectState.hideCursorOverlay) {
+        final effectiveCursorBlur =
+            projectState.motionBlur * projectState.cursorMovementBlur;
         _paintCursor(
-          canvas,
+          fgCanvas,
           position: position,
           screenPos: motion.screenPos,
           velocity: combinedCursorVelocity,
-          intensity: projectState.motionBlur,
+          intensity: effectiveCursorBlur,
           state: motion.state,
         );
       }
 
-      final picture = recorder.endRecording();
+      final fgPicture = fgRecorder.endRecording();
       try {
-        final image = await picture.toImage(
+        final fgImage = await fgPicture.toImage(
           totalSize.width.toInt(),
           totalSize.height.toInt(),
         );
         try {
-          final byteData =
-              await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-          if (byteData == null) {
-            throw StateError('toByteData returned null at $position');
+          // Apply scene blur to the foreground ONLY. The wallpaper,
+          // being sticky, doesn't move and therefore shouldn't get
+          // streaked by the camera-motion smear.
+          final blurredFg = await _applySceneMotionBlur(fgImage, sceneSignal);
+          final fgToComposite = blurredFg ?? fgImage;
+          try {
+            final wallpaperImage = await _ensureWallpaperImage();
+            // No wallpaper: foreground IS the final image. Skip the
+            // composite step.
+            if (wallpaperImage == null) {
+              final byteData = await fgToComposite.toByteData(
+                format: ui.ImageByteFormat.rawRgba,
+              );
+              if (byteData == null) {
+                throw StateError('toByteData returned null at $position');
+              }
+              return Uint8List.fromList(byteData.buffer.asUint8List());
+            }
+            // Composite: sticky wallpaper underneath, (possibly blurred)
+            // foreground on top. The foreground's transparent padding
+            // region reveals the wallpaper around the framed video.
+            final composeRecorder = ui.PictureRecorder();
+            final composeCanvas = ui.Canvas(
+              composeRecorder,
+              Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+            );
+            composeCanvas.drawImage(wallpaperImage, Offset.zero, Paint());
+            composeCanvas.drawImage(fgToComposite, Offset.zero, Paint());
+            final composePicture = composeRecorder.endRecording();
+            try {
+              final finalImage = await composePicture.toImage(
+                totalSize.width.toInt(),
+                totalSize.height.toInt(),
+              );
+              try {
+                final byteData = await finalImage.toByteData(
+                  format: ui.ImageByteFormat.rawRgba,
+                );
+                if (byteData == null) {
+                  throw StateError('toByteData returned null at $position');
+                }
+                // Defensive copy — the underlying buffer is owned by
+                // the ui.Image and freed when we dispose it.
+                return Uint8List.fromList(byteData.buffer.asUint8List());
+              } finally {
+                finalImage.dispose();
+              }
+            } finally {
+              composePicture.dispose();
+            }
+          } finally {
+            if (blurredFg != null) blurredFg.dispose();
           }
-          // Defensive copy — the underlying buffer is owned by the
-          // ui.Image and freed when we dispose it.
-          return Uint8List.fromList(byteData.buffer.asUint8List());
         } finally {
-          image.dispose();
+          fgImage.dispose();
         }
       } finally {
-        picture.dispose();
+        fgPicture.dispose();
       }
     } finally {
       videoImage.dispose();
     }
   }
 
+  /// Lazily renders the wallpaper into a `ui.Image` and caches it,
+  /// keyed by the inputs that affect its appearance. Returns null when
+  /// the project has no wallpaper. All frames of one export hit the
+  /// cache after the first call, since wallpaperCategory/Index/blur and
+  /// totalSize don't change mid-export.
+  Future<ui.Image?> _ensureWallpaperImage() async {
+    final category = _frame.wallpaperCategory;
+    if (category == null) {
+      _cachedWallpaperImage?.dispose();
+      _cachedWallpaperImage = null;
+      _cachedWallpaperKey = null;
+      return null;
+    }
+
+    final key = '$category|${_frame.wallpaperIndex}|'
+        '${_frame.backgroundBlur}|'
+        '${totalSize.width.toInt()}x${totalSize.height.toInt()}';
+    final cached = _cachedWallpaperImage;
+    if (cached != null && _cachedWallpaperKey == key) return cached;
+
+    _cachedWallpaperImage?.dispose();
+    _cachedWallpaperImage = null;
+    _cachedWallpaperKey = key;
+
+    // Photo-based macOS wallpapers need the asset image preloaded as
+    // a ui.Image before we can paint to the recorder canvas. `BoxPainter`
+    // would otherwise kick off an async ImageStream that doesn't
+    // resolve in time for our synchronous paint, and the export would
+    // ship a blank wallpaper. Procedural categories (gradients / solid)
+    // paint synchronously and use the BoxPainter path.
+    final photo = await _loadWallpaperPhoto(category, _frame.wallpaperIndex);
+
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+    );
+    _paintWallpaper(canvas, photo: photo);
+    final picture = recorder.endRecording();
+    try {
+      final image = await picture.toImage(
+        totalSize.width.toInt(),
+        totalSize.height.toInt(),
+      );
+      _cachedWallpaperImage = image;
+      return image;
+    } finally {
+      picture.dispose();
+      photo?.dispose();
+    }
+  }
+
+  /// Loads the photo asset for [category]/[index] as a `ui.Image` if
+  /// the category is image-backed, or returns null for procedural
+  /// categories. Caller is responsible for disposing the returned
+  /// image.
+  Future<ui.Image?> _loadWallpaperPhoto(String category, int index) async {
+    final assetPath = photoWallpaperAsset(category, index);
+    if (assetPath == null) return null;
+    final data = await rootBundle.load(assetPath);
+    final codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: totalSize.width.toInt(),
+    );
+    final frame = await codec.getNextFrame();
+    return frame.image;
+  }
+
   // --- internals --------------------------------------------------------
 
-  void _paintWallpaper(Canvas canvas) {
+  SceneMotionBlurSignal _updateSceneMotionSignal({
+    required Duration position,
+    required Offset focal,
+    required double scale,
+  }) {
+    if (projectState.motionBlur <= 0 ||
+        projectState.zoomRegions.isEmpty ||
+        (projectState.screenMovementBlur <= 0 &&
+            projectState.screenZoomBlur <= 0)) {
+      _sceneMotionBlurController.reset();
+      return SceneMotionBlurSignal.zero;
+    }
+
+    final movementExposure = Duration(
+      microseconds:
+          (_sceneBlurExposureMs *
+                  projectState.motionBlur *
+                  projectState.screenMovementBlur *
+                  1000)
+              .round(),
+    );
+    final zoomExposure = Duration(
+      microseconds:
+          (_sceneBlurExposureMs *
+                  projectState.motionBlur *
+                  projectState.screenZoomBlur *
+                  1000)
+              .round(),
+    );
+    return _sceneMotionBlurController.update(
+      current: SceneCameraSample(
+        position: position,
+        focal: focal,
+        scale: scale,
+      ),
+      movementExposure: movementExposure,
+      zoomExposure: zoomExposure,
+      maxTranslation: _sceneBlurMaxTranslation,
+      smooth: true,
+    );
+  }
+
+  Future<ui.Image?> _applySceneMotionBlur(
+    ui.Image sceneImage,
+    SceneMotionBlurSignal signal,
+  ) async {
+    if (!signal.hasMotion || projectState.motionBlur <= 0) return null;
+
+    final program = _sceneBlurProgram ??=
+        await SceneMotionBlurShader.ensureLoaded();
+
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+    );
+    paintSceneMotionBlur(
+      canvas: canvas,
+      image: sceneImage,
+      program: program,
+      size: totalSize,
+      signal: signal,
+      sampleCount: _sceneBlurSampleCount,
+      speedCurveExp: _sceneBlurSpeedCurveExp,
+      speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
+      devicePixelRatio: 1.0,
+    );
+    final picture = recorder.endRecording();
+    try {
+      return await picture.toImage(
+        totalSize.width.toInt(),
+        totalSize.height.toInt(),
+      );
+    } finally {
+      picture.dispose();
+    }
+  }
+
+  void _paintWallpaper(Canvas canvas, {ui.Image? photo}) {
     final category = _frame.wallpaperCategory;
     if (category == null) return;
-    final decoration = wallpaperDecoration(category, _frame.wallpaperIndex);
-    final boxPainter = decoration.createBoxPainter(() {});
-    final imageConfig = ImageConfiguration(size: totalSize);
     final blur = _frame.backgroundBlur;
+    final totalRect = Rect.fromLTWH(0, 0, totalSize.width, totalSize.height);
+
+    void drawPhoto() {
+      canvas.drawImageRect(
+        photo!,
+        Rect.fromLTWH(
+          0,
+          0,
+          photo.width.toDouble(),
+          photo.height.toDouble(),
+        ),
+        totalRect,
+        Paint()..filterQuality = FilterQuality.medium,
+      );
+    }
+
+    void drawProcedural() {
+      final decoration = wallpaperDecoration(category, _frame.wallpaperIndex);
+      final boxPainter = decoration.createBoxPainter(() {});
+      boxPainter.paint(
+        canvas,
+        Offset.zero,
+        ImageConfiguration(size: totalSize),
+      );
+      boxPainter.dispose();
+    }
+
     if (blur > 0) {
       // Mirror the preview's `ImageFiltered(ImageFilter.blur(...))`
       // wrapper around the wallpaper layer. saveLayer is required so
       // the filter applies to the wallpaper draw and nothing else.
-      final layerRect = Rect.fromLTWH(0, 0, totalSize.width, totalSize.height);
       canvas.saveLayer(
-        layerRect,
+        totalRect,
         Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
       );
-      boxPainter.paint(canvas, Offset.zero, imageConfig);
+      if (photo != null) {
+        drawPhoto();
+      } else {
+        drawProcedural();
+      }
       canvas.restore();
+    } else if (photo != null) {
+      drawPhoto();
     } else {
-      boxPainter.paint(canvas, Offset.zero, imageConfig);
+      drawProcedural();
     }
-    boxPainter.dispose();
   }
 
   void _paintVideoFrame(Canvas canvas, ui.Image videoImage) {
@@ -247,10 +507,9 @@ class FrameCompositor {
       videoImage.height.toDouble(),
     );
     canvas.save();
-    canvas.clipRRect(RRect.fromRectAndRadius(
-      dst,
-      Radius.circular(_frame.cornerRadius),
-    ));
+    canvas.clipRRect(
+      RRect.fromRectAndRadius(dst, Radius.circular(_frame.cornerRadius)),
+    );
     canvas.drawImageRect(
       videoImage,
       src,
@@ -281,6 +540,9 @@ class FrameCompositor {
       clickEffect: projectState.cursorClickEffect,
       velocityPxPerSec: velocity,
       motionBlurIntensity: intensity,
+      tuning: MotionBlurTuning.defaults.copyWith(
+        maxExposureMs: MotionBlurTuning.defaults.maxExposureMs * intensity,
+      ),
       cursorState: state,
       cursorShadow: projectState.cursorShadow,
     );
@@ -295,11 +557,7 @@ class FrameCompositor {
     return null;
   }
 
-  static Future<ui.Image> _bgraToImage(
-    Uint8List bgra,
-    int width,
-    int height,
-  ) {
+  static Future<ui.Image> _bgraToImage(Uint8List bgra, int width, int height) {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
       bgra,

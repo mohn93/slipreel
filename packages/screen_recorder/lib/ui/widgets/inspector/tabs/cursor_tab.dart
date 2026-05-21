@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
+import 'package:screen_recorder/rendering/spring_config.dart';
+import 'package:screen_recorder/state/cursor_post_process.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Cursor tab — size, style, behavior toggles, click-effect section.
@@ -23,6 +25,14 @@ class CursorTab extends StatefulWidget {
     required this.onHideCursorChanged,
     required this.shadow,
     required this.onShadowChanged,
+    required this.motionSpring,
+    required this.onMotionSpringChanged,
+    required this.clickSpring,
+    required this.onClickSpringChanged,
+    required this.cursorDelay,
+    required this.onCursorDelayChanged,
+    required this.postProcess,
+    required this.onPostProcessChanged,
   });
 
   final double size;
@@ -37,6 +47,32 @@ class CursorTab extends StatefulWidget {
   final double shadow;
   final ValueChanged<double> onShadowChanged;
 
+  /// Spring driving the cursor's motion chase. The two sliders edit
+  /// this in place; switching the Animation tab's cursor preset
+  /// rewrites it (the preset picker remains the broad-feel choice,
+  /// these sliders are fine-tune knobs over the same parameter).
+  final MotionSpring motionSpring;
+  final ValueChanged<MotionSpring> onMotionSpringChanged;
+
+  /// Spring driving the press-pulse size animation on click + release.
+  final ClickSpring clickSpring;
+  final ValueChanged<ClickSpring> onClickSpringChanged;
+
+  /// Debug — how far back in time to sample the cursor recording when
+  /// rendering, so the sprite visually lines up with an app's UI
+  /// redraw delay (the recording shows UI responding ~16–200 ms after
+  /// the cursor event; tune until the sprite reaches the button at
+  /// the same moment the highlight appears).
+  final Duration cursorDelay;
+  final ValueChanged<Duration> onCursorDelayChanged;
+
+  /// Bundle of advanced per-project cursor filters (end-freeze, despike,
+  /// state-debounce). Lives in the Advanced section at the bottom of
+  /// the tab. Updating one field rebuilds the whole bundle via
+  /// [CursorPostProcess.copyWith].
+  final CursorPostProcess postProcess;
+  final ValueChanged<CursorPostProcess> onPostProcessChanged;
+
   @override
   State<CursorTab> createState() => _CursorTabState();
 }
@@ -45,6 +81,7 @@ class _CursorTabState extends State<CursorTab> {
   bool _alwaysPointer = false;
   bool _hideIfStill = false;
   bool _loopPosition = false;
+  bool _advancedExpanded = true;
 
   @override
   Widget build(BuildContext context) {
@@ -57,8 +94,8 @@ class _CursorTabState extends State<CursorTab> {
           min: 0.5,
           max: 8.0,
           onChanged: widget.onSizeChanged,
-          onReset: () => widget.onSizeChanged(1.0),
-          canReset: widget.size != 1.0,
+          onReset: () => widget.onSizeChanged(2.0),
+          canReset: widget.size != 2.0,
           subtitle: '${widget.size.toStringAsFixed(2)}×',
         ),
         const SizedBox(height: 20),
@@ -151,9 +188,244 @@ class _CursorTabState extends State<CursorTab> {
           iconOf: (e) => _ClickEffectPreview(effect: e),
           labelOf: (e) => e.label,
         ),
+        const InspectorSectionDivider(),
+        const Text(
+          'Springs',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Stiffness controls how fast each animation chases its target. '
+          'Damping below 1.0 adds bounce; 1.0 settles cleanly.',
+          style: TextStyle(
+            color: kInspectorMuted,
+            fontSize: 12,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 16),
+        ..._motionSpringSliders(),
+        const SizedBox(height: 16),
+        ..._clickSpringSliders(),
+        const InspectorSectionDivider(),
+        const Text(
+          'Debug',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Experimental controls. Off by default.',
+          style: TextStyle(
+            color: kInspectorMuted,
+            fontSize: 12,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 16),
+        InspectorSlider(
+          label: 'Cursor delay',
+          subtitle: () {
+            final ms = widget.cursorDelay.inMilliseconds;
+            if (ms == 0) return 'Off';
+            if (ms > 0) return '$ms ms (lag)';
+            return '${-ms} ms (lead)';
+          }(),
+          // Range goes negative so the cursor can be advanced past the
+          // spring's intrinsic 75-ms lag (useful for apps that
+          // *immediately* respond to cursor events with no animation —
+          // there the sprite should *lead* the recorded UI by a few
+          // frames to look right). 0 = no shift, +N ms = sprite lags
+          // by N ms, −N ms = sprite leads by N ms.
+          value: widget.cursorDelay.inMicroseconds / 1000.0,
+          min: -100,
+          max: 500,
+          onChanged: (v) => widget.onCursorDelayChanged(
+              Duration(microseconds: (v * 1000).round())),
+          onReset: () => widget.onCursorDelayChanged(Duration.zero),
+          canReset: widget.cursorDelay != Duration.zero,
+        ),
+        const InspectorSectionDivider(),
+        ..._advancedSection(),
         const SizedBox(height: 24),
       ],
     );
+  }
+
+  /// "Advanced" section — collapsible group of per-project cursor
+  /// filters (end-of-clip freeze, shake removal, rapid-state-change
+  /// debounce). Mirrors ScreenStudio's section of the same name.
+  /// State for each control flows through [CursorPostProcess.copyWith]
+  /// so a single onChange handler keeps the bundle consistent.
+  List<Widget> _advancedSection() {
+    final pp = widget.postProcess;
+    return [
+      InkWell(
+        onTap: () => setState(() => _advancedExpanded = !_advancedExpanded),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Advanced',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Icon(
+                _advancedExpanded
+                    ? Icons.keyboard_arrow_up
+                    : Icons.keyboard_arrow_down,
+                color: Colors.white70,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+      if (_advancedExpanded) ...[
+        const SizedBox(height: 16),
+        InspectorSlider(
+          label: 'Stop cursor movement at the end of the video',
+          subtitle: 'Near the end of the video, the last mouse movement '
+              'often leads to clicking "Stop Recording," which you might '
+              'not want to be visible. Adjust how long before the end of '
+              'the video the mouse cursor will stop moving.\n'
+              '${pp.endFreezeMs == 0 ? 'Off' : '${pp.endFreezeMs} ms'}',
+          value: pp.endFreezeMs.toDouble(),
+          min: 0,
+          max: CursorPostProcess.endFreezeMaxMs.toDouble(),
+          onChanged: (v) => widget.onPostProcessChanged(
+            pp.copyWith(endFreezeMs: v.round()),
+          ),
+          onReset: () => widget.onPostProcessChanged(
+            pp.copyWith(endFreezeMs: 0),
+          ),
+          canReset: pp.endFreezeMs != 0,
+        ),
+        const SizedBox(height: 20),
+        InspectorToggle(
+          label: 'Remove cursor shakes',
+          subtitle: 'If you use some accessibility apps that can control '
+              'your mouse, it is possible those apps will cause sudden, '
+              'short movements of your mouse. This option allows trying '
+              'to detect and remove them.',
+          value: pp.removeShakes,
+          onChanged: (v) => widget.onPostProcessChanged(
+            pp.copyWith(removeShakes: v),
+          ),
+        ),
+        const SizedBox(height: 20),
+        InspectorSlider(
+          label: 'Remove cursor shakes threshold',
+          subtitle: '${pp.shakeThresholdPx.toStringAsFixed(0)} px',
+          value: pp.shakeThresholdPx,
+          min: 5,
+          max: 60,
+          onChanged: (v) => widget.onPostProcessChanged(
+            pp.copyWith(shakeThresholdPx: v),
+          ),
+          onReset: () => widget.onPostProcessChanged(
+            pp.copyWith(
+              shakeThresholdPx: CursorPostProcess.defaultShakeThresholdPx,
+            ),
+          ),
+          canReset: pp.shakeThresholdPx !=
+              CursorPostProcess.defaultShakeThresholdPx,
+        ),
+        const SizedBox(height: 20),
+        InspectorToggle(
+          label: 'Optimize cursor changes',
+          subtitle: 'Slipreel will try to minimize rapid cursor changes '
+              '(eg when quickly moving over some elements) when this '
+              'option is enabled.',
+          value: pp.optimizeChanges,
+          onChanged: (v) => widget.onPostProcessChanged(
+            pp.copyWith(optimizeChanges: v),
+          ),
+        ),
+      ],
+    ];
+  }
+
+  // The motion spring is logically owned by the Animation tab's
+  // cursor preset, but the fine-tune knobs live here. When isSnap
+  // (None preset) the sliders fall back to the smooth defaults so
+  // they're touchable; the first drag converts the active config to
+  // a custom spring (the parent does that conversion in its
+  // onMotionSpringChanged handler).
+  List<Widget> _motionSpringSliders() {
+    final s = widget.motionSpring;
+    final stiffness = s.isSnap ? 180.0 : s.stiffness;
+    final damping = s.isSnap ? 1.0 : s.damping;
+    return [
+      InspectorSlider(
+        label: 'Motion stiffness',
+        subtitle: stiffness.round().toString(),
+        value: stiffness,
+        min: 50,
+        max: 1500,
+        onChanged: (v) =>
+            widget.onMotionSpringChanged(s.copyWith(stiffness: v)),
+        onReset: () =>
+            widget.onMotionSpringChanged(s.copyWith(stiffness: 180)),
+        canReset: stiffness != 180,
+      ),
+      const SizedBox(height: 20),
+      InspectorSlider(
+        label: 'Motion damping',
+        subtitle: damping.toStringAsFixed(2),
+        value: damping,
+        min: 0.3,
+        max: 1.4,
+        onChanged: (v) =>
+            widget.onMotionSpringChanged(s.copyWith(damping: v)),
+        onReset: () =>
+            widget.onMotionSpringChanged(s.copyWith(damping: 1.0)),
+        canReset: damping != 1.0,
+      ),
+    ];
+  }
+
+  List<Widget> _clickSpringSliders() {
+    final s = widget.clickSpring;
+    return [
+      InspectorSlider(
+        label: 'Click stiffness',
+        subtitle: s.stiffness.round().toString(),
+        value: s.stiffness,
+        min: 100,
+        max: 1200,
+        onChanged: (v) =>
+            widget.onClickSpringChanged(s.copyWith(stiffness: v)),
+        onReset: () =>
+            widget.onClickSpringChanged(s.copyWith(stiffness: 350)),
+        canReset: s.stiffness != 350,
+      ),
+      const SizedBox(height: 20),
+      InspectorSlider(
+        label: 'Click damping',
+        subtitle: s.damping.toStringAsFixed(2),
+        value: s.damping,
+        min: 0.3,
+        max: 1.4,
+        onChanged: (v) =>
+            widget.onClickSpringChanged(s.copyWith(damping: v)),
+        onReset: () =>
+            widget.onClickSpringChanged(s.copyWith(damping: 1.0)),
+        canReset: s.damping != 1.0,
+      ),
+    ];
   }
 }
 

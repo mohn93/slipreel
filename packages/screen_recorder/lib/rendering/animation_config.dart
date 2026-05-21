@@ -1,6 +1,7 @@
 import 'package:flutter/animation.dart';
 import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
+import 'package:screen_recorder/rendering/spring_config.dart';
 
 /// Either a preset pick (one of [ScreenAnimationStyle]) or a custom
 /// cubic bezier with an optional badge-tween-duration override. The
@@ -92,7 +93,8 @@ class CursorAnimationConfig {
       : _preset = preset,
         _customCurve = null,
         _customWindow = null,
-        _customFlutterCurve = null;
+        _customFlutterCurve = null,
+        _customSpring = null;
 
   CursorAnimationConfig.custom({
     required CubicBezierCurve curve,
@@ -100,23 +102,51 @@ class CursorAnimationConfig {
   })  : _preset = null,
         _customCurve = curve,
         _customWindow = window,
-        _customFlutterCurve = curve.toFlutterCurve();
+        _customFlutterCurve = curve.toFlutterCurve(),
+        _customSpring = null;
 
-  // Exactly one of (_preset, _customCurve) is non-null. Enforced by the
-  // two named constructors. Resolution accessors below rely on this.
+  /// Spring-based custom config. Use this from the Springs section in
+  /// the cursor tab — dragging a slider builds a new config of this
+  /// shape, preserving (or initialising from) the current motion
+  /// spring values without touching the preset enum.
+  const CursorAnimationConfig.customSpring({required MotionSpring spring})
+      : _preset = null,
+        _customCurve = null,
+        _customWindow = null,
+        _customFlutterCurve = null,
+        _customSpring = spring;
+
+  // Exactly one of (_preset, _customCurve, _customSpring) is non-null.
+  // Enforced by the named constructors. Resolution accessors below
+  // rely on this.
   final CursorAnimationStyle? _preset;
   final CubicBezierCurve? _customCurve;
   final Duration? _customWindow;
   final Curve? _customFlutterCurve;
+  final MotionSpring? _customSpring;
 
-  bool get isCustom => _customCurve != null;
+  bool get isCustom => _customCurve != null || _customSpring != null;
+  bool get isCustomSpring => _customSpring != null;
   CursorAnimationStyle? get preset => _preset;
   CubicBezierCurve? get customCurve => _customCurve;
 
   Duration get window => _customWindow ?? _preset!.fir.window;
   Curve get firCurve => _customFlutterCurve ?? _preset!.fir.curve;
 
+  /// Active motion spring. Custom-spring configs return their own
+  /// override; preset configs return the preset's spring; legacy
+  /// custom-curve configs (only loaded from old JSON) fall back to
+  /// Smooth — the FIR is gone and re-deriving spring params from a
+  /// bezier wouldn't carry meaning.
+  MotionSpring get motionSpring =>
+      _customSpring ??
+      _preset?.motionSpring ??
+      CursorAnimationStyle.smooth.motionSpring;
+
   Map<String, dynamic> toJson() {
+    if (_customSpring != null) {
+      return {'spring': _customSpring.toJson()};
+    }
     if (_preset != null) {
       return {'preset': _preset.name};
     }
@@ -127,6 +157,12 @@ class CursorAnimationConfig {
   }
 
   factory CursorAnimationConfig.fromJson(Map<String, dynamic> json) {
+    final springJson = json['spring'] as Map<String, dynamic>?;
+    if (springJson != null) {
+      return CursorAnimationConfig.customSpring(
+        spring: MotionSpring.fromJson(springJson),
+      );
+    }
     final presetName = json['preset'] as String?;
     if (presetName != null) {
       CursorAnimationStyle? preset;
