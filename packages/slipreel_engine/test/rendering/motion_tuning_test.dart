@@ -18,6 +18,13 @@ void main() {
       expect(t.cursorFeedforwardStrength, 0.5);
       expect(t.cursorFeedforwardFadeStartPxPerSec, 200.0);
       expect(t.cursorFeedforwardFullSpeedPxPerSec, 800.0);
+      // Scene-blur knobs (phase B).
+      expect(t.sceneBlurExposureMs, 16.0);
+      expect(t.sceneBlurMaxTranslation, 60.0);
+      expect(t.sceneBlurSampleCount, 48);
+      expect(t.sceneBlurSpeedCurveExp, 1.0);
+      expect(t.sceneBlurSpeedCurveRefPx, 10.0);
+      expect(t.pauseStabilizeThreshold.inMilliseconds, 100);
     });
 
     test('snappy preset tightens cursor follow vs defaults', () {
@@ -52,6 +59,12 @@ void main() {
         cursorFeedforwardStrength: 0.75,
         cursorFeedforwardFadeStartPxPerSec: 150.0,
         cursorFeedforwardFullSpeedPxPerSec: 900.0,
+        sceneBlurExposureMs: 20.0,
+        sceneBlurMaxTranslation: 80.0,
+        sceneBlurSampleCount: 64,
+        sceneBlurSpeedCurveExp: 1.5,
+        sceneBlurSpeedCurveRefPx: 15.0,
+        pauseStabilizeThreshold: Duration(milliseconds: 150),
       );
 
       final json = original.toJson();
@@ -71,6 +84,12 @@ void main() {
         round.cursorFeedforwardFullSpeedPxPerSec,
         original.cursorFeedforwardFullSpeedPxPerSec,
       );
+      expect(round.sceneBlurExposureMs, original.sceneBlurExposureMs);
+      expect(round.sceneBlurMaxTranslation, original.sceneBlurMaxTranslation);
+      expect(round.sceneBlurSampleCount, original.sceneBlurSampleCount);
+      expect(round.sceneBlurSpeedCurveExp, original.sceneBlurSpeedCurveExp);
+      expect(round.sceneBlurSpeedCurveRefPx, original.sceneBlurSpeedCurveRefPx);
+      expect(round.pauseStabilizeThreshold, original.pauseStabilizeThreshold);
     });
 
     test('fromJson fills missing fields with defaults', () {

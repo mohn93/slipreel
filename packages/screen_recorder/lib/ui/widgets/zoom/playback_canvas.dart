@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/effects/scene_accumulation_painter.dart';
@@ -205,11 +206,17 @@ class PlaybackCanvas extends StatefulWidget {
 }
 
 class _PlaybackCanvasState extends State<PlaybackCanvas> {
-  static const double _sceneBlurExposureMs = 16.0;
-  static const double _sceneBlurMaxTranslation = 60.0;
-  static const int _sceneBlurSampleCount = 48;
-  static const double _sceneBlurSpeedCurveExp = 1.0;
-  static const double _sceneBlurSpeedCurveRefPx = 10.0;
+  // Scene-blur knobs come from [MotionTuning] so the preview canvas
+  // and the export pipeline (FrameCompositor) share one source of
+  // truth (P2-8 phase B).
+  static final MotionTuning _tuning = MotionTuning.defaults;
+  double get _sceneBlurExposureMs => _tuning.sceneBlurExposureMs;
+  double get _sceneBlurMaxTranslation => _tuning.sceneBlurMaxTranslation;
+  int get _sceneBlurSampleCount => _tuning.sceneBlurSampleCount;
+  double get _sceneBlurSpeedCurveExp => _tuning.sceneBlurSpeedCurveExp;
+  double get _sceneBlurSpeedCurveRefPx => _tuning.sceneBlurSpeedCurveRefPx;
+  int get _pauseStabilizeThresholdMicros =>
+      _tuning.pauseStabilizeThreshold.inMicroseconds;
 
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
 
@@ -362,7 +369,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
               final stable = _stablePos;
               if (stable == null ||
                   (rawPos.inMicroseconds - stable.inMicroseconds).abs() >
-                      100000) {
+                      _pauseStabilizeThresholdMicros) {
                 _stablePos = rawPos;
                 pos = rawPos;
               } else {

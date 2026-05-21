@@ -246,7 +246,7 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 
 ### P2
 
-- [x] **P2-8 — Centralized tuning JSON + presets** (Task #246) — _phase A landed_
+- [x] **P2-8 — Centralized tuning JSON + presets** (Task #246) — _phases A+B landed_
   New `MotionTuning` immutable record in
   `slipreel_engine/lib/rendering/motion_tuning.dart` collects 8
   motion-feel knobs from across `ZoomFocalController` and
@@ -300,3 +300,4 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P1-7 landed — `EditorHistoryController` in slipreel_engine: ChangeNotifier wrapping `UndoRedoController<EditorProjectState>` with debounced coalescing (one history entry per slider drag, not per tick). 8 tests in `test/state/editor_history_controller_test.dart`. Wired into PlaybackScreen, replacing the broken trim-only undo. Test result: 558 pass / 14 skip across both packages (+8 new). **Bug #5 closed**.
 - 2026-05-21 — P2-8 phase A landed — `MotionTuning` immutable record collects 8 spring/follow/feedforward constants from `ZoomFocalController` + `CursorMotionController` into one place. Named presets (`defaults`, `snappy`, `cinematic`) + JSON round-trip + per-field copyWith. Both controllers expose `tuning` via constructor param; `defaults` is the historic production set, so landing this is behavior-neutral. 8 tests. Test result: 566 pass / 14 skip across both packages (+8 new).
 - 2026-05-21 — P1-5 landed — `FollowStrategy` pluggable interface (Bounded / Centered / Predictive) lifts per-mode logic out of `ZoomFocalController`. The controller becomes a pure spring integrator + strategy cache; the bounded gate's `_inFlight` field moves onto `BoundedFollowStrategy` (was inline on the controller). Hold detection now reads from the strategy's explicit `isHolding` flag instead of a fragile `target == _smoothedFocal` compare — **bug #8 closed**. 10 tests in `test/rendering/follow_strategy_test.dart`. Test result: 576 pass / 14 skip across both packages (+10 new).
+- 2026-05-21 — P2-8 phase B landed — extended `MotionTuning` with 6 more fields: 5 scene-blur knobs (`sceneBlurExposureMs`, `sceneBlurMaxTranslation`, `sceneBlurSampleCount`, `sceneBlurSpeedCurveExp`, `sceneBlurSpeedCurveRefPx`) and `pauseStabilizeThreshold`. Replaced duplicated `static const _sceneBlur*` in both `FrameCompositor` (engine) and `PlaybackCanvas` (shell) with reads from `MotionTuning.defaults` — single source of truth, no duplicated tuning between preview and export. Same JSON / copyWith / defaults pattern as phase A. Behavior preserved. Test result: 576 pass / 14 skip (no net new tests, the existing tuning suite was extended).

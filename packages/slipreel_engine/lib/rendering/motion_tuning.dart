@@ -26,6 +26,12 @@ class MotionTuning {
     this.cursorFeedforwardStrength = 0.5,
     this.cursorFeedforwardFadeStartPxPerSec = 200.0,
     this.cursorFeedforwardFullSpeedPxPerSec = 800.0,
+    this.sceneBlurExposureMs = 16.0,
+    this.sceneBlurMaxTranslation = 60.0,
+    this.sceneBlurSampleCount = 48,
+    this.sceneBlurSpeedCurveExp = 1.0,
+    this.sceneBlurSpeedCurveRefPx = 10.0,
+    this.pauseStabilizeThreshold = const Duration(milliseconds: 100),
   });
 
   /// Minimum reverse-scrub jump that resets focal/cursor spring
@@ -69,6 +75,40 @@ class MotionTuning {
   /// this speed [cursorFeedforwardStrength] applies in full.
   final double cursorFeedforwardFullSpeedPxPerSec;
 
+  /// Base virtual-shutter window for the scene-blur shader before
+  /// the user-facing motion-blur and sub-blur sliders modulate it.
+  /// 16 ms ≈ one 60 fps frame's worth of motion captured per
+  /// composition tick — the smear band matches what the eye expects
+  /// from cinematic motion blur on a moving camera.
+  final double sceneBlurExposureMs;
+
+  /// Hard cap (px) on the scene-blur shader's translation magnitude.
+  /// Without it a fast camera pan would smear the frame end-to-end
+  /// and the cursor would visually skate. 60 px keeps the trail
+  /// readable at 1440p.
+  final double sceneBlurMaxTranslation;
+
+  /// Number of stamps the scene-blur shader takes across the
+  /// exposure window. Higher = smoother trail at higher GPU cost.
+  final int sceneBlurSampleCount;
+
+  /// Exponent applied to the camera-speed → exposure curve. 1.0 =
+  /// linear; >1 attenuates slow motion (only fast pans smear); <1
+  /// boosts slow motion (even small pans get noticeable trails).
+  final double sceneBlurSpeedCurveExp;
+
+  /// Reference speed (px/frame) used to normalise the exposure
+  /// curve. At this speed the curve reads its full input value;
+  /// faster scales above, slower scales below.
+  final double sceneBlurSpeedCurveRefPx;
+
+  /// Maximum drift between consecutive paused-playhead reads before
+  /// PlaybackCanvas treats them as a real seek (vs. micro-jitter
+  /// from the smooth-playhead tween). Locks the per-tick
+  /// `_stablePos` so the scene-blur signal doesn't see phantom
+  /// motion while the user is on the trim handles.
+  final Duration pauseStabilizeThreshold;
+
   /// Historic production tuning — what the editor felt like before
   /// P2-8 landed. Every controller defaults here unless the caller
   /// passes an override, so this commit alone is behavior-neutral.
@@ -101,6 +141,12 @@ class MotionTuning {
     double? cursorFeedforwardStrength,
     double? cursorFeedforwardFadeStartPxPerSec,
     double? cursorFeedforwardFullSpeedPxPerSec,
+    double? sceneBlurExposureMs,
+    double? sceneBlurMaxTranslation,
+    int? sceneBlurSampleCount,
+    double? sceneBlurSpeedCurveExp,
+    double? sceneBlurSpeedCurveRefPx,
+    Duration? pauseStabilizeThreshold,
   }) {
     return MotionTuning(
       reverseScrubFloor: reverseScrubFloor ?? this.reverseScrubFloor,
@@ -116,6 +162,18 @@ class MotionTuning {
           this.cursorFeedforwardFadeStartPxPerSec,
       cursorFeedforwardFullSpeedPxPerSec: cursorFeedforwardFullSpeedPxPerSec ??
           this.cursorFeedforwardFullSpeedPxPerSec,
+      sceneBlurExposureMs:
+          sceneBlurExposureMs ?? this.sceneBlurExposureMs,
+      sceneBlurMaxTranslation:
+          sceneBlurMaxTranslation ?? this.sceneBlurMaxTranslation,
+      sceneBlurSampleCount:
+          sceneBlurSampleCount ?? this.sceneBlurSampleCount,
+      sceneBlurSpeedCurveExp:
+          sceneBlurSpeedCurveExp ?? this.sceneBlurSpeedCurveExp,
+      sceneBlurSpeedCurveRefPx:
+          sceneBlurSpeedCurveRefPx ?? this.sceneBlurSpeedCurveRefPx,
+      pauseStabilizeThreshold:
+          pauseStabilizeThreshold ?? this.pauseStabilizeThreshold,
     );
   }
 
@@ -130,6 +188,12 @@ class MotionTuning {
             cursorFeedforwardFadeStartPxPerSec,
         'cursorFeedforwardFullSpeedPxPerSec':
             cursorFeedforwardFullSpeedPxPerSec,
+        'sceneBlurExposureMs': sceneBlurExposureMs,
+        'sceneBlurMaxTranslation': sceneBlurMaxTranslation,
+        'sceneBlurSampleCount': sceneBlurSampleCount,
+        'sceneBlurSpeedCurveExp': sceneBlurSpeedCurveExp,
+        'sceneBlurSpeedCurveRefPx': sceneBlurSpeedCurveRefPx,
+        'pauseStabilizeThresholdMs': pauseStabilizeThreshold.inMilliseconds,
       };
 
   factory MotionTuning.fromJson(Map<String, dynamic> json) {
@@ -149,6 +213,11 @@ class MotionTuning {
     double doubleOr(String key, double fallback) {
       final v = json[key];
       return v is num ? v.toDouble() : fallback;
+    }
+
+    int intOr(String key, int fallback) {
+      final v = json[key];
+      return v is num ? v.round() : fallback;
     }
 
     return MotionTuning(
@@ -174,6 +243,26 @@ class MotionTuning {
       cursorFeedforwardFullSpeedPxPerSec: doubleOr(
         'cursorFeedforwardFullSpeedPxPerSec',
         d.cursorFeedforwardFullSpeedPxPerSec,
+      ),
+      sceneBlurExposureMs:
+          doubleOr('sceneBlurExposureMs', d.sceneBlurExposureMs),
+      sceneBlurMaxTranslation: doubleOr(
+        'sceneBlurMaxTranslation',
+        d.sceneBlurMaxTranslation,
+      ),
+      sceneBlurSampleCount:
+          intOr('sceneBlurSampleCount', d.sceneBlurSampleCount),
+      sceneBlurSpeedCurveExp: doubleOr(
+        'sceneBlurSpeedCurveExp',
+        d.sceneBlurSpeedCurveExp,
+      ),
+      sceneBlurSpeedCurveRefPx: doubleOr(
+        'sceneBlurSpeedCurveRefPx',
+        d.sceneBlurSpeedCurveRefPx,
+      ),
+      pauseStabilizeThreshold: durationFromMs(
+        'pauseStabilizeThresholdMs',
+        d.pauseStabilizeThreshold,
       ),
     );
   }

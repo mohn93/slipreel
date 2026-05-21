@@ -12,6 +12,7 @@ import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/rendering/frame_painter.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
@@ -85,11 +86,17 @@ class FrameCompositor {
   ui.Image? _cachedWallpaperImage;
   String? _cachedWallpaperKey;
 
-  static const double _sceneBlurExposureMs = 16.0;
-  static const double _sceneBlurMaxTranslation = 60.0;
-  static const int _sceneBlurSampleCount = 48;
-  static const double _sceneBlurSpeedCurveExp = 1.0;
-  static const double _sceneBlurSpeedCurveRefPx = 10.0;
+  // Scene-blur knobs come from [MotionTuning] so the export pipeline
+  // and the preview canvas share one source of truth. Reads are
+  // instance accessors because [MotionTuning] fields aren't const-
+  // exposable; the instance itself is `MotionTuning.defaults` (a
+  // const) so there's no per-frame allocation.
+  static final MotionTuning _tuning = MotionTuning.defaults;
+  double get _sceneBlurExposureMs => _tuning.sceneBlurExposureMs;
+  double get _sceneBlurMaxTranslation => _tuning.sceneBlurMaxTranslation;
+  int get _sceneBlurSampleCount => _tuning.sceneBlurSampleCount;
+  double get _sceneBlurSpeedCurveExp => _tuning.sceneBlurSpeedCurveExp;
+  double get _sceneBlurSpeedCurveRefPx => _tuning.sceneBlurSpeedCurveRefPx;
 
   WindowFrame get _frame => projectState.windowFrame;
 
