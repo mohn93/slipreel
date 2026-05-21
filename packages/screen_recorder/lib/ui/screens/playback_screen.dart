@@ -2,20 +2,16 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:video_player/video_player.dart';
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart' show CursorBlurMode;
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
-import 'package:slipreel_engine/rendering/animation_config.dart';
-import 'package:slipreel_engine/rendering/animation_style.dart';
-import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
-import 'package:slipreel_engine/rendering/cursor_glyph.dart';
-import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:screen_recorder/services/curve_library.dart';
 import 'package:screen_recorder/services/destination_handlers.dart';
-import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/state/editor_project_store.dart';
 import 'package:slipreel_engine/state/export_settings_store.dart';
@@ -41,16 +37,16 @@ import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 
-class PlaybackScreen extends StatefulWidget {
+class PlaybackScreen extends ConsumerStatefulWidget {
   final String videoPath;
 
   const PlaybackScreen({super.key, required this.videoPath});
 
   @override
-  State<PlaybackScreen> createState() => _PlaybackScreenState();
+  ConsumerState<PlaybackScreen> createState() => _PlaybackScreenState();
 }
 
-class _PlaybackScreenState extends State<PlaybackScreen>
+class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     with TickerProviderStateMixin {
   late VideoPlayerController _controller;
   SmoothPlayheadController? _smoothPlayhead;
@@ -68,49 +64,23 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   bool _isExporting = false;
   TrimSelection? _trimSelection;
   late UndoRedoController<TrimSelection> _undoRedo;
-  List<ZoomRegion> _zoomRegions = [];
   int? _selectedZoomIndex;
   // Whether the main clip bar is currently selected. Mutually
   // exclusive with [_selectedZoomIndex]: selecting one clears the
   // other. Drives the inspector's context-mode display.
   bool _isClipSelected = false;
-  // Whether the synthetic cursor overlay is hidden in the preview.
-  // Toggled from the inspector's "Hide cursor" control. Only meaningful
-  // when the recording is pure source (cursor not baked into the MP4).
-  bool _hideCursorOverlay = false;
-  // Cursor visual settings — live-applied to the playback overlay and
-  // forwarded to the export pipeline so the rendered video matches.
-  double _cursorSize = 2.0;
-  CursorStyle _cursorStyle = CursorStyle.modernDark;
-  CursorClickEffect _cursorClickEffect = CursorClickEffect.ripple;
-  // Animation tab — screen + cursor styles + motion blur amount.
-  ScreenAnimationConfig _screenAnimationConfig =
-      const ScreenAnimationConfig.preset(ScreenAnimationStyle.smooth);
-  CursorAnimationConfig _cursorAnimationConfig =
-      const CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
-  double _motionBlur = 0;
-  double _cursorMovementBlur = 1.0;
-  double _screenMovementBlur = 1.0;
-  double _screenZoomBlur = 1.0;
-  // Live-tunable knobs for the cursor motion-blur path. Exposed in
-  double _cursorShadow = 0.4;
-  // Press-pulse spring. Default is snappy / critically damped; the
-  // cursor tab's Springs section edits this in-place and persists via
-  // EditorProjectState.
-  ClickSpring _clickSpring = ClickSpring.snappy;
-  // Cursor playback delay — shifts the cursor track's query time
-  // backward by this much so the sprite visually arrives at UI
-  // elements at the same moment they react in the recording (most
-  // macOS apps redraw ~30–80 ms after a cursor event). Default 50 ms
-  // is a reasonable universal value; live-tunable from the cursor
-  // tab's Debug section and persisted on the project so the export
-  // pipeline reads the same value.
-  Duration _cursorDelay = const Duration(milliseconds: 50);
-  // Per-project cursor post-processing — end-of-clip freeze, shake
-  // removal, rapid-state-change debounce. Edited from the cursor tab's
-  // Advanced section. Defaults to all filters off so existing projects
-  // load with unchanged behaviour.
-  CursorPostProcess _cursorPostProcess = CursorPostProcess.none;
+
+  // Editor-state values (cursor visuals, animation configs, motion-
+  // blur knobs, zoom regions, etc.) all live on
+  // [editorProjectControllerProvider] now. The notifier exposes an
+  // immutable [EditorProjectState] + per-field mutators; the screen
+  // reads via [ref.watch] in build() and mutates via these helpers
+  // below.
+  EditorProjectState get _project =>
+      ref.read(editorProjectControllerProvider);
+  EditorProjectController get _projectController =>
+      ref.read(editorProjectControllerProvider.notifier);
+
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
@@ -174,8 +144,15 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   }
 
   void _onFrameSettingsChanged() {
+    // Mirror the FrameSettingsProvider's WindowFrame into the editor
+    // notifier so the unified state's `windowFrame` is always current
+    // and the auto-persist `ref.listen` in build() sees the change.
+    // setState fires because frame chrome bits (background, shadow)
+    // are rendered from `_frameSettings` directly, not from the
+    // notifier — until those move too, the screen needs a kick to
+    // redraw when the frame mutates.
+    _projectController.setWindowFrame(_frameSettings.currentFrame);
     setState(() {});
-    _persistProject();
   }
 
   Future<void> _initializeVideo() async {
@@ -200,21 +177,11 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       // build sees the persisted state and the canvas doesn't flash
       // its defaults for a frame.
       final saved = await _projectStore.load();
-      _zoomRegions = List.of(saved.zoomRegions);
-      _screenAnimationConfig = saved.screenAnimationConfig;
-      _cursorAnimationConfig = saved.cursorAnimationConfig;
-      _cursorSize = saved.cursorSize;
-      _cursorStyle = saved.cursorStyle;
-      _cursorClickEffect = saved.cursorClickEffect;
-      _hideCursorOverlay = saved.hideCursorOverlay;
-      _motionBlur = saved.motionBlur;
-      _cursorMovementBlur = saved.cursorMovementBlur;
-      _screenMovementBlur = saved.screenMovementBlur;
-      _screenZoomBlur = saved.screenZoomBlur;
-      _cursorShadow = saved.cursorShadow;
-      _clickSpring = saved.clickSpring;
-      _cursorDelay = saved.cursorDelay;
-      _cursorPostProcess = saved.cursorPostProcess;
+      // Push the loaded state into the Riverpod notifier — single
+      // source of truth for everything the inspector edits. The
+      // ref.listen wired up in build() will route subsequent changes
+      // back into _persistProject().
+      _projectController.replace(saved);
       // Frame chrome (wallpaper, padding, corners, shadow, blur) is
       // also per-clip. Restore via setFrame BEFORE flipping the
       // _isInitialized flag so _persistProject won't fire on the
@@ -266,34 +233,14 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     }
   }
 
-  /// Snapshot of the current persistable editor state.
-  EditorProjectState _captureProjectState() => EditorProjectState(
-    zoomRegions: List.unmodifiable(_zoomRegions),
-    screenAnimationConfig: _screenAnimationConfig,
-    cursorAnimationConfig: _cursorAnimationConfig,
-    cursorSize: _cursorSize,
-    cursorStyle: _cursorStyle,
-    cursorClickEffect: _cursorClickEffect,
-    hideCursorOverlay: _hideCursorOverlay,
-    motionBlur: _motionBlur,
-    cursorMovementBlur: _cursorMovementBlur,
-    screenMovementBlur: _screenMovementBlur,
-    screenZoomBlur: _screenZoomBlur,
-    cursorShadow: _cursorShadow,
-    clickSpring: _clickSpring,
-    cursorDelay: _cursorDelay,
-    windowFrame: _frameSettings.currentFrame,
-    cursorPostProcess: _cursorPostProcess,
-  );
-
   /// Schedule a debounced save so a slider drag doesn't hammer the
-  /// disk on every tick. Call after any setState that mutates a
-  /// tracked field.
+  /// disk on every tick. Wired automatically: a `ref.listen` in
+  /// build() calls this on every notifier publish.
   void _persistProject() {
     if (!_isInitialized) return; // Don't overwrite on the load pass.
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 500), () {
-      _projectStore.save(_captureProjectState());
+      _projectStore.save(_project);
     });
   }
 
@@ -305,7 +252,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     // queue mean a partially-written file is impossible.
     _saveDebounce?.cancel();
     if (_isInitialized) {
-      _projectStore.save(_captureProjectState());
+      _projectStore.save(_project);
       _controller.removeListener(_enforceTrimBounds);
       _controller.removeListener(_trackIntendedPosition);
     }
@@ -356,22 +303,22 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       videoBounds: videoSize,
     );
 
+    _projectController.addZoom(zoomRegion);
     setState(() {
-      _zoomRegions = [..._zoomRegions, zoomRegion];
       // Auto-select the new zoom so the inspector opens on it.
-      _selectedZoomIndex = _zoomRegions.length - 1;
+      _selectedZoomIndex = _project.zoomRegions.length - 1;
       _isClipSelected = false;
     });
-    _persistProject();
     _controller.seekTo(start);
   }
 
   void _checkZoomMarkerClick(Duration position) {
     // Find zoom region near clicked position (within 0.5 seconds).
     const tolerance = Duration(milliseconds: 500);
+    final regions = _project.zoomRegions;
     int? newIndex;
-    for (var i = 0; i < _zoomRegions.length; i++) {
-      if ((position - _zoomRegions[i].startTime).abs() < tolerance) {
+    for (var i = 0; i < regions.length; i++) {
+      if ((position - regions[i].startTime).abs() < tolerance) {
         newIndex = i;
         break;
       }
@@ -571,7 +518,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                 outputPath: outPath,
                 sourceMetadata: meta,
                 cursorRecording: cursorRec,
-                projectState: _captureProjectState(),
+                projectState: _project,
                 settings: settings,
               ).run(onProgress: (p) => progress.value = p)
             : await ExportPipeline(
@@ -579,7 +526,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                 outputPath: outPath,
                 sourceMetadata: meta,
                 cursorRecording: cursorRec,
-                projectState: _captureProjectState(),
+                projectState: _project,
                 settings: settings,
               ).run(onProgress: (p) => progress.value = p);
 
@@ -697,6 +644,18 @@ class _PlaybackScreenState extends State<PlaybackScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Single source of truth: every editor-state read in the body
+    // pulls from this snapshot. Rebuilds when any notifier mutator
+    // publishes — matches the previous setState-driven rebuild scope.
+    final project = ref.watch(editorProjectControllerProvider);
+    // Auto-persist: any mutation on the notifier triggers the
+    // debounced save in [_persistProject]. Replaces ~30 inline
+    // `_persistProject()` calls scattered through the inspector
+    // callbacks.
+    ref.listen<EditorProjectState>(
+      editorProjectControllerProvider,
+      (_, __) => _persistProject(),
+    );
     return Focus(
       autofocus: true,
       onKeyEvent: (node, event) {
@@ -900,92 +859,56 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                     InspectorPanel(
                       frameSettings: _frameSettings,
                       selection: _currentSelection(),
-                      zoomRegions: _zoomRegions,
+                      zoomRegions: project.zoomRegions,
                       clipDuration: _controller.value.duration,
-                      hideCursor: _hideCursorOverlay,
+                      hideCursor: project.hideCursorOverlay,
                       canHideCursor:
                           _metadata?.isPureSource == true &&
                           _cursorRecording.count > 0,
-                      onHideCursorChanged: (v) {
-                        setState(() => _hideCursorOverlay = v);
-                        _persistProject();
-                      },
-                      cursorSize: _cursorSize,
-                      cursorStyle: _cursorStyle,
-                      cursorClickEffect: _cursorClickEffect,
-                      cursorShadow: _cursorShadow,
-                      onCursorSizeChanged: (v) {
-                        setState(() => _cursorSize = v);
-                        _persistProject();
-                      },
-                      onCursorStyleChanged: (s) {
-                        setState(() => _cursorStyle = s);
-                        _persistProject();
-                      },
-                      onCursorClickEffectChanged: (e) {
-                        setState(() => _cursorClickEffect = e);
-                        _persistProject();
-                      },
-                      onCursorShadowChanged: (v) {
-                        setState(() => _cursorShadow = v);
-                        _persistProject();
-                      },
-                      screenAnimationConfig: _screenAnimationConfig,
-                      cursorAnimationConfig: _cursorAnimationConfig,
-                      motionBlur: _motionBlur,
-                      cursorMovementBlur: _cursorMovementBlur,
-                      screenMovementBlur: _screenMovementBlur,
-                      screenZoomBlur: _screenZoomBlur,
-                      onScreenAnimationConfigChanged: (c) {
-                        setState(() => _screenAnimationConfig = c);
-                        _persistProject();
-                      },
-                      onCursorAnimationConfigChanged: (c) {
-                        setState(() => _cursorAnimationConfig = c);
-                        _persistProject();
-                      },
-                      onMotionBlurChanged: (v) {
-                        setState(() => _motionBlur = v);
-                        _persistProject();
-                      },
-                      onCursorMovementBlurChanged: (v) {
-                        setState(() => _cursorMovementBlur = v);
-                        _persistProject();
-                      },
-                      onScreenMovementBlurChanged: (v) {
-                        setState(() => _screenMovementBlur = v);
-                        _persistProject();
-                      },
-                      onScreenZoomBlurChanged: (v) {
-                        setState(() => _screenZoomBlur = v);
-                        _persistProject();
-                      },
-                      clickSpring: _clickSpring,
-                      onClickSpringChanged: (s) {
-                        setState(() => _clickSpring = s);
-                        _persistProject();
-                      },
-                      cursorDelay: _cursorDelay,
-                      onCursorDelayChanged: (d) {
-                        setState(() => _cursorDelay = d);
-                        _persistProject();
-                      },
-                      cursorPostProcess: _cursorPostProcess,
-                      onCursorPostProcessChanged: (cfg) {
-                        setState(() => _cursorPostProcess = cfg);
-                        _persistProject();
-                      },
+                      onHideCursorChanged: _projectController
+                          .setHideCursorOverlay,
+                      cursorSize: project.cursorSize,
+                      cursorStyle: project.cursorStyle,
+                      cursorClickEffect: project.cursorClickEffect,
+                      cursorShadow: project.cursorShadow,
+                      onCursorSizeChanged: _projectController.setCursorSize,
+                      onCursorStyleChanged:
+                          _projectController.setCursorStyle,
+                      onCursorClickEffectChanged:
+                          _projectController.setCursorClickEffect,
+                      onCursorShadowChanged:
+                          _projectController.setCursorShadow,
+                      screenAnimationConfig: project.screenAnimationConfig,
+                      cursorAnimationConfig: project.cursorAnimationConfig,
+                      motionBlur: project.motionBlur,
+                      cursorMovementBlur: project.cursorMovementBlur,
+                      screenMovementBlur: project.screenMovementBlur,
+                      screenZoomBlur: project.screenZoomBlur,
+                      onScreenAnimationConfigChanged:
+                          _projectController.setScreenAnimationConfig,
+                      onCursorAnimationConfigChanged:
+                          _projectController.setCursorAnimationConfig,
+                      onMotionBlurChanged: _projectController.setMotionBlur,
+                      onCursorMovementBlurChanged:
+                          _projectController.setCursorMovementBlur,
+                      onScreenMovementBlurChanged:
+                          _projectController.setScreenMovementBlur,
+                      onScreenZoomBlurChanged:
+                          _projectController.setScreenZoomBlur,
+                      clickSpring: project.clickSpring,
+                      onClickSpringChanged:
+                          _projectController.setClickSpring,
+                      cursorDelay: project.cursorDelay,
+                      onCursorDelayChanged:
+                          _projectController.setCursorDelay,
+                      cursorPostProcess: project.cursorPostProcess,
+                      onCursorPostProcessChanged:
+                          _projectController.setCursorPostProcess,
                       curveLibrary: _curveLibrary,
-                      onZoomChanged: (index, next) {
-                        setState(() => _zoomRegions[index] = next);
-                        _persistProject();
-                      },
+                      onZoomChanged: _projectController.updateZoomAt,
                       onZoomDeleted: (index) {
-                        setState(() {
-                          _zoomRegions.removeAt(index);
-                          _selectedZoomIndex = null;
-                        });
-                        _persistProject();
+                        _projectController.removeZoomAt(index);
+                        setState(() => _selectedZoomIndex = null);
                       },
                       onSelectionCleared: () => setState(() {
                         _selectedZoomIndex = null;
@@ -1046,23 +969,24 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     // `wantsScenePass` gate short-circuits in that case. The cursor
     // channel stays live because cursor accumulation runs in
     // PlaybackCanvas (no capture lag — it stamps from the recording).
+    final project = ref.watch(editorProjectControllerProvider);
     final playbackCanvas = PlaybackCanvas(
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
       frameSettings: _frameSettings,
       metadata: _metadata,
       cursorRecording: _cursorRecording,
-      hideCursorOverlay: _hideCursorOverlay,
-      cursorSize: _cursorSize,
-      cursorStyle: _cursorStyle,
-      cursorClickEffect: _cursorClickEffect,
+      hideCursorOverlay: project.hideCursorOverlay,
+      cursorSize: project.cursorSize,
+      cursorStyle: project.cursorStyle,
+      cursorClickEffect: project.cursorClickEffect,
       showZoomDebug: _showZoomDebug,
       debugSnapshot: _zoomDebugSnapshot,
-      zoomRegions: _zoomRegions,
-      screenAnimationConfig: _screenAnimationConfig,
-      cursorAnimationConfig: _cursorAnimationConfig,
-      motionBlur: _motionBlur,
-      cursorMovementBlur: _cursorMovementBlur,
+      zoomRegions: project.zoomRegions,
+      screenAnimationConfig: project.screenAnimationConfig,
+      cursorAnimationConfig: project.cursorAnimationConfig,
+      motionBlur: project.motionBlur,
+      cursorMovementBlur: project.cursorMovementBlur,
       screenMovementBlur: 0.0,
       screenZoomBlur: 0.0,
       // motionBlurTuning is required by PlaybackCanvas's API only
@@ -1084,11 +1008,11 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       // now produces a clearly visible ~75 ms trail and the slider
       // gives a usable gradient.
       accumulationExposureMs: 150.0,
-      cursorShadow: _cursorShadow,
-      clickSpring: _clickSpring,
-      cursorDelay: _cursorDelay,
+      cursorShadow: project.cursorShadow,
+      clickSpring: project.clickSpring,
+      cursorDelay: project.cursorDelay,
       isHoverScrubbing: isHoverScrubbing,
-      cursorPostProcess: _cursorPostProcess,
+      cursorPostProcess: project.cursorPostProcess,
     );
 
     final videoSize = _controller.value.size;
@@ -1109,25 +1033,27 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     // is effectively a soft on-ramp; the visible action happens in
     // the upper half. Cursor blur stays linear — it's path-stamped
     // and doesn't have the same gate-induced 0↔1% jump.
-    final masterCurved = _motionBlur * _motionBlur * _motionBlur / 0.25;
-    final screenMovementCurved =
-        _screenMovementBlur * _screenMovementBlur * _screenMovementBlur;
+    final masterCurved =
+        project.motionBlur * project.motionBlur * project.motionBlur / 0.25;
+    final screenMovementCurved = project.screenMovementBlur *
+        project.screenMovementBlur *
+        project.screenMovementBlur;
     final screenZoomCurved =
-        _screenZoomBlur * _screenZoomBlur * _screenZoomBlur;
+        project.screenZoomBlur * project.screenZoomBlur * project.screenZoomBlur;
     return SceneBlurOverlay(
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
       cursorRecording: _cursorRecording,
-      zoomRegions: _zoomRegions,
-      cursorAnimationConfig: _cursorAnimationConfig,
-      screenAnimationConfig: _screenAnimationConfig,
+      zoomRegions: project.zoomRegions,
+      cursorAnimationConfig: project.cursorAnimationConfig,
+      screenAnimationConfig: project.screenAnimationConfig,
       motionBlur: masterCurved,
       screenMovementBlur: screenMovementCurved,
       screenZoomBlur: screenZoomCurved,
       isHoverScrubbing: isHoverScrubbing,
       videoSize: videoSize,
       fps: _metadata?.fps ?? 60,
-      cursorPostProcess: _cursorPostProcess,
+      cursorPostProcess: project.cursorPostProcess,
       child: playbackCanvas,
     );
   }
@@ -1273,7 +1199,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                     setState(() => _isHovering = false);
                   }
                 },
-                zoomRegions: _zoomRegions,
+                zoomRegions: _project.zoomRegions,
                 selectedZoomIndex: _selectedZoomIndex,
                 onZoomSelected: (i) {
                   setState(() {
@@ -1290,18 +1216,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                     if (selected) _selectedZoomIndex = null;
                   });
                 },
-                onZoomChanged: (index, next) {
-                  setState(() {
-                    final list = List<ZoomRegion>.from(_zoomRegions);
-                    list[index] = next;
-                    _zoomRegions = list;
-                  });
-                },
+                onZoomChanged: _projectController.updateZoomAt,
                 onZoomDeleted: (index) {
+                  _projectController.removeZoomAt(index);
                   setState(() {
-                    final list = List<ZoomRegion>.from(_zoomRegions)
-                      ..removeAt(index);
-                    _zoomRegions = list;
                     if (_selectedZoomIndex == index) {
                       _selectedZoomIndex = null;
                     } else if (_selectedZoomIndex != null &&

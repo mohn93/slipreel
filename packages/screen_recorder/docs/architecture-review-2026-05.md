@@ -144,20 +144,21 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   live in the painter selection / TweenAnimationBuilder layer above
   the builder.
 
-- [ ] **P0-2 — Editor state to Riverpod Notifier** (Task #240) — _foundation landed_
-  Two foundation pieces are in:
-  - `EditorProjectState.copyWith(...)` for immutable field-by-field
-    updates (5 tests in `test/state/editor_project_state_test.dart`).
-  - `EditorProjectController extends StateNotifier<EditorProjectState>`
-    with per-field mutators + zoom-region list ops + Riverpod provider
-    (5 tests in `test/state/editor_project_controller_test.dart`).
-
-  **Still to do**: migrate `_PlaybackScreenState` to consume the
-  controller (swap each `_field = ...; setState(...)` with
-  `ref.read(editorProjectControllerProvider.notifier).setX(...)`);
-  switch the InspectorPanel to read via `ref.watch(...select(...))`
-  instead of taking 30 props. Big surface area; deferred to a
-  follow-up commit so this branch can ship the foundation cleanly.
+- [x] **P0-2 — Editor state to Riverpod Notifier** (Task #240) — _step 2 landed_
+  Foundation (commit `23a544a`): `EditorProjectState.copyWith` +
+  `EditorProjectController` + provider.
+  Step 2: `_PlaybackScreenState` is now a `ConsumerStatefulWidget`
+  that reads editor state from the notifier in `build()` (single
+  `ref.watch`) and routes every inspector callback to a notifier
+  mutator. The `ref.listen` auto-fires `_persistProject()` on every
+  publish, replacing ~30 inline `_persistProject()` calls. 14
+  editor-state private fields drained; `_captureProjectState` deleted
+  (the notifier's state *is* the captured form). 6 setState calls
+  removed; the remaining ones are for non-editor session UI
+  (`_isHovering`, `_selectedZoomIndex`, etc.). InspectorPanel
+  constructor still takes its 30 props — that's a follow-up
+  (downgrade to `ref.watch(...select(...))` inside each tab so the
+  prop list can drop).
 
 - [x] **P0-3 — Engine layer extraction** (Tasks #241, #249) — _both phases done_
   Phase 1 (commit `b6834a2`): within `screen_recorder`, the
@@ -241,3 +242,4 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P1-6 landed — replaced O(N) cursor-event walks with O(log N) indexed lookups. `CursorRecording` now exposes a lazily-built `CursorEventIndex` (version-keyed, rebuilds on mutation). 7 new tests in `test/models/cursor_event_index_test.dart`. Test result: 545 pass / 14 skip (+7 new, 0 regressions).
 - 2026-05-21 — P0-3 phase 2 landed — extracted `packages/slipreel_engine`. Moved `models/`, `rendering/`, `effects/`, `export/`, `utils/`, the engine subset of `state/`, and shader assets out of `screen_recorder` into the new package. `screen_recorder` now depends on it via a path import. The boundary test moved to the engine package and was tightened to ban any `package:screen_recorder/*` import. Test result: slipreel_engine 381 pass / 0 skip; screen_recorder 164 pass / 14 skip (= 546 total).
 - 2026-05-21 — P2-9 landed — schema migration switchboard. `EditorProjectState.fromJson` runs `migrateEditorProjectJson(...)` before field decoding. Chain has v0→v1 (no-op) and v1→v2 (insert schemaVersion marker). 5 tests in `test/state/editor_project_state_migration_test.dart`. Test result: 550 pass / 14 skip (+4 net new; one test was a clamp-bound correction).
+- 2026-05-21 — P0-2 step 2 landed — `_PlaybackScreenState` converted to `ConsumerStatefulWidget`. 14 editor-state private fields drained into the Riverpod notifier; `_captureProjectState` deleted (notifier state IS the captured form); `_persistProject` now wired via `ref.listen` (replaces ~30 inline calls); ~6 setStates removed; InspectorPanel callbacks rewired to notifier mutators directly. Frame chrome mirrored from `FrameSettingsProvider` into the notifier on every change so persistence captures it. Test result: 550 pass / 14 skip across both packages (0 net new tests, 0 regressions). UI verification deferred to running the app.
