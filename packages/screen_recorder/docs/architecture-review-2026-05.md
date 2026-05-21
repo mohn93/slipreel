@@ -187,12 +187,13 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   press-pulse per-stamp as a destination-rect scale instead of trying
   to bake it into the cached sprite. `clickSpring` parameter added
   and wired from `PlaybackCanvas` — **bug #4 closed**.
-  Phase C (deferred): bug #9 — `CursorOverlayPainter` re-bakes its
-  sprite every frame on the motion-blur branch. Requires factoring
-  the shadow rendering out of `paintCursorGlyphWithPulse` so the
-  bake-once-stamp-many pattern can be applied here too. More invasive
-  than #1/#4 and only matters when motion-blur is active. Tracked as
-  a follow-up.
+  Phase C landed: `_OverlaySpriteCache` (module-level LRU, capacity
+  8) keys by `(pxDiameter, dpr, style, state, bufferPx)` so cache
+  survives a click animation + a shadow-slider drag. Bake is bare
+  glyph; shadow drawn separately via `paintCursorShadow` (extracted
+  to public); press-pulse applied as a destination-rect scale on
+  both the shader rect and the multi-stamp fallback. **Bug #9
+  closed.**
 - [x] **P1-5 — `FollowStrategy` interface** (Task #243)
   `FollowStrategy` abstract class in `lib/rendering/follow_strategy.dart`
   with `resolve({zoom, cursor, cursorVelocity, currentFocal,
