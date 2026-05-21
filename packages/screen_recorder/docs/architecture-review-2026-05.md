@@ -247,7 +247,7 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 
 ### P2
 
-- [x] **P2-8 — Centralized tuning JSON + presets** (Task #246) — _phases A+B landed_
+- [x] **P2-8 — Centralized tuning JSON + presets** (Task #246) — _phases A+B+C foundation landed_
   New `MotionTuning` immutable record in
   `slipreel_engine/lib/rendering/motion_tuning.dart` collects 8
   motion-feel knobs from across `ZoomFocalController` and
