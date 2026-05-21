@@ -205,7 +205,27 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   `test/models/cursor_event_index_test.dart` (empty recording, no
   click yet, multiple clicks, release sequence, cache invalidation,
   long recording binary-search correctness).
-- [ ] **P1-7 — State-shaped undo/redo** (Task #245, blocked by P0-2)
+- [x] **P1-7 — State-shaped undo/redo** (Task #245)
+  `EditorHistoryController` (new file
+  `lib/state/editor_history_controller.dart` in slipreel_engine)
+  subscribes to `EditorProjectController` and debounces mutations
+  into a single history entry per `coalesceWindow` (500 ms default).
+  `undo()`/`redo()` flush any pending coalesced edit, pop/push the
+  generic `UndoRedoController<EditorProjectState>`, then apply the
+  chosen entry via `controller.replace(...)` with an
+  `_applyingHistory` guard so the resulting publish doesn't push
+  recursively. Extends `ChangeNotifier` so toolbar buttons rebuild on
+  history mutations even when a debounced push fires without a
+  coincident editor publish. 8 tests in
+  `test/state/editor_history_controller_test.dart` cover the floor
+  semantics, coalescing, undo/redo round-trip, redo-stack clear on
+  branched history, no-recursive-push during apply, pre-undo flush of
+  pending edits, and the `ChangeNotifier` notify pattern.
+  PlaybackScreen now uses this controller; the legacy
+  `UndoRedoController&lt;TrimSelection&gt;` plumbing is gone. Trim
+  selection rejoins undo when trim moves into `EditorProjectState`
+  (P2-10).
+  **Closes review bug #5** — the undo UI is no longer a lie.
 
 ### P2
 
@@ -245,3 +265,5 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P2-9 landed — schema migration switchboard. `EditorProjectState.fromJson` runs `migrateEditorProjectJson(...)` before field decoding. Chain has v0→v1 (no-op) and v1→v2 (insert schemaVersion marker). 5 tests in `test/state/editor_project_state_migration_test.dart`. Test result: 550 pass / 14 skip (+4 net new; one test was a clamp-bound correction).
 - 2026-05-21 — P0-2 step 2 landed — `_PlaybackScreenState` converted to `ConsumerStatefulWidget`. 14 editor-state private fields drained into the Riverpod notifier; `_captureProjectState` deleted (notifier state IS the captured form); `_persistProject` now wired via `ref.listen` (replaces ~30 inline calls); ~6 setStates removed; InspectorPanel callbacks rewired to notifier mutators directly. Frame chrome mirrored from `FrameSettingsProvider` into the notifier on every change so persistence captures it. Test result: 550 pass / 14 skip across both packages (0 net new tests, 0 regressions). UI verification deferred to running the app.
 - 2026-05-21 — P0-2 step 3 landed — `CursorTab` and `AnimationTab` converted to `ConsumerStatefulWidget`s reading editor state directly via `ref.watch(editorProjectControllerProvider)` and mutating via the notifier. `InspectorPanel` constructor shrank from 30+ params (state + callbacks) to 8 (frameSettings, width, initialTab, selection, zoomRegions, clipDuration, canHideCursor, curveLibrary + selection callbacks). Each tab now owns its own provider subscription, so a slider drag in the cursor tab no longer rebuilds the animation tab. Test result: 550 pass / 14 skip (0 net new, 0 regressions).
+- 2026-05-21 — runtime verification — launched app on macOS arm64 (had to bypass FVM's x86_64 wrapper); first launch crashed at scene-blur frame because shader assets had moved with P0-3 phase 2 but the loaders still used bare paths. Three fixes landed in commit `9d9f1c3`: shader loaders now use `packages/slipreel_engine/shaders/...` with a bare-path fallback for the engine's own tests. App ran clean after that.
+- 2026-05-21 — P1-7 landed — `EditorHistoryController` in slipreel_engine: ChangeNotifier wrapping `UndoRedoController<EditorProjectState>` with debounced coalescing (one history entry per slider drag, not per tick). 8 tests in `test/state/editor_history_controller_test.dart`. Wired into PlaybackScreen, replacing the broken trim-only undo. Test result: 558 pass / 14 skip across both packages (+8 new). **Bug #5 closed**.

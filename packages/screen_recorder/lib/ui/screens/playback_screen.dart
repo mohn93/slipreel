@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/state/editor_history_controller.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:video_player/video_player.dart';
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart' show CursorBlurMode;
@@ -18,7 +19,6 @@ import 'package:slipreel_engine/state/export_settings_store.dart';
 import 'package:slipreel_engine/state/export_telemetry_store.dart';
 import 'package:slipreel_engine/export/export_estimator.dart';
 import 'package:slipreel_engine/models/compression_bitrate.dart';
-import 'package:slipreel_engine/state/undo_redo_controller.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/cta_spinner.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
@@ -63,7 +63,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // for a frame.
   bool _isExporting = false;
   TrimSelection? _trimSelection;
-  late UndoRedoController<TrimSelection> _undoRedo;
+  // State-shaped undo/redo for everything the editor notifier owns
+  // (cursor visuals, animation configs, motion blur, zoom regions,
+  // etc.). Wired in [_initializeVideo] after the project state loads
+  // so the initial floor matches the on-disk snapshot. Trim selection
+  // is not yet covered — it'll join once trim moves into
+  // [EditorProjectState] alongside the timeline container (P2-10).
+  EditorHistoryController? _history;
   int? _selectedZoomIndex;
   // Whether the main clip bar is currently selected. Mutually
   // exclusive with [_selectedZoomIndex]: selecting one clears the
@@ -125,7 +131,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   @override
   void initState() {
     super.initState();
-    _undoRedo = UndoRedoController<TrimSelection>();
     _frameSettings = FrameSettingsProvider();
     _frameSettings.addListener(_onFrameSettingsChanged);
     _initializeVideo();
@@ -196,9 +201,18 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           end: _controller.value.duration,
           videoDuration: _controller.value.duration,
         );
-        // Push initial state to undo/redo controller
-        _undoRedo.push(_trimSelection!);
       });
+      // Wire state-shaped undo/redo. Starts AFTER `replace(saved)` so
+      // the initial history floor is the on-disk snapshot, not the
+      // defaults — Cmd-Z from a fresh-loaded recording does nothing
+      // (correctly: there's nothing to undo yet). Listen so the
+      // toolbar buttons re-enable when a debounced push lands without
+      // a coincident editor-state publish.
+      _history = EditorHistoryController(controller: _projectController)
+        ..addListener(() {
+          if (mounted) setState(() {});
+        })
+        ..start();
       // Auto-pause when playback reaches the trim end. Wired after
       // _isInitialized + _trimSelection are set so the listener never
       // sees a half-initialized state.
@@ -260,31 +274,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _controller.dispose();
     _frameSettings.removeListener(_onFrameSettingsChanged);
     _frameSettings.dispose();
+    _history?.dispose();
     _zoomDebugSnapshot.dispose();
     super.dispose();
   }
 
-  void _handleUndo() {
-    if (_undoRedo.canUndo) {
-      final previousState = _undoRedo.undo();
-      if (previousState != null) {
-        setState(() {
-          _trimSelection = previousState;
-        });
-      }
-    }
-  }
-
-  void _handleRedo() {
-    if (_undoRedo.canRedo) {
-      final nextState = _undoRedo.redo();
-      if (nextState != null) {
-        setState(() {
-          _trimSelection = nextState;
-        });
-      }
-    }
-  }
+  void _handleUndo() => _history?.undo();
+  void _handleRedo() => _history?.redo();
 
   /// Click-to-add zoom from the timeline ghost. Spatial rect defaults
   /// to the full video frame; the cursor-follow pipeline handles
@@ -677,7 +673,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         if (cmdOrCtrl &&
             event.logicalKey == LogicalKeyboardKey.keyZ &&
             !HardwareKeyboard.instance.isShiftPressed) {
-          if (_undoRedo.canUndo) {
+          if ((_history?.canUndo ?? false)) {
             _handleUndo();
             return KeyEventResult.handled;
           }
@@ -688,7 +684,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         if (cmdOrCtrl &&
             event.logicalKey == LogicalKeyboardKey.keyZ &&
             HardwareKeyboard.instance.isShiftPressed) {
-          if (_undoRedo.canRedo) {
+          if ((_history?.canRedo ?? false)) {
             _handleRedo();
             return KeyEventResult.handled;
           }
@@ -1204,7 +1200,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             children: [
               // Undo button
               IconButton(
-                onPressed: _undoRedo.canUndo ? _handleUndo : null,
+                onPressed: (_history?.canUndo ?? false) ? _handleUndo : null,
                 icon: const Icon(Icons.undo),
                 tooltip: 'Undo (Cmd+Z)',
                 color: const Color(0xFF6C63FF),
@@ -1213,7 +1209,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
               // Redo button
               IconButton(
-                onPressed: _undoRedo.canRedo ? _handleRedo : null,
+                onPressed: (_history?.canRedo ?? false) ? _handleRedo : null,
                 icon: const Icon(Icons.redo),
                 tooltip: 'Redo (Cmd+Shift+Z)',
                 color: const Color(0xFF6C63FF),
