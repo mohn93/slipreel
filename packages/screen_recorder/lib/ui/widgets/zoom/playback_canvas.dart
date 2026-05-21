@@ -471,6 +471,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                             widget.cursorTypeChangeBlurHalfWidthMs,
                         postProcess: widget.cursorPostProcess,
                         clickEffect: widget.cursorClickEffect,
+                        clickSpring: widget.clickSpring,
                       ),
                     ),
                   ),

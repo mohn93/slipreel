@@ -7,6 +7,7 @@ import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/rendering/cursor_click_effect.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/cursor_glyph.dart';
+import 'package:screen_recorder/rendering/spring_config.dart';
 import 'package:screen_recorder/state/cursor_post_process.dart';
 
 /// Renders the cursor with **temporal accumulation** motion blur — the
@@ -46,6 +47,7 @@ class AccumulationCursorPainter extends CustomPainter {
     this.typeChangeBlurHalfWidthMs,
     this.postProcess = CursorPostProcess.none,
     this.clickEffect = CursorClickEffect.ripple,
+    this.clickSpring = ClickSpring.snappy,
   });
 
   final CursorRecording cursorRecording;
@@ -125,6 +127,14 @@ class AccumulationCursorPainter extends CustomPainter {
   /// already paints this same ring; surfacing it here keeps the live
   /// preview consistent regardless of which blur mode is active.
   final CursorClickEffect clickEffect;
+
+  /// Spring tuning for the press-pulse — drives how fast the cursor
+  /// glyph shrinks on click and how it bounces back on release. Each
+  /// sub-frame stamp gets its own pulse multiplier sampled from this
+  /// spring at the stamp's recorded timestamp, so the press animation
+  /// plays through the motion trail rather than being lost the moment
+  /// the recording sees a click. Defaults to [ClickSpring.snappy].
+  final ClickSpring clickSpring;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -352,14 +362,33 @@ class AccumulationCursorPainter extends CustomPainter {
           sigmaY: sigma,
         );
       }
+
+      // Press-pulse: cached sprites are baked at base diameter (pulse =
+      // 1.0) since the cache key omits press-pulse phase — including
+      // it would miss every frame and re-rasterize the sprite, defeating
+      // the cache. Instead, apply the per-stamp pulse as a scale on the
+      // destination rect. Each sub-frame sample's t looks up the click
+      // state at that exact moment, so the press animation actually
+      // plays through the motion trail (stamps recorded before the
+      // click stay full-size; stamps after it shrink). Bug #4 from the
+      // 2026-05 architecture review.
+      final stampDt = microsSinceClick(cursorRecording, t);
+      final stampDtRelease = microsSinceRelease(cursorRecording, t);
+      final pulse = pressPulseMultiplier(
+        microsSinceClick: stampDt,
+        microsSinceRelease: stampDtRelease,
+        spring: clickSpring,
+      );
+      final scaledBuffer = spriteBufferSize * pulse;
+      final pulseInset = (spriteBufferSize - scaledBuffer) / 2;
       canvas.drawImageRect(
         stampSprite,
         srcRect,
         Rect.fromLTWH(
-          widgetPos.dx - spriteCenter.dx,
-          widgetPos.dy - spriteCenter.dy,
-          spriteBufferSize,
-          spriteBufferSize,
+          widgetPos.dx - spriteCenter.dx + pulseInset,
+          widgetPos.dy - spriteCenter.dy + pulseInset,
+          scaledBuffer,
+          scaledBuffer,
         ),
         stampPaint,
       );
@@ -387,7 +416,8 @@ class AccumulationCursorPainter extends CustomPainter {
         old.typeChangeBlurSigmaPx != typeChangeBlurSigmaPx ||
         old.typeChangeBlurHalfWidthMs != typeChangeBlurHalfWidthMs ||
         old.postProcess != postProcess ||
-        old.clickEffect != clickEffect;
+        old.clickEffect != clickEffect ||
+        old.clickSpring != clickSpring;
   }
 }
 
