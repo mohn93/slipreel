@@ -193,7 +193,24 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   bake-once-stamp-many pattern can be applied here too. More invasive
   than #1/#4 and only matters when motion-blur is active. Tracked as
   a follow-up.
-- [ ] **P1-5 — `FollowStrategy` interface** (Task #243)
+- [x] **P1-5 — `FollowStrategy` interface** (Task #243)
+  `FollowStrategy` abstract class in `lib/rendering/follow_strategy.dart`
+  with `resolve({zoom, cursor, cursorVelocity, currentFocal,
+  videoSize, tuning}) → FollowResolution(target, isHolding)` plus a
+  `reset()` hook for stateful strategies and an `inFlight` getter for
+  the debug HUD. Three concretes: `BoundedFollowStrategy` (owns the
+  gate state), `CenteredFollowStrategy` (stateless pass-through),
+  `PredictiveFollowStrategy` (reuses centered logic). 10 tests in
+  `test/rendering/follow_strategy_test.dart`.
+  `ZoomFocalController` now caches strategies in a
+  `Map<FollowMode, FollowStrategy>`, delegates per-frame target
+  resolution to the active strategy, and reads `isHolding` from the
+  strategy's explicit flag instead of `target == _smoothedFocal`
+  (closes review bug #8). The `_inFlight` field on the controller
+  is gone — gate state lives on `BoundedFollowStrategy`. `inFlight`
+  getter for the HUD now delegates to the active strategy.
+  Existing 50+ controller tests still pass with no changes
+  (behavior preserved by construction).
 - [x] **P1-6 — Cached cursor event lookups** (Task #244)
   Added `CursorEventIndex` on `CursorRecording`: lazy, version-keyed,
   rebuilds only after `addPosition`/`clear`. Exposes
@@ -282,3 +299,4 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — runtime verification — launched app on macOS arm64 (had to bypass FVM's x86_64 wrapper); first launch crashed at scene-blur frame because shader assets had moved with P0-3 phase 2 but the loaders still used bare paths. Three fixes landed in commit `9d9f1c3`: shader loaders now use `packages/slipreel_engine/shaders/...` with a bare-path fallback for the engine's own tests. App ran clean after that.
 - 2026-05-21 — P1-7 landed — `EditorHistoryController` in slipreel_engine: ChangeNotifier wrapping `UndoRedoController<EditorProjectState>` with debounced coalescing (one history entry per slider drag, not per tick). 8 tests in `test/state/editor_history_controller_test.dart`. Wired into PlaybackScreen, replacing the broken trim-only undo. Test result: 558 pass / 14 skip across both packages (+8 new). **Bug #5 closed**.
 - 2026-05-21 — P2-8 phase A landed — `MotionTuning` immutable record collects 8 spring/follow/feedforward constants from `ZoomFocalController` + `CursorMotionController` into one place. Named presets (`defaults`, `snappy`, `cinematic`) + JSON round-trip + per-field copyWith. Both controllers expose `tuning` via constructor param; `defaults` is the historic production set, so landing this is behavior-neutral. 8 tests. Test result: 566 pass / 14 skip across both packages (+8 new).
+- 2026-05-21 — P1-5 landed — `FollowStrategy` pluggable interface (Bounded / Centered / Predictive) lifts per-mode logic out of `ZoomFocalController`. The controller becomes a pure spring integrator + strategy cache; the bounded gate's `_inFlight` field moves onto `BoundedFollowStrategy` (was inline on the controller). Hold detection now reads from the strategy's explicit `isHolding` flag instead of a fragile `target == _smoothedFocal` compare — **bug #8 closed**. 10 tests in `test/rendering/follow_strategy_test.dart`. Test result: 576 pass / 14 skip across both packages (+10 new).

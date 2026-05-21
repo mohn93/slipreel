@@ -1,6 +1,7 @@
 import 'package:flutter/animation.dart' show Curves;
-import 'package:flutter/painting.dart' show Offset, Rect, Size;
+import 'package:flutter/painting.dart' show Offset, Size;
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/follow_strategy.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
 
 /// Stateful controller for the cursor-follow zoom focal point.
@@ -34,7 +35,6 @@ class ZoomFocalController {
   /// historic hand-tuned production set — pass an override to swap
   /// to a named preset or a JSON-loaded custom config.
   final MotionTuning tuning;
-  ZoomRegion? _previousActiveZoom;
   Offset? _smoothedFocal;
 
   // Spring state — velocity in source-video pixels per second, per
@@ -59,21 +59,14 @@ class ZoomFocalController {
   /// Playhead at which [lastSnapReason] fired. Exposed for the HUD.
   Duration? get lastSnapAt => _lastSnapAt;
 
-  // Bounded-mode "cursor outside the deadzone right now" flag. Pure
-  // per-frame state — set when this frame's cursor is outside the
-  // deadzone, cleared the moment the cursor re-enters it.
-  //
-  // The earlier design latched this flag through the entire chase so
-  // a transient cursor return inside the moving deadzone wouldn't
-  // abort. That preserves a ScreenStudio-style "commit to chase"
-  // semantic but produces a sticky latch: an earlier off-screen
-  // cursor excursion can leave the spring chasing for a long time
-  // even after the cursor settles back inside the deadzone, which
-  // the user reads as the camera drifting in a small zone for no
-  // visible reason. The leash semantic (hold the moment the cursor
-  // is inside the dz again, regardless of prior history) is closer
-  // to user intent and trivially explainable.
-  bool _inFlight = false;
+  /// Per-mode target resolution lives in [FollowStrategy]. Cached by
+  /// [FollowMode] so the bounded gate's `_inFlight` persists across
+  /// frames within one zoom region. Reset on active-region change.
+  final Map<FollowMode, FollowStrategy> _strategies = {};
+  FollowMode? _activeStrategyMode;
+
+  FollowStrategy _strategyFor(FollowMode mode) =>
+      _strategies.putIfAbsent(mode, () => followStrategyFor(mode));
 
   // Last [position] passed to [update]. Used for two purposes:
   // (1) detect backward scrubs that should snap rather than integrate;
@@ -162,7 +155,9 @@ class ZoomFocalController {
   // mid-drag. Engagement is still strictly positional (cursor must
   // leave the dz), so this can't fire as the old "velocity bypass"
   // did against a hover-inside-dz.
-  double get _cursorAtRestPxPerSec => tuning.cursorAtRestPxPerSec;
+  //
+  // The threshold itself now lives on [MotionTuning] and is read by
+  // [BoundedFollowStrategy].
 
   /// Last computed focal. Exposed for the debug HUD that draws the
   /// focal as a hollow yellow ring.
@@ -176,7 +171,11 @@ class ZoomFocalController {
   /// cursor left the deadzone at some point) or whether the drift is
   /// coming from somewhere else (false → the spring shouldn't be
   /// moving at all).
-  bool get inFlight => _inFlight;
+  bool get inFlight {
+    final mode = _activeStrategyMode;
+    if (mode == null) return false;
+    return _strategies[mode]?.inFlight ?? false;
+  }
 
   /// Current spring velocity in source-video pixels per second.
   /// Exposed for the debug HUD.
@@ -216,11 +215,10 @@ class ZoomFocalController {
   }) {
     final activeZoom = _activeZoomAt(position, zoomRegions);
     if (activeZoom == null) {
-      _previousActiveZoom = null;
       _smoothedFocal = null;
       _focalVx = 0;
       _focalVy = 0;
-      _inFlight = false;
+      _resetStrategies();
       _exitRampStartFocal = null;
       _lastUpdatePosition = position;
       return null;
@@ -243,12 +241,12 @@ class ZoomFocalController {
       _smoothedFocal = activeZoom.rect.center;
       _focalVx = 0;
       _focalVy = 0;
-      _inFlight = false;
+      _resetStrategies();
       _exitRampStartFocal = null;
-      _previousActiveZoom = activeZoom;
       _lastUpdatePosition = position;
       _lastSnapReason = 'init';
       _lastSnapAt = position;
+      _activeStrategyMode = activeZoom.followMode;
       return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
     }
     // Adopt the new zoom instance without resetting any spring state.
@@ -256,7 +254,6 @@ class ZoomFocalController {
     // drag, zoom region timeline-slot change) flow into the gate's
     // target on the next spring step and the spring chases there —
     // no jolt, no snap, just smooth motion.
-    _previousActiveZoom = activeZoom;
 
     // Backward scrub or hover-scrub force-snap: don't teleport the
     // focal, but DO zero the spring's velocity. Without zeroing, the
@@ -273,7 +270,7 @@ class ZoomFocalController {
     if (forceSnap || reverseScrub) {
       _focalVx = 0;
       _focalVy = 0;
-      _inFlight = false;
+      _resetStrategies();
       _lastSnapReason = forceSnap ? 'forceSnap (vel→0)' : 'reverseScrub (vel→0)';
       _lastSnapAt = position;
     }
@@ -313,7 +310,7 @@ class ZoomFocalController {
         // before the ramp.
         _focalVx = 0;
         _focalVy = 0;
-        _inFlight = false;
+        _resetStrategies();
         return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
       }
     }
@@ -321,19 +318,24 @@ class ZoomFocalController {
     // entry into an exit ramp re-captures from a fresh position.
     _exitRampStartFocal = null;
 
-    // Resolve target this frame. The bounded-mode gate is
-    // velocity-aware: it engages when the cursor leaves the
-    // deadzone, and releases only once the cursor has come to rest
-    // inside the deadzone — see [_resolveTarget] for the why.
-    final baseTarget = _baseTarget(activeZoom, cursor);
-    final target = _resolveTarget(
+    // Resolve target this frame via the pluggable per-mode strategy.
+    // The bounded strategy owns its gate state; centered/predictive
+    // are stateless pass-throughs. The strategy also reports whether
+    // the controller should treat this frame as a hold (overdamped)
+    // or an active chase (critical damping) — replaces the fragile
+    // `target == _smoothedFocal` check.
+    final strategy = _strategyFor(activeZoom.followMode);
+    _activeStrategyMode = activeZoom.followMode;
+    final resolution = strategy.resolve(
       zoom: activeZoom,
       cursor: cursor,
       cursorVelocity: cursorVelocity,
-      baseTarget: baseTarget,
       currentFocal: _smoothedFocal!,
       videoSize: videoSize,
+      tuning: tuning,
     );
+    final target = resolution.target;
+    final isHolding = resolution.isHolding;
 
     // Step the spring.
     final followUs = activeZoom.followDuration.inMicroseconds;
@@ -358,14 +360,13 @@ class ZoomFocalController {
         final k = omega * omega;
         // Damping ratio: critical (ζ = 1, c = 2ω) when the spring is
         // chasing — smooth acceleration to the target with no
-        // overshoot. Overdamped (ζ = 3, c = 6ω) when the bounded gate
-        // has locked the target to the current focal — any residual
+        // overshoot. Overdamped (ζ = 3, c = 6ω) when the gate has
+        // locked the target to the current focal — any residual
         // chase velocity at the chase→hold transition then bleeds
         // off ~3× faster, so the focal doesn't coast visibly past
-        // the cursor's re-entry point (the "trailing flick" complaint).
-        // We detect "hold mode" by target equality with the focal —
-        // `_resolveTarget` returns `currentFocal` itself in that case.
-        final isHolding = target == _smoothedFocal;
+        // the cursor's re-entry point (the "trailing flick"
+        // complaint). Hold detection comes from the strategy's
+        // explicit flag instead of a fragile Offset== compare.
         final c = isHolding ? 6.0 * omega : 2.0 * omega;
         var x = _smoothedFocal!.dx;
         var y = _smoothedFocal!.dy;
@@ -394,13 +395,18 @@ class ZoomFocalController {
   /// Drop all smoothing state. Use when switching to a different
   /// recording, scrubbing past a zoom region, or in tests.
   void reset() {
-    _previousActiveZoom = null;
     _smoothedFocal = null;
     _focalVx = 0;
     _focalVy = 0;
-    _inFlight = false;
+    _resetStrategies();
     _exitRampStartFocal = null;
     _lastUpdatePosition = null;
+  }
+
+  void _resetStrategies() {
+    for (final s in _strategies.values) {
+      s.reset();
+    }
   }
 
   // --- internals --------------------------------------------------
@@ -434,95 +440,10 @@ class ZoomFocalController {
     return (exitStartUs: exitStartUs, exitUs: exitUs);
   }
 
-  // [_initialTarget] removed: the spring now always starts at
-  // videoCenter on a cold init and chases the gate's target. The
-  // gate (in [_resolveTarget]) is the single source of truth for
-  // where the focal *should* be on any given frame.
-
-  /// "Base" target this frame, ignoring the deadzone — the cursor
-  /// when we're following it, or the zoom's static center otherwise.
-  static Offset _baseTarget(ZoomRegion zoom, Offset? cursor) {
-    if (!zoom.followCursor || cursor == null) {
-      return zoom.rect.center;
-    }
-    return cursor;
-  }
-
-  /// Decide the spring target this frame.
-  ///
-  /// For non-bounded modes (centered / predictive / followCursor=off)
-  /// the target is whatever [_baseTarget] returned — no gating.
-  ///
-  /// For bounded mode the gate is **engage-positional, release-
-  /// velocity-aware**:
-  ///   - **Engagement** (when not currently chasing): cursor outside
-  ///     the deadzone ⇒ start chasing. Strictly positional, so a
-  ///     hovering cursor with jitter inside the dz never starts a
-  ///     chase from noise alone.
-  ///   - **Release** (when currently chasing): cursor must be **both**
-  ///     inside the deadzone **and** at rest (scene-velocity below
-  ///     [_cursorAtRestPxPerSec]). The velocity condition is what
-  ///     prevents the gate-cycle artefact that pure-positional gates
-  ///     produce against a continuously-moving cursor — see the
-  ///     comment on [_cursorAtRestPxPerSec] for the full diagnosis.
-  ///
-  /// [_inFlight] holds across frames as a result, but only across
-  /// the duration of a single chase. It is NOT the old "commit-to-
-  /// chase" latch: engagement remains gated by the cursor genuinely
-  /// leaving the dz.
-  Offset _resolveTarget({
-    required ZoomRegion zoom,
-    required Offset? cursor,
-    required Offset cursorVelocity,
-    required Offset baseTarget,
-    required Offset currentFocal,
-    required Size videoSize,
-  }) {
-    final boundsActive = zoom.followCursor &&
-        zoom.followMode == FollowMode.bounded &&
-        cursor != null &&
-        zoom.deadzoneRatio > 0 &&
-        videoSize.width > 0 &&
-        videoSize.height > 0;
-    if (!boundsActive) {
-      _inFlight = false;
-      return baseTarget;
-    }
-    final z = zoom.zoomLevel;
-    final dzW = (videoSize.width / z) * zoom.deadzoneRatio;
-    final dzH = (videoSize.height / z) * zoom.deadzoneRatio;
-    final dz = Rect.fromCenter(
-      center: currentFocal,
-      width: dzW,
-      height: dzH,
-    );
-
-    if (_inFlight) {
-      // Currently chasing. Release only when the cursor is **both**
-      // inside the dz **and** at rest. The velocity check is what
-      // keeps a continuous chase from cycling: during steady motion
-      // the spring's lag puts the cursor inside the dz, but the
-      // cursor's intrinsic velocity is well above the threshold so
-      // the gate stays engaged. When the user actually stops moving
-      // the cursor, scene velocity falls within ~33 ms of the stop
-      // (the velocity-lookback window) and the gate releases here.
-      final cursorAtRest =
-          cursorVelocity.distance < _cursorAtRestPxPerSec;
-      if (cursorAtRest && dz.contains(cursor)) {
-        _inFlight = false;
-        return currentFocal;
-      }
-      return baseTarget;
-    }
-
-    // Not currently chasing. Engagement is strictly positional so
-    // hover jitter inside the dz never starts a chase from noise.
-    if (dz.contains(cursor)) {
-      return currentFocal;
-    }
-    _inFlight = true;
-    return baseTarget;
-  }
+  // _baseTarget and _resolveTarget moved into FollowStrategy
+  // (P1-5). The controller is now a pure spring integrator that
+  // delegates per-frame target resolution to a pluggable strategy
+  // keyed by FollowMode.
 
   static ZoomRegion? _activeZoomAt(
     Duration position,
