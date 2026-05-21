@@ -1,10 +1,14 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/painting.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 /// Stores cursor position data for a recording session
 class CursorRecording {
   final List<CursorPosition> _positions = [];
+  int _version = 0;
+  CursorEventIndex? _eventIndexCache;
+  int? _eventIndexVersion;
 
   /// Get unmodifiable view of positions
   List<CursorPosition> get positions => List.unmodifiable(_positions);
@@ -12,6 +16,23 @@ class CursorRecording {
   /// Add a cursor position to the recording
   void addPosition(CursorPosition position) {
     _positions.add(position);
+    _version++;
+  }
+
+  /// Indexed click/release events derived from the recording. Lazily
+  /// built on first access, cached, and invalidated whenever the
+  /// recording mutates ([addPosition] / [clear]). Painters and the
+  /// press-pulse spring used to walk the entire `_positions` list
+  /// from the start every frame to find the most recent click —
+  /// O(N) per call × 3 painters × 60 fps was wasted work on every
+  /// recording of any length. The index sorts events into two short
+  /// arrays and answers via binary search.
+  CursorEventIndex get eventIndex {
+    if (_eventIndexCache == null || _eventIndexVersion != _version) {
+      _eventIndexCache = CursorEventIndex._fromPositions(_positions);
+      _eventIndexVersion = _version;
+    }
+    return _eventIndexCache!;
   }
 
   /// Get cursor position at the given timestamp.
@@ -150,5 +171,82 @@ class CursorRecording {
   /// Clear all positions
   void clear() {
     _positions.clear();
+    _version++;
+  }
+}
+
+/// One click event extracted from a [CursorRecording] — the timestamp
+/// of the false→true `isClicked` transition and the cursor's
+/// screen-space position at that moment. Stored in [CursorEventIndex]
+/// so the press-pulse can find "which click most recently happened
+/// at or before time t" without walking the recording every frame.
+class CursorClickEvent {
+  const CursorClickEvent({
+    required this.timestampMicros,
+    required this.screenPos,
+  });
+  final int timestampMicros;
+  final Offset screenPos;
+}
+
+/// Pre-extracted click / release event lists with sorted timestamps,
+/// answering "what's the most recent click/release at or before t?"
+/// in O(log N) via binary search. Built lazily by
+/// [CursorRecording.eventIndex] and invalidated on mutation.
+class CursorEventIndex {
+  CursorEventIndex._fromPositions(List<CursorPosition> positions) {
+    bool? prevClicked;
+    for (final p in positions) {
+      if (prevClicked == false && p.isClicked) {
+        _clickMicros.add(p.timestampMicros);
+        _clickPositions.add(Offset(p.x, p.y));
+      } else if (prevClicked == true && !p.isClicked) {
+        _releaseMicros.add(p.timestampMicros);
+      }
+      prevClicked = p.isClicked;
+    }
+  }
+
+  final List<int> _clickMicros = <int>[];
+  final List<Offset> _clickPositions = <Offset>[];
+  final List<int> _releaseMicros = <int>[];
+
+  /// Most recent click event at or before [timestampMicros], or null
+  /// when no click has happened yet at that playhead.
+  CursorClickEvent? lastClickAtOrBefore(int timestampMicros) {
+    final idx = _floorIndex(_clickMicros, timestampMicros);
+    if (idx < 0) return null;
+    return CursorClickEvent(
+      timestampMicros: _clickMicros[idx],
+      screenPos: _clickPositions[idx],
+    );
+  }
+
+  /// Timestamp of the most recent button-release at or before
+  /// [timestampMicros], or null when the button has never been
+  /// released by then.
+  int? lastReleaseAtOrBefore(int timestampMicros) {
+    final idx = _floorIndex(_releaseMicros, timestampMicros);
+    if (idx < 0) return null;
+    return _releaseMicros[idx];
+  }
+
+  /// Returns the largest index `i` such that `sorted[i] <= target`,
+  /// or -1 when [target] is below every element. The input list is
+  /// already sorted ascending because it was built by walking the
+  /// recording in order. Standard floor-style binary search.
+  static int _floorIndex(List<int> sorted, int target) {
+    if (sorted.isEmpty || sorted.first > target) return -1;
+    var lo = 0;
+    var hi = sorted.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (sorted[mid] <= target) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo;
   }
 }

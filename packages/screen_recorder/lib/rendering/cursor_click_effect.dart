@@ -32,42 +32,17 @@ const double _heldMultiplier = 0.86;
 /// Total length of the ripple expansion+fade.
 const int _rippleDurationMicros = 350000;
 
-/// One click event: when it happened (false→true transition) and where
-/// the cursor was at that moment in screen-space. Returned by
-/// [mostRecentClickEvent] so the renderer can pin the ripple to the
-/// click site even after the cursor has moved on.
-class CursorClickEvent {
-  final int timestampMicros;
-  final Offset screenPos;
-  const CursorClickEvent({
-    required this.timestampMicros,
-    required this.screenPos,
-  });
-}
-
 /// Returns the most recent false→true click transition at or before
-/// [timestampMicros], or null if no click has happened yet. Walks the
-/// recording from the start once per call — recordings are small
-/// enough that this isn't worth caching today.
+/// [timestampMicros], or null if no click has happened yet.
+///
+/// Backed by [CursorRecording.eventIndex]: O(log N) binary search on
+/// a pre-built sorted list, vs. the legacy O(N) walk that ran every
+/// frame from every painter.
 CursorClickEvent? mostRecentClickEvent(
   CursorRecording recording,
   int timestampMicros,
 ) {
-  final positions = recording.positions;
-  if (positions.isEmpty) return null;
-  bool? prevClicked;
-  CursorClickEvent? mostRecent;
-  for (final p in positions) {
-    if (p.timestampMicros > timestampMicros) break;
-    if (prevClicked == false && p.isClicked) {
-      mostRecent = CursorClickEvent(
-        timestampMicros: p.timestampMicros,
-        screenPos: Offset(p.x, p.y),
-      );
-    }
-    prevClicked = p.isClicked;
-  }
-  return mostRecent;
+  return recording.eventIndex.lastClickAtOrBefore(timestampMicros);
 }
 
 /// Microseconds since the most recent click event, or null if no click
@@ -76,7 +51,7 @@ int? microsSinceClick(
   CursorRecording recording,
   int timestampMicros,
 ) {
-  final ev = mostRecentClickEvent(recording, timestampMicros);
+  final ev = recording.eventIndex.lastClickAtOrBefore(timestampMicros);
   if (ev == null) return null;
   final delta = timestampMicros - ev.timestampMicros;
   return delta < 0 ? null : delta;
@@ -84,25 +59,15 @@ int? microsSinceClick(
 
 /// Microseconds since the most recent button-release event (true→false
 /// transition), or null if no release has happened yet at
-/// [timestampMicros]. Walks the recording from the start once per
-/// call; recordings are small enough this isn't worth caching.
+/// [timestampMicros].
 int? microsSinceRelease(
   CursorRecording recording,
   int timestampMicros,
 ) {
-  final positions = recording.positions;
-  if (positions.isEmpty) return null;
-  bool? prevClicked;
-  int? lastReleaseMicros;
-  for (final p in positions) {
-    if (p.timestampMicros > timestampMicros) break;
-    if (prevClicked == true && !p.isClicked) {
-      lastReleaseMicros = p.timestampMicros;
-    }
-    prevClicked = p.isClicked;
-  }
-  if (lastReleaseMicros == null) return null;
-  final delta = timestampMicros - lastReleaseMicros;
+  final releaseMicros =
+      recording.eventIndex.lastReleaseAtOrBefore(timestampMicros);
+  if (releaseMicros == null) return null;
+  final delta = timestampMicros - releaseMicros;
   return delta < 0 ? null : delta;
 }
 

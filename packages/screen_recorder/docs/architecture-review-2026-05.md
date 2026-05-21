@@ -190,7 +190,17 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   than #1/#4 and only matters when motion-blur is active. Tracked as
   a follow-up.
 - [ ] **P1-5 — `FollowStrategy` interface** (Task #243)
-- [ ] **P1-6 — Cached cursor event lookups** (Task #244)
+- [x] **P1-6 — Cached cursor event lookups** (Task #244)
+  Added `CursorEventIndex` on `CursorRecording`: lazy, version-keyed,
+  rebuilds only after `addPosition`/`clear`. Exposes
+  `lastClickAtOrBefore(t)` and `lastReleaseAtOrBefore(t)` via O(log N)
+  binary search over pre-sorted timestamp lists.
+  `mostRecentClickEvent`, `microsSinceClick`, `microsSinceRelease` now
+  delegate to the index — same public API, no more O(N) walks per
+  painter per frame. 7 tests in
+  `test/models/cursor_event_index_test.dart` (empty recording, no
+  click yet, multiple clicks, release sequence, cache invalidation,
+  long recording binary-search correctness).
 - [ ] **P1-7 — State-shaped undo/redo** (Task #245, blocked by P0-2)
 
 ### P2
@@ -214,3 +224,5 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P0-1 + P0-3 + P0-2 foundation merged to main; new working branch `refactor/p1-4-unified-cursor-painter`.
 - 2026-05-21 — P1-4 phase A — added `CursorPaintRequest` + `paintCursorComposed` in `lib/rendering/cursor_painter.dart` (4 tests in `test/rendering/cursor_painter_test.dart`). Deleted the buggy `paintCursorWithEffects` wrapper. Updated `CursorRenderer` to look up the click event and pass `clickPosition` to the new API — **bug #1 closed** (exported MP4s no longer drag the ripple along with the cursor). Test result: 536 pass / 14 skip (+4 new).
 - 2026-05-21 — P1-4 phase B — fixed **bug #4** (accumulation press-pulse lost on cached sprites): `AccumulationCursorPainter` now applies the per-stamp press-pulse as a scale on the destination rect instead of trying to bake it into the cached sprite. Added `clickSpring` parameter to the painter, wired through `PlaybackCanvas`. 2 new tests in `test/effects/accumulation_cursor_painter_test.dart` (538 pass total).
+- 2026-05-21 — P1-4 merged to main; new branch `refactor/p1-6-cached-cursor-events`.
+- 2026-05-21 — P1-6 landed — replaced O(N) cursor-event walks with O(log N) indexed lookups. `CursorRecording` now exposes a lazily-built `CursorEventIndex` (version-keyed, rebuilds on mutation). 7 new tests in `test/models/cursor_event_index_test.dart`. Test result: 545 pass / 14 skip (+7 new, 0 regressions).
