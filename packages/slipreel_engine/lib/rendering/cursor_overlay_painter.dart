@@ -232,18 +232,21 @@ class CursorOverlayPainter extends CustomPainter {
       );
     }
 
-    // Pre-bake just the cursor body (with press-pulse) to a ui.Image so
-    // the shader can sample it cheaply, and so the fallback path's
-    // multi-stamp loop only re-rasterizes vectors once per frame.
+    // Pre-bake just the cursor body to a ui.Image so the shader can
+    // sample it cheaply and the fallback path only re-rasterizes
+    // vectors once. The bake is now BARE (no press-pulse, no drop
+    // shadow) so it can be cached across frames — the press-pulse is
+    // applied as a destination-rect scale at stamp time, and the
+    // shadow is drawn separately. Without this split the bake would
+    // change every frame the press-pulse animates and the cache would
+    // miss continuously (bug #9 / P1-4 phase C).
     //
     // Buffer-size budget per side from the cursor's tip (which sits at
     // the buffer's center): the macOS-shape glyph extends at most ~1.27
     // × pxDiameter from the tip in any direction (body height + halo
-    // overshoot); the drop shadow extends another ~0.5 × pxDiameter
-    // below at full intensity (offset + 3σ blur); the trail reaches
-    // `reach` pixels in the velocity direction. 4 × pxDiameter centred
-    // on the tip covers all of those without clipping, even at the
-    // inspector slider's maxima.
+    // overshoot); the trail reaches `reach` pixels in the velocity
+    // direction. 4 × pxDiameter centred on the tip covers all of
+    // those without clipping, even at the inspector slider's maxima.
     final reach = samples.stepPx.distance * (samples.count - 1);
     final spriteBufferSize =
         (pxDiameter * 4 + reach * 2).ceil().toDouble();
@@ -257,36 +260,39 @@ class CursorOverlayPainter extends CustomPainter {
     final dpr = devicePixelRatio <= 0 ? 1.0 : devicePixelRatio;
     final spriteBufferPixelSize = (spriteBufferSize * dpr).ceil();
 
-    final recorder = ui.PictureRecorder();
-    final spriteCanvas = Canvas(
-      recorder,
-      Rect.fromLTWH(
-        0,
-        0,
-        spriteBufferPixelSize.toDouble(),
-        spriteBufferPixelSize.toDouble(),
-      ),
-    );
-    spriteCanvas.scale(dpr);
-    paintCursorGlyphWithPulse(
-      spriteCanvas,
-      position: spriteBufferCenter,
-      baseDiameter: pxDiameter,
-      style: style,
+    // Press-pulse is applied per stamp at draw time so the bake stays
+    // cacheable (sprite cache key omits press-pulse phase by design).
+    final pulse = pressPulseMultiplier(
       microsSinceClick: dt,
       microsSinceRelease: dtRelease,
-      clickSpring: clickSpring,
+      spring: clickSpring,
+    );
+
+    final spriteImage = _overlaySpriteCache.get(
+      pxDiameter: pxDiameter,
+      dpr: dpr,
+      style: style,
       state: cursorState,
-      shadowIntensity: cursorShadow,
+      bufferPx: spriteBufferPixelSize,
+      bufferLogical: spriteBufferSize,
+      spriteCenter: spriteBufferCenter,
     );
-    final picture = recorder.endRecording();
-    final spriteImage = picture.toImageSync(
-      spriteBufferPixelSize,
-      spriteBufferPixelSize,
-    );
-    picture.dispose();
 
     try {
+      // Drop shadow goes UNDER the smeared sprite so the smear's
+      // alpha doesn't darken it. Scales with the pulse so a held
+      // click visibly shrinks the shadow alongside the body.
+      if (cursorShadow > 0) {
+        paintCursorShadow(
+          canvas,
+          position: widgetPos,
+          diameter: pxDiameter * pulse,
+          style: style,
+          state: cursorState,
+          intensity: cursorShadow,
+        );
+      }
+
       final program = _motionBlurProgram;
       if (program != null) {
         // Shader path: one drawRect with a fragment shader that
@@ -308,13 +314,19 @@ class CursorOverlayPainter extends CustomPainter {
 
         // FlutterFragCoord is canvas-local under Skia. Translate the
         // canvas so the rect's top-left is at (0, 0), draw at origin.
+        // Pulse scales the rect uniformly so a held click visibly
+        // shrinks the smear too; the smear length scales with it,
+        // which reads correctly because the trail and the body
+        // belong to the same logical cursor.
+        final scaledSize = spriteBufferSize * pulse;
+        final pulseInset = (spriteBufferSize - scaledSize) / 2;
         canvas.save();
         canvas.translate(
-          widgetPos.dx - spriteBufferCenter.dx,
-          widgetPos.dy - spriteBufferCenter.dy,
+          widgetPos.dx - spriteBufferCenter.dx + pulseInset,
+          widgetPos.dy - spriteBufferCenter.dy + pulseInset,
         );
         canvas.drawRect(
-          Rect.fromLTWH(0, 0, spriteBufferSize, spriteBufferSize),
+          Rect.fromLTWH(0, 0, scaledSize, scaledSize),
           Paint()..shader = shader,
         );
         canvas.restore();
@@ -331,6 +343,8 @@ class CursorOverlayPainter extends CustomPainter {
           spriteBufferPixelSize.toDouble(),
           spriteBufferPixelSize.toDouble(),
         );
+        final scaledSize = spriteBufferSize * pulse;
+        final pulseInset = (spriteBufferSize - scaledSize) / 2;
         for (var i = 0; i < samples.count; i++) {
           final tailIndex = samples.count - 1 - i;
           final dx = samples.stepPx.dx * tailIndex;
@@ -339,10 +353,10 @@ class CursorOverlayPainter extends CustomPainter {
             spriteImage,
             spriteSrcRect,
             Rect.fromLTWH(
-              widgetPos.dx + dx - spriteBufferCenter.dx,
-              widgetPos.dy + dy - spriteBufferCenter.dy,
-              spriteBufferSize,
-              spriteBufferSize,
+              widgetPos.dx + dx - spriteBufferCenter.dx + pulseInset,
+              widgetPos.dy + dy - spriteBufferCenter.dy + pulseInset,
+              scaledSize,
+              scaledSize,
             ),
             Paint()
               ..color = Colors.white.withValues(alpha: samples.alphas[i])
@@ -351,7 +365,8 @@ class CursorOverlayPainter extends CustomPainter {
         }
       }
     } finally {
-      spriteImage.dispose();
+      // No spriteImage.dispose() — the cache owns it. Disposing
+      // would invalidate the next frame's lookup.
     }
   }
 
@@ -543,3 +558,87 @@ class CursorOverlayPainter extends CustomPainter {
         old.devicePixelRatio != devicePixelRatio;
   }
 }
+
+/// Cache of pre-baked, bare cursor sprites keyed by the inputs that
+/// can change frame-to-frame (diameter, dpr, style, state, bufferPx).
+/// Each baked sprite is the cursor body alone — no press-pulse, no
+/// drop shadow — so the cache key needn't include the press-pulse
+/// phase (which would re-bake every frame) or the shadow knob (which
+/// the painter applies separately at draw time). Without this cache,
+/// the motion-blur branch called `picture.toImageSync` on every
+/// frame the cursor was moving, stalling the UI thread on each tick
+/// (bug #9 from the 2026-05 architecture review).
+class _OverlaySpriteCache {
+  static const int _capacity = 8;
+  final Map<_OverlaySpriteKey, ui.Image> _entries =
+      <_OverlaySpriteKey, ui.Image>{}; // insertion-order LRU
+
+  ui.Image get({
+    required double pxDiameter,
+    required double dpr,
+    required CursorStyle style,
+    required CursorState state,
+    required int bufferPx,
+    required double bufferLogical,
+    required Offset spriteCenter,
+  }) {
+    final key = _OverlaySpriteKey(pxDiameter, dpr, style, state, bufferPx);
+    final hit = _entries.remove(key);
+    if (hit != null) {
+      _entries[key] = hit; // touch (move to end)
+      return hit;
+    }
+    final recorder = ui.PictureRecorder();
+    final c = Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, bufferPx.toDouble(), bufferPx.toDouble()),
+    );
+    c.scale(dpr);
+    paintCursorGlyph(
+      c,
+      position: spriteCenter,
+      diameter: pxDiameter,
+      style: style,
+      state: state,
+    );
+    final pic = recorder.endRecording();
+    final image = pic.toImageSync(bufferPx, bufferPx);
+    pic.dispose();
+    _entries[key] = image;
+    while (_entries.length > _capacity) {
+      final firstKey = _entries.keys.first;
+      _entries.remove(firstKey)?.dispose();
+    }
+    return image;
+  }
+}
+
+@immutable
+class _OverlaySpriteKey {
+  const _OverlaySpriteKey(
+    this.pxDiameter,
+    this.dpr,
+    this.style,
+    this.state,
+    this.bufferPx,
+  );
+  final double pxDiameter;
+  final double dpr;
+  final CursorStyle style;
+  final CursorState state;
+  final int bufferPx;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _OverlaySpriteKey &&
+      other.pxDiameter == pxDiameter &&
+      other.dpr == dpr &&
+      other.style == style &&
+      other.state == state &&
+      other.bufferPx == bufferPx;
+
+  @override
+  int get hashCode => Object.hash(pxDiameter, dpr, style, state, bufferPx);
+}
+
+final _overlaySpriteCache = _OverlaySpriteCache();

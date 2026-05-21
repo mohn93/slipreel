@@ -204,7 +204,7 @@ void paintCursorGlyphWithPulse(
   );
   final effectiveDiameter = baseDiameter * pulse;
   if (shadowIntensity > 0) {
-    _paintCursorShadow(
+    paintCursorShadow(
       canvas,
       position: position,
       diameter: effectiveDiameter,
@@ -233,7 +233,11 @@ void paintCursorGlyphWithPulse(
 /// slider drives offset, blur radius, and opacity together. The base
 /// constants are tuned for the macOS cursor's typical drop-shadow
 /// look (subtle, mostly downward, narrow halo).
-void _paintCursorShadow(
+/// Public so painters that need to cache a bare glyph sprite can
+/// stamp the shadow separately at draw time (the sprite cache lives
+/// at base diameter; the shadow scales with the press-pulse multiplier
+/// so it can't be baked once and reused).
+void paintCursorShadow(
   Canvas canvas, {
   required Offset position,
   required double diameter,
