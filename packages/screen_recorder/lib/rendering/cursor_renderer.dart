@@ -6,10 +6,11 @@ import '../effects/background_effect.dart';
 import '../utils/app_logger.dart';
 import 'cursor_click_effect.dart';
 import 'cursor_glyph.dart';
+import 'cursor_painter.dart';
 import 'spring_config.dart';
 
 /// Renders cursor overlay on video frames during export. The glyph is
-/// drawn programmatically via [paintCursorWithEffects] so the exported
+/// drawn programmatically via [paintCursorComposed] so the exported
 /// video matches the editor's playback overlay (size, style, and click
 /// effect) frame-for-frame.
 class CursorRenderer {
@@ -78,17 +79,31 @@ class CursorRenderer {
       // recording stores positions in screen-space pixels; for the
       // export, screen-space matches video-space (we encode at the
       // capture's native dimensions).
-      final dt = microsSinceClick(cursorRecording, timestampMicros);
-      final dtRelease = microsSinceRelease(cursorRecording, timestampMicros);
-      paintCursorWithEffects(
+      //
+      // The ripple is anchored to where the click *landed*, not to the
+      // current cursor position, so click-and-drag in the recording
+      // doesn't drag the ring around (bug #1 from the 2026-05
+      // architecture review — the legacy `paintCursorWithEffects`
+      // wrapper conflated both positions).
+      final clickEvent =
+          mostRecentClickEvent(cursorRecording, timestampMicros);
+      final int? dt = clickEvent == null
+          ? null
+          : timestampMicros - clickEvent.timestampMicros;
+      final dtRelease =
+          microsSinceRelease(cursorRecording, timestampMicros);
+      paintCursorComposed(
         canvas,
-        position: ui.Offset(cursorPos.x, cursorPos.y),
-        baseDiameter: kCursorBaseDiameter * sizeMultiplier,
-        style: style,
-        microsSinceClick: dt,
-        microsSinceRelease: dtRelease,
-        clickSpring: clickSpring,
-        effect: clickEffect,
+        CursorPaintRequest(
+          cursorPosition: ui.Offset(cursorPos.x, cursorPos.y),
+          clickPosition: clickEvent?.screenPos,
+          microsSinceClick: dt,
+          microsSinceRelease: dtRelease,
+          baseDiameter: kCursorBaseDiameter * sizeMultiplier,
+          style: style,
+          clickSpring: clickSpring,
+          clickEffect: clickEffect,
+        ),
       );
 
       // Convert back to BGRA bytes

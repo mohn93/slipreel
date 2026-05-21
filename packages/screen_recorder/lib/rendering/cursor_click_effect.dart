@@ -316,36 +316,3 @@ void _paintCursorShadow(
   canvas.restore();
 }
 
-/// Convenience wrapper: ripple underneath, glyph (with pulse) on top.
-/// Use this on rendering paths that don't apply motion blur.
-void paintCursorWithEffects(
-  Canvas canvas, {
-  required Offset position,
-  required double baseDiameter,
-  required CursorStyle style,
-  required int? microsSinceClick,
-  int? microsSinceRelease,
-  ClickSpring clickSpring = ClickSpring.snappy,
-  CursorClickEffect effect = CursorClickEffect.none,
-  CursorState state = CursorState.arrow,
-  double shadowIntensity = 0,
-}) {
-  paintCursorRipple(
-    canvas,
-    position: position,
-    baseDiameter: baseDiameter,
-    microsSinceClick: microsSinceClick,
-    effect: effect,
-  );
-  paintCursorGlyphWithPulse(
-    canvas,
-    position: position,
-    baseDiameter: baseDiameter,
-    style: style,
-    microsSinceClick: microsSinceClick,
-    microsSinceRelease: microsSinceRelease,
-    clickSpring: clickSpring,
-    state: state,
-    shadowIntensity: shadowIntensity,
-  );
-}

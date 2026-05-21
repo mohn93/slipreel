@@ -21,7 +21,7 @@ import '../../rendering/spring_config.dart';
 /// — the painter itself stays stateless. Click events are still looked
 /// up against [cursorRecording] for the press-pulse + ripple.
 ///
-/// The glyph + click effects are drawn via [paintCursorWithEffects] so
+/// The glyph + click effects are drawn via [paintCursorComposed] so
 /// the preview and the exported video stay visually consistent. When
 /// [motionBlurIntensity] is > 0 and the cursor moved during the virtual
 /// shutter window, the cursor sprite is smeared along the chord of its

@@ -174,7 +174,15 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 
 ### P1
 
-- [ ] **P1-4 — Unified `paintCursor()` entry point** (Task #242)
+- [ ] **P1-4 — Unified `paintCursor()` entry point** (Task #242) — _phase A landed (bug #1)_
+  Phase A: introduced `CursorPaintRequest` + `paintCursorComposed(canvas, req)`
+  in `lib/rendering/cursor_painter.dart`. Replaced the buggy
+  `paintCursorWithEffects` convenience wrapper (which forced ripple
+  and glyph to share one position). `CursorRenderer` now looks up the
+  click event and passes `clickPosition` separately — **bug #1
+  closed**. Phase B: fold accumulation press-pulse out of the sprite
+  cache (bug #4) and add a sprite cache to the overlay painter to
+  stop the per-frame `toImageSync` (bug #9).
 - [ ] **P1-5 — `FollowStrategy` interface** (Task #243)
 - [ ] **P1-6 — Cached cursor event lookups** (Task #244)
 - [ ] **P1-7 — State-shaped undo/redo** (Task #245, blocked by P0-2)
@@ -197,3 +205,5 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P0-1 landed — extracted `ScenePassBuilder` (new file `lib/rendering/scene_pass_builder.dart`, 7 new tests in `test/rendering/scene_pass_builder_test.dart`). Wired into `FrameCompositor` + `PlaybackCanvas`. **Bug #2 fixed**: export's bounded-mode gate now sees `cursorVelocity` and behaves identically to preview. Test result: 521 pass / 14 skip (+7 new, zero regressions).
 - 2026-05-21 — P0-3 phase 1 — moved `cursor_motion_controller.dart`, `zoom_focal_controller.dart`, `cursor_overlay_painter.dart` from `lib/ui/widgets/` into `lib/rendering/`. Engine-layer directories (`models`, `rendering`, `effects`, `export`, `state`) are now UI-free. Added `test/architecture/engine_layer_boundary_test.dart` to enforce the boundary. Test result: 522 pass / 14 skip (+1 new). Phase 2 (sibling-package extraction) deferred to follow-up.
 - 2026-05-21 — P0-2 foundation — added `EditorProjectState.copyWith` and `EditorProjectController` (StateNotifier) + `editorProjectControllerProvider` (Riverpod). 10 new tests in `test/state/editor_project_{state,controller}_test.dart`. Migration of `_PlaybackScreenState` and the inspector to consume the controller is deferred — that's a 1000-line touch on the largest screen and warrants its own dedicated session. Test result: 532 pass / 14 skip (+10 new).
+- 2026-05-21 — P0-1 + P0-3 + P0-2 foundation merged to main; new working branch `refactor/p1-4-unified-cursor-painter`.
+- 2026-05-21 — P1-4 phase A — added `CursorPaintRequest` + `paintCursorComposed` in `lib/rendering/cursor_painter.dart` (4 tests in `test/rendering/cursor_painter_test.dart`). Deleted the buggy `paintCursorWithEffects` wrapper. Updated `CursorRenderer` to look up the click event and pass `clickPosition` to the new API — **bug #1 closed** (exported MP4s no longer drag the ripple along with the cursor). Test result: 536 pass / 14 skip (+4 new).
