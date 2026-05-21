@@ -88,10 +88,6 @@ class InspectorPanel extends StatefulWidget {
 class _InspectorPanelState extends State<InspectorPanel> {
   late InspectorTab _selected = widget.initialTab;
 
-  // Local state for context-mode controls that don't have a model
-  // field yet. (Zoom controls all read/write through ZoomRegion now.)
-  final _ClipLocalState _clipLocal = _ClipLocalState();
-
   @override
   Widget build(BuildContext context) {
     final selection = widget.selection;
@@ -175,13 +171,6 @@ class _InspectorPanelState extends State<InspectorPanel> {
   Widget _clipContext() {
     return ClipContextInspector(
       clipDuration: widget.clipDuration,
-      playbackSpeed: _clipLocal.playbackSpeed,
-      onPlaybackSpeedChanged: (v) =>
-          setState(() => _clipLocal.playbackSpeed = v),
-      fadeIn: _clipLocal.fadeIn,
-      fadeOut: _clipLocal.fadeOut,
-      onFadeInChanged: (v) => setState(() => _clipLocal.fadeIn = v),
-      onFadeOutChanged: (v) => setState(() => _clipLocal.fadeOut = v),
       onClose: () => widget.onSelectionCleared?.call(),
     );
   }
@@ -271,8 +260,7 @@ class _AccentDot extends StatelessWidget {
   }
 }
 
-class _ClipLocalState {
-  double playbackSpeed = 1.0;
-  double fadeIn = 0;
-  double fadeOut = 0;
-}
+// _ClipLocalState removed — clip-level fields (playbackSpeed,
+// fadeIn, fadeOut) moved into EditorProjectState via P2-8 bugfix
+// (review bug #6). Inspector now reads them via ref.watch on the
+// editor notifier so the values persist across rebuilds and on disk.

@@ -33,6 +33,9 @@ class EditorProjectState {
     required this.cursorDelay,
     required this.windowFrame,
     this.cursorPostProcess = CursorPostProcess.none,
+    this.playbackSpeed = 1.0,
+    this.fadeIn = Duration.zero,
+    this.fadeOut = Duration.zero,
   });
 
   /// Sensible blank slate for a freshly-loaded recording with no saved
@@ -98,6 +101,21 @@ class EditorProjectState {
   /// section. Defaults to [CursorPostProcess.none] — all filters off.
   final CursorPostProcess cursorPostProcess;
 
+  /// Playback speed multiplier for the clip (1.0 = native). Edited
+  /// from the Clip context inspector. The export pipeline does not
+  /// yet apply this — the field round-trips through persistence so
+  /// users don't lose their picker choice when an actual speed
+  /// transform lands.
+  final double playbackSpeed;
+
+  /// Fade-in duration applied at the start of the clip. Round-tripped
+  /// through persistence; pipeline wiring is pending — see
+  /// [playbackSpeed].
+  final Duration fadeIn;
+
+  /// Fade-out duration applied at the end of the clip. See [fadeIn].
+  final Duration fadeOut;
+
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
   static const int currentSchemaVersion = 2;
@@ -128,6 +146,9 @@ class EditorProjectState {
     Duration? cursorDelay,
     CursorPostProcess? cursorPostProcess,
     WindowFrame? windowFrame,
+    double? playbackSpeed,
+    Duration? fadeIn,
+    Duration? fadeOut,
   }) {
     return EditorProjectState(
       zoomRegions: zoomRegions ?? this.zoomRegions,
@@ -148,6 +169,9 @@ class EditorProjectState {
       cursorDelay: cursorDelay ?? this.cursorDelay,
       cursorPostProcess: cursorPostProcess ?? this.cursorPostProcess,
       windowFrame: windowFrame ?? this.windowFrame,
+      playbackSpeed: playbackSpeed ?? this.playbackSpeed,
+      fadeIn: fadeIn ?? this.fadeIn,
+      fadeOut: fadeOut ?? this.fadeOut,
     );
   }
 
@@ -169,6 +193,9 @@ class EditorProjectState {
     'cursorDelayMicros': cursorDelay.inMicroseconds,
     'windowFrame': windowFrame.toJson(),
     'cursorPostProcess': cursorPostProcess.toJson(),
+    'playbackSpeed': playbackSpeed,
+    'fadeInMicros': fadeIn.inMicroseconds,
+    'fadeOutMicros': fadeOut.inMicroseconds,
   };
 
   factory EditorProjectState.fromJson(Map<String, dynamic> json) {
@@ -252,6 +279,14 @@ class EditorProjectState {
               json['cursorPostProcess'] as Map<String, dynamic>,
             )
           : CursorPostProcess.none,
+      playbackSpeed:
+          (json['playbackSpeed'] as num?)?.toDouble() ?? defaults.playbackSpeed,
+      fadeIn: json['fadeInMicros'] is num
+          ? Duration(microseconds: (json['fadeInMicros'] as num).round())
+          : defaults.fadeIn,
+      fadeOut: json['fadeOutMicros'] is num
+          ? Duration(microseconds: (json['fadeOutMicros'] as num).round())
+          : defaults.fadeOut,
     );
   }
 

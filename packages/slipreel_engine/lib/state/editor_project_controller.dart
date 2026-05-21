@@ -84,6 +84,13 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   void setWindowFrame(WindowFrame value) =>
       state = state.copyWith(windowFrame: value);
 
+  void setPlaybackSpeed(double value) =>
+      state = state.copyWith(playbackSpeed: value);
+
+  void setFadeIn(Duration value) => state = state.copyWith(fadeIn: value);
+
+  void setFadeOut(Duration value) => state = state.copyWith(fadeOut: value);
+
   // ---- zoom region list -------------------------------------------------
 
   void replaceZoomRegions(List<ZoomRegion> regions) =>

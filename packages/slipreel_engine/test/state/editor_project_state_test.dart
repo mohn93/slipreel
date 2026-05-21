@@ -35,6 +35,36 @@ void main() {
       expect(copy.cursorDelay, equals(original.cursorDelay));
       expect(copy.cursorPostProcess, equals(original.cursorPostProcess));
       expect(copy.windowFrame, equals(original.windowFrame));
+      // Clip-level fields (bug #6): playback speed + fades persisted
+      // through copyWith. Pipeline doesn't apply them yet — the
+      // inspector controls were placeholder state with silent
+      // data-loss until P2-8 bugfix.
+      expect(copy.playbackSpeed, equals(original.playbackSpeed));
+      expect(copy.fadeIn, equals(original.fadeIn));
+      expect(copy.fadeOut, equals(original.fadeOut));
+    });
+
+    test('clip-level defaults match the inspector picker defaults', () {
+      // Sliders and chips in ClipContextInspector default to 1.0× / 0 /
+      // 0; if EditorProjectState shipped different defaults the user
+      // would see the picker jump on first open.
+      final s = EditorProjectState.defaults();
+      expect(s.playbackSpeed, 1.0);
+      expect(s.fadeIn, Duration.zero);
+      expect(s.fadeOut, Duration.zero);
+    });
+
+    test('clip-level fields round-trip through toJson/fromJson', () {
+      final original = EditorProjectState.defaults().copyWith(
+        playbackSpeed: 1.5,
+        fadeIn: const Duration(milliseconds: 400),
+        fadeOut: const Duration(milliseconds: 600),
+      );
+      final json = original.toJson();
+      final loaded = EditorProjectState.fromJson(json);
+      expect(loaded.playbackSpeed, 1.5);
+      expect(loaded.fadeIn, const Duration(milliseconds: 400));
+      expect(loaded.fadeOut, const Duration(milliseconds: 600));
     });
 
     test('overrides each named field independently without touching others',

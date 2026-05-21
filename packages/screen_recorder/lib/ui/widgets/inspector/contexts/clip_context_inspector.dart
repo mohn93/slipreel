@@ -1,36 +1,44 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Properties view shown when the main video clip bar is selected.
 ///
-/// All controls are placeholders today — there's no per-clip speed
-/// or fade model yet. Local state keeps the UI feeling live.
-class ClipContextInspector extends StatelessWidget {
+/// Reads playback-speed + fade values from
+/// [editorProjectControllerProvider] so the inspector picks up the
+/// persisted values from `<videoPath>.editor.json` and the user's
+/// edits round-trip through the same notifier as everything else
+/// (closes review bug #6 — used to silently drop on rebuild).
+/// The pipeline doesn't yet apply these — the controls exist as
+/// forward-compatible scaffolding for the eventual clip-level model.
+class ClipContextInspector extends ConsumerWidget {
   const ClipContextInspector({
     super.key,
     required this.clipDuration,
-    required this.playbackSpeed,
-    required this.onPlaybackSpeedChanged,
-    required this.fadeIn,
-    required this.fadeOut,
-    required this.onFadeInChanged,
-    required this.onFadeOutChanged,
     required this.onClose,
   });
 
   final Duration clipDuration;
-  final double playbackSpeed;
-  final ValueChanged<double> onPlaybackSpeedChanged;
-  final double fadeIn;
-  final double fadeOut;
-  final ValueChanged<double> onFadeInChanged;
-  final ValueChanged<double> onFadeOutChanged;
   final VoidCallback onClose;
 
   static const _speedPresets = <double>[0.5, 1.0, 1.5, 2.0];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final project = ref.watch(editorProjectControllerProvider);
+    final notifier = ref.read(editorProjectControllerProvider.notifier);
+    final playbackSpeed = project.playbackSpeed;
+    // Slider values are seconds (slider range 0..2). Persisted state
+    // is a Duration; convert on the boundary so the slider's API
+    // stays a plain double.
+    final fadeIn = project.fadeIn.inMicroseconds / 1e6;
+    final fadeOut = project.fadeOut.inMicroseconds / 1e6;
+    void onPlaybackSpeedChanged(double v) => notifier.setPlaybackSpeed(v);
+    void onFadeInChanged(double seconds) => notifier
+        .setFadeIn(Duration(microseconds: (seconds * 1e6).round()));
+    void onFadeOutChanged(double seconds) => notifier
+        .setFadeOut(Duration(microseconds: (seconds * 1e6).round()));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
