@@ -4,16 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:video_player/video_player.dart';
 
-import 'package:screen_recorder/effects/scene_motion_blur.dart';
-import 'package:screen_recorder/effects/zoom_transformer.dart';
-import 'package:screen_recorder/models/cursor_recording.dart';
-import 'package:screen_recorder/models/zoom_region.dart';
-import 'package:screen_recorder/rendering/animation_config.dart';
-import 'package:screen_recorder/rendering/cursor_geometry.dart';
-import 'package:screen_recorder/state/cursor_post_process.dart';
+import 'package:slipreel_engine/effects/scene_motion_blur.dart';
+import 'package:slipreel_engine/effects/zoom_transformer.dart';
+import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/animation_config.dart';
+import 'package:slipreel_engine/rendering/cursor_geometry.dart';
+import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
-import 'package:screen_recorder/rendering/cursor_motion_controller.dart';
-import 'package:screen_recorder/rendering/zoom_focal_controller.dart';
+import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
+import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 
 /// Wraps a [child] (typically a [PlaybackCanvas]) and renders the
 /// scene-level motion blur as a captured-and-shadered overlay on top.

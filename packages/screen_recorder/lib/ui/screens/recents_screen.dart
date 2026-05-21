@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import 'package:screen_recorder/models/recording_history.dart';
+import 'package:slipreel_engine/models/recording_history.dart';
 import 'package:screen_recorder/ui/screens/motion_blur_playground_screen.dart';
 import 'package:screen_recorder/ui/screens/playback_screen.dart';
 

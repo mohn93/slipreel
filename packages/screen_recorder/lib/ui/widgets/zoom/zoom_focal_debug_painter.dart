@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'package:screen_recorder/models/cursor_recording.dart';
-import 'package:screen_recorder/models/zoom_region.dart';
-import 'package:screen_recorder/rendering/cursor_geometry.dart';
+import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 
 /// Dev HUD painter overlaid on the playback canvas. Renders the recorded
 /// cursor trail, the raw cursor at the current playhead, the smoothed

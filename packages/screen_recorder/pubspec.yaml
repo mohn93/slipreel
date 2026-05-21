@@ -40,6 +40,8 @@ dependencies:
     path: ../screen_recorder_platform_interface
   screen_recorder_macos:
     path: ../screen_recorder_macos
+  slipreel_engine:
+    path: ../slipreel_engine
 
   # Video processing
   path_provider: ^2.1.4
@@ -92,9 +94,8 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  shaders:
-    - shaders/motion_blur.frag
-    - shaders/scene_motion_blur.frag
+  # Shaders moved with the engine package (P0-3 phase 2). slipreel_engine
+  # declares them; this app picks them up via the package dependency.
 
   # To add assets to your application, add an assets section, like this:
   assets:

@@ -1,7 +1,7 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
-import 'package:screen_recorder/models/window_frame.dart';
+import 'package:slipreel_engine/models/window_frame.dart';
 
 void main() {
   group('FrameSettingsProvider', () {

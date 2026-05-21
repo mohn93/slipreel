@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:screen_recorder/effects/motion_blur_tuning.dart';
+import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Live-tunable knobs for the cursor motion-blur path. Each slider

@@ -1,5 +1,5 @@
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import 'utils/app_logger.dart';
+import 'package:slipreel_engine/utils/app_logger.dart';
 
 /// Façade over the platform's live HW-encoded recording API.
 ///

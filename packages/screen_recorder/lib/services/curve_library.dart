@@ -4,8 +4,8 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:path_provider/path_provider.dart';
-import 'package:screen_recorder/rendering/animation_curve.dart';
-import 'package:screen_recorder/utils/app_logger.dart';
+import 'package:slipreel_engine/rendering/animation_curve.dart';
+import 'package:slipreel_engine/utils/app_logger.dart';
 
 /// Identifies a curve in chip rows and editor state. The same record
 /// shape is used for built-ins and for user-saved entries.

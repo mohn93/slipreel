@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 import 'package:screen_recorder_macos/screen_recorder_macos.dart';
-import 'effects/scene_motion_blur.dart';
-import 'rendering/cursor_image_cache.dart';
+import 'package:slipreel_engine/effects/scene_motion_blur.dart';
+import 'package:slipreel_engine/rendering/cursor_image_cache.dart';
+import 'package:slipreel_engine/rendering/cursor_overlay_painter.dart';
+import 'package:slipreel_engine/utils/app_logger.dart';
 import 'ui/screens/recording_screen.dart';
-import 'rendering/cursor_overlay_painter.dart';
-import 'utils/app_logger.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -1,0 +1,36 @@
+name: slipreel_engine
+description: >-
+  Headless rendering and editor-state engine for Slipreel.
+  Owns the cursor and zoom spring controllers, the frame compositor,
+  click effects, motion-blur primitives, immutable project state, and
+  the FFmpeg export pipeline. Has zero Flutter widget-tree imports so
+  it can drive headless CLI exports, cloud worker compositions, or
+  third-party plugin SDKs without dragging the app shell along.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  flutter_riverpod: ^2.5.1
+  logger: ^2.5.0
+  path: ^1.9.0
+  path_provider: ^2.1.4
+  shared_preferences: ^2.2.0
+
+  screen_recorder_platform_interface:
+    path: ../screen_recorder_platform_interface
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  shaders:
+    - shaders/motion_blur.frag
+    - shaders/scene_motion_blur.frag

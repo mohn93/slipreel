@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:screen_recorder/models/export_settings.dart';
+import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/_export_dialog_theme.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/segmented_button.dart';
 

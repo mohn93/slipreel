@@ -1,7 +1,7 @@
 // packages/screen_recorder/lib/ui/widgets/background_effect_layer.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../../effects/effect_params.dart';
+import 'package:slipreel_engine/effects/effect_params.dart';
 
 enum BackgroundKind { none, solid, gradient, blur }
 

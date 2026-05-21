@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:screen_recorder/rendering/wallpaper.dart';
+import 'package:slipreel_engine/rendering/wallpaper.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 

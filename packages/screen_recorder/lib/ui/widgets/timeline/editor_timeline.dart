@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:screen_recorder/models/trim_selection.dart';
-import 'package:screen_recorder/models/zoom_region.dart';
+import 'package:slipreel_engine/models/trim_selection.dart';
+import 'package:slipreel_engine/models/zoom_region.dart';
 
 const _trackBg = Color(0xFF1B1B26);
 const _clipFill = Color(0xFFE69E5A);

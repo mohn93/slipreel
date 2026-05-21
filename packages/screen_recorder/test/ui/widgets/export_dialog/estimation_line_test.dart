@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_recorder/export/export_estimator.dart';
-import 'package:screen_recorder/models/export_settings.dart';
+import 'package:slipreel_engine/export/export_estimator.dart';
+import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/estimation_line.dart';
 
 void main() {

@@ -159,18 +159,20 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   instead of taking 30 props. Big surface area; deferred to a
   follow-up commit so this branch can ship the foundation cleanly.
 
-- [x] **P0-3 — Engine layer separation** (Task #241) — _phase 1_
-  Within `screen_recorder`, the engine-layer directories
-  (`models/`, `rendering/`, `effects/`, `export/`, `state/`) no longer
-  import anything from `lib/ui/`. Three files moved out of
-  `lib/ui/widgets/` into `lib/rendering/`:
-  `cursor_motion_controller.dart`, `zoom_focal_controller.dart`,
-  `cursor_overlay_painter.dart`. A boundary test
-  (`test/architecture/engine_layer_boundary_test.dart`) fails CI if
-  any engine file imports from `lib/ui/`. **Phase 2** (physical
-  extraction into a sibling `slipreel_engine` package) is now
-  mechanical — every engine import is portable — and will land as a
-  follow-up.
+- [x] **P0-3 — Engine layer extraction** (Tasks #241, #249) — _both phases done_
+  Phase 1 (commit `b6834a2`): within `screen_recorder`, the
+  engine-layer directories stopped importing from `lib/ui/`. Three
+  files moved out of `lib/ui/widgets/` into `lib/rendering/`.
+  Phase 2: physical extraction. `packages/slipreel_engine` now owns
+  `models/`, `rendering/`, `effects/`, `export/`, `utils/`, the
+  engine subset of `state/`, and the shader assets.
+  `screen_recorder` depends on it as a path package and contains only
+  the app shell + recording control state + frame settings UI state.
+  The boundary test moved to the engine package itself and now
+  enforces "no `package:screen_recorder/*` imports from inside
+  slipreel_engine" — a stricter rule than phase 1's "no
+  `lib/ui/*` imports". Test split: slipreel_engine 381 pass,
+  screen_recorder 164 pass / 14 skip (= 546 total, +1 new boundary test).
 
 ### P1
 
@@ -226,3 +228,4 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P1-4 phase B — fixed **bug #4** (accumulation press-pulse lost on cached sprites): `AccumulationCursorPainter` now applies the per-stamp press-pulse as a scale on the destination rect instead of trying to bake it into the cached sprite. Added `clickSpring` parameter to the painter, wired through `PlaybackCanvas`. 2 new tests in `test/effects/accumulation_cursor_painter_test.dart` (538 pass total).
 - 2026-05-21 — P1-4 merged to main; new branch `refactor/p1-6-cached-cursor-events`.
 - 2026-05-21 — P1-6 landed — replaced O(N) cursor-event walks with O(log N) indexed lookups. `CursorRecording` now exposes a lazily-built `CursorEventIndex` (version-keyed, rebuilds on mutation). 7 new tests in `test/models/cursor_event_index_test.dart`. Test result: 545 pass / 14 skip (+7 new, 0 regressions).
+- 2026-05-21 — P0-3 phase 2 landed — extracted `packages/slipreel_engine`. Moved `models/`, `rendering/`, `effects/`, `export/`, `utils/`, the engine subset of `state/`, and shader assets out of `screen_recorder` into the new package. `screen_recorder` now depends on it via a path import. The boundary test moved to the engine package and was tightened to ban any `package:screen_recorder/*` import. Test result: slipreel_engine 381 pass / 0 skip; screen_recorder 164 pass / 14 skip (= 546 total).

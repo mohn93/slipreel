@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:screen_recorder/rendering/animation_config.dart';
-import 'package:screen_recorder/rendering/animation_curve.dart';
-import 'package:screen_recorder/rendering/animation_style.dart';
+import 'package:slipreel_engine/rendering/animation_config.dart';
+import 'package:slipreel_engine/rendering/animation_curve.dart';
+import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:screen_recorder/services/curve_library.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_graph_painter.dart';

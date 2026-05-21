@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
-import 'package:screen_recorder/models/window_frame.dart';
+import 'package:slipreel_engine/models/window_frame.dart';
 
 /// Settings screen for customizing window frame appearance.
 ///

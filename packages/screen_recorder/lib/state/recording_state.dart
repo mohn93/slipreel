@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import '../models/cursor_recording.dart';
-import '../models/recording_history.dart';
-import '../models/recording_metadata.dart';
-import '../utils/app_logger.dart';
-import '../utils/perf_summary.dart';
+import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/models/recording_history.dart';
+import 'package:slipreel_engine/models/recording_metadata.dart';
+import 'package:slipreel_engine/utils/app_logger.dart';
+import 'package:slipreel_engine/utils/perf_summary.dart';
 import '../video_encoder.dart';
 
 enum RecordingStatus { idle, recording, processing, completed, error }

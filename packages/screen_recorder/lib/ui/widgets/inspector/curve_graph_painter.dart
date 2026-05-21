@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:screen_recorder/rendering/animation_curve.dart';
+import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart'
     show kInspectorAccent, kInspectorBorder;
 

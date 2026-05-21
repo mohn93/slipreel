@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:screen_recorder/models/window_frame.dart';
+import 'package:slipreel_engine/models/window_frame.dart';
 
 /// In-memory frame state for the active recording.
 ///

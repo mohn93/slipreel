@@ -6,27 +6,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:video_player/video_player.dart';
 
-import 'package:screen_recorder/effects/accumulation_cursor_painter.dart';
-import 'package:screen_recorder/effects/motion_blur_tuning.dart';
-import 'package:screen_recorder/effects/scene_motion_blur.dart';
-import 'package:screen_recorder/effects/zoom_transformer.dart';
-import 'package:screen_recorder/models/window_frame.dart';
-import 'package:screen_recorder/models/cursor_recording.dart';
-import 'package:screen_recorder/models/recording_metadata.dart';
-import 'package:screen_recorder/models/zoom_region.dart';
-import 'package:screen_recorder/rendering/animation_config.dart';
-import 'package:screen_recorder/rendering/animation_style.dart';
-import 'package:screen_recorder/rendering/cursor_click_effect.dart';
-import 'package:screen_recorder/rendering/cursor_geometry.dart';
-import 'package:screen_recorder/rendering/cursor_glyph.dart';
-import 'package:screen_recorder/rendering/frame_painter.dart';
-import 'package:screen_recorder/rendering/spring_config.dart';
+import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
+import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
+import 'package:slipreel_engine/effects/scene_motion_blur.dart';
+import 'package:slipreel_engine/effects/zoom_transformer.dart';
+import 'package:slipreel_engine/models/window_frame.dart';
+import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/models/recording_metadata.dart';
+import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/animation_config.dart';
+import 'package:slipreel_engine/rendering/animation_style.dart';
+import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
+import 'package:slipreel_engine/rendering/cursor_geometry.dart';
+import 'package:slipreel_engine/rendering/cursor_glyph.dart';
+import 'package:slipreel_engine/rendering/frame_painter.dart';
+import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/motion_blur_tuning_panel.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
-import 'package:screen_recorder/rendering/cursor_motion_controller.dart';
+import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
-import 'package:screen_recorder/rendering/zoom_focal_controller.dart';
+import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 
 /// A dev-only screen for iterating on the cursor motion-blur algorithm
 /// without rebuilding the entire editor every time. Loads a recording

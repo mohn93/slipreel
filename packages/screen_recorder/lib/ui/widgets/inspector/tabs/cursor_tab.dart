@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:screen_recorder/rendering/cursor_click_effect.dart';
-import 'package:screen_recorder/rendering/cursor_glyph.dart';
-import 'package:screen_recorder/rendering/spring_config.dart';
-import 'package:screen_recorder/state/cursor_post_process.dart';
+import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
+import 'package:slipreel_engine/rendering/cursor_glyph.dart';
+import 'package:slipreel_engine/rendering/spring_config.dart';
+import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Cursor tab — size, style, behavior toggles, click-effect section.
