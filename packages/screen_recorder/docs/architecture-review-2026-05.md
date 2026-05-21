@@ -174,15 +174,21 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 
 ### P1
 
-- [ ] **P1-4 — Unified `paintCursor()` entry point** (Task #242) — _phase A landed (bug #1)_
-  Phase A: introduced `CursorPaintRequest` + `paintCursorComposed(canvas, req)`
-  in `lib/rendering/cursor_painter.dart`. Replaced the buggy
-  `paintCursorWithEffects` convenience wrapper (which forced ripple
-  and glyph to share one position). `CursorRenderer` now looks up the
-  click event and passes `clickPosition` separately — **bug #1
-  closed**. Phase B: fold accumulation press-pulse out of the sprite
-  cache (bug #4) and add a sprite cache to the overlay painter to
-  stop the per-frame `toImageSync` (bug #9).
+- [ ] **P1-4 — Unified `paintCursor()` entry point** (Task #242) — _phases A+B landed, C deferred_
+  Phase A (commit `27de5c6`): `CursorPaintRequest` +
+  `paintCursorComposed` in `lib/rendering/cursor_painter.dart`,
+  replacing the buggy `paintCursorWithEffects` wrapper. `CursorRenderer`
+  threads click position separately — **bug #1 closed**.
+  Phase B (commit `f966371`): `AccumulationCursorPainter` applies
+  press-pulse per-stamp as a destination-rect scale instead of trying
+  to bake it into the cached sprite. `clickSpring` parameter added
+  and wired from `PlaybackCanvas` — **bug #4 closed**.
+  Phase C (deferred): bug #9 — `CursorOverlayPainter` re-bakes its
+  sprite every frame on the motion-blur branch. Requires factoring
+  the shadow rendering out of `paintCursorGlyphWithPulse` so the
+  bake-once-stamp-many pattern can be applied here too. More invasive
+  than #1/#4 and only matters when motion-blur is active. Tracked as
+  a follow-up.
 - [ ] **P1-5 — `FollowStrategy` interface** (Task #243)
 - [ ] **P1-6 — Cached cursor event lookups** (Task #244)
 - [ ] **P1-7 — State-shaped undo/redo** (Task #245, blocked by P0-2)
