@@ -208,7 +208,18 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 ### P2
 
 - [ ] **P2-8 — Centralized tuning JSON + presets** (Task #246)
-- [ ] **P2-9 — Schema migration switchboard** (Task #247)
+- [x] **P2-9 — Schema migration switchboard** (Task #247)
+  `EditorProjectState.fromJson` now routes through
+  `migrateEditorProjectJson()` before reading fields. The migration
+  chain is an ordered list (`_schemaMigrations`) of
+  `Map<String, dynamic> Function(Map<String, dynamic>)` steps, one
+  per `vN→vN+1` hop. Adding a new schema version: bump
+  `currentSchemaVersion`, append a step, write a migration test.
+  Today's chain has a no-op v0→v1 and a v1→v2 step that fills in the
+  `schemaVersion: 2` marker for legacy sidecars that pre-date it.
+  5 tests in `test/state/editor_project_state_migration_test.dart`
+  cover missing-version, current-version pass-through, future-version
+  refusal, chain composability, and explicit-v1 round-trip.
 - [ ] **P2-10 — Timeline container for multi-track** (Task #248)
 
 ---
@@ -229,3 +240,4 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P1-4 merged to main; new branch `refactor/p1-6-cached-cursor-events`.
 - 2026-05-21 — P1-6 landed — replaced O(N) cursor-event walks with O(log N) indexed lookups. `CursorRecording` now exposes a lazily-built `CursorEventIndex` (version-keyed, rebuilds on mutation). 7 new tests in `test/models/cursor_event_index_test.dart`. Test result: 545 pass / 14 skip (+7 new, 0 regressions).
 - 2026-05-21 — P0-3 phase 2 landed — extracted `packages/slipreel_engine`. Moved `models/`, `rendering/`, `effects/`, `export/`, `utils/`, the engine subset of `state/`, and shader assets out of `screen_recorder` into the new package. `screen_recorder` now depends on it via a path import. The boundary test moved to the engine package and was tightened to ban any `package:screen_recorder/*` import. Test result: slipreel_engine 381 pass / 0 skip; screen_recorder 164 pass / 14 skip (= 546 total).
+- 2026-05-21 — P2-9 landed — schema migration switchboard. `EditorProjectState.fromJson` runs `migrateEditorProjectJson(...)` before field decoding. Chain has v0→v1 (no-op) and v1→v2 (insert schemaVersion marker). 5 tests in `test/state/editor_project_state_migration_test.dart`. Test result: 550 pass / 14 skip (+4 net new; one test was a clamp-bound correction).

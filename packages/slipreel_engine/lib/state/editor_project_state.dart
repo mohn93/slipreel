@@ -269,3 +269,65 @@ class EditorProjectState {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Schema migration switchboard
+//
+// Each entry in [_schemaMigrations] maps the JSON shape from vN to vN+1.
+// [migrateEditorProjectJson] applies them in order starting at the
+// inferred input version, returning a JSON the current build can read
+// directly. Index 0 is v0→v1, index 1 is v1→v2, etc.
+//
+// **Pattern for adding a new schema version:**
+//
+// 1. Bump [EditorProjectState.currentSchemaVersion] from N to N+1.
+// 2. Add a `Map<String, dynamic> _vNtoNPlus1(Map<String, dynamic>)`
+//    function that transforms the old shape into the new shape
+//    (rename fields, restructure objects, fill in derived defaults).
+// 3. Append it to [_schemaMigrations] in order.
+// 4. Update [toJson] for the new shape if the changed fields are
+//    serialised by name. Add a regression test alongside.
+//
+// Recordings written by builds older than this one will then load
+// through the chain instead of silently mis-parsing.
+// ---------------------------------------------------------------------------
+
+/// Ordered list of vN → vN+1 migration functions. Index `i` migrates
+/// from schemaVersion `i` to `i + 1`.
+final List<Map<String, dynamic> Function(Map<String, dynamic>)>
+    _schemaMigrations = [
+  // v0 → v1: no-op. v0 is hypothetical (pre-public builds); v1
+  // recordings exist in the wild, so the chain starts at v1.
+  (json) => json,
+  // v1 → v2: insert the schemaVersion field. v1 sidecars predate
+  // the version marker and assume the current build can identify
+  // them by its absence. Any additional v1→v2 shape changes go here
+  // too — today there are none, but the comment block above explains
+  // how to grow this.
+  (json) => {...json, 'schemaVersion': 2},
+];
+
+/// Walks [json] forward through [_schemaMigrations] until its
+/// `schemaVersion` matches [EditorProjectState.currentSchemaVersion].
+/// Exposed (not private) so the migration pipeline can be unit-tested
+/// in isolation from `fromJson`.
+///
+/// A JSON without a `schemaVersion` field is treated as v1 — the
+/// pre-versioned shape — since v0 was hypothetical and never shipped.
+Map<String, dynamic> migrateEditorProjectJson(Map<String, dynamic> json) {
+  final rawVersion = json['schemaVersion'];
+  var version = (rawVersion is int && rawVersion >= 0) ? rawVersion : 1;
+  var current = json;
+  while (version < EditorProjectState.currentSchemaVersion) {
+    if (version >= _schemaMigrations.length) {
+      throw StateError(
+        'No migration step from EditorProjectState v$version — '
+        '_schemaMigrations is missing an entry. Add a v$version→v${version + 1} '
+        'step or update currentSchemaVersion.',
+      );
+    }
+    current = _schemaMigrations[version](current);
+    version++;
+  }
+  return current;
+}
