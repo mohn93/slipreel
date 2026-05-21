@@ -8,7 +8,7 @@ import 'package:slipreel_engine/models/recording_history.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 import 'package:slipreel_engine/utils/perf_summary.dart';
-import '../video_encoder.dart';
+import 'package:slipreel_engine/video_encoder.dart';
 
 enum RecordingStatus { idle, recording, processing, completed, error }
 

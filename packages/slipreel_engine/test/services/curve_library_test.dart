@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
-import 'package:screen_recorder/services/curve_library.dart';
+import 'package:slipreel_engine/services/curve_library.dart';
 
 void main() {
   group('BuiltInCurves', () {

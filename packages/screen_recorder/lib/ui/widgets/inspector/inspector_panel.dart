@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
-import 'package:screen_recorder/services/curve_library.dart';
+import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/clip_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';

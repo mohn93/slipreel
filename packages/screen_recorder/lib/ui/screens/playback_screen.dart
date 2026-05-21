@@ -11,7 +11,7 @@ import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
-import 'package:screen_recorder/services/curve_library.dart';
+import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/services/destination_handlers.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/state/editor_project_store.dart';
