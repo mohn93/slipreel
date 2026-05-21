@@ -5,7 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:screen_recorder/effects/accumulation_cursor_painter.dart';
-import 'package:screen_recorder/effects/ema_velocity_filter.dart';
+import 'package:screen_recorder/rendering/scene_pass_builder.dart';
 import 'package:screen_recorder/effects/motion_blur_tuning.dart';
 import 'package:screen_recorder/effects/scene_accumulation_painter.dart';
 import 'package:screen_recorder/effects/scene_motion_blur.dart';
@@ -212,17 +212,13 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
   static const double _sceneBlurSpeedCurveRefPx = 10.0;
 
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
-  // Cursor-driven zoom focal smoothing. State (active-zoom tracking,
-  // last smoothed offset) lives in the controller so it can be unit-
-  // tested without a widget tree.
-  final ZoomFocalController _zoomFocalController = ZoomFocalController();
-  // Smooths the synthetic cursor's on-screen position toward the
-  // recorded path each frame, driven by cursorAnimationConfig.
-  final CursorMotionController _cursorMotionController =
-      CursorMotionController();
-  // Smooths the cursor's scene velocity so the motion-blur trail's
-  // magnitude and direction don't flap on per-frame velocity noise.
-  final EmaVelocityFilter _blurVelocityFilter = EmaVelocityFilter();
+
+  /// Single source of truth for per-frame scene state (cursor sprite,
+  /// focal trajectory, EMA-filtered cursor velocity). Shared with the
+  /// export pipeline ([FrameCompositor]) — same instance class, same
+  /// inputs in, same outputs out — so preview and export cannot drift.
+  final ScenePassBuilder _scenePassBuilder = ScenePassBuilder();
+  ZoomFocalController get _zoomFocalController => _scenePassBuilder.focal;
   final SceneMotionBlurController _sceneMotionBlurController =
       SceneMotionBlurController();
   final GlobalKey _sceneBoundaryKey = GlobalKey();
@@ -382,52 +378,30 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                 widget.cursorRecording.count > 0;
             final showCursor = hasCursorData && !widget.hideCursorOverlay;
 
-            final motion = hasCursorData
-                ? _cursorMotionController.update(
-                    position: pos,
-                    cursorRecording: widget.cursorRecording,
-                    config: widget.cursorAnimationConfig,
-                    fps: widget.metadata?.fps ?? 60,
-                    cursorDelay: widget.cursorDelay,
-                    postProcess: widget.cursorPostProcess,
-                  )
-                : null;
-
-            // Cursor target for the focal: predictive mode looks at
-            // the median of recent cursor samples (dwell location),
-            // every other mode tracks the FIR-smoothed sprite so the
-            // camera and the visible cursor never disagree.
-            final activeZoomForCursor = _activeZoomAt(widget.zoomRegions, pos);
-            final cursorForFocal =
-                activeZoomForCursor?.followMode == FollowMode.predictive
-                ? medianCursorOver(
-                    recording: widget.cursorRecording,
-                    t: pos,
-                    window: activeZoomForCursor!.predictiveWindow,
-                  )
-                : motion?.screenPos;
-
-            final focalUpdate = _zoomFocalController.update(
+            // Single call into the shared scene builder. The export
+            // pipeline calls the same builder with the same inputs in
+            // FrameCompositor.compose, guaranteeing that what the user
+            // sees in the editor is bit-equivalent to what lands in the
+            // MP4 (modulo per-frame dt vs. fixed-fps integration noise,
+            // which sub-stepping bounds).
+            //
+            // Hover-scrub bypasses the EMA filter so the same timestamp
+            // renders the same regardless of approach direction.
+            final scenePass = _scenePassBuilder.build(
               position: pos,
               zoomRegions: widget.zoomRegions,
-              cursor: cursorForFocal,
+              cursorAnimationConfig: widget.cursorAnimationConfig,
+              cursorDelay: widget.cursorDelay,
+              cursorPostProcess: widget.cursorPostProcess,
+              cursorRecording: widget.cursorRecording,
               videoSize: videoSize,
-              cursorVelocity: motion?.velocityPxPerSec ?? Offset.zero,
+              fps: widget.metadata?.fps ?? 60,
+              hasCursorData: hasCursorData,
               forceSnap: widget.isHoverScrubbing,
+              bypassVelocityFilter: widget.isHoverScrubbing,
             );
-
-            // Cursor motion blur reflects the cursor's INTRINSIC scene
-            // velocity only — i.e., the actual mouse movement. Camera
-            // pan from a zoom transition is not the cursor moving
-            // through space, so adding it here would streak the cursor
-            // every time the zoom ramps in/out even when the mouse is
-            // perfectly still, which reads as wrong. EMA-smooth so the
-            // trail's magnitude/direction don't flap on per-frame noise
-            // — except during hover-scrub, where the smoother's history
-            // would make the same timestamp render differently
-            // depending on whether the user approached it from the
-            // left or the right.
-            final rawCursorVelocity = motion?.velocityPxPerSec ?? Offset.zero;
+            final motion = scenePass.motion;
+            final focalUpdate = scenePass.focalUpdate;
             final effectiveCursorBlur =
                 widget.motionBlur * widget.cursorMovementBlur;
             final effectiveCursorTuning = widget.motionBlurTuning.copyWith(
@@ -435,9 +409,7 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
                   widget.motionBlurTuning.maxExposureMs *
                   widget.cursorMovementBlur,
             );
-            final combinedCursorVelocity = widget.isHoverScrubbing
-                ? rawCursorVelocity
-                : _blurVelocityFilter.filter(rawCursorVelocity, pos);
+            final combinedCursorVelocity = scenePass.filteredCursorVelocity;
 
             // Cursor is extracted from the body composition so the
             // scene-blur shader (which captures and smears the entire
@@ -741,13 +713,6 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
       aspectRatio: totalSize.width / totalSize.height,
       child: FittedBox(fit: BoxFit.contain, child: framedVideo),
     );
-  }
-
-  static ZoomRegion? _activeZoomAt(List<ZoomRegion> zooms, Duration t) {
-    for (final z in zooms) {
-      if (z.isActive(t)) return z;
-    }
-    return null;
   }
 
   Widget _buildSceneMotionBlurPass({

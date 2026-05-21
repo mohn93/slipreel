@@ -132,10 +132,17 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 
 ### P0 — fixes recurring preview/export drift class of bugs
 
-- [ ] **P0-1 — Unified scene builder** (Task #239)
-  Extract `ScenePassBuilder.buildFrame(t) → (motion, cursor, focal,
-  sceneSignal, cursorVelocity, activeZoom)` consumed by both
-  `PlaybackCanvas` and `FrameCompositor`. Kills bugs #1–#3 in one pass.
+- [x] **P0-1 — Unified scene builder** (Task #239)
+  `ScenePassBuilder` in `lib/rendering/scene_pass_builder.dart` owns
+  the `CursorMotionController`, `ZoomFocalController`, and
+  `EmaVelocityFilter`. Returns a `ScenePass` with `(motion, activeZoom,
+  cursorForFocal, focalUpdate, rawCursorVelocity,
+  filteredCursorVelocity)`. Both `FrameCompositor.compose()` and
+  `PlaybackCanvas.build()` now call it. **Closes bug #2** (export was
+  passing `cursorVelocity = 0` to the bounded gate). Bugs #1, #3, and
+  the zoom-tween divergence are unblocked but not yet fixed — they
+  live in the painter selection / TweenAnimationBuilder layer above
+  the builder.
 
 - [ ] **P0-2 — Editor state to Riverpod Notifier** (Task #240)
   Drain 25 fields out of `_PlaybackScreenState`, drop the 30-param
@@ -168,3 +175,5 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 — commit SHA(s).)
 
 - 2026-05-21 — review intake — created this doc + tasks #239–#248.
+- 2026-05-21 — snapshot — committed ~7k-line in-flight focal/cursor iteration as `e88e593` to `main`; branched to `refactor/p0-1-unified-scene-builder`. Test baseline: 514 pass / 14 skip.
+- 2026-05-21 — P0-1 landed — extracted `ScenePassBuilder` (new file `lib/rendering/scene_pass_builder.dart`, 7 new tests in `test/rendering/scene_pass_builder_test.dart`). Wired into `FrameCompositor` + `PlaybackCanvas`. **Bug #2 fixed**: export's bounded-mode gate now sees `cursorVelocity` and behaves identically to preview. Test result: 521 pass / 14 skip (+7 new, zero regressions).

@@ -5,21 +5,17 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import 'package:screen_recorder/effects/ema_velocity_filter.dart';
 import 'package:screen_recorder/effects/motion_blur_tuning.dart';
 import 'package:screen_recorder/effects/scene_motion_blur.dart';
 import 'package:screen_recorder/effects/zoom_transformer.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/recording_metadata.dart';
 import 'package:screen_recorder/models/window_frame.dart';
-import 'package:screen_recorder/models/zoom_region.dart';
-import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/rendering/frame_painter.dart';
+import 'package:screen_recorder/rendering/scene_pass_builder.dart';
 import 'package:screen_recorder/rendering/wallpaper.dart';
 import 'package:screen_recorder/state/editor_project_state.dart';
 import 'package:screen_recorder/ui/widgets/cursor_overlay_painter.dart';
-import 'package:screen_recorder/ui/widgets/zoom/cursor_motion_controller.dart';
-import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
 
 /// Re-renders the same composition the preview canvas paints, but to
 /// raw RGBA bytes instead of a widget tree. Owns the same stateful
@@ -73,14 +69,14 @@ class FrameCompositor {
   final FramePainter _framePainter;
   final EdgeInsets _effectivePadding;
 
-  final ZoomFocalController _focalController = ZoomFocalController();
-  final CursorMotionController _motionController = CursorMotionController();
+  /// Shared scene-state production for preview and export. Owns the
+  /// spring controllers and EMA filter; one source of truth means
+  /// preview and export cannot disagree on cursor velocity, focal
+  /// trajectory, or filtered blur velocity.
+  final ScenePassBuilder _scenePassBuilder = ScenePassBuilder();
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
   final SceneMotionBlurController _sceneMotionBlurController =
       SceneMotionBlurController();
-  // Mirrors the preview's EmaVelocityFilter so the export's blur
-  // smoothing matches what the user saw in the editor (WYSIWYG).
-  final EmaVelocityFilter _blurVelocityFilter = EmaVelocityFilter();
   ui.FragmentProgram? _sceneBlurProgram;
   // The wallpaper is rendered once per export and reused for every
   // composited frame, since the wallpaper inputs (category/index/blur/
@@ -119,38 +115,22 @@ class FrameCompositor {
       videoSize.height.toInt(),
     );
     try {
-      // Cursor motion shares one source of truth with the preview:
-      // the FIR-smoothed offset feeds both the sprite's drawn position
-      // and the zoom focal target so they can't drift apart.
-      final motion = _hasCursorData
-          ? _motionController.update(
-              position: position,
-              cursorRecording: cursorRecording,
-              config: projectState.cursorAnimationConfig,
-              fps: fps,
-              cursorDelay: projectState.cursorDelay,
-              postProcess: projectState.cursorPostProcess,
-            )
-          : null;
-
-      // Predictive follow gets a different cursor source — the
-      // rolling median over the recording — so it tracks the dwell
-      // location, not the instantaneous (smoothed) cursor.
-      final activeZoom = _activeZoomAt(position);
-      final cursorForFocal = activeZoom?.followMode == FollowMode.predictive
-          ? medianCursorOver(
-              recording: cursorRecording,
-              t: position,
-              window: activeZoom!.predictiveWindow,
-            )
-          : motion?.screenPos;
-
-      final focalUpdate = _focalController.update(
+      // Single source of truth shared with PlaybackCanvas: same spring
+      // controllers, same gate semantics, same EMA filter. Anything
+      // computed here is exactly what the preview sees.
+      final scenePass = _scenePassBuilder.build(
         position: position,
         zoomRegions: projectState.zoomRegions,
-        cursor: cursorForFocal,
+        cursorAnimationConfig: projectState.cursorAnimationConfig,
+        cursorDelay: projectState.cursorDelay,
+        cursorPostProcess: projectState.cursorPostProcess,
+        cursorRecording: cursorRecording,
         videoSize: videoSize,
+        fps: fps,
+        hasCursorData: _hasCursorData,
       );
+      final motion = scenePass.motion;
+      final focalUpdate = scenePass.focalUpdate;
 
       // Apply the zoom Transform around totalSize/2, matching the
       // preview's `Transform(alignment: Alignment.center, ...)`.
@@ -181,15 +161,9 @@ class FrameCompositor {
       // Cursor motion blur reflects the cursor's INTRINSIC scene
       // velocity only — i.e., the actual mouse movement. Camera pan
       // from a zoom transition is not the cursor moving through space,
-      // so streaking on it would look wrong (cursor blurs even when
-      // the mouse is still). EMA-smooth so the trail's magnitude /
-      // direction don't flap on per-frame velocity noise — same
-      // filter the preview uses.
-      final rawCursorVelocity = motion?.velocityPxPerSec ?? Offset.zero;
-      final combinedCursorVelocity = _blurVelocityFilter.filter(
-        rawCursorVelocity,
-        position,
-      );
+      // so streaking on it would look wrong. The builder returns the
+      // EMA-filtered value already in [filteredCursorVelocity].
+      final combinedCursorVelocity = scenePass.filteredCursorVelocity;
 
       // Render the FOREGROUND (frame chrome + video + cursor) with the
       // zoom transform applied. The wallpaper is rendered separately
@@ -548,13 +522,6 @@ class FrameCompositor {
     );
     painter.paint(canvas, videoSize);
     canvas.restore();
-  }
-
-  ZoomRegion? _activeZoomAt(Duration t) {
-    for (final z in projectState.zoomRegions) {
-      if (z.isActive(t)) return z;
-    }
-    return null;
   }
 
   static Future<ui.Image> _bgraToImage(Uint8List bgra, int width, int height) {
