@@ -144,10 +144,20 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   live in the painter selection / TweenAnimationBuilder layer above
   the builder.
 
-- [ ] **P0-2 — Editor state to Riverpod Notifier** (Task #240)
-  Drain 25 fields out of `_PlaybackScreenState`, drop the 30-param
-  InspectorPanel, fix per-tick whole-screen rebuilds, give undo/redo
-  a real subject.
+- [ ] **P0-2 — Editor state to Riverpod Notifier** (Task #240) — _foundation landed_
+  Two foundation pieces are in:
+  - `EditorProjectState.copyWith(...)` for immutable field-by-field
+    updates (5 tests in `test/state/editor_project_state_test.dart`).
+  - `EditorProjectController extends StateNotifier<EditorProjectState>`
+    with per-field mutators + zoom-region list ops + Riverpod provider
+    (5 tests in `test/state/editor_project_controller_test.dart`).
+
+  **Still to do**: migrate `_PlaybackScreenState` to consume the
+  controller (swap each `_field = ...; setState(...)` with
+  `ref.read(editorProjectControllerProvider.notifier).setX(...)`);
+  switch the InspectorPanel to read via `ref.watch(...select(...))`
+  instead of taking 30 props. Big surface area; deferred to a
+  follow-up commit so this branch can ship the foundation cleanly.
 
 - [x] **P0-3 — Engine layer separation** (Task #241) — _phase 1_
   Within `screen_recorder`, the engine-layer directories
@@ -186,3 +196,4 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — snapshot — committed ~7k-line in-flight focal/cursor iteration as `e88e593` to `main`; branched to `refactor/p0-1-unified-scene-builder`. Test baseline: 514 pass / 14 skip.
 - 2026-05-21 — P0-1 landed — extracted `ScenePassBuilder` (new file `lib/rendering/scene_pass_builder.dart`, 7 new tests in `test/rendering/scene_pass_builder_test.dart`). Wired into `FrameCompositor` + `PlaybackCanvas`. **Bug #2 fixed**: export's bounded-mode gate now sees `cursorVelocity` and behaves identically to preview. Test result: 521 pass / 14 skip (+7 new, zero regressions).
 - 2026-05-21 — P0-3 phase 1 — moved `cursor_motion_controller.dart`, `zoom_focal_controller.dart`, `cursor_overlay_painter.dart` from `lib/ui/widgets/` into `lib/rendering/`. Engine-layer directories (`models`, `rendering`, `effects`, `export`, `state`) are now UI-free. Added `test/architecture/engine_layer_boundary_test.dart` to enforce the boundary. Test result: 522 pass / 14 skip (+1 new). Phase 2 (sibling-package extraction) deferred to follow-up.
+- 2026-05-21 — P0-2 foundation — added `EditorProjectState.copyWith` and `EditorProjectController` (StateNotifier) + `editorProjectControllerProvider` (Riverpod). 10 new tests in `test/state/editor_project_{state,controller}_test.dart`. Migration of `_PlaybackScreenState` and the inspector to consume the controller is deferred — that's a 1000-line touch on the largest screen and warrants its own dedicated session. Test result: 532 pass / 14 skip (+10 new).

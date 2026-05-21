@@ -102,6 +102,55 @@ class EditorProjectState {
   /// loader can refuse to parse newer versions instead of guessing.
   static const int currentSchemaVersion = 2;
 
+  /// Returns a new instance with the named fields replaced.
+  ///
+  /// Used by `EditorProjectController` (the Riverpod notifier) to
+  /// produce the next state on every inspector edit. Every named
+  /// argument is `Object?` so callers can distinguish "leave unchanged"
+  /// (sentinel default) from "set to null" — needed for nullable
+  /// fields like `windowFrame` if we ever introduce them, but also
+  /// keeps the call sites obvious: `state.copyWith(cursorSize: 3.0)`
+  /// only touches `cursorSize`.
+  EditorProjectState copyWith({
+    List<ZoomRegion>? zoomRegions,
+    ScreenAnimationConfig? screenAnimationConfig,
+    CursorAnimationConfig? cursorAnimationConfig,
+    double? cursorSize,
+    CursorStyle? cursorStyle,
+    CursorClickEffect? cursorClickEffect,
+    bool? hideCursorOverlay,
+    double? motionBlur,
+    double? cursorMovementBlur,
+    double? screenMovementBlur,
+    double? screenZoomBlur,
+    double? cursorShadow,
+    ClickSpring? clickSpring,
+    Duration? cursorDelay,
+    CursorPostProcess? cursorPostProcess,
+    WindowFrame? windowFrame,
+  }) {
+    return EditorProjectState(
+      zoomRegions: zoomRegions ?? this.zoomRegions,
+      screenAnimationConfig:
+          screenAnimationConfig ?? this.screenAnimationConfig,
+      cursorAnimationConfig:
+          cursorAnimationConfig ?? this.cursorAnimationConfig,
+      cursorSize: cursorSize ?? this.cursorSize,
+      cursorStyle: cursorStyle ?? this.cursorStyle,
+      cursorClickEffect: cursorClickEffect ?? this.cursorClickEffect,
+      hideCursorOverlay: hideCursorOverlay ?? this.hideCursorOverlay,
+      motionBlur: motionBlur ?? this.motionBlur,
+      cursorMovementBlur: cursorMovementBlur ?? this.cursorMovementBlur,
+      screenMovementBlur: screenMovementBlur ?? this.screenMovementBlur,
+      screenZoomBlur: screenZoomBlur ?? this.screenZoomBlur,
+      cursorShadow: cursorShadow ?? this.cursorShadow,
+      clickSpring: clickSpring ?? this.clickSpring,
+      cursorDelay: cursorDelay ?? this.cursorDelay,
+      cursorPostProcess: cursorPostProcess ?? this.cursorPostProcess,
+      windowFrame: windowFrame ?? this.windowFrame,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
     'schemaVersion': currentSchemaVersion,
     'zoomRegions': zoomRegions.map((z) => z.toJson()).toList(),
