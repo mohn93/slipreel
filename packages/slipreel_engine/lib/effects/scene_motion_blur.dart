@@ -33,9 +33,22 @@ class SceneMotionBlurShader {
   static ui.FragmentProgram? get maybeProgram => _program;
 
   static Future<ui.FragmentProgram> ensureLoaded() async {
-    return _program ??= await ui.FragmentProgram.fromAsset(
-      'shaders/scene_motion_blur.frag',
-    );
+    // Asset is declared in slipreel_engine/pubspec.yaml. From a
+    // depending app (the screen_recorder shell) it resolves through
+    // the package-prefixed path. From inside the engine's own tests
+    // it resolves through the bare path. Try the depending-app path
+    // first since that's the production lookup; fall back for tests.
+    if (_program != null) return _program!;
+    try {
+      _program = await ui.FragmentProgram.fromAsset(
+        'packages/slipreel_engine/shaders/scene_motion_blur.frag',
+      );
+    } catch (_) {
+      _program = await ui.FragmentProgram.fromAsset(
+        'shaders/scene_motion_blur.frag',
+      );
+    }
+    return _program!;
   }
 }
 

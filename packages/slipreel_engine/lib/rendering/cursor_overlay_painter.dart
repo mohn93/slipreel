@@ -81,9 +81,20 @@ class CursorOverlayPainter extends CustomPainter {
   /// can use it on first paint. Call from `main()` before `runApp`.
   /// Idempotent — subsequent calls return the cached program.
   static Future<void> ensureMotionBlurProgramLoaded() async {
-    _motionBlurProgram ??= await ui.FragmentProgram.fromAsset(
-      'shaders/motion_blur.frag',
-    );
+    // Asset is declared in slipreel_engine/pubspec.yaml. From a
+    // depending app the path resolves through the package prefix;
+    // from inside the engine's own tests it resolves bare. Try the
+    // depending-app path first; fall back for tests.
+    if (_motionBlurProgram != null) return;
+    try {
+      _motionBlurProgram = await ui.FragmentProgram.fromAsset(
+        'packages/slipreel_engine/shaders/motion_blur.frag',
+      );
+    } catch (_) {
+      _motionBlurProgram = await ui.FragmentProgram.fromAsset(
+        'shaders/motion_blur.frag',
+      );
+    }
   }
 
   @override

@@ -183,8 +183,10 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       // to apply a radial motion smear to a captured snapshot of the
       // composition. Loaded lazily so the playground doesn't block
       // startup waiting for it.
+      // Shader lives in the slipreel_engine package (P0-3 phase 2);
+      // load via the package-prefixed asset path.
       _sceneBlurProgram = await ui.FragmentProgram.fromAsset(
-        'shaders/scene_motion_blur.frag',
+        'packages/slipreel_engine/shaders/scene_motion_blur.frag',
       );
       if (!mounted) return;
       setState(() => _ready = true);
