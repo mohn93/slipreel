@@ -40,7 +40,7 @@ class EditorHistoryController extends ChangeNotifier {
   /// initial "floor" entry — [canUndo] is false until the next
   /// mutation is committed.
   void start() {
-    _history.push(controller.state);
+    _history.push(controller.current);
     _removeListener = controller.addListener(
       (state) {
         if (_applyingHistory) return;
@@ -87,7 +87,7 @@ class EditorHistoryController extends ChangeNotifier {
 
   void _commitPending() {
     _coalesceTimer = null;
-    final current = controller.state;
+    final current = controller.current;
     // Avoid pushing duplicates — happens when a mutator is called
     // with the same value the state already has.
     if (identical(_history.current, current)) return;

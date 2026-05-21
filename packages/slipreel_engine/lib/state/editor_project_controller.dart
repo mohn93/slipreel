@@ -24,6 +24,13 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   EditorProjectController({EditorProjectState? initial})
       : super(initial ?? EditorProjectState.defaults());
 
+  /// Public read accessor for the current state. `StateNotifier.state`
+  /// is protected to subclasses; external callers (e.g.
+  /// [EditorHistoryController], persistence, debug tooling) read
+  /// through this without tripping the analyzer's
+  /// invalid_use_of_protected_member warning.
+  EditorProjectState get current => state;
+
   /// Swap the entire state. Used by the project loader: hand it a
   /// fully-built state and the controller pushes it through.
   void replace(EditorProjectState next) {

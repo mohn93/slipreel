@@ -6,6 +6,7 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 
 /// Stateful spring chase over the recorded cursor path.
@@ -41,6 +42,14 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 ///   position)` at the rendered timestamp** — independent of the
 ///   spring's state, so a press/release fires at the recorded moment.
 class CursorMotionController {
+  CursorMotionController({MotionTuning? tuning})
+      : tuning = tuning ?? MotionTuning.defaults;
+
+  /// Motion-feel tuning (velocity lookback window, feedforward
+  /// strength + fade band). Defaults to the historic hand-tuned
+  /// production set.
+  final MotionTuning tuning;
+
   // Spring state (one axis each). Initialised lazily on the first
   // call where a raw cursor sample is available.
   double _x = 0;
@@ -87,7 +96,7 @@ class CursorMotionController {
   // playback through different content.
 
   /// Back-look window for the scene-velocity finite difference.
-  static const Duration _velocityLookback = Duration(milliseconds: 33);
+  Duration get _velocityLookback => tuning.cursorVelocityLookback;
 
   /// Fraction of the spring's analytical lag (τ) compensated by
   /// velocity feedforward. 1.0 = full cancellation (rendered cursor
@@ -102,7 +111,7 @@ class CursorMotionController {
   /// strength is faded toward zero so the target doesn't keep a lead
   /// of `raw + V × τ × 0.5` when V is decaying to zero — see the
   /// commentary on the smoothstep below for why this matters at clicks.
-  static const double _feedforwardStrength = 0.5;
+  double get _feedforwardStrength => tuning.cursorFeedforwardStrength;
 
   /// Cursor speeds (px/s) at which the velocity feedforward is fully
   /// off vs. fully on. Between these speeds the strength is smooth-
@@ -129,8 +138,10 @@ class CursorMotionController {
   /// (33 ms) window so even fast motions decay through the fade band
   /// over several frames — preventing the "fade" itself from being a
   /// discontinuity the user can see.
-  static const double _feedforwardFadeStartPxPerSec = 200.0;
-  static const double _feedforwardFullSpeedPxPerSec = 800.0;
+  double get _feedforwardFadeStartPxPerSec =>
+      tuning.cursorFeedforwardFadeStartPxPerSec;
+  double get _feedforwardFullSpeedPxPerSec =>
+      tuning.cursorFeedforwardFullSpeedPxPerSec;
 
   CursorMotionUpdate? update({
     required Duration position,

@@ -1,6 +1,7 @@
 import 'package:flutter/animation.dart' show Curves;
 import 'package:flutter/painting.dart' show Offset, Rect, Size;
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 
 /// Stateful controller for the cursor-follow zoom focal point.
 ///
@@ -25,6 +26,14 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 /// — the spring is only active during the hold phase and the enter
 /// ramp.
 class ZoomFocalController {
+  ZoomFocalController({MotionTuning? tuning})
+      : tuning = tuning ?? MotionTuning.defaults;
+
+  /// Motion-feel tuning (reverse-scrub floor, sub-step caps, the
+  /// bounded-mode at-rest velocity threshold). Defaults to the
+  /// historic hand-tuned production set — pass an override to swap
+  /// to a named preset or a JSON-loaded custom config.
+  final MotionTuning tuning;
   ZoomRegion? _previousActiveZoom;
   Offset? _smoothedFocal;
 
@@ -90,20 +99,20 @@ class ZoomFocalController {
   // (clicking a much earlier point on the timeline, keyboard
   // scrubbing, etc.) are still always larger than 200 ms, so the
   // snap path stays available for the cases that actually need it.
-  static const int _reverseScrubMinMicros = 200 * 1000;
+  int get _reverseScrubMinMicros => tuning.reverseScrubFloor.inMicroseconds;
 
   // Largest sub-step the spring is integrated over. Semi-implicit
   // Euler is stable for damped-spring systems while `c·dt < 2`; for
   // the minimum allowed settleTime (100 ms) `c = 4/T = 40`, so
   // `dt < 50 ms`. 16 ms (one 60 fps frame) keeps the integration
   // well inside that band for every supported [ZoomRegion.followDuration].
-  static const int _maxSubStepMicros = 16 * 1000;
+  int get _maxSubStepMicros => tuning.subStepCapMicros.inMicroseconds;
 
   // Hard cap on the *total* dt fed into a single update. After a
   // pause-resume the next call may carry a multi-second gap; capping
   // at 250 ms keeps sub-step counts bounded (≤16 sub-steps) and the
   // spring effectively jumps to the new state on the following frame.
-  static const int _maxTotalDtMicros = 250 * 1000;
+  int get _maxTotalDtMicros => tuning.dtCap.inMicroseconds;
 
   // Velocity threshold (px/s) at which the bounded-mode gate
   // considers the cursor "at rest" and is allowed to release an
@@ -153,7 +162,7 @@ class ZoomFocalController {
   // mid-drag. Engagement is still strictly positional (cursor must
   // leave the dz), so this can't fire as the old "velocity bypass"
   // did against a hover-inside-dz.
-  static const double _cursorAtRestPxPerSec = 80.0;
+  double get _cursorAtRestPxPerSec => tuning.cursorAtRestPxPerSec;
 
   /// Last computed focal. Exposed for the debug HUD that draws the
   /// focal as a hollow yellow ring.

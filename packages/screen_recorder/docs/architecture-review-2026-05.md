@@ -229,7 +229,21 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 
 ### P2
 
-- [ ] **P2-8 — Centralized tuning JSON + presets** (Task #246)
+- [x] **P2-8 — Centralized tuning JSON + presets** (Task #246) — _phase A landed_
+  New `MotionTuning` immutable record in
+  `slipreel_engine/lib/rendering/motion_tuning.dart` collects 8
+  motion-feel knobs from across `ZoomFocalController` and
+  `CursorMotionController` (reverse-scrub floor, sub-step caps,
+  cursor-at-rest threshold, velocity lookback, feedforward strength
+  + fade band). Named presets: `defaults` (historic production set
+  — behavior-neutral), `snappy` (lower at-rest threshold + higher
+  feedforward), `cinematic` (lower feedforward, more film-y lag).
+  `toJson`/`fromJson` round-trip with partial-JSON fallbacks. Both
+  controllers expose `tuning` via a constructor param defaulting to
+  `MotionTuning.defaults`. 8 tests in
+  `test/rendering/motion_tuning_test.dart`. **Phase B** (wire scene
+  blur + zoom-region defaults), **Phase C** (JSON file load + hot-
+  reload + UI preset picker) deferred.
 - [x] **P2-9 — Schema migration switchboard** (Task #247)
   `EditorProjectState.fromJson` now routes through
   `migrateEditorProjectJson()` before reading fields. The migration
@@ -267,3 +281,4 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P0-2 step 3 landed — `CursorTab` and `AnimationTab` converted to `ConsumerStatefulWidget`s reading editor state directly via `ref.watch(editorProjectControllerProvider)` and mutating via the notifier. `InspectorPanel` constructor shrank from 30+ params (state + callbacks) to 8 (frameSettings, width, initialTab, selection, zoomRegions, clipDuration, canHideCursor, curveLibrary + selection callbacks). Each tab now owns its own provider subscription, so a slider drag in the cursor tab no longer rebuilds the animation tab. Test result: 550 pass / 14 skip (0 net new, 0 regressions).
 - 2026-05-21 — runtime verification — launched app on macOS arm64 (had to bypass FVM's x86_64 wrapper); first launch crashed at scene-blur frame because shader assets had moved with P0-3 phase 2 but the loaders still used bare paths. Three fixes landed in commit `9d9f1c3`: shader loaders now use `packages/slipreel_engine/shaders/...` with a bare-path fallback for the engine's own tests. App ran clean after that.
 - 2026-05-21 — P1-7 landed — `EditorHistoryController` in slipreel_engine: ChangeNotifier wrapping `UndoRedoController<EditorProjectState>` with debounced coalescing (one history entry per slider drag, not per tick). 8 tests in `test/state/editor_history_controller_test.dart`. Wired into PlaybackScreen, replacing the broken trim-only undo. Test result: 558 pass / 14 skip across both packages (+8 new). **Bug #5 closed**.
+- 2026-05-21 — P2-8 phase A landed — `MotionTuning` immutable record collects 8 spring/follow/feedforward constants from `ZoomFocalController` + `CursorMotionController` into one place. Named presets (`defaults`, `snappy`, `cinematic`) + JSON round-trip + per-field copyWith. Both controllers expose `tuning` via constructor param; `defaults` is the historic production set, so landing this is behavior-neutral. 8 tests. Test result: 566 pass / 14 skip across both packages (+8 new).
