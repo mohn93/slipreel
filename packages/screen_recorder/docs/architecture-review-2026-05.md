@@ -274,7 +274,26 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   5 tests in `test/state/editor_project_state_migration_test.dart`
   cover missing-version, current-version pass-through, future-version
   refusal, chain composability, and explicit-v1 round-trip.
-- [ ] **P2-10 — Timeline container for multi-track** (Task #248)
+- [x] **P2-10 — Timeline container for multi-track** (Task #248)
+  New `Timeline` + `ZoomTrack` value objects in
+  `slipreel_engine/lib/timeline/timeline.dart`. `EditorProjectState`'s
+  flat `final List<ZoomRegion> zoomRegions` field is replaced by
+  `final Timeline timeline`; a `zoomRegions` getter shim returns
+  `timeline.activeZoomRegions` (first track's regions) so existing
+  read sites keep working without churn. `copyWith` accepts both
+  `timeline:` (explicit, atomic swap) and `zoomRegions:` (convenience,
+  writes through to the active track). Schema bump v2 → v3: the v2→v3
+  migration step folds the top-level `zoomRegions: [...]` array into
+  `timeline.zoomTracks[0].regions`, lossless. `EditorProjectState.fromJson`
+  now actually routes through `migrateEditorProjectJson` (the v1→v2
+  no-op had hidden the missing call). Future fields (`clips`,
+  `captionTracks`, `audioTracks`) will append to `Timeline` without
+  another schema break of `EditorProjectState`. 9 new tests in
+  `test/timeline/timeline_test.dart`, 3 new migration tests
+  (v2→v3 happy path, v2 missing zoomRegions, v1→v3 chain),
+  3 new EditorProjectState tests for the Timeline plumbing.
+  Behavior preserved across all 153 screen_recorder tests + 450
+  engine tests (603 total).
 
 ---
 
@@ -306,4 +325,5 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P1-4 phase C landed — `CursorOverlayPainter`'s motion-blur branch no longer re-bakes the cursor sprite on every frame. Bake split into bare glyph (cached by `pxDiameter × dpr × style × state × bufferPx`) + drop shadow drawn separately at stamp time + press-pulse applied as a destination-rect scale on the smear. Made `paintCursorShadow` public. **Bug #9 closed**. Behavior preserved. Test result: 578 pass / 14 skip.
 - 2026-05-21 — P0-3 phase 2 finalized — moved `curve_library.dart` and `video_encoder.dart` from `screen_recorder` to `slipreel_engine` (both were engine-shaped — no UI imports). Shell trimmed to `main`, `services/destination_handlers`, `state/{frame_settings_provider,recording_state}`, `ui/`. Tests just shifted (578 total preserved).
 - 2026-05-21 — P2-8 phase C foundation landed — `MotionTuningController` (StateNotifier) + `MotionTuningStore` (sidecar JSON load/save with atomic write + corrupt-file recovery) + `motionTuningProvider` + `MotionTuningPreset` enum (defaults / snappy / cinematic). 10 new tests. Wiring the existing controllers to read from the provider, and a debug-tab preset picker UI, deferred to phase C-2. Test result: 588 pass / 14 skip across both packages (+10 new).
+- 2026-05-21 — P2-10 landed — Timeline container. New `Timeline` + `ZoomTrack` in `slipreel_engine/lib/timeline/`. `EditorProjectState.zoomRegions` (field) → `EditorProjectState.timeline` (field) + `zoomRegions` getter shim reading `timeline.activeZoomRegions`. `copyWith` accepts `timeline:` (explicit) and `zoomRegions:` (convenience → active track). Schema v2 → v3 migration moves the flat list onto `timeline.zoomTracks[0].regions`. While here, wired `fromJson` to route through `migrateEditorProjectJson` (v1→v2 was a noop, so the missing call hadn't bitten anyone yet, but v2→v3 actually reshapes JSON). 15 new tests across `test/timeline/timeline_test.dart`, `editor_project_state_test.dart`, and `editor_project_state_migration_test.dart`. Test result: 603 pass / 14 skip (450 engine + 153 shell). Zero call-site churn outside `EditorProjectState` itself + 5 test files where stale `copyForTest` extensions were collapsed to the now-existing production `copyWith`. **Last task on the original review roadmap.**
 - 2026-05-21 — P2-8 phase C-2 landed — wired the MotionTuning provider into the live preview AND added the inspector preset picker. `ZoomFocalController.tuning` and `CursorMotionController.tuning` made mutable (was final); `ScenePassBuilder.setTuning(...)` propagates a new tuning to both. `PlaybackCanvas` converted to `ConsumerStatefulWidget`; at the top of each build it `ref.watch`es `motionTuningProvider` and calls `setTuning()` on its scene-pass builder so a preset swap flows through to the springs + scene-blur knobs on the next frame. `main.dart` loads tuning from `applicationSupport/motion_tuning.json` at startup and seeds the provider + store via `ProviderScope` overrides. Cursor tab's Debug section gains a `_MotionPresetPicker` showing the active preset (or "Custom") and three chips that swap the state and persist to JSON. Designer iteration loop is closed: pick preset → preview updates live → choice survives restart. Test result: 588 pass / 14 skip (no net new tests — behaviour preserved by construction, defaults flow through unchanged).

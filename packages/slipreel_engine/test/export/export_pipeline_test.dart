@@ -24,7 +24,7 @@ void main() {
         // source video size — keeps this test focused on the decode →
         // composite → encode loop without inflating output dims via the
         // default rounded frame's padding.
-        final state = EditorProjectState.defaults().copyForTest(
+        final state = EditorProjectState.defaults().copyWith(
           windowFrame: const WindowFrame(
             name: 'None',
             padding: EdgeInsets.zero,
@@ -76,24 +76,3 @@ void main() {
   });
 }
 
-extension on EditorProjectState {
-  EditorProjectState copyForTest({WindowFrame? windowFrame}) {
-    return EditorProjectState(
-      zoomRegions: zoomRegions,
-      screenAnimationConfig: screenAnimationConfig,
-      cursorAnimationConfig: cursorAnimationConfig,
-      cursorSize: cursorSize,
-      cursorStyle: cursorStyle,
-      cursorClickEffect: cursorClickEffect,
-      hideCursorOverlay: hideCursorOverlay,
-      motionBlur: motionBlur,
-      cursorMovementBlur: cursorMovementBlur,
-      screenMovementBlur: screenMovementBlur,
-      screenZoomBlur: screenZoomBlur,
-      cursorShadow: cursorShadow,
-      clickSpring: clickSpring,
-      cursorDelay: cursorDelay,
-      windowFrame: windowFrame ?? this.windowFrame,
-    );
-  }
-}

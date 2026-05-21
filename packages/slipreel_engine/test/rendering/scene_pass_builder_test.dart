@@ -42,32 +42,7 @@ CursorRecording _eastBoundRecording({
 }
 
 EditorProjectState _projectWith({required List<ZoomRegion> zooms}) {
-  return EditorProjectState.defaults().copyForTest(zoomRegions: zooms);
-}
-
-/// Local copy-with for tests; the production class has no copyWith, and
-/// each test file scopes its own override surface.
-extension on EditorProjectState {
-  EditorProjectState copyForTest({List<ZoomRegion>? zoomRegions}) {
-    return EditorProjectState(
-      zoomRegions: zoomRegions ?? this.zoomRegions,
-      screenAnimationConfig: screenAnimationConfig,
-      cursorAnimationConfig: cursorAnimationConfig,
-      cursorSize: cursorSize,
-      cursorStyle: cursorStyle,
-      cursorClickEffect: cursorClickEffect,
-      hideCursorOverlay: hideCursorOverlay,
-      motionBlur: motionBlur,
-      cursorMovementBlur: cursorMovementBlur,
-      screenMovementBlur: screenMovementBlur,
-      screenZoomBlur: screenZoomBlur,
-      cursorShadow: cursorShadow,
-      clickSpring: clickSpring,
-      cursorDelay: cursorDelay,
-      cursorPostProcess: cursorPostProcess,
-      windowFrame: windowFrame,
-    );
-  }
+  return EditorProjectState.defaults().copyWith(zoomRegions: zooms);
 }
 
 ZoomRegion _bounded({

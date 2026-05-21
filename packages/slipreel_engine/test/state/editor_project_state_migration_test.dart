@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
+import 'package:slipreel_engine/timeline/timeline.dart';
 
 void main() {
   group('EditorProjectState.fromJson schema migration', () {
@@ -93,5 +94,82 @@ void main() {
         expect(state.cursorSize, 3.0);
       },
     );
+
+    test(
+      'v2 → v3: flat zoomRegions list is folded onto a single zoom '
+      'track inside a new timeline container, lossless',
+      () {
+        // A v2 sidecar (post-migration-switchboard, pre-timeline) keeps
+        // zoom regions at the top level. Loading it must preserve every
+        // region under timeline.zoomTracks[0].regions without any field
+        // loss — playback should look identical to before.
+        final v2Json = <String, dynamic>{
+          'schemaVersion': 2,
+          'zoomRegions': [
+            {
+              'rect': {'left': 0.1, 'top': 0.2, 'width': 0.3, 'height': 0.4},
+              'startTimeMicros': 250,
+              'durationMicros': 2000,
+              'zoomLevel': 1.7,
+            },
+            {
+              'rect': {'left': 0.5, 'top': 0.5, 'width': 0.2, 'height': 0.2},
+              'startTimeMicros': 3000,
+              'durationMicros': 1500,
+              'zoomLevel': 2.2,
+            },
+          ],
+          'cursorSize': 2.5,
+        };
+
+        final migrated = migrateEditorProjectJson(v2Json);
+        expect(migrated['schemaVersion'], 3);
+        expect(migrated.containsKey('zoomRegions'), isFalse,
+            reason: 'top-level zoomRegions must be removed in v3');
+        expect(migrated['timeline'], isA<Map<String, dynamic>>());
+        expect((migrated['timeline'] as Map)['zoomTracks'], hasLength(1));
+
+        // Parse through fromJson — every region should survive, accessible
+        // via the convenience shim.
+        final state = EditorProjectState.fromJson(v2Json);
+        expect(state.zoomRegions, hasLength(2));
+        expect(state.zoomRegions.first.zoomLevel, 1.7);
+        expect(state.zoomRegions.last.zoomLevel, 2.2);
+        expect(state.cursorSize, 2.5,
+            reason: 'unrelated fields must pass through migration unchanged');
+        expect(state.timeline.zoomTracks, hasLength(1));
+      },
+    );
+
+    test('v2 → v3: missing zoomRegions yields an empty track, not crash', () {
+      final v2Json = <String, dynamic>{
+        'schemaVersion': 2,
+        'cursorSize': 1.0,
+        // No zoomRegions key (hand-edited / partial sidecar).
+      };
+      final state = EditorProjectState.fromJson(v2Json);
+      expect(state.timeline.zoomTracks, hasLength(1));
+      expect(state.zoomRegions, isEmpty);
+    });
+
+    test('v1 → v3 chains through both steps in order', () {
+      final v1Json = <String, dynamic>{
+        // No schemaVersion → v1
+        'zoomRegions': [
+          {
+            'rect': {'left': 0.0, 'top': 0.0, 'width': 0.5, 'height': 0.5},
+            'startTimeMicros': 0,
+            'durationMicros': 1000,
+            'zoomLevel': 1.3,
+          },
+        ],
+      };
+      final state = EditorProjectState.fromJson(v1Json);
+      // Both steps ran: schemaVersion marker added (v1→v2), then regions
+      // moved into the timeline (v2→v3).
+      expect(state.zoomRegions, hasLength(1));
+      expect(state.zoomRegions.first.zoomLevel, 1.3);
+      expect(state.timeline, isA<Timeline>());
+    });
   });
 }

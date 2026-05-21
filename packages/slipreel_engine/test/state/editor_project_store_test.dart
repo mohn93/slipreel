@@ -28,7 +28,7 @@ void main() {
 
   group('EditorProjectState JSON', () {
     test('full roundtrip preserves all fields', () {
-      final state = EditorProjectState(
+      final state = EditorProjectState.defaults().copyWith(
         zoomRegions: [
           ZoomRegion(
             rect: const Rect.fromLTWH(0, 0, 100, 100),
@@ -176,46 +176,18 @@ void main() {
 }
 
 extension on EditorProjectState {
-  EditorProjectState copyAsZoomedExample() => EditorProjectState(
-    zoomRegions: [
-      ZoomRegion(
-        rect: const Rect.fromLTWH(0, 0, 50, 50),
-        startTime: const Duration(milliseconds: 100),
-        duration: const Duration(seconds: 1),
-        zoomLevel: 3.0,
-      ),
-    ],
-    screenAnimationConfig: screenAnimationConfig,
-    cursorAnimationConfig: cursorAnimationConfig,
-    cursorSize: 2.0,
-    cursorStyle: cursorStyle,
-    cursorClickEffect: cursorClickEffect,
-    hideCursorOverlay: hideCursorOverlay,
-    motionBlur: motionBlur,
-    cursorMovementBlur: cursorMovementBlur,
-    screenMovementBlur: screenMovementBlur,
-    screenZoomBlur: screenZoomBlur,
-    cursorShadow: cursorShadow,
-    clickSpring: clickSpring,
-    cursorDelay: cursorDelay,
-    windowFrame: windowFrame,
-  );
+  EditorProjectState copyAsZoomedExample() => copyWith(
+        zoomRegions: [
+          ZoomRegion(
+            rect: const Rect.fromLTWH(0, 0, 50, 50),
+            startTime: const Duration(milliseconds: 100),
+            duration: const Duration(seconds: 1),
+            zoomLevel: 3.0,
+          ),
+        ],
+        cursorSize: 2.0,
+      );
 
-  EditorProjectState copyWithCursorSize(double size) => EditorProjectState(
-    zoomRegions: zoomRegions,
-    screenAnimationConfig: screenAnimationConfig,
-    cursorAnimationConfig: cursorAnimationConfig,
-    cursorSize: size,
-    cursorStyle: cursorStyle,
-    cursorClickEffect: cursorClickEffect,
-    hideCursorOverlay: hideCursorOverlay,
-    motionBlur: motionBlur,
-    cursorMovementBlur: cursorMovementBlur,
-    screenMovementBlur: screenMovementBlur,
-    screenZoomBlur: screenZoomBlur,
-    cursorShadow: cursorShadow,
-    clickSpring: clickSpring,
-    cursorDelay: cursorDelay,
-    windowFrame: windowFrame,
-  );
+  EditorProjectState copyWithCursorSize(double size) =>
+      copyWith(cursorSize: size);
 }

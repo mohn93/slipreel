@@ -23,7 +23,7 @@ ExportSettings _gifSettings({
   destination: ExportDestination.file,
 );
 
-EditorProjectState _bareState() => EditorProjectState.defaults().copyForTest(
+EditorProjectState _bareState() => EditorProjectState.defaults().copyWith(
   windowFrame: const WindowFrame(
     name: 'None',
     padding: EdgeInsets.zero,
@@ -293,24 +293,3 @@ void main() {
   });
 }
 
-extension on EditorProjectState {
-  EditorProjectState copyForTest({WindowFrame? windowFrame}) {
-    return EditorProjectState(
-      zoomRegions: zoomRegions,
-      screenAnimationConfig: screenAnimationConfig,
-      cursorAnimationConfig: cursorAnimationConfig,
-      cursorSize: cursorSize,
-      cursorStyle: cursorStyle,
-      cursorClickEffect: cursorClickEffect,
-      hideCursorOverlay: hideCursorOverlay,
-      motionBlur: motionBlur,
-      cursorMovementBlur: cursorMovementBlur,
-      screenMovementBlur: screenMovementBlur,
-      screenZoomBlur: screenZoomBlur,
-      cursorShadow: cursorShadow,
-      clickSpring: clickSpring,
-      cursorDelay: cursorDelay,
-      windowFrame: windowFrame ?? this.windowFrame,
-    );
-  }
-}

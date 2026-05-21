@@ -6,6 +6,7 @@ import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
+import 'package:slipreel_engine/timeline/timeline.dart';
 
 /// Per-recording editor settings that persist across app sessions.
 ///
@@ -17,7 +18,7 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 /// [EditorProjectStore].
 class EditorProjectState {
   const EditorProjectState({
-    required this.zoomRegions,
+    required this.timeline,
     required this.screenAnimationConfig,
     required this.cursorAnimationConfig,
     required this.cursorSize,
@@ -43,7 +44,7 @@ class EditorProjectState {
   /// `_PlaybackScreenState`'s field initializers and the rounded
   /// frame template.
   factory EditorProjectState.defaults() => EditorProjectState(
-    zoomRegions: const [],
+    timeline: Timeline.defaults(),
     screenAnimationConfig: const ScreenAnimationConfig.preset(
       ScreenAnimationStyle.smooth,
     ),
@@ -61,7 +62,18 @@ class EditorProjectState {
     windowFrame: WindowFrame.rounded(),
   );
 
-  final List<ZoomRegion> zoomRegions;
+  /// Container for zoom tracks (and, in follow-ups, caption + audio
+  /// tracks and multi-clip splits). Replaces the flat `zoomRegions`
+  /// list as of schema v3.
+  final Timeline timeline;
+
+  /// Convenience read accessor for code that hasn't been updated to
+  /// pick a specific zoom track. Returns the active (first) track's
+  /// regions — matches today's single-track editor UI. New code
+  /// should reach through `state.timeline.zoomTracks[i].regions`
+  /// directly once multi-track lands.
+  List<ZoomRegion> get zoomRegions => timeline.activeZoomRegions;
+
   final ScreenAnimationConfig screenAnimationConfig;
   final CursorAnimationConfig cursorAnimationConfig;
   final double cursorSize;
@@ -118,7 +130,7 @@ class EditorProjectState {
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 2;
+  static const int currentSchemaVersion = 3;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -130,6 +142,7 @@ class EditorProjectState {
   /// keeps the call sites obvious: `state.copyWith(cursorSize: 3.0)`
   /// only touches `cursorSize`.
   EditorProjectState copyWith({
+    Timeline? timeline,
     List<ZoomRegion>? zoomRegions,
     ScreenAnimationConfig? screenAnimationConfig,
     CursorAnimationConfig? cursorAnimationConfig,
@@ -150,8 +163,28 @@ class EditorProjectState {
     Duration? fadeIn,
     Duration? fadeOut,
   }) {
+    // `zoomRegions:` is a convenience override that writes through to
+    // the active (first) zoom track on the timeline — matches today's
+    // single-track inspector. Passing both `timeline:` and
+    // `zoomRegions:` is ambiguous, so prefer the explicit timeline.
+    final Timeline nextTimeline;
+    if (timeline != null) {
+      nextTimeline = timeline;
+    } else if (zoomRegions != null) {
+      final tracks = this.timeline.zoomTracks;
+      if (tracks.isEmpty) {
+        nextTimeline = Timeline(zoomTracks: [ZoomTrack(regions: zoomRegions)]);
+      } else {
+        final updated = List<ZoomTrack>.from(tracks);
+        updated[0] = tracks[0].copyWith(regions: zoomRegions);
+        nextTimeline = Timeline(zoomTracks: updated);
+      }
+    } else {
+      nextTimeline = this.timeline;
+    }
+
     return EditorProjectState(
-      zoomRegions: zoomRegions ?? this.zoomRegions,
+      timeline: nextTimeline,
       screenAnimationConfig:
           screenAnimationConfig ?? this.screenAnimationConfig,
       cursorAnimationConfig:
@@ -177,7 +210,7 @@ class EditorProjectState {
 
   Map<String, dynamic> toJson() => {
     'schemaVersion': currentSchemaVersion,
-    'zoomRegions': zoomRegions.map((z) => z.toJson()).toList(),
+    'timeline': timeline.toJson(),
     'screenAnimationConfig': screenAnimationConfig.toJson(),
     'cursorAnimationConfig': cursorAnimationConfig.toJson(),
     'cursorSize': cursorSize,
@@ -198,8 +231,8 @@ class EditorProjectState {
     'fadeOutMicros': fadeOut.inMicroseconds,
   };
 
-  factory EditorProjectState.fromJson(Map<String, dynamic> json) {
-    final version = json['schemaVersion'];
+  factory EditorProjectState.fromJson(Map<String, dynamic> rawJson) {
+    final version = rawJson['schemaVersion'];
     if (version is int && version > currentSchemaVersion) {
       throw FormatException(
         'EditorProjectState: schemaVersion $version is newer than '
@@ -207,13 +240,16 @@ class EditorProjectState {
       );
     }
 
-    final zoomList = json['zoomRegions'];
-    final zoomRegions = <ZoomRegion>[];
-    if (zoomList is List) {
-      for (final z in zoomList) {
-        zoomRegions.add(ZoomRegion.fromJson(z as Map<String, dynamic>));
-      }
-    }
+    // Walk old sidecars forward through the migration chain so the
+    // field readers below only ever see the current shape. A v2 JSON
+    // (flat zoomRegions list) is reshaped into a v3 JSON (timeline
+    // container) by the v2→v3 step before we look up `timeline`.
+    final json = migrateEditorProjectJson(rawJson);
+
+    final timelineJson = json['timeline'];
+    final timeline = timelineJson is Map<String, dynamic>
+        ? Timeline.fromJson(timelineJson)
+        : Timeline.defaults();
 
     final screen = json['screenAnimationConfig'] as Map<String, dynamic>?;
     final cursorAnim = json['cursorAnimationConfig'] as Map<String, dynamic>?;
@@ -221,7 +257,7 @@ class EditorProjectState {
     final defaults = EditorProjectState.defaults();
 
     return EditorProjectState(
-      zoomRegions: zoomRegions,
+      timeline: timeline,
       screenAnimationConfig: screen != null
           ? ScreenAnimationConfig.fromJson(screen)
           : defaults.screenAnimationConfig,
@@ -340,6 +376,21 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>)>
   // too — today there are none, but the comment block above explains
   // how to grow this.
   (json) => {...json, 'schemaVersion': 2},
+  // v2 → v3: move the flat `zoomRegions` list onto a single zoom
+  // track inside a `timeline` container — scaffolding for captions,
+  // audio, and multi-clip support that all land on the same root
+  // object. The transform is lossless for v2 projects: the active
+  // (only) zoom track wraps the previous list.
+  (json) {
+    final next = {...json, 'schemaVersion': 3};
+    final regions = next.remove('zoomRegions');
+    next['timeline'] = {
+      'zoomTracks': [
+        {'regions': regions is List ? regions : const <dynamic>[]},
+      ],
+    };
+    return next;
+  },
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its

@@ -15,7 +15,7 @@ void main() {
   group('FrameCompositor', () {
     test('totalSize equals videoSize when frame is "None"', () {
       final compositor = FrameCompositor(
-        projectState: EditorProjectState.defaults().copyForTest(
+        projectState: EditorProjectState.defaults().copyWith(
           windowFrame: const WindowFrame(
             name: 'None',
             padding: EdgeInsets.zero,
@@ -39,7 +39,7 @@ void main() {
       // left/right = 30 * 4/3 = 40. totalSize = 320+80, 240+60 =
       // 400, 300. (Already even — yuv420p happy.)
       final compositor = FrameCompositor(
-        projectState: EditorProjectState.defaults().copyForTest(
+        projectState: EditorProjectState.defaults().copyWith(
           windowFrame: const WindowFrame(
             name: 'Custom',
             padding: EdgeInsets.all(30),
@@ -65,7 +65,7 @@ void main() {
       // = (361.86, 271.4) → rounds to (362, 271) → (362, 272) after
       // the even-up step.
       final compositor = FrameCompositor(
-        projectState: EditorProjectState.defaults().copyForTest(
+        projectState: EditorProjectState.defaults().copyWith(
           windowFrame: const WindowFrame(
             name: 'Custom',
             padding: EdgeInsets.all(15.7),
@@ -91,7 +91,7 @@ void main() {
       // (255, 0, 255). RGBA output should reproduce that pixel inside
       // the framed video region.
       final compositor = FrameCompositor(
-        projectState: EditorProjectState.defaults().copyForTest(
+        projectState: EditorProjectState.defaults().copyWith(
           windowFrame: const WindowFrame(
             name: 'None',
             padding: EdgeInsets.zero,
@@ -135,7 +135,7 @@ void main() {
       // transform), but it confirms the zoom path doesn't throw and
       // the focal pipeline produces a non-empty output.
       final compositor = FrameCompositor(
-        projectState: EditorProjectState.defaults().copyForTest(
+        projectState: EditorProjectState.defaults().copyWith(
           windowFrame: const WindowFrame(
             name: 'None',
             padding: EdgeInsets.zero,
@@ -193,7 +193,7 @@ void main() {
         // helper unit tests) — we just confirm the wrapped path
         // produces a buffer of the right length and doesn't throw.
         final compositor = FrameCompositor(
-          projectState: EditorProjectState.defaults().copyForTest(
+          projectState: EditorProjectState.defaults().copyWith(
             motionBlur: 1.0,
             windowFrame: const WindowFrame(
               name: 'None',
@@ -244,7 +244,7 @@ void main() {
           zoomLevel: 2.0,
         );
         final compositor = FrameCompositor(
-          projectState: EditorProjectState.defaults().copyForTest(
+          projectState: EditorProjectState.defaults().copyWith(
             motionBlur: 1.0,
             zoomRegions: [zoom],
             windowFrame: const WindowFrame(
@@ -327,28 +327,3 @@ Uint8List _twoTone(int w, int h) {
   return out;
 }
 
-extension on EditorProjectState {
-  EditorProjectState copyForTest({
-    WindowFrame? windowFrame,
-    List<ZoomRegion>? zoomRegions,
-    double? motionBlur,
-  }) {
-    return EditorProjectState(
-      zoomRegions: zoomRegions ?? this.zoomRegions,
-      screenAnimationConfig: screenAnimationConfig,
-      cursorAnimationConfig: cursorAnimationConfig,
-      cursorSize: cursorSize,
-      cursorStyle: cursorStyle,
-      cursorClickEffect: cursorClickEffect,
-      hideCursorOverlay: hideCursorOverlay,
-      motionBlur: motionBlur ?? this.motionBlur,
-      cursorMovementBlur: cursorMovementBlur,
-      screenMovementBlur: screenMovementBlur,
-      screenZoomBlur: screenZoomBlur,
-      cursorShadow: cursorShadow,
-      clickSpring: clickSpring,
-      cursorDelay: cursorDelay,
-      windowFrame: windowFrame ?? this.windowFrame,
-    );
-  }
-}

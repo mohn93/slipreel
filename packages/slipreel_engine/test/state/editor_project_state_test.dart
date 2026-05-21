@@ -8,6 +8,7 @@ import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
+import 'package:slipreel_engine/timeline/timeline.dart';
 
 void main() {
   group('EditorProjectState.copyWith', () {
@@ -139,6 +140,66 @@ void main() {
         expect(original.cursorPostProcess, CursorPostProcess.none);
       },
     );
+
+    test('carries a Timeline and exposes zoomRegions getter shim', () {
+      // P2-10: regions now live on timeline.zoomTracks.first.regions.
+      // The zoomRegions getter is the shim for code that hasn't been
+      // updated to walk the timeline — it returns the active track's
+      // regions, matching today's single-track UI.
+      final defaults = EditorProjectState.defaults();
+      expect(defaults.timeline, isA<Timeline>());
+      expect(defaults.timeline.zoomTracks, hasLength(1));
+      expect(defaults.zoomRegions, isEmpty);
+
+      final region = ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 1, 1),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 1),
+        zoomLevel: 2.0,
+      );
+      final next = defaults.copyWith(zoomRegions: [region]);
+      expect(next.timeline.zoomTracks.first.regions, hasLength(1));
+      expect(next.zoomRegions, hasLength(1));
+      expect(next.zoomRegions.first.zoomLevel, 2.0);
+    });
+
+    test('copyWith(timeline:) replaces the whole timeline atomically', () {
+      // Allows the controller to swap in a multi-track timeline once
+      // captions/audio land, without round-tripping through zoomRegions.
+      final original = EditorProjectState.defaults();
+      final replacement = Timeline(zoomTracks: [
+        ZoomTrack(regions: [
+          ZoomRegion(
+            rect: const Rect.fromLTWH(0, 0, 1, 1),
+            startTime: Duration.zero,
+            duration: const Duration(seconds: 2),
+            zoomLevel: 1.7,
+          ),
+        ]),
+      ]);
+      final patched = original.copyWith(timeline: replacement);
+      expect(identical(patched.timeline, replacement), isTrue);
+      expect(patched.zoomRegions.first.zoomLevel, 1.7);
+    });
+
+    test('timeline round-trips through toJson/fromJson', () {
+      final original = EditorProjectState.defaults().copyWith(zoomRegions: [
+        ZoomRegion(
+          rect: const Rect.fromLTWH(0.1, 0.1, 0.5, 0.5),
+          startTime: const Duration(milliseconds: 250),
+          duration: const Duration(seconds: 3),
+          zoomLevel: 1.4,
+        ),
+      ]);
+      final json = original.toJson();
+      // v3 shape: timeline replaces top-level zoomRegions
+      expect(json['timeline'], isA<Map<String, dynamic>>());
+      expect(json.containsKey('zoomRegions'), isFalse);
+
+      final restored = EditorProjectState.fromJson(json);
+      expect(restored.zoomRegions, hasLength(1));
+      expect(restored.zoomRegions.first.zoomLevel, 1.4);
+    });
 
     test('animation configs swap atomically as a single unit', () {
       // CursorAnimationConfig has nested spring state — copyWith must
