@@ -4,7 +4,7 @@ import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/animation_curve.dart';
 import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/spring_config.dart';
-import 'package:screen_recorder/ui/widgets/zoom/cursor_motion_controller.dart';
+import 'package:screen_recorder/rendering/cursor_motion_controller.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 CursorRecording _record(

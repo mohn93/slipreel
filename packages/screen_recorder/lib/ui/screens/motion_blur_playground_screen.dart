@@ -24,9 +24,9 @@ import 'package:screen_recorder/rendering/spring_config.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/motion_blur_tuning_panel.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
-import 'package:screen_recorder/ui/widgets/zoom/cursor_motion_controller.dart';
+import 'package:screen_recorder/rendering/cursor_motion_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
-import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
+import 'package:screen_recorder/rendering/zoom_focal_controller.dart';
 
 /// A dev-only screen for iterating on the cursor motion-blur algorithm
 /// without rebuilding the entire editor every time. Loads a recording

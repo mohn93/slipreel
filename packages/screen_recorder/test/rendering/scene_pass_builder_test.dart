@@ -2,7 +2,6 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
-import 'package:screen_recorder/rendering/animation_style.dart';
 import 'package:screen_recorder/rendering/scene_pass_builder.dart';
 import 'package:screen_recorder/state/editor_project_state.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';

@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/models/cursor_recording.dart';
-import 'package:screen_recorder/ui/widgets/cursor_overlay_painter.dart';
+import 'package:screen_recorder/rendering/cursor_overlay_painter.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 class _RecordingCanvas implements ui.Canvas {

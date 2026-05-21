@@ -12,8 +12,8 @@ import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/state/cursor_post_process.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
-import 'package:screen_recorder/ui/widgets/zoom/cursor_motion_controller.dart';
-import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
+import 'package:screen_recorder/rendering/cursor_motion_controller.dart';
+import 'package:screen_recorder/rendering/zoom_focal_controller.dart';
 
 /// Wraps a [child] (typically a [PlaybackCanvas]) and renders the
 /// scene-level motion blur as a captured-and-shadered overlay on top.

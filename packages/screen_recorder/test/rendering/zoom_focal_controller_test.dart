@@ -1,7 +1,7 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/models/zoom_region.dart';
-import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
+import 'package:screen_recorder/rendering/zoom_focal_controller.dart';
 
 const Size _videoSize = Size(1920, 1080);
 

@@ -7,7 +7,7 @@ import 'package:screen_recorder_macos/screen_recorder_macos.dart';
 import 'effects/scene_motion_blur.dart';
 import 'rendering/cursor_image_cache.dart';
 import 'ui/screens/recording_screen.dart';
-import 'ui/widgets/cursor_overlay_painter.dart';
+import 'rendering/cursor_overlay_painter.dart';
 import 'utils/app_logger.dart';
 
 Future<void> main() async {

@@ -23,10 +23,10 @@ import 'package:screen_recorder/rendering/spring_config.dart';
 import 'package:screen_recorder/rendering/wallpaper.dart';
 import 'package:screen_recorder/state/cursor_post_process.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
-import 'package:screen_recorder/ui/widgets/cursor_overlay_painter.dart';
+import 'package:screen_recorder/rendering/cursor_overlay_painter.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
-import 'package:screen_recorder/ui/widgets/zoom/cursor_motion_controller.dart';
-import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
+import 'package:screen_recorder/rendering/cursor_motion_controller.dart';
+import 'package:screen_recorder/rendering/zoom_focal_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 
 /// The composed playback canvas: wallpaper layer, framed video,

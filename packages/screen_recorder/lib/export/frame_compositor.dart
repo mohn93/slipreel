@@ -15,7 +15,7 @@ import 'package:screen_recorder/rendering/frame_painter.dart';
 import 'package:screen_recorder/rendering/scene_pass_builder.dart';
 import 'package:screen_recorder/rendering/wallpaper.dart';
 import 'package:screen_recorder/state/editor_project_state.dart';
-import 'package:screen_recorder/ui/widgets/cursor_overlay_painter.dart';
+import 'package:screen_recorder/rendering/cursor_overlay_painter.dart';
 
 /// Re-renders the same composition the preview canvas paints, but to
 /// raw RGBA bytes instead of a widget tree. Owns the same stateful

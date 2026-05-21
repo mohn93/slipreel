@@ -149,10 +149,18 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   InspectorPanel, fix per-tick whole-screen rebuilds, give undo/redo
   a real subject.
 
-- [ ] **P0-3 — Extract `slipreel_engine` package** (Task #241)
-  Move `models/`, `rendering/`, `effects/`, `export/` into a sibling
-  package with zero Flutter UI imports. Invert
-  `frame_compositor.dart:20-22` dependency. Add import-boundary lint.
+- [x] **P0-3 — Engine layer separation** (Task #241) — _phase 1_
+  Within `screen_recorder`, the engine-layer directories
+  (`models/`, `rendering/`, `effects/`, `export/`, `state/`) no longer
+  import anything from `lib/ui/`. Three files moved out of
+  `lib/ui/widgets/` into `lib/rendering/`:
+  `cursor_motion_controller.dart`, `zoom_focal_controller.dart`,
+  `cursor_overlay_painter.dart`. A boundary test
+  (`test/architecture/engine_layer_boundary_test.dart`) fails CI if
+  any engine file imports from `lib/ui/`. **Phase 2** (physical
+  extraction into a sibling `slipreel_engine` package) is now
+  mechanical — every engine import is portable — and will land as a
+  follow-up.
 
 ### P1
 
@@ -177,3 +185,4 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — review intake — created this doc + tasks #239–#248.
 - 2026-05-21 — snapshot — committed ~7k-line in-flight focal/cursor iteration as `e88e593` to `main`; branched to `refactor/p0-1-unified-scene-builder`. Test baseline: 514 pass / 14 skip.
 - 2026-05-21 — P0-1 landed — extracted `ScenePassBuilder` (new file `lib/rendering/scene_pass_builder.dart`, 7 new tests in `test/rendering/scene_pass_builder_test.dart`). Wired into `FrameCompositor` + `PlaybackCanvas`. **Bug #2 fixed**: export's bounded-mode gate now sees `cursorVelocity` and behaves identically to preview. Test result: 521 pass / 14 skip (+7 new, zero regressions).
+- 2026-05-21 — P0-3 phase 1 — moved `cursor_motion_controller.dart`, `zoom_focal_controller.dart`, `cursor_overlay_painter.dart` from `lib/ui/widgets/` into `lib/rendering/`. Engine-layer directories (`models`, `rendering`, `effects`, `export`, `state`) are now UI-free. Added `test/architecture/engine_layer_boundary_test.dart` to enforce the boundary. Test result: 522 pass / 14 skip (+1 new). Phase 2 (sibling-package extraction) deferred to follow-up.

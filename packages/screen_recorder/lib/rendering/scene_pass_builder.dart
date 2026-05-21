@@ -6,8 +6,8 @@ import 'package:screen_recorder/models/zoom_region.dart';
 import 'package:screen_recorder/rendering/animation_config.dart';
 import 'package:screen_recorder/rendering/cursor_geometry.dart';
 import 'package:screen_recorder/state/cursor_post_process.dart';
-import 'package:screen_recorder/ui/widgets/zoom/cursor_motion_controller.dart';
-import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_controller.dart';
+import 'package:screen_recorder/rendering/cursor_motion_controller.dart';
+import 'package:screen_recorder/rendering/zoom_focal_controller.dart';
 
 /// Per-frame "scene state": everything both the live preview and the
 /// export pipeline need to draw one frame. Produced by
