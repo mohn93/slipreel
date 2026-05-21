@@ -5,6 +5,7 @@ import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
@@ -89,6 +90,14 @@ class ScenePassBuilder {
   final CursorMotionController motion;
   final ZoomFocalController focal;
   final EmaVelocityFilter velocityFilter;
+
+  /// Propagate a new [MotionTuning] to the owned spring controllers
+  /// so a preset-picker swap or JSON reload takes effect on the next
+  /// frame without disposing the springs' accumulated state.
+  void setTuning(MotionTuning tuning) {
+    motion.tuning = tuning;
+    focal.tuning = tuning;
+  }
 
   /// Compute one frame of scene state.
   ///

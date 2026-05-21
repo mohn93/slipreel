@@ -2,11 +2,13 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
+import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/effects/scene_accumulation_painter.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
@@ -43,7 +45,7 @@ import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 /// through [frameSettings] / [screenAnimationConfig] /
 /// [cursorAnimationConfig] etc., and changes there rebuild the canvas
 /// without rebuilding the surrounding shell.
-class PlaybackCanvas extends StatefulWidget {
+class PlaybackCanvas extends ConsumerStatefulWidget {
   const PlaybackCanvas({
     super.key,
     required this.controller,
@@ -202,14 +204,18 @@ class PlaybackCanvas extends StatefulWidget {
   final int sceneAccumSampleCount;
 
   @override
-  State<PlaybackCanvas> createState() => _PlaybackCanvasState();
+  ConsumerState<PlaybackCanvas> createState() => _PlaybackCanvasState();
 }
 
-class _PlaybackCanvasState extends State<PlaybackCanvas> {
+class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   // Scene-blur knobs come from [MotionTuning] so the preview canvas
   // and the export pipeline (FrameCompositor) share one source of
-  // truth (P2-8 phase B).
-  static final MotionTuning _tuning = MotionTuning.defaults;
+  // truth (P2-8 phase B). The instance field is refreshed at the top
+  // of build() from [motionTuningProvider]; the spring controllers
+  // owned by [ScenePassBuilder] receive the same value via
+  // `setTuning(...)` so a preset-picker swap takes effect on the
+  // next frame (P2-8 phase C-2).
+  MotionTuning _tuning = MotionTuning.defaults;
   double get _sceneBlurExposureMs => _tuning.sceneBlurExposureMs;
   double get _sceneBlurMaxTranslation => _tuning.sceneBlurMaxTranslation;
   int get _sceneBlurSampleCount => _tuning.sceneBlurSampleCount;
@@ -310,6 +316,13 @@ class _PlaybackCanvasState extends State<PlaybackCanvas> {
 
   @override
   Widget build(BuildContext context) {
+    // Pick up the latest MotionTuning from the provider so preset
+    // changes from the cursor-tab picker (or a JSON reload at app
+    // startup) flow through to the scene-blur knobs read in this
+    // build AND to the spring controllers owned by the
+    // ScenePassBuilder.
+    _tuning = ref.watch(motionTuningProvider);
+    _scenePassBuilder.setTuning(_tuning);
     final videoSize = widget.controller.value.size;
     final currentFrame = widget.frameSettings.currentFrame;
     if (_lastSeenFrame != currentFrame) {

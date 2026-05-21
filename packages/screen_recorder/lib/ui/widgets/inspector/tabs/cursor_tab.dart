@@ -6,6 +6,7 @@ import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
+import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Cursor tab — size, style, behavior toggles, click-effect section.
@@ -199,6 +200,18 @@ class _CursorTabState extends ConsumerState<CursorTab> {
           ),
         ),
         const SizedBox(height: 16),
+        _MotionPresetPicker(
+          active: ref.watch(motionTuningProvider.notifier).activePreset,
+          onPick: (preset) {
+            ref.read(motionTuningProvider.notifier).usePreset(preset);
+            // Persist so next launch picks up this choice. Fire-and-
+            // forget — store handles errors internally (logs only).
+            ref
+                .read(motionTuningStoreProvider)
+                .save(preset.tuning);
+          },
+        ),
+        const SizedBox(height: 20),
         InspectorSlider(
           label: 'Cursor delay',
           subtitle: () {
@@ -478,4 +491,100 @@ class _CursorStylePreviewPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _CursorStylePreviewPainter old) =>
       old.style != style;
+}
+
+/// Compact preset picker for [MotionTuning]. Shown in the cursor
+/// tab's Debug section so designers can A/B presets without
+/// recompiling — pairs with the sidecar JSON load at startup. The
+/// "Custom" row appears only when [active] is null (the current
+/// tuning doesn't match any named preset — e.g. user-edited JSON).
+class _MotionPresetPicker extends StatelessWidget {
+  const _MotionPresetPicker({required this.active, required this.onPick});
+
+  final MotionTuningPreset? active;
+  final ValueChanged<MotionTuningPreset> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Motion preset',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          active == null
+              ? 'Custom (loaded from motion_tuning.json — pick a preset to '
+                  'override).'
+              : 'Active: ${active!.label}. Affects spring + scene-blur '
+                  'tuning across preview and export.',
+          style: const TextStyle(
+            color: kInspectorMuted,
+            fontSize: 11,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final p in MotionTuningPreset.values)
+              _PresetChip(
+                label: p.label,
+                isSelected: active == p,
+                onTap: () => onPick(p),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _PresetChip extends StatelessWidget {
+  const _PresetChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? kInspectorAccent.withValues(alpha: 0.15)
+              : kInspectorPanel,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected
+                ? kInspectorAccent.withValues(alpha: 0.5)
+                : kInspectorBorder,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? kInspectorAccent : Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
 }

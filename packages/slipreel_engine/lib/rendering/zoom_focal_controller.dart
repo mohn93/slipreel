@@ -32,9 +32,11 @@ class ZoomFocalController {
 
   /// Motion-feel tuning (reverse-scrub floor, sub-step caps, the
   /// bounded-mode at-rest velocity threshold). Defaults to the
-  /// historic hand-tuned production set — pass an override to swap
-  /// to a named preset or a JSON-loaded custom config.
-  final MotionTuning tuning;
+  /// historic hand-tuned production set. Mutable so a preset picker
+  /// or JSON-reload can swap it at runtime without recreating the
+  /// controller (spring state is preserved — the next update() reads
+  /// the new constants).
+  MotionTuning tuning;
   Offset? _smoothedFocal;
 
   // Spring state — velocity in source-video pixels per second, per

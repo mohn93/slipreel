@@ -45,10 +45,10 @@ class CursorMotionController {
   CursorMotionController({MotionTuning? tuning})
       : tuning = tuning ?? MotionTuning.defaults;
 
-  /// Motion-feel tuning (velocity lookback window, feedforward
-  /// strength + fade band). Defaults to the historic hand-tuned
-  /// production set.
-  final MotionTuning tuning;
+  /// Motion-feel tuning. Mutable so a preset picker can swap it at
+  /// runtime — spring state survives the swap; the next update()
+  /// just reads the new constants.
+  MotionTuning tuning;
 
   // Spring state (one axis each). Initialised lazily on the first
   // call where a raw cursor sample is available.

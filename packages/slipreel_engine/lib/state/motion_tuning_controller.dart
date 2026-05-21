@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
+import 'package:slipreel_engine/state/motion_tuning_store.dart';
 
 /// Named, shippable [MotionTuning] presets the inspector picker
 /// exposes as buttons. The enum acts as the user-facing label too
@@ -61,4 +62,16 @@ class MotionTuningController extends StateNotifier<MotionTuning> {
 final motionTuningProvider =
     StateNotifierProvider<MotionTuningController, MotionTuning>(
   (ref) => MotionTuningController(),
+);
+
+/// Path-aware [MotionTuningStore] hookup. Default throws if read
+/// without an override — app startup is expected to provide one via
+/// `ProviderScope(overrides: [...])` with the path_provider-resolved
+/// path baked in. UI surfaces (preset picker) read this to persist
+/// the user's choice across sessions.
+final motionTuningStoreProvider = Provider<MotionTuningStore>(
+  (ref) => throw StateError(
+    'motionTuningStoreProvider not overridden — app startup must '
+    'override with a MotionTuningStore that knows its file path',
+  ),
 );

@@ -3,10 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_macos/screen_recorder_macos.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/rendering/cursor_image_cache.dart';
 import 'package:slipreel_engine/rendering/cursor_overlay_painter.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
+import 'package:slipreel_engine/state/motion_tuning_controller.dart';
+import 'package:slipreel_engine/state/motion_tuning_store.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 import 'ui/screens/recording_screen.dart';
 
@@ -32,7 +37,32 @@ Future<void> main() async {
   // ~50 ms it takes for the bitmaps to land.
   unawaited(CursorImageCache.load());
 
-  runApp(const ProviderScope(child: MyApp()));
+  // Load the motion-feel tuning from the user prefs dir. Closes the
+  // designer iteration loop: edit the sidecar JSON, restart the app,
+  // see the new feel. Missing/corrupt → defaults (silent — store
+  // logs corruption but doesn't throw).
+  final tuningStore = MotionTuningStore(
+    path: p.join(
+      (await getApplicationSupportDirectory()).path,
+      'motion_tuning.json',
+    ),
+  );
+  final loadedTuning = await tuningStore.load();
+  if (loadedTuning != null) {
+    AppLogger.platform.i('MotionTuning loaded from ${tuningStore.path}');
+  }
+
+  runApp(ProviderScope(
+    overrides: [
+      motionTuningProvider.overrideWith(
+        (ref) => MotionTuningController(
+          initial: loadedTuning ?? MotionTuning.defaults,
+        ),
+      ),
+      motionTuningStoreProvider.overrideWithValue(tuningStore),
+    ],
+    child: const MyApp(),
+  ));
 }
 
 class MyApp extends StatelessWidget {
