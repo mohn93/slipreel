@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
+import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/services/curve_library.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_graph_painter.dart';
@@ -13,43 +15,20 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 /// pipeline. Motion blur drives directional cursor stamps + an
 /// anisotropic Gaussian on the screen layer; both are speed-gated so
 /// the slider only takes effect when something is actually moving.
-class AnimationTab extends StatefulWidget {
-  const AnimationTab({
-    super.key,
-    required this.screenConfig,
-    required this.onScreenConfigChanged,
-    required this.cursorConfig,
-    required this.onCursorConfigChanged,
-    required this.motionBlur,
-    required this.onMotionBlurChanged,
-    required this.cursorMovementBlur,
-    required this.onCursorMovementBlurChanged,
-    required this.screenMovementBlur,
-    required this.onScreenMovementBlurChanged,
-    required this.screenZoomBlur,
-    required this.onScreenZoomBlurChanged,
-    required this.library,
-  });
+class AnimationTab extends ConsumerStatefulWidget {
+  const AnimationTab({super.key, required this.library});
 
-  final ScreenAnimationConfig screenConfig;
-  final ValueChanged<ScreenAnimationConfig> onScreenConfigChanged;
-  final CursorAnimationConfig cursorConfig;
-  final ValueChanged<CursorAnimationConfig> onCursorConfigChanged;
-  final double motionBlur;
-  final ValueChanged<double> onMotionBlurChanged;
-  final double cursorMovementBlur;
-  final ValueChanged<double> onCursorMovementBlurChanged;
-  final double screenMovementBlur;
-  final ValueChanged<double> onScreenMovementBlurChanged;
-  final double screenZoomBlur;
-  final ValueChanged<double> onScreenZoomBlurChanged;
+  /// Persistence for the curve-editor's Library row. A service object,
+  /// not editor state — passed in so saves survive tab rebuilds.
   final CurveLibrary library;
 
   @override
-  State<AnimationTab> createState() => _AnimationTabState();
+  ConsumerState<AnimationTab> createState() => _AnimationTabState();
 }
 
-class _AnimationTabState extends State<AnimationTab> {
+class _AnimationTabState extends ConsumerState<AnimationTab> {
+  EditorProjectController get _notifier =>
+      ref.read(editorProjectControllerProvider.notifier);
   /// Default seed curve for the Screen Custom tile when the user picks
   /// it for the first time — matches CSS `ease-in-out` so the feel is
   /// close to the Smooth preset.
@@ -71,6 +50,7 @@ class _AnimationTabState extends State<AnimationTab> {
 
   @override
   Widget build(BuildContext context) {
+    final project = ref.watch(editorProjectControllerProvider);
     return ListView(
       // Right-side gutter keeps the curve editor's drag area clear of
       // the macOS Scrollbar's hit zone — without it, dragging a handle
@@ -93,48 +73,48 @@ class _AnimationTabState extends State<AnimationTab> {
             for (final s in ScreenAnimationStyle.values)
               _AnimationOptionTile<ScreenAnimationStyle>(
                 value: s,
-                selected: widget.screenConfig.preset,
+                selected: project.screenAnimationConfig.preset,
                 label: s.label,
                 icon: _screenIcon(s),
                 previewCurve: s.previewCurve,
                 previewDuration: s.previewDuration,
-                onSelected: (s) => widget.onScreenConfigChanged(
+                onSelected: (s) => _notifier.setScreenAnimationConfig(
                   ScreenAnimationConfig.preset(s),
                 ),
                 size: 84,
               ),
             _CustomTile(
-              selected: widget.screenConfig.isCustom,
+              selected: project.screenAnimationConfig.isCustom,
               curve:
-                  widget.screenConfig.customCurve ?? _defaultScreenCustomCurve,
-              onTap: () => widget.onScreenConfigChanged(
+                  project.screenAnimationConfig.customCurve ?? _defaultScreenCustomCurve,
+              onTap: () => _notifier.setScreenAnimationConfig(
                 ScreenAnimationConfig.custom(
                   curve:
-                      widget.screenConfig.customCurve ??
+                      project.screenAnimationConfig.customCurve ??
                       _defaultScreenCustomCurve,
-                  badgeDuration: widget.screenConfig.badgeDuration,
+                  badgeDuration: project.screenAnimationConfig.badgeDuration,
                 ),
               ),
               size: 84,
             ),
           ],
         ),
-        if (widget.screenConfig.isCustom)
+        if (project.screenAnimationConfig.isCustom)
           CurveEditor(
-            curve: widget.screenConfig.customCurve!,
-            duration: widget.screenConfig.badgeDuration,
+            curve: project.screenAnimationConfig.customCurve!,
+            duration: project.screenAnimationConfig.badgeDuration,
             durationLabel: 'Badge duration',
             durationMin: const Duration(milliseconds: 100),
             durationMax: const Duration(milliseconds: 1000),
-            onCurveChanged: (c) => widget.onScreenConfigChanged(
+            onCurveChanged: (c) => _notifier.setScreenAnimationConfig(
               ScreenAnimationConfig.custom(
                 curve: c,
-                badgeDuration: widget.screenConfig.badgeDuration,
+                badgeDuration: project.screenAnimationConfig.badgeDuration,
               ),
             ),
-            onDurationChanged: (d) => widget.onScreenConfigChanged(
+            onDurationChanged: (d) => _notifier.setScreenAnimationConfig(
               ScreenAnimationConfig.custom(
-                curve: widget.screenConfig.customCurve!,
+                curve: project.screenAnimationConfig.customCurve!,
                 badgeDuration: d,
               ),
             ),
@@ -159,12 +139,12 @@ class _AnimationTabState extends State<AnimationTab> {
             for (final s in CursorAnimationStyle.values)
               _AnimationOptionTile<CursorAnimationStyle>(
                 value: s,
-                selected: widget.cursorConfig.preset,
+                selected: project.cursorAnimationConfig.preset,
                 label: s.label,
                 icon: _cursorIcon(s),
                 previewCurve: s.previewCurve,
                 previewDuration: s.previewDuration,
-                onSelected: (s) => widget.onCursorConfigChanged(
+                onSelected: (s) => _notifier.setCursorAnimationConfig(
                   CursorAnimationConfig.preset(s),
                 ),
                 size: 76,
@@ -176,43 +156,43 @@ class _AnimationTabState extends State<AnimationTab> {
               // `isCustom == true` config (custom-spring variant),
               // but that path has no curve to edit and doesn't
               // belong to this tile.
-              selected: widget.cursorConfig.customCurve != null,
+              selected: project.cursorAnimationConfig.customCurve != null,
               curve:
-                  widget.cursorConfig.customCurve ?? _defaultCursorCustomCurve,
-              onTap: () => widget.onCursorConfigChanged(
+                  project.cursorAnimationConfig.customCurve ?? _defaultCursorCustomCurve,
+              onTap: () => _notifier.setCursorAnimationConfig(
                 CursorAnimationConfig.custom(
                   curve:
-                      widget.cursorConfig.customCurve ??
+                      project.cursorAnimationConfig.customCurve ??
                       _defaultCursorCustomCurve,
                   // The "None" preset reports a zero window; promote it
                   // to a sensible default so the editor's slider has a
                   // non-degenerate starting value when the user first
                   // chooses Custom from None.
-                  window: widget.cursorConfig.window == Duration.zero
+                  window: project.cursorAnimationConfig.window == Duration.zero
                       ? const Duration(milliseconds: 300)
-                      : widget.cursorConfig.window,
+                      : project.cursorAnimationConfig.window,
                 ),
               ),
               size: 76,
             ),
           ],
         ),
-        if (widget.cursorConfig.customCurve != null)
+        if (project.cursorAnimationConfig.customCurve != null)
           CurveEditor(
-            curve: widget.cursorConfig.customCurve!,
-            duration: widget.cursorConfig.window,
+            curve: project.cursorAnimationConfig.customCurve!,
+            duration: project.cursorAnimationConfig.window,
             durationLabel: 'Catch-up window',
             durationMin: const Duration(milliseconds: 50),
             durationMax: const Duration(milliseconds: 1500),
-            onCurveChanged: (c) => widget.onCursorConfigChanged(
+            onCurveChanged: (c) => _notifier.setCursorAnimationConfig(
               CursorAnimationConfig.custom(
                 curve: c,
-                window: widget.cursorConfig.window,
+                window: project.cursorAnimationConfig.window,
               ),
             ),
-            onDurationChanged: (d) => widget.onCursorConfigChanged(
+            onDurationChanged: (d) => _notifier.setCursorAnimationConfig(
               CursorAnimationConfig.custom(
-                curve: widget.cursorConfig.customCurve!,
+                curve: project.cursorAnimationConfig.customCurve!,
                 window: d,
               ),
             ),
@@ -226,12 +206,12 @@ class _AnimationTabState extends State<AnimationTab> {
           subtitle:
               'While mouse cursor or screen is moving, cinematic motion '
               'blur effect will be applied.',
-          value: widget.motionBlur.clamp(0.0, 0.5),
+          value: project.motionBlur.clamp(0.0, 0.5),
           min: 0,
           max: 0.5,
-          onChanged: widget.onMotionBlurChanged,
-          onReset: () => widget.onMotionBlurChanged(0),
-          canReset: widget.motionBlur != 0,
+          onChanged: _notifier.setMotionBlur,
+          onReset: () => _notifier.setMotionBlur(0),
+          canReset: project.motionBlur != 0,
         ),
         const SizedBox(height: 24),
         InspectorCollapsible(
@@ -241,34 +221,34 @@ class _AnimationTabState extends State<AnimationTab> {
               InspectorSlider(
                 label: 'Cursor movement',
                 subtitle: 'Caps blur from the cursor path.',
-                value: widget.cursorMovementBlur.clamp(0.0, 1.0),
+                value: project.cursorMovementBlur.clamp(0.0, 1.0),
                 min: 0,
                 max: 1,
-                onChanged: widget.onCursorMovementBlurChanged,
-                onReset: () => widget.onCursorMovementBlurChanged(1),
-                canReset: widget.cursorMovementBlur != 1,
+                onChanged: _notifier.setCursorMovementBlur,
+                onReset: () => _notifier.setCursorMovementBlur(1),
+                canReset: project.cursorMovementBlur != 1,
               ),
               const SizedBox(height: 16),
               InspectorSlider(
                 label: 'Screen movement',
                 subtitle: 'Caps blur from camera pan / focal movement.',
-                value: widget.screenMovementBlur.clamp(0.0, 1.0),
+                value: project.screenMovementBlur.clamp(0.0, 1.0),
                 min: 0,
                 max: 1,
-                onChanged: widget.onScreenMovementBlurChanged,
-                onReset: () => widget.onScreenMovementBlurChanged(1),
-                canReset: widget.screenMovementBlur != 1,
+                onChanged: _notifier.setScreenMovementBlur,
+                onReset: () => _notifier.setScreenMovementBlur(1),
+                canReset: project.screenMovementBlur != 1,
               ),
               const SizedBox(height: 16),
               InspectorSlider(
                 label: 'Screen zoom',
                 subtitle: 'Caps radial blur from zoom ramps.',
-                value: widget.screenZoomBlur.clamp(0.0, 1.0),
+                value: project.screenZoomBlur.clamp(0.0, 1.0),
                 min: 0,
                 max: 1,
-                onChanged: widget.onScreenZoomBlurChanged,
-                onReset: () => widget.onScreenZoomBlurChanged(1),
-                canReset: widget.screenZoomBlur != 1,
+                onChanged: _notifier.setScreenZoomBlur,
+                onReset: () => _notifier.setScreenZoomBlur(1),
+                canReset: project.screenZoomBlur != 1,
               ),
             ],
           ),

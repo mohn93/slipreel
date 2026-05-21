@@ -144,7 +144,7 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   live in the painter selection / TweenAnimationBuilder layer above
   the builder.
 
-- [x] **P0-2 — Editor state to Riverpod Notifier** (Task #240) — _step 2 landed_
+- [x] **P0-2 — Editor state to Riverpod Notifier** (Tasks #240, #251) — _steps 2 + 3 landed_
   Foundation (commit `23a544a`): `EditorProjectState.copyWith` +
   `EditorProjectController` + provider.
   Step 2: `_PlaybackScreenState` is now a `ConsumerStatefulWidget`
@@ -155,10 +155,11 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   editor-state private fields drained; `_captureProjectState` deleted
   (the notifier's state *is* the captured form). 6 setState calls
   removed; the remaining ones are for non-editor session UI
-  (`_isHovering`, `_selectedZoomIndex`, etc.). InspectorPanel
-  constructor still takes its 30 props — that's a follow-up
-  (downgrade to `ref.watch(...select(...))` inside each tab so the
-  prop list can drop).
+  (`_isHovering`, `_selectedZoomIndex`, etc.).
+  Step 3: `CursorTab` and `AnimationTab` are now
+  `ConsumerStatefulWidget`s that read directly from the notifier and
+  mutate via tear-off references to the controller's setters.
+  `InspectorPanel`'s constructor shrank from 30+ params to 8.
 
 - [x] **P0-3 — Engine layer extraction** (Tasks #241, #249) — _both phases done_
   Phase 1 (commit `b6834a2`): within `screen_recorder`, the
@@ -243,3 +244,4 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P0-3 phase 2 landed — extracted `packages/slipreel_engine`. Moved `models/`, `rendering/`, `effects/`, `export/`, `utils/`, the engine subset of `state/`, and shader assets out of `screen_recorder` into the new package. `screen_recorder` now depends on it via a path import. The boundary test moved to the engine package and was tightened to ban any `package:screen_recorder/*` import. Test result: slipreel_engine 381 pass / 0 skip; screen_recorder 164 pass / 14 skip (= 546 total).
 - 2026-05-21 — P2-9 landed — schema migration switchboard. `EditorProjectState.fromJson` runs `migrateEditorProjectJson(...)` before field decoding. Chain has v0→v1 (no-op) and v1→v2 (insert schemaVersion marker). 5 tests in `test/state/editor_project_state_migration_test.dart`. Test result: 550 pass / 14 skip (+4 net new; one test was a clamp-bound correction).
 - 2026-05-21 — P0-2 step 2 landed — `_PlaybackScreenState` converted to `ConsumerStatefulWidget`. 14 editor-state private fields drained into the Riverpod notifier; `_captureProjectState` deleted (notifier state IS the captured form); `_persistProject` now wired via `ref.listen` (replaces ~30 inline calls); ~6 setStates removed; InspectorPanel callbacks rewired to notifier mutators directly. Frame chrome mirrored from `FrameSettingsProvider` into the notifier on every change so persistence captures it. Test result: 550 pass / 14 skip across both packages (0 net new tests, 0 regressions). UI verification deferred to running the app.
+- 2026-05-21 — P0-2 step 3 landed — `CursorTab` and `AnimationTab` converted to `ConsumerStatefulWidget`s reading editor state directly via `ref.watch(editorProjectControllerProvider)` and mutating via the notifier. `InspectorPanel` constructor shrank from 30+ params (state + callbacks) to 8 (frameSettings, width, initialTab, selection, zoomRegions, clipDuration, canHideCursor, curveLibrary + selection callbacks). Each tab now owns its own provider subscription, so a slider drag in the cursor tab no longer rebuilds the animation tab. Test result: 550 pass / 14 skip (0 net new, 0 regressions).

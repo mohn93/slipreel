@@ -1,115 +1,83 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
+import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Cursor tab — size, style, behavior toggles, click-effect section.
 ///
-/// Size, style, and "Hide cursor" are wired to the playback overlay
-/// and the export pipeline. The remaining toggles (always-pointer,
-/// hide-if-still, loop-position, click-effect) are still local-state
-/// placeholders.
-class CursorTab extends StatefulWidget {
-  const CursorTab({
-    super.key,
-    required this.size,
-    required this.onSizeChanged,
-    required this.style,
-    required this.onStyleChanged,
-    required this.clickEffect,
-    required this.onClickEffectChanged,
-    required this.hideCursor,
-    required this.canHideCursor,
-    required this.onHideCursorChanged,
-    required this.shadow,
-    required this.onShadowChanged,
-    required this.motionSpring,
-    required this.onMotionSpringChanged,
-    required this.clickSpring,
-    required this.onClickSpringChanged,
-    required this.cursorDelay,
-    required this.onCursorDelayChanged,
-    required this.postProcess,
-    required this.onPostProcessChanged,
-  });
+/// Reads + writes the editor's cursor settings directly via the
+/// [editorProjectControllerProvider]. `canHideCursor` stays as a
+/// constructor prop because it depends on the cursor recording (a
+/// session input, not editor state). Local toggles for not-yet-wired
+/// settings (always-pointer, hide-if-still, loop-position) live on
+/// the state object until they get real model fields.
+class CursorTab extends ConsumerStatefulWidget {
+  const CursorTab({super.key, required this.canHideCursor});
 
-  final double size;
-  final ValueChanged<double> onSizeChanged;
-  final CursorStyle style;
-  final ValueChanged<CursorStyle> onStyleChanged;
-  final CursorClickEffect clickEffect;
-  final ValueChanged<CursorClickEffect> onClickEffectChanged;
-  final bool hideCursor;
+  /// Whether hiding the cursor is supported for the current recording.
+  /// When false the "Hide cursor" toggle is rendered disabled.
   final bool canHideCursor;
-  final ValueChanged<bool> onHideCursorChanged;
-  final double shadow;
-  final ValueChanged<double> onShadowChanged;
-
-  /// Spring driving the cursor's motion chase. The two sliders edit
-  /// this in place; switching the Animation tab's cursor preset
-  /// rewrites it (the preset picker remains the broad-feel choice,
-  /// these sliders are fine-tune knobs over the same parameter).
-  final MotionSpring motionSpring;
-  final ValueChanged<MotionSpring> onMotionSpringChanged;
-
-  /// Spring driving the press-pulse size animation on click + release.
-  final ClickSpring clickSpring;
-  final ValueChanged<ClickSpring> onClickSpringChanged;
-
-  /// Debug — how far back in time to sample the cursor recording when
-  /// rendering, so the sprite visually lines up with an app's UI
-  /// redraw delay (the recording shows UI responding ~16–200 ms after
-  /// the cursor event; tune until the sprite reaches the button at
-  /// the same moment the highlight appears).
-  final Duration cursorDelay;
-  final ValueChanged<Duration> onCursorDelayChanged;
-
-  /// Bundle of advanced per-project cursor filters (end-freeze, despike,
-  /// state-debounce). Lives in the Advanced section at the bottom of
-  /// the tab. Updating one field rebuilds the whole bundle via
-  /// [CursorPostProcess.copyWith].
-  final CursorPostProcess postProcess;
-  final ValueChanged<CursorPostProcess> onPostProcessChanged;
 
   @override
-  State<CursorTab> createState() => _CursorTabState();
+  ConsumerState<CursorTab> createState() => _CursorTabState();
 }
 
-class _CursorTabState extends State<CursorTab> {
+class _CursorTabState extends ConsumerState<CursorTab> {
   bool _alwaysPointer = false;
   bool _hideIfStill = false;
   bool _loopPosition = false;
   bool _advancedExpanded = true;
 
+  EditorProjectController get _notifier =>
+      ref.read(editorProjectControllerProvider.notifier);
+
+  /// Re-wrap motion-spring slider changes into a custom-spring config.
+  /// The Animation tab's preset picker keeps owning the broad-feel
+  /// choice; these sliders are an override on top of it.
+  void _setMotionSpring(MotionSpring s) {
+    _notifier.setCursorAnimationConfig(
+      CursorAnimationConfig.customSpring(spring: s),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // ref.watch on the whole state — every slider drag rebuilds this
+    // tab, matching the previous setState-driven scope. Granular
+    // .select() per field would skip rebuilds when an unrelated field
+    // changes; today there's no neighbour to optimise against because
+    // each tab is rebuilt by its parent on selection switches anyway.
+    final project = ref.watch(editorProjectControllerProvider);
+    final size = project.cursorSize;
+    final shadow = project.cursorShadow;
     return ListView(
       padding: EdgeInsets.zero,
       children: [
         InspectorSlider(
           label: 'Cursor size',
-          value: widget.size,
+          value: size,
           min: 0.5,
           max: 8.0,
-          onChanged: widget.onSizeChanged,
-          onReset: () => widget.onSizeChanged(2.0),
-          canReset: widget.size != 2.0,
-          subtitle: '${widget.size.toStringAsFixed(2)}×',
+          onChanged: _notifier.setCursorSize,
+          onReset: () => _notifier.setCursorSize(2.0),
+          canReset: size != 2.0,
+          subtitle: '${size.toStringAsFixed(2)}×',
         ),
         const SizedBox(height: 20),
         InspectorSlider(
           label: 'Cursor shadow',
-          subtitle: widget.shadow > 0
-              ? '${(widget.shadow * 100).round()}%'
-              : 'Off',
-          value: widget.shadow,
+          subtitle: shadow > 0 ? '${(shadow * 100).round()}%' : 'Off',
+          value: shadow,
           min: 0,
           max: 1,
-          onChanged: widget.onShadowChanged,
-          onReset: () => widget.onShadowChanged(0.4),
-          canReset: widget.shadow != 0.4,
+          onChanged: _notifier.setCursorShadow,
+          onReset: () => _notifier.setCursorShadow(0.4),
+          canReset: shadow != 0.4,
         ),
         const InspectorSectionDivider(),
         const Text(
@@ -123,8 +91,8 @@ class _CursorTabState extends State<CursorTab> {
         const SizedBox(height: 12),
         InspectorOptionRow<CursorStyle>(
           items: CursorStyle.values,
-          selected: widget.style,
-          onSelected: widget.onStyleChanged,
+          selected: project.cursorStyle,
+          onSelected: _notifier.setCursorStyle,
           iconOf: (s) => _CursorStylePreview(style: s),
           labelOf: (_) => null,
         ),
@@ -157,9 +125,10 @@ class _CursorTabState extends State<CursorTab> {
           subtitle: widget.canHideCursor
               ? null
               : 'Available for recordings made with this version.',
-          value: widget.canHideCursor && widget.hideCursor,
-          onChanged:
-              widget.canHideCursor ? widget.onHideCursorChanged : null,
+          value: widget.canHideCursor && project.hideCursorOverlay,
+          onChanged: widget.canHideCursor
+              ? _notifier.setHideCursorOverlay
+              : null,
         ),
         const InspectorSectionDivider(),
         const Text(
@@ -183,8 +152,8 @@ class _CursorTabState extends State<CursorTab> {
         const SizedBox(height: 12),
         InspectorOptionRow<CursorClickEffect>(
           items: CursorClickEffect.values,
-          selected: widget.clickEffect,
-          onSelected: widget.onClickEffectChanged,
+          selected: project.cursorClickEffect,
+          onSelected: _notifier.setCursorClickEffect,
           iconOf: (e) => _ClickEffectPreview(effect: e),
           labelOf: (e) => e.label,
         ),
@@ -208,9 +177,9 @@ class _CursorTabState extends State<CursorTab> {
           ),
         ),
         const SizedBox(height: 16),
-        ..._motionSpringSliders(),
+        ..._motionSpringSliders(project.cursorAnimationConfig.motionSpring),
         const SizedBox(height: 16),
-        ..._clickSpringSliders(),
+        ..._clickSpringSliders(project.clickSpring),
         const InspectorSectionDivider(),
         const Text(
           'Debug',
@@ -233,7 +202,7 @@ class _CursorTabState extends State<CursorTab> {
         InspectorSlider(
           label: 'Cursor delay',
           subtitle: () {
-            final ms = widget.cursorDelay.inMilliseconds;
+            final ms = project.cursorDelay.inMilliseconds;
             if (ms == 0) return 'Off';
             if (ms > 0) return '$ms ms (lag)';
             return '${-ms} ms (lead)';
@@ -244,16 +213,16 @@ class _CursorTabState extends State<CursorTab> {
           // there the sprite should *lead* the recorded UI by a few
           // frames to look right). 0 = no shift, +N ms = sprite lags
           // by N ms, −N ms = sprite leads by N ms.
-          value: widget.cursorDelay.inMicroseconds / 1000.0,
+          value: project.cursorDelay.inMicroseconds / 1000.0,
           min: -100,
           max: 500,
-          onChanged: (v) => widget.onCursorDelayChanged(
+          onChanged: (v) => _notifier.setCursorDelay(
               Duration(microseconds: (v * 1000).round())),
-          onReset: () => widget.onCursorDelayChanged(Duration.zero),
-          canReset: widget.cursorDelay != Duration.zero,
+          onReset: () => _notifier.setCursorDelay(Duration.zero),
+          canReset: project.cursorDelay != Duration.zero,
         ),
         const InspectorSectionDivider(),
-        ..._advancedSection(),
+        ..._advancedSection(project.cursorPostProcess),
         const SizedBox(height: 24),
       ],
     );
@@ -264,8 +233,7 @@ class _CursorTabState extends State<CursorTab> {
   /// debounce). Mirrors ScreenStudio's section of the same name.
   /// State for each control flows through [CursorPostProcess.copyWith]
   /// so a single onChange handler keeps the bundle consistent.
-  List<Widget> _advancedSection() {
-    final pp = widget.postProcess;
+  List<Widget> _advancedSection(CursorPostProcess pp) {
     return [
       InkWell(
         onTap: () => setState(() => _advancedExpanded = !_advancedExpanded),
@@ -305,10 +273,10 @@ class _CursorTabState extends State<CursorTab> {
           value: pp.endFreezeMs.toDouble(),
           min: 0,
           max: CursorPostProcess.endFreezeMaxMs.toDouble(),
-          onChanged: (v) => widget.onPostProcessChanged(
+          onChanged: (v) => _notifier.setCursorPostProcess(
             pp.copyWith(endFreezeMs: v.round()),
           ),
-          onReset: () => widget.onPostProcessChanged(
+          onReset: () => _notifier.setCursorPostProcess(
             pp.copyWith(endFreezeMs: 0),
           ),
           canReset: pp.endFreezeMs != 0,
@@ -321,9 +289,8 @@ class _CursorTabState extends State<CursorTab> {
               'short movements of your mouse. This option allows trying '
               'to detect and remove them.',
           value: pp.removeShakes,
-          onChanged: (v) => widget.onPostProcessChanged(
-            pp.copyWith(removeShakes: v),
-          ),
+          onChanged: (v) => _notifier
+              .setCursorPostProcess(pp.copyWith(removeShakes: v)),
         ),
         const SizedBox(height: 20),
         InspectorSlider(
@@ -332,10 +299,10 @@ class _CursorTabState extends State<CursorTab> {
           value: pp.shakeThresholdPx,
           min: 5,
           max: 60,
-          onChanged: (v) => widget.onPostProcessChanged(
+          onChanged: (v) => _notifier.setCursorPostProcess(
             pp.copyWith(shakeThresholdPx: v),
           ),
-          onReset: () => widget.onPostProcessChanged(
+          onReset: () => _notifier.setCursorPostProcess(
             pp.copyWith(
               shakeThresholdPx: CursorPostProcess.defaultShakeThresholdPx,
             ),
@@ -350,9 +317,8 @@ class _CursorTabState extends State<CursorTab> {
               '(eg when quickly moving over some elements) when this '
               'option is enabled.',
           value: pp.optimizeChanges,
-          onChanged: (v) => widget.onPostProcessChanged(
-            pp.copyWith(optimizeChanges: v),
-          ),
+          onChanged: (v) => _notifier
+              .setCursorPostProcess(pp.copyWith(optimizeChanges: v)),
         ),
       ],
     ];
@@ -362,10 +328,8 @@ class _CursorTabState extends State<CursorTab> {
   // cursor preset, but the fine-tune knobs live here. When isSnap
   // (None preset) the sliders fall back to the smooth defaults so
   // they're touchable; the first drag converts the active config to
-  // a custom spring (the parent does that conversion in its
-  // onMotionSpringChanged handler).
-  List<Widget> _motionSpringSliders() {
-    final s = widget.motionSpring;
+  // a custom spring (see [_setMotionSpring]).
+  List<Widget> _motionSpringSliders(MotionSpring s) {
     final stiffness = s.isSnap ? 180.0 : s.stiffness;
     final damping = s.isSnap ? 1.0 : s.damping;
     return [
@@ -375,10 +339,8 @@ class _CursorTabState extends State<CursorTab> {
         value: stiffness,
         min: 50,
         max: 1500,
-        onChanged: (v) =>
-            widget.onMotionSpringChanged(s.copyWith(stiffness: v)),
-        onReset: () =>
-            widget.onMotionSpringChanged(s.copyWith(stiffness: 180)),
+        onChanged: (v) => _setMotionSpring(s.copyWith(stiffness: v)),
+        onReset: () => _setMotionSpring(s.copyWith(stiffness: 180)),
         canReset: stiffness != 180,
       ),
       const SizedBox(height: 20),
@@ -388,17 +350,14 @@ class _CursorTabState extends State<CursorTab> {
         value: damping,
         min: 0.3,
         max: 1.4,
-        onChanged: (v) =>
-            widget.onMotionSpringChanged(s.copyWith(damping: v)),
-        onReset: () =>
-            widget.onMotionSpringChanged(s.copyWith(damping: 1.0)),
+        onChanged: (v) => _setMotionSpring(s.copyWith(damping: v)),
+        onReset: () => _setMotionSpring(s.copyWith(damping: 1.0)),
         canReset: damping != 1.0,
       ),
     ];
   }
 
-  List<Widget> _clickSpringSliders() {
-    final s = widget.clickSpring;
+  List<Widget> _clickSpringSliders(ClickSpring s) {
     return [
       InspectorSlider(
         label: 'Click stiffness',
@@ -406,10 +365,9 @@ class _CursorTabState extends State<CursorTab> {
         value: s.stiffness,
         min: 100,
         max: 1200,
-        onChanged: (v) =>
-            widget.onClickSpringChanged(s.copyWith(stiffness: v)),
+        onChanged: (v) => _notifier.setClickSpring(s.copyWith(stiffness: v)),
         onReset: () =>
-            widget.onClickSpringChanged(s.copyWith(stiffness: 350)),
+            _notifier.setClickSpring(s.copyWith(stiffness: 350)),
         canReset: s.stiffness != 350,
       ),
       const SizedBox(height: 20),
@@ -419,10 +377,8 @@ class _CursorTabState extends State<CursorTab> {
         value: s.damping,
         min: 0.3,
         max: 1.4,
-        onChanged: (v) =>
-            widget.onClickSpringChanged(s.copyWith(damping: v)),
-        onReset: () =>
-            widget.onClickSpringChanged(s.copyWith(damping: 1.0)),
+        onChanged: (v) => _notifier.setClickSpring(s.copyWith(damping: v)),
+        onReset: () => _notifier.setClickSpring(s.copyWith(damping: 1.0)),
         canReset: s.damping != 1.0,
       ),
     ];

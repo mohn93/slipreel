@@ -1,12 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
-import 'package:slipreel_engine/rendering/animation_config.dart';
-import 'package:slipreel_engine/rendering/animation_style.dart';
-import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
-import 'package:slipreel_engine/rendering/cursor_glyph.dart';
-import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:screen_recorder/services/curve_library.dart';
-import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/clip_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';
@@ -44,107 +38,22 @@ class InspectorPanel extends StatefulWidget {
     this.onZoomChanged,
     this.onZoomDeleted,
     this.onSelectionCleared,
-    this.hideCursor = false,
     this.canHideCursor = false,
-    this.onHideCursorChanged,
-    this.cursorSize = 1.0,
-    this.cursorStyle = CursorStyle.modernDark,
-    this.cursorClickEffect = CursorClickEffect.ripple,
-    this.cursorShadow = 0,
-    this.onCursorSizeChanged,
-    this.onCursorStyleChanged,
-    this.onCursorClickEffectChanged,
-    this.onCursorShadowChanged,
-    this.screenAnimationConfig = const ScreenAnimationConfig.preset(
-      ScreenAnimationStyle.smooth,
-    ),
-    this.cursorAnimationConfig = const CursorAnimationConfig.preset(
-      CursorAnimationStyle.smooth,
-    ),
-    this.motionBlur = 0,
-    this.cursorMovementBlur = 1,
-    this.screenMovementBlur = 1,
-    this.screenZoomBlur = 1,
-    this.clickSpring = ClickSpring.snappy,
-    this.cursorDelay = Duration.zero,
-    this.cursorPostProcess = CursorPostProcess.none,
-    this.onScreenAnimationConfigChanged,
-    this.onCursorAnimationConfigChanged,
-    this.onMotionBlurChanged,
-    this.onCursorMovementBlurChanged,
-    this.onScreenMovementBlurChanged,
-    this.onScreenZoomBlurChanged,
-    this.onClickSpringChanged,
-    this.onCursorDelayChanged,
-    this.onCursorPostProcessChanged,
     required this.curveLibrary,
   });
 
+  /// Frame chrome (wallpaper, padding, corners, shadow, blur) — kept
+  /// separate from the editor notifier for now; the background tab
+  /// listens to this ChangeNotifier directly.
   final FrameSettingsProvider frameSettings;
   final double width;
   final InspectorTab initialTab;
 
-  /// Whether the synthetic cursor overlay is currently hidden in the
-  /// preview. Controlled from the cursor tab's "Hide cursor" toggle.
-  final bool hideCursor;
-
   /// Whether hiding the cursor is supported for the current recording.
-  /// When false the toggle is rendered disabled.
+  /// When false the cursor tab's "Hide cursor" toggle is rendered
+  /// disabled. Depends on the cursor recording (a session input), not
+  /// on persisted editor state, so it can't come from the notifier.
   final bool canHideCursor;
-
-  /// Setter for [hideCursor]. Required for the cursor tab to write
-  /// through to the parent's state.
-  final ValueChanged<bool>? onHideCursorChanged;
-
-  /// Cursor size multiplier (0.5 – 8.0). Live-applied to the playback
-  /// overlay and carried into the export pipeline.
-  final double cursorSize;
-  final CursorStyle cursorStyle;
-  final CursorClickEffect cursorClickEffect;
-
-  /// Cursor drop-shadow strength, 0..1 (0 disables). See [EditorProjectState.cursorShadow].
-  final double cursorShadow;
-
-  final ValueChanged<double>? onCursorSizeChanged;
-  final ValueChanged<CursorStyle>? onCursorStyleChanged;
-  final ValueChanged<CursorClickEffect>? onCursorClickEffectChanged;
-  final ValueChanged<double>? onCursorShadowChanged;
-
-  /// Screen + cursor animation configs drive zoom transitions and
-  /// focal smoothing on the playback canvas. Each config is either a
-  /// preset enum or a user-authored cubic bezier; the animation tab
-  /// chooses between them.
-  final ScreenAnimationConfig screenAnimationConfig;
-  final CursorAnimationConfig cursorAnimationConfig;
-  final double motionBlur;
-  final double cursorMovementBlur;
-  final double screenMovementBlur;
-  final double screenZoomBlur;
-  final ValueChanged<ScreenAnimationConfig>? onScreenAnimationConfigChanged;
-  final ValueChanged<CursorAnimationConfig>? onCursorAnimationConfigChanged;
-  final ValueChanged<double>? onMotionBlurChanged;
-  final ValueChanged<double>? onCursorMovementBlurChanged;
-  final ValueChanged<double>? onScreenMovementBlurChanged;
-  final ValueChanged<double>? onScreenZoomBlurChanged;
-
-  /// Click-pulse spring used by the synthetic cursor's press
-  /// animation. Edited in the cursor tab's Springs section.
-  final ClickSpring clickSpring;
-  final ValueChanged<ClickSpring>? onClickSpringChanged;
-
-  /// Debug knob — shifts the rendered cursor back in time by N ms so
-  /// the user can compensate for an app's UI redraw delay (the sprite
-  /// will appear to arrive at UI elements at the same moment those
-  /// elements react in the recording). Lives in the cursor tab's
-  /// Debug section. Zero = current behavior.
-  final Duration cursorDelay;
-  final ValueChanged<Duration>? onCursorDelayChanged;
-
-  /// Advanced cursor post-processing — end-of-clip freeze, shake
-  /// removal, rapid-state-change debounce. Surfaced in the cursor tab's
-  /// Advanced section.
-  final CursorPostProcess cursorPostProcess;
-  final ValueChanged<CursorPostProcess>? onCursorPostProcessChanged;
 
   /// Persistence for user-saved curves shown in the curve editor's
   /// Library row. Required so the inspector doesn't conjure its own
@@ -155,7 +64,9 @@ class InspectorPanel extends StatefulWidget {
   /// inspector enters context mode. Null returns to tab mode.
   final TimelineSelection? selection;
 
-  /// All zoom regions, indexed by [ZoomSelected.index].
+  /// All zoom regions, indexed by [ZoomSelected.index]. The context
+  /// inspector reads from this directly so the existing zoom inspector
+  /// flow stays untouched.
   final List<ZoomRegion> zoomRegions;
 
   /// Total clip duration, displayed in the Clip context header.
@@ -214,58 +125,13 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.background => BackgroundTab(
           frameSettings: widget.frameSettings,
         ),
-        InspectorTab.cursor => CursorTab(
-          size: widget.cursorSize,
-          onSizeChanged: widget.onCursorSizeChanged ?? (_) {},
-          style: widget.cursorStyle,
-          onStyleChanged: widget.onCursorStyleChanged ?? (_) {},
-          clickEffect: widget.cursorClickEffect,
-          onClickEffectChanged: widget.onCursorClickEffectChanged ?? (_) {},
-          hideCursor: widget.hideCursor,
-          canHideCursor: widget.canHideCursor,
-          onHideCursorChanged: widget.onHideCursorChanged ?? (_) {},
-          shadow: widget.cursorShadow,
-          onShadowChanged: widget.onCursorShadowChanged ?? (_) {},
-          // Surface the active motion spring (preset's default or
-          // the current custom override) and re-wrap every slider
-          // change into a customSpring config — the Animation tab's
-          // preset picker keeps owning the broad-feel choice; the
-          // sliders are an override on top of it.
-          motionSpring: widget.cursorAnimationConfig.motionSpring,
-          onMotionSpringChanged: (s) => widget.onCursorAnimationConfigChanged
-              ?.call(CursorAnimationConfig.customSpring(spring: s)),
-          clickSpring: widget.clickSpring,
-          onClickSpringChanged: (s) => widget.onClickSpringChanged?.call(s),
-          cursorDelay: widget.cursorDelay,
-          onCursorDelayChanged: (d) => widget.onCursorDelayChanged?.call(d),
-          postProcess: widget.cursorPostProcess,
-          onPostProcessChanged: (cfg) =>
-              widget.onCursorPostProcessChanged?.call(cfg),
-        ),
+        InspectorTab.cursor =>
+            CursorTab(canHideCursor: widget.canHideCursor),
         InspectorTab.camera => const CameraTab(),
         InspectorTab.captions => const CaptionsTab(),
         InspectorTab.audio => const AudioTab(),
         InspectorTab.shortcuts => const ShortcutsTab(),
-        InspectorTab.animation => AnimationTab(
-          screenConfig: widget.screenAnimationConfig,
-          onScreenConfigChanged: (c) =>
-              widget.onScreenAnimationConfigChanged?.call(c),
-          cursorConfig: widget.cursorAnimationConfig,
-          onCursorConfigChanged: (c) =>
-              widget.onCursorAnimationConfigChanged?.call(c),
-          motionBlur: widget.motionBlur,
-          onMotionBlurChanged: (v) => widget.onMotionBlurChanged?.call(v),
-          cursorMovementBlur: widget.cursorMovementBlur,
-          onCursorMovementBlurChanged: (v) =>
-              widget.onCursorMovementBlurChanged?.call(v),
-          screenMovementBlur: widget.screenMovementBlur,
-          onScreenMovementBlurChanged: (v) =>
-              widget.onScreenMovementBlurChanged?.call(v),
-          screenZoomBlur: widget.screenZoomBlur,
-          onScreenZoomBlurChanged: (v) =>
-              widget.onScreenZoomBlurChanged?.call(v),
-          library: widget.curveLibrary,
-        ),
+        InspectorTab.animation => AnimationTab(library: widget.curveLibrary),
       },
     );
   }

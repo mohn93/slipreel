@@ -861,49 +861,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       selection: _currentSelection(),
                       zoomRegions: project.zoomRegions,
                       clipDuration: _controller.value.duration,
-                      hideCursor: project.hideCursorOverlay,
-                      canHideCursor:
-                          _metadata?.isPureSource == true &&
+                      canHideCursor: _metadata?.isPureSource == true &&
                           _cursorRecording.count > 0,
-                      onHideCursorChanged: _projectController
-                          .setHideCursorOverlay,
-                      cursorSize: project.cursorSize,
-                      cursorStyle: project.cursorStyle,
-                      cursorClickEffect: project.cursorClickEffect,
-                      cursorShadow: project.cursorShadow,
-                      onCursorSizeChanged: _projectController.setCursorSize,
-                      onCursorStyleChanged:
-                          _projectController.setCursorStyle,
-                      onCursorClickEffectChanged:
-                          _projectController.setCursorClickEffect,
-                      onCursorShadowChanged:
-                          _projectController.setCursorShadow,
-                      screenAnimationConfig: project.screenAnimationConfig,
-                      cursorAnimationConfig: project.cursorAnimationConfig,
-                      motionBlur: project.motionBlur,
-                      cursorMovementBlur: project.cursorMovementBlur,
-                      screenMovementBlur: project.screenMovementBlur,
-                      screenZoomBlur: project.screenZoomBlur,
-                      onScreenAnimationConfigChanged:
-                          _projectController.setScreenAnimationConfig,
-                      onCursorAnimationConfigChanged:
-                          _projectController.setCursorAnimationConfig,
-                      onMotionBlurChanged: _projectController.setMotionBlur,
-                      onCursorMovementBlurChanged:
-                          _projectController.setCursorMovementBlur,
-                      onScreenMovementBlurChanged:
-                          _projectController.setScreenMovementBlur,
-                      onScreenZoomBlurChanged:
-                          _projectController.setScreenZoomBlur,
-                      clickSpring: project.clickSpring,
-                      onClickSpringChanged:
-                          _projectController.setClickSpring,
-                      cursorDelay: project.cursorDelay,
-                      onCursorDelayChanged:
-                          _projectController.setCursorDelay,
-                      cursorPostProcess: project.cursorPostProcess,
-                      onCursorPostProcessChanged:
-                          _projectController.setCursorPostProcess,
                       curveLibrary: _curveLibrary,
                       onZoomChanged: _projectController.updateZoomAt,
                       onZoomDeleted: (index) {
