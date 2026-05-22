@@ -8,6 +8,7 @@ import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
+import 'package:slipreel_engine/timeline/timeline.dart';
 
 /// Single source of truth for per-recording editor settings.
 ///
@@ -92,26 +93,57 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   void setFadeOut(Duration value) => state = state.copyWith(fadeOut: value);
 
   // ---- zoom region list -------------------------------------------------
+  //
+  // Mutates the active (first) zoom track on the timeline. Reaches
+  // into Timeline directly rather than going through the
+  // `state.zoomRegions` getter shim — the controller is the place
+  // where zoom data is *created*, so it should know the concrete
+  // shape. UI read sites stay on the shim for now and will migrate
+  // when the inspector grows multi-track awareness.
+
+  /// Returns the regions of the active (first) zoom track, or an
+  /// empty list when no tracks exist. Centralised so the mutators
+  /// don't each re-derive the same lookup.
+  List<ZoomRegion> _activeRegions() {
+    final tracks = state.timeline.zoomTracks;
+    return tracks.isEmpty ? const <ZoomRegion>[] : tracks.first.regions;
+  }
+
+  /// Returns the next timeline with [regions] installed on the active
+  /// (first) zoom track. Creates a single track if the timeline is
+  /// empty so first-write isn't a special case at the call site.
+  Timeline _timelineWithActiveRegions(List<ZoomRegion> regions) {
+    final immutable = List<ZoomRegion>.unmodifiable(regions);
+    final tracks = state.timeline.zoomTracks;
+    if (tracks.isEmpty) {
+      return Timeline(zoomTracks: [ZoomTrack(regions: immutable)]);
+    }
+    final updated = List<ZoomTrack>.from(tracks);
+    updated[0] = tracks[0].copyWith(regions: immutable);
+    return Timeline(zoomTracks: updated);
+  }
 
   void replaceZoomRegions(List<ZoomRegion> regions) =>
-      state = state.copyWith(zoomRegions: List<ZoomRegion>.unmodifiable(regions));
+      state = state.copyWith(timeline: _timelineWithActiveRegions(regions));
 
   void addZoom(ZoomRegion zoom) {
-    final next = List<ZoomRegion>.from(state.zoomRegions)..add(zoom);
-    state = state.copyWith(zoomRegions: List.unmodifiable(next));
+    final next = List<ZoomRegion>.from(_activeRegions())..add(zoom);
+    state = state.copyWith(timeline: _timelineWithActiveRegions(next));
   }
 
   void updateZoomAt(int index, ZoomRegion zoom) {
-    if (index < 0 || index >= state.zoomRegions.length) return;
-    final next = List<ZoomRegion>.from(state.zoomRegions);
+    final regions = _activeRegions();
+    if (index < 0 || index >= regions.length) return;
+    final next = List<ZoomRegion>.from(regions);
     next[index] = zoom;
-    state = state.copyWith(zoomRegions: List.unmodifiable(next));
+    state = state.copyWith(timeline: _timelineWithActiveRegions(next));
   }
 
   void removeZoomAt(int index) {
-    if (index < 0 || index >= state.zoomRegions.length) return;
-    final next = List<ZoomRegion>.from(state.zoomRegions)..removeAt(index);
-    state = state.copyWith(zoomRegions: List.unmodifiable(next));
+    final regions = _activeRegions();
+    if (index < 0 || index >= regions.length) return;
+    final next = List<ZoomRegion>.from(regions)..removeAt(index);
+    state = state.copyWith(timeline: _timelineWithActiveRegions(next));
   }
 }
 

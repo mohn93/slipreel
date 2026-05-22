@@ -135,12 +135,7 @@ class EditorProjectState {
   /// Returns a new instance with the named fields replaced.
   ///
   /// Used by `EditorProjectController` (the Riverpod notifier) to
-  /// produce the next state on every inspector edit. Every named
-  /// argument is `Object?` so callers can distinguish "leave unchanged"
-  /// (sentinel default) from "set to null" — needed for nullable
-  /// fields like `windowFrame` if we ever introduce them, but also
-  /// keeps the call sites obvious: `state.copyWith(cursorSize: 3.0)`
-  /// only touches `cursorSize`.
+  /// produce the next state on every inspector edit.
   EditorProjectState copyWith({
     Timeline? timeline,
     List<ZoomRegion>? zoomRegions,

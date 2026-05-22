@@ -2,11 +2,11 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 
 /// One lane of [ZoomRegion]s on the [Timeline].
 ///
-/// Today the editor only renders the first zoom track of the only clip
-/// — multi-track is scaffolded but not yet exposed through the
-/// inspector. Wrapping the region list in a track lets us add
-/// per-track properties (mute, lock, color label) later without
-/// re-shaping the persisted state again.
+/// Today the editor only renders the first zoom track — multi-track
+/// is scaffolded but not yet exposed through the inspector. Wrapping
+/// the region list in a track lets us add per-track properties
+/// (mute, lock, color label) later without re-shaping the persisted
+/// state again.
 class ZoomTrack {
   const ZoomTrack({this.regions = const <ZoomRegion>[]});
 

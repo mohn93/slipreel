@@ -163,6 +163,33 @@ void main() {
       expect(next.zoomRegions.first.zoomLevel, 2.0);
     });
 
+    test(
+      'copyWith(zoomRegions:) on a zero-tracks timeline synthesizes a '
+      'single track instead of dropping the regions',
+      () {
+        // Reachable from a corrupt sidecar (Timeline.fromJson({}) yields
+        // zero tracks). copyWith must produce a valid timeline so the
+        // first inspector edit after a partial load doesn't silently
+        // lose the regions the user just placed.
+        final state = EditorProjectState.defaults()
+            .copyWith(timeline: const Timeline(zoomTracks: []));
+        expect(state.timeline.zoomTracks, isEmpty);
+
+        final region = ZoomRegion(
+          rect: const Rect.fromLTWH(0, 0, 1, 1),
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 1),
+          zoomLevel: 1.6,
+        );
+        final next = state.copyWith(zoomRegions: [region]);
+
+        expect(next.timeline.zoomTracks, hasLength(1),
+            reason: 'a fresh track must be synthesized, not silently dropped');
+        expect(next.zoomRegions, hasLength(1));
+        expect(next.zoomRegions.first.zoomLevel, 1.6);
+      },
+    );
+
     test('copyWith(timeline:) replaces the whole timeline atomically', () {
       // Allows the controller to swap in a multi-track timeline once
       // captions/audio land, without round-tripping through zoomRegions.
