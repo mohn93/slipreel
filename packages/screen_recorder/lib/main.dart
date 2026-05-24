@@ -19,6 +19,7 @@ import 'package:slipreel_engine/utils/app_logger.dart';
 import 'ui/screens/playback_screen.dart';
 import 'ui/screens/recording_screen.dart';
 import 'ui/widgets/scene_blur_overlay.dart';
+import 'ui/widgets/zoom/playback_canvas.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -121,6 +122,15 @@ void _registerSlipreelDebugExtensions() {
   });
   developer.registerExtension('ext.slipreel.playbackState', (m, p) async {
     return developer.ServiceExtensionResponse.result(_playbackStateJson());
+  });
+
+  // Per-frame trace of the visible spring camera focal (PlaybackCanvas).
+  developer.registerExtension('ext.slipreel.setCameraFocalTrace',
+      (method, params) async {
+    final raw = params['enabled'];
+    final enabled = raw == 'true' || raw == '1';
+    cameraFocalTraceEnabled = enabled;
+    return developer.ServiceExtensionResponse.result('{"enabled": $enabled}');
   });
 }
 

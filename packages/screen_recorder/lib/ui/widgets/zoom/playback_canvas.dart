@@ -45,6 +45,16 @@ import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 /// through [frameSettings] / [screenAnimationConfig] /
 /// [cursorAnimationConfig] etc., and changes there rebuild the canvas
 /// without rebuilding the surrounding shell.
+
+/// Per-frame trace of the VISIBLE camera focal (the spring-driven
+/// `ZoomFocalController` output that positions the rendered frame),
+/// gated so it only logs when an agent flips it via
+/// `ext.slipreel.setCameraFocalTrace`. Off by default — every frame
+/// emits a `[CamFocal]` line when on. Used to characterize camera
+/// jumps (smooth fast pan vs. gate snap/overshoot) that the
+/// scene-blur trace can't see.
+bool cameraFocalTraceEnabled = false;
+
 class PlaybackCanvas extends ConsumerStatefulWidget {
   const PlaybackCanvas({
     super.key,
@@ -412,6 +422,31 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                   widget.cursorMovementBlur,
             );
             final combinedCursorVelocity = scenePass.filteredCursorVelocity;
+
+            // Visible-camera focal trace. Logs the spring focal, its
+            // velocity, the bounded-gate state, and the most recent
+            // snap reason for the LIVE render path (once per frame).
+            // Lets us tell a smooth-but-fast pan from a gate snap or
+            // overshoot during a fast cursor flick. See
+            // [cameraFocalTraceEnabled].
+            assert(() {
+              if (cameraFocalTraceEnabled) {
+                final fc = _zoomFocalController;
+                final f = focalUpdate?.focal;
+                final raw = motion?.screenPos;
+                debugPrint(
+                  '[CamFocal] pos=${pos.inMicroseconds / 1000}ms '
+                  'play=${widget.controller.value.isPlaying} '
+                  '| focal=${f == null ? "null" : "(${f.dx.toStringAsFixed(1)},${f.dy.toStringAsFixed(1)})"} '
+                  'vel=${fc.focalVelocity.distance.toStringAsFixed(0)}px/s '
+                  'inFlight=${fc.inFlight} '
+                  'snap=${fc.lastSnapReason ?? "-"}@${fc.lastSnapAt?.inMilliseconds ?? -1} '
+                  '| rawCur=${raw == null ? "null" : "(${raw.dx.toStringAsFixed(0)},${raw.dy.toStringAsFixed(0)})"} '
+                  'filtVel=${combinedCursorVelocity.distance.toStringAsFixed(0)}px/s',
+                );
+              }
+              return true;
+            }());
 
             // Cursor is extracted from the body composition so the
             // scene-blur shader (which captures and smears the entire

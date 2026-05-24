@@ -261,37 +261,43 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
     // soon as this build's reconciliation runs.
     _flushDisposeQueue();
 
+    // `child` (the PlaybackCanvas) is ALWAYS hosted at the same slot —
+    // under this keyed RepaintBoundary, at index 0 of the Stack —
+    // regardless of whether a smear is drawn this frame. Earlier this
+    // method returned the bare `child` when there was nothing to smear
+    // and a `Stack[RepaintBoundary(child), painter]` when there was;
+    // toggling those two tree shapes changed child's slot type and
+    // made Flutter REMOUNT PlaybackCanvas, which recreates its
+    // ScenePassBuilder/ZoomFocalController and snaps the camera focal
+    // back to the zoom rect's centre — a visible "jump" every time the
+    // blur turned on/off (which, with the deterministic signal, is
+    // every brief cursor pause). Keeping the host stable preserves the
+    // camera spring across smear on/off transitions; the painter is
+    // layered on top only when there's motion to smear.
+    Widget? smearOverlay;
+
     final wantsPass =
         widget.motionBlur > 0 &&
         widget.zoomRegions.isNotEmpty &&
         (widget.screenMovementBlur > 0 || widget.screenZoomBlur > 0);
-    if (!wantsPass) {
+    final program = _program;
+
+    if (!wantsPass || program == null) {
       _currentSignal = SceneMotionBlurSignal.zero;
       _disposeCapture();
-      return child;
-    }
+    } else {
+      final pos =
+          widget.smoothPlayhead?.position ?? widget.controller.value.position;
+      final signal = _computeSignal(pos);
+      _currentSignal = signal;
 
-    final pos =
-        widget.smoothPlayhead?.position ?? widget.controller.value.position;
-    final signal = _computeSignal(pos);
-    _currentSignal = signal;
-
-    final program = _program;
-    if (program == null) return child;
-    if (!signal.hasMotion) {
-      _disposeCapture();
-      return child;
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => _captureScene());
-
-    final dpr = MediaQuery.of(context).devicePixelRatio;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        RepaintBoundary(key: _boundaryKey, child: child),
-        if (_capturedScene != null)
-          IgnorePointer(
+      if (!signal.hasMotion) {
+        _disposeCapture();
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _captureScene());
+        if (_capturedScene != null) {
+          final dpr = MediaQuery.of(context).devicePixelRatio;
+          smearOverlay = IgnorePointer(
             child: CustomPaint(
               painter: SceneMotionBlurPainter(
                 image: _capturedScene!,
@@ -308,7 +314,16 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
                 devicePixelRatio: dpr,
               ),
             ),
-          ),
+          );
+        }
+      }
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        RepaintBoundary(key: _boundaryKey, child: child),
+        if (smearOverlay != null) smearOverlay,
       ],
     );
   }
