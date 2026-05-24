@@ -178,7 +178,7 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 
 ### P1
 
-- [ ] **P1-4 — Unified `paintCursor()` entry point** (Task #242) — _phases A+B landed, C deferred_
+- [x] **P1-4 — Unified `paintCursor()` entry point** (Task #242) — _all three phases landed; bugs #1, #4, #9 closed_
   Phase A (commit `27de5c6`): `CursorPaintRequest` +
   `paintCursorComposed` in `lib/rendering/cursor_painter.dart`,
   replacing the buggy `paintCursorWithEffects` wrapper. `CursorRenderer`
@@ -247,7 +247,7 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 
 ### P2
 
-- [x] **P2-8 — Centralized tuning JSON + presets** (Task #246) — _phases A+B+C foundation landed_
+- [x] **P2-8 — Centralized tuning JSON + presets** (Task #246) — _all phases landed (A: record + presets, B: scene-blur, C/C-2: JSON sidecar + provider + picker)_
   New `MotionTuning` immutable record in
   `slipreel_engine/lib/rendering/motion_tuning.dart` collects 8
   motion-feel knobs from across `ZoomFocalController` and
@@ -275,6 +275,26 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
   cover missing-version, current-version pass-through, future-version
   refusal, chain composability, and explicit-v1 round-trip.
 - [x] **P2-10 — Timeline container for multi-track** (Task #248)
+
+### Bug fixes after the roadmap
+
+- [x] **Bug #3 — Export cursor painter mismatch** (Task #255)
+  Production preview (`PlaybackScreen`) hard-codes
+  `CursorBlurMode.accumulation`; `FrameCompositor._paintCursor` was
+  still using `CursorOverlayPainter` (the shader chord-stretch
+  smear), so the exported MP4 didn't match what the user edited.
+  Re-wired `_paintCursor` to instantiate `AccumulationCursorPainter`
+  with the same exposure (150 ms × effectiveCursorBlur) and sample
+  count (8) the production preview uses, passing `videoRect` so
+  smear stamps near the video edge bleed onto the wallpaper padding
+  (matches preview behaviour). Removed the dead
+  `CursorOverlayPainter` + `MotionBlurTuning` references from the
+  export path. New structural test in
+  `test/export/frame_compositor_cursor_painter_test.dart` asserts
+  the painter substitution so a regression to the shader path
+  would fail CI.
+  All ten review bugs closed (`#1, #2, #4, #5, #6, #8, #9` directly;
+  `#3` here; `#7, #10` investigated and documented as non-bugs).
   New `Timeline` + `ZoomTrack` value objects in
   `slipreel_engine/lib/timeline/timeline.dart`. `EditorProjectState`'s
   flat `final List<ZoomRegion> zoomRegions` field is replaced by
@@ -325,5 +345,7 @@ P1 = high-leverage but narrower. P2 = scaffolding for product growth.
 - 2026-05-21 — P1-4 phase C landed — `CursorOverlayPainter`'s motion-blur branch no longer re-bakes the cursor sprite on every frame. Bake split into bare glyph (cached by `pxDiameter × dpr × style × state × bufferPx`) + drop shadow drawn separately at stamp time + press-pulse applied as a destination-rect scale on the smear. Made `paintCursorShadow` public. **Bug #9 closed**. Behavior preserved. Test result: 578 pass / 14 skip.
 - 2026-05-21 — P0-3 phase 2 finalized — moved `curve_library.dart` and `video_encoder.dart` from `screen_recorder` to `slipreel_engine` (both were engine-shaped — no UI imports). Shell trimmed to `main`, `services/destination_handlers`, `state/{frame_settings_provider,recording_state}`, `ui/`. Tests just shifted (578 total preserved).
 - 2026-05-21 — P2-8 phase C foundation landed — `MotionTuningController` (StateNotifier) + `MotionTuningStore` (sidecar JSON load/save with atomic write + corrupt-file recovery) + `motionTuningProvider` + `MotionTuningPreset` enum (defaults / snappy / cinematic). 10 new tests. Wiring the existing controllers to read from the provider, and a debug-tab preset picker UI, deferred to phase C-2. Test result: 588 pass / 14 skip across both packages (+10 new).
+- 2026-05-24 — Bug #3 fixed (Task #255) — `FrameCompositor._paintCursor` was still on `CursorOverlayPainter` (shader chord-stretch) while production preview hard-codes accumulation. Substituted `AccumulationCursorPainter` with the same exposure / sample / videoRect settings the preview uses. Removed dead `CursorOverlayPainter` + `MotionBlurTuning` references from the export path. New structural test (`frame_compositor_cursor_painter_test.dart`) pins the painter substitution. All 10 original review bugs are now closed (#1,#2,#3,#4,#5,#6,#8,#9 fixed; #7,#10 investigated as non-bugs). Test result: 605 pass / 14 skip (+1 new).
+- 2026-05-24 — doc rot pass — flipped P1-4 checkbox (phase C had landed but the box was never ticked); refreshed P2-8 body to reflect phases A+B+C+C-2 all landed.
 - 2026-05-21 — P2-10 landed — Timeline container. New `Timeline` + `ZoomTrack` in `slipreel_engine/lib/timeline/`. `EditorProjectState.zoomRegions` (field) → `EditorProjectState.timeline` (field) + `zoomRegions` getter shim reading `timeline.activeZoomRegions`. `copyWith` accepts `timeline:` (explicit) and `zoomRegions:` (convenience → active track). Schema v2 → v3 migration moves the flat list onto `timeline.zoomTracks[0].regions`. While here, wired `fromJson` to route through `migrateEditorProjectJson` (v1→v2 was a noop, so the missing call hadn't bitten anyone yet, but v2→v3 actually reshapes JSON). 15 new tests across `test/timeline/timeline_test.dart`, `editor_project_state_test.dart`, and `editor_project_state_migration_test.dart`. Test result: 603 pass / 14 skip (450 engine + 153 shell). Zero call-site churn outside `EditorProjectState` itself + 5 test files where stale `copyForTest` extensions were collapsed to the now-existing production `copyWith`. **Last task on the original review roadmap.**
 - 2026-05-21 — P2-8 phase C-2 landed — wired the MotionTuning provider into the live preview AND added the inspector preset picker. `ZoomFocalController.tuning` and `CursorMotionController.tuning` made mutable (was final); `ScenePassBuilder.setTuning(...)` propagates a new tuning to both. `PlaybackCanvas` converted to `ConsumerStatefulWidget`; at the top of each build it `ref.watch`es `motionTuningProvider` and calls `setTuning()` on its scene-pass builder so a preset swap flows through to the springs + scene-blur knobs on the next frame. `main.dart` loads tuning from `applicationSupport/motion_tuning.json` at startup and seeds the provider + store via `ProviderScope` overrides. Cursor tab's Debug section gains a `_MotionPresetPicker` showing the active preset (or "Custom") and three chips that swap the state and persist to JSON. Designer iteration loop is closed: pick preset → preview updates live → choice survives restart. Test result: 588 pass / 14 skip (no net new tests — behaviour preserved by construction, defaults flow through unchanged).

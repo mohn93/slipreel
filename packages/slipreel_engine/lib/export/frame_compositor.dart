@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
+import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
@@ -16,7 +16,6 @@ import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
-import 'package:slipreel_engine/rendering/cursor_overlay_painter.dart';
 
 /// Re-renders the same composition the preview canvas paints, but to
 /// raw RGBA bytes instead of a widget tree. Owns the same stateful
@@ -165,13 +164,6 @@ class FrameCompositor {
         scale: zoomTransform.storage[0],
       );
 
-      // Cursor motion blur reflects the cursor's INTRINSIC scene
-      // velocity only — i.e., the actual mouse movement. Camera pan
-      // from a zoom transition is not the cursor moving through space,
-      // so streaking on it would look wrong. The builder returns the
-      // EMA-filtered value already in [filteredCursorVelocity].
-      final combinedCursorVelocity = scenePass.filteredCursorVelocity;
-
       // Render the FOREGROUND (frame chrome + video + cursor) with the
       // zoom transform applied. The wallpaper is rendered separately
       // below — it's "sticky" and never goes through the zoom Transform
@@ -196,8 +188,6 @@ class FrameCompositor {
         _paintCursor(
           fgCanvas,
           position: position,
-          screenPos: motion.screenPos,
-          velocity: combinedCursorVelocity,
           intensity: effectiveCursorBlur,
           state: motion.state,
         );
@@ -500,35 +490,57 @@ class FrameCompositor {
     canvas.restore();
   }
 
+  /// Production preview ([`PlaybackScreen`]) hard-codes
+  /// `CursorBlurMode.accumulation` for cursor motion blur. Export
+  /// follows the same painter so the rendered MP4 is WYSIWYG with
+  /// what the user edited (closes bug #3). The shader path
+  /// ([`CursorOverlayPainter`]) is intentionally only kept for the
+  /// playground's A/B compare screen.
+  ///
+  /// Exposure (150 ms) matches production preview's
+  /// `accumulationExposureMs` so a slider drag and a re-export read
+  /// the same trail length. Sample count (8) matches the preview's
+  /// `accumulationSampleCount` default on [`PlaybackCanvas`].
   void _paintCursor(
     Canvas canvas, {
     required Duration position,
-    required Offset screenPos,
-    required Offset velocity,
     required double intensity,
     required CursorState state,
   }) {
-    canvas.save();
-    canvas.translate(_effectivePadding.left, _effectivePadding.top);
-    final painter = CursorOverlayPainter(
+    final painter = AccumulationCursorPainter(
       cursorRecording: cursorRecording,
       position: position,
-      screenPos: screenPos,
       videoSize: videoSize,
-      screenSize: videoSize,
+      // Match production preview (PlaybackScreen): 150 ms base
+      // exposure scaled by the same effectiveCursorBlur the preview
+      // uses. Zero blur → 0 ms → all N stamps land on the current
+      // frame, so the painter degenerates to a single sharp sprite.
+      exposureMs: 150.0 * intensity,
+      sampleCount: 8,
       sizeMultiplier: projectState.cursorSize,
       style: projectState.cursorStyle,
-      clickEffect: projectState.cursorClickEffect,
-      velocityPxPerSec: velocity,
-      motionBlurIntensity: intensity,
-      tuning: MotionBlurTuning.defaults.copyWith(
-        maxExposureMs: MotionBlurTuning.defaults.maxExposureMs * intensity,
-      ),
       cursorState: state,
-      cursorShadow: projectState.cursorShadow,
+      // Export renders at the metadata's dpr; the painter sizes its
+      // sprite buffer off this, not off MediaQuery. Live preview
+      // passes the device's dpr from MediaQuery; the exporter has no
+      // BuildContext, so 2.0 is the reasonable middle-of-the-road
+      // default — sharper than 1.0, gentler than 3.0 on memory.
+      devicePixelRatio: 2.0,
+      // Tell the painter where the video lives inside the canvas so
+      // stamps that land near the edge can bleed onto the wallpaper
+      // padding (matches PlaybackCanvas, which sizes its cursor
+      // layer to totalSize for the same reason).
+      videoRect: Rect.fromLTWH(
+        _effectivePadding.left,
+        _effectivePadding.top,
+        videoSize.width,
+        videoSize.height,
+      ),
+      postProcess: projectState.cursorPostProcess,
+      clickEffect: projectState.cursorClickEffect,
+      clickSpring: projectState.clickSpring,
     );
-    painter.paint(canvas, videoSize);
-    canvas.restore();
+    painter.paint(canvas, totalSize);
   }
 
   static Future<ui.Image> _bgraToImage(Uint8List bgra, int width, int height) {
