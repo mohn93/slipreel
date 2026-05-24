@@ -10,6 +10,7 @@ import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
+import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 
@@ -139,6 +140,11 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
   // any stateful smoothing would re-introduce the path-dependence
   // that this refactor exists to remove.
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
+
+  /// Cached deterministic spring-camera focal track for the most recently
+  /// queried [ZoomRegion]. Rebuilt lazily whenever the region or any
+  /// configuration parameter changes (verified by [DeterministicFocalTrack.matches]).
+  DeterministicFocalTrack? _focalTrack;
 
   final GlobalKey _boundaryKey = GlobalKey();
   ui.FragmentProgram? _program;
@@ -385,6 +391,33 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
 
   String _lastDebugKey = '';
 
+  /// Returns the [DeterministicFocalTrack] for [region], rebuilding it only
+  /// when the region or any relevant configuration parameter has changed.
+  /// Returns `null` when [region.followCursor] is false (static focal).
+  DeterministicFocalTrack? _trackFor(ZoomRegion region) {
+    if (!region.followCursor) return null;
+    final cached = _focalTrack;
+    if (cached != null &&
+        cached.matches(
+          region: region,
+          cursorRecording: widget.cursorRecording,
+          cursorAnimationConfig: widget.cursorAnimationConfig,
+          cursorPostProcess: widget.cursorPostProcess,
+          videoSize: widget.videoSize,
+          fps: widget.fps,
+        )) {
+      return cached;
+    }
+    return _focalTrack = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: widget.cursorRecording,
+      cursorAnimationConfig: widget.cursorAnimationConfig,
+      cursorPostProcess: widget.cursorPostProcess,
+      videoSize: widget.videoSize,
+      fps: widget.fps,
+    );
+  }
+
   SceneCameraSample _approxSampleAt(Duration t) {
     if (t.isNegative) {
       return SceneCameraSample(
@@ -413,21 +446,20 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
-      // Both the current and prev blur samples flow through this
-      // function, so the result is symmetric by construction —
-      // the smear vector is exactly the raw cursor delta across
-      // the exposure window, no smoother-delay bias on either side.
-      final s = cursorAtFiltered(
-        widget.cursorRecording,
-        t,
-        widget.cursorPostProcess,
-      );
-      focal = s == null
-          ? active.rect.center
-          : Offset(
-              s.x.toDouble().clamp(0, widget.videoSize.width),
-              s.y.toDouble().clamp(0, widget.videoSize.height),
-            );
+      final track = _trackFor(active);
+      if (track != null) {
+        // Spring-camera focal (matches the visible camera), evaluated
+        // deterministically so pause == play == export at this playhead.
+        focal = track.focalAt(t);
+      } else {
+        final s = cursorAtFiltered(
+            widget.cursorRecording, t, widget.cursorPostProcess);
+        focal = s == null
+            ? active.rect.center
+            : Offset(
+                s.x.toDouble().clamp(0, widget.videoSize.width),
+                s.y.toDouble().clamp(0, widget.videoSize.height));
+      }
     }
 
     final matrix = _zoomTransformer.getTransform(
