@@ -81,7 +81,16 @@ class DeterministicFocalTrack {
         hasCursorData: hasCursor,
       );
       final focal = pass.focalUpdate?.focal;
-      if (focal == null) break;
+      // The loop only visits timestamps inside [startUs, endUs], where the
+      // region's zoom is active, so focalUpdate is always non-null. A null
+      // here means an invariant changed (e.g. the loop bounds or the
+      // controller's active-window contract) — surface it loudly in debug.
+      assert(
+        focal != null,
+        'DeterministicFocalTrack: focalUpdate null inside region bounds at '
+        '${Duration(microseconds: us)}',
+      );
+      if (focal == null) break; // release-mode safety net
       samples.add(focal);
     }
 
@@ -119,9 +128,10 @@ class DeterministicFocalTrack {
   /// True when this track was built from inputs equal to the given set —
   /// used by callers to decide whether to rebuild after a widget update.
   /// [cursorRecording] is compared by identity (the shell swaps the whole
-  /// object when the recording changes). [cursorAnimationConfig] is also
-  /// compared by identity since it has no custom `==`; callers that swap
-  /// configs create new instances.
+  /// object when the recording changes). Everything else is compared by
+  /// value — [cursorAnimationConfig] implements value `==`, so a caller
+  /// passing a freshly-constructed-but-equal config (e.g. an inline
+  /// `CursorAnimationConfig.preset(...)`) does not thrash the cache.
   bool matches({
     required ZoomRegion region,
     required CursorRecording cursorRecording,
@@ -131,7 +141,7 @@ class DeterministicFocalTrack {
     required int fps,
   }) {
     return identical(this.cursorRecording, cursorRecording) &&
-        identical(this.cursorAnimationConfig, cursorAnimationConfig) &&
+        this.cursorAnimationConfig == cursorAnimationConfig &&
         this.region == region &&
         this.cursorPostProcess == cursorPostProcess &&
         this.videoSize == videoSize &&

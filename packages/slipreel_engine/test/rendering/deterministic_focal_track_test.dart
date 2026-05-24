@@ -9,6 +9,7 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
+import 'package:slipreel_engine/state/cursor_post_process.dart';
 
 void main() {
   // A cursor that sits at (200,200) until 2500ms then sweeps to (1200,800)
@@ -89,5 +90,84 @@ void main() {
       lessThan(700),
       reason: 'chased left toward cursor x=200 from center x=864',
     );
+  });
+
+  group('matches()', () {
+    final recording = sweep();
+    const config =
+        CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+    final track = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: recording,
+      cursorAnimationConfig: config,
+      videoSize: videoSize,
+      fps: 60,
+    );
+
+    test('identical inputs → true', () {
+      expect(
+        track.matches(
+          region: region,
+          cursorRecording: recording,
+          cursorAnimationConfig: config,
+          cursorPostProcess: CursorPostProcess.none,
+          videoSize: videoSize,
+          fps: 60,
+        ),
+        isTrue,
+      );
+    });
+
+    test('changed region → false', () {
+      final other = region.copyWith(zoomLevel: 3.0);
+      expect(
+        track.matches(
+          region: other,
+          cursorRecording: recording,
+          cursorAnimationConfig: config,
+          cursorPostProcess: CursorPostProcess.none,
+          videoSize: videoSize,
+          fps: 60,
+        ),
+        isFalse,
+      );
+    });
+
+    test('separate but value-equal CursorAnimationConfig instances → true',
+        () {
+      // A distinct instance with the same preset value — must not thrash
+      // the cache. Built without `const` so Dart can't canonicalize it to
+      // the same object as [config]; this proves `matches` is value-based.
+      // ignore: prefer_const_constructors
+      final fresh =
+          CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      expect(identical(config, fresh), isFalse);
+      expect(
+        track.matches(
+          region: region,
+          cursorRecording: recording,
+          cursorAnimationConfig: fresh,
+          cursorPostProcess: CursorPostProcess.none,
+          videoSize: videoSize,
+          fps: 60,
+        ),
+        isTrue,
+      );
+    });
+
+    test('changed cursorPostProcess → false', () {
+      expect(
+        track.matches(
+          region: region,
+          cursorRecording: recording,
+          cursorAnimationConfig: config,
+          cursorPostProcess:
+              const CursorPostProcess(removeShakes: true),
+          videoSize: videoSize,
+          fps: 60,
+        ),
+        isFalse,
+      );
+    });
   });
 }
