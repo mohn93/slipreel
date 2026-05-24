@@ -46,6 +46,35 @@ import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.d
 /// for normal interactive use.
 bool sceneBlurTraceEnabled = false;
 
+/// Assembles the scene-blur tree so [framedChild] ALWAYS occupies the
+/// same slot (the `Stack`'s child 0) whether or not [smearOverlay] is
+/// present. The smear is layered on top; adding or removing it never
+/// disturbs the child's slot.
+///
+/// This is the linchpin of the mid-zoom "camera jump" fix: the child
+/// is the `PlaybackCanvas`, which owns the live `ZoomFocalController`
+/// spring. If the child's slot changed shape (e.g. bare child when
+/// there's no smear vs. nested-under-Stack when there is), Flutter
+/// would remount it, recreating the controller and snapping the camera
+/// focal to the zoom rect's centre. Keeping a single stable shape here
+/// preserves the controller across smear on/off transitions.
+///
+/// Exposed for the behavioral remount test; `_SceneBlurOverlayState`'s
+/// build is the only production caller.
+@visibleForTesting
+Widget buildSceneBlurTree({
+  required Widget framedChild,
+  Widget? smearOverlay,
+}) {
+  return Stack(
+    fit: StackFit.expand,
+    children: [
+      framedChild,
+      if (smearOverlay != null) smearOverlay,
+    ],
+  );
+}
+
 class SceneBlurOverlay extends StatefulWidget {
   const SceneBlurOverlay({
     super.key,
@@ -319,12 +348,9 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
       }
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        RepaintBoundary(key: _boundaryKey, child: child),
-        if (smearOverlay != null) smearOverlay,
-      ],
+    return buildSceneBlurTree(
+      framedChild: RepaintBoundary(key: _boundaryKey, child: child),
+      smearOverlay: smearOverlay,
     );
   }
 
