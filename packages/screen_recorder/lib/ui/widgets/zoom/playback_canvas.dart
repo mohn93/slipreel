@@ -232,8 +232,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   /// inputs in, same outputs out — so preview and export cannot drift.
   final ScenePassBuilder _scenePassBuilder = ScenePassBuilder();
   ZoomFocalController get _zoomFocalController => _scenePassBuilder.focal;
-  final SceneMotionBlurController _sceneMotionBlurController =
-      SceneMotionBlurController();
   final GlobalKey _sceneBoundaryKey = GlobalKey();
   ui.FragmentProgram? _sceneBlurProgram;
   ui.Image? _capturedScene;
@@ -260,25 +258,9 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   @override
   void didUpdateWidget(covariant PlaybackCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Reset ONLY when the camera trajectory itself changes (different
-    // video / cursor data / zoom regions / animation config). The
-    // per-channel blur knobs (motionBlur, cursorMovementBlur,
-    // screenMovementBlur, screenZoomBlur) only rescale the exposure
-    // window — they don't invalidate the history. Resetting on them
-    // wipes the very samples the signal computation needs, which made
-    // every knob nudge collapse `signal` to zero (visible especially
-    // when paused, where no new samples come in to refill the history).
-    if (oldWidget.controller != widget.controller ||
-        oldWidget.cursorRecording != widget.cursorRecording ||
-        oldWidget.metadata != widget.metadata ||
-        oldWidget.zoomRegions != widget.zoomRegions ||
-        oldWidget.screenAnimationConfig != widget.screenAnimationConfig ||
-        oldWidget.cursorAnimationConfig != widget.cursorAnimationConfig ||
-        oldWidget.cursorDelay != widget.cursorDelay) {
-      _sceneMotionBlurController.reset();
-      _currentSceneSignal = SceneMotionBlurSignal.zero;
-      _capturedSceneSignal = SceneMotionBlurSignal.zero;
-    }
+    // The scene-blur signal is now a pure function of (pos, sampleAt),
+    // so there is no per-controller state to reset on trajectory
+    // changes — `compute` reads fresh on every call.
     if (oldWidget.motionBlur != widget.motionBlur ||
         oldWidget.cursorMovementBlur != widget.cursorMovementBlur ||
         oldWidget.screenMovementBlur != widget.screenMovementBlur ||
@@ -663,8 +645,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 cursorOverlay: cursorOverlay,
                 stickyBackground: stickyBackground,
                 position: pos,
-                focal: videoSize.center(Offset.zero),
-                scale: 1.0,
                 totalSize: totalSize,
                 videoSize: videoSize,
                 currentTransform: Matrix4.identity(),
@@ -717,8 +697,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                   cursorOverlay: transformedCursor,
                   stickyBackground: stickyBackground,
                   position: pos,
-                  focal: focalForFrame,
-                  scale: transform.storage[0],
                   totalSize: totalSize,
                   videoSize: videoSize,
                   currentTransform: transform,
@@ -741,8 +719,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     Widget? cursorOverlay,
     Widget? stickyBackground,
     required Duration position,
-    required Offset focal,
-    required double scale,
     required Size totalSize,
     required Size videoSize,
     required Matrix4 currentTransform,
@@ -765,7 +741,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         widget.zoomRegions.isNotEmpty &&
         (widget.screenMovementBlur > 0 || widget.screenZoomBlur > 0);
     if (!wantsScenePass) {
-      _sceneMotionBlurController.reset();
       _currentSceneSignal = SceneMotionBlurSignal.zero;
       return bodyWithCursor();
     }
@@ -786,23 +761,16 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                   1000)
               .round(),
     );
-    final signal = _sceneMotionBlurController.update(
-      current: SceneCameraSample(
-        position: position,
-        focal: focal,
-        scale: scale,
-      ),
+    // Stateless: both `current` (at `position`) and `prev` (at
+    // `position − exposure`) come from `_approxSceneSampleAt`, so the
+    // smear vector is symmetric by construction and the editor
+    // preview matches what export produces at the same playhead.
+    final signal = SceneMotionBlurController.compute(
+      position: position,
+      sampleAt: (t) => _approxSceneSampleAt(t, videoSize),
       movementExposure: movementExposure,
       zoomExposure: zoomExposure,
       maxTranslation: _sceneBlurMaxTranslation,
-      smooth: !widget.isHoverScrubbing && widget.controller.value.isPlaying,
-      // Fallback used when the controller's history doesn't have a
-      // sample at `position - exposure` (typical right after a scrub /
-      // pause / mode-switch — history hasn't repopulated yet). Without
-      // this, signal collapses to zero and the scene blur silently
-      // disables, even though the zoom region's math fully determines
-      // what the camera would have been at that timestamp.
-      approxSampleAt: (t) => _approxSceneSampleAt(t, videoSize),
     );
     _currentSceneSignal = signal;
 

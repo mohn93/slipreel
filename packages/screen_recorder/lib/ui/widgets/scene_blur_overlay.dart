@@ -10,10 +10,9 @@ import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
+import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
-import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
-import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 
 /// Wraps a [child] (typically a [PlaybackCanvas]) and renders the
 /// scene-level motion blur as a captured-and-shadered overlay on top.
@@ -40,6 +39,13 @@ import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 /// (`AccumulationCursorPainter` inside [PlaybackCanvas]) and has no
 /// capture lag, so it doesn't need to ride along the external
 /// capture-and-shader pipeline.
+/// Static per-frame trace toggle, exposed at the public widget class
+/// so a VM-service extension (or a hot-reload edit) can flip it without
+/// poking at the State's privates. Off by default — every paint emits
+/// a structured `[SceneBlur frame]` line when on, which is too noisy
+/// for normal interactive use.
+bool sceneBlurTraceEnabled = false;
+
 class SceneBlurOverlay extends StatefulWidget {
   const SceneBlurOverlay({
     super.key,
@@ -125,20 +131,20 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
   static const double _speedCurveExp = 1.0;
   static const double _speedCurveRefPx = 10.0;
 
-  // Camera-state controllers — independent copies of what
-  // [PlaybackCanvas] runs internally. Duplicating the smoothing state
-  // is intentional: it keeps the overlay self-contained so the inner
-  // canvas doesn't need a separate API for exposing focal/scale, and
-  // the two controllers' outputs only ever drive their own rendering
-  // (PlaybackCanvas for the body transform, overlay for the smear
-  // signal). They see the same inputs each frame so they stay in
-  // lockstep.
+  // The blur signal is a stateless function of `(pos, sampleAt)` —
+  // [SceneMotionBlurController.compute] reads the camera state at
+  // `pos` and `pos − exposure` from `_approxSampleAt`, which uses
+  // the same raw-cursor + zoom-transform machinery on both sides.
+  // No focal/cursor smoother state is kept here: determinism (pause
+  // == play == export at the same playhead) is the contract, and
+  // any stateful smoothing would re-introduce the path-dependence
+  // that this refactor exists to remove.
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
-  final ZoomFocalController _focalController = ZoomFocalController();
-  final CursorMotionController _cursorMotion = CursorMotionController();
 
-  final SceneMotionBlurController _signalController =
-      SceneMotionBlurController();
+  /// Cached deterministic spring-camera focal track for the most recently
+  /// queried [ZoomRegion]. Rebuilt lazily whenever the region or any
+  /// configuration parameter changes (verified by [DeterministicFocalTrack.matches]).
+  DeterministicFocalTrack? _focalTrack;
 
   final GlobalKey _boundaryKey = GlobalKey();
   ui.FragmentProgram? _program;
@@ -166,16 +172,6 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
   // before its image is freed.
   final List<ui.Image> _disposeQueue = <ui.Image>[];
 
-  // Stable playhead lock. smoothPlayhead's ticker continues firing at
-  // vsync rate after the video pauses, and the position micro-
-  // fluctuates by 1–3 ms per rebuild — those tiny deltas leak into
-  // the scene-blur signal (`prev.focal − current.focal` over a 16 ms
-  // exposure is dominated by them) and the smear jitters even though
-  // the camera is still. Free during playback, lock during pause.
-  // Release only on a >100 ms deviation, meaning the user scrubbed.
-  Duration _stablePos = Duration.zero;
-  bool _hasStablePos = false;
-
   @override
   void initState() {
     super.initState();
@@ -195,20 +191,9 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
   @override
   void didUpdateWidget(covariant SceneBlurOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Reset only when the camera trajectory itself changes. Knob
-    // changes only rescale the exposure window — they don't
-    // invalidate the history, and resetting on them wipes the very
-    // samples the signal computation needs (most visible when paused,
-    // where no new samples come in to refill).
-    if (oldWidget.controller != widget.controller ||
-        oldWidget.cursorRecording != widget.cursorRecording ||
-        oldWidget.zoomRegions != widget.zoomRegions ||
-        oldWidget.cursorAnimationConfig != widget.cursorAnimationConfig ||
-        oldWidget.screenAnimationConfig != widget.screenAnimationConfig) {
-      _signalController.reset();
-      _currentSignal = SceneMotionBlurSignal.zero;
-      _capturedSignal = SceneMotionBlurSignal.zero;
-    }
+    // No signal-state to reset: the blur is a pure function of pos +
+    // sampleAt. Knob changes only need a fresh capture-paint so the
+    // shader picks up the new exposure window the next frame.
     if (oldWidget.motionBlur != widget.motionBlur ||
         oldWidget.screenMovementBlur != widget.screenMovementBlur ||
         oldWidget.screenZoomBlur != widget.screenZoomBlur ||
@@ -281,13 +266,13 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
         widget.zoomRegions.isNotEmpty &&
         (widget.screenMovementBlur > 0 || widget.screenZoomBlur > 0);
     if (!wantsPass) {
-      _signalController.reset();
       _currentSignal = SceneMotionBlurSignal.zero;
       _disposeCapture();
       return child;
     }
 
-    final pos = _resolveStablePlayhead();
+    final pos =
+        widget.smoothPlayhead?.position ?? widget.controller.value.position;
     final signal = _computeSignal(pos);
     _currentSignal = signal;
 
@@ -328,69 +313,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
     );
   }
 
-  /// Lock the playhead during pause to keep the scene-blur signal
-  /// stable. See the comment on [_stablePos] for the full rationale.
-  Duration _resolveStablePlayhead() {
-    final raw =
-        widget.smoothPlayhead?.position ?? widget.controller.value.position;
-    if (widget.controller.value.isPlaying) {
-      _stablePos = raw;
-      _hasStablePos = true;
-      return raw;
-    }
-    if (!_hasStablePos ||
-        (raw.inMicroseconds - _stablePos.inMicroseconds).abs() > 100000) {
-      _stablePos = raw;
-      _hasStablePos = true;
-    }
-    return _stablePos;
-  }
-
   SceneMotionBlurSignal _computeSignal(Duration pos) {
-    final hasCursorData = widget.cursorRecording.count > 0;
-    final cursorMotion = hasCursorData
-        ? _cursorMotion.update(
-            position: pos,
-            cursorRecording: widget.cursorRecording,
-            config: widget.cursorAnimationConfig,
-            fps: widget.fps,
-          )
-        : null;
-    final activeZoom = _activeZoomAt(pos);
-    final cursorForFocal = activeZoom?.followMode == FollowMode.predictive
-        ? medianCursorOver(
-            recording: widget.cursorRecording,
-            t: pos,
-            window: activeZoom!.predictiveWindow,
-          )
-        : cursorMotion?.screenPos;
-    final focalUpdate = _focalController.update(
-      position: pos,
-      zoomRegions: widget.zoomRegions,
-      cursor: cursorForFocal,
-      videoSize: widget.videoSize,
-      forceSnap: widget.isHoverScrubbing,
-    );
-
-    Offset focal;
-    double scale;
-    if (focalUpdate != null) {
-      final matrix = _zoomTransformer.getTransform(
-        position: pos,
-        zoomRegion: focalUpdate.zoom,
-        videoSize: widget.videoSize,
-        focalPoint: focalUpdate.focal,
-        rampCurve:
-            focalUpdate.zoom.rampCurveOverride?.toFlutterCurve() ??
-            widget.screenAnimationConfig.rampCurve,
-      );
-      focal = focalUpdate.focal;
-      scale = matrix.storage[0];
-    } else {
-      focal = widget.videoSize.center(Offset.zero);
-      scale = 1.0;
-    }
-
     final movementExposure = Duration(
       microseconds:
           (_baseExposureMs * widget.motionBlur * widget.screenMovementBlur * 1000)
@@ -402,22 +325,17 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
               .round(),
     );
 
-    final signal = _signalController.update(
-      current: SceneCameraSample(position: pos, focal: focal, scale: scale),
+    final signal = SceneMotionBlurController.compute(
+      position: pos,
+      sampleAt: _approxSampleAt,
       movementExposure: movementExposure,
       zoomExposure: zoomExposure,
       maxTranslation: _maxTranslation,
-      smooth: !widget.isHoverScrubbing && widget.controller.value.isPlaying,
-      // Stateless fallback for prev-sample lookups when history is
-      // empty (immediately after scrub / mode-switch / fresh mount).
-      // Same machinery [PlaybackCanvas] uses; ensures the signal
-      // doesn't collapse to zero during interactive paused testing.
-      approxSampleAt: _approxSampleAt,
     );
 
-    // TEMP debug: log signal values whenever a knob changes so we can
-    // see what the slider is actually doing under the hood. Throttled
-    // by a key so we only print on transitions, not every frame.
+    // Knob-change one-shot log (kept from the original instrumentation):
+    // confirms the slider is actually feeding new exposures into the
+    // compute path. Quiet during steady-state.
     assert(() {
       final key = '${widget.motionBlur.toStringAsFixed(6)}|'
           '${widget.screenMovementBlur.toStringAsFixed(6)}|'
@@ -425,23 +343,80 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
       if (key != _lastDebugKey) {
         _lastDebugKey = key;
         debugPrint(
-          '[SceneBlur] '
-          'masterCurved=${widget.motionBlur.toStringAsExponential(2)} '
-          'moveCurved=${widget.screenMovementBlur.toStringAsExponential(2)} '
-          'zoomCurved=${widget.screenZoomBlur.toStringAsExponential(2)} '
-          '| mExp=${(movementExposure.inMicroseconds / 1000).toStringAsFixed(3)}ms '
-          'zExp=${(zoomExposure.inMicroseconds / 1000).toStringAsFixed(3)}ms '
-          '| scaleDelta=${signal.scaleDelta.toStringAsExponential(2)} '
-          'trans=${signal.translation.distance.toStringAsFixed(2)}px '
-          'hasMotion=${signal.hasMotion}',
+          '[SceneBlur knob] '
+          'master=${widget.motionBlur.toStringAsExponential(2)} '
+          'move=${widget.screenMovementBlur.toStringAsExponential(2)} '
+          'zoom=${widget.screenZoomBlur.toStringAsExponential(2)} '
+          '| mExp=${(movementExposure.inMicroseconds / 1000).toStringAsFixed(2)}ms '
+          'zExp=${(zoomExposure.inMicroseconds / 1000).toStringAsFixed(2)}ms',
         );
       }
       return true;
     }());
+
+    // Per-frame trace, gated by [sceneBlurTraceEnabled] so it doesn't
+    // flood by default. The MCP `get_logs` tool reads this back when
+    // we want a frame-by-frame view of the blur signal (e.g. to
+    // diagnose smear jitter that propagates into the cursor sprite).
+    // Toggle via `ext.slipreel.setSceneBlurTrace` (registered in
+    // main.dart).
+    assert(() {
+      if (sceneBlurTraceEnabled) {
+        // Sample the same current/prev pair the controller saw so the
+        // log shows exactly what fed the math, not a re-derivation.
+        final cur = _approxSampleAt(pos);
+        final prev =
+            _approxSampleAt(pos - (movementExposure > Duration.zero
+                ? movementExposure
+                : zoomExposure));
+        debugPrint(
+          '[SceneBlur frame] '
+          'pos=${pos.inMicroseconds / 1000}ms '
+          'isPlaying=${widget.controller.value.isPlaying} '
+          '| cur=(${cur.focal.dx.toStringAsFixed(1)},${cur.focal.dy.toStringAsFixed(1)}) '
+          'scale=${cur.scale.toStringAsFixed(4)} '
+          '| prev=(${prev.focal.dx.toStringAsFixed(1)},${prev.focal.dy.toStringAsFixed(1)}) '
+          'scale=${prev.scale.toStringAsFixed(4)} '
+          '| trans=(${signal.translation.dx.toStringAsFixed(2)},'
+          '${signal.translation.dy.toStringAsFixed(2)}) '
+          '|trans|=${signal.translation.distance.toStringAsFixed(2)}px '
+          'scaleDelta=${signal.scaleDelta.toStringAsExponential(2)}',
+        );
+      }
+      return true;
+    }());
+
     return signal;
   }
 
   String _lastDebugKey = '';
+
+  /// Returns the [DeterministicFocalTrack] for [region], rebuilding it only
+  /// when the region or any relevant configuration parameter has changed.
+  /// Returns `null` when [region.followCursor] is false (static focal).
+  DeterministicFocalTrack? _trackFor(ZoomRegion region) {
+    if (!region.followCursor) return null;
+    final cached = _focalTrack;
+    if (cached != null &&
+        cached.matches(
+          region: region,
+          cursorRecording: widget.cursorRecording,
+          cursorAnimationConfig: widget.cursorAnimationConfig,
+          cursorPostProcess: widget.cursorPostProcess,
+          videoSize: widget.videoSize,
+          fps: widget.fps,
+        )) {
+      return cached;
+    }
+    return _focalTrack = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: widget.cursorRecording,
+      cursorAnimationConfig: widget.cursorAnimationConfig,
+      cursorPostProcess: widget.cursorPostProcess,
+      videoSize: widget.videoSize,
+      fps: widget.fps,
+    );
+  }
 
   SceneCameraSample _approxSampleAt(Duration t) {
     if (t.isNegative) {
@@ -471,26 +446,20 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
-      // Query raw cursor at exactly `t`. We used to subtract a
-      // 200 ms "smoother-delay approximation" here, but it only
-      // matches the live focal smoother during playback (when the
-      // smoother is mid-tween). During pause the smoother fully
-      // converges to the cursor's actual position, so `current.focal`
-      // is unlagged — comparing it against a 200-ms-lagged prev
-      // focal produced ~200 ms of cursor motion as the "translation",
-      // saturating the cap at every slider position. Using raw cursor
-      // at `t` for the fallback keeps current and prev consistent.
-      final s = cursorAtFiltered(
-        widget.cursorRecording,
-        t,
-        widget.cursorPostProcess,
-      );
-      focal = s == null
-          ? active.rect.center
-          : Offset(
-              s.x.toDouble().clamp(0, widget.videoSize.width),
-              s.y.toDouble().clamp(0, widget.videoSize.height),
-            );
+      final track = _trackFor(active);
+      if (track != null) {
+        // Spring-camera focal (matches the visible camera), evaluated
+        // deterministically so pause == play == export at this playhead.
+        focal = track.focalAt(t);
+      } else {
+        final s = cursorAtFiltered(
+            widget.cursorRecording, t, widget.cursorPostProcess);
+        focal = s == null
+            ? active.rect.center
+            : Offset(
+                s.x.toDouble().clamp(0, widget.videoSize.width),
+                s.y.toDouble().clamp(0, widget.videoSize.height));
+      }
     }
 
     final matrix = _zoomTransformer.getTransform(
@@ -507,13 +476,6 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
       focal: focal,
       scale: matrix.storage[0],
     );
-  }
-
-  ZoomRegion? _activeZoomAt(Duration t) {
-    for (final z in widget.zoomRegions) {
-      if (z.isActive(t)) return z;
-    }
-    return null;
   }
 
   void _captureScene() {

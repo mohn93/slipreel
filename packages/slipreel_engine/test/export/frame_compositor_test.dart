@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/export/frame_compositor.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
@@ -278,6 +279,101 @@ void main() {
         );
         expect(r0.length, 320 * 240 * 4);
         expect(r1.length, 320 * 240 * 4);
+      },
+    );
+
+    test(
+      'follow-cursor zoom: scene-blur translation at region entry is small '
+      '(spring-camera focal, not raw cursor snap)',
+      () {
+        // Discriminating setup: the zoom rect is centred at videoSize.center
+        // (160, 120) — exactly where _sceneSampleAt returns for timestamps
+        // outside the region ("no active zoom → videoSize.center"). This
+        // means the spring camera starts at rect.center = (160, 120) on the
+        // very first frame, which matches the "prev" sample (outside the
+        // region). Consequently the DeterministicFocalTrack path produces a
+        // near-zero entry translation.
+        //
+        // With the OLD raw-cursor code _sceneSampleAt(regionStart) would
+        // instead use cursorAtFiltered, which reads the cursor that jumped
+        // to (270, 120) — 110 px away — and the translation would hit
+        // sceneBlurMaxTranslation (60 px). The test asserts the spring-
+        // camera path stays well under 30 px, which the raw-cursor path
+        // cannot satisfy.
+        const videoSize = Size(320.0, 240.0);
+        // Rect centred at videoSize.center (160, 120) so that the spring's
+        // init snap lands at the same point as the "outside region" focal.
+        const zoomRect = Rect.fromLTWH(80, 60, 160, 120); // centre = (160,120)
+        const regionStart = Duration(milliseconds: 500);
+        const regionDuration = Duration(milliseconds: 800);
+
+        // Cursor sits at centre until just before the region, then jumps
+        // to (270, 120) — a 110 px step — right at the region boundary.
+        final recording = CursorRecording();
+        for (var ms = 0; ms <= 498; ms += 16) {
+          recording.addPosition(CursorPosition(
+            x: 160,
+            y: 120,
+            timestampMicros: ms * 1000,
+          ));
+        }
+        // The large jump arrives exactly at region start.
+        for (var ms = 500; ms <= 1400; ms += 16) {
+          recording.addPosition(CursorPosition(
+            x: 270,
+            y: 120,
+            timestampMicros: ms * 1000,
+          ));
+        }
+
+        final zoomRegion = ZoomRegion(
+          rect: zoomRect,
+          startTime: regionStart,
+          duration: regionDuration,
+          zoomLevel: 2.0,
+          followCursor: true,
+          enterDuration: const Duration(milliseconds: 300),
+          exitDuration: const Duration(milliseconds: 300),
+        );
+
+        final compositor = FrameCompositor(
+          projectState: EditorProjectState.defaults().copyWith(
+            motionBlur: 1.0,
+            screenMovementBlur: 1.0,
+            zoomRegions: [zoomRegion],
+            windowFrame: const WindowFrame(
+              name: 'None',
+              padding: EdgeInsets.zero,
+              cornerRadius: 0,
+              shadowBlur: 0,
+              shadowOffset: Offset.zero,
+              shadowColor: Color(0x00000000),
+              borderWidth: 0,
+            ),
+          ),
+          cursorRecording: recording,
+          metadata: _meta(),
+          videoSize: videoSize,
+          fps: 30,
+        );
+
+        // Signal at the first frame inside the zoom region.
+        // With DeterministicFocalTrack: spring initialises at rect.center
+        // = (160, 120), identical to the "prev" outside-region focal →
+        // delta ≈ 0 → translation is tiny (< 5 px).
+        // With raw cursor: current focal = (270, 120), prev focal =
+        // (160, 120) → delta = 110 px → clamped to sceneBlurMaxTranslation
+        // (60 px). The 30 px bound cleanly distinguishes the two paths.
+        final signal = compositor.sceneMotionSignalAt(regionStart);
+
+        expect(
+          signal.translation.distance,
+          lessThan(30.0),
+          reason:
+              'Scene-blur translation at zoom entry must be small when the '
+              'focal tracks the spring camera (DeterministicFocalTrack), not '
+              'the raw cursor which snaps 110 px in one frame.',
+        );
       },
     );
   });

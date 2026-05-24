@@ -37,6 +37,14 @@ import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 
+/// Debug hook: the active [PlaybackScreen] publishes its video
+/// controller here (in debug/profile builds) so VM-service extensions
+/// (`ext.slipreel.*`, registered in main.dart) can drive playback —
+/// play / pause / seek / read state — during agent-driven debugging
+/// without needing to find and tap the transport buttons. Null when no
+/// editor is open.
+VideoPlayerController? debugPlaybackController;
+
 class PlaybackScreen extends ConsumerStatefulWidget {
   final String videoPath;
 
@@ -640,6 +648,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Publish the controller for VM-service playback control (debug
+    // only). Set in build so a hot-reload re-establishes it without a
+    // full restart. See [debugPlaybackController].
+    assert(() {
+      debugPlaybackController = _controller;
+      return true;
+    }());
     // Single source of truth: every editor-state read in the body
     // pulls from this snapshot. Rebuilds when any notifier mutator
     // publishes — matches the previous setState-driven rebuild scope.

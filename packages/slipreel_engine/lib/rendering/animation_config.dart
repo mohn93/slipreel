@@ -190,4 +190,28 @@ class CursorAnimationConfig {
       window: Duration(microseconds: micros),
     );
   }
+
+  // Value equality over the four meaningful fields. [_customFlutterCurve]
+  // is deliberately excluded: it is fully derived from [_customCurve]
+  // (`curve.toFlutterCurve()`), so two configs with equal [_customCurve]
+  // always have equal flutter curves — including it would be redundant
+  // and `Curve` lacks a meaningful `==` anyway. [_customCurve]
+  // ([CubicBezierCurve]) and [_customSpring] ([MotionSpring]) both
+  // implement value `==`, so this comparison is fully value-based.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CursorAnimationConfig &&
+          other._preset == _preset &&
+          other._customCurve == _customCurve &&
+          other._customWindow == _customWindow &&
+          other._customSpring == _customSpring;
+
+  @override
+  int get hashCode => Object.hash(
+        _preset,
+        _customCurve,
+        _customWindow,
+        _customSpring,
+      );
 }
