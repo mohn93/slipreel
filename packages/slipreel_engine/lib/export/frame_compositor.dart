@@ -13,6 +13,7 @@ import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
+import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
 import 'package:slipreel_engine/rendering/frame_painter.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
@@ -77,6 +78,7 @@ class FrameCompositor {
   /// trajectory, or filtered blur velocity.
   final ScenePassBuilder _scenePassBuilder = ScenePassBuilder();
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
+  DeterministicFocalTrack? _focalTrack;
   ui.FragmentProgram? _sceneBlurProgram;
   // The wallpaper is rendered once per export and reused for every
   // composited frame, since the wallpaper inputs (category/index/blur/
@@ -330,6 +332,41 @@ class FrameCompositor {
 
   // --- internals --------------------------------------------------------
 
+  /// Returns a [DeterministicFocalTrack] for [region] if it is a
+  /// follow-cursor region, caching it to avoid replaying the spring
+  /// pipeline more than once per region identity. Returns null for
+  /// non-follow-cursor regions (the caller uses rect.center instead).
+  DeterministicFocalTrack? _trackFor(ZoomRegion region) {
+    if (!region.followCursor) return null;
+    final cached = _focalTrack;
+    if (cached != null &&
+        cached.matches(
+          region: region,
+          cursorRecording: cursorRecording,
+          cursorAnimationConfig: projectState.cursorAnimationConfig,
+          cursorPostProcess: projectState.cursorPostProcess,
+          videoSize: videoSize,
+          fps: fps,
+        )) {
+      return cached;
+    }
+    return _focalTrack = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: cursorRecording,
+      cursorAnimationConfig: projectState.cursorAnimationConfig,
+      cursorPostProcess: projectState.cursorPostProcess,
+      videoSize: videoSize,
+      fps: fps,
+    );
+  }
+
+  /// Exposes [_computeSceneMotionSignal] for unit tests so they can
+  /// assert the blur signal without driving the full GPU-backed [compose]
+  /// pipeline (which requires a real video frame decoder).
+  @visibleForTesting
+  SceneMotionBlurSignal sceneMotionSignalAt(Duration position) =>
+      _computeSceneMotionSignal(position: position);
+
   SceneMotionBlurSignal _computeSceneMotionSignal({
     required Duration position,
   }) {
@@ -399,17 +436,22 @@ class FrameCompositor {
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
-      final s = cursorAtFiltered(
-        cursorRecording,
-        t,
-        projectState.cursorPostProcess,
-      );
-      focal = s == null
-          ? active.rect.center
-          : Offset(
-              s.x.toDouble().clamp(0, videoSize.width),
-              s.y.toDouble().clamp(0, videoSize.height),
-            );
+      final track = _trackFor(active);
+      if (track != null) {
+        focal = track.focalAt(t);
+      } else {
+        final s = cursorAtFiltered(
+          cursorRecording,
+          t,
+          projectState.cursorPostProcess,
+        );
+        focal = s == null
+            ? active.rect.center
+            : Offset(
+                s.x.toDouble().clamp(0, videoSize.width),
+                s.y.toDouble().clamp(0, videoSize.height),
+              );
+      }
     }
 
     final matrix = _zoomTransformer.getTransform(
