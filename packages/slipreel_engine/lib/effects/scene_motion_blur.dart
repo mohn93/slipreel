@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -89,195 +88,77 @@ class SceneMotionBlurSignal {
       scaleDelta.abs() > 0.00005 || translation.distance > 0.01;
 }
 
-/// Stateful signal smoother for scene-level motion blur.
+/// Stateless scene-motion-blur signal compute.
 ///
 /// The smear shader is intentionally simple: it needs only a radial
-/// zoom delta and a uniform pan vector. This controller derives those
-/// two values from the same camera samples used by preview/export, then
-/// applies a short attack/longer release so the blur does not pop from
-/// huge to tiny between adjacent frames.
+/// zoom delta and a uniform pan vector. Those two values are a pure
+/// function of `(position, sampleAt, exposure, maxTranslation)` — no
+/// history, no EMA, no `smooth:` flag. Determinism is the contract:
+/// the editor preview (pause, play, scrub) and the export pipeline
+/// must all produce the same signal at the same playhead, by
+/// construction.
+///
+/// Earlier versions of this class held a history list and an EMA
+/// across `update()` calls so the blur didn't pop frame-to-frame.
+/// That made pause-vs-play diverge (pause skipped the EMA, play
+/// applied it), and made the signal path-dependent (scrub-to-T ≠
+/// played-up-to-T). The EMA was also masking real content variation —
+/// motion blur is supposed to be bigger on a fast frame than a slow
+/// one. The popping it was hiding came from playhead micro-jitter
+/// (now fixed at the source) and history-edge crossings (no longer
+/// possible without history). So the smoother is gone.
 class SceneMotionBlurController {
-  final List<SceneCameraSample> _history = <SceneCameraSample>[];
-  Duration? _lastCameraPosition;
-  Duration? _lastSignalPosition;
-  SceneMotionBlurSignal _signal = SceneMotionBlurSignal.zero;
+  SceneMotionBlurController._();
 
-  SceneMotionBlurSignal update({
-    required SceneCameraSample current,
+  /// Returns the scene-blur signal at [position], given a stateless
+  /// `(focal, scale)` lookup [sampleAt] callable at any timestamp.
+  /// Both the current sample and the prev sample (at `position −
+  /// exposure`) come from [sampleAt] — same engine on both sides
+  /// keeps the translation symmetric.
+  static SceneMotionBlurSignal compute({
+    required Duration position,
+    required SceneCameraSample Function(Duration) sampleAt,
     required Duration movementExposure,
     required Duration zoomExposure,
     required double maxTranslation,
-    required bool smooth,
-    SceneCameraSample Function(Duration)? approxSampleAt,
   }) {
-    final lastCameraPosition = _lastCameraPosition;
-    if (lastCameraPosition != null) {
-      final dt =
-          current.position.inMicroseconds - lastCameraPosition.inMicroseconds;
-      if (dt < 0 || dt > _resetGap.inMicroseconds) {
-        reset();
-      }
-    }
-    _lastCameraPosition = current.position;
-    _append(current);
-
-    final raw = SceneMotionBlurSignal(
-      scaleDelta: _rawScaleDelta(current, zoomExposure, approxSampleAt),
+    final current = sampleAt(position);
+    return SceneMotionBlurSignal(
+      scaleDelta: _rawScaleDelta(current, zoomExposure, sampleAt),
       translation: _rawTranslation(
-          current, movementExposure, maxTranslation, approxSampleAt),
+        current,
+        movementExposure,
+        maxTranslation,
+        sampleAt,
+      ),
     );
-
-    final lastSignalPosition = _lastSignalPosition;
-    final dtUs = lastSignalPosition == null
-        ? 0
-        : current.position.inMicroseconds - lastSignalPosition.inMicroseconds;
-    final canSmooth =
-        smooth &&
-        lastSignalPosition != null &&
-        dtUs > 0 &&
-        dtUs <= _resetGap.inMicroseconds;
-
-    if (!canSmooth) {
-      _signal = raw;
-      _lastSignalPosition = current.position;
-      return _signal;
-    }
-
-    final dtMs = dtUs / 1000.0;
-    final scaleTauMs = _tauMs(
-      currentMagnitude: _signal.scaleDelta.abs(),
-      nextMagnitude: raw.scaleDelta.abs(),
-      changingDirection:
-          _signal.scaleDelta.abs() > 0.0001 &&
-          raw.scaleDelta.abs() > 0.0001 &&
-          _signal.scaleDelta.sign != raw.scaleDelta.sign,
-    );
-    final translationTauMs = _tauMs(
-      currentMagnitude: _signal.translation.distance,
-      nextMagnitude: raw.translation.distance,
-      changingDirection:
-          _signal.translation.distance > 0.01 &&
-          raw.translation.distance > 0.01 &&
-          _dot(_signal.translation, raw.translation) < 0,
-    );
-
-    _signal = SceneMotionBlurSignal(
-      scaleDelta: ui.lerpDouble(
-        _signal.scaleDelta,
-        raw.scaleDelta,
-        _emaAlpha(dtMs, scaleTauMs),
-      )!,
-      translation: Offset.lerp(
-        _signal.translation,
-        raw.translation,
-        _emaAlpha(dtMs, translationTauMs),
-      )!,
-    );
-    _lastSignalPosition = current.position;
-    return _signal;
   }
 
-  void reset() {
-    _history.clear();
-    _lastCameraPosition = null;
-    _lastSignalPosition = null;
-    _signal = SceneMotionBlurSignal.zero;
-  }
-
-  double _rawScaleDelta(
+  static double _rawScaleDelta(
     SceneCameraSample current,
     Duration exposure,
-    SceneCameraSample Function(Duration)? approxSampleAt,
+    SceneCameraSample Function(Duration) sampleAt,
   ) {
     if (exposure <= Duration.zero || current.scale == 0) return 0;
-    final prevTime = current.position - exposure;
-    final prev = _sampleAt(prevTime) ?? approxSampleAt?.call(prevTime);
-    if (prev == null) return 0;
+    final prev = sampleAt(current.position - exposure);
     return 1.0 - prev.scale / current.scale;
   }
 
-  Offset _rawTranslation(
+  static Offset _rawTranslation(
     SceneCameraSample current,
     Duration exposure,
     double maxTranslation,
-    SceneCameraSample Function(Duration)? approxSampleAt,
+    SceneCameraSample Function(Duration) sampleAt,
   ) {
     if (exposure <= Duration.zero) return Offset.zero;
-    final prevTime = current.position - exposure;
-    final prev = _sampleAt(prevTime) ?? approxSampleAt?.call(prevTime);
-    if (prev == null) return Offset.zero;
-
-    final raw = (prev.focal - current.focal) * prev.scale * current.screenScale;
+    final prev = sampleAt(current.position - exposure);
+    final raw =
+        (prev.focal - current.focal) * prev.scale * current.screenScale;
     if (raw.distance > maxTranslation) {
       return raw * (maxTranslation / raw.distance);
     }
     return raw;
   }
-
-  void _append(SceneCameraSample sample) {
-    if (_history.isNotEmpty) {
-      final last = _history.last;
-      if (sample.position == last.position) {
-        _history[_history.length - 1] = sample;
-        return;
-      }
-      if (sample.position < last.position) {
-        _history.clear();
-      }
-    }
-
-    _history.add(sample);
-    final oldestAllowed = sample.position - const Duration(milliseconds: 700);
-    while (_history.length > 2 && _history.first.position < oldestAllowed) {
-      _history.removeAt(0);
-    }
-  }
-
-  SceneCameraSample? _sampleAt(Duration position) {
-    if (_history.isEmpty) return null;
-    if (position == _history.last.position) return _history.last;
-    if (position < _history.first.position ||
-        position > _history.last.position) {
-      return null;
-    }
-
-    for (var i = 1; i < _history.length; i++) {
-      final a = _history[i - 1];
-      final b = _history[i];
-      if (position == a.position) return a;
-      if (position == b.position) return b;
-      if (position > a.position && position < b.position) {
-        final span = b.position.inMicroseconds - a.position.inMicroseconds;
-        if (span <= 0) return b;
-        final t = (position.inMicroseconds - a.position.inMicroseconds) / span;
-        return SceneCameraSample(
-          position: position,
-          focal: Offset.lerp(a.focal, b.focal, t)!,
-          scale: ui.lerpDouble(a.scale, b.scale, t)!,
-          screenScale: ui.lerpDouble(a.screenScale, b.screenScale, t)!,
-        );
-      }
-    }
-    return null;
-  }
-
-  double _tauMs({
-    required double currentMagnitude,
-    required double nextMagnitude,
-    required bool changingDirection,
-  }) {
-    if (changingDirection) return 45.0;
-    return nextMagnitude > currentMagnitude ? 55.0 : 120.0;
-  }
-
-  double _emaAlpha(double dtMs, double tauMs) {
-    if (tauMs <= 0) return 1;
-    return 1 - math.exp(-dtMs / tauMs);
-  }
-
-  double _dot(Offset a, Offset b) => a.dx * b.dx + a.dy * b.dy;
-
-  static const Duration _resetGap = Duration(milliseconds: 100);
 }
 
 class SceneMotionBlurPainter extends CustomPainter {
