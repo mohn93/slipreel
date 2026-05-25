@@ -56,9 +56,9 @@ class MainFlutterWindow: NSWindow {
   private func applyMode(_ mode: String) {
     switch mode {
     case "bar":
-      configureFloating(width: 720, height: 68)
+      configureFloating(width: 720, height: 68, cornerRadius: 18)
     case "pill":
-      configureFloating(width: 168, height: 48)
+      configureFloating(width: 156, height: 48, cornerRadius: 24)
     case "panel":
       configurePanel(width: 1100, height: 720)
     default:
@@ -93,7 +93,7 @@ class MainFlutterWindow: NSWindow {
     }
   }
 
-  private func configureFloating(width: CGFloat, height: CGFloat) {
+  private func configureFloating(width: CGFloat, height: CGFloat, cornerRadius: CGFloat) {
     styleMask = [.borderless]
     isOpaque = false
     backgroundColor = .clear
@@ -106,7 +106,7 @@ class MainFlutterWindow: NSWindow {
     // isOpaque=false this clips the corners to the desktop, so the bar reads
     // as a floating rounded pill without relying on Flutter-layer alpha.
     contentView?.wantsLayer = true
-    contentView?.layer?.cornerRadius = 18
+    contentView?.layer?.cornerRadius = cornerRadius
     contentView?.layer?.masksToBounds = true
     positionTopCenter(width: width, height: height)
     makeKeyAndOrderFront(nil)

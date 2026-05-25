@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'elapsed_format.dart';
 
 /// The window collapses to this while recording: a pulsing red dot, the
-/// elapsed time, and a stop button. Pure presentation.
+/// elapsed time, and a stop button. Fills the window edge-to-edge — the native
+/// window supplies the capsule rounding + drop shadow, so there is no second
+/// border drawn here (which previously fought the window's rounded mask).
 class RecordingPill extends StatelessWidget {
   const RecordingPill({super.key, required this.elapsed, required this.onStop});
 
@@ -13,15 +15,11 @@ class RecordingPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF2C2C30),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        boxShadow: const [
-          BoxShadow(color: Colors.black45, blurRadius: 18, offset: Offset(0, 6)),
-        ],
-      ),
-      padding: const EdgeInsets.fromLTRB(14, 7, 8, 7),
+      width: double.infinity,
+      height: double.infinity,
+      alignment: Alignment.center,
+      color: const Color(0xFF2C2C30),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -43,16 +41,17 @@ class RecordingPill extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          IconButton(
+          GestureDetector(
             key: const Key('pill-stop'),
-            tooltip: 'Stop recording',
-            onPressed: onStop,
-            icon: const Icon(Icons.stop_rounded),
-            color: Colors.white,
-            style: IconButton.styleFrom(
-              backgroundColor: const Color(0xFFE5484D),
-              minimumSize: const Size(30, 30),
-              padding: EdgeInsets.zero,
+            onTap: onStop,
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE5484D),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.stop_rounded, color: Colors.white, size: 18),
             ),
           ),
         ],
