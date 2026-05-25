@@ -61,25 +61,36 @@ final class SourcePickerView: NSView {
   override func draw(_ dirtyRect: NSRect) {
     super.draw(dirtyRect)
     guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+
+    // One uniform dim over the whole screen so the picker reads as a modal
+    // layer. (A per-window scrim would stack alpha where windows overlap.)
+    ctx.setFillColor(Self.scrim.cgColor)
+    ctx.fill(bounds)
+
     if targets.isEmpty {
-      ctx.setFillColor(Self.scrim.cgColor)
-      ctx.fill(bounds)
       drawCenteredHint("No windows to record — open one and try again",
                        sub: "Press Esc to cancel")
       return
     }
-    for (i, t) in targets.enumerated() {
-      let hovered = (i == hoveredIndex)
-      let fill = hovered ? Self.blue : Self.scrim
-      ctx.setFillColor(fill.cgColor)
-      ctx.fill(t.localFrame)
-      if hovered {
-        ctx.setStrokeColor(Self.blueBorder.cgColor)
-        ctx.setLineWidth(3)
-        ctx.stroke(t.localFrame.insetBy(dx: 1.5, dy: 1.5))
-      }
-      drawCenteredControls(for: t, hovered: hovered)
+
+    // Highlight + Record for ONLY ONE target at a time — the window under the
+    // cursor — so overlapping windows don't pile their Record buttons on top
+    // of each other. A single target (e.g. a whole display) is active by
+    // default so the user doesn't have to hover to see Record.
+    let active = hoveredIndex ?? (targets.count == 1 ? 0 : nil)
+    guard let i = active, i >= 0, i < targets.count else {
+      drawCenteredHint("Hover a window, then click it to record",
+                       sub: "Press Esc to cancel")
+      return
     }
+
+    let t = targets[i]
+    ctx.setFillColor(Self.blue.cgColor)
+    ctx.fill(t.localFrame)
+    ctx.setStrokeColor(Self.blueBorder.cgColor)
+    ctx.setLineWidth(3)
+    ctx.stroke(t.localFrame.insetBy(dx: 1.5, dy: 1.5))
+    drawCenteredControls(for: t, hovered: true)
   }
 
   private func drawCenteredHint(_ text: String, sub: String) {
