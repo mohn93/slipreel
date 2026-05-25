@@ -235,4 +235,16 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
     if (raw == null) return null;
     return PickedSource.fromMap(raw);
   }
+
+  @override
+  Future<MicrophoneMenuResult> showMicrophoneMenu(MicrophoneConfig? current) async {
+    final raw = await _recordingChannel.invokeMapMethod<String, dynamic>(
+      ScreenRecorderMethods.showMicrophoneMenu,
+      current?.toJson(),
+    );
+    if (raw == null) {
+      return const MicrophoneMenuResult(cancelled: true);
+    }
+    return MicrophoneMenuResult.fromJson(raw);
+  }
 }
