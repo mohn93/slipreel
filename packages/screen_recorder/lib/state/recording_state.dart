@@ -193,6 +193,7 @@ class RecordingController extends StateNotifier<RecordingState> {
           result.height > 0 ? result.height : _videoEncoder.height;
       final meta = RecordingMetadata(
         isPureSource: true,
+        duration: duration,
         recordedAt: DateTime.now(),
         widthPx: actualWidth,
         heightPx: actualHeight,

@@ -16,12 +16,17 @@ class RecordingMetadata {
   final int heightPx;
   final int fps;
 
+  /// Total recording length. Null for legacy (schema v1) sidecars that
+  /// predate this field — callers probe + backfill on demand.
+  final Duration? duration;
+
   const RecordingMetadata({
     required this.isPureSource,
     required this.recordedAt,
     required this.widthPx,
     required this.heightPx,
     required this.fps,
+    this.duration,
   });
 
   Map<String, dynamic> toJson() => {
@@ -30,10 +35,12 @@ class RecordingMetadata {
         'widthPx': widthPx,
         'heightPx': heightPx,
         'fps': fps,
-        'schemaVersion': 1,
+        if (duration != null) 'durationMs': duration!.inMilliseconds,
+        'schemaVersion': 2,
       };
 
   factory RecordingMetadata.fromJson(Map<String, dynamic> json) {
+    final durMs = json['durationMs'] as int?;
     return RecordingMetadata(
       isPureSource: json['isPureSource'] as bool? ?? false,
       recordedAt:
@@ -41,6 +48,7 @@ class RecordingMetadata {
       widthPx: json['widthPx'] as int? ?? 0,
       heightPx: json['heightPx'] as int? ?? 0,
       fps: json['fps'] as int? ?? 30,
+      duration: durMs == null ? null : Duration(milliseconds: durMs),
     );
   }
 
