@@ -209,6 +209,7 @@ class _GearButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Subtler than the other icons, with a small dropdown chevron beside it.
     return SpringHoverButton(
       key: const Key('bar-gear'),
       onTap: onTap,
@@ -217,7 +218,14 @@ class _GearButton extends StatelessWidget {
         width: 46,
         height: _kBarButtonHeight,
         child: Center(
-          child: Icon(LucideIcons.settings, color: Color(0xFFD6D6DA), size: 22),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(LucideIcons.settings, color: Color(0xFF7E7E86), size: 22),
+              SizedBox(width: 1),
+              Icon(LucideIcons.chevronDown, color: Color(0xFF7E7E86), size: 13),
+            ],
+          ),
         ),
       ),
     );
