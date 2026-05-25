@@ -56,12 +56,24 @@ class RecordingHistoryEntry {
 /// Persists the recording history to SharedPreferences as a JSON list.
 /// Most-recent first; capped at [maxEntries] to keep prefs small.
 class RecordingHistoryStore {
-  RecordingHistoryStore({SharedPreferences? prefs}) : _prefs = prefs;
+  RecordingHistoryStore({SharedPreferences? prefs})
+      : _prefs = prefs,
+        _seed = null;
+
+  /// Test-only constructor: seeds the store with a fixed list and never
+  /// touches SharedPreferences. Mutations (append/removeByPath) update
+  /// the in-memory seed list only.
+  RecordingHistoryStore.inMemory(List<RecordingHistoryEntry> entries)
+      : _prefs = null,
+        _seed = List<RecordingHistoryEntry>.from(entries);
 
   static const _key = 'recording_history';
   static const int maxEntries = 100;
 
   SharedPreferences? _prefs;
+
+  /// Non-null only when constructed via [RecordingHistoryStore.inMemory].
+  List<RecordingHistoryEntry>? _seed;
 
   Future<SharedPreferences> _ensure() async {
     return _prefs ??= await SharedPreferences.getInstance();
@@ -70,6 +82,7 @@ class RecordingHistoryStore {
   /// Returns the persisted list (most recent first). Silently drops
   /// malformed entries so a single bad row can't lock the user out.
   Future<List<RecordingHistoryEntry>> load() async {
+    if (_seed != null) return List<RecordingHistoryEntry>.from(_seed!);
     final prefs = await _ensure();
     final raw = prefs.getString(_key);
     if (raw == null || raw.isEmpty) return [];
@@ -93,6 +106,12 @@ class RecordingHistoryStore {
   }
 
   Future<void> _save(List<RecordingHistoryEntry> entries) async {
+    if (_seed != null) {
+      _seed!
+        ..clear()
+        ..addAll(entries);
+      return;
+    }
     final prefs = await _ensure();
     final encoded = jsonEncode(entries.map((e) => e.toJson()).toList());
     await prefs.setString(_key, encoded);
@@ -123,6 +142,10 @@ class RecordingHistoryStore {
   }
 
   Future<void> clear() async {
+    if (_seed != null) {
+      _seed!.clear();
+      return;
+    }
     final prefs = await _ensure();
     await prefs.remove(_key);
   }

@@ -1,10 +1,11 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
+import 'dart:io';
 
 import 'package:slipreel_engine/models/recording_history.dart';
 import 'package:screen_recorder/ui/screens/motion_blur_playground_screen.dart';
 import 'package:screen_recorder/ui/screens/playback_screen.dart';
+import 'package:screen_recorder/ui/screens/recents/recording_card.dart';
+import 'package:screen_recorder/ui/screens/recents/recording_thumbnail_service.dart';
 
 /// Lists previously recorded videos so the user can re-open or remove
 /// them. Each row checks whether its file still exists; missing rows are
@@ -27,6 +28,11 @@ class _RecentsScreenState extends State<RecentsScreen> {
   final Map<String, bool> _exists = {};
   bool _loading = true;
 
+  final RecordingThumbnailService _thumbs = RecordingThumbnailService();
+  // Per-entry Future memos so the same Future object is reused across rebuilds,
+  // preventing FutureBuilder from restarting on every setState.
+  final Map<String, Future<RecordingThumbnail>> _futures = {};
+
   @override
   void initState() {
     super.initState();
@@ -36,6 +42,7 @@ class _RecentsScreenState extends State<RecentsScreen> {
 
   Future<void> _refresh() async {
     setState(() => _loading = true);
+    _futures.clear();
     final list = await _store.load();
     final exists = <String, bool>{};
     for (final e in list) {
@@ -57,6 +64,7 @@ class _RecentsScreenState extends State<RecentsScreen> {
     setState(() {
       _entries = next;
       _exists.remove(e.videoPath);
+      _futures.remove(e.videoPath);
     });
   }
 
@@ -103,20 +111,28 @@ class _RecentsScreenState extends State<RecentsScreen> {
     if (entries.isEmpty) {
       return const _EmptyState();
     }
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+    return GridView.builder(
+      padding: const EdgeInsets.all(20),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 280,
+        childAspectRatio: 16 / 13,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+      ),
       itemCount: entries.length,
-      separatorBuilder: (_, __) =>
-          const Divider(height: 1, color: Color(0xFF2B2B3D)),
       itemBuilder: (_, i) {
-        final e = entries[i];
-        final exists = _exists[e.videoPath] ?? false;
-        return _RecentTile(
-          entry: e,
+        final entry = entries[i];
+        final exists = _exists[entry.videoPath] ?? false;
+        return RecordingCard(
+          entry: entry,
           fileExists: exists,
-          onOpen: exists ? () => _open(e) : null,
-          onLongPress: exists ? () => _openPlayground(e) : null,
-          onRemove: () => _remove(e),
+          thumbnailFuture: exists
+              ? _futures.putIfAbsent(
+                  entry.videoPath, () => _thumbs.thumbFor(entry))
+              : null,
+          onOpen: () => _open(entry),
+          onOpenPlayground: () => _openPlayground(entry),
+          onRemove: () => _remove(entry),
         );
       },
     );
@@ -156,106 +172,3 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _RecentTile extends StatelessWidget {
-  const _RecentTile({
-    required this.entry,
-    required this.fileExists,
-    required this.onOpen,
-    required this.onLongPress,
-    required this.onRemove,
-  });
-
-  final RecordingHistoryEntry entry;
-  final bool fileExists;
-  final VoidCallback? onOpen;
-  final VoidCallback? onLongPress;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final filename = entry.videoPath.split(Platform.pathSeparator).last;
-    final dimensions =
-        '${entry.widthPx}×${entry.heightPx} @ ${entry.fps}fps';
-    final color = fileExists ? Colors.white : Colors.white38;
-    final subtitleColor = fileExists ? Colors.white60 : Colors.white24;
-
-    return InkWell(
-      onTap: onOpen,
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Row(
-          children: [
-            Icon(
-              fileExists
-                  ? Icons.play_circle_outline
-                  : Icons.broken_image_outlined,
-              color: fileExists
-                  ? const Color(0xFF6C63FF)
-                  : Colors.white24,
-              size: 30,
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    filename,
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      decoration: fileExists
-                          ? TextDecoration.none
-                          : TextDecoration.lineThrough,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    fileExists
-                        ? '${_formatDate(entry.recordedAt)} · $dimensions'
-                        : 'File not found · ${_formatDate(entry.recordedAt)}',
-                    style: TextStyle(color: subtitleColor, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            if (fileExists && onLongPress != null)
-              IconButton(
-                tooltip: 'Open in motion-blur playground',
-                icon: const Icon(Icons.tune, size: 18),
-                color: Colors.white54,
-                onPressed: onLongPress,
-              ),
-            if (!fileExists)
-              TextButton(
-                onPressed: onRemove,
-                child: const Text(
-                  'Remove',
-                  style: TextStyle(color: Color(0xFFE5484D)),
-                ),
-              )
-            else
-              IconButton(
-                tooltip: 'Remove from history',
-                icon: const Icon(Icons.close, size: 18),
-                color: Colors.white38,
-                onPressed: onRemove,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static String _formatDate(DateTime when) {
-    final local = when.toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    final date =
-        '${local.year}-${two(local.month)}-${two(local.day)}';
-    final time = '${two(local.hour)}:${two(local.minute)}';
-    return '$date  $time';
-  }
-}
