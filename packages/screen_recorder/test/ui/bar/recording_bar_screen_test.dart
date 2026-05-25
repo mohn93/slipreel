@@ -65,7 +65,7 @@ class _FakeRecordingController extends RecordingController {
   }
 
   @override
-  Future<void> startRecording() async => startCalls++;
+  Future<void> startRecording({MicrophoneConfig? microphone}) async => startCalls++;
 
   @override
   Future<void> stopRecording() async => stopCalls++;
