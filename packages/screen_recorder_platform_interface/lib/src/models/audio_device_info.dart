@@ -3,11 +3,13 @@ class AudioDeviceInfo {
   final String id;
   final String name;
   final AudioDeviceType type;
+  final bool isDefault;
 
   const AudioDeviceInfo({
     required this.id,
     required this.name,
     required this.type,
+    this.isDefault = false,
   });
 
   Map<String, dynamic> toJson() {
@@ -15,6 +17,7 @@ class AudioDeviceInfo {
       'id': id,
       'name': name,
       'type': type.name,
+      'isDefault': isDefault,
     };
   }
 
@@ -26,12 +29,13 @@ class AudioDeviceInfo {
         (e) => e.name == json['type'],
         orElse: () => AudioDeviceType.unknown,
       ),
+      isDefault: json['isDefault'] as bool? ?? false,
     );
   }
 
   @override
   String toString() {
-    return 'AudioDeviceInfo(id: $id, name: $name, type: $type)';
+    return 'AudioDeviceInfo(id: $id, name: $name, type: $type, isDefault: $isDefault)';
   }
 }
 
