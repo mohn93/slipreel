@@ -61,6 +61,13 @@ final class SourcePickerView: NSView {
   override func draw(_ dirtyRect: NSRect) {
     super.draw(dirtyRect)
     guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+    if targets.isEmpty {
+      ctx.setFillColor(Self.scrim.cgColor)
+      ctx.fill(bounds)
+      drawCenteredHint("No windows to record — open one and try again",
+                       sub: "Press Esc to cancel")
+      return
+    }
     for (i, t) in targets.enumerated() {
       let hovered = (i == hoveredIndex)
       let fill = hovered ? Self.blue : Self.scrim
@@ -73,6 +80,24 @@ final class SourcePickerView: NSView {
       }
       drawCenteredControls(for: t, hovered: hovered)
     }
+  }
+
+  private func drawCenteredHint(_ text: String, sub: String) {
+    let cx = bounds.midX, cy = bounds.midY
+    let attrs: [NSAttributedString.Key: Any] = [
+      .font: NSFont.systemFont(ofSize: 16, weight: .semibold),
+      .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+    ]
+    let s = NSAttributedString(string: text, attributes: attrs)
+    let sz = s.size()
+    s.draw(at: CGPoint(x: cx - sz.width / 2, y: cy - 14))
+    let subAttrs: [NSAttributedString.Key: Any] = [
+      .font: NSFont.systemFont(ofSize: 12, weight: .regular),
+      .foregroundColor: NSColor.white.withAlphaComponent(0.6),
+    ]
+    let ss = NSAttributedString(string: sub, attributes: subAttrs)
+    let ssz = ss.size()
+    ss.draw(at: CGPoint(x: cx - ssz.width / 2, y: cy + 10))
   }
 
   private func drawCenteredControls(for t: PickerTarget, hovered: Bool) {

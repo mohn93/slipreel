@@ -164,7 +164,7 @@ class MyApp extends StatelessWidget {
       ),
       debugShowCheckedModeBanner: false,
       // Lets agent-wires resolve routes so the agent can call
-      // `wait_for_route("RecordingScreen")` etc.
+      // `wait_for_route("RecordingBarScreen")` etc.
       navigatorObservers: [
         if (kDebugMode || kProfileMode)
           AgentWiresProbe.routeTracker.createObserver(),
