@@ -18,6 +18,10 @@ final class SourcePickerView: NSView {
   var onSelect: ((String) -> Void)?
   /// Called when the user clicks empty space (cancel).
   var onCancel: (() -> Void)?
+  /// Called (with self) whenever this view gains a hover, so the owning
+  /// manager can clear the hover on every OTHER screen overlay — guarantees a
+  /// single highlight even if a cross-screen `mouseExited` is missed.
+  var onHoverChanged: ((SourcePickerView) -> Void)?
 
   private var hoveredIndex: Int?
   private static let blue = NSColor(srgbRed: 0.16, green: 0.43, blue: 1.0, alpha: 0.34)
@@ -42,11 +46,21 @@ final class SourcePickerView: NSView {
     if idx != hoveredIndex {
       hoveredIndex = idx
       needsDisplay = true
+      if idx != nil { onHoverChanged?(self) }
     }
   }
 
   override func mouseExited(with event: NSEvent) {
     if hoveredIndex != nil { hoveredIndex = nil; needsDisplay = true }
+  }
+
+  /// Clears any hover highlight. Called by the manager when another screen
+  /// overlay takes the hover, so only one overlay is ever highlighted.
+  func clearHover() {
+    if hoveredIndex != nil {
+      hoveredIndex = nil
+      needsDisplay = true
+    }
   }
 
   override func mouseDown(with event: NSEvent) {
@@ -73,13 +87,12 @@ final class SourcePickerView: NSView {
       return
     }
 
-    // Highlight + Record for ONLY ONE target at a time — the window under the
-    // cursor — so overlapping windows don't pile their Record buttons on top
-    // of each other. A single target (e.g. a whole display) is active by
-    // default so the user doesn't have to hover to see Record.
-    let active = hoveredIndex ?? (targets.count == 1 ? 0 : nil)
-    guard let i = active, i >= 0, i < targets.count else {
-      drawCenteredHint("Hover a window, then click it to record",
+    // Highlight + Record for ONLY the target under the cursor. No always-on
+    // fallback: a single-target view (every display overlay has one target)
+    // would otherwise stay permanently highlighted, so every display would
+    // light up at once and never clear.
+    guard let i = hoveredIndex, i >= 0, i < targets.count else {
+      drawCenteredHint("Hover a window or screen, then click to record",
                        sub: "Press Esc to cancel")
       return
     }

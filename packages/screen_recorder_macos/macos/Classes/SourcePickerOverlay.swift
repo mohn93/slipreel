@@ -20,6 +20,7 @@ final class SourcePickerOverlay {
   private init() {}
 
   private var overlayWindows: [NSWindow] = []
+  private var pickerViews: [SourcePickerView] = []
   private var continuation: CheckedContinuation<PickedSourceResult?, Never>?
   private var escMonitor: Any?
   private var kind: PickerKind = .window
@@ -41,6 +42,7 @@ final class SourcePickerOverlay {
 
   private func present(targetsByScreen: [NSScreen: [PickerTarget]]) {
     overlayWindows.removeAll()
+    pickerViews.removeAll()
     for screen in NSScreen.screens {
       let win = NSWindow(
         contentRect: screen.frame,
@@ -58,9 +60,16 @@ final class SourcePickerOverlay {
       view.targets = targetsByScreen[screen] ?? []
       view.onSelect = { [weak self] id in self?.finish(id: id) }
       view.onCancel = { [weak self] in self?.cancel() }
+      // When this view gains a hover, clear every OTHER screen overlay so only
+      // one highlight is ever shown (handles missed cross-screen mouseExited).
+      view.onHoverChanged = { [weak self] active in
+        guard let self = self else { return }
+        for v in self.pickerViews where v !== active { v.clearHover() }
+      }
       win.contentView = view
       win.orderFrontRegardless()
       overlayWindows.append(win)
+      pickerViews.append(view)
     }
     NSApp.activate(ignoringOtherApps: true)
     overlayWindows.first?.makeKey()
@@ -137,6 +146,7 @@ final class SourcePickerOverlay {
   private func teardown() {
     overlayWindows.forEach { $0.orderOut(nil) }
     overlayWindows.removeAll()
+    pickerViews.removeAll()
     if let m = escMonitor { NSEvent.removeMonitor(m); escMonitor = nil }
   }
 }
