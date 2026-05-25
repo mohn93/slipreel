@@ -527,7 +527,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       return
     }
     let sourceId = args["sourceId"] as? String
-    let captureAudio = args["captureAudio"] as? Bool ?? false
+    let micArgs = args["microphone"] as? [String: Any]   // nil → don't record mic
+    let captureMic = micArgs != nil
     let captureCursor = args["captureCursor"] as? Bool ?? true
 
     // Optional region for area capture.
@@ -590,7 +591,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         }
         let writer = LiveRecordingWriter(
           outputPath: outputPath, width: captureWidth, height: captureHeight,
-          fps: fps, audioTracks: captureAudio ? [.microphone] : [])
+          fps: fps, audioTracks: captureMic ? [.microphone] : [])
         try writer.start()
 
         let encoder = VideoToolboxEncoder(width: captureWidth, height: captureHeight, fps: fps)
@@ -616,12 +617,16 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           sourceId: finalSourceId, fps: fps, isWindow: isWindow,
           region: regionSelection)
 
-        if captureAudio {
+        if let mic = micArgs {
+          let uid = mic["deviceUid"] as? String
+          let reduceNoise = mic["reduceNoise"] as? Bool ?? false
+          let disableAgc = mic["disableAgc"] as? Bool ?? false
           if audioCaptureManager == nil { audioCaptureManager = AudioCaptureManager() }
           audioCaptureManager?.onSampleBufferReceived = { [weak writer] sb in
             writer?.appendAudio(sb, role: .microphone)
           }
-          try audioCaptureManager?.startCapture(includeMicrophone: true, includeSystem: false)
+          try audioCaptureManager?.startMicrophoneCapture(
+            deviceUid: uid, reduceNoise: reduceNoise, disableAgc: disableAgc)
         }
 
         // liveStartTime must be set BEFORE cursor tracking begins so the
