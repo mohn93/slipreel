@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// One row in the recording history list. Persisted to SharedPreferences
@@ -63,6 +64,7 @@ class RecordingHistoryStore {
   /// Test-only constructor: seeds the store with a fixed list and never
   /// touches SharedPreferences. Mutations (append/removeByPath) update
   /// the in-memory seed list only.
+  @visibleForTesting
   RecordingHistoryStore.inMemory(List<RecordingHistoryEntry> entries)
       : _prefs = null,
         _seed = List<RecordingHistoryEntry>.from(entries);
@@ -73,7 +75,8 @@ class RecordingHistoryStore {
   SharedPreferences? _prefs;
 
   /// Non-null only when constructed via [RecordingHistoryStore.inMemory].
-  List<RecordingHistoryEntry>? _seed;
+  /// Mutated in place (never reassigned) so it can stay final.
+  final List<RecordingHistoryEntry>? _seed;
 
   Future<SharedPreferences> _ensure() async {
     return _prefs ??= await SharedPreferences.getInstance();
@@ -82,7 +85,7 @@ class RecordingHistoryStore {
   /// Returns the persisted list (most recent first). Silently drops
   /// malformed entries so a single bad row can't lock the user out.
   Future<List<RecordingHistoryEntry>> load() async {
-    if (_seed != null) return List<RecordingHistoryEntry>.from(_seed!);
+    if (_seed != null) return List<RecordingHistoryEntry>.from(_seed);
     final prefs = await _ensure();
     final raw = prefs.getString(_key);
     if (raw == null || raw.isEmpty) return [];
@@ -107,7 +110,7 @@ class RecordingHistoryStore {
 
   Future<void> _save(List<RecordingHistoryEntry> entries) async {
     if (_seed != null) {
-      _seed!
+      _seed
         ..clear()
         ..addAll(entries);
       return;
@@ -143,7 +146,7 @@ class RecordingHistoryStore {
 
   Future<void> clear() async {
     if (_seed != null) {
-      _seed!.clear();
+      _seed.clear();
       return;
     }
     final prefs = await _ensure();

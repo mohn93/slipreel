@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
 
 import 'package:slipreel_engine/models/recording_history.dart';
 import 'package:screen_recorder/ui/screens/motion_blur_playground_screen.dart';
@@ -42,7 +43,6 @@ class _RecentsScreenState extends State<RecentsScreen> {
 
   Future<void> _refresh() async {
     setState(() => _loading = true);
-    _futures.clear();
     final list = await _store.load();
     final exists = <String, bool>{};
     for (final e in list) {
@@ -54,6 +54,12 @@ class _RecentsScreenState extends State<RecentsScreen> {
       _exists
         ..clear()
         ..addAll(exists);
+      // Clear the per-entry Future memo AND the service's in-memory memo
+      // atomically with the entries swap. Clearing the service memo forces
+      // thumbFor to re-run its disk-staleness check, so an edit (which bumps
+      // editor.json) regenerates the thumbnail instead of serving a stale one.
+      _futures.clear();
+      _thumbs.clearMemoryCache();
       _loading = false;
     });
   }
