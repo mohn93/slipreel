@@ -105,15 +105,20 @@ class _Mode extends StatelessWidget {
     final color = disabled ? const Color(0xFF6E6E76) : const Color(0xFFE9E9EC);
     return SpringHoverButton(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(height: 3),
-            Text(label, style: TextStyle(fontSize: 11, color: color)),
-          ],
+      // Fixed width so all four mode tiles (and their hover pills) are equal,
+      // regardless of label length.
+      child: SizedBox(
+        width: 66,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(height: 3),
+              Text(label, style: TextStyle(fontSize: 11, color: color)),
+            ],
+          ),
         ),
       ),
     );
@@ -160,7 +165,7 @@ class _CircleButton extends StatelessWidget {
       child: SizedBox(
         width: 30,
         height: 30,
-        child: Icon(icon, size: 16, color: const Color(0xFFE9E9EC)),
+        child: Icon(icon, size: 18, color: const Color(0xFFE9E9EC)),
       ),
     );
   }
@@ -179,7 +184,7 @@ class _GearButton extends StatelessWidget {
       child: const SizedBox(
         width: 32,
         height: 32,
-        child: Icon(LucideIcons.settings, color: Color(0xFFD6D6DA), size: 20),
+        child: Icon(LucideIcons.settings, color: Color(0xFFD6D6DA), size: 18),
       ),
     );
   }
