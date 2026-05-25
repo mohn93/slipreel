@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
@@ -20,13 +21,13 @@ Widget _host(Widget child) =>
     MaterialApp(home: Scaffold(body: Center(child: SizedBox(width: 280, child: child))));
 
 void main() {
-  testWidgets('missing file → shows placeholder, tap disabled, remove works',
+  testWidgets('missing file → shows placeholder, hover reveals working remove',
       (tester) async {
     var removed = false;
     await tester.pumpWidget(_host(RecordingCard(
       entry: _entry(),
       fileExists: false,
-      thumbnailFuture: Future.error(RecordingMissingException('/tmp/recording_1.mp4')),
+      thumbnailFuture: null,
       onOpen: () {},
       onOpenPlayground: () {},
       onRemove: () => removed = true,
@@ -34,6 +35,15 @@ void main() {
     await tester.pump();
     expect(find.byIcon(Icons.broken_image_outlined), findsOneWidget);
     expect(find.textContaining('May 14, 2026'), findsOneWidget);
+
+    // Hover to reveal the ✕ remove button, then tap it.
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.byType(RecordingCard)));
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.close));
+    expect(removed, isTrue);
   });
 
   testWidgets('ready → renders the thumbnail image and caption', (tester) async {

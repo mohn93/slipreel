@@ -3,34 +3,26 @@ import 'package:slipreel_engine/models/recording_history.dart';
 import 'recording_thumbnail_service.dart';
 
 class RecordingCard extends StatefulWidget {
-  RecordingCard({
+  const RecordingCard({
     super.key,
     required this.entry,
     required this.fileExists,
-    required Future<RecordingThumbnail> thumbnailFuture,
+    required this.thumbnailFuture,
     required this.onOpen,
     required this.onOpenPlayground,
     required this.onRemove,
-  }) : thumbnailFuture = _makeSafe(thumbnailFuture);
+  });
 
   final RecordingHistoryEntry entry;
   final bool fileExists;
-  // Internally the future is always the safe (error-converted) variant so
-  // the zone never sees an "unhandled" error. Errors become null values.
-  final Future<RecordingThumbnail?> thumbnailFuture;
+
+  /// The styled-thumbnail future, or null when no thumbnail should be loaded
+  /// (e.g. the underlying file is missing). When null the card never
+  /// subscribes to a future, so there is nothing that can error.
+  final Future<RecordingThumbnail>? thumbnailFuture;
   final VoidCallback onOpen;
   final VoidCallback onOpenPlayground;
   final VoidCallback onRemove;
-
-  /// Converts any error into a null completion so that FutureBuilder renders
-  /// a placeholder instead of propagating the exception to the zone.
-  static Future<RecordingThumbnail?> _makeSafe(
-      Future<RecordingThumbnail> f) {
-    return f.then<RecordingThumbnail?>(
-      (v) => v,
-      onError: (Object _, StackTrace __) => null,
-    );
-  }
 
   @override
   State<RecordingCard> createState() => _RecordingCardState();
@@ -38,6 +30,8 @@ class RecordingCard extends StatefulWidget {
 
 class _RecordingCardState extends State<RecordingCard> {
   bool _hover = false;
+
+  bool get _hasFuture => widget.fileExists && widget.thumbnailFuture != null;
 
   @override
   Widget build(BuildContext context) {
@@ -85,28 +79,23 @@ class _RecordingCardState extends State<RecordingCard> {
             ),
           ),
           const SizedBox(height: 2),
-          _SubtitleLine(
-            entry: widget.entry,
-            future: widget.thumbnailFuture,
-            enabled: enabled,
-          ),
+          _subtitle(enabled),
         ],
       ),
     );
   }
 
   Widget _thumbArea() {
-    if (!widget.fileExists) return const _Placeholder();
-    return FutureBuilder<RecordingThumbnail?>(
+    if (!_hasFuture) return const _Placeholder();
+    return FutureBuilder<RecordingThumbnail>(
       future: widget.thumbnailFuture,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const _Shimmer();
+          return const _LoadingPlaceholder();
         }
-        final thumb = snap.data;
-        if (thumb == null) return const _Placeholder();
+        if (snap.hasError || !snap.hasData) return const _Placeholder();
         return Image.file(
-          thumb.pngFile,
+          snap.data!.pngFile,
           fit: BoxFit.contain,
           gaplessPlayback: true,
           errorBuilder: (_, __, ___) => const _Placeholder(),
@@ -114,37 +103,37 @@ class _RecordingCardState extends State<RecordingCard> {
       },
     );
   }
-}
 
-class _SubtitleLine extends StatelessWidget {
-  const _SubtitleLine({
-    required this.entry,
-    required this.future,
-    required this.enabled,
-  });
-
-  final RecordingHistoryEntry entry;
-  final Future<RecordingThumbnail?> future;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final dims = '${entry.widthPx}×${entry.heightPx}';
+  Widget _subtitle(bool enabled) {
+    final dims = '${widget.entry.widthPx}×${widget.entry.heightPx}';
     final color = enabled ? Colors.white60 : Colors.white24;
-    return FutureBuilder<RecordingThumbnail?>(
-      future: future,
+    if (!_hasFuture) {
+      return _SubtitleText(text: dims, color: color);
+    }
+    return FutureBuilder<RecordingThumbnail>(
+      future: widget.thumbnailFuture,
       builder: (context, snap) {
-        final dur = snap.data?.duration;
+        final dur = snap.hasData ? snap.data!.duration : null;
         final text = dur != null ? '${_fmtDuration(dur)} · $dims' : dims;
-        return Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: color, fontSize: 12),
-        );
+        return _SubtitleText(text: text, color: color);
       },
     );
   }
+}
+
+class _SubtitleText extends StatelessWidget {
+  const _SubtitleText({required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: color, fontSize: 12),
+      );
 }
 
 class _Placeholder extends StatelessWidget {
@@ -160,8 +149,8 @@ class _Placeholder extends StatelessWidget {
       );
 }
 
-class _Shimmer extends StatelessWidget {
-  const _Shimmer();
+class _LoadingPlaceholder extends StatelessWidget {
+  const _LoadingPlaceholder();
 
   @override
   Widget build(BuildContext context) =>
