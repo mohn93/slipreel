@@ -84,6 +84,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         onClose: () => SystemNavigator.pop(),
         onGearTap: _onGearTap,
         onDragStart: () => ref.read(windowChromeProvider).startWindowDrag(),
+        onMicTap: () {}, // wired in Task 9
       );
 
   Future<void> _onGearTap() async {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 import 'spring_hover_button.dart';
 
@@ -22,6 +23,8 @@ class RecordingBar extends StatelessWidget {
     required this.onClose,
     required this.onGearTap,
     required this.onDragStart,
+    this.microphone,
+    required this.onMicTap,
   });
 
   final void Function(BarSourceMode mode) onPickMode;
@@ -31,6 +34,12 @@ class RecordingBar extends StatelessWidget {
   /// Fired when the user begins dragging a non-button area — used to start a
   /// native window drag so the borderless bar can be repositioned.
   final VoidCallback onDragStart;
+
+  /// Current microphone selection (null = off). Renders the mic control state.
+  final MicrophoneConfig? microphone;
+
+  /// Fired when the mic control is tapped (opens the native mic menu).
+  final VoidCallback onMicTap;
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +82,7 @@ class RecordingBar extends StatelessWidget {
             const _Mode(icon: LucideIcons.smartphone, label: 'Device'),
             const _Divider(),
             const _AvPlaceholder(icon: LucideIcons.videoOff, label: 'No camera'),
-            const _AvPlaceholder(icon: LucideIcons.micOff, label: 'No microphone'),
+            _MicControl(microphone: microphone, onTap: onMicTap),
             const _AvPlaceholder(icon: LucideIcons.volumeOff, label: 'No system audio'),
             const _Divider(),
             _GearButton(onTap: onGearTap),
@@ -160,6 +169,54 @@ class _AvPlaceholder extends StatelessWidget {
                 Text(label,
                     style: const TextStyle(
                         fontSize: 10, color: Color(0xFF6E6E76))),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Live microphone control: icon + (truncated) device name + chevron. Greyed
+/// when off. Tapping opens the native mic menu via [onTap].
+class _MicControl extends StatelessWidget {
+  const _MicControl({required this.microphone, required this.onTap});
+
+  final MicrophoneConfig? microphone;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = microphone != null;
+    final label = on ? microphone!.deviceLabel : 'No microphone';
+    final iconColor = on ? const Color(0xFFE9E9EC) : const Color(0xFF6E6E76);
+    final textColor = on ? const Color(0xFFE9E9EC) : const Color(0xFF6E6E76);
+    return SpringHoverButton(
+      key: const Key('bar-mic'),
+      onTap: onTap,
+      child: SizedBox(
+        height: _kBarButtonHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(on ? LucideIcons.mic : LucideIcons.micOff,
+                    size: 22, color: iconColor),
+                const SizedBox(width: 6),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 120),
+                  child: Text(label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: TextStyle(fontSize: 10, color: textColor)),
+                ),
+                const SizedBox(width: 2),
+                const Icon(LucideIcons.chevronDown,
+                    size: 13, color: Color(0xFF7E7E86)),
               ],
             ),
           ),
