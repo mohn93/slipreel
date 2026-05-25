@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'spring_hover_button.dart';
 
@@ -46,30 +47,30 @@ class RecordingBar extends StatelessWidget {
           children: [
             _CircleButton(
               barKey: const Key('bar-close'),
-              icon: Icons.close,
+              icon: LucideIcons.x,
               onPressed: onClose,
             ),
             const _Divider(),
             _Mode(
-              icon: Icons.desktop_windows_outlined,
+              icon: LucideIcons.monitor,
               label: 'Display',
               onTap: () => onPickMode(BarSourceMode.display),
             ),
             _Mode(
-              icon: Icons.web_asset,
+              icon: LucideIcons.appWindowMac,
               label: 'Window',
               onTap: () => onPickMode(BarSourceMode.window),
             ),
             _Mode(
-              icon: Icons.crop_free,
+              icon: LucideIcons.scan,
               label: 'Area',
               onTap: () => onPickMode(BarSourceMode.area),
             ),
-            const _Mode(icon: Icons.phone_iphone, label: 'Device'),
+            const _Mode(icon: LucideIcons.smartphone, label: 'Device'),
             const _Divider(),
-            const _AvPlaceholder(icon: Icons.videocam_off_outlined, label: 'No camera'),
-            const _AvPlaceholder(icon: Icons.mic_off_outlined, label: 'No microphone'),
-            const _AvPlaceholder(icon: Icons.volume_off_outlined, label: 'No system audio'),
+            const _AvPlaceholder(icon: LucideIcons.videoOff, label: 'No camera'),
+            const _AvPlaceholder(icon: LucideIcons.micOff, label: 'No microphone'),
+            const _AvPlaceholder(icon: LucideIcons.volumeOff, label: 'No system audio'),
             const _Divider(),
             _GearButton(onTap: onGearTap),
           ],
@@ -178,7 +179,7 @@ class _GearButton extends StatelessWidget {
       child: const SizedBox(
         width: 32,
         height: 32,
-        child: Icon(Icons.settings_outlined, color: Color(0xFFD6D6DA), size: 20),
+        child: Icon(LucideIcons.settings, color: Color(0xFFD6D6DA), size: 20),
       ),
     );
   }

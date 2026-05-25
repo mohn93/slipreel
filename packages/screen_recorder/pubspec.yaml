@@ -82,6 +82,7 @@ dependencies:
   # so it is a no-op in release builds.
   agent_wires_probe:
     path: ../../../agent-wires/packages/agent_wires_probe
+  lucide_icons_flutter: ^3.1.14+2
 
 dev_dependencies:
   flutter_test:
