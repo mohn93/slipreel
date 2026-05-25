@@ -44,7 +44,7 @@ class RecordingBar extends StatelessWidget {
       width: double.infinity,
       height: double.infinity,
       color: const Color(0xFF2C2C30),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Center(
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -178,18 +178,26 @@ class _CircleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Square hover container (like the other buttons), with an inverted chip:
+    // light fill, dark glyph.
     return SpringHoverButton(
       key: barKey,
       onTap: onPressed,
-      borderRadius: 15,
-      child: Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.14),
-          shape: BoxShape.circle,
+      borderRadius: 11,
+      child: SizedBox(
+        width: 46,
+        height: _kBarButtonHeight,
+        child: Center(
+          child: Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE9E9EC),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 16, color: const Color(0xFF2C2C30)),
+          ),
         ),
-        child: Icon(icon, size: 16, color: const Color(0xFFE9E9EC)),
       ),
     );
   }
@@ -204,11 +212,13 @@ class _GearButton extends StatelessWidget {
     return SpringHoverButton(
       key: const Key('bar-gear'),
       onTap: onTap,
-      borderRadius: 16,
+      borderRadius: 11,
       child: const SizedBox(
-        width: 32,
-        height: 32,
-        child: Icon(LucideIcons.settings, color: Color(0xFFD6D6DA), size: 22),
+        width: 46,
+        height: _kBarButtonHeight,
+        child: Center(
+          child: Icon(LucideIcons.settings, color: Color(0xFFD6D6DA), size: 22),
+        ),
       ),
     );
   }
