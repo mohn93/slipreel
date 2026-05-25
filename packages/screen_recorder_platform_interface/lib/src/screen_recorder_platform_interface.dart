@@ -8,6 +8,7 @@ import 'models/cursor_position.dart';
 import 'models/frame_data.dart';
 import 'models/recording_result.dart';
 import 'models/recording_settings.dart';
+import 'models/picked_source.dart';
 import 'models/region_selection.dart';
 import 'models/screen_info.dart';
 import 'models/source_list.dart';
@@ -167,6 +168,13 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   /// region in display-pixel coordinates, or null if the user cancelled.
   Future<RegionSelection?> selectRegion() {
     throw UnsupportedError('selectRegion() is not supported on this platform.');
+  }
+
+  /// Shows a native click-to-select overlay over the desktop for the given
+  /// [kind] (window or screen). Returns the chosen source, or null if the
+  /// user cancelled (Esc / clicked empty space).
+  Future<PickedSource?> pickSource(RecordingSource kind) {
+    throw UnsupportedError('pickSource() is not supported on this platform.');
   }
 
   /// Start a live HW-encoded recording. Writes a complete MP4 directly to
