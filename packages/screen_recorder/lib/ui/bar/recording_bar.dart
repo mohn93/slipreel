@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'spring_hover_button.dart';
+
 /// The selectable source modes on the bar. `device` is shown but disabled.
 enum BarSourceMode { display, window, area, device }
 
@@ -43,7 +45,7 @@ class RecordingBar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             _CircleButton(
-              key: const Key('bar-close'),
+              barKey: const Key('bar-close'),
               icon: Icons.close,
               onPressed: onClose,
             ),
@@ -100,9 +102,8 @@ class _Mode extends StatelessWidget {
   Widget build(BuildContext context) {
     final disabled = onTap == null;
     final color = disabled ? const Color(0xFF6E6E76) : const Color(0xFFE9E9EC);
-    return InkWell(
+    return SpringHoverButton(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(9),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Column(
@@ -125,38 +126,39 @@ class _AvPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: const Color(0xFF6E6E76)),
-          const SizedBox(width: 6),
-          Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF6E6E76))),
-        ],
+    return SpringHoverButton(
+      onTap: null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: const Color(0xFF6E6E76)),
+            const SizedBox(width: 6),
+            Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF6E6E76))),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _CircleButton extends StatelessWidget {
-  const _CircleButton({super.key, required this.icon, required this.onPressed});
+  const _CircleButton({required this.barKey, required this.icon, required this.onPressed});
 
+  final Key barKey;
   final IconData icon;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return SpringHoverButton(
+      key: barKey,
       onTap: onPressed,
-      customBorder: const CircleBorder(),
-      child: Container(
+      borderRadius: 15,
+      child: SizedBox(
         width: 30,
         height: 30,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
-        ),
         child: Icon(icon, size: 16, color: const Color(0xFFE9E9EC)),
       ),
     );
@@ -169,10 +171,10 @@ class _GearButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return SpringHoverButton(
       key: const Key('bar-gear'),
       onTap: onTap,
-      customBorder: const CircleBorder(),
+      borderRadius: 16,
       child: const SizedBox(
         width: 32,
         height: 32,
