@@ -143,6 +143,45 @@ class AudioCaptureManager: NSObject {
     }
   }
 
+  /// Start capturing a specific microphone device with optional voice
+  /// processing. [deviceUid] nil → system default input. Falls back to the
+  /// default input if the UID no longer resolves.
+  func startMicrophoneCapture(deviceUid: String?, reduceNoise: Bool, disableAgc: Bool) throws {
+    guard !isCapturing else { throw AudioCaptureError.alreadyCapturing }
+    guard checkMicrophonePermission() else { throw AudioCaptureError.permissionDenied }
+
+    let engine = AVAudioEngine()
+    let input = engine.inputNode
+    do {
+      // Select the chosen device (falls back to default if the UID is gone).
+      if let uid = deviceUid, let devID = AudioDeviceCatalog.deviceID(forUID: uid) {
+        try input.auAudioUnit.setDeviceID(devID)
+      }
+      // Noise suppression + level normalization via voice processing.
+      if reduceNoise {
+        try input.setVoiceProcessingEnabled(true)
+        if #available(macOS 14.0, *) {
+          input.isVoiceProcessingAGCEnabled = !disableAgc
+        }
+      }
+      let format = input.outputFormat(forBus: 0)
+      input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, time in
+        self?.processAudioBuffer(buffer, time: time)
+      }
+      try engine.start()
+
+      // Commit state only after everything succeeded.
+      audioEngine = engine
+      inputNode = input
+      currentFormat = format
+      isCapturing = true
+    } catch {
+      input.removeTap(onBus: 0) // safe no-op if no tap was installed
+      engine.stop()
+      throw error
+    }
+  }
+
   /// Stop capturing audio
   func stopCapture() {
     guard isCapturing else { return }
