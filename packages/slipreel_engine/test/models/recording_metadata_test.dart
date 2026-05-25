@@ -1,10 +1,57 @@
-// packages/screen_recorder/test/models/recording_metadata_test.dart
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 
 void main() {
-  group('RecordingMetadata', () {
+  test('round-trips durationMs and writes schemaVersion 2', () {
+    final meta = RecordingMetadata(
+      isPureSource: true,
+      recordedAt: DateTime.utc(2026, 5, 14, 19, 33, 40),
+      widthPx: 2214,
+      heightPx: 1984,
+      fps: 60,
+      duration: const Duration(milliseconds: 41823),
+    );
+    final json = meta.toJson();
+    expect(json['durationMs'], 41823);
+    expect(json['schemaVersion'], 2);
+
+    final back = RecordingMetadata.fromJson(json);
+    expect(back.duration, const Duration(milliseconds: 41823));
+    expect(back.widthPx, 2214);
+    expect(back.isPureSource, isTrue);
+  });
+
+  test('v1 sidecar (no durationMs) parses with duration == null', () {
+    final v1 = {
+      'isPureSource': true,
+      'recordedAt': '2026-05-14T19:33:40.000Z',
+      'widthPx': 2214,
+      'heightPx': 1984,
+      'fps': 60,
+      'schemaVersion': 1,
+    };
+    final meta = RecordingMetadata.fromJson(v1);
+    expect(meta.duration, isNull);
+    expect(meta.fps, 60);
+  });
+
+  test('duration defaults to null when constructed without it', () {
+    final meta = RecordingMetadata(
+      isPureSource: false,
+      recordedAt: DateTime.utc(1970),
+      widthPx: 0,
+      heightPx: 0,
+      fps: 30,
+    );
+    expect(meta.duration, isNull);
+    expect(meta.toJson().containsKey('durationMs'), isFalse);
+  });
+
+  group('existing behavior preserved', () {
     test('round-trips through JSON', () {
       final m = RecordingMetadata(
         isPureSource: true,
