@@ -16,8 +16,10 @@ import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/state/motion_tuning_store.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
+import 'platform/window_chrome_channel.dart';
+import 'state/window_mode_controller.dart';
+import 'ui/bar/recording_bar_screen.dart';
 import 'ui/screens/playback_screen.dart';
-import 'ui/screens/recording_screen.dart';
 import 'ui/widgets/scene_blur_overlay.dart';
 import 'ui/widgets/zoom/playback_canvas.dart';
 
@@ -78,6 +80,7 @@ Future<void> main() async {
         ),
       ),
       motionTuningStoreProvider.overrideWithValue(tuningStore),
+      windowChromeProvider.overrideWithValue(MethodChannelWindowChrome()),
     ],
     child: const MyApp(),
   ));
@@ -161,12 +164,12 @@ class MyApp extends StatelessWidget {
       ),
       debugShowCheckedModeBanner: false,
       // Lets agent-wires resolve routes so the agent can call
-      // `wait_for_route("RecordingScreen")` etc.
+      // `wait_for_route("RecordingBarScreen")` etc.
       navigatorObservers: [
         if (kDebugMode || kProfileMode)
           AgentWiresProbe.routeTracker.createObserver(),
       ],
-      home: const RecordingScreen(),
+      home: const RecordingBarScreen(),
     );
   }
 }

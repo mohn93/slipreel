@@ -119,6 +119,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       captureThumbnail(call: call, result: result)
     case "selectRegion":
       selectRegion(call: call, result: result)
+    case "pickSource":
+      pickSource(call: call, result: result)
     case "getAudioDevices":
       getAudioDevices(result: result)
     case "startRecording":
@@ -1010,6 +1012,23 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           "y": s.y,
           "width": s.widthPx,
           "height": s.heightPx,
+        ])
+      } else {
+        result(nil)
+      }
+    }
+  }
+
+  private func pickSource(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let args = call.arguments as? [String: Any]
+    let kindStr = (args?["kind"] as? String) ?? "window"
+    let kind: PickerKind = (kindStr == "screen") ? .screen : .window
+    Task { @MainActor in
+      let picked = await SourcePickerOverlay.shared.pick(kind: kind)
+      if let p = picked {
+        result([
+          "kind": p.kind == .window ? "window" : "screen",
+          "id": p.id,
         ])
       } else {
         result(nil)

@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 @testable import screen_recorder_macos
 
 final class SourceCatalogTests: XCTestCase {
@@ -117,5 +118,28 @@ final class SourceCatalogTests: XCTestCase {
     XCTAssertEqual(dict["width"] as? Int, 1200)
     XCTAssertEqual(dict["height"] as? Int, 800)
     XCTAssertEqual(dict["isOnScreen"] as? Bool, true)
+  }
+}
+
+final class SourcePickerGeometryTests: XCTestCase {
+  func testLocalFrameSubtractsDisplayOrigin() {
+    let display = CGRect(x: 1920, y: 0, width: 2560, height: 1440)
+    let window = CGRect(x: 2020, y: 50, width: 400, height: 300)
+    let local = SourcePickerGeometry.localFrame(window: window, displayBounds: display)
+    XCTAssertEqual(local, CGRect(x: 100, y: 50, width: 400, height: 300))
+  }
+
+  func testTopmostReturnsFirstContainingFrameFrontToBack() {
+    let frames = [
+      CGRect(x: 0, y: 0, width: 100, height: 100),   // front
+      CGRect(x: 200, y: 0, width: 100, height: 100),
+      CGRect(x: 50, y: 50, width: 100, height: 100),  // back, overlaps front
+    ]
+    XCTAssertEqual(SourcePickerGeometry.topmost(at: CGPoint(x: 60, y: 60), frames: frames), 0)
+  }
+
+  func testTopmostReturnsNilOutsideAllFrames() {
+    let frames = [CGRect(x: 0, y: 0, width: 10, height: 10)]
+    XCTAssertNil(SourcePickerGeometry.topmost(at: CGPoint(x: 500, y: 500), frames: frames))
   }
 }
