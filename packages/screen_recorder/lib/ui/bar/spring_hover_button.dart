@@ -57,7 +57,7 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
   late final Ticker _ticker;
   Duration _last = Duration.zero;
 
-  final _reveal = _Spring(0, stiffness: 240, zeta: 1.0); // opacity 0..1
+  final _reveal = _Spring(0, stiffness: 380, zeta: 1.0); // opacity 0..1 (quick fade)
   final _scale = _Spring(0.6, stiffness: 340, zeta: 0.6); // pill scale
   final _press = _Spring(0, stiffness: 520, zeta: 1.0); // press intensity 0..1
   final _dx = _Spring(0, stiffness: 300, zeta: 0.58); // offset from centre
@@ -140,7 +140,9 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
     _dx.target = dir.dx * (s.width * 0.5 + 14);
     _dy.target = dir.dy * (s.height * 0.5 + 14);
     _reveal.target = 0;
-    _scale.target = 0.4;
+    // Barely shrink on the way out — the fade carries the vanish, so the pill
+    // never reads as a tiny scaled-down dot.
+    _scale.target = 0.82;
     _press.target = 0;
     _ensureTicking();
   }
@@ -153,7 +155,7 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
 
   void _release() {
     _press.target = 0;
-    _scale.target = _hovering ? 1 : 0.4;
+    _scale.target = _hovering ? 1 : 0.82;
     _ensureTicking();
   }
 
