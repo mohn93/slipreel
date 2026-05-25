@@ -155,14 +155,19 @@ class AudioCaptureManager: NSObject {
     do {
       // Select the chosen device (falls back to default if the UID is gone).
       if let uid = deviceUid, let devID = AudioDeviceCatalog.deviceID(forUID: uid) {
-        try input.auAudioUnit.setDeviceID(devID)
+        do {
+          try input.auAudioUnit.setDeviceID(devID)
+        } catch {
+          // Device went away between enumeration and capture — fall back to the
+          // engine's default input rather than failing the whole recording.
+        }
       }
       // Noise suppression + level normalization via voice processing.
-      if reduceNoise {
-        try input.setVoiceProcessingEnabled(true)
-        if #available(macOS 14.0, *) {
-          input.isVoiceProcessingAGCEnabled = !disableAgc
-        }
+      // Explicitly set both ways — voice processing is sticky on the input node,
+      // so a previous reduceNoise=true session would otherwise leak into this one.
+      try input.setVoiceProcessingEnabled(reduceNoise)
+      if reduceNoise, #available(macOS 14.0, *) {
+        input.isVoiceProcessingAGCEnabled = !disableAgc
       }
       let format = input.outputFormat(forBus: 0)
       input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, time in
@@ -209,9 +214,17 @@ class AudioCaptureManager: NSObject {
     }
 
     var sampleBuffer: CMSampleBuffer?
+    // Build the PTS in the host-time-clock domain (mach time → nanoseconds),
+    // matching the video frames' PTS so the muxed audio aligns with video.
+    // (Using time.sampleTime here would put audio on an unrelated timeline,
+    // misaligning or dropping it.)
+    var timebaseInfo = mach_timebase_info()
+    mach_timebase_info(&timebaseInfo)
+    let hostNanos = time.hostTime &* UInt64(timebaseInfo.numer) / UInt64(timebaseInfo.denom)
+    let pts = CMTime(value: CMTimeValue(hostNanos), timescale: 1_000_000_000)
     let timing = CMSampleTimingInfo(
       duration: CMTime(value: 1, timescale: CMTimeScale(buffer.format.sampleRate)),
-      presentationTimeStamp: CMTime(value: CMTimeValue(time.sampleTime), timescale: CMTimeScale(buffer.format.sampleRate)),
+      presentationTimeStamp: pts,
       decodeTimeStamp: .invalid
     )
 
