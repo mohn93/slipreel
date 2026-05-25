@@ -225,4 +225,14 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
     if (raw == null) return null;
     return RegionSelection.fromMap(raw);
   }
+
+  @override
+  Future<PickedSource?> pickSource(RecordingSource kind) async {
+    final raw = await _recordingChannel.invokeMapMethod<String, dynamic>(
+      ScreenRecorderMethods.pickSource,
+      {'kind': kind == RecordingSource.window ? 'window' : 'screen'},
+    );
+    if (raw == null) return null;
+    return PickedSource.fromMap(raw);
+  }
 }
