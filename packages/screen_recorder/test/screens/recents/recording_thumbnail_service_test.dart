@@ -88,8 +88,8 @@ void main() {
       probeDuration: (_) async => null,
       generate: (e, at, out) async {},
     );
-    expect(
-      () => svc.thumbFor(entryFor('${tmp.path}/gone.mp4')),
+    await expectLater(
+      svc.thumbFor(entryFor('${tmp.path}/gone.mp4')),
       throwsA(isA<RecordingMissingException>()),
     );
   });

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart' show Size;
+import 'package:flutter/widgets.dart' show Size;
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/export/frame_compositor.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
@@ -91,7 +91,7 @@ class RecordingThumbnailService {
           recordedAt: meta.recordedAt,
           widthPx: meta.widthPx != 0 ? meta.widthPx : entry.widthPx,
           heightPx: meta.heightPx != 0 ? meta.heightPx : entry.heightPx,
-          fps: meta.fps,
+          fps: meta.fps != 0 ? meta.fps : entry.fps,
           duration: duration,
         ).saveForVideo(entry.videoPath);
       }
@@ -215,10 +215,14 @@ class RecordingThumbnailService {
       ui.Paint()..filterQuality = ui.FilterQuality.medium,
     );
     final scaled = await recorder.endRecording().toImage(dw, dh);
-    final bd = await scaled.toByteData(format: ui.ImageByteFormat.png);
-    src.dispose();
-    scaled.dispose();
-    return bd!.buffer.asUint8List();
+    try {
+      final bd = await scaled.toByteData(format: ui.ImageByteFormat.png);
+      if (bd == null) throw StateError('PNG encode returned null for thumbnail');
+      return bd.buffer.asUint8List();
+    } finally {
+      src.dispose();
+      scaled.dispose();
+    }
   }
 
   static Future<ui.Image> _imageFromRgba(Uint8List rgba, int w, int h) {
