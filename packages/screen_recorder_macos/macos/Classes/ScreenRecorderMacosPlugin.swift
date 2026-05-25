@@ -488,7 +488,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         }
         let writer = LiveRecordingWriter(
           outputPath: outputPath, width: captureWidth, height: captureHeight,
-          fps: fps, captureAudio: captureAudio)
+          fps: fps, audioTracks: captureAudio ? [.microphone] : [])
         try writer.start()
 
         let encoder = VideoToolboxEncoder(width: captureWidth, height: captureHeight, fps: fps)
@@ -517,7 +517,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         if captureAudio {
           if audioCaptureManager == nil { audioCaptureManager = AudioCaptureManager() }
           audioCaptureManager?.onSampleBufferReceived = { [weak writer] sb in
-            writer?.appendAudio(sb)
+            writer?.appendAudio(sb, role: .microphone)
           }
           try audioCaptureManager?.startCapture(includeMicrophone: true, includeSystem: false)
         }

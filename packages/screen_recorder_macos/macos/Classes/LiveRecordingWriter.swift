@@ -4,6 +4,8 @@ import AVFoundation
 import CoreMedia
 import VideoToolbox
 
+enum AudioTrackRole: String { case microphone, system }
+
 /// Writes a complete H.264 + AAC MP4 file directly during capture.
 ///
 /// Owns an `AVAssetWriter` with two inputs (video and optional audio).
@@ -49,11 +51,11 @@ class LiveRecordingWriter {
   private let width: Int
   private let height: Int
   private let fps: Int
-  private let captureAudio: Bool
+  private let audioTracks: [AudioTrackRole]
 
   private var assetWriter: AVAssetWriter?
   private var videoInput: AVAssetWriterInput?
-  private var audioInput: AVAssetWriterInput?
+  private var audioInputs: [AudioTrackRole: AVAssetWriterInput] = [:]
 
   private var isStarted = false
   private var sessionStartedAt: CMTime?
@@ -70,12 +72,12 @@ class LiveRecordingWriter {
 
   // MARK: - Init
 
-  init(outputPath: String, width: Int, height: Int, fps: Int, captureAudio: Bool) {
+  init(outputPath: String, width: Int, height: Int, fps: Int, audioTracks: [AudioTrackRole]) {
     self.outputURL = URL(fileURLWithPath: outputPath)
     self.width = width
     self.height = height
     self.fps = fps
-    self.captureAudio = captureAudio
+    self.audioTracks = audioTracks
   }
 
   // MARK: - Lifecycle
@@ -97,22 +99,16 @@ class LiveRecordingWriter {
       throw WriterError.assetWriterCreateFailed(error)
     }
 
-    // Audio input — let the writer encode raw PCM to AAC for us.
+    // Audio inputs — one per requested track role.
     // This uses an explicit outputSettings dict so canAdd() succeeds immediately.
-    if captureAudio {
-      let audioSettings: [String: Any] = [
-        AVFormatIDKey: kAudioFormatMPEG4AAC,
-        AVSampleRateKey: 48000,
-        AVNumberOfChannelsKey: 1,
-        AVEncoderBitRateKey: 128_000,
-      ]
-      let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
-      audioInput.expectsMediaDataInRealTime = true
-      guard writer.canAdd(audioInput) else {
+    for role in audioTracks {
+      let input = AVAssetWriterInput(mediaType: .audio, outputSettings: Self.audioSettings(for: role))
+      input.expectsMediaDataInRealTime = true
+      guard writer.canAdd(input) else {
         throw WriterError.cannotAddAudioInput
       }
-      writer.add(audioInput)
-      self.audioInput = audioInput
+      writer.add(input)
+      audioInputs[role] = input
     }
 
     // Video input is intentionally NOT added here. See addVideoInputAndStartSession(_:pts:).
@@ -122,6 +118,16 @@ class LiveRecordingWriter {
   }
 
   // MARK: - Private helpers
+
+  private static func audioSettings(for role: AudioTrackRole) -> [String: Any] {
+    let channels = (role == .system) ? 2 : 1
+    return [
+      AVFormatIDKey: kAudioFormatMPEG4AAC,
+      AVSampleRateKey: 48000,
+      AVNumberOfChannelsKey: channels,
+      AVEncoderBitRateKey: 128_000,
+    ]
+  }
 
   /// Add the video input using the format description extracted from the first
   /// compressed sample, then start writing and open the AVAssetWriter session.
@@ -186,12 +192,12 @@ class LiveRecordingWriter {
     }
   }
 
-  /// Append a raw audio sample buffer. The writer encodes to AAC.
+  /// Append a raw audio sample buffer for the given track role. The writer encodes to AAC.
   /// Audio arriving before the video input is ready (writerActive == false) is
   /// silently dropped; the session start time is anchored to the first video
   /// sample's PTS so pre-session audio is outside the timeline anyway.
-  func appendAudio(_ sampleBuffer: CMSampleBuffer) {
-    guard isStarted, writerActive, let input = audioInput else { return }
+  func appendAudio(_ sampleBuffer: CMSampleBuffer, role: AudioTrackRole) {
+    guard isStarted, writerActive, let input = audioInputs[role] else { return }
     if input.isReadyForMoreMediaData {
       input.append(sampleBuffer)
     }
@@ -205,7 +211,7 @@ class LiveRecordingWriter {
     }
 
     videoInput?.markAsFinished()
-    audioInput?.markAsFinished()
+    audioInputs.values.forEach { $0.markAsFinished() }
 
     if !writerActive {
       // Nothing was ever written; just clean up.
