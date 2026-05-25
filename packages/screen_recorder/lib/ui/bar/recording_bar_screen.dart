@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 import '../../state/frame_settings_provider.dart';
+import '../../state/microphone_controller.dart';
 import '../../state/recording_state.dart';
 import '../../state/window_mode.dart';
 import '../../state/window_mode_controller.dart';
@@ -64,7 +65,8 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         final picked = await ScreenRecorderPlatform.instance.pickSource(kind);
         if (picked == null) return;
         controller.selectSource(kind: picked.kind, id: picked.id);
-        await controller.startRecording();
+        await controller.startRecording(
+            microphone: ref.read(microphoneControllerProvider));
       case BarSourceMode.area:
         final region = await ScreenRecorderPlatform.instance.selectRegion();
         if (region == null) return;
@@ -73,7 +75,8 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
           id: region.displayId,
           region: region,
         );
-        await controller.startRecording();
+        await controller.startRecording(
+            microphone: ref.read(microphoneControllerProvider));
       case BarSourceMode.device:
         break;
     }
@@ -84,8 +87,17 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         onClose: () => SystemNavigator.pop(),
         onGearTap: _onGearTap,
         onDragStart: () => ref.read(windowChromeProvider).startWindowDrag(),
-        onMicTap: () {}, // wired in Task 9
+        microphone: ref.watch(microphoneControllerProvider),
+        onMicTap: _onMicTap,
       );
+
+  Future<void> _onMicTap() async {
+    final current = ref.read(microphoneControllerProvider);
+    final result =
+        await ScreenRecorderPlatform.instance.showMicrophoneMenu(current);
+    if (!mounted || result.cancelled) return;
+    ref.read(microphoneControllerProvider.notifier).set(result.config);
+  }
 
   Future<void> _onGearTap() async {
     final action = await ref.read(windowChromeProvider).showGearMenu();

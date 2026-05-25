@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:screen_recorder/state/microphone_controller.dart';
 import 'package:screen_recorder/state/recording_state.dart';
 import 'package:screen_recorder/state/window_mode.dart';
 import 'package:screen_recorder/state/window_mode_controller.dart';
@@ -28,6 +29,15 @@ class _FakePlatform extends ScreenRecorderPlatform
 
   final PickedSource? picked;
   final RegionSelection? region;
+
+  MicrophoneConfig? menuReturns;
+  int showMicMenuCalls = 0;
+
+  @override
+  Future<MicrophoneMenuResult> showMicrophoneMenu(MicrophoneConfig? current) async {
+    showMicMenuCalls++;
+    return MicrophoneMenuResult(cancelled: false, config: menuReturns);
+  }
 
   final List<RecordingSource> pickSourceCalls = [];
   int selectRegionCalls = 0;
@@ -218,5 +228,32 @@ void main() {
     await tester.pump();
 
     expect(find.byType(RecordingPill), findsOneWidget);
+  });
+
+  testWidgets('tapping the mic control opens the menu and updates state',
+      (tester) async {
+    _wide(tester);
+    final fakePlatform = _FakePlatform()
+      ..menuReturns = const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'Mic One');
+    ScreenRecorderPlatform.instance = fakePlatform;
+
+    late WidgetRef capturedRef;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [windowChromeProvider.overrideWithValue(_FakeChrome())],
+      child: MaterialApp(
+        home: Consumer(builder: (c, ref, _) {
+          capturedRef = ref;
+          return const RecordingBarScreen();
+        }),
+      ),
+    ));
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('bar-mic')));
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.showMicMenuCalls, 1);
+    expect(capturedRef.read(microphoneControllerProvider)?.deviceLabel, 'Mic One');
+    expect(find.text('Mic One'), findsOneWidget);
   });
 }
