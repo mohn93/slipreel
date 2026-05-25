@@ -8,6 +8,7 @@ import 'models/cursor_position.dart';
 import 'models/frame_data.dart';
 import 'models/recording_result.dart';
 import 'models/recording_settings.dart';
+import 'models/microphone_config.dart';
 import 'models/picked_source.dart';
 import 'models/region_selection.dart';
 import 'models/screen_info.dart';
@@ -175,6 +176,12 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   /// user cancelled (Esc / clicked empty space).
   Future<PickedSource?> pickSource(RecordingSource kind) {
     throw UnsupportedError('pickSource() is not supported on this platform.');
+  }
+
+  /// Shows the native microphone dropdown (NSMenu) seeded with [current].
+  /// Returns the user's choice; see [MicrophoneMenuResult].
+  Future<MicrophoneMenuResult> showMicrophoneMenu(MicrophoneConfig? current) {
+    throw UnsupportedError('showMicrophoneMenu() is not supported on this platform.');
   }
 
   /// Start a live HW-encoded recording. Writes a complete MP4 directly to

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 void main() {
@@ -74,4 +75,13 @@ void main() {
       expect(r.config, isNull);
     });
   });
+
+  group('ScreenRecorderPlatform.showMicrophoneMenu default', () {
+    test('throws UnsupportedError by default', () {
+      final p = _BarePlatform();
+      expect(() => p.showMicrophoneMenu(null), throwsUnsupportedError);
+    });
+  });
 }
+
+class _BarePlatform extends ScreenRecorderPlatform with MockPlatformInterfaceMixin {}
