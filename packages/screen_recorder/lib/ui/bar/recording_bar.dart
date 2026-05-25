@@ -6,6 +6,10 @@ import 'spring_hover_button.dart';
 /// The selectable source modes on the bar. `device` is shown but disabled.
 enum BarSourceMode { display, window, area, device }
 
+/// Shared height for the labelled bar controls so their hover containers all
+/// line up (modes are icon-over-label; A/V are icon-beside-label).
+const double _kBarButtonHeight = 50;
+
 /// The compact floating control bar: close, source modes, disabled A/V
 /// placeholders, and a gear button that opens a NATIVE menu. There are
 /// intentionally no Flutter Tooltips/dropdowns here — Flutter overlays cannot
@@ -109,8 +113,8 @@ class _Mode extends StatelessWidget {
       // regardless of label length.
       child: SizedBox(
         width: 58,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+        height: _kBarButtonHeight,
+        child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -134,15 +138,22 @@ class _AvPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return SpringHoverButton(
       onTap: null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: const Color(0xFF6E6E76)),
-            const SizedBox(width: 6),
-            Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF6E6E76))),
-          ],
+      child: SizedBox(
+        height: _kBarButtonHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: const Color(0xFF6E6E76)),
+                const SizedBox(width: 6),
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 11, color: Color(0xFF6E6E76))),
+              ],
+            ),
+          ),
         ),
       ),
     );
