@@ -13,12 +13,15 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 
 class _FakeChrome implements WindowChrome {
   final List<WindowMode> calls = [];
+  final List<double> barWidths = [];
   @override
   Future<void> setMode(WindowMode mode) async => calls.add(mode);
   @override
   Future<String?> showGearMenu() async => null;
   @override
   Future<void> startWindowDrag() async {}
+  @override
+  Future<void> setBarWidth(double width) async => barWidths.add(width);
 }
 
 /// A fake platform that returns canned [pickSource]/[selectRegion] results and
@@ -255,5 +258,36 @@ void main() {
     expect(fakePlatform.showMicMenuCalls, 1);
     expect(capturedRef.read(microphoneControllerProvider)?.deviceLabel, 'Mic One');
     expect(find.text('Mic One'), findsOneWidget);
+  });
+
+  testWidgets('bar auto-sizes its window to the (variable) content width',
+      (tester) async {
+    _wide(tester);
+    ScreenRecorderPlatform.instance = _FakePlatform();
+    final chrome = _FakeChrome();
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [windowChromeProvider.overrideWithValue(chrome)],
+      child: const MaterialApp(home: RecordingBarScreen()),
+    ));
+    await tester.pumpAndSettle();
+
+    // Auto-size fired and asked native for a concrete, clamped width.
+    expect(chrome.barWidths, isNotEmpty);
+    final offWidth = chrome.barWidths.last;
+    expect(offWidth, greaterThan(320)); // native min-clamp floor
+
+    // Changing the mic label changes the measured content → a new width is
+    // requested (content-driven, not a constant).
+    final container = ProviderScope.containerOf(
+        tester.element(find.byType(RecordingBar)));
+    container
+        .read(microphoneControllerProvider.notifier)
+        .set(const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'X'));
+    await tester.pumpAndSettle();
+
+    // A one-char label is narrower than "No microphone", so the bar shrinks —
+    // proving the requested width tracks the content (and in the right direction).
+    expect(chrome.barWidths.last, lessThan(offWidth));
   });
 }

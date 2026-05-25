@@ -29,6 +29,14 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   // we own one instance for the screen's lifetime and pass it down.
   final FrameSettingsProvider _frameSettings = FrameSettingsProvider();
 
+  // Auto-size: the bar window hugs its content, which varies with the mic
+  // (and later system-audio) label. We measure the content Row's intrinsic
+  // width after each bar frame and ask the native window to match it.
+  final GlobalKey _barContentKey = GlobalKey();
+  double? _lastBarWidth;
+  WindowMode? _lastMode;
+  bool _barWidthCallbackPending = false;
+
   @override
   void initState() {
     super.initState();
@@ -89,7 +97,25 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         onDragStart: () => ref.read(windowChromeProvider).startWindowDrag(),
         microphone: ref.watch(microphoneControllerProvider),
         onMicTap: _onMicTap,
+        contentKey: _barContentKey,
       );
+
+  /// Measures the bar content's intrinsic (constraint-independent) width and
+  /// asks the native window to hug it. Using the intrinsic width — not the
+  /// rendered width — means resizing the window can't feed back into the
+  /// measurement, so there's no resize loop. Deduped so we only call native
+  /// when the width actually changes.
+  void _syncBarWidth() {
+    final box = _barContentKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final content = box.getMaxIntrinsicWidth(double.infinity);
+    if (!content.isFinite || content <= 0) return;
+    // +12 for the bar Container's symmetric horizontal padding (6 + 6).
+    final width = (content + 12).ceilToDouble();
+    if (_lastBarWidth != null && (_lastBarWidth! - width).abs() < 0.5) return;
+    _lastBarWidth = width;
+    ref.read(windowChromeProvider).setBarWidth(width);
+  }
 
   Future<void> _onMicTap() async {
     final current = ref.read(microphoneControllerProvider);
@@ -140,6 +166,25 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
       case WindowMode.bar:
       case WindowMode.panel:
         body = _buildBar();
+    }
+
+    // On (re)entering bar mode, force a re-measure: native applyMode("bar")
+    // resets the window to its default width, so the cached width is stale
+    // (otherwise the dedup would suppress the call and leave the bar unhugged).
+    if (mode != _lastMode) {
+      if (mode == WindowMode.bar) _lastBarWidth = null;
+      _lastMode = mode;
+    }
+
+    // Hug the bar window to its content after this frame lays out. Only in bar
+    // mode — the pill/panel own their own sizes (native also guards on mode).
+    // The pending flag coalesces the per-build callbacks into one per frame.
+    if (mode == WindowMode.bar && !_barWidthCallbackPending) {
+      _barWidthCallbackPending = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _barWidthCallbackPending = false;
+        if (mounted) _syncBarWidth();
+      });
     }
 
     return Scaffold(backgroundColor: Colors.transparent, body: body);

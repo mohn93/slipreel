@@ -25,6 +25,7 @@ class RecordingBar extends StatelessWidget {
     required this.onDragStart,
     this.microphone,
     required this.onMicTap,
+    this.contentKey,
   });
 
   final void Function(BarSourceMode mode) onPickMode;
@@ -41,6 +42,10 @@ class RecordingBar extends StatelessWidget {
   /// Fired when the mic control is tapped (opens the native mic menu).
   final VoidCallback onMicTap;
 
+  /// Attached to the inner content [Row] so the host can measure its intrinsic
+  /// width and resize the (variable-width) bar window to hug the content.
+  final Key? contentKey;
+
   @override
   Widget build(BuildContext context) {
     // Fills the whole (borderless) window edge-to-edge with the bar colour;
@@ -56,6 +61,7 @@ class RecordingBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       child: Center(
         child: Row(
+          key: contentKey,
           mainAxisSize: MainAxisSize.min,
           children: [
             _CircleButton(
@@ -206,6 +212,10 @@ class _MicControl extends StatelessWidget {
                 Icon(on ? LucideIcons.mic : LucideIcons.micOff,
                     size: 22, color: iconColor),
                 const SizedBox(width: 6),
+                // The 120pt cap bounds long device names. The bar's auto-size
+                // measures this Row's intrinsic width, and ConstrainedBox caps
+                // intrinsic width too — so the measurement matches what renders.
+                // If this cap changes, the bar window will still hug correctly.
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 120),
                   child: Text(label,
