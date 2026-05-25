@@ -193,8 +193,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   }
 
   private func getAudioDevices(result: @escaping FlutterResult) {
-    // TODO: Implement in Phase 2
-    result([])
+    result(AudioDeviceCatalog.inputDevices())
   }
 
   // MARK: - Recording Control
