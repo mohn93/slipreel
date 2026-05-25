@@ -16,4 +16,8 @@ enum WindowMode {
 /// unit-testable without a live method channel.
 abstract class WindowChrome {
   Future<void> setMode(WindowMode mode);
+
+  /// Pops up the native gear menu and resolves to the chosen action id
+  /// ('recents' | 'settings' | 'quit') or null if dismissed.
+  Future<String?> showGearMenu();
 }

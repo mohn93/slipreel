@@ -11,4 +11,9 @@ class MethodChannelWindowChrome implements WindowChrome {
   Future<void> setMode(WindowMode mode) async {
     await _channel.invokeMethod<void>('setMode', {'mode': mode.name});
   }
+
+  @override
+  Future<String?> showGearMenu() async {
+    return _channel.invokeMethod<String>('showGearMenu');
+  }
 }

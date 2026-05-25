@@ -1,6 +1,13 @@
 import Cocoa
 import FlutterMacOS
 
+private final class GearMenuTarget: NSObject {
+  var selected: String?
+  @objc func pick(_ sender: NSMenuItem) {
+    selected = sender.representedObject as? String
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   // Bar/pill are borderless; borderless windows refuse key/main unless we
   // opt in, which the bar needs to receive clicks (gear menu, mode buttons).
@@ -19,14 +26,20 @@ class MainFlutterWindow: NSWindow {
       name: "slipreel/window",
       binaryMessenger: flutterViewController.engine.binaryMessenger)
     channel.setMethodCallHandler { [weak self] call, result in
-      guard call.method == "setMode",
-            let args = call.arguments as? [String: Any],
-            let mode = args["mode"] as? String else {
+      switch call.method {
+      case "setMode":
+        guard let args = call.arguments as? [String: Any],
+              let mode = args["mode"] as? String else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        self?.applyMode(mode)
+        result(nil)
+      case "showGearMenu":
+        self?.showGearMenu(result: result)
+      default:
         result(FlutterMethodNotImplemented)
-        return
       }
-      self?.applyMode(mode)
-      result(nil)
     }
 
     RegisterGeneratedPlugins(registry: flutterViewController)
@@ -48,6 +61,25 @@ class MainFlutterWindow: NSWindow {
     default:
       break
     }
+  }
+
+  private func showGearMenu(result: @escaping FlutterResult) {
+    let target = GearMenuTarget()
+    let menu = NSMenu()
+    func add(_ title: String, _ id: String) {
+      let item = NSMenuItem(
+        title: title, action: #selector(GearMenuTarget.pick(_:)), keyEquivalent: "")
+      item.target = target
+      item.representedObject = id
+      menu.addItem(item)
+    }
+    add("Recent recordings", "recents")
+    add("Settings", "settings")
+    menu.addItem(.separator())
+    add("Quit Slipreel", "quit")
+    // view: nil → location is in screen coordinates; pop at the cursor.
+    menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    result(target.selected)
   }
 
   private func configureFloating(width: CGFloat, height: CGFloat) {

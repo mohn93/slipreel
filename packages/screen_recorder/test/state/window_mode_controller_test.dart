@@ -6,6 +6,8 @@ class _FakeChrome implements WindowChrome {
   final List<WindowMode> calls = [];
   @override
   Future<void> setMode(WindowMode mode) async => calls.add(mode);
+  @override
+  Future<String?> showGearMenu() async => null;
 }
 
 void main() {

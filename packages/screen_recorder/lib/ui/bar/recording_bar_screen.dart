@@ -82,10 +82,21 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   Widget _buildBar() => RecordingBar(
         onPickMode: _pickAndRecord,
         onClose: () => SystemNavigator.pop(),
-        onOpenRecents: () => _openPanel(const RecentsScreen()),
-        onOpenSettings: () =>
-            _openPanel(SettingsScreen(settingsProvider: _frameSettings)),
+        onGearTap: _onGearTap,
       );
+
+  Future<void> _onGearTap() async {
+    final action = await ref.read(windowChromeProvider).showGearMenu();
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'recents':
+        await _openPanel(const RecentsScreen());
+      case 'settings':
+        await _openPanel(SettingsScreen(settingsProvider: _frameSettings));
+      case 'quit':
+        await SystemNavigator.pop();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

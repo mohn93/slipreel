@@ -30,4 +30,15 @@ void main() {
     expect(log.single.method, 'setMode');
     expect(log.single.arguments, {'mode': 'panel'});
   });
+
+  test('showGearMenu invokes showGearMenu and returns the action', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'showGearMenu') return 'settings';
+      return null;
+    });
+    final chrome = MethodChannelWindowChrome();
+    final action = await chrome.showGearMenu();
+    expect(action, 'settings');
+  });
 }

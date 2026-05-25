@@ -13,14 +13,12 @@ void main() {
   RecordingBar bar({
     void Function(BarSourceMode)? onPickMode,
     VoidCallback? onClose,
-    VoidCallback? onOpenRecents,
-    VoidCallback? onOpenSettings,
+    VoidCallback? onGearTap,
   }) =>
       RecordingBar(
         onPickMode: onPickMode ?? (_) {},
         onClose: onClose ?? () {},
-        onOpenRecents: onOpenRecents ?? () {},
-        onOpenSettings: onOpenSettings ?? () {},
+        onGearTap: onGearTap ?? () {},
       );
 
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
@@ -67,22 +65,11 @@ void main() {
     expect(closed, isTrue);
   });
 
-  testWidgets('gear menu opens Recents and Settings', (tester) async {
+  testWidgets('tapping the gear fires onGearTap', (tester) async {
     _wide(tester);
-    var recents = false;
-    var settings = false;
-    await tester.pumpWidget(wrap(bar(
-      onOpenRecents: () => recents = true,
-      onOpenSettings: () => settings = true,
-    )));
+    var gearTapped = false;
+    await tester.pumpWidget(wrap(bar(onGearTap: () => gearTapped = true)));
     await tester.tap(find.byKey(const Key('bar-gear')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Recent recordings'));
-    expect(recents, isTrue);
-
-    await tester.tap(find.byKey(const Key('bar-gear')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Settings'));
-    expect(settings, isTrue);
+    expect(gearTapped, isTrue);
   });
 }
