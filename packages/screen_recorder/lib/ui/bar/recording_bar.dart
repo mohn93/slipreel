@@ -8,7 +8,7 @@ enum BarSourceMode { display, window, area, device }
 
 /// Shared height for the labelled bar controls so their hover containers all
 /// line up (modes are icon-over-label; A/V are icon-beside-label).
-const double _kBarButtonHeight = 50;
+const double _kBarButtonHeight = 46;
 
 /// The compact floating control bar: close, source modes, disabled A/V
 /// placeholders, and a gear button that opens a NATIVE menu. There are
@@ -106,7 +106,12 @@ class _Mode extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final disabled = onTap == null;
-    final color = disabled ? const Color(0xFF6E6E76) : const Color(0xFFE9E9EC);
+    final iconColor =
+        disabled ? const Color(0xFF6E6E76) : const Color(0xFFE9E9EC);
+    // Labels read subtler than the icons.
+    final labelColor = disabled
+        ? const Color(0xFF6E6E76)
+        : Colors.white.withValues(alpha: 0.55);
     return SpringHoverButton(
       onTap: onTap,
       // Fixed width so all four mode tiles (and their hover pills) are equal,
@@ -118,9 +123,13 @@ class _Mode extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 18, color: color),
-              const SizedBox(height: 3),
-              Text(label, style: TextStyle(fontSize: 11, color: color)),
+              Icon(icon, size: 22, color: iconColor),
+              const SizedBox(height: 2),
+              Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.fade,
+                  softWrap: false,
+                  style: TextStyle(fontSize: 10, color: labelColor)),
             ],
           ),
         ),
@@ -146,11 +155,11 @@ class _AvPlaceholder extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 18, color: const Color(0xFF6E6E76)),
+                Icon(icon, size: 22, color: const Color(0xFF6E6E76)),
                 const SizedBox(width: 6),
                 Text(label,
                     style: const TextStyle(
-                        fontSize: 11, color: Color(0xFF6E6E76))),
+                        fontSize: 10, color: Color(0xFF6E6E76))),
               ],
             ),
           ),
@@ -173,10 +182,14 @@ class _CircleButton extends StatelessWidget {
       key: barKey,
       onTap: onPressed,
       borderRadius: 15,
-      child: SizedBox(
+      child: Container(
         width: 30,
         height: 30,
-        child: Icon(icon, size: 18, color: const Color(0xFFE9E9EC)),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.14),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, size: 16, color: const Color(0xFFE9E9EC)),
       ),
     );
   }
@@ -195,7 +208,7 @@ class _GearButton extends StatelessWidget {
       child: const SizedBox(
         width: 32,
         height: 32,
-        child: Icon(LucideIcons.settings, color: Color(0xFFD6D6DA), size: 18),
+        child: Icon(LucideIcons.settings, color: Color(0xFFD6D6DA), size: 22),
       ),
     );
   }
