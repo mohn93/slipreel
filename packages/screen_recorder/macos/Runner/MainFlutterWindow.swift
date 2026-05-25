@@ -40,7 +40,7 @@ class MainFlutterWindow: NSWindow {
   private func applyMode(_ mode: String) {
     switch mode {
     case "bar":
-      configureFloating(width: 860, height: 76)
+      configureFloating(width: 760, height: 76)
     case "pill":
       configureFloating(width: 168, height: 48)
     case "panel":
@@ -59,6 +59,12 @@ class MainFlutterWindow: NSWindow {
     isMovableByWindowBackground = true
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     setContentSize(NSSize(width: width, height: height))
+    // Round the bar by masking the content-view layer. Combined with
+    // isOpaque=false this clips the corners to the desktop, so the bar reads
+    // as a floating rounded pill without relying on Flutter-layer alpha.
+    contentView?.wantsLayer = true
+    contentView?.layer?.cornerRadius = 18
+    contentView?.layer?.masksToBounds = true
     positionTopCenter(width: width, height: height)
     makeKeyAndOrderFront(nil)
   }
@@ -71,6 +77,9 @@ class MainFlutterWindow: NSWindow {
     level = .normal
     isMovableByWindowBackground = false
     collectionBehavior = [.fullScreenPrimary]
+    // Square, unmasked corners for the normal titled panel.
+    contentView?.layer?.cornerRadius = 0
+    contentView?.layer?.masksToBounds = false
     setContentSize(NSSize(width: width, height: height))
     center()
     makeKeyAndOrderFront(nil)

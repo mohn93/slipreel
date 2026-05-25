@@ -22,17 +22,16 @@ class RecordingBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF2C2C30),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          boxShadow: const [
-            BoxShadow(color: Colors.black54, blurRadius: 24, offset: Offset(0, 10)),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    // Fills the whole (borderless) window edge-to-edge with the bar colour;
+    // the native window rounds its corners via a layer mask and supplies the
+    // drop shadow. This avoids depending on Flutter-layer transparency, which
+    // renders an opaque black box on a borderless macOS window.
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: const Color(0xFF2C2C30),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Center(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
