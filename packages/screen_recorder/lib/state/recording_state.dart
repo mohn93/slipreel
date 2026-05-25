@@ -124,7 +124,6 @@ class RecordingController extends StateNotifier<RecordingState> {
         source: state.selectedSourceKind!,
         sourceId: state.selectedSourceId,
         frameRate: _defaultFps,
-        captureAudio: true,
         captureCursor: true,
       );
 

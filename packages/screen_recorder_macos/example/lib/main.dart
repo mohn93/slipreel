@@ -96,7 +96,6 @@ class _MyAppState extends State<MyApp> {
         const RecordingSettings(
           source: RecordingSource.screen,
           frameRate: 30,
-          captureAudio: true,
         ),
       );
 

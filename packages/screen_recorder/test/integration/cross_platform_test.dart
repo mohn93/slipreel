@@ -116,7 +116,6 @@ void main() {
         source: RecordingSource.screen,
         sourceId: screens.first.id,
         frameRate: 30,
-        captureAudio: false,
       );
 
       // Start should not throw
@@ -147,7 +146,6 @@ void main() {
         source: RecordingSource.screen,
         sourceId: screens.first.id,
         frameRate: 30,
-        captureAudio: false,
       );
 
       await platform.startRecording(settings);
@@ -184,7 +182,6 @@ void main() {
         source: RecordingSource.window,
         sourceId: 'invalid-source-id-12345',
         frameRate: 30,
-        captureAudio: false,
       );
 
       // Should throw or return error, not crash
