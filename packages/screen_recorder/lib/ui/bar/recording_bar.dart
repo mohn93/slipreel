@@ -8,7 +8,7 @@ enum BarSourceMode { display, window, area, device }
 
 /// Shared height for the labelled bar controls so their hover containers all
 /// line up (modes are icon-over-label; A/V are icon-beside-label).
-const double _kBarButtonHeight = 46;
+const double _kBarButtonHeight = 56;
 
 /// The compact floating control bar: close, source modes, disabled A/V
 /// placeholders, and a gear button that opens a NATIVE menu. There are
@@ -44,7 +44,7 @@ class RecordingBar extends StatelessWidget {
       width: double.infinity,
       height: double.infinity,
       color: const Color(0xFF2C2C30),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       child: Center(
         child: Row(
           mainAxisSize: MainAxisSize.min,

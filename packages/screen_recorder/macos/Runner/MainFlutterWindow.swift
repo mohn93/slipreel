@@ -56,7 +56,7 @@ class MainFlutterWindow: NSWindow {
   private func applyMode(_ mode: String) {
     switch mode {
     case "bar":
-      configureFloating(width: 786, height: 68)
+      configureFloating(width: 720, height: 68)
     case "pill":
       configureFloating(width: 168, height: 48)
     case "panel":
