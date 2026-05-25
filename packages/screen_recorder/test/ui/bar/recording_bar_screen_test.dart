@@ -16,6 +16,8 @@ class _FakeChrome implements WindowChrome {
   Future<void> setMode(WindowMode mode) async => calls.add(mode);
   @override
   Future<String?> showGearMenu() async => null;
+  @override
+  Future<void> startWindowDrag() async {}
 }
 
 /// A fake platform that returns canned [pickSource]/[selectRegion] results and

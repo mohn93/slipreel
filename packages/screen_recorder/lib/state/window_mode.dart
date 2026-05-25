@@ -20,4 +20,8 @@ abstract class WindowChrome {
   /// Pops up the native gear menu and resolves to the chosen action id
   /// ('recents' | 'settings' | 'quit') or null if dismissed.
   Future<String?> showGearMenu();
+
+  /// Begins a native window drag from the current mouse event, so the user can
+  /// reposition the borderless bar by dragging any non-button area.
+  Future<void> startWindowDrag();
 }

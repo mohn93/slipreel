@@ -14,11 +14,13 @@ void main() {
     void Function(BarSourceMode)? onPickMode,
     VoidCallback? onClose,
     VoidCallback? onGearTap,
+    VoidCallback? onDragStart,
   }) =>
       RecordingBar(
         onPickMode: onPickMode ?? (_) {},
         onClose: onClose ?? () {},
         onGearTap: onGearTap ?? () {},
+        onDragStart: onDragStart ?? () {},
       );
 
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
@@ -71,5 +73,14 @@ void main() {
     await tester.pumpWidget(wrap(bar(onGearTap: () => gearTapped = true)));
     await tester.tap(find.byKey(const Key('bar-gear')));
     expect(gearTapped, isTrue);
+  });
+
+  testWidgets('dragging the bar fires onDragStart (window move)',
+      (tester) async {
+    _wide(tester);
+    var dragged = false;
+    await tester.pumpWidget(wrap(bar(onDragStart: () => dragged = true)));
+    await tester.drag(find.byType(RecordingBar), const Offset(60, 0));
+    expect(dragged, isTrue);
   });
 }

@@ -14,18 +14,26 @@ class RecordingBar extends StatelessWidget {
     required this.onPickMode,
     required this.onClose,
     required this.onGearTap,
+    required this.onDragStart,
   });
 
   final void Function(BarSourceMode mode) onPickMode;
   final VoidCallback onClose;
   final VoidCallback onGearTap;
 
+  /// Fired when the user begins dragging a non-button area — used to start a
+  /// native window drag so the borderless bar can be repositioned.
+  final VoidCallback onDragStart;
+
   @override
   Widget build(BuildContext context) {
     // Fills the whole (borderless) window edge-to-edge with the bar colour;
     // the native window rounds its corners via a layer mask and supplies the
-    // drop shadow.
-    return Container(
+    // drop shadow. The pan gesture lets the user drag the borderless window
+    // from any non-button area (buttons still receive their taps).
+    return GestureDetector(
+      onPanStart: (_) => onDragStart(),
+      child: Container(
       width: double.infinity,
       height: double.infinity,
       color: const Color(0xFF2C2C30),
@@ -64,6 +72,7 @@ class RecordingBar extends StatelessWidget {
             _GearButton(onTap: onGearTap),
           ],
         ),
+      ),
       ),
     );
   }

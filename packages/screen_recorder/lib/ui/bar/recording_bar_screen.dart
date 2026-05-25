@@ -83,6 +83,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         onPickMode: _pickAndRecord,
         onClose: () => SystemNavigator.pop(),
         onGearTap: _onGearTap,
+        onDragStart: () => ref.read(windowChromeProvider).startWindowDrag(),
       );
 
   Future<void> _onGearTap() async {

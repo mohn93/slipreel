@@ -37,6 +37,9 @@ class MainFlutterWindow: NSWindow {
         result(nil)
       case "showGearMenu":
         self?.showGearMenu(result: result)
+      case "startWindowDrag":
+        self?.startWindowDrag()
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -53,7 +56,7 @@ class MainFlutterWindow: NSWindow {
   private func applyMode(_ mode: String) {
     switch mode {
     case "bar":
-      configureFloating(width: 760, height: 76)
+      configureFloating(width: 690, height: 76)
     case "pill":
       configureFloating(width: 168, height: 48)
     case "panel":
@@ -80,6 +83,14 @@ class MainFlutterWindow: NSWindow {
     // view: nil → location is in screen coordinates; pop at the cursor.
     menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     result(target.selected)
+  }
+
+  /// Drags the window using the in-flight mouse event. Invoked from Flutter on
+  /// pan-start over any non-button area of the bar.
+  private func startWindowDrag() {
+    if let event = NSApp.currentEvent {
+      performDrag(with: event)
+    }
   }
 
   private func configureFloating(width: CGFloat, height: CGFloat) {
