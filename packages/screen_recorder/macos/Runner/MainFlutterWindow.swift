@@ -89,8 +89,15 @@ class MainFlutterWindow: NSWindow {
   private func setBarWidth(_ width: CGFloat) {
     guard currentMode == "bar" else { return }
     let clamped = max(320, min(width, 1400))
-    setContentSize(NSSize(width: clamped, height: kBarHeight))
-    positionTopCenter(width: clamped, height: kBarHeight)
+    // Resize in place: keep the window's origin fixed (and thus its top-left
+    // corner, since the height is constant) so the bar grows/shrinks on the
+    // RIGHT and stays exactly where the user dragged it. Re-centering /
+    // top-positioning here would make the whole bar jump and snap back to the
+    // top of the screen on every content change. Borderless → frame size ==
+    // content size, so setting frame width sets the content width directly.
+    var f = frame
+    f.size.width = clamped
+    setFrame(f, display: true)
   }
 
   private func showGearMenu(result: @escaping FlutterResult) {
