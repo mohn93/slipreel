@@ -108,7 +108,7 @@ class _Mode extends StatelessWidget {
       // Fixed width so all four mode tiles (and their hover pills) are equal,
       // regardless of label length.
       child: SizedBox(
-        width: 66,
+        width: 58,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Column(
