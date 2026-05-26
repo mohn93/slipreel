@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
+import 'mic_level_meter.dart';
 import 'spring_hover_button.dart';
 
 /// The selectable source modes on the bar. `device` is shown but disabled.
@@ -26,6 +29,7 @@ class RecordingBar extends StatelessWidget {
     this.microphone,
     required this.onMicTap,
     this.contentKey,
+    this.micLevelStream,
   });
 
   final void Function(BarSourceMode mode) onPickMode;
@@ -45,6 +49,10 @@ class RecordingBar extends StatelessWidget {
   /// Attached to the inner content [Row] so the host can measure its intrinsic
   /// width and resize the (variable-width) bar window to hug the content.
   final Key? contentKey;
+
+  /// Live mic level (0..1) stream; when non-null a meter is shown under the mic
+  /// control. Null when not monitoring.
+  final Stream<double>? micLevelStream;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +96,10 @@ class RecordingBar extends StatelessWidget {
             const _Mode(icon: LucideIcons.smartphone, label: 'Device'),
             const _Divider(),
             const _AvPlaceholder(icon: LucideIcons.videoOff, label: 'No camera'),
-            _MicControl(microphone: microphone, onTap: onMicTap),
+            _MicControl(
+                microphone: microphone,
+                onTap: onMicTap,
+                levelStream: micLevelStream),
             const _AvPlaceholder(icon: LucideIcons.volumeOff, label: 'No system audio'),
             const _Divider(),
             _GearButton(onTap: onGearTap),
@@ -186,11 +197,17 @@ class _AvPlaceholder extends StatelessWidget {
 
 /// Live microphone control: icon + (truncated) device name + chevron. Greyed
 /// when off. Tapping opens the native mic menu via [onTap].
+/// When [levelStream] is non-null, a [MicLevelMeter] is rendered below the chip.
 class _MicControl extends StatelessWidget {
-  const _MicControl({required this.microphone, required this.onTap});
+  const _MicControl({
+    required this.microphone,
+    required this.onTap,
+    this.levelStream,
+  });
 
   final MicrophoneConfig? microphone;
   final VoidCallback onTap;
+  final Stream<double>? levelStream;
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +215,7 @@ class _MicControl extends StatelessWidget {
     final label = on ? microphone!.deviceLabel : 'No microphone';
     final iconColor = on ? const Color(0xFFE9E9EC) : const Color(0xFF6E6E76);
     final textColor = on ? const Color(0xFFE9E9EC) : const Color(0xFF6E6E76);
-    return SpringHoverButton(
+    final chip = SpringHoverButton(
       key: const Key('bar-mic'),
       onTap: onTap,
       child: SizedBox(
@@ -231,6 +248,24 @@ class _MicControl extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+    if (levelStream == null) return chip;
+    // The chip's natural width determines the Column's width; stretch then
+    // makes the meter fill that same width. IntrinsicWidth gives the Column
+    // a tight finite width equal to the chip's content width.
+    return IntrinsicWidth(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          chip,
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: MicLevelMeter(levelStream: levelStream!),
+          ),
+        ],
       ),
     );
   }

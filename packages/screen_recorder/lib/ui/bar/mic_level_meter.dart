@@ -63,12 +63,19 @@ class _MicLevelMeterState extends State<MicLevelMeter> {
             const Positioned.fill(
               child: ColoredBox(color: Color(0x1FFFFFFF)), // track
             ),
-            FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: _level,
-              child: Container(
-                key: const Key('mic-meter-fill'),
-                decoration: BoxDecoration(color: _fillColor),
+            // Positioned so the fill bar doesn't affect the Stack's intrinsic
+            // width (which would cause divide-by-zero when widthFactor == 0
+            // inside an IntrinsicWidth ancestor).
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: _level,
+                  child: Container(
+                    key: const Key('mic-meter-fill'),
+                    decoration: BoxDecoration(color: _fillColor),
+                  ),
+                ),
               ),
             ),
           ],

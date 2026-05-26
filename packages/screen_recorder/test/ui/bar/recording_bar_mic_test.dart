@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder/ui/bar/mic_level_meter.dart';
 import 'package:screen_recorder/ui/bar/recording_bar.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
@@ -12,13 +14,15 @@ void _wide(WidgetTester tester) {
 
 Widget _wrap(Widget c) => MaterialApp(home: Scaffold(body: c));
 
-RecordingBar _bar({MicrophoneConfig? mic, VoidCallback? onMicTap}) => RecordingBar(
+RecordingBar _bar({MicrophoneConfig? mic, VoidCallback? onMicTap, Stream<double>? level}) =>
+    RecordingBar(
       onPickMode: (_) {},
       onClose: () {},
       onGearTap: () {},
       onDragStart: () {},
       microphone: mic,
       onMicTap: onMicTap ?? () {},
+      micLevelStream: level,
     );
 
 void main() {
@@ -53,5 +57,23 @@ void main() {
     await tester.pumpWidget(_wrap(_bar(onMicTap: () => tapped = true)));
     await tester.tap(find.byKey(const Key('bar-mic')));
     expect(tapped, isTrue);
+  });
+
+  testWidgets('shows the meter under the mic when a stream is provided',
+      (tester) async {
+    _wide(tester);
+    final c = StreamController<double>.broadcast();
+    await tester.pumpWidget(_wrap(_bar(
+      mic: const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'Mic'),
+      level: c.stream,
+    )));
+    expect(find.byType(MicLevelMeter), findsOneWidget);
+    await c.close();
+  });
+
+  testWidgets('no meter when no level stream (off)', (tester) async {
+    _wide(tester);
+    await tester.pumpWidget(_wrap(_bar(mic: null)));
+    expect(find.byType(MicLevelMeter), findsNothing);
   });
 }
