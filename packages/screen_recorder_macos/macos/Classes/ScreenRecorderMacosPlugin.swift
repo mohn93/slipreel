@@ -139,6 +139,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       getAudioDevices(result: result)
     case "showMicrophoneMenu":
       showMicrophoneMenu(args: call.arguments as? [String: Any], result: result)
+    case "showSystemAudioMenu":
+      showSystemAudioMenu(args: call.arguments as? [String: Any], result: result)
     case "startMicMonitor":
       if let args = call.arguments as? [String: Any] {
         micLevelMonitor.start(
@@ -319,6 +321,65 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       case .toggleDisableAgc:
         guard let uid = curUid, let label = current?["deviceLabel"] as? String else { reply(nil); return }
         reply(configMap(uid: uid, label: label, reduceNoise: curReduceNoise, disableAgc: !curDisableAgc))
+      }
+    }
+  }
+
+  private func showSystemAudioMenu(args: [String: Any]?, result: @escaping FlutterResult) {
+    let curMode = args?["mode"] as? String          // "allApps" | "selectedApps" | nil(off)
+    let curBundleIds = (args?["bundleIds"] as? [String]) ?? []
+
+    DispatchQueue.main.async {
+      guard #available(macOS 13.0, *) else {
+        result(["cancelled": false, "config": NSNull()]); return
+      }
+      let target = SysAudioMenuTarget()
+      let menu = NSMenu()
+
+      let all = NSMenuItem(title: "Record system audio from all apps",
+        action: #selector(SysAudioMenuTarget.pickAll(_:)), keyEquivalent: "")
+      all.target = target
+      all.state = (curMode == "allApps") ? .on : .off
+      menu.addItem(all)
+
+      let selected = NSMenuItem(title: "Record system audio from selected apps…",
+        action: #selector(SysAudioMenuTarget.pickSelected(_:)), keyEquivalent: "")
+      selected.target = target
+      selected.state = (curMode == "selectedApps") ? .on : .off
+      menu.addItem(selected)
+
+      menu.addItem(.separator())
+      let off = NSMenuItem(title: "Don't record system audio",
+        action: #selector(SysAudioMenuTarget.dontRecord(_:)), keyEquivalent: "")
+      off.target = target
+      off.state = (curMode == nil) ? .on : .off
+      menu.addItem(off)
+
+      menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+
+      func reply(_ config: [String: Any]?) {
+        result(["cancelled": false, "config": (config as Any?) ?? NSNull()])
+      }
+
+      switch target.action {
+      case .none:
+        result(["cancelled": true, "config": NSNull()])
+      case .dontRecord:
+        reply(nil)
+      case .all:
+        reply(["mode": "allApps", "bundleIds": [String]()])
+      case .selected:
+        let picker = SystemAudioAppPicker()
+        Task {
+          let chosen = await picker.pick(preselected: curBundleIds)
+          DispatchQueue.main.async {
+            if let chosen = chosen, !chosen.isEmpty {
+              reply(["mode": "selectedApps", "bundleIds": chosen])
+            } else {
+              result(["cancelled": true, "config": NSNull()])
+            }
+          }
+        }
       }
     }
   }
@@ -1299,6 +1360,17 @@ private final class MicMenuTarget: NSObject {
   @objc func toggleReduceNoise(_ s: NSMenuItem) { action = .toggleReduceNoise }
   @objc func toggleDisableAgc(_ s: NSMenuItem) { action = .toggleDisableAgc }
   @objc func dontRecord(_ s: NSMenuItem) { action = .dontRecord }
+}
+
+// MARK: - System Audio Menu Target
+
+@available(macOS 13.0, *)
+final class SysAudioMenuTarget: NSObject {
+  enum Action { case none, all, selected, dontRecord }
+  var action: Action = .none
+  @objc func pickAll(_ s: Any) { action = .all }
+  @objc func pickSelected(_ s: Any) { action = .selected }
+  @objc func dontRecord(_ s: Any) { action = .dontRecord }
 }
 
 // MARK: - Frame Stream Handler
