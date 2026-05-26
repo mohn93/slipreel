@@ -304,6 +304,92 @@ class _MicControlState extends State<_MicControl> {
   }
 }
 
+/// System-audio control: speaker icon + label + chevron, mirroring [_MicControl]
+/// (fixed-width chip, hover-brighten). Greyed when off. Tapping opens the native
+/// system-audio menu via [onTap].
+class _SystemAudioControl extends StatefulWidget {
+  const _SystemAudioControl({required this.systemAudio, required this.onTap});
+
+  final SystemAudioConfig? systemAudio;
+  final VoidCallback onTap;
+
+  @override
+  State<_SystemAudioControl> createState() => _SystemAudioControlState();
+}
+
+class _SystemAudioControlState extends State<_SystemAudioControl> {
+  bool _hover = false;
+
+  String get _label {
+    final cfg = widget.systemAudio;
+    if (cfg == null) return 'No system audio';
+    switch (cfg.mode) {
+      case SystemAudioMode.allApps:
+        return 'System audio';
+      case SystemAudioMode.selectedApps:
+        final n = cfg.bundleIds.length;
+        return n == 1 ? '1 app' : '$n apps';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final on = widget.systemAudio != null;
+    final active = on || _hover;
+    return SpringHoverButton(
+      key: const Key('bar-system-audio'),
+      onTap: widget.onTap,
+      onHoverChanged: (h) => setState(() => _hover = h),
+      child: SizedBox(
+        width: _kMicChipWidth,
+        height: _kBarButtonHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(end: active ? 1.0 : 0.0),
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            builder: (context, t, _) {
+              final color = Color.lerp(
+                  const Color(0xFF6E6E76), const Color(0xFFE9E9EC), t)!;
+              return Row(
+                children: [
+                  Icon(on ? LucideIcons.volume2 : LucideIcons.volumeOff,
+                      size: 22, color: color),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(_label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        textAlign: TextAlign.left,
+                        style: TextStyle(fontSize: 12, color: color)),
+                  ),
+                  const SizedBox(width: 2),
+                  const Icon(LucideIcons.chevronDown,
+                      size: 13, color: Color(0xFF7E7E86)),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Test-only public wrapper around the private [_SystemAudioControl].
+@visibleForTesting
+class SystemAudioControlForTest extends StatelessWidget {
+  const SystemAudioControlForTest(
+      {super.key, this.systemAudio, required this.onTap});
+  final SystemAudioConfig? systemAudio;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) =>
+      _SystemAudioControl(systemAudio: systemAudio, onTap: onTap);
+}
+
 class _CircleButton extends StatelessWidget {
   const _CircleButton({required this.barKey, required this.icon, required this.onPressed});
 
