@@ -34,8 +34,10 @@ import 'package:screen_recorder/ui/screens/settings_screen.dart';
 import 'package:slipreel_engine/export/export_pipeline.dart';
 import 'package:slipreel_engine/export/gif_export_pipeline.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
+import 'package:slipreel_engine/export/audio_mix_args.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
+import '../../state/recording_audio_streams_provider.dart';
 
 /// Debug hook: the active [PlaybackScreen] publishes its video
 /// controller here (in debug/profile builds) so VM-service extensions
@@ -232,6 +234,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       _controller.addListener(_trackIntendedPosition);
       // Auto-play on load
       _controller.play();
+
+      // Probe the recording's audio streams so the audio tab knows which
+      // per-track controls to show. Non-fatal — failure leaves it empty.
+      try {
+        final probedForAudio = await ffmpegProbe(path: widget.videoPath);
+        if (mounted) {
+          ref.read(recordingAudioStreamsProvider.notifier).state =
+              probedForAudio.audioStreams;
+        }
+      } catch (_) {/* leave empty */}
     } catch (e) {
       setState(() {
         _error = 'Failed to load video: $e';
@@ -399,7 +411,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           initialSettings: defaults,
           sourceVideoSize: sourceVideoSize,
           videoDuration: videoDuration,
-          audioBitrateKbps: probed.audioBitrateKbps,
+          audioBitrateKbps: buildAudioMixArgs(
+                  probed.audioStreams,
+                  ref.read(editorProjectControllerProvider).audioMix)
+              .bitrateKbps,
           estimator: ExportEstimator(
             lastRealtimeMultiplier: persistedMultiplier ?? 0.7,
           ),
