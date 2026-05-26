@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import '../utils/app_logger.dart';
+import 'audio_mix_args.dart';
 
 /// Pixel format of the raw frames arriving on the encoder's stdin.
 ///
@@ -46,9 +47,15 @@ class FfmpegEncoder {
   /// Pixel format of frames arriving on stdin.
   final FfmpegPixelFormat pixelFormat;
 
-  /// Optional path to the source MP4 — its audio track is muxed into the
-  /// output via `-c:a copy` (no re-encode).
+  /// Optional path to the source MP4 carrying the recording's audio. When an
+  /// [audioMixPlan] with audio is supplied, its audio streams are mixed and
+  /// re-encoded to AAC into the output; otherwise the output has no audio.
   final String? audioSourcePath;
+
+  /// When non-null and [AudioMixPlan.hasAudio], the export muxes audio from
+  /// [audioSourcePath] through this ffmpeg filtergraph (per-track volume +
+  /// amix downmix) instead of copying. Null/`!hasAudio` ⇒ video-only output.
+  final AudioMixPlan? audioMixPlan;
 
   Process? _process;
   String _codecUsed = 'h264_videotoolbox';
@@ -66,6 +73,7 @@ class FfmpegEncoder {
     required this.fps,
     required this.bitrateKbps,
     this.audioSourcePath,
+    this.audioMixPlan,
     int? sourceWidth,
     int? sourceHeight,
     int? sourceFps,
@@ -75,51 +83,51 @@ class FfmpegEncoder {
         sourceFps = sourceFps ?? fps;
 
   List<String> _argsFor(String codec) {
+    final plan = audioMixPlan;
+    final hasAudio = audioSourcePath != null && (plan?.hasAudio ?? false);
+    final needsScale = width != sourceWidth || height != sourceHeight;
+
     final args = <String>[
       '-loglevel', 'error',
       '-y',
-      // Video input from stdin — always sized to source (decoder) resolution.
-      // The `-r` here describes the rate of frames arriving on stdin
-      // (source rate), NOT the desired output rate. Mismatch here
-      // makes ffmpeg interpret each frame as covering more or less
-      // wall time than it really does → encoded video runs slow or
-      // fast even though it has the right number of frames.
       '-f', 'rawvideo',
       '-pix_fmt', pixelFormat.ffmpegName,
       '-s', '${sourceWidth}x$sourceHeight',
       '-r', '$sourceFps',
       '-i', '-',
     ];
-    if (audioSourcePath != null) {
-      args.addAll(['-i', audioSourcePath!]);
-      args.addAll(['-map', '0:v', '-map', '1:a:0']);
-    }
-    args.addAll([
-      '-c:v', codec,
-      '-b:v', '${bitrateKbps}k',
-      '-pix_fmt', 'yuv420p',
-    ]);
-    // Insert scaling filter only when output differs from source.
-    // `force_original_aspect_ratio=decrease` + `pad` preserves the
-    // source aspect by letterboxing (black bars) instead of squeezing
-    // the image when the output preset's aspect doesn't match the
-    // source — without it, a 16:9 capture rendered into a 4:3 preset
-    // would appear visibly stretched.
-    if (width != sourceWidth || height != sourceHeight) {
-      args.addAll([
-        '-vf',
+
+    final scaleChain =
         'scale=$width:$height:force_original_aspect_ratio=decrease,'
-            'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black,'
-            'setsar=1',
-      ]);
-    }
-    args.addAll(['-r', '$fps']);
-    if (audioSourcePath != null) {
-      args.addAll(['-c:a', 'copy']);
+        'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1';
+
+    if (hasAudio) {
+      // Audio present: route video + audio through one -filter_complex so we
+      // never mix -vf with -filter_complex (which can conflict).
+      args.addAll(['-i', audioSourcePath!]);
+      final videoChain =
+          needsScale ? '[0:v]$scaleChain[vout]' : '[0:v]null[vout]';
+      args.addAll(['-filter_complex', '$videoChain;${plan!.filterComplex!}']);
+      args.addAll(['-map', '[vout]', '-map', plan.mapLabel!]);
+      args.addAll(
+          ['-c:v', codec, '-b:v', '${bitrateKbps}k', '-pix_fmt', 'yuv420p']);
+      args.addAll(['-r', '$fps']);
+      args.addAll(['-c:a', 'aac', '-b:a', '${plan.bitrateKbps}k']);
+    } else {
+      // Video only (today's path): -vf for scaling, no audio.
+      args.addAll(
+          ['-c:v', codec, '-b:v', '${bitrateKbps}k', '-pix_fmt', 'yuv420p']);
+      if (needsScale) {
+        args.addAll(['-vf', scaleChain]);
+      }
+      args.addAll(['-r', '$fps']);
     }
     args.add(outputPath);
     return args;
   }
+
+  /// Test seam: the resolved ffmpeg arg list for [codec].
+  List<String> argsForTesting(String codec) => _argsFor(codec);
 
   Future<void> start() async {
     Future<bool> tryCodec(String codec) async {
