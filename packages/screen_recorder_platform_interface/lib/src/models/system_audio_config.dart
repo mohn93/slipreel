@@ -45,3 +45,23 @@ class SystemAudioConfig {
     return a.toSet().containsAll(b);
   }
 }
+
+/// Result of the native system-audio menu. [cancelled] true means the user
+/// dismissed it (no change). When not cancelled, [config] is the new selection,
+/// or null for "Don't record system audio".
+class SystemAudioMenuResult {
+  final bool cancelled;
+  final SystemAudioConfig? config;
+
+  const SystemAudioMenuResult({required this.cancelled, this.config});
+
+  factory SystemAudioMenuResult.fromJson(Map<String, dynamic> json) {
+    final c = json['config'];
+    return SystemAudioMenuResult(
+      cancelled: json['cancelled'] as bool? ?? false,
+      config: c == null
+          ? null
+          : SystemAudioConfig.fromJson(Map<String, dynamic>.from(c as Map)),
+    );
+  }
+}

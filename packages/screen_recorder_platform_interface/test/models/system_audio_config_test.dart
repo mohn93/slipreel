@@ -35,4 +35,32 @@ void main() {
       expect(d.bundleIds, ['x']);
     });
   });
+
+  group('SystemAudioMenuResult', () {
+    test('decodes a cancelled result', () {
+      final r = SystemAudioMenuResult.fromJson(
+          {'cancelled': true, 'config': null});
+      expect(r.cancelled, isTrue);
+      expect(r.config, isNull);
+    });
+
+    test('decodes an off (null config) result', () {
+      final r = SystemAudioMenuResult.fromJson(
+          {'cancelled': false, 'config': null});
+      expect(r.cancelled, isFalse);
+      expect(r.config, isNull);
+    });
+
+    test('decodes a selected-apps config', () {
+      final r = SystemAudioMenuResult.fromJson({
+        'cancelled': false,
+        'config': {'mode': 'selectedApps', 'bundleIds': ['com.apple.Music']},
+      });
+      expect(r.cancelled, isFalse);
+      expect(r.config,
+          const SystemAudioConfig(
+              mode: SystemAudioMode.selectedApps,
+              bundleIds: ['com.apple.Music']));
+    });
+  });
 }
