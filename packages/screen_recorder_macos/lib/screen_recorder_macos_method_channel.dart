@@ -15,6 +15,9 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   /// Event channel for cursor positions
   final _cursorChannel = const EventChannel(ScreenRecorderChannels.cursor);
 
+  /// Event channel for live microphone level
+  final _micLevelChannel = const EventChannel(ScreenRecorderChannels.micLevel);
+
   @override
   Future<List<ScreenInfo>> getAvailableScreens() async {
     final result = await _recordingChannel.invokeMethod<List<dynamic>>(
@@ -246,5 +249,25 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
       return const MicrophoneMenuResult(cancelled: true);
     }
     return MicrophoneMenuResult.fromJson(raw);
+  }
+
+  @override
+  Stream<double> get micLevelStream => _micLevelChannel
+      .receiveBroadcastStream()
+      .map((event) => (event as num).toDouble());
+
+  @override
+  Future<void> startMicMonitor(MicrophoneConfig config) async {
+    await _recordingChannel.invokeMethod<void>(
+      ScreenRecorderMethods.startMicMonitor,
+      config.toJson(),
+    );
+  }
+
+  @override
+  Future<void> stopMicMonitor() async {
+    await _recordingChannel.invokeMethod<void>(
+      ScreenRecorderMethods.stopMicMonitor,
+    );
   }
 }

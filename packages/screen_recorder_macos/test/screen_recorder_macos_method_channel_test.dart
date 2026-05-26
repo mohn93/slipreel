@@ -28,6 +28,10 @@ void main() {
                 'disableAgc': false,
               },
             };
+          case 'startMicMonitor':
+            return null;
+          case 'stopMicMonitor':
+            return null;
           default:
             return null;
         }
@@ -57,5 +61,30 @@ void main() {
   test('showMicrophoneMenu(null) is allowed', () async {
     final result = await platform.showMicrophoneMenu(null);
     expect(result, isA<MicrophoneMenuResult>());
+  });
+
+  test('startMicMonitor sends the microphone config', () async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (c) async {
+      calls.add(c);
+      return null;
+    });
+    await platform.startMicMonitor(
+        const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'Mic', reduceNoise: true));
+    expect(calls.single.method, 'startMicMonitor');
+    expect((calls.single.arguments as Map)['deviceUid'], 'u');
+    expect((calls.single.arguments as Map)['reduceNoise'], true);
+  });
+
+  test('stopMicMonitor invokes the stop method', () async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (c) async {
+      calls.add(c);
+      return null;
+    });
+    await platform.stopMicMonitor();
+    expect(calls.single.method, 'stopMicMonitor');
   });
 }

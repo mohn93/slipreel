@@ -184,6 +184,21 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
     throw UnsupportedError('showMicrophoneMenu() is not supported on this platform.');
   }
 
+  /// Live microphone level (0..1), emitted ~20 Hz while a monitor is running.
+  Stream<double> get micLevelStream {
+    throw UnimplementedError('micLevelStream has not been implemented.');
+  }
+
+  /// Start live monitoring of [config]'s device so [micLevelStream] emits.
+  Future<void> startMicMonitor(MicrophoneConfig config) {
+    throw UnsupportedError('startMicMonitor() is not supported on this platform.');
+  }
+
+  /// Stop live mic monitoring.
+  Future<void> stopMicMonitor() {
+    throw UnsupportedError('stopMicMonitor() is not supported on this platform.');
+  }
+
   /// Start a live HW-encoded recording. Writes a complete MP4 directly to
   /// [outputPath] during capture (no raw-frame spool). Throws
   /// `UnsupportedError` on platforms that don't support the live path.

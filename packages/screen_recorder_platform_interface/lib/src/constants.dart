@@ -11,6 +11,9 @@ class ScreenRecorderChannels {
 
   /// Event channel for cursor position stream
   static const String cursor = 'com.slipreel.screen_recorder/cursor';
+
+  /// Event channel for the live microphone level (0..1) stream.
+  static const String micLevel = 'com.slipreel.screen_recorder/micLevel';
 }
 
 /// Method names for the recording channel
@@ -31,4 +34,6 @@ class ScreenRecorderMethods {
   static const String selectRegion = 'selectRegion';
   static const String pickSource = 'pickSource';
   static const String showMicrophoneMenu = 'showMicrophoneMenu';
+  static const String startMicMonitor = 'startMicMonitor';
+  static const String stopMicMonitor = 'stopMicMonitor';
 }
