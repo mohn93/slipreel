@@ -299,7 +299,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final on = chrome.barSizes.last;
-    expect(on.w, lessThan(off.w)); // 'X' is narrower than 'No microphone'
+    // Mic chip is fixed-width now, so selecting a device doesn't change the bar
+    // width (the label ellipsizes within the fixed chip).
+    expect(on.w, off.w);
     expect(on.h, 68); // same constant height — meter is inside the chip now
   });
 

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
-import 'mic_level_meter.dart';
+import 'mic_status.dart';
 import 'spring_hover_button.dart';
 
 /// The selectable source modes on the bar. `device` is shown but disabled.
@@ -13,6 +13,10 @@ enum BarSourceMode { display, window, area, device }
 /// Shared height for the labelled bar controls so their hover containers all
 /// line up (modes are icon-over-label; A/V are icon-beside-label).
 const double _kBarButtonHeight = 56;
+
+/// Fixed width for the mic chip so the bar doesn't resize as the device label
+/// changes — long labels ellipsize, the icon and chevron stay anchored.
+const double _kMicChipWidth = 160;
 
 /// The compact floating control bar: close, source modes, disabled A/V
 /// placeholders, and a gear button that opens a NATIVE menu. There are
@@ -185,7 +189,7 @@ class _AvPlaceholder extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text(label,
                     style: const TextStyle(
-                        fontSize: 10, color: Color(0xFF6E6E76))),
+                        fontSize: 12, color: Color(0xFF6E6E76))),
               ],
             ),
           ),
@@ -221,29 +225,27 @@ class _MicControl extends StatelessWidget {
       key: const Key('bar-mic'),
       onTap: onTap,
       child: SizedBox(
+        width: _kMicChipWidth,
         height: _kBarButtonHeight,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Stack(
             children: [
-              Center(
+              Positioned.fill(
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(on ? LucideIcons.mic : LucideIcons.micOff,
                         size: 22, color: iconColor),
                     const SizedBox(width: 6),
-                    // The 120pt cap bounds long device names. The bar's auto-size
-                    // measures this Row's intrinsic width, and ConstrainedBox caps
-                    // intrinsic width too — so the measurement matches what renders.
-                    // If this cap changes, the bar window will still hug correctly.
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 120),
+                    // Left-aligned label fills the remaining fixed width and
+                    // ellipsizes; the leading icon never shifts with label length.
+                    Expanded(
                       child: Text(label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           softWrap: false,
-                          style: TextStyle(fontSize: 10, color: textColor)),
+                          textAlign: TextAlign.left,
+                          style: TextStyle(fontSize: 12, color: textColor)),
                     ),
                     const SizedBox(width: 2),
                     const Icon(LucideIcons.chevronDown,
@@ -255,8 +257,8 @@ class _MicControl extends StatelessWidget {
                 Positioned(
                   left: 0,
                   right: 0,
-                  bottom: 2,
-                  child: MicLevelMeter(levelStream: levelStream!),
+                  bottom: 6,
+                  child: MicStatus(levelStream: levelStream!),
                 ),
             ],
           ),

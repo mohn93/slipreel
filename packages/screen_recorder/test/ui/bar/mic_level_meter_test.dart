@@ -52,8 +52,23 @@ void main() {
     await tester.pump();
     await _pumpFrames(tester, 8); // ~120 ms — fill springs down, peak holds
     expect(peakFactor(tester), greaterThan(fillFactor(tester)));
-    await _pumpFrames(tester, 125); // ~2 s — peak decays significantly
+    // ~2.4 s — short hold (0.3 s) then faster decay (0.6/s) brings peak well down.
+    await _pumpFrames(tester, 150);
     expect(peakFactor(tester), lessThan(0.5));
+    await c.close();
+  });
+
+  testWidgets('peak band renders with non-zero size', (tester) async {
+    final c = StreamController<double>.broadcast();
+    await tester.pumpWidget(host(c.stream));
+    c.add(1.0);
+    await tester.pump();
+    await _pumpFrames(tester, 20); // peak rises off zero
+    // The band must have real width (∝ peak) and fill the meter height — a
+    // zero-size box would paint nothing.
+    final size = tester.getSize(find.byKey(const Key('mic-meter-peak')));
+    expect(size.width, greaterThan(0));
+    expect(size.height, greaterThan(0));
     await c.close();
   });
 

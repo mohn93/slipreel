@@ -23,7 +23,8 @@ final class MicLevelMonitor {
     lastEmit = 0
     do {
       if let uid = deviceUid, let devID = AudioDeviceCatalog.deviceID(forUID: uid) {
-        do { try input.auAudioUnit.setDeviceID(devID) } catch { /* fall back to default */ }
+        do { try input.auAudioUnit.setDeviceID(devID) }
+        catch { NSLog("MicLevelMonitor: setDeviceID(\(uid)) failed: \(error)") }
       }
       // Voice processing is sticky on the input node, so set it explicitly both
       // ways (a previous reduceNoise=true session would otherwise leak in).
@@ -31,7 +32,16 @@ final class MicLevelMonitor {
       if reduceNoise, #available(macOS 14.0, *) {
         input.isVoiceProcessingAGCEnabled = !disableAgc
       }
+      // A freshly-switched device can momentarily report an invalid (0 Hz / 0
+      // channel) format; installing a tap or starting the engine on it throws,
+      // which previously left the meter frozen at a stale value. Treat it as a
+      // failed start so we fall through to the recovery path below.
       let format = input.outputFormat(forBus: 0)
+      guard format.sampleRate > 0, format.channelCount > 0 else {
+        throw NSError(
+          domain: "MicLevelMonitor", code: -1,
+          userInfo: [NSLocalizedDescriptionKey: "invalid input format \(format)"])
+      }
       input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
         self?.process(buffer)
       }
@@ -39,8 +49,12 @@ final class MicLevelMonitor {
       self.engine = engine
       self.isRunning = true
     } catch {
+      NSLog("MicLevelMonitor: start failed: \(error)")
       input.removeTap(onBus: 0)
       engine.stop()
+      // Report a negative sentinel so the UI shows a problem indicator instead
+      // of freezing at a stale value or looking like plain silence.
+      DispatchQueue.main.async { [weak self] in self?.onLevel?(-1) }
     }
   }
 
@@ -50,6 +64,9 @@ final class MicLevelMonitor {
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
     self.engine = nil
+    // Clear the meter when monitoring ends (e.g. switching devices) so a stale
+    // level never lingers while the next engine spins up.
+    DispatchQueue.main.async { [weak self] in self?.onLevel?(0) }
   }
 
   private func process(_ buffer: AVAudioPCMBuffer) {
@@ -71,8 +88,10 @@ final class MicLevelMonitor {
     let db = rms > 0 ? 20 * log10(rms) : -160
     let level = max(0, min(1, (db + 60) / 60))
 
-    // Attack/decay smoothing: rise fast, fall slower.
-    let coeff = level > smoothed ? 0.5 : 0.15
+    // Light attack/decay smoothing only — the Flutter spring does the visual
+    // smoothing. Keep the fall fast so the fill drops promptly when you go
+    // quiet, letting the peak-hold marker visibly lead it back down.
+    let coeff = level > smoothed ? 0.5 : 0.45
     smoothed += (level - smoothed) * coeff
 
     // Throttle to ~20 Hz.

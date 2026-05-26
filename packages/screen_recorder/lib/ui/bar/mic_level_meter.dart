@@ -7,7 +7,7 @@ import 'package:flutter/scheduler.dart';
 /// value from [levelStream]; a peak-hold marker jumps to the max and decays
 /// slowly back (like an audio peak meter). Fills the width given by its parent.
 class MicLevelMeter extends StatefulWidget {
-  const MicLevelMeter({super.key, required this.levelStream, this.height = 5});
+  const MicLevelMeter({super.key, required this.levelStream, this.height = 3});
 
   final Stream<double> levelStream;
   final double height;
@@ -26,12 +26,18 @@ class _MicLevelMeterState extends State<MicLevelMeter>
   double _display = 0; // spring-animated fill position
   double _velocity = 0; // spring velocity
   double _peak = 0; // peak-hold marker position
+  double _peakAge = 0; // seconds since the peak was last bumped up
 
-  // Spring (2nd-order): stiffness + damping tuned for a lively-but-settled feel.
-  static const double _stiffness = 240;
-  static const double _damping = 16;
-  // Peak marker falls this much per second once the level drops below it.
-  static const double _peakDecayPerSec = 0.7;
+  // Spring (2nd-order): very high stiffness so the fill snaps to the level and
+  // falls fast (settling ~0.2s), leaving the peak-hold marker to glide back on
+  // its own. Damping slightly under critical keeps it lively without mush.
+  static const double _stiffness = 1500;
+  static const double _damping = 38;
+  // Peak marker: pin at the top for this long, then fall slowly — so the
+  // segment visibly hangs above the fast fill and creeps back down (VU-style
+  // peak hold). Long hold + slow fall make the detachment easy to see.
+  static const double _peakHoldSec = 0.3;
+  static const double _peakDecayPerSec = 0.6;
 
   @override
   void initState() {
@@ -71,11 +77,16 @@ class _MicLevelMeterState extends State<MicLevelMeter>
     _velocity += accel * dt;
     _display = (_display + _velocity * dt).clamp(0.0, 1.0);
 
-    // Peak hold: snap up to the display, otherwise decay slowly (never below it).
+    // Peak hold: snap up to the display and reset the hold timer; otherwise
+    // keep it pinned for _peakHoldSec, then decay slowly (never below display).
     if (_display >= _peak) {
       _peak = _display;
+      _peakAge = 0;
     } else {
-      _peak = math.max(_display, _peak - _peakDecayPerSec * dt);
+      _peakAge += dt;
+      if (_peakAge > _peakHoldSec) {
+        _peak = math.max(_display, _peak - _peakDecayPerSec * dt);
+      }
     }
 
     setState(() {});
@@ -98,7 +109,7 @@ class _MicLevelMeterState extends State<MicLevelMeter>
   Color get _fillColor {
     if (_display >= 0.97) return const Color(0xFFE5484D); // red near clip
     if (_display >= 0.85) return const Color(0xFFF5A623); // amber
-    return const Color(0xFF8A8A92); // dim, less-prominent accent
+    return const Color(0xFFB4B4BC); // bright, prominent live bar
   }
 
   @override
@@ -112,8 +123,27 @@ class _MicLevelMeterState extends State<MicLevelMeter>
             const Positioned.fill(
               child: ColoredBox(color: Color(0x14FFFFFF)), // track
             ),
-            // Fill (spring-animated). Positioned so it never feeds an ancestor's
-            // intrinsic-width pass (avoids a 0/0 NaN under IntrinsicWidth).
+            // Peak band (dimmer grey): fills 0..peak behind the bright live
+            // fill, so the stretch between the fill and the peak shows as a
+            // dimmer-grey tail — it holds the recent max, then decays back.
+            // Positioned so it never feeds an ancestor's intrinsic-width pass
+            // (avoids a 0/0 NaN under IntrinsicWidth).
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: _peak.clamp(0.0, 1.0),
+                  // Container (not ColoredBox) so it fills the loose height like
+                  // the fill does — a ColoredBox would collapse to height 0.
+                  child: Container(
+                    key: const Key('mic-meter-peak'),
+                    decoration: const BoxDecoration(color: Color(0xFF565660)),
+                  ),
+                ),
+              ),
+            ),
+            // Fill (spring-animated): the bright live-level bar, painted over
+            // the peak band so 0..display reads bright, display..peak dim.
             Positioned.fill(
               child: Align(
                 alignment: Alignment.centerLeft,
@@ -122,23 +152,6 @@ class _MicLevelMeterState extends State<MicLevelMeter>
                   child: Container(
                     key: const Key('mic-meter-fill'),
                     decoration: BoxDecoration(color: _fillColor),
-                  ),
-                ),
-              ),
-            ),
-            // Peak-hold marker: a 2pt line sitting at the peak position.
-            Positioned.fill(
-              child: FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: _peak.clamp(0.0, 1.0),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: SizedBox(
-                    width: 2,
-                    child: ColoredBox(
-                      key: const Key('mic-meter-peak'),
-                      color: const Color(0xFFC8C8CE), // brighter than the fill
-                    ),
                   ),
                 ),
               ),
