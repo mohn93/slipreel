@@ -13,6 +13,7 @@ import '../utils/perf_summary.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
 import 'ffmpeg_probe.dart';
+import 'ffmpeg_resolver.dart';
 import 'frame_compositor.dart';
 
 /// Two-pass GIF export pipeline using ffmpeg's palettegen + paletteuse.
@@ -64,6 +65,7 @@ class GifExportPipeline {
     void Function(double progress)? onProgress,
   }) async {
     final wallSw = Stopwatch()..start();
+    final ffmpegBin = Ffmpeg.resolve();
 
     final probed = await ffmpegProbe(
       path: sourcePath,
@@ -114,9 +116,9 @@ class GifExportPipeline {
             'palettegen=max_colors=${paletteSettings.maxColors}:stats_mode=full',
         palettePath,
       ];
-      AppLogger.ffmpeg.d('gif pass1: ffmpeg ${pass1Args.join(" ")}');
+      AppLogger.ffmpeg.d('gif pass1: $ffmpegBin ${pass1Args.join(" ")}');
 
-      final proc1 = await Process.start('ffmpeg', pass1Args);
+      final proc1 = await Process.start(ffmpegBin, pass1Args);
 
       final decoder1 = FfmpegDecoder(
         inputPath: sourcePath,
@@ -186,9 +188,9 @@ class GifExportPipeline {
         '-loop', '0',
         outputPath,
       ];
-      AppLogger.ffmpeg.d('gif pass2: ffmpeg ${pass2Args.join(" ")}');
+      AppLogger.ffmpeg.d('gif pass2: $ffmpegBin ${pass2Args.join(" ")}');
 
-      final proc2 = await Process.start('ffmpeg', pass2Args);
+      final proc2 = await Process.start(ffmpegBin, pass2Args);
 
       final decoder2 = FfmpegDecoder(
         inputPath: sourcePath,

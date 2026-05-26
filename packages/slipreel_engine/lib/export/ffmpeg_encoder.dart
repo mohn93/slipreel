@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import '../utils/app_logger.dart';
 import 'audio_mix_args.dart';
+import 'ffmpeg_resolver.dart';
 
 /// Pixel format of the raw frames arriving on the encoder's stdin.
 ///
@@ -130,14 +131,16 @@ class FfmpegEncoder {
   List<String> argsForTesting(String codec) => _argsFor(codec);
 
   Future<void> start() async {
+    final binary = Ffmpeg.resolve();
+
     Future<bool> tryCodec(String codec) async {
       final args = _argsFor(codec);
-      AppLogger.ffmpeg.d('encode ($codec): ffmpeg ${args.join(" ")}');
+      AppLogger.ffmpeg.d('encode ($codec): $binary ${args.join(" ")}');
       try {
-        _process = await Process.start('ffmpeg', args);
+        _process = await Process.start(binary, args);
         return true;
       } catch (e) {
-        AppLogger.ffmpeg.w('ffmpeg start with $codec failed: $e');
+        AppLogger.ffmpeg.w('$binary start with $codec failed: $e');
         return false;
       }
     }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import '../utils/app_logger.dart';
+import 'ffmpeg_resolver.dart';
 
 /// Spawns `ffmpeg` to decode an input video into raw BGRA frames streamed
 /// on stdout. Each emitted [Uint8List] is exactly `width * height * 4` bytes.
@@ -41,9 +42,10 @@ class FfmpegDecoder {
       '-pix_fmt', 'bgra',
       '-',
     ];
-    AppLogger.ffmpeg.d('decode: ffmpeg ${args.join(" ")}');
+    final binary = Ffmpeg.resolve();
+    AppLogger.ffmpeg.d('decode: $binary ${args.join(" ")}');
 
-    final process = await Process.start('ffmpeg', args);
+    final process = await Process.start(binary, args);
     final frameSize = width * height * 4;
     final buffer = BytesBuilder(copy: false);
     final stopwatch = Stopwatch()..start();
