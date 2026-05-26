@@ -1,3 +1,4 @@
+import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
@@ -37,6 +38,7 @@ class EditorProjectState {
     this.playbackSpeed = 1.0,
     this.fadeIn = Duration.zero,
     this.fadeOut = Duration.zero,
+    this.audioMix = const AudioMix(),
   });
 
   /// Sensible blank slate for a freshly-loaded recording with no saved
@@ -128,9 +130,13 @@ class EditorProjectState {
   /// Fade-out duration applied at the end of the clip. See [fadeIn].
   final Duration fadeOut;
 
+  /// Per-track recording-audio volume/mute, applied as an ffmpeg downmix at
+  /// export. Preview is unaffected (export-only mixing).
+  final AudioMix audioMix;
+
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 3;
+  static const int currentSchemaVersion = 4;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -157,6 +163,7 @@ class EditorProjectState {
     double? playbackSpeed,
     Duration? fadeIn,
     Duration? fadeOut,
+    AudioMix? audioMix,
   }) {
     // `zoomRegions:` is a convenience override that writes through to
     // the active (first) zoom track on the timeline — matches today's
@@ -200,6 +207,7 @@ class EditorProjectState {
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       fadeIn: fadeIn ?? this.fadeIn,
       fadeOut: fadeOut ?? this.fadeOut,
+      audioMix: audioMix ?? this.audioMix,
     );
   }
 
@@ -224,6 +232,7 @@ class EditorProjectState {
     'playbackSpeed': playbackSpeed,
     'fadeInMicros': fadeIn.inMicroseconds,
     'fadeOutMicros': fadeOut.inMicroseconds,
+    'audioMix': audioMix.toJson(),
   };
 
   factory EditorProjectState.fromJson(Map<String, dynamic> rawJson) {
@@ -318,6 +327,9 @@ class EditorProjectState {
       fadeOut: json['fadeOutMicros'] is num
           ? Duration(microseconds: (json['fadeOutMicros'] as num).round())
           : defaults.fadeOut,
+      audioMix: json['audioMix'] is Map<String, dynamic>
+          ? AudioMix.fromJson(json['audioMix'] as Map<String, dynamic>)
+          : defaults.audioMix,
     );
   }
 
@@ -386,6 +398,10 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>)>
     };
     return next;
   },
+  // v3 → v4: add the per-track `audioMix` block. Additive — fromJson fills the
+  // unity default when the key is absent, so the migration only bumps the
+  // version marker so the chain reaches v4.
+  (json) => {...json, 'schemaVersion': 4},
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its

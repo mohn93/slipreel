@@ -123,7 +123,7 @@ void main() {
         };
 
         final migrated = migrateEditorProjectJson(v2Json);
-        expect(migrated['schemaVersion'], 3);
+        expect(migrated['schemaVersion'], 4);
         expect(migrated.containsKey('zoomRegions'), isFalse,
             reason: 'top-level zoomRegions must be removed in v3');
         expect(migrated['timeline'], isA<Map<String, dynamic>>());

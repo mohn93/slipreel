@@ -6,6 +6,7 @@ import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
+import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
@@ -243,5 +244,32 @@ void main() {
       expect(next.cursorAnimationConfig.preset, CursorAnimationStyle.rapid);
       expect(next.screenAnimationConfig.preset, ScreenAnimationStyle.focused);
     });
+  });
+
+  test('audioMix round-trips through toJson/fromJson', () {
+    final s = EditorProjectState.defaults().copyWith(
+        audioMix: const AudioMix(systemGainPercent: 60, micMuted: true));
+    final restored = EditorProjectState.fromJson(s.toJson());
+    expect(restored.audioMix,
+        const AudioMix(systemGainPercent: 60, micMuted: true));
+  });
+
+  test('defaults() has unity AudioMix', () {
+    expect(EditorProjectState.defaults().audioMix, const AudioMix());
+  });
+
+  test('a v3 sidecar (no audioMix) migrates to v4 with unity defaults', () {
+    final v3 = {
+      'schemaVersion': 3,
+      'timeline': {'zoomTracks': [{'regions': <dynamic>[]}]},
+    };
+    final migrated = migrateEditorProjectJson(v3);
+    expect(migrated['schemaVersion'], 4);
+    final state = EditorProjectState.fromJson(v3);
+    expect(state.audioMix, const AudioMix());
+  });
+
+  test('toJson advertises schemaVersion 4', () {
+    expect(EditorProjectState.defaults().toJson()['schemaVersion'], 4);
   });
 }
