@@ -2,6 +2,7 @@
 import 'dart:io';
 
 import '../utils/app_logger.dart';
+import 'audio_streams.dart';
 
 /// The resolved output of a single `ffprobe` run.
 class FfmpegProbeResult {
@@ -12,6 +13,7 @@ class FfmpegProbeResult {
     this.nbFrames,
     this.durationSec,
     this.audioBitrateKbps,
+    this.audioStreams = const [],
   });
 
   final int width;
@@ -34,6 +36,10 @@ class FfmpegProbeResult {
   /// audio bytes pass through unchanged into the output — callers add
   /// `audioBitrateKbps × duration / 8 × 1024` to size estimates.
   final int? audioBitrateKbps;
+
+  /// All audio streams in the source, in container order. Drives editor audio
+  /// controls and the export mix. Empty when the source has no audio.
+  final List<AudioStreamInfo> audioStreams;
 }
 
 /// Runs `ffprobe` once on [path] and returns the resolved dimensions,
@@ -131,7 +137,9 @@ Future<FfmpegProbeResult> ffmpegProbe({
   // (one stream type per call). Failure here is non-fatal — files with
   // no audio track or with an unreported bitrate just leave the field
   // null, and the size estimator skips the audio adjustment.
-  final audioBitrateKbps = await _probeAudioBitrate(path);
+  final audioStreams = await _probeAudioStreams(path);
+  final audioBitrateKbps =
+      audioStreams.isEmpty ? null : audioStreams.first.bitrateKbps;
 
   return FfmpegProbeResult(
     width: w,
@@ -140,27 +148,22 @@ Future<FfmpegProbeResult> ffmpegProbe({
     nbFrames: nbFrames,
     durationSec: dur,
     audioBitrateKbps: audioBitrateKbps,
+    audioStreams: audioStreams,
   );
 }
 
-Future<int?> _probeAudioBitrate(String path) async {
+Future<List<AudioStreamInfo>> _probeAudioStreams(String path) async {
   try {
     final result = await Process.run('ffprobe', [
       '-v', 'error',
-      '-select_streams', 'a:0',
-      '-show_entries', 'stream=bit_rate',
-      '-of', 'default=nw=1:nk=0',
+      '-select_streams', 'a',
+      '-show_entries', 'stream=index,codec_name,channels,bit_rate',
+      '-of', 'json',
       path,
     ]);
-    if (result.exitCode != 0) return null;
-    final output = (result.stdout as String).trim();
-    if (output.isEmpty) return null;
-    final eq = output.indexOf('=');
-    if (eq <= 0) return null;
-    final bps = int.tryParse(output.substring(eq + 1).trim());
-    if (bps == null || bps <= 0) return null;
-    return (bps / 1000).round();
+    if (result.exitCode != 0) return const [];
+    return parseAudioStreams(result.stdout as String);
   } catch (_) {
-    return null;
+    return const [];
   }
 }
