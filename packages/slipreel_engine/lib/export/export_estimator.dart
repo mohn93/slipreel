@@ -36,12 +36,11 @@ class ExportEstimator {
     return Duration(milliseconds: (floored * 1000).round());
   }
 
-  /// Estimated output bytes. For [ExportFormat.mp4] this is video
-  /// bitrate × duration plus, when known, the audio stream's bytes
-  /// (the encoder muxes audio with `-c:a copy` so the source audio
-  /// passes through unchanged). For [ExportFormat.gif] we apply a 0.6
-  /// calibration factor against the naive bitrate arithmetic and skip
-  /// audio entirely (GIF strips it).
+  /// Estimated output bytes. For [ExportFormat.mp4] this is video bitrate ×
+  /// duration plus, when the export will contain audio, the mixed AAC track's
+  /// bytes (callers pass the mixed-track bitrate, e.g. kMixedAudioBitrateKbps,
+  /// or null when the export has no audio). GIF applies a 0.6 factor and skips
+  /// audio.
   int estimateOutputBytes({
     required double durationSec,
     required int bitrateKbps,

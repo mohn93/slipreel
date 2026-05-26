@@ -37,11 +37,17 @@ List<AudioStreamInfo> parseAudioStreams(String jsonString) {
   final streams = (decoded is Map && decoded['streams'] is List)
       ? decoded['streams'] as List
       : const [];
-  return streams.map((s) {
+  return streams.indexed.map((entry) {
+    final (audioIdx, s) = entry;
     final m = s as Map<String, dynamic>;
     final br = int.tryParse('${m['bit_rate'] ?? ''}');
+    // Use the position in the audio-only list as the stream index so that
+    // filter-complex references like `[1:a:0]` / `[1:a:1]` are correct.
+    // ffprobe reports the absolute stream index (e.g. 1 for the second stream
+    // overall), but ffmpeg's `-select_streams a` / `[N:a:K]` syntax expects
+    // the audio-relative index K.
     return AudioStreamInfo(
-      index: (m['index'] as num?)?.toInt() ?? 0,
+      index: audioIdx,
       channels: (m['channels'] as num?)?.toInt() ?? 0,
       codecName: m['codec_name'] as String? ?? '',
       bitrateKbps: (br == null || br <= 0) ? null : (br / 1000).round(),

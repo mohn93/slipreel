@@ -11,6 +11,7 @@ import '../models/recording_metadata.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
+import 'audio_mix_args.dart';
 import 'bounded_async_queue.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
@@ -136,6 +137,8 @@ class ExportPipeline {
       height: srcHeight,
       cfrFps: pipelineFps,
     );
+    final audioMixPlan =
+        buildAudioMixArgs(probed.audioStreams, projectState.audioMix);
     final encoder = FfmpegEncoder(
       outputPath: outputPath,
       width: outWidth,
@@ -143,6 +146,7 @@ class ExportPipeline {
       fps: outFps,
       bitrateKbps: bitrateKbps,
       audioSourcePath: sourcePath,
+      audioMixPlan: audioMixPlan,
       // The encoder receives composed frames at totalSize (the framed
       // output), not the source video resolution.
       sourceWidth: compositor.totalSize.width.toInt(),
