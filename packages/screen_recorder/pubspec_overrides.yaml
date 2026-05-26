@@ -1,6 +1,8 @@
-# melos_managed_dependency_overrides: screen_recorder_macos,screen_recorder_platform_interface
+# melos_managed_dependency_overrides: screen_recorder_macos,screen_recorder_platform_interface,slipreel_engine
 dependency_overrides:
   screen_recorder_macos:
     path: ../screen_recorder_macos
   screen_recorder_platform_interface:
     path: ../screen_recorder_platform_interface
+  slipreel_engine:
+    path: ../slipreel_engine
