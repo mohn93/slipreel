@@ -34,6 +34,7 @@ class ScreenRecorderMethods {
   static const String selectRegion = 'selectRegion';
   static const String pickSource = 'pickSource';
   static const String showMicrophoneMenu = 'showMicrophoneMenu';
+  static const String showSystemAudioMenu = 'showSystemAudioMenu';
   static const String startMicMonitor = 'startMicMonitor';
   static const String stopMicMonitor = 'stopMicMonitor';
 }

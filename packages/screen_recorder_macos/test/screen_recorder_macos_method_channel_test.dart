@@ -87,4 +87,34 @@ void main() {
     await platform.stopMicMonitor();
     expect(calls.single.method, 'stopMicMonitor');
   });
+
+  test('showSystemAudioMenu sends current and decodes the result', () async {
+    final platform2 = MethodChannelScreenRecorderMacos();
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('com.slipreel.screen_recorder/recording'),
+      (call) async {
+        calls.add(call);
+        if (call.method == 'showSystemAudioMenu') {
+          return <String, dynamic>{
+            'cancelled': false,
+            'config': {'mode': 'allApps', 'bundleIds': <String>[]},
+          };
+        }
+        return null;
+      },
+    );
+
+    final result = await platform2.showSystemAudioMenu(
+        const SystemAudioConfig(
+            mode: SystemAudioMode.selectedApps,
+            bundleIds: ['com.apple.Music']));
+
+    expect(calls.single.method, 'showSystemAudioMenu');
+    expect(calls.single.arguments,
+        {'mode': 'selectedApps', 'bundleIds': ['com.apple.Music']});
+    expect(result.cancelled, isFalse);
+    expect(result.config!.mode, SystemAudioMode.allApps);
+  });
 }

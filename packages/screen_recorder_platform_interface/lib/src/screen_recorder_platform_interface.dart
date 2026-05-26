@@ -9,6 +9,7 @@ import 'models/frame_data.dart';
 import 'models/recording_result.dart';
 import 'models/recording_settings.dart';
 import 'models/microphone_config.dart';
+import 'models/system_audio_config.dart';
 import 'models/picked_source.dart';
 import 'models/region_selection.dart';
 import 'models/screen_info.dart';
@@ -182,6 +183,12 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   /// Returns the user's choice; see [MicrophoneMenuResult].
   Future<MicrophoneMenuResult> showMicrophoneMenu(MicrophoneConfig? current) {
     throw UnsupportedError('showMicrophoneMenu() is not supported on this platform.');
+  }
+
+  /// Shows the native system-audio NSMenu (and, for "selected apps", the app
+  /// picker). Returns the chosen selection, or a cancelled result.
+  Future<SystemAudioMenuResult> showSystemAudioMenu(SystemAudioConfig? current) {
+    throw UnsupportedError('showSystemAudioMenu() is not supported on this platform.');
   }
 
   /// Live microphone level (0..1), emitted ~20 Hz while a monitor is running.

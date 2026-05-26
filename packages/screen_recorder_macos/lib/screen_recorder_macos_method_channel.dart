@@ -252,6 +252,19 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  Future<SystemAudioMenuResult> showSystemAudioMenu(
+      SystemAudioConfig? current) async {
+    final raw = await _recordingChannel.invokeMapMethod<String, dynamic>(
+      ScreenRecorderMethods.showSystemAudioMenu,
+      current?.toJson(),
+    );
+    if (raw == null) {
+      return const SystemAudioMenuResult(cancelled: true);
+    }
+    return SystemAudioMenuResult.fromJson(raw);
+  }
+
+  @override
   Stream<double> get micLevelStream => _micLevelChannel
       .receiveBroadcastStream()
       .map((event) => (event as num).toDouble());
