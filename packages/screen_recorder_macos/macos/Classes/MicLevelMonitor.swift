@@ -33,7 +33,17 @@ final class MicLevelMonitor {
     smoothed = 0
     lastEmit = 0
     do {
-      if let uid = deviceUid, let devID = AudioDeviceCatalog.deviceID(forUID: uid) {
+      if let uid = deviceUid {
+        // The selected device must still be present. If its UID no longer
+        // resolves (e.g. a Continuity mic whose iPhone disconnected), do NOT
+        // silently fall through to the default input — that leaves the bar
+        // showing the wrong device with no audio from the one the user picked.
+        // Treat it as a failed start so the catch below emits the -1 sentinel.
+        guard let devID = AudioDeviceCatalog.deviceID(forUID: uid) else {
+          throw NSError(
+            domain: "MicLevelMonitor", code: -2,
+            userInfo: [NSLocalizedDescriptionKey: "selected input '\(uid)' is unavailable"])
+        }
         do { try input.auAudioUnit.setDeviceID(devID) }
         catch { NSLog("MicLevelMonitor: setDeviceID(\(uid)) failed: \(error)") }
       }

@@ -6,10 +6,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'mic_level_meter.dart';
 
 /// Shows the live [MicLevelMeter] for a selected mic, or an amber warning
-/// triangle when the native monitor reports a real input problem: a negative
-/// sentinel emitted when the monitor fails to start / the audio engine errors
-/// on the device. Plain silence (a valid 0 level) is NOT a problem, so a quiet
-/// mic never warns.
+/// triangle when the selected input has a problem. Two cases warn:
+///  - the native monitor emits a negative sentinel (failed to start / engine
+///    error / the selected device is no longer available);
+///  - the input taps fine but emits a *literal* zero level for a sustained
+///    window — a dead or virtual-silent input (e.g. a loopback cable with
+///    nothing routed). A real mic's noise floor never sits at exact zero, so a
+///    merely quiet mic never warns.
 class MicStatus extends StatefulWidget {
   const MicStatus({super.key, required this.levelStream});
 
@@ -21,7 +24,14 @@ class MicStatus extends StatefulWidget {
 
 class _MicStatusState extends State<MicStatus> {
   StreamSubscription<double>? _sub;
+  Timer? _noSignalTimer;
   bool _problem = false;
+
+  // A real mic's noise floor stays above this even in a silent room; only a
+  // dead/virtual-silent input sits at a literal zero. Held for the window
+  // below, that reads as "no signal" and warns.
+  static const double _kNoSignalEpsilon = 0.001;
+  static const Duration _kNoSignalWindow = Duration(milliseconds: 2500);
 
   @override
   void initState() {
@@ -34,24 +44,54 @@ class _MicStatusState extends State<MicStatus> {
     super.didUpdateWidget(old);
     if (old.levelStream != widget.levelStream) {
       _sub?.cancel();
+      _cancelNoSignalTimer();
       _problem = false;
       _subscribe();
     }
   }
 
   void _subscribe() {
-    _sub = widget.levelStream.listen((v) {
-      if (!mounted) return;
-      // Negative = native problem sentinel (failed to start / engine error).
-      // Any valid 0..1 level — including silence — clears it.
-      final problem = v < 0;
-      if (problem != _problem) setState(() => _problem = problem);
+    _sub = widget.levelStream.listen(_onLevel);
+  }
+
+  void _onLevel(double v) {
+    if (!mounted) return;
+    if (v < 0) {
+      // Native problem sentinel: failed to start / engine error / the selected
+      // device is unavailable.
+      _cancelNoSignalTimer();
+      _setProblem(true);
+    } else if (v < _kNoSignalEpsilon) {
+      // Literal silence — arm the no-signal countdown once. A real mic never
+      // sits here, so this only trips on a dead/virtual-silent input.
+      if (!_problem) _armNoSignalTimer();
+    } else {
+      // Real signal present — cancel the countdown and clear any warning.
+      _cancelNoSignalTimer();
+      _setProblem(false);
+    }
+  }
+
+  void _armNoSignalTimer() {
+    _noSignalTimer ??= Timer(_kNoSignalWindow, () {
+      _noSignalTimer = null;
+      _setProblem(true);
     });
+  }
+
+  void _cancelNoSignalTimer() {
+    _noSignalTimer?.cancel();
+    _noSignalTimer = null;
+  }
+
+  void _setProblem(bool problem) {
+    if (problem != _problem && mounted) setState(() => _problem = problem);
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _cancelNoSignalTimer();
     super.dispose();
   }
 

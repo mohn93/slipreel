@@ -27,12 +27,59 @@ void main() {
     await c.close();
   });
 
-  testWidgets('silence does NOT warn (only real problems do)', (tester) async {
+  testWidgets('a quiet real mic (small non-zero floor) does NOT warn',
+      (tester) async {
     final c = StreamController<double>.broadcast();
     await tester.pumpWidget(host(c.stream));
-    c.add(0.0); // digital silence — a quiet mic, not a problem
+    // A real mic in a silent room still has a noise floor above zero; it must
+    // never trip the no-signal warning even held for a long time.
+    c.add(0.02);
     await tester.pump();
     await tester.pump(const Duration(seconds: 5));
+    expect(warning, findsNothing);
+    expect(find.byType(MicLevelMeter), findsOneWidget);
+    await c.close();
+  });
+
+  testWidgets('literal-zero (no signal) warns after the timeout',
+      (tester) async {
+    final c = StreamController<double>.broadcast();
+    await tester.pumpWidget(host(c.stream));
+    // Exactly 0.0 = a dead/virtual-silent input (e.g. VB-Cable with nothing
+    // routed). Held past the no-signal window, it should warn.
+    c.add(0.0);
+    await tester.pump();
+    expect(warning, findsNothing); // not immediately — only after the window
+    await tester.pump(const Duration(seconds: 3));
+    expect(warning, findsOneWidget);
+    await c.close();
+  });
+
+  testWidgets('a brief zero followed by signal does NOT warn', (tester) async {
+    final c = StreamController<double>.broadcast();
+    await tester.pumpWidget(host(c.stream));
+    c.add(0.0); // momentary startup silence
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 800));
+    c.add(0.3); // audio starts before the no-signal window elapses
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    expect(warning, findsNothing);
+    expect(find.byType(MicLevelMeter), findsOneWidget);
+    await c.close();
+  });
+
+  testWidgets('a returning signal clears the no-signal warning',
+      (tester) async {
+    final c = StreamController<double>.broadcast();
+    await tester.pumpWidget(host(c.stream));
+    c.add(0.0);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    expect(warning, findsOneWidget);
+    c.add(0.6); // signal returns
+    await tester.pump();
+    await tester.pump();
     expect(warning, findsNothing);
     expect(find.byType(MicLevelMeter), findsOneWidget);
     await c.close();
