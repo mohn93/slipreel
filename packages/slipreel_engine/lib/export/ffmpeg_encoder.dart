@@ -157,8 +157,10 @@ class FfmpegEncoder {
     final p = _process!;
     final buffer = StringBuffer();
     _stderrBuffer = buffer;
-    _stderrDone =
-        p.stderr.transform(const SystemEncoding().decoder).forEach(buffer.write);
+    _stderrDone = p.stderr
+        .transform(const SystemEncoding().decoder)
+        .forEach(buffer.write)
+        .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
     _sw.start();
   }
 

@@ -53,7 +53,8 @@ class FfmpegDecoder {
     final stderrBuffer = StringBuffer();
     final stderrDone = process.stderr
         .transform(const SystemEncoding().decoder)
-        .forEach(stderrBuffer.write);
+        .forEach(stderrBuffer.write)
+        .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
 
     try {
       await for (final chunk in process.stdout) {

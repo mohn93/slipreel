@@ -122,7 +122,8 @@ class GifExportPipeline {
       final stderr1Buffer = StringBuffer();
       final stderr1Done = proc1.stderr
           .transform(const SystemEncoding().decoder)
-          .forEach(stderr1Buffer.write);
+          .forEach(stderr1Buffer.write)
+          .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
 
       final decoder1 = FfmpegDecoder(
         inputPath: sourcePath,
@@ -196,7 +197,8 @@ class GifExportPipeline {
       final stderr2Buffer = StringBuffer();
       final stderr2Done = proc2.stderr
           .transform(const SystemEncoding().decoder)
-          .forEach(stderr2Buffer.write);
+          .forEach(stderr2Buffer.write)
+          .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
 
       final decoder2 = FfmpegDecoder(
         inputPath: sourcePath,

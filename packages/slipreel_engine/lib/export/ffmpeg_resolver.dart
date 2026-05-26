@@ -34,6 +34,9 @@ class FfmpegResolver {
 
   final bool Function(String path) _fileExists;
   final String _pathEnv;
+
+  /// Holds only a *successful* resolution. A failed lookup is never cached so
+  /// [resolve] re-scans on the next call — ffmpeg may be installed mid-session.
   String? _cached;
 
   static bool _defaultFileExists(String p) => File(p).existsSync();
@@ -84,6 +87,10 @@ class FfmpegResolver {
 class Ffmpeg {
   Ffmpeg._();
 
+  /// The intentional injection point for the ffmpeg binary. Production wires
+  /// a bundled-binary path here at startup; tests override it (paired with
+  /// [resetForTesting]). Deliberately not `@visibleForTesting` — production
+  /// code must be able to set it.
   static FfmpegResolver resolver = FfmpegResolver();
 
   /// Absolute path to ffmpeg. Throws [FfmpegNotFoundException] if missing.
