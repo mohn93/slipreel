@@ -14,6 +14,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var audioStreamHandler: AudioStreamHandler?
   private var cursorStreamHandler: CursorStreamHandler?
   private var cursorTracker: CursorTracker?
+  private var micLevelStreamHandler: MicLevelStreamHandler?
+  private let micLevelMonitor = MicLevelMonitor()
 
   // NEW: Live recording state.
   private var liveWriter: LiveRecordingWriter?
@@ -75,6 +77,16 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     instance.cursorStreamHandler = CursorStreamHandler()
     cursorChannel.setStreamHandler(instance.cursorStreamHandler)
 
+    let micLevelChannel = FlutterEventChannel(
+      name: "com.slipreel.screen_recorder/micLevel",
+      binaryMessenger: registrar.messenger
+    )
+    instance.micLevelStreamHandler = MicLevelStreamHandler()
+    micLevelChannel.setStreamHandler(instance.micLevelStreamHandler)
+    instance.micLevelMonitor.onLevel = { [weak instance] level in
+      instance?.micLevelStreamHandler?.send(level)
+    }
+
     // Register the app with macOS's Accessibility TCC list at plugin
     // load. Without this an app that has never asked for the permission
     // doesn't appear in System Settings → Privacy & Security →
@@ -126,6 +138,17 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       getAudioDevices(result: result)
     case "showMicrophoneMenu":
       showMicrophoneMenu(args: call.arguments as? [String: Any], result: result)
+    case "startMicMonitor":
+      if let args = call.arguments as? [String: Any] {
+        micLevelMonitor.start(
+          deviceUid: args["deviceUid"] as? String,
+          reduceNoise: args["reduceNoise"] as? Bool ?? false,
+          disableAgc: args["disableAgc"] as? Bool ?? false)
+      }
+      result(nil)
+    case "stopMicMonitor":
+      micLevelMonitor.stop()
+      result(nil)
     case "startRecording":
       startRecording(call: call, result: result)
     case "stopRecording":
@@ -517,6 +540,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   // MARK: - Live Recording (Phase 9)
 
   private func startLiveRecording(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    micLevelMonitor.stop()
     guard let args = call.arguments as? [String: Any],
           let source = args["source"] as? String,
           let fps = args["frameRate"] as? Int,
@@ -1399,5 +1423,27 @@ class CursorStreamHandler: NSObject, FlutterStreamHandler {
     }
 
     sampleCount += 1
+  }
+}
+
+// MARK: - Mic Level Stream Handler
+
+class MicLevelStreamHandler: NSObject, FlutterStreamHandler {
+  private var eventSink: FlutterEventSink?
+
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    self.eventSink = events
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    self.eventSink = nil
+    return nil
+  }
+
+  /// Called on the main thread by MicLevelMonitor.
+  func send(_ level: Double) {
+    guard let sink = eventSink, level.isFinite else { return }
+    sink(level)
   }
 }
