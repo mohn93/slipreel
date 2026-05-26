@@ -19,7 +19,6 @@ import 'ffmpeg_decoder.dart';
 import 'ffmpeg_encoder.dart';
 import 'ffmpeg_probe.dart';
 import 'frame_compositor.dart';
-import 'isolate_frame_compositor.dart';
 
 /// Orchestrates: decode source MP4 → composite (wallpaper + frame +
 /// video + cursor + zoom) via [FrameCompositor] → encode HW.
@@ -46,14 +45,6 @@ class ExportPipeline {
   // Cache for a single ffprobe result per pipeline instance.
   FfmpegProbeResult? _probeCache;
 
-  /// Off by default — `Picture.toImage` in a background isolate
-  /// crashes the Flutter engine on macOS (segfaults on `flutter test`,
-  /// "Lost connection to device" on a real desktop run). The isolate
-  /// path stays in the tree behind this flag so we can revisit it
-  /// once engine support stabilizes; until then, compose runs on the
-  /// main isolate and we accept the throughput hit.
-  final bool useIsolateCompositor;
-
   ExportPipeline({
     required this.sourcePath,
     required this.outputPath,
@@ -61,7 +52,6 @@ class ExportPipeline {
     required this.cursorRecording,
     required this.projectState,
     required this.settings,
-    this.useIsolateCompositor = false,
   }) {
     if (settings.format != ExportFormat.mp4) {
       throw ArgumentError.value(
@@ -122,21 +112,13 @@ class ExportPipeline {
     // frames internally to bridge two different rates.
     final pipelineFps = outFps;
 
-    final ExportCompositor compositor = useIsolateCompositor
-        ? await IsolateFrameCompositor.spawn(
-            projectState: projectState,
-            cursorRecording: cursorRecording,
-            metadata: sourceMetadata,
-            videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
-            fps: pipelineFps,
-          )
-        : InProcessExportCompositor(FrameCompositor(
-            projectState: projectState,
-            cursorRecording: cursorRecording,
-            metadata: sourceMetadata,
-            videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
-            fps: pipelineFps,
-          ));
+    final ExportCompositor compositor = InProcessExportCompositor(FrameCompositor(
+      projectState: projectState,
+      cursorRecording: cursorRecording,
+      metadata: sourceMetadata,
+      videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
+      fps: pipelineFps,
+    ));
 
     final decoder = FfmpegDecoder(
       inputPath: sourcePath,
