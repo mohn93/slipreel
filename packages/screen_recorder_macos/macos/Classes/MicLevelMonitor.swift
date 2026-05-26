@@ -25,9 +25,11 @@ final class MicLevelMonitor {
       if let uid = deviceUid, let devID = AudioDeviceCatalog.deviceID(forUID: uid) {
         do { try input.auAudioUnit.setDeviceID(devID) } catch { /* fall back to default */ }
       }
-      if reduceNoise {
-        try input.setVoiceProcessingEnabled(true)
-        if #available(macOS 14.0, *) { input.isVoiceProcessingAGCEnabled = !disableAgc }
+      // Voice processing is sticky on the input node, so set it explicitly both
+      // ways (a previous reduceNoise=true session would otherwise leak in).
+      try input.setVoiceProcessingEnabled(reduceNoise)
+      if reduceNoise, #available(macOS 14.0, *) {
+        input.isVoiceProcessingAGCEnabled = !disableAgc
       }
       let format = input.outputFormat(forBus: 0)
       input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in

@@ -38,7 +38,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   final GlobalKey _barContentKey = GlobalKey();
   ({double w, double h})? _lastBarSize;
   WindowMode? _lastMode;
-  bool _barWidthCallbackPending = false;
+  bool _barSizeCallbackPending = false;
 
   // Mic monitor lifecycle: tracks which config is currently being monitored so
   // we can avoid redundant start/stop calls and detect device changes.
@@ -220,10 +220,10 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     // Hug the bar window to its content after this frame lays out. Only in bar
     // mode — the pill/panel own their own sizes (native also guards on mode).
     // The pending flag coalesces the per-build callbacks into one per frame.
-    if (mode == WindowMode.bar && !_barWidthCallbackPending) {
-      _barWidthCallbackPending = true;
+    if (mode == WindowMode.bar && !_barSizeCallbackPending) {
+      _barSizeCallbackPending = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _barWidthCallbackPending = false;
+        _barSizeCallbackPending = false;
         if (mounted) _syncBarSize();
       });
     }
