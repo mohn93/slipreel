@@ -76,6 +76,11 @@ class ExportPipeline {
   /// `[0, 1]`. The denominator is `ffprobe`'s `nb_frames`; if that's
   /// unavailable the callback is suppressed (a determinate UI would
   /// rather show nothing than a wildly-wrong percentage).
+  ///
+  /// Single-use: each pipeline instance and each [cancelToken] is meant for
+  /// one [run] call. The `whenCancelled` handler is wired per run, so don't
+  /// reuse a [CancelToken] across runs (kill()/close() are idempotent, so
+  /// reuse is currently harmless, but the assumption may tighten later).
   Future<ExportPerfSummary> run({
     void Function(double progress)? onProgress,
     CancelToken? cancelToken,
@@ -266,6 +271,13 @@ class ExportPipeline {
         stageFutures.map((f) => f.then<void>((_) {}, onError: (_) {})),
       );
       await compositor.dispose();
+      // The encoder was killed mid-write, so any output on disk is a
+      // truncated fragment — delete it so a cancelled/failed export isn't
+      // mistaken for a real MP4.
+      try {
+        final out = File(outputPath);
+        if (await out.exists()) await out.delete();
+      } catch (_) {}
       if (cancelToken?.isCancelled ?? false) {
         throw const ExportCancelledException();
       }

@@ -65,6 +65,12 @@ class GifExportPipeline {
 
   /// Runs both passes. [onProgress] receives a value in [0, 1]:
   /// pass 1 covers [0, 0.5], pass 2 covers [0.5, 1.0].
+  ///
+  /// Single-use: each pipeline instance and each [cancelToken] is meant for
+  /// one [run] call. The `whenCancelled` handler and the `_activeProc` /
+  /// `_activeDecoder` fields are wired/mutated per run, so don't reuse a
+  /// [CancelToken] across runs (kill() is idempotent, so reuse is currently
+  /// harmless, but the assumption may tighten later).
   Future<ExportPerfSummary> run({
     void Function(double progress)? onProgress,
     CancelToken? cancelToken,
@@ -97,6 +103,7 @@ class GifExportPipeline {
     final int? expectedFrames = _expectedFrames(probed, fps);
 
     try {
+      try {
       final compositeSw1 = Stopwatch();
       var pass1Frames = 0;
 
@@ -293,6 +300,18 @@ class GifExportPipeline {
       );
       AppLogger.ffmpeg.i(summary.format());
       return summary;
+      } catch (_) {
+        // Best-effort: remove any partial output so a cancelled/failed GIF
+        // isn't mistaken for a real export.
+        try {
+          final out = File(outputPath);
+          if (await out.exists()) await out.delete();
+        } catch (_) {}
+        if (cancelToken?.isCancelled ?? false) {
+          throw const ExportCancelledException();
+        }
+        rethrow;
+      }
     } finally {
       // Recursively delete the temp directory that holds palette.png.
       // Deleting the dir (not just the file) avoids leaving behind
