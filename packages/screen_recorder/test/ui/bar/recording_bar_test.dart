@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/ui/bar/recording_bar.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 void _wide(WidgetTester tester) {
   tester.view.physicalSize = const Size(1100, 600);
@@ -15,12 +16,16 @@ void main() {
     VoidCallback? onClose,
     VoidCallback? onGearTap,
     VoidCallback? onDragStart,
+    MicrophoneConfig? microphone,
+    VoidCallback? onMicTap,
   }) =>
       RecordingBar(
         onPickMode: onPickMode ?? (_) {},
         onClose: onClose ?? () {},
         onGearTap: onGearTap ?? () {},
         onDragStart: onDragStart ?? () {},
+        microphone: microphone,
+        onMicTap: onMicTap ?? () {},
       );
 
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));

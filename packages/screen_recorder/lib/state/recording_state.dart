@@ -103,7 +103,7 @@ class RecordingController extends StateNotifier<RecordingState> {
     );
   }
 
-  Future<void> startRecording() async {
+  Future<void> startRecording({MicrophoneConfig? microphone}) async {
     if (!state.canStartRecording ||
         state.selectedSourceId == null ||
         state.selectedSourceKind == null) return;
@@ -124,7 +124,7 @@ class RecordingController extends StateNotifier<RecordingState> {
         source: state.selectedSourceKind!,
         sourceId: state.selectedSourceId,
         frameRate: _defaultFps,
-        captureAudio: true,
+        microphone: microphone,
         captureCursor: true,
       );
 

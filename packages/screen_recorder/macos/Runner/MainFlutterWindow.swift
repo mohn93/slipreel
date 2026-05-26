@@ -40,6 +40,14 @@ class MainFlutterWindow: NSWindow {
       case "startWindowDrag":
         self?.startWindowDrag()
         result(nil)
+      case "setBarWidth":
+        guard let args = call.arguments as? [String: Any],
+              let width = args["width"] as? Double else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        self?.setBarWidth(CGFloat(width))
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -53,10 +61,16 @@ class MainFlutterWindow: NSWindow {
     super.awakeFromNib()
   }
 
+  /// Tracks the active mode so `setBarWidth` only resizes while we're the bar.
+  private var currentMode = "bar"
+
   private func applyMode(_ mode: String) {
+    currentMode = mode
     switch mode {
     case "bar":
-      configureFloating(width: 720, height: 68, cornerRadius: 18)
+      // 736 is just the pre-measure default; Flutter measures the row content
+      // and calls `setBarWidth` to hug it (the mic/system-audio labels vary).
+      configureFloating(width: 736, height: kBarHeight, cornerRadius: 18)
     case "pill":
       configureFloating(width: 156, height: 48, cornerRadius: 24)
     case "panel":
@@ -64,6 +78,26 @@ class MainFlutterWindow: NSWindow {
     default:
       break
     }
+  }
+
+  /// Fixed bar height; width is content-driven via `setBarWidth`.
+  private let kBarHeight: CGFloat = 68
+
+  /// Resizes the floating bar to hug its Flutter content. No-op unless we're
+  /// currently the bar (so it never resizes the pill or the panel). Keeps the
+  /// window top-centered. Width is clamped to a sane range.
+  private func setBarWidth(_ width: CGFloat) {
+    guard currentMode == "bar" else { return }
+    let clamped = max(320, min(width, 1400))
+    // Resize in place: keep the window's origin fixed (and thus its top-left
+    // corner, since the height is constant) so the bar grows/shrinks on the
+    // RIGHT and stays exactly where the user dragged it. Re-centering /
+    // top-positioning here would make the whole bar jump and snap back to the
+    // top of the screen on every content change. Borderless → frame size ==
+    // content size, so setting frame width sets the content width directly.
+    var f = frame
+    f.size.width = clamped
+    setFrame(f, display: true)
   }
 
   private func showGearMenu(result: @escaping FlutterResult) {

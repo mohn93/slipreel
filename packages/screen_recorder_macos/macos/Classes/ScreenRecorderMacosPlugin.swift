@@ -1,4 +1,5 @@
 import ApplicationServices
+import AVFoundation
 import Cocoa
 import FlutterMacOS
 import CoreMedia
@@ -123,6 +124,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       pickSource(call: call, result: result)
     case "getAudioDevices":
       getAudioDevices(result: result)
+    case "showMicrophoneMenu":
+      showMicrophoneMenu(args: call.arguments as? [String: Any], result: result)
     case "startRecording":
       startRecording(call: call, result: result)
     case "stopRecording":
@@ -193,8 +196,107 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   }
 
   private func getAudioDevices(result: @escaping FlutterResult) {
-    // TODO: Implement in Phase 2
-    result([])
+    result(AudioDeviceCatalog.inputDevices())
+  }
+
+  private func showMicrophoneMenu(args: [String: Any]?, result: @escaping FlutterResult) {
+    let current = args // {deviceUid, deviceLabel, reduceNoise, disableAgc} or nil
+    let curUid = current?["deviceUid"] as? String
+    let curReduceNoise = current?["reduceNoise"] as? Bool ?? false
+    let curDisableAgc = current?["disableAgc"] as? Bool ?? false
+
+    DispatchQueue.main.async {
+      let target = MicMenuTarget()
+      let menu = NSMenu()
+      let status = AVCaptureDevice.authorizationStatus(for: .audio)
+
+      if status == .denied || status == .restricted {
+        let info = NSMenuItem(
+          title: "Microphone access denied — enable in System Settings ▸ Privacy",
+          action: nil, keyEquivalent: "")
+        info.isEnabled = false
+        menu.addItem(info)
+        menu.addItem(.separator())
+      }
+
+      for dev in AudioDeviceCatalog.inputDevices() {
+        let uid = dev["id"] as? String ?? ""
+        let name = dev["name"] as? String ?? uid
+        let isDefault = dev["isDefault"] as? Bool ?? false
+        let item = NSMenuItem(
+          title: isDefault ? "\(name) (default)" : name,
+          action: #selector(MicMenuTarget.pickDevice(_:)), keyEquivalent: "")
+        item.target = target
+        item.representedObject = ["uid": uid, "label": name]
+        item.state = (uid == curUid) ? .on : .off
+        menu.addItem(item)
+      }
+
+      menu.addItem(.separator())
+
+      let noise = NSMenuItem(title: "Reduce noise and normalize volume",
+        action: #selector(MicMenuTarget.toggleReduceNoise(_:)), keyEquivalent: "")
+      noise.target = target
+      noise.state = curReduceNoise ? .on : .off
+      noise.isEnabled = (curUid != nil) // only meaningful with a device selected
+      menu.addItem(noise)
+
+      if #available(macOS 14.0, *) {
+        let agc = NSMenuItem(title: "Disable auto gain control",
+          action: #selector(MicMenuTarget.toggleDisableAgc(_:)), keyEquivalent: "")
+        agc.target = target
+        agc.state = curDisableAgc ? .on : .off
+        agc.isEnabled = (curUid != nil && curReduceNoise)
+        menu.addItem(agc)
+      }
+
+      menu.addItem(.separator())
+      let off = NSMenuItem(title: "Don't record microphone",
+        action: #selector(MicMenuTarget.dontRecord(_:)), keyEquivalent: "")
+      off.target = target
+      off.state = (curUid == nil) ? .on : .off
+      menu.addItem(off)
+
+      menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+
+      // Compute the new config from the click.
+      func reply(_ config: [String: Any]?) {
+        result(["cancelled": false, "config": (config as Any?) ?? NSNull()])
+      }
+      func configMap(uid: String, label: String, reduceNoise: Bool, disableAgc: Bool) -> [String: Any] {
+        ["deviceUid": uid, "deviceLabel": label, "reduceNoise": reduceNoise, "disableAgc": disableAgc]
+      }
+
+      switch target.action {
+      case .none:
+        result(["cancelled": true, "config": NSNull()])
+      case .dontRecord:
+        reply(nil)
+      case .toggleReduceNoise:
+        guard let uid = curUid, let label = current?["deviceLabel"] as? String else { reply(nil); return }
+        reply(configMap(uid: uid, label: label, reduceNoise: !curReduceNoise, disableAgc: curDisableAgc))
+      case .device(let uid, let label):
+        // Newly selecting a device: ensure permission first.
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+          AVCaptureDevice.requestAccess(for: .audio) { granted in
+            DispatchQueue.main.async {
+              if granted {
+                reply(configMap(uid: uid, label: label, reduceNoise: curReduceNoise, disableAgc: curDisableAgc))
+              } else {
+                reply(nil)
+              }
+            }
+          }
+        } else if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
+          reply(configMap(uid: uid, label: label, reduceNoise: curReduceNoise, disableAgc: curDisableAgc))
+        } else {
+          reply(nil) // denied/restricted
+        }
+      case .toggleDisableAgc:
+        guard let uid = curUid, let label = current?["deviceLabel"] as? String else { reply(nil); return }
+        reply(configMap(uid: uid, label: label, reduceNoise: curReduceNoise, disableAgc: !curDisableAgc))
+      }
+    }
   }
 
   // MARK: - Recording Control
@@ -425,7 +527,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       return
     }
     let sourceId = args["sourceId"] as? String
-    let captureAudio = args["captureAudio"] as? Bool ?? false
+    let micArgs = args["microphone"] as? [String: Any]   // nil → don't record mic
+    let captureMic = micArgs != nil
     let captureCursor = args["captureCursor"] as? Bool ?? true
 
     // Optional region for area capture.
@@ -488,7 +591,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         }
         let writer = LiveRecordingWriter(
           outputPath: outputPath, width: captureWidth, height: captureHeight,
-          fps: fps, captureAudio: captureAudio)
+          fps: fps, audioTracks: captureMic ? [.microphone] : [])
         try writer.start()
 
         let encoder = VideoToolboxEncoder(width: captureWidth, height: captureHeight, fps: fps)
@@ -514,12 +617,16 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           sourceId: finalSourceId, fps: fps, isWindow: isWindow,
           region: regionSelection)
 
-        if captureAudio {
+        if let mic = micArgs {
+          let uid = mic["deviceUid"] as? String
+          let reduceNoise = mic["reduceNoise"] as? Bool ?? false
+          let disableAgc = mic["disableAgc"] as? Bool ?? false
           if audioCaptureManager == nil { audioCaptureManager = AudioCaptureManager() }
           audioCaptureManager?.onSampleBufferReceived = { [weak writer] sb in
-            writer?.appendAudio(sb)
+            writer?.appendAudio(sb, role: .microphone)
           }
-          try audioCaptureManager?.startCapture(includeMicrophone: true, includeSystem: false)
+          try audioCaptureManager?.startMicrophoneCapture(
+            deviceUid: uid, reduceNoise: reduceNoise, disableAgc: disableAgc)
         }
 
         // liveStartTime must be set BEFORE cursor tracking begins so the
@@ -1117,6 +1224,21 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       }
     }
   }
+}
+
+// MARK: - Microphone Menu Target
+
+private final class MicMenuTarget: NSObject {
+  enum Action { case device(uid: String, label: String), toggleReduceNoise, toggleDisableAgc, dontRecord }
+  var action: Action?
+  @objc func pickDevice(_ s: NSMenuItem) {
+    if let pair = s.representedObject as? [String: String] {
+      action = .device(uid: pair["uid"] ?? "", label: pair["label"] ?? "")
+    }
+  }
+  @objc func toggleReduceNoise(_ s: NSMenuItem) { action = .toggleReduceNoise }
+  @objc func toggleDisableAgc(_ s: NSMenuItem) { action = .toggleDisableAgc }
+  @objc func dontRecord(_ s: NSMenuItem) { action = .dontRecord }
 }
 
 // MARK: - Frame Stream Handler
