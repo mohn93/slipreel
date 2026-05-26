@@ -40,6 +40,15 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   WindowMode? _lastMode;
   bool _barWidthCallbackPending = false;
 
+  // Mic monitor lifecycle: tracks which config is currently being monitored so
+  // we can avoid redundant start/stop calls and detect device changes.
+  MicrophoneConfig? _monitoredConfig;
+
+  // Cache the level stream once — the getter returns a fresh
+  // receiveBroadcastStream() on each call, so we must not call it per-build.
+  late final Stream<double> _micLevelStream =
+      ScreenRecorderPlatform.instance.micLevelStream;
+
   @override
   void initState() {
     super.initState();
@@ -50,8 +59,26 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
 
   @override
   void dispose() {
+    if (_monitoredConfig != null) {
+      ScreenRecorderPlatform.instance.stopMicMonitor();
+    }
     _frameSettings.dispose();
     super.dispose();
+  }
+
+  /// Starts/stops the native mic monitor so the level meter only runs while the
+  /// bar is showing with a mic selected. Restarts when the device changes.
+  void _syncMicMonitor(WindowMode mode, MicrophoneConfig? mic) {
+    final shouldMonitor = mode == WindowMode.bar && mic != null;
+    if (shouldMonitor) {
+      if (_monitoredConfig != mic) {
+        _monitoredConfig = mic;
+        ScreenRecorderPlatform.instance.startMicMonitor(mic!);
+      }
+    } else if (_monitoredConfig != null) {
+      _monitoredConfig = null;
+      ScreenRecorderPlatform.instance.stopMicMonitor();
+    }
   }
 
   WindowModeController get _window =>
@@ -101,6 +128,9 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         microphone: ref.watch(microphoneControllerProvider),
         onMicTap: _onMicTap,
         contentKey: _barContentKey,
+        micLevelStream: ref.watch(microphoneControllerProvider) != null
+            ? _micLevelStream
+            : null,
       );
 
   /// Measures the bar content's intrinsic width and pairs it with a height that
@@ -148,6 +178,10 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   @override
   Widget build(BuildContext context) {
     final mode = ref.watch(windowModeControllerProvider);
+    final mic = ref.watch(microphoneControllerProvider);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncMicMonitor(mode, mic);
+    });
 
     ref.listen<RecordingState>(recordingControllerProvider, (prev, next) {
       if (next.status == RecordingStatus.recording ||

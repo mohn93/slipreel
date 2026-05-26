@@ -57,6 +57,19 @@ class _FakePlatform extends ScreenRecorderPlatform
     selectRegionCalls++;
     return region;
   }
+
+  final List<MicrophoneConfig> monitorStarts = [];
+  int monitorStops = 0;
+
+  @override
+  Future<void> startMicMonitor(MicrophoneConfig config) async =>
+      monitorStarts.add(config);
+
+  @override
+  Future<void> stopMicMonitor() async => monitorStops++;
+
+  @override
+  Stream<double> get micLevelStream => const Stream<double>.empty();
 }
 
 /// Records orchestration calls without doing any real recording IO.
@@ -288,5 +301,35 @@ void main() {
     final on = chrome.barSizes.last;
     expect(on.w, lessThan(off.w)); // 'X' is narrower than 'No microphone'
     expect(on.h, 80); // taller — meter row present
+  });
+
+  testWidgets('monitor starts when a mic is selected, stops when off',
+      (tester) async {
+    _wide(tester);
+    final fakePlatform = _FakePlatform();
+    ScreenRecorderPlatform.instance = fakePlatform;
+
+    late WidgetRef ref;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [windowChromeProvider.overrideWithValue(_FakeChrome())],
+      child: MaterialApp(
+        home: Consumer(builder: (c, r, _) {
+          ref = r;
+          return const RecordingBarScreen();
+        }),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.monitorStarts, isEmpty); // off by default
+
+    ref.read(microphoneControllerProvider.notifier)
+        .set(const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'Mic'));
+    await tester.pumpAndSettle();
+    expect(fakePlatform.monitorStarts, hasLength(1));
+
+    ref.read(microphoneControllerProvider.notifier).set(null);
+    await tester.pumpAndSettle();
+    expect(fakePlatform.monitorStops, greaterThanOrEqualTo(1));
   });
 }
