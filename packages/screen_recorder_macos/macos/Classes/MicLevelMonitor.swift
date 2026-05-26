@@ -13,10 +13,21 @@ final class MicLevelMonitor {
   private var lastEmit: CFTimeInterval = 0
   private(set) var isRunning = false
 
+  // Stored so the monitor can rebuild itself on an engine configuration change.
+  private var deviceUid: String?
+  private var reduceNoise = false
+  private var disableAgc = false
+  private var configObserver: NSObjectProtocol?
+  private var lastStart: CFTimeInterval = 0
+
   /// Start monitoring [deviceUid] (nil → default input). [reduceNoise] mirrors
   /// the recorder so the meter reflects the processed signal.
   func start(deviceUid: String?, reduceNoise: Bool, disableAgc: Bool) {
     stop()
+    self.deviceUid = deviceUid
+    self.reduceNoise = reduceNoise
+    self.disableAgc = disableAgc
+    lastStart = CACurrentMediaTime()
     let engine = AVAudioEngine()
     let input = engine.inputNode
     smoothed = 0
@@ -48,6 +59,7 @@ final class MicLevelMonitor {
       try engine.start()
       self.engine = engine
       self.isRunning = true
+      observeConfigChanges(of: engine)
     } catch {
       NSLog("MicLevelMonitor: start failed: \(error)")
       input.removeTap(onBus: 0)
@@ -59,6 +71,10 @@ final class MicLevelMonitor {
   }
 
   func stop() {
+    if let obs = configObserver {
+      NotificationCenter.default.removeObserver(obs)
+      configObserver = nil
+    }
     guard isRunning, let engine = engine else { return }
     isRunning = false
     engine.inputNode.removeTap(onBus: 0)
@@ -67,6 +83,27 @@ final class MicLevelMonitor {
     // Clear the meter when monitoring ends (e.g. switching devices) so a stale
     // level never lingers while the next engine spins up.
     DispatchQueue.main.async { [weak self] in self?.onLevel?(0) }
+  }
+
+  /// AVAudioEngine stops itself when the audio configuration changes — the
+  /// input device's sample rate/route changes, or another app grabs it. The
+  /// installed tap then goes silent with no error, freezing the meter. Observe
+  /// that and rebuild the tap so the meter keeps tracking.
+  private func observeConfigChanges(of engine: AVAudioEngine) {
+    configObserver = NotificationCenter.default.addObserver(
+      forName: .AVAudioEngineConfigurationChange,
+      object: engine,
+      queue: .main
+    ) { [weak self] _ in
+      guard let self = self, self.isRunning else { return }
+      // Ignore the churn that voice-processing setup itself triggers right
+      // after a start(), so we don't loop restarting.
+      guard CACurrentMediaTime() - self.lastStart > 0.5 else { return }
+      NSLog("MicLevelMonitor: configuration changed — rebuilding tap")
+      self.start(deviceUid: self.deviceUid,
+                 reduceNoise: self.reduceNoise,
+                 disableAgc: self.disableAgc)
+    }
   }
 
   private func process(_ buffer: AVAudioPCMBuffer) {
