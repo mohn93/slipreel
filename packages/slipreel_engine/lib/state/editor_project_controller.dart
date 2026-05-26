@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:slipreel_engine/models/window_frame.dart';
+import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
@@ -91,6 +92,18 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   void setFadeIn(Duration value) => state = state.copyWith(fadeIn: value);
 
   void setFadeOut(Duration value) => state = state.copyWith(fadeOut: value);
+
+  void setMicGain(int percent) => state = state.copyWith(
+      audioMix: state.audioMix.copyWith(micGainPercent: percent));
+
+  void setMicMuted(bool value) => state = state.copyWith(
+      audioMix: state.audioMix.copyWith(micMuted: value));
+
+  void setSystemGain(int percent) => state = state.copyWith(
+      audioMix: state.audioMix.copyWith(systemGainPercent: percent));
+
+  void setSystemMuted(bool value) => state = state.copyWith(
+      audioMix: state.audioMix.copyWith(systemMuted: value));
 
   // ---- zoom region list -------------------------------------------------
   //
