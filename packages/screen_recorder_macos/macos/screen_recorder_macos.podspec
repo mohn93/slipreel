@@ -24,8 +24,8 @@ A new Flutter plugin project.
 
   s.dependency 'FlutterMacOS'
 
-  # ScreenCaptureKit requires macOS 12.3+
-  s.platform = :osx, '12.3'
+  # ScreenCaptureKit capturesAudio requires macOS 13.0+
+  s.platform = :osx, '13.0'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
   s.swift_version = '5.0'
 
