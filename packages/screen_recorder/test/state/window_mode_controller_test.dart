@@ -11,7 +11,7 @@ class _FakeChrome implements WindowChrome {
   @override
   Future<void> startWindowDrag() async {}
   @override
-  Future<void> setBarWidth(double width) async {}
+  Future<void> setBarSize(double width, double height) async {}
 }
 
 void main() {

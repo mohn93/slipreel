@@ -32,8 +32,11 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   // Auto-size: the bar window hugs its content, which varies with the mic
   // (and later system-audio) label. We measure the content Row's intrinsic
   // width after each bar frame and ask the native window to match it.
+  static const double _kBarHeight = 68;
+  static const double _kBarHeightWithMeter = 80;
+
   final GlobalKey _barContentKey = GlobalKey();
-  double? _lastBarWidth;
+  ({double w, double h})? _lastBarSize;
   WindowMode? _lastMode;
   bool _barWidthCallbackPending = false;
 
@@ -100,21 +103,25 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         contentKey: _barContentKey,
       );
 
-  /// Measures the bar content's intrinsic (constraint-independent) width and
-  /// asks the native window to hug it. Using the intrinsic width — not the
-  /// rendered width — means resizing the window can't feed back into the
-  /// measurement, so there's no resize loop. Deduped so we only call native
-  /// when the width actually changes.
-  void _syncBarWidth() {
+  /// Measures the bar content's intrinsic width and pairs it with a height that
+  /// depends on whether the meter row is shown (a mic is selected). Intrinsic
+  /// width keeps native resizes from feeding back into the measurement.
+  void _syncBarSize() {
     final box = _barContentKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final content = box.getMaxIntrinsicWidth(double.infinity);
     if (!content.isFinite || content <= 0) return;
-    // +12 for the bar Container's symmetric horizontal padding (6 + 6).
-    final width = (content + 12).ceilToDouble();
-    if (_lastBarWidth != null && (_lastBarWidth! - width).abs() < 0.5) return;
-    _lastBarWidth = width;
-    ref.read(windowChromeProvider).setBarWidth(width);
+    final width = (content + 12).ceilToDouble(); // h-padding 6+6
+    final micOn = ref.read(microphoneControllerProvider) != null;
+    final height = micOn ? _kBarHeightWithMeter : _kBarHeight;
+    final size = (w: width, h: height);
+    if (_lastBarSize != null &&
+        (_lastBarSize!.w - size.w).abs() < 0.5 &&
+        _lastBarSize!.h == size.h) {
+      return;
+    }
+    _lastBarSize = size;
+    ref.read(windowChromeProvider).setBarSize(size.w, size.h);
   }
 
   Future<void> _onMicTap() async {
@@ -169,10 +176,10 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     }
 
     // On (re)entering bar mode, force a re-measure: native applyMode("bar")
-    // resets the window to its default width, so the cached width is stale
+    // resets the window to its default size, so the cached size is stale
     // (otherwise the dedup would suppress the call and leave the bar unhugged).
     if (mode != _lastMode) {
-      if (mode == WindowMode.bar) _lastBarWidth = null;
+      if (mode == WindowMode.bar) _lastBarSize = null;
       _lastMode = mode;
     }
 
@@ -183,7 +190,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
       _barWidthCallbackPending = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _barWidthCallbackPending = false;
-        if (mounted) _syncBarWidth();
+        if (mounted) _syncBarSize();
       });
     }
 

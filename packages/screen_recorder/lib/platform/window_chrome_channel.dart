@@ -23,7 +23,8 @@ class MethodChannelWindowChrome implements WindowChrome {
   }
 
   @override
-  Future<void> setBarWidth(double width) async {
-    await _channel.invokeMethod<void>('setBarWidth', {'width': width});
+  Future<void> setBarSize(double width, double height) async {
+    await _channel
+        .invokeMethod<void>('setBarSize', {'width': width, 'height': height});
   }
 }

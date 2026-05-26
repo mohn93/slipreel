@@ -13,7 +13,7 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 
 class _FakeChrome implements WindowChrome {
   final List<WindowMode> calls = [];
-  final List<double> barWidths = [];
+  final List<({double w, double h})> barSizes = [];
   @override
   Future<void> setMode(WindowMode mode) async => calls.add(mode);
   @override
@@ -21,7 +21,8 @@ class _FakeChrome implements WindowChrome {
   @override
   Future<void> startWindowDrag() async {}
   @override
-  Future<void> setBarWidth(double width) async => barWidths.add(width);
+  Future<void> setBarSize(double width, double height) async =>
+      barSizes.add((w: width, h: height));
 }
 
 /// A fake platform that returns canned [pickSource]/[selectRegion] results and
@@ -260,7 +261,7 @@ void main() {
     expect(find.text('Mic One'), findsOneWidget);
   });
 
-  testWidgets('bar auto-sizes its window to the (variable) content width',
+  testWidgets('bar auto-sizes its window to the (variable) content size',
       (tester) async {
     _wide(tester);
     ScreenRecorderPlatform.instance = _FakePlatform();
@@ -272,13 +273,11 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // Auto-size fired and asked native for a concrete, clamped width.
-    expect(chrome.barWidths, isNotEmpty);
-    final offWidth = chrome.barWidths.last;
-    expect(offWidth, greaterThan(320)); // native min-clamp floor
+    expect(chrome.barSizes, isNotEmpty);
+    final off = chrome.barSizes.last;
+    expect(off.w, greaterThan(320));
+    expect(off.h, 68); // base height, no meter when mic is off
 
-    // Changing the mic label changes the measured content → a new width is
-    // requested (content-driven, not a constant).
     final container = ProviderScope.containerOf(
         tester.element(find.byType(RecordingBar)));
     container
@@ -286,8 +285,8 @@ void main() {
         .set(const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'X'));
     await tester.pumpAndSettle();
 
-    // A one-char label is narrower than "No microphone", so the bar shrinks —
-    // proving the requested width tracks the content (and in the right direction).
-    expect(chrome.barWidths.last, lessThan(offWidth));
+    final on = chrome.barSizes.last;
+    expect(on.w, lessThan(off.w)); // 'X' is narrower than 'No microphone'
+    expect(on.h, 80); // taller — meter row present
   });
 }

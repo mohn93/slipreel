@@ -25,8 +25,8 @@ abstract class WindowChrome {
   /// reposition the borderless bar by dragging any non-button area.
   Future<void> startWindowDrag();
 
-  /// Resizes the floating bar window to [width] points (height fixed), keeping
-  /// it top-centered. Native no-ops unless the window is in bar mode. Used to
-  /// hug the bar's variable-width content (e.g. the selected mic device label).
-  Future<void> setBarWidth(double width);
+  /// Resizes the floating bar window to [width]×[height] points, keeping its
+  /// top-left corner fixed (grows/shrinks on the right & bottom). Native no-ops
+  /// unless in bar mode. Hugs the bar's variable content (mic label, meter row).
+  Future<void> setBarSize(double width, double height);
 }
