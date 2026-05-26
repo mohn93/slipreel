@@ -327,12 +327,23 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
 
   private func showSystemAudioMenu(args: [String: Any]?, result: @escaping FlutterResult) {
     let curMode = args?["mode"] as? String          // "allApps" | "selectedApps" | nil(off)
-    let curBundleIds = (args?["bundleIds"] as? [String]) ?? []
+    let curBundleIds = Set((args?["bundleIds"] as? [String]) ?? [])
 
-    DispatchQueue.main.async {
-      guard #available(macOS 13.0, *) else {
-        result(["cancelled": false, "config": NSNull()]); return
-      }
+    guard #available(macOS 13.0, *) else {
+      result(["cancelled": false, "config": NSNull()]); return
+    }
+
+    Task { @MainActor in
+      // Enumerate running apps so each becomes an inline checkbox row.
+      let content = try? await SCShareableContent.excludingDesktopWindows(
+        false, onScreenWindowsOnly: false)
+      var seen = Set<String>()
+      let apps = (content?.applications ?? [])
+        .filter { !$0.bundleIdentifier.isEmpty && !$0.applicationName.isEmpty
+                  && seen.insert($0.bundleIdentifier).inserted }
+        .sorted { $0.applicationName.localizedCaseInsensitiveCompare($1.applicationName)
+                  == .orderedAscending }
+
       let target = SysAudioMenuTarget()
       let menu = NSMenu()
 
@@ -342,11 +353,35 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       all.state = (curMode == "allApps") ? .on : .off
       menu.addItem(all)
 
-      let selected = NSMenuItem(title: "Record system audio from selected apps…",
-        action: #selector(SysAudioMenuTarget.pickSelected(_:)), keyEquivalent: "")
-      selected.target = target
-      selected.state = (curMode == "selectedApps") ? .on : .off
-      menu.addItem(selected)
+      menu.addItem(.separator())
+      let header = NSMenuItem(title: "Selected apps", action: nil, keyEquivalent: "")
+      header.isEnabled = false
+      menu.addItem(header)
+
+      // Each app is a custom-view checkbox row: clicking a checkbox inside a
+      // menu item's view does NOT dismiss the menu, so several apps can be
+      // toggled in one pass. We read the checkbox states after the menu closes.
+      var checkboxes: [(bundleId: String, button: NSButton)] = []
+      if apps.isEmpty {
+        let none = NSMenuItem(title: "  (no apps available)", action: nil, keyEquivalent: "")
+        none.isEnabled = false
+        menu.addItem(none)
+      }
+      for app in apps {
+        let button = NSButton(checkboxWithTitle: app.applicationName,
+                              target: nil, action: nil)
+        button.state = curBundleIds.contains(app.bundleIdentifier) ? .on : .off
+        button.sizeToFit()
+        let rowH = max(22, button.frame.height + 4)
+        let rowW = max(240, button.frame.width + 44)
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: rowW, height: rowH))
+        button.setFrameOrigin(NSPoint(x: 20, y: (rowH - button.frame.height) / 2))
+        view.addSubview(button)
+        let item = NSMenuItem()
+        item.view = view
+        menu.addItem(item)
+        checkboxes.append((app.bundleIdentifier, button))
+      }
 
       menu.addItem(.separator())
       let off = NSMenuItem(title: "Don't record system audio",
@@ -362,23 +397,17 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       }
 
       switch target.action {
-      case .none:
-        result(["cancelled": true, "config": NSNull()])
-      case .dontRecord:
-        reply(nil)
       case .all:
         reply(["mode": "allApps", "bundleIds": [String]()])
-      case .selected:
-        let picker = SystemAudioAppPicker()
-        Task {
-          let chosen = await picker.pick(preselected: curBundleIds)
-          DispatchQueue.main.async {
-            if let chosen = chosen, !chosen.isEmpty {
-              reply(["mode": "selectedApps", "bundleIds": chosen])
-            } else {
-              result(["cancelled": true, "config": NSNull()])
-            }
-          }
+      case .dontRecord:
+        reply(nil)
+      case .none:
+        // Dismissed by clicking away / Escape — apply whatever apps are checked.
+        let chosen = checkboxes.filter { $0.button.state == .on }.map { $0.bundleId }
+        if chosen.isEmpty {
+          result(["cancelled": true, "config": NSNull()]) // no change
+        } else {
+          reply(["mode": "selectedApps", "bundleIds": chosen])
         }
       }
     }
@@ -1366,10 +1395,9 @@ private final class MicMenuTarget: NSObject {
 
 @available(macOS 13.0, *)
 final class SysAudioMenuTarget: NSObject {
-  enum Action { case none, all, selected, dontRecord }
+  enum Action { case none, all, dontRecord }
   var action: Action = .none
   @objc func pickAll(_ s: Any) { action = .all }
-  @objc func pickSelected(_ s: Any) { action = .selected }
   @objc func dontRecord(_ s: Any) { action = .dontRecord }
 }
 
