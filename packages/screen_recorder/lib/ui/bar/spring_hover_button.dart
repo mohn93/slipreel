@@ -20,11 +20,17 @@ class SpringHoverButton extends StatefulWidget {
     required this.child,
     this.onTap,
     this.borderRadius = 9,
+    this.onHoverChanged,
   });
 
   final Widget child;
   final VoidCallback? onTap;
   final double borderRadius;
+
+  /// Fires with true on hover-enter and false on hover-exit, so a control can
+  /// animate its own content (e.g. brighten its icon/label) in step with the
+  /// hover pill.
+  final ValueChanged<bool>? onHoverChanged;
 
   @override
   State<SpringHoverButton> createState() => _SpringHoverButtonState();
@@ -112,6 +118,7 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
 
   void _onEnter(PointerEnterEvent e) {
     _hovering = true;
+    widget.onHoverChanged?.call(true);
     final rel = _centreRel(e.localPosition);
     _dx.value = rel.dx; // start where the cursor entered
     _dy.value = rel.dy;
@@ -133,6 +140,7 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
 
   void _onExit(PointerExitEvent e) {
     _hovering = false;
+    widget.onHoverChanged?.call(false);
     final rel = _centreRel(e.localPosition);
     final dist = rel.distance;
     final dir = dist == 0 ? const Offset(0, -1) : rel / dist;
@@ -186,7 +194,7 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(
-                            alpha: (0.12 + 0.16 * _press.value).clamp(0.0, 0.34),
+                            alpha: (0.07 + 0.12 * _press.value).clamp(0.0, 0.22),
                           ),
                           borderRadius:
                               BorderRadius.circular(widget.borderRadius),

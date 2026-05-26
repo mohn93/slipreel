@@ -168,29 +168,47 @@ class _Mode extends StatelessWidget {
   }
 }
 
-class _AvPlaceholder extends StatelessWidget {
+class _AvPlaceholder extends StatefulWidget {
   const _AvPlaceholder({required this.icon, required this.label});
   final IconData icon;
   final String label;
 
   @override
+  State<_AvPlaceholder> createState() => _AvPlaceholderState();
+}
+
+class _AvPlaceholderState extends State<_AvPlaceholder> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
     return SpringHoverButton(
       onTap: null,
+      onHoverChanged: (h) => setState(() => _hover = h),
       child: SizedBox(
         height: _kBarButtonHeight,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 22, color: const Color(0xFF6E6E76)),
-                const SizedBox(width: 6),
-                Text(label,
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFF6E6E76))),
-              ],
+            // On hover the icon + label animate from the inactive grey up to
+            // the active bright colour.
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(end: _hover ? 1.0 : 0.0),
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOut,
+              builder: (context, t, _) {
+                final color = Color.lerp(
+                    const Color(0xFF6E6E76), const Color(0xFFE9E9EC), t)!;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(widget.icon, size: 22, color: color),
+                    const SizedBox(width: 6),
+                    Text(widget.label,
+                        style: TextStyle(fontSize: 12, color: color)),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -204,7 +222,7 @@ class _AvPlaceholder extends StatelessWidget {
 /// When [levelStream] is non-null, a [MicLevelMeter] is rendered inside the
 /// chip's container, pinned to the bottom — the chip's icon/label stay put
 /// and the bar height does NOT grow.
-class _MicControl extends StatelessWidget {
+class _MicControl extends StatefulWidget {
   const _MicControl({
     required this.microphone,
     required this.onTap,
@@ -216,14 +234,23 @@ class _MicControl extends StatelessWidget {
   final Stream<double>? levelStream;
 
   @override
+  State<_MicControl> createState() => _MicControlState();
+}
+
+class _MicControlState extends State<_MicControl> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
-    final on = microphone != null;
-    final label = on ? microphone!.deviceLabel : 'No microphone';
-    final iconColor = on ? const Color(0xFFE9E9EC) : const Color(0xFF6E6E76);
-    final textColor = on ? const Color(0xFFE9E9EC) : const Color(0xFF6E6E76);
-    final chip = SpringHoverButton(
+    final on = widget.microphone != null;
+    final label = on ? widget.microphone!.deviceLabel : 'No microphone';
+    // Active when a mic is selected, or while hovered — the icon/label animate
+    // from the inactive grey to the active bright colour.
+    final active = on || _hover;
+    return SpringHoverButton(
       key: const Key('bar-mic'),
-      onTap: onTap,
+      onTap: widget.onTap,
+      onHoverChanged: (h) => setState(() => _hover = h),
       child: SizedBox(
         width: _kMicChipWidth,
         height: _kBarButtonHeight,
@@ -232,40 +259,48 @@ class _MicControl extends StatelessWidget {
           child: Stack(
             children: [
               Positioned.fill(
-                child: Row(
-                  children: [
-                    Icon(on ? LucideIcons.mic : LucideIcons.micOff,
-                        size: 22, color: iconColor),
-                    const SizedBox(width: 6),
-                    // Left-aligned label fills the remaining fixed width and
-                    // ellipsizes; the leading icon never shifts with label length.
-                    Expanded(
-                      child: Text(label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: false,
-                          textAlign: TextAlign.left,
-                          style: TextStyle(fontSize: 12, color: textColor)),
-                    ),
-                    const SizedBox(width: 2),
-                    const Icon(LucideIcons.chevronDown,
-                        size: 13, color: Color(0xFF7E7E86)),
-                  ],
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(end: active ? 1.0 : 0.0),
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOut,
+                  builder: (context, t, _) {
+                    final color = Color.lerp(
+                        const Color(0xFF6E6E76), const Color(0xFFE9E9EC), t)!;
+                    return Row(
+                      children: [
+                        Icon(on ? LucideIcons.mic : LucideIcons.micOff,
+                            size: 22, color: color),
+                        const SizedBox(width: 6),
+                        // Left-aligned label fills the remaining fixed width and
+                        // ellipsizes; the leading icon never shifts.
+                        Expanded(
+                          child: Text(label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              softWrap: false,
+                              textAlign: TextAlign.left,
+                              style: TextStyle(fontSize: 12, color: color)),
+                        ),
+                        const SizedBox(width: 2),
+                        const Icon(LucideIcons.chevronDown,
+                            size: 13, color: Color(0xFF7E7E86)),
+                      ],
+                    );
+                  },
                 ),
               ),
-              if (levelStream != null)
+              if (widget.levelStream != null)
                 Positioned(
                   left: 0,
                   right: 0,
                   bottom: 6,
-                  child: MicStatus(levelStream: levelStream!),
+                  child: MicStatus(levelStream: widget.levelStream!),
                 ),
             ],
           ),
         ),
       ),
     );
-    return chip;
   }
 }
 
