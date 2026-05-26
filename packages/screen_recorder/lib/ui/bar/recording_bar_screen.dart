@@ -33,7 +33,6 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   // (and later system-audio) label. We measure the content Row's intrinsic
   // width after each bar frame and ask the native window to match it.
   static const double _kBarHeight = 68;
-  static const double _kBarHeightWithMeter = 80;
 
   final GlobalKey _barContentKey = GlobalKey();
   ({double w, double h})? _lastBarSize;
@@ -133,17 +132,16 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
             : null,
       );
 
-  /// Measures the bar content's intrinsic width and pairs it with a height that
-  /// depends on whether the meter row is shown (a mic is selected). Intrinsic
-  /// width keeps native resizes from feeding back into the measurement.
+  /// Measures the bar content's intrinsic width and pairs it with the constant
+  /// bar height. Intrinsic width keeps native resizes from feeding back into
+  /// the measurement.
   void _syncBarSize() {
     final box = _barContentKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final content = box.getMaxIntrinsicWidth(double.infinity);
     if (!content.isFinite || content <= 0) return;
     final width = (content + 12).ceilToDouble(); // h-padding 6+6
-    final micOn = ref.read(microphoneControllerProvider) != null;
-    final height = micOn ? _kBarHeightWithMeter : _kBarHeight;
+    final height = _kBarHeight;
     final size = (w: width, h: height);
     if (_lastBarSize != null &&
         (_lastBarSize!.w - size.w).abs() < 0.5 &&

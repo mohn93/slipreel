@@ -197,7 +197,9 @@ class _AvPlaceholder extends StatelessWidget {
 
 /// Live microphone control: icon + (truncated) device name + chevron. Greyed
 /// when off. Tapping opens the native mic menu via [onTap].
-/// When [levelStream] is non-null, a [MicLevelMeter] is rendered below the chip.
+/// When [levelStream] is non-null, a [MicLevelMeter] is rendered inside the
+/// chip's container, pinned to the bottom — the chip's icon/label stay put
+/// and the bar height does NOT grow.
 class _MicControl extends StatelessWidget {
   const _MicControl({
     required this.microphone,
@@ -222,52 +224,46 @@ class _MicControl extends StatelessWidget {
         height: _kBarButtonHeight,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(on ? LucideIcons.mic : LucideIcons.micOff,
-                    size: 22, color: iconColor),
-                const SizedBox(width: 6),
-                // The 120pt cap bounds long device names. The bar's auto-size
-                // measures this Row's intrinsic width, and ConstrainedBox caps
-                // intrinsic width too — so the measurement matches what renders.
-                // If this cap changes, the bar window will still hug correctly.
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 120),
-                  child: Text(label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                      style: TextStyle(fontSize: 10, color: textColor)),
+          child: Stack(
+            children: [
+              Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(on ? LucideIcons.mic : LucideIcons.micOff,
+                        size: 22, color: iconColor),
+                    const SizedBox(width: 6),
+                    // The 120pt cap bounds long device names. The bar's auto-size
+                    // measures this Row's intrinsic width, and ConstrainedBox caps
+                    // intrinsic width too — so the measurement matches what renders.
+                    // If this cap changes, the bar window will still hug correctly.
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 120),
+                      child: Text(label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          style: TextStyle(fontSize: 10, color: textColor)),
+                    ),
+                    const SizedBox(width: 2),
+                    const Icon(LucideIcons.chevronDown,
+                        size: 13, color: Color(0xFF7E7E86)),
+                  ],
                 ),
-                const SizedBox(width: 2),
-                const Icon(LucideIcons.chevronDown,
-                    size: 13, color: Color(0xFF7E7E86)),
-              ],
-            ),
+              ),
+              if (levelStream != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 2,
+                  child: MicLevelMeter(levelStream: levelStream!),
+                ),
+            ],
           ),
         ),
       ),
     );
-    if (levelStream == null) return chip;
-    // The chip's natural width determines the Column's width; stretch then
-    // makes the meter fill that same width. IntrinsicWidth gives the Column
-    // a tight finite width equal to the chip's content width.
-    return IntrinsicWidth(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          chip,
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: MicLevelMeter(levelStream: levelStream!),
-          ),
-        ],
-      ),
-    );
+    return chip;
   }
 }
 

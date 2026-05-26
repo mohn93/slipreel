@@ -300,7 +300,7 @@ void main() {
 
     final on = chrome.barSizes.last;
     expect(on.w, lessThan(off.w)); // 'X' is narrower than 'No microphone'
-    expect(on.h, 80); // taller — meter row present
+    expect(on.h, 68); // same constant height — meter is inside the chip now
   });
 
   testWidgets('monitor starts when a mic is selected, stops when off',

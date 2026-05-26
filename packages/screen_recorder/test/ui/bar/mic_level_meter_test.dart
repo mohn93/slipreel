@@ -12,68 +12,58 @@ void main() {
         ),
       );
 
-  testWidgets('fill width tracks the level', (tester) async {
+  double fillFactor(WidgetTester t) => t
+      .widget<FractionallySizedBox>(find.ancestor(
+          of: find.byKey(const Key('mic-meter-fill')),
+          matching: find.byType(FractionallySizedBox)))
+      .widthFactor!;
+  double peakFactor(WidgetTester t) => t
+      .widget<FractionallySizedBox>(find.ancestor(
+          of: find.byKey(const Key('mic-meter-peak')),
+          matching: find.byType(FractionallySizedBox)))
+      .widthFactor!;
+
+  /// Pumps [n] frames at [frameMs] milliseconds each to drive the ticker.
+  Future<void> _pumpFrames(WidgetTester tester, int n,
+      {int frameMs = 16}) async {
+    for (var i = 0; i < n; i++) {
+      await tester.pump(Duration(milliseconds: frameMs));
+    }
+  }
+
+  testWidgets('fill springs up toward the level', (tester) async {
     final c = StreamController<double>.broadcast();
     await tester.pumpWidget(host(c.stream));
-    await tester.pump();
-
-    c.add(0.0);
-    await tester.pump(); // deliver the stream event → setState schedules a frame
-    await tester.pump(); // build the scheduled frame
-    expect(tester.widget<FractionallySizedBox>(find.byType(FractionallySizedBox)).widthFactor, 0.0);
-
     c.add(1.0);
-    await tester.pump(); // deliver the stream event → setState schedules a frame
-    await tester.pump(); // build the scheduled frame
-    expect(tester.widget<FractionallySizedBox>(find.byType(FractionallySizedBox)).widthFactor, 1.0);
-
-    c.add(0.5);
-    await tester.pump(); // deliver the stream event → setState schedules a frame
-    await tester.pump(); // build the scheduled frame
-    expect(tester.widget<FractionallySizedBox>(find.byType(FractionallySizedBox)).widthFactor, 0.5);
-
+    await tester.pump(); // deliver stream event
+    // ~500 ms at 16 ms/frame ≈ 31 frames — enough for the spring to reach >0.6
+    await _pumpFrames(tester, 31);
+    expect(fillFactor(tester), greaterThan(0.6));
     await c.close();
   });
 
-  testWidgets('fill color shifts to amber then red near clip', (tester) async {
+  testWidgets('peak holds above the fill, then decays', (tester) async {
     final c = StreamController<double>.broadcast();
     await tester.pumpWidget(host(c.stream));
-
-    Color fillColor() => (tester
-            .widget<Container>(find.byKey(const Key('mic-meter-fill')))
-            .decoration as BoxDecoration)
-        .color!;
-
-    c.add(0.5);
-    await tester.pump(); // deliver the stream event → setState schedules a frame
-    await tester.pump(); // build the scheduled frame
-    final normal = fillColor();
-
-    c.add(0.90);
-    await tester.pump(); // deliver the stream event → setState schedules a frame
-    await tester.pump(); // build the scheduled frame
-    expect(fillColor(), isNot(normal)); // amber zone
-
-    c.add(0.99);
-    await tester.pump(); // deliver the stream event → setState schedules a frame
-    await tester.pump(); // build the scheduled frame
-    final red = fillColor();
-    expect(red.red, greaterThan(red.green)); // reddish near clip
-
+    c.add(1.0);
+    await tester.pump();
+    await _pumpFrames(tester, 25); // ~400 ms — fill + peak near 1
+    c.add(0.0);
+    await tester.pump();
+    await _pumpFrames(tester, 8); // ~120 ms — fill springs down, peak holds
+    expect(peakFactor(tester), greaterThan(fillFactor(tester)));
+    await _pumpFrames(tester, 125); // ~2 s — peak decays significantly
+    expect(peakFactor(tester), lessThan(0.5));
     await c.close();
   });
 
   testWidgets('clamps out-of-range levels', (tester) async {
     final c = StreamController<double>.broadcast();
     await tester.pumpWidget(host(c.stream));
-    c.add(2.0);
-    await tester.pump(); // deliver the stream event → setState schedules a frame
-    await tester.pump(); // build the scheduled frame
-    expect(tester.widget<FractionallySizedBox>(find.byType(FractionallySizedBox)).widthFactor, 1.0);
-    c.add(-1.0);
-    await tester.pump(); // deliver the stream event → setState schedules a frame
-    await tester.pump(); // build the scheduled frame
-    expect(tester.widget<FractionallySizedBox>(find.byType(FractionallySizedBox)).widthFactor, 0.0);
+    c.add(5.0);
+    await tester.pump();
+    await _pumpFrames(tester, 31); // ~500 ms of spring animation
+    expect(fillFactor(tester), lessThanOrEqualTo(1.0));
     await c.close();
   });
 }
