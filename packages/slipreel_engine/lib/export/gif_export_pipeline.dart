@@ -10,6 +10,7 @@ import '../models/recording_metadata.dart';
 import '../state/editor_project_state.dart';
 import '../utils/app_logger.dart';
 import '../utils/perf_summary.dart';
+import 'export_cancellation.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
 import 'ffmpeg_probe.dart';
@@ -59,13 +60,21 @@ class GifExportPipeline {
   // left empty gif_palette* dirs under /var/folders/…/T/).
   Directory? _paletteDir;
 
+  Process? _activeProc;
+  FfmpegDecoder? _activeDecoder;
+
   /// Runs both passes. [onProgress] receives a value in [0, 1]:
   /// pass 1 covers [0, 0.5], pass 2 covers [0.5, 1.0].
   Future<ExportPerfSummary> run({
     void Function(double progress)? onProgress,
+    CancelToken? cancelToken,
   }) async {
     final wallSw = Stopwatch()..start();
     final ffmpegBin = Ffmpeg.resolve();
+    cancelToken?.whenCancelled.then((_) {
+      _activeProc?.kill(ProcessSignal.sigkill);
+      _activeDecoder?.kill();
+    });
 
     final probed = await ffmpegProbe(
       path: sourcePath,
@@ -119,6 +128,7 @@ class GifExportPipeline {
       AppLogger.ffmpeg.d('gif pass1: $ffmpegBin ${pass1Args.join(" ")}');
 
       final proc1 = await Process.start(ffmpegBin, pass1Args);
+      _activeProc = proc1;
       final stderr1Buffer = StringBuffer();
       final stderr1Done = proc1.stderr
           .transform(const SystemEncoding().decoder)
@@ -131,10 +141,14 @@ class GifExportPipeline {
         height: srcHeight,
         cfrFps: fps,
       );
+      _activeDecoder = decoder1;
 
       try {
         var index = 0;
         await for (final raw in decoder1.frames()) {
+          if (cancelToken?.isCancelled ?? false) {
+            throw const ExportCancelledException();
+          }
           final tsMicros = (1000000 * index) ~/ fps;
           compositeSw1.start();
           final composed = await compositor1.compose(
@@ -194,6 +208,7 @@ class GifExportPipeline {
       AppLogger.ffmpeg.d('gif pass2: $ffmpegBin ${pass2Args.join(" ")}');
 
       final proc2 = await Process.start(ffmpegBin, pass2Args);
+      _activeProc = proc2;
       final stderr2Buffer = StringBuffer();
       final stderr2Done = proc2.stderr
           .transform(const SystemEncoding().decoder)
@@ -206,11 +221,15 @@ class GifExportPipeline {
         height: srcHeight,
         cfrFps: fps,
       );
+      _activeDecoder = decoder2;
 
       try {
         try {
           var index = 0;
           await for (final raw in decoder2.frames()) {
+            if (cancelToken?.isCancelled ?? false) {
+              throw const ExportCancelledException();
+            }
             final tsMicros = (1000000 * index) ~/ fps;
             compositeSw2.start();
             final composed = await compositor2.compose(

@@ -199,4 +199,10 @@ class FfmpegEncoder {
       _hwEncoderConfirmed = true;
     }
   }
+
+  /// Terminates the ffmpeg subprocess if running. Safe before start / after
+  /// finish. Used to avoid orphaning ffmpeg on error/cancel.
+  void kill() {
+    _process?.kill(ProcessSignal.sigkill);
+  }
 }

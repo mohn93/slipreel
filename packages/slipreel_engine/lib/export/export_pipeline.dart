@@ -13,6 +13,7 @@ import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
 import 'audio_mix_args.dart';
 import 'bounded_async_queue.dart';
+import 'export_cancellation.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
 import 'ffmpeg_encoder.dart';
@@ -77,6 +78,7 @@ class ExportPipeline {
   /// rather show nothing than a wildly-wrong percentage).
   Future<ExportPerfSummary> run({
     void Function(double progress)? onProgress,
+    CancelToken? cancelToken,
   }) async {
     // ffprobe is authoritative for dimensions. Recording metadata
     // stores the *capture* width/height returned by the native plugin,
@@ -157,6 +159,15 @@ class ExportPipeline {
 
     await encoder.start();
 
+    final decodedQueue = BoundedAsyncQueue<Uint8List>(2);
+    final composedQueue = BoundedAsyncQueue<Uint8List>(2);
+    cancelToken?.whenCancelled.then((_) {
+      decoder.kill();
+      encoder.kill();
+      decodedQueue.close();
+      composedQueue.close();
+    });
+
     final wallSw = Stopwatch()..start();
     final compositeSw = Stopwatch();
     int totalFrames = 0;
@@ -189,9 +200,6 @@ class ExportPipeline {
     // frame in hand and one in flight so adjacent stages overlap their
     // I/O, while still bounding memory (a composed RGBA frame is ~10MB
     // at 1440p, so worst case ~7 frames in flight ≈ 70MB).
-    final decodedQueue = BoundedAsyncQueue<Uint8List>(2);
-    final composedQueue = BoundedAsyncQueue<Uint8List>(2);
-
     final decodeFuture = () async {
       try {
         await for (final raw in decoder.frames()) {
@@ -245,6 +253,8 @@ class ExportPipeline {
     try {
       await Future.wait(stageFutures, eagerError: true);
     } catch (_) {
+      decoder.kill();
+      encoder.kill();
       // First stage to fail surfaces here. Close the queues so any
       // sibling stage parked on take/add unblocks and exits, then wait
       // for them to fully wind down before we tear the compositor down
@@ -256,6 +266,9 @@ class ExportPipeline {
         stageFutures.map((f) => f.then<void>((_) {}, onError: (_) {})),
       );
       await compositor.dispose();
+      if (cancelToken?.isCancelled ?? false) {
+        throw const ExportCancelledException();
+      }
       rethrow;
     }
     await compositor.dispose();

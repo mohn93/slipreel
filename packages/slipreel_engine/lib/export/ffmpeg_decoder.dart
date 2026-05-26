@@ -26,6 +26,8 @@ class FfmpegDecoder {
   /// Does not include subprocess spawn time.
   int totalDecodeMs = 0;
 
+  Process? _process;
+
   FfmpegDecoder({
     required this.inputPath,
     required this.width,
@@ -45,7 +47,7 @@ class FfmpegDecoder {
     final binary = Ffmpeg.resolve();
     AppLogger.ffmpeg.d('decode: $binary ${args.join(" ")}');
 
-    final process = await Process.start(binary, args);
+    final process = _process = await Process.start(binary, args);
     final frameSize = width * height * 4;
     final buffer = BytesBuilder(copy: false);
     final stopwatch = Stopwatch()..start();
@@ -80,5 +82,11 @@ class FfmpegDecoder {
       stopwatch.stop();
       totalDecodeMs = stopwatch.elapsedMilliseconds;
     }
+  }
+
+  /// Terminates the ffmpeg subprocess if running. Safe before start / after
+  /// exit. Used by the pipeline to avoid orphaning ffmpeg on error/cancel.
+  void kill() {
+    _process?.kill(ProcessSignal.sigkill);
   }
 }
