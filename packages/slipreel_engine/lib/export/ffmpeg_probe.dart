@@ -31,10 +31,9 @@ class FfmpegProbeResult {
   /// The `duration` field in seconds, if present.
   final double? durationSec;
 
-  /// Bitrate of the first audio stream in kbps, if the source has audio
-  /// and ffprobe could determine it. The encoder uses `-c:a copy` so the
-  /// audio bytes pass through unchanged into the output — callers add
-  /// `audioBitrateKbps × duration / 8 × 1024` to size estimates.
+  /// Bitrate of the first audio stream in kbps, if present. Used only for the
+  /// export size estimate; the actual export re-encodes the mixed audio to AAC
+  /// (see kMixedAudioBitrateKbps), so this is a rough input-side figure.
   final int? audioBitrateKbps;
 
   /// All audio streams in the source, in container order. Drives editor audio

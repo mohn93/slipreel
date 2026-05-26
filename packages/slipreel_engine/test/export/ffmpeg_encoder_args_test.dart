@@ -33,5 +33,17 @@ void main() {
     expect(joined, contains('-c:a aac'));
     expect(joined, contains('-b:a 192k'));
     expect(args.contains('copy'), isFalse);
+    expect(joined, contains('-map [vout]'));
+    expect(args.contains('-vf'), isFalse); // video routed through filter_complex
+  });
+
+  test('video-only with scaling uses -vf (no filter_complex)', () {
+    final enc = FfmpegEncoder(
+        outputPath: '/tmp/o.mp4', width: 200, height: 200, fps: 30,
+        bitrateKbps: 2000, sourceWidth: 100, sourceHeight: 100);
+    final args = enc.argsForTesting('libx264');
+    expect(args.contains('-vf'), isTrue);
+    expect(args.contains('-filter_complex'), isFalse);
+    expect(args.contains('-c:a'), isFalse);
   });
 }

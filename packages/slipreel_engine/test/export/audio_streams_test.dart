@@ -17,6 +17,20 @@ void main() {
       expect(streams[1].channels, 2);
     });
 
+    test('uses audio-relative position, not ffprobe absolute index', () {
+      // A file with video at stream 0 reports audio at absolute indices 1 and 2;
+      // ffmpeg `[1:a:K]` needs the audio-relative K (0,1), so parsing must
+      // ignore the absolute "index" field.
+      const json = '''
+      {"streams":[
+        {"index":1,"codec_name":"aac","channels":1,"bit_rate":"128000"},
+        {"index":2,"codec_name":"aac","channels":2,"bit_rate":"192000"}
+      ]}''';
+      final streams = parseAudioStreams(json);
+      expect(streams[0].index, 0);
+      expect(streams[1].index, 1);
+    });
+
     test('handles missing/absent bitrate and empty list', () {
       expect(parseAudioStreams('{"streams":[]}'), isEmpty);
       final s = parseAudioStreams(
