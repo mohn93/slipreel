@@ -36,3 +36,6 @@ pubspec.lock
 # Coverage
 coverage/
 .test_coverage/
+
+# Xcode
+DerivedData/
