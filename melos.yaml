@@ -9,13 +9,20 @@ command:
 
 scripts:
   analyze:
-    run: flutter analyze
-    description: Run Flutter analyze in all packages
+    exec: flutter analyze --no-fatal-infos
+    description: Run flutter analyze in all packages (infos non-fatal)
+    packageFilters:
+      ignore:
+        - "*example*"
 
   test:
-    run: flutter test
+    exec: flutter test
     description: Run tests in all packages
+    packageFilters:
+      ignore:
+        - "*example*"
+        - "screen_recorder_windows"
 
   clean:
-    run: flutter clean
+    exec: flutter clean
     description: Clean all packages

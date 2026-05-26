@@ -73,7 +73,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     if (shouldMonitor) {
       if (_monitoredConfig != mic) {
         _monitoredConfig = mic;
-        ScreenRecorderPlatform.instance.startMicMonitor(mic!);
+        ScreenRecorderPlatform.instance.startMicMonitor(mic);
       }
     } else if (_monitoredConfig != null) {
       _monitoredConfig = null;
