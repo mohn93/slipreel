@@ -6,6 +6,7 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import '../../state/frame_settings_provider.dart';
 import '../../state/microphone_controller.dart';
 import '../../state/recording_state.dart';
+import '../../state/system_audio_controller.dart';
 import '../../state/window_mode.dart';
 import '../../state/window_mode_controller.dart';
 import '../screens/playback_screen.dart';
@@ -103,7 +104,8 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         if (picked == null) return;
         controller.selectSource(kind: picked.kind, id: picked.id);
         await controller.startRecording(
-            microphone: ref.read(microphoneControllerProvider));
+            microphone: ref.read(microphoneControllerProvider),
+            systemAudio: ref.read(systemAudioControllerProvider));
       case BarSourceMode.area:
         final region = await ScreenRecorderPlatform.instance.selectRegion();
         if (region == null) return;
@@ -113,7 +115,8 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
           region: region,
         );
         await controller.startRecording(
-            microphone: ref.read(microphoneControllerProvider));
+            microphone: ref.read(microphoneControllerProvider),
+            systemAudio: ref.read(systemAudioControllerProvider));
       case BarSourceMode.device:
         break;
     }
@@ -126,6 +129,8 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         onDragStart: () => ref.read(windowChromeProvider).startWindowDrag(),
         microphone: ref.watch(microphoneControllerProvider),
         onMicTap: _onMicTap,
+        systemAudio: ref.watch(systemAudioControllerProvider),
+        onSystemAudioTap: _onSystemAudioTap,
         contentKey: _barContentKey,
         micLevelStream: ref.watch(microphoneControllerProvider) != null
             ? _micLevelStream
@@ -158,6 +163,14 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         await ScreenRecorderPlatform.instance.showMicrophoneMenu(current);
     if (!mounted || result.cancelled) return;
     ref.read(microphoneControllerProvider.notifier).set(result.config);
+  }
+
+  Future<void> _onSystemAudioTap() async {
+    final current = ref.read(systemAudioControllerProvider);
+    final result =
+        await ScreenRecorderPlatform.instance.showSystemAudioMenu(current);
+    if (!mounted || result.cancelled) return;
+    ref.read(systemAudioControllerProvider.notifier).set(result.config);
   }
 
   Future<void> _onGearTap() async {

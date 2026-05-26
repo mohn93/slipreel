@@ -43,6 +43,11 @@ class _FakePlatform extends ScreenRecorderPlatform
     return MicrophoneMenuResult(cancelled: false, config: menuReturns);
   }
 
+  @override
+  Future<SystemAudioMenuResult> showSystemAudioMenu(SystemAudioConfig? current) async {
+    return const SystemAudioMenuResult(cancelled: true);
+  }
+
   final List<RecordingSource> pickSourceCalls = [];
   int selectRegionCalls = 0;
 
@@ -92,7 +97,7 @@ class _FakeRecordingController extends RecordingController {
   }
 
   @override
-  Future<void> startRecording({MicrophoneConfig? microphone}) async => startCalls++;
+  Future<void> startRecording({MicrophoneConfig? microphone, SystemAudioConfig? systemAudio}) async => startCalls++;
 
   @override
   Future<void> stopRecording() async => stopCalls++;
@@ -303,6 +308,20 @@ void main() {
     // width (the label ellipsizes within the fixed chip).
     expect(on.w, off.w);
     expect(on.h, 68); // same constant height — meter is inside the chip now
+  });
+
+  testWidgets('renders the system-audio control', (tester) async {
+    _wide(tester);
+    final fakePlatform = _FakePlatform();
+    ScreenRecorderPlatform.instance = fakePlatform;
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [windowChromeProvider.overrideWithValue(_FakeChrome())],
+      child: const MaterialApp(home: RecordingBarScreen()),
+    ));
+    await tester.pump();
+
+    expect(find.byKey(const Key('bar-system-audio')), findsOneWidget);
   });
 
   testWidgets('monitor starts when a mic is selected, stops when off',

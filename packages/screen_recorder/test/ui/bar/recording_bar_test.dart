@@ -18,6 +18,7 @@ void main() {
     VoidCallback? onDragStart,
     MicrophoneConfig? microphone,
     VoidCallback? onMicTap,
+    VoidCallback? onSystemAudioTap,
   }) =>
       RecordingBar(
         onPickMode: onPickMode ?? (_) {},
@@ -26,6 +27,7 @@ void main() {
         onDragStart: onDragStart ?? () {},
         microphone: microphone,
         onMicTap: onMicTap ?? () {},
+        onSystemAudioTap: onSystemAudioTap ?? () {},
       );
 
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));

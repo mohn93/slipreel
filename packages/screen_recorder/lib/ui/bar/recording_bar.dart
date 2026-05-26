@@ -32,6 +32,8 @@ class RecordingBar extends StatelessWidget {
     required this.onDragStart,
     this.microphone,
     required this.onMicTap,
+    this.systemAudio,
+    required this.onSystemAudioTap,
     this.contentKey,
     this.micLevelStream,
   });
@@ -49,6 +51,12 @@ class RecordingBar extends StatelessWidget {
 
   /// Fired when the mic control is tapped (opens the native mic menu).
   final VoidCallback onMicTap;
+
+  /// Current system-audio selection (null = off).
+  final SystemAudioConfig? systemAudio;
+
+  /// Fired when the system-audio control is tapped (opens the native menu).
+  final VoidCallback onSystemAudioTap;
 
   /// Attached to the inner content [Row] so the host can measure its intrinsic
   /// width and resize the (variable-width) bar window to hug the content.
@@ -104,7 +112,8 @@ class RecordingBar extends StatelessWidget {
                 microphone: microphone,
                 onTap: onMicTap,
                 levelStream: micLevelStream),
-            const _AvPlaceholder(icon: LucideIcons.volumeOff, label: 'No system audio'),
+            _SystemAudioControl(
+                systemAudio: systemAudio, onTap: onSystemAudioTap),
             const _Divider(),
             _GearButton(onTap: onGearTap),
           ],

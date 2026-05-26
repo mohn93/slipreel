@@ -22,6 +22,7 @@ RecordingBar _bar({MicrophoneConfig? mic, VoidCallback? onMicTap, Stream<double>
       onDragStart: () {},
       microphone: mic,
       onMicTap: onMicTap ?? () {},
+      onSystemAudioTap: () {},
       micLevelStream: level,
     );
 
