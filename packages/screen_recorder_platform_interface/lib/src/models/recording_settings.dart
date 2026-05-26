@@ -1,4 +1,5 @@
 import 'microphone_config.dart';
+import 'system_audio_config.dart';
 
 /// Settings for a recording session
 class RecordingSettings {
@@ -9,6 +10,9 @@ class RecordingSettings {
   /// The microphone to record, or null for "don't record microphone".
   final MicrophoneConfig? microphone;
 
+  /// The system-audio selection, or null for "don't record system audio".
+  final SystemAudioConfig? systemAudio;
+
   final bool captureCursor;
   final int? maxDurationSeconds;
 
@@ -17,6 +21,7 @@ class RecordingSettings {
     this.sourceId,
     this.frameRate = 30,
     this.microphone,
+    this.systemAudio,
     this.captureCursor = true,
     this.maxDurationSeconds,
   });
@@ -27,6 +32,7 @@ class RecordingSettings {
       'sourceId': sourceId,
       'frameRate': frameRate,
       'microphone': microphone?.toJson(),
+      'systemAudio': systemAudio?.toJson(),
       'captureCursor': captureCursor,
       'maxDurationSeconds': maxDurationSeconds,
     };
@@ -34,6 +40,7 @@ class RecordingSettings {
 
   factory RecordingSettings.fromJson(Map<String, dynamic> json) {
     final mic = json['microphone'];
+    final sys = json['systemAudio'];
     return RecordingSettings(
       source: RecordingSource.values.firstWhere(
         (e) => e.name == json['source'],
@@ -44,6 +51,9 @@ class RecordingSettings {
       microphone: mic == null
           ? null
           : MicrophoneConfig.fromJson(Map<String, dynamic>.from(mic as Map)),
+      systemAudio: sys == null
+          ? null
+          : SystemAudioConfig.fromJson(Map<String, dynamic>.from(sys as Map)),
       captureCursor: json['captureCursor'] as bool? ?? true,
       maxDurationSeconds: json['maxDurationSeconds'] as int?,
     );
@@ -54,6 +64,7 @@ class RecordingSettings {
     String? sourceId,
     int? frameRate,
     MicrophoneConfig? microphone,
+    SystemAudioConfig? systemAudio,
     bool? captureCursor,
     int? maxDurationSeconds,
   }) {
@@ -62,6 +73,7 @@ class RecordingSettings {
       sourceId: sourceId ?? this.sourceId,
       frameRate: frameRate ?? this.frameRate,
       microphone: microphone ?? this.microphone,
+      systemAudio: systemAudio ?? this.systemAudio,
       captureCursor: captureCursor ?? this.captureCursor,
       maxDurationSeconds: maxDurationSeconds ?? this.maxDurationSeconds,
     );

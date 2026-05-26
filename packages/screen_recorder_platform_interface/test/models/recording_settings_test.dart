@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'package:screen_recorder_platform_interface/src/models/system_audio_config.dart';
 
 void main() {
   group('RecordingSettings.microphone', () {
@@ -39,5 +40,34 @@ void main() {
       final s2 = s.copyWith(microphone: const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'L'));
       expect(s2.microphone?.deviceUid, 'u');
     });
+  });
+
+  test('toJson includes systemAudio when set, null when off', () {
+    const withSys = RecordingSettings(
+      source: RecordingSource.screen,
+      systemAudio: SystemAudioConfig(mode: SystemAudioMode.allApps),
+    );
+    expect(withSys.toJson()['systemAudio'],
+        {'mode': 'allApps', 'bundleIds': <String>[]});
+
+    const off = RecordingSettings(source: RecordingSource.screen);
+    expect(off.toJson()['systemAudio'], isNull);
+  });
+
+  test('fromJson restores systemAudio', () {
+    const c = RecordingSettings(
+      source: RecordingSource.screen,
+      systemAudio: SystemAudioConfig(
+          mode: SystemAudioMode.selectedApps, bundleIds: ['com.apple.Music']),
+    );
+    final restored = RecordingSettings.fromJson(c.toJson());
+    expect(restored.systemAudio, c.systemAudio);
+  });
+
+  test('copyWith replaces systemAudio', () {
+    const c = RecordingSettings(source: RecordingSource.screen);
+    final d = c.copyWith(
+        systemAudio: const SystemAudioConfig(mode: SystemAudioMode.allApps));
+    expect(d.systemAudio!.mode, SystemAudioMode.allApps);
   });
 }
