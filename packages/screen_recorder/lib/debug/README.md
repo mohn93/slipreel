@@ -35,8 +35,8 @@ override that is gitignored.
    ```
 
 3. **Add a dependency override** to
-   `packages/screen_recorder/pubspec_overrides.yaml` (this file is
-   melos-managed; add under `dependency_overrides:`):
+   `packages/screen_recorder/pubspec_overrides.yaml` (add under
+   `dependency_overrides:`):
 
    ```yaml
    dependency_overrides:
@@ -49,6 +49,24 @@ override that is gitignored.
    ```sh
    melos bootstrap
    ```
+
+   > **WARNING — `pubspec_overrides.yaml` is git-TRACKED and melos-managed.**
+   > Unlike `agent_wires_probe_binding.dart` and `main_dev.dart` (both
+   > gitignored), this file is committed, and `melos bootstrap` rewrites it
+   > (it manages the workspace path overrides). That means:
+   >
+   > - **Do NOT commit your local `agent_wires_probe` override.** It points at
+   >   a sibling repo that does not exist on CI or other machines and would
+   >   break their builds.
+   > - After adding your override locally, tell git to ignore your changes to
+   >   the file so you can't stage it by accident:
+   >
+   >   ```sh
+   >   git update-index --skip-worktree packages/screen_recorder/pubspec_overrides.yaml
+   >   ```
+   >
+   >   (Reverse later with `--no-skip-worktree`.) Alternatively, simply never
+   >   stage `pubspec_overrides.yaml` when committing.
 
 4. **Create a gitignored `lib/main_dev.dart`** that installs the real probe
    before delegating to the normal entry point:
