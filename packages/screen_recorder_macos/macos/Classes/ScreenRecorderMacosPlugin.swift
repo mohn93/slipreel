@@ -10,6 +10,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var recordingChannel: FlutterMethodChannel?
   private var captureManager: ScreenCaptureManager?
   private var audioCaptureManager: AudioCaptureManager?
+  private var systemAudioManager: Any?  // SystemAudioCaptureManager (gated to macOS 13+)
   private var frameStreamHandler: FrameStreamHandler?
   private var audioStreamHandler: AudioStreamHandler?
   private var cursorStreamHandler: CursorStreamHandler?
@@ -553,6 +554,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     let sourceId = args["sourceId"] as? String
     let micArgs = args["microphone"] as? [String: Any]   // nil → don't record mic
     let captureMic = micArgs != nil
+    let sysArgs = args["systemAudio"] as? [String: Any]   // nil → don't record system audio
+    let captureSystem = sysArgs != nil
     let captureCursor = args["captureCursor"] as? Bool ?? true
 
     // Optional region for area capture.
@@ -615,7 +618,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         }
         let writer = LiveRecordingWriter(
           outputPath: outputPath, width: captureWidth, height: captureHeight,
-          fps: fps, audioTracks: captureMic ? [.microphone] : [])
+          fps: fps, audioTracks: {
+            var roles: [AudioTrackRole] = []
+            if captureMic { roles.append(.microphone) }
+            if captureSystem { roles.append(.system) }
+            return roles
+          }())
         try writer.start()
 
         let encoder = VideoToolboxEncoder(width: captureWidth, height: captureHeight, fps: fps)
@@ -651,6 +659,23 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           }
           try audioCaptureManager?.startMicrophoneCapture(
             deviceUid: uid, reduceNoise: reduceNoise, disableAgc: disableAgc)
+        }
+
+        if let sys = sysArgs, #available(macOS 13.0, *) {
+          let modeStr = sys["mode"] as? String ?? "allApps"
+          let mode = SystemAudioMode(rawValue: modeStr) ?? .allApps
+          let bundleIds = (sys["bundleIds"] as? [String]) ?? []
+          let manager = SystemAudioCaptureManager()
+          manager.onSampleBufferReceived = { [weak writer] sb in
+            writer?.appendAudio(sb, role: .system)
+          }
+          do {
+            try await manager.start(mode: mode, bundleIds: bundleIds)
+            self.systemAudioManager = manager
+          } catch {
+            // Degrade gracefully: drop the system track, keep recording.
+            NSLog("System audio capture failed to start: \(error)")
+          }
         }
 
         // liveStartTime must be set BEFORE cursor tracking begins so the
@@ -750,6 +775,11 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       am.stopCapture()
       audioCaptureManager = nil
     }
+    if #available(macOS 13.0, *),
+       let sysMgr = self.systemAudioManager as? SystemAudioCaptureManager {
+      sysMgr.stop()
+    }
+    self.systemAudioManager = nil
     if let ct = cursorTracker {
       ct.onCursorUpdate = nil
       if ct.isCurrentlyTracking() { ct.stopTracking() }
@@ -785,6 +815,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           am.stopCapture()
           audioCaptureManager = nil
         }
+
+        if #available(macOS 13.0, *),
+           let sysMgr = self.systemAudioManager as? SystemAudioCaptureManager {
+          sysMgr.stop()
+        }
+        self.systemAudioManager = nil
 
         if let ct = cursorTracker {
           ct.onCursorUpdate = nil
