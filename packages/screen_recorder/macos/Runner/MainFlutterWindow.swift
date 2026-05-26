@@ -40,13 +40,14 @@ class MainFlutterWindow: NSWindow {
       case "startWindowDrag":
         self?.startWindowDrag()
         result(nil)
-      case "setBarWidth":
+      case "setBarSize":
         guard let args = call.arguments as? [String: Any],
-              let width = args["width"] as? Double else {
+              let width = args["width"] as? Double,
+              let height = args["height"] as? Double else {
           result(FlutterMethodNotImplemented)
           return
         }
-        self?.setBarWidth(CGFloat(width))
+        self?.setBarSize(width: CGFloat(width), height: CGFloat(height))
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
@@ -61,7 +62,7 @@ class MainFlutterWindow: NSWindow {
     super.awakeFromNib()
   }
 
-  /// Tracks the active mode so `setBarWidth` only resizes while we're the bar.
+  /// Tracks the active mode so `setBarSize` only resizes while we're the bar.
   private var currentMode = "bar"
 
   private func applyMode(_ mode: String) {
@@ -69,7 +70,7 @@ class MainFlutterWindow: NSWindow {
     switch mode {
     case "bar":
       // 736 is just the pre-measure default; Flutter measures the row content
-      // and calls `setBarWidth` to hug it (the mic/system-audio labels vary).
+      // and calls `setBarSize` to hug it (the mic/system-audio labels vary).
       configureFloating(width: 736, height: kBarHeight, cornerRadius: 18)
     case "pill":
       configureFloating(width: 156, height: 48, cornerRadius: 24)
@@ -80,23 +81,22 @@ class MainFlutterWindow: NSWindow {
     }
   }
 
-  /// Fixed bar height; width is content-driven via `setBarWidth`.
+  /// Fixed bar height; width is content-driven via `setBarSize`.
   private let kBarHeight: CGFloat = 68
 
-  /// Resizes the floating bar to hug its Flutter content. No-op unless we're
-  /// currently the bar (so it never resizes the pill or the panel). Keeps the
-  /// window top-centered. Width is clamped to a sane range.
-  private func setBarWidth(_ width: CGFloat) {
+  /// Resize the bar in place to width×height, anchoring the TOP-LEFT corner
+  /// (in Cocoa bottom-left coords: keep origin.x; set origin.y so the top edge
+  /// stays put). Grows/shrinks on the right & bottom; never re-centers / snaps
+  /// to the top of the screen. Bar mode only.
+  private func setBarSize(width: CGFloat, height: CGFloat) {
     guard currentMode == "bar" else { return }
-    let clamped = max(320, min(width, 1400))
-    // Resize in place: keep the window's origin fixed (and thus its top-left
-    // corner, since the height is constant) so the bar grows/shrinks on the
-    // RIGHT and stays exactly where the user dragged it. Re-centering /
-    // top-positioning here would make the whole bar jump and snap back to the
-    // top of the screen on every content change. Borderless → frame size ==
-    // content size, so setting frame width sets the content width directly.
+    let w = max(320, min(width, 1400))
+    let h = max(48, min(height, 200))
     var f = frame
-    f.size.width = clamped
+    let top = f.maxY          // current top edge (screen coords)
+    f.size.width = w
+    f.size.height = h
+    f.origin.y = top - h      // keep the top edge fixed
     setFrame(f, display: true)
   }
 
