@@ -1,6 +1,0 @@
-# melos_managed_dependency_overrides: screen_recorder_platform_interface,screen_recorder_windows
-dependency_overrides:
-  screen_recorder_platform_interface:
-    path: ../../screen_recorder_platform_interface
-  screen_recorder_windows:
-    path: ..
