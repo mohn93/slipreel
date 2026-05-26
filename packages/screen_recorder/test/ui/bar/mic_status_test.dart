@@ -9,13 +9,7 @@ void main() {
   Widget host(Stream<double> s) => MaterialApp(
         home: Scaffold(
           body: Center(
-            child: SizedBox(
-              width: 120,
-              child: MicStatus(
-                levelStream: s,
-                silenceTimeout: const Duration(milliseconds: 200),
-              ),
-            ),
+            child: SizedBox(width: 120, child: MicStatus(levelStream: s)),
           ),
         ),
       );
@@ -33,17 +27,19 @@ void main() {
     await c.close();
   });
 
-  testWidgets('warns after prolonged silence', (tester) async {
+  testWidgets('silence does NOT warn (only real problems do)', (tester) async {
     final c = StreamController<double>.broadcast();
     await tester.pumpWidget(host(c.stream));
-    c.add(0.0); // digital silence
+    c.add(0.0); // digital silence — a quiet mic, not a problem
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250)); // past the timeout
-    expect(warning, findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    expect(warning, findsNothing);
+    expect(find.byType(MicLevelMeter), findsOneWidget);
     await c.close();
   });
 
-  testWidgets('warns immediately on a negative sentinel', (tester) async {
+  testWidgets('warns on a negative sentinel (device/engine error)',
+      (tester) async {
     final c = StreamController<double>.broadcast();
     await tester.pumpWidget(host(c.stream));
     c.add(-1.0);
@@ -65,16 +61,6 @@ void main() {
     await tester.pump();
     expect(warning, findsNothing);
     expect(find.byType(MicLevelMeter), findsOneWidget);
-    await c.close();
-  });
-
-  testWidgets('a quiet-but-nonzero floor does not warn', (tester) async {
-    final c = StreamController<double>.broadcast();
-    await tester.pumpWidget(host(c.stream));
-    c.add(0.1); // ambient noise floor, above the silence epsilon
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
-    expect(warning, findsNothing);
     await c.close();
   });
 }

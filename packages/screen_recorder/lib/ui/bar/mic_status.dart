@@ -6,22 +6,14 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'mic_level_meter.dart';
 
 /// Shows the live [MicLevelMeter] for a selected mic, or an amber warning
-/// triangle when the input looks broken:
-///  - a negative sentinel from the native monitor (failed to start / engine
-///    error on the device), or
-///  - prolonged (near-)digital silence, meaning the input isn't delivering
-///    audio (e.g. a virtual/aggregate device with nothing routed to it).
-/// The warning springs in horizontally. A working mic's faint noise floor sits
-/// above [_eps], so a quiet room does not trip the silence warning.
+/// triangle when the native monitor reports a real input problem: a negative
+/// sentinel emitted when the monitor fails to start / the audio engine errors
+/// on the device. Plain silence (a valid 0 level) is NOT a problem, so a quiet
+/// mic never warns.
 class MicStatus extends StatefulWidget {
-  const MicStatus({
-    super.key,
-    required this.levelStream,
-    this.silenceTimeout = const Duration(seconds: 3),
-  });
+  const MicStatus({super.key, required this.levelStream});
 
   final Stream<double> levelStream;
-  final Duration silenceTimeout;
 
   @override
   State<MicStatus> createState() => _MicStatusState();
@@ -29,10 +21,7 @@ class MicStatus extends StatefulWidget {
 
 class _MicStatusState extends State<MicStatus> {
   StreamSubscription<double>? _sub;
-  Timer? _silence;
   bool _problem = false;
-
-  static const double _eps = 0.03;
 
   @override
   void initState() {
@@ -45,8 +34,6 @@ class _MicStatusState extends State<MicStatus> {
     super.didUpdateWidget(old);
     if (old.levelStream != widget.levelStream) {
       _sub?.cancel();
-      _silence?.cancel();
-      _silence = null;
       _problem = false;
       _subscribe();
     }
@@ -55,31 +42,16 @@ class _MicStatusState extends State<MicStatus> {
   void _subscribe() {
     _sub = widget.levelStream.listen((v) {
       if (!mounted) return;
-      if (v < 0) {
-        // Native problem sentinel (failed to start / engine error).
-        _silence?.cancel();
-        _silence = null;
-        if (!_problem) setState(() => _problem = true);
-        return;
-      }
-      if (v > _eps) {
-        _silence?.cancel();
-        _silence = null;
-        if (_problem) setState(() => _problem = false);
-      } else {
-        // Near silence: arm a one-shot timer on the first quiet sample; further
-        // quiet samples don't reset it, so it fires once the input stays silent.
-        _silence ??= Timer(widget.silenceTimeout, () {
-          if (mounted && !_problem) setState(() => _problem = true);
-        });
-      }
+      // Negative = native problem sentinel (failed to start / engine error).
+      // Any valid 0..1 level — including silence — clears it.
+      final problem = v < 0;
+      if (problem != _problem) setState(() => _problem = problem);
     });
   }
 
   @override
   void dispose() {
     _sub?.cancel();
-    _silence?.cancel();
     super.dispose();
   }
 
