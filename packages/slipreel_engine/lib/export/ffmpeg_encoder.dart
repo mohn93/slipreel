@@ -59,6 +59,8 @@ class FfmpegEncoder {
   final AudioMixPlan? audioMixPlan;
 
   Process? _process;
+  StringBuffer? _stderrBuffer;
+  Future<void>? _stderrDone;
   String _codecUsed = 'h264_videotoolbox';
   bool _hwEncoderConfirmed = false;
   int totalEncodeMs = 0;
@@ -152,6 +154,11 @@ class FfmpegEncoder {
     } else {
       throw Exception('Could not start ffmpeg with any encoder');
     }
+    final p = _process!;
+    final buffer = StringBuffer();
+    _stderrBuffer = buffer;
+    _stderrDone =
+        p.stderr.transform(const SystemEncoding().decoder).forEach(buffer.write);
     _sw.start();
   }
 
@@ -170,7 +177,8 @@ class FfmpegEncoder {
     _sw.stop();
     totalEncodeMs = _sw.elapsedMilliseconds;
 
-    final stderr = await p.stderr.transform(SystemEncoding().decoder).join();
+    await _stderrDone;
+    final stderr = _stderrBuffer?.toString() ?? '';
 
     if (exit != 0) {
       // Correct _codecUsed if VideoToolbox failed silently after start().

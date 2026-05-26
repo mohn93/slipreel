@@ -119,6 +119,10 @@ class GifExportPipeline {
       AppLogger.ffmpeg.d('gif pass1: $ffmpegBin ${pass1Args.join(" ")}');
 
       final proc1 = await Process.start(ffmpegBin, pass1Args);
+      final stderr1Buffer = StringBuffer();
+      final stderr1Done = proc1.stderr
+          .transform(const SystemEncoding().decoder)
+          .forEach(stderr1Buffer.write);
 
       final decoder1 = FfmpegDecoder(
         inputPath: sourcePath,
@@ -151,11 +155,9 @@ class GifExportPipeline {
       }
 
       final exit1 = await proc1.exitCode;
+      await stderr1Done;
       if (exit1 != 0) {
-        final stderr1 = await proc1.stderr
-            .transform(SystemEncoding().decoder)
-            .join();
-        throw Exception('GIF pass 1 (palettegen) exited $exit1: $stderr1');
+        throw Exception('GIF pass 1 (palettegen) exited $exit1: $stderr1Buffer');
       }
 
       // Pass 2: decode + compose → ffmpeg paletteuse → output.gif.
@@ -191,6 +193,10 @@ class GifExportPipeline {
       AppLogger.ffmpeg.d('gif pass2: $ffmpegBin ${pass2Args.join(" ")}');
 
       final proc2 = await Process.start(ffmpegBin, pass2Args);
+      final stderr2Buffer = StringBuffer();
+      final stderr2Done = proc2.stderr
+          .transform(const SystemEncoding().decoder)
+          .forEach(stderr2Buffer.write);
 
       final decoder2 = FfmpegDecoder(
         inputPath: sourcePath,
@@ -225,11 +231,9 @@ class GifExportPipeline {
         }
 
         final exit2 = await proc2.exitCode;
+        await stderr2Done;
         if (exit2 != 0) {
-          final stderr2 = await proc2.stderr
-              .transform(SystemEncoding().decoder)
-              .join();
-          throw Exception('GIF pass 2 (paletteuse) exited $exit2: $stderr2');
+          throw Exception('GIF pass 2 (paletteuse) exited $exit2: $stderr2Buffer');
         }
       } catch (e) {
         // Pass 2 failed: remove the partial output so callers cannot

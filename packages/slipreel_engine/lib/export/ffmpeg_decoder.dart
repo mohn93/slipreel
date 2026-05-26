@@ -50,6 +50,11 @@ class FfmpegDecoder {
     final buffer = BytesBuilder(copy: false);
     final stopwatch = Stopwatch()..start();
 
+    final stderrBuffer = StringBuffer();
+    final stderrDone = process.stderr
+        .transform(const SystemEncoding().decoder)
+        .forEach(stderrBuffer.write);
+
     try {
       await for (final chunk in process.stdout) {
         buffer.add(chunk);
@@ -66,11 +71,9 @@ class FfmpegDecoder {
         }
       }
       final exit = await process.exitCode;
+      await stderrDone;
       if (exit != 0) {
-        final stderr = await process.stderr
-            .transform(SystemEncoding().decoder)
-            .join();
-        throw Exception('ffmpeg decode exited $exit: $stderr');
+        throw Exception('ffmpeg decode exited $exit: $stderrBuffer');
       }
     } finally {
       stopwatch.stop();
