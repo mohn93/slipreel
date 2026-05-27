@@ -134,6 +134,11 @@ class ExportPipeline {
     );
     final audioMixPlan =
         buildAudioMixArgs(probed.audioStreams, projectState.audioMix);
+    // Output duration after trim + speed, used to position the fade-out.
+    final inputDurationSec = trim != null
+        ? trim!.duration.inMicroseconds / 1000000
+        : (probed.durationSec ?? 0);
+    final outputDurationSec = inputDurationSec / projectState.playbackSpeed;
     final encoder = FfmpegEncoder(
       outputPath: outputPath,
       width: outWidth,
@@ -143,6 +148,12 @@ class ExportPipeline {
       audioSourcePath: sourcePath,
       audioMixPlan: audioMixPlan,
       trim: trim,
+      playbackSpeed: projectState.playbackSpeed,
+      fadeIn: projectState.fadeIn,
+      fadeOut: projectState.fadeOut,
+      outputDuration: outputDurationSec > 0
+          ? Duration(microseconds: (outputDurationSec * 1000000).round())
+          : null,
       // The encoder receives composed frames at totalSize (the framed
       // output), not the source video resolution.
       sourceWidth: compositor.totalSize.width.toInt(),

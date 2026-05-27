@@ -65,6 +65,20 @@ class FfmpegEncoder {
   /// and the container length matches the trim. Null ⇒ full-length audio.
   final TrimSelection? trim;
 
+  /// Playback-speed factor applied at encode (2.0 ⇒ 2× faster). 1.0 ⇒ no-op.
+  /// Drives `setpts` on the video chain and `atempo` on the audio mix.
+  final double playbackSpeed;
+
+  /// Fade-in / fade-out durations applied at encode. Zero ⇒ no fade.
+  /// Drive `fade`/`afade` on the video/audio chains.
+  final Duration fadeIn;
+  final Duration fadeOut;
+
+  /// Duration of the encoded output (after trim + speed). Required to position
+  /// the fade-out (`st = outputDuration - fadeOut`); when null, fade-out is
+  /// skipped.
+  final Duration? outputDuration;
+
   Process? _process;
   StringBuffer? _stderrBuffer;
   Future<void>? _stderrDone;
@@ -85,6 +99,10 @@ class FfmpegEncoder {
     this.audioSourcePath,
     this.audioMixPlan,
     this.trim,
+    this.playbackSpeed = 1.0,
+    this.fadeIn = Duration.zero,
+    this.fadeOut = Duration.zero,
+    this.outputDuration,
     int? sourceWidth,
     int? sourceHeight,
     int? sourceFps,
@@ -108,9 +126,20 @@ class FfmpegEncoder {
       '-i', '-',
     ];
 
-    final scaleChain =
-        'scale=$width:$height:force_original_aspect_ratio=decrease,'
-        'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1';
+    // Video filter chain: scale/pad (when output res differs), then speed
+    // (setpts) and fades, then setsar (only needed when we scaled/padded).
+    final videoFilters = <String>[
+      if (needsScale) ...[
+        'scale=$width:$height:force_original_aspect_ratio=decrease',
+        'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black',
+      ],
+      if (playbackSpeed != 1.0) setptsForSpeed(playbackSpeed),
+      if (fadeIn > Duration.zero) 'fade=t=in:st=0:d=${ffSeconds(fadeIn)}',
+      if (fadeOut > Duration.zero && outputDuration != null)
+        'fade=t=out:st=${ffSeconds(outputDuration! - fadeOut)}:d=${ffSeconds(fadeOut)}',
+      if (needsScale) 'setsar=1',
+    ];
+    final videoChain = videoFilters.join(',');
 
     if (hasAudio) {
       // Audio present: route video + audio through one -filter_complex so we
@@ -122,20 +151,39 @@ class FfmpegEncoder {
         args.addAll(['-ss', ffSeconds(trim!.start), '-t', ffSeconds(trim!.duration)]);
       }
       args.addAll(['-i', audioSourcePath!]);
-      final videoChain =
-          needsScale ? '[0:v]$scaleChain[vout]' : '[0:v]null[vout]';
-      args.addAll(['-filter_complex', '$videoChain;${plan!.filterComplex!}']);
-      args.addAll(['-map', '[vout]', '-map', plan.mapLabel!]);
+      final vlabel =
+          videoChain.isEmpty ? '[0:v]null[vout]' : '[0:v]$videoChain[vout]';
+      // Audio post-processing (speed/fade) appended after the mix's [aout].
+      // The mix plan already trimmed the audio at the input (`-ss`/`-t`); these
+      // operate on the mix output, so they compose with the input trim.
+      final audioPost = <String>[
+        if (playbackSpeed != 1.0) speedAtempo(playbackSpeed),
+        if (fadeIn > Duration.zero) 'afade=t=in:st=0:d=${ffSeconds(fadeIn)}',
+        if (fadeOut > Duration.zero && outputDuration != null)
+          'afade=t=out:st=${ffSeconds(outputDuration! - fadeOut)}:d=${ffSeconds(fadeOut)}',
+      ];
+      final String audioMapLabel;
+      final String audioGraph;
+      if (audioPost.isEmpty) {
+        audioGraph = plan!.filterComplex!;
+        audioMapLabel = plan.mapLabel!;
+      } else {
+        audioGraph =
+            '${plan!.filterComplex!};${plan.mapLabel!}${audioPost.join(',')}[aoutx]';
+        audioMapLabel = '[aoutx]';
+      }
+      args.addAll(['-filter_complex', '$vlabel;$audioGraph']);
+      args.addAll(['-map', '[vout]', '-map', audioMapLabel]);
       args.addAll(
           ['-c:v', codec, '-b:v', '${bitrateKbps}k', '-pix_fmt', 'yuv420p']);
       args.addAll(['-r', '$fps']);
       args.addAll(['-c:a', 'aac', '-b:a', '${plan.bitrateKbps}k']);
     } else {
-      // Video only (today's path): -vf for scaling, no audio.
+      // Video only (today's path): -vf for the scale/speed/fade chain, no audio.
       args.addAll(
           ['-c:v', codec, '-b:v', '${bitrateKbps}k', '-pix_fmt', 'yuv420p']);
-      if (needsScale) {
-        args.addAll(['-vf', scaleChain]);
+      if (videoChain.isNotEmpty) {
+        args.addAll(['-vf', videoChain]);
       }
       args.addAll(['-r', '$fps']);
     }
