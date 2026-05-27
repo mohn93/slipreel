@@ -41,16 +41,21 @@ class VideoToolboxEncoder {
   /// Called for each compressed sample. Set before initialize().
   var onCompressedSample: ((CMSampleBuffer) -> Void)?
 
-  /// Atomically tracks frames the encoder reported as dropped via
-  /// `kVTEncodeInfo_FrameDropped`. Read at stop time.
-  private(set) var droppedFrameCount: Int = 0
+  /// Guards the diagnostic counters below — `encode()` runs on the capture
+  /// queue while the VideoToolbox `outputCallback` runs on VT's own queue, so
+  /// the counter mutations/reads race without this.
+  private let counterLock = NSLock()
 
-  /// Number of times encode(pixelBuffer:timestamp:) was called.
-  private(set) var encodeCallCount: Int = 0
-  /// Number of frames successfully submitted to VTCompressionSessionEncodeFrame.
-  private(set) var encodeSuccessCount: Int = 0
-  /// Number of times the static outputCallback fired with a ready sample.
-  private(set) var outputCallbackCount: Int = 0
+  private var _droppedFrameCount = 0
+  private var _encodeCallCount = 0
+  private var _encodeSuccessCount = 0
+  private var _outputCallbackCount = 0
+
+  /// Frames the encoder reported dropped. Thread-safe read.
+  var droppedFrameCount: Int {
+    counterLock.lock(); defer { counterLock.unlock() }
+    return _droppedFrameCount
+  }
 
   init(width: Int, height: Int, fps: Int) {
     self.width = width
@@ -103,7 +108,7 @@ class VideoToolboxEncoder {
   }
 
   func encode(pixelBuffer: CVPixelBuffer, timestamp: CMTime) throws {
-    encodeCallCount += 1
+    counterLock.lock(); _encodeCallCount += 1; counterLock.unlock()
     guard let session = compressionSession else { throw EncoderError.notInitialized }
     var flags = VTEncodeInfoFlags()
     let status = VTCompressionSessionEncodeFrame(
@@ -116,8 +121,10 @@ class VideoToolboxEncoder {
       infoFlagsOut: &flags
     )
     if status != noErr { throw EncoderError.encodeFailed(status) }
-    encodeSuccessCount += 1
-    if flags.contains(.frameDropped) { droppedFrameCount += 1 }
+    counterLock.lock()
+    _encodeSuccessCount += 1
+    if flags.contains(.frameDropped) { _droppedFrameCount += 1 }
+    counterLock.unlock()
   }
 
   func finalize() {
@@ -140,7 +147,7 @@ class VideoToolboxEncoder {
     guard let sampleBuffer = sampleBuffer, CMSampleBufferDataIsReady(sampleBuffer) else { return }
     guard let refcon = refcon else { return }
     let encoder = Unmanaged<VideoToolboxEncoder>.fromOpaque(refcon).takeUnretainedValue()
-    encoder.outputCallbackCount += 1
+    encoder.counterLock.lock(); encoder._outputCallbackCount += 1; encoder.counterLock.unlock()
     encoder.onCompressedSample?(sampleBuffer)
   }
 }
