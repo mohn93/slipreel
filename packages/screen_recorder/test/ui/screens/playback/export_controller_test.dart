@@ -24,6 +24,17 @@ class _FakeHandler implements DestinationHandler {
       const DestinationResult(message: 'Saved', revealPath: '/tmp/out.mp4');
 }
 
+/// Resolves a path fine but throws during delivery — models the clipboard/link
+/// handlers' real I/O failing after a successful encode.
+class _ThrowingHandler implements DestinationHandler {
+  @override
+  Future<String?> resolveOutputPath({required String suggestedFileName}) async =>
+      '/tmp/out.mp4';
+  @override
+  Future<DestinationResult> deliver(String outputPath) async =>
+      throw Exception('deliver boom');
+}
+
 void main() {
   test('run reports progress, delivers, returns success', () async {
     final progress = <double>[];
@@ -42,6 +53,22 @@ void main() {
     expect(progress, [0.5, 1.0]);
     expect(outcome, isA<ExportSuccess>());
     expect((outcome as ExportSuccess).result.message, 'Saved');
+  });
+
+  test('run returns failure when delivery throws (pipeline succeeded)',
+      () async {
+    final c = ExportController(
+      runPipeline: ({required onProgress, required cancelToken}) async {
+        onProgress(1.0);
+        return _summary();
+      },
+    );
+    final outcome = await c.run(
+      outputPath: '/tmp/out.mp4',
+      handler: _ThrowingHandler(),
+      onProgress: (_) {},
+    );
+    expect(outcome, isA<ExportFailure>());
   });
 
   test('run returns failure when the pipeline throws', () async {

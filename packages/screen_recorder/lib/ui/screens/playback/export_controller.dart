@@ -1,4 +1,5 @@
 import 'package:slipreel_engine/export/export_cancellation.dart';
+import 'package:slipreel_engine/utils/app_logger.dart';
 import 'package:slipreel_engine/utils/perf_summary.dart';
 
 import '../../../services/destination_handlers.dart';
@@ -55,7 +56,13 @@ class ExportController {
       return ExportSuccess(summary, result);
     } on ExportCancelledException {
       return const ExportCancelled();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      // Broad catch is intentional: ffmpeg/codec/IO errors (from the pipeline
+      // and handler.deliver) are varied and Object-typed, so we funnel them all
+      // into ExportFailure for uniform UI handling. Logging the error + stack
+      // here preserves diagnosability so genuine bugs (TypeError, etc.) aren't
+      // silently downgraded to a plain "Export failed" message with no trace.
+      AppLogger.ffmpeg.e('Export run failed', error: e, stackTrace: stackTrace);
       return ExportFailure(e);
     }
   }
