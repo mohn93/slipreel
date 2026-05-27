@@ -118,7 +118,7 @@ class GifExportPipeline {
     final extraVideoFilters = <String>[
       if (speed != 1.0) setptsForSpeed(speed),
       if (fadeIn > Duration.zero) 'fade=t=in:st=0:d=${ffSeconds(fadeIn)}',
-      if (fadeOut > Duration.zero)
+      if (fadeOut > Duration.zero && outputDuration > Duration.zero)
         'fade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(fadeOut)}',
     ];
     final extraVideo =
