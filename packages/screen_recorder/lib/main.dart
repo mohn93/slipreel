@@ -41,7 +41,12 @@ Future<void> main() async {
     );
   }
 
-  // Explicitly register the macOS platform implementation
+  // macOS platform registration. `dartPluginClass: ScreenRecorderMacos` in
+  // screen_recorder_macos/pubspec.yaml makes Flutter auto-register via
+  // GeneratedPluginRegistrant; this explicit call is kept as a harmless
+  // belt-and-suspenders (registerWith just re-sets the same instance) until
+  // auto-registration is confirmed on a real `flutter build macos` (which is
+  // broken in this dev env). Safe to remove once verified.
   ScreenRecorderMacos.registerWith();
   AppLogger.platform.i('macOS platform registered');
 
