@@ -7,6 +7,7 @@ import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
+import '../models/trim_selection.dart';
 import '../state/editor_project_state.dart';
 import '../utils/app_logger.dart';
 import '../utils/perf_summary.dart';
@@ -38,6 +39,7 @@ class GifExportPipeline {
     required this.cursorRecording,
     required this.projectState,
     required this.settings,
+    this.trim,
   }) {
     if (settings.format != ExportFormat.gif) {
       throw ArgumentError.value(
@@ -54,6 +56,7 @@ class GifExportPipeline {
   final CursorRecording cursorRecording;
   final EditorProjectState projectState;
   final ExportSettings settings;
+  final TrimSelection? trim;
 
   // Holds the directory created for the palette temp file so we can
   // delete it recursively in the finally block (fixes the dir-leak that
@@ -147,6 +150,7 @@ class GifExportPipeline {
         width: srcWidth,
         height: srcHeight,
         cfrFps: fps,
+        trim: trim,
       );
       _activeDecoder = decoder1;
 
@@ -160,7 +164,9 @@ class GifExportPipeline {
           compositeSw1.start();
           final composed = await compositor1.compose(
             bgra: raw,
-            position: Duration(microseconds: tsMicros),
+            position:
+                (trim?.start ?? Duration.zero) +
+                    Duration(microseconds: tsMicros),
           );
           compositeSw1.stop();
           proc1.stdin.add(composed);
@@ -227,6 +233,7 @@ class GifExportPipeline {
         width: srcWidth,
         height: srcHeight,
         cfrFps: fps,
+        trim: trim,
       );
       _activeDecoder = decoder2;
 
@@ -241,7 +248,9 @@ class GifExportPipeline {
             compositeSw2.start();
             final composed = await compositor2.compose(
               bgra: raw,
-              position: Duration(microseconds: tsMicros),
+              position:
+                  (trim?.start ?? Duration.zero) +
+                      Duration(microseconds: tsMicros),
             );
             compositeSw2.stop();
             proc2.stdin.add(composed);
@@ -338,6 +347,9 @@ class GifExportPipeline {
   }
 
   int? _expectedFrames(FfmpegProbeResult probed, int fps) {
+    if (trim != null) {
+      return (trim!.duration.inMicroseconds / 1000000 * fps).round();
+    }
     final dur = probed.durationSec;
     if (dur != null && dur > 0) return (dur * fps).round();
     final nb = probed.nbFrames;

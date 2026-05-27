@@ -8,6 +8,7 @@ import 'package:slipreel_engine/models/compression_bitrate.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
+import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 
@@ -260,6 +261,42 @@ void main() {
         );
 
         await expectLater(pipeline.run(), throwsA(isA<Exception>()));
+      } finally {
+        tmp.deleteSync(recursive: true);
+      }
+    });
+
+    test('trimmed GIF export produces a non-empty valid GIF', () async {
+      final tmp = Directory.systemTemp.createTempSync('gif_pipe_trim');
+      final outPath = '${tmp.path}/out.gif';
+
+      try {
+        final pipeline = GifExportPipeline(
+          sourcePath: 'test/fixtures/sample_recording.mp4',
+          outputPath: outPath,
+          sourceMetadata: _metadata(),
+          cursorRecording: CursorRecording(),
+          projectState: _bareState(),
+          settings: _gifSettings(),
+          trim: TrimSelection(
+            start: Duration.zero,
+            end: const Duration(milliseconds: 500),
+          ),
+        );
+
+        final summary = await pipeline.run();
+
+        final file = File(outPath);
+        expect(file.existsSync(), isTrue);
+        expect(summary.outputBytes, greaterThan(0));
+
+        final header = file.readAsBytesSync().sublist(0, 6);
+        final headerStr = String.fromCharCodes(header);
+        expect(
+          headerStr == 'GIF87a' || headerStr == 'GIF89a',
+          isTrue,
+          reason: 'Expected GIF magic bytes, got: $headerStr',
+        );
       } finally {
         tmp.deleteSync(recursive: true);
       }
