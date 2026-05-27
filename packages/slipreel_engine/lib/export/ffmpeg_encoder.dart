@@ -126,6 +126,13 @@ class FfmpegEncoder {
       '-i', '-',
     ];
 
+    // Fade-out begins at outputDuration - fadeOut, clamped to >= 0 so a fade
+    // longer than the (trim/speed-shortened) output doesn't start negative
+    // (which would make the clip open already partially faded).
+    final fadeOutStart = (outputDuration != null && outputDuration! > fadeOut)
+        ? outputDuration! - fadeOut
+        : Duration.zero;
+
     // Video filter chain: scale/pad (when output res differs), then speed
     // (setpts) and fades, then setsar (only needed when we scaled/padded).
     final videoFilters = <String>[
@@ -136,7 +143,7 @@ class FfmpegEncoder {
       if (playbackSpeed != 1.0) setptsForSpeed(playbackSpeed),
       if (fadeIn > Duration.zero) 'fade=t=in:st=0:d=${ffSeconds(fadeIn)}',
       if (fadeOut > Duration.zero && outputDuration != null)
-        'fade=t=out:st=${ffSeconds(outputDuration! - fadeOut)}:d=${ffSeconds(fadeOut)}',
+        'fade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(fadeOut)}',
       if (needsScale) 'setsar=1',
     ];
     final videoChain = videoFilters.join(',');
@@ -160,7 +167,7 @@ class FfmpegEncoder {
         if (playbackSpeed != 1.0) speedAtempo(playbackSpeed),
         if (fadeIn > Duration.zero) 'afade=t=in:st=0:d=${ffSeconds(fadeIn)}',
         if (fadeOut > Duration.zero && outputDuration != null)
-          'afade=t=out:st=${ffSeconds(outputDuration! - fadeOut)}:d=${ffSeconds(fadeOut)}',
+          'afade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(fadeOut)}',
       ];
       final String audioMapLabel;
       final String audioGraph;

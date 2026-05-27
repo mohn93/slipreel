@@ -116,15 +116,14 @@ class EditorProjectState {
   final CursorPostProcess cursorPostProcess;
 
   /// Playback speed multiplier for the clip (1.0 = native). Edited
-  /// from the Clip context inspector. The export pipeline does not
-  /// yet apply this — the field round-trips through persistence so
-  /// users don't lose their picker choice when an actual speed
-  /// transform lands.
+  /// from the Clip context inspector. The MP4 export pipeline applies
+  /// this (setpts on video, atempo on audio); GIF speed is being wired
+  /// separately. Round-tripped through persistence.
   final double playbackSpeed;
 
-  /// Fade-in duration applied at the start of the clip. Round-tripped
-  /// through persistence; pipeline wiring is pending — see
-  /// [playbackSpeed].
+  /// Fade-in duration applied at the start of the clip. The MP4 export
+  /// pipeline applies this (fade on video, afade on audio); GIF fades
+  /// are being wired separately. See [playbackSpeed].
   final Duration fadeIn;
 
   /// Fade-out duration applied at the end of the clip. See [fadeIn].

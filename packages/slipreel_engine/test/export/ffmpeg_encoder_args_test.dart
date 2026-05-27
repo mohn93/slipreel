@@ -97,5 +97,27 @@ void main() {
       // audio is remapped to the post-processed label, not the raw [aout]
       expect(joined, contains('-map [aoutx]'));
     });
+
+    test('fadeOut longer than output clamps fade-out start to 0', () {
+      final enc = FfmpegEncoder(
+        outputPath: '/tmp/o.mp4', width: 100, height: 100, fps: 30,
+        bitrateKbps: 2000,
+        audioSourcePath: '/tmp/in.mp4',
+        audioMixPlan: const AudioMixPlan(
+          filterComplex:
+              '[1:a:0]volume=1.0,aformat=sample_rates=48000:channel_layouts=stereo[aout]',
+          mapLabel: '[aout]',
+          bitrateKbps: 192,
+        ),
+        fadeOut: const Duration(seconds: 2),
+        outputDuration: const Duration(milliseconds: 500),
+      );
+      final args = enc.argsForTesting('libx264');
+      final joined = args.join(' ');
+      // Output is shorter than the fade — start must clamp to 0, not negative.
+      expect(joined, contains('fade=t=out:st=0.000000:d=2.000000'));
+      expect(joined, contains('afade=t=out:st=0.000000:d=2.000000'));
+      expect(joined, isNot(contains('st=-')));
+    });
   });
 }
