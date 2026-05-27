@@ -33,6 +33,25 @@ void main() {
       expect(region.isActive(const Duration(seconds: 6)), false);
     });
 
+    test('isActive is a half-open interval [start, end)', () {
+      final region = ZoomRegion(
+        rect: const Rect.fromLTWH(100, 100, 200, 150),
+        startTime: const Duration(seconds: 2),
+        duration: const Duration(seconds: 3),
+        zoomLevel: 2.0,
+      );
+      // endTime == 5s.
+      // Active exactly at the start edge.
+      expect(region.isActive(const Duration(seconds: 2)), true);
+      // Active just before the end edge.
+      expect(
+        region.isActive(const Duration(seconds: 5) - const Duration(microseconds: 1)),
+        true,
+      );
+      // Inactive exactly at the end edge (half-open).
+      expect(region.isActive(const Duration(seconds: 5)), false);
+    });
+
     test('should calculate progress within zoom region', () {
       final region = ZoomRegion(
         rect: const Rect.fromLTWH(100, 100, 200, 150),

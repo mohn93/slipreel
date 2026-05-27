@@ -69,7 +69,7 @@ class DeterministicFocalTrack {
     final hasCursor = cursorRecording.count > 0;
     final samples = <Offset>[];
 
-    for (var us = startUs; us <= endUs; us += _stepMicros) {
+    for (var us = startUs; us < endUs; us += _stepMicros) {
       final pass = builder.build(
         position: Duration(microseconds: us),
         zoomRegions: regions,
@@ -81,10 +81,11 @@ class DeterministicFocalTrack {
         hasCursorData: hasCursor,
       );
       final focal = pass.focalUpdate?.focal;
-      // The loop only visits timestamps inside [startUs, endUs], where the
-      // region's zoom is active, so focalUpdate is always non-null. A null
-      // here means an invariant changed (e.g. the loop bounds or the
-      // controller's active-window contract) — surface it loudly in debug.
+      // The loop only visits timestamps inside [startUs, endUs), where the
+      // region's zoom is active (ZoomRegion.isActive is a half-open interval),
+      // so focalUpdate is always non-null. A null here means an invariant
+      // changed (e.g. the loop bounds or the controller's active-window
+      // contract) — surface it loudly in debug.
       assert(
         focal != null,
         'DeterministicFocalTrack: focalUpdate null inside region bounds at '

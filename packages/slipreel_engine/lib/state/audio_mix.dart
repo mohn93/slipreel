@@ -1,6 +1,7 @@
 /// Per-track volume settings for the two possible recording audio tracks
 /// (microphone, system). Gains are a percentage: 0 = silent, 100 = unchanged,
-/// up to 200 = ~+6 dB boost. Stored by role; the physical track index is
+/// up to 200 = +6.02 dB boost (volume=2.0 → 20*log10(2) ≈ +6.02 dB). Stored by
+/// role; the physical track index is
 /// resolved at export from a probe. Mute preserves the gain value.
 class AudioMix {
   final int micGainPercent;

@@ -123,9 +123,14 @@ class ZoomRegion {
   /// End time of zoom effect
   Duration get endTime => startTime + duration;
 
-  /// Check if position is within zoom region
+  /// Check if position is within the zoom region.
+  ///
+  /// Half-open interval `[startTime, endTime)`: active at the start edge,
+  /// inactive exactly at the end edge. This removes the one-frame boundary
+  /// ambiguity when two regions share an edge (only the later one is active
+  /// at the shared instant).
   bool isActive(Duration position) {
-    return position >= startTime && position <= endTime;
+    return position >= startTime && position < endTime;
   }
 
   /// Get progress within zoom region (0.0 to 1.0)

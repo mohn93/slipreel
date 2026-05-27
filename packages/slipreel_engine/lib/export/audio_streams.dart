@@ -72,6 +72,16 @@ Map<AudioRole, int> inferAudioRoles(List<AudioStreamInfo> streams) {
       AudioRole.system: stereo.first.index,
     };
   }
+  // Channel counts didn't disambiguate; fall back to stream order
+  // (streams[0] → mic, streams[1] → system). This app only ever produces
+  // at most two audio tracks (mic + system), so >2 streams here is
+  // unsupported and the role mapping becomes order-dependent — any extra
+  // streams beyond the first two are silently ignored.
+  assert(
+    streams.length <= 2,
+    'inferAudioRoles: >2 audio streams is unsupported and order-dependent '
+    '(got ${streams.length}); only streams[0]/[1] are mapped.',
+  );
   return {
     AudioRole.microphone: streams[0].index,
     AudioRole.system: streams[1].index,

@@ -47,8 +47,19 @@ class FrameCompositor {
            videoSize: videoSize,
          ),
        ),
-       _effectivePadding = FramePainter.effectivePadding(
-         projectState.windowFrame.padding,
+       // Center the video within the EVEN canvas. The raw effective padding
+       // would leave the video positioned for the pre-rounding total size, so
+       // the up-to-1px the even-rounding adds to width/height would all land
+       // on the right/bottom — shifting the video off-center. Deriving the
+       // padding from (evenTotal − videoSize)/2 splits that pixel evenly and
+       // keeps the video centered (no 1px offset).
+       _effectivePadding = _centeredPadding(
+         _evenSize(
+           FramePainter.calculateTotalSize(
+             frame: projectState.windowFrame,
+             videoSize: videoSize,
+           ),
+         ),
          videoSize,
        );
 
@@ -659,5 +670,16 @@ class FrameCompositor {
     }
 
     return Size(even(s.width).toDouble(), even(s.height).toDouble());
+  }
+
+  /// Padding that centers [videoSize] inside the (already even-rounded)
+  /// [totalSize]. Computing the left/top inset from the rounded canvas —
+  /// rather than the raw aspect-scaled padding — keeps the video centered
+  /// after the even-up step, instead of letting the extra rounding pixel
+  /// push it off-center toward the right/bottom.
+  static EdgeInsets _centeredPadding(Size totalSize, Size videoSize) {
+    final dx = (totalSize.width - videoSize.width) / 2;
+    final dy = (totalSize.height - videoSize.height) / 2;
+    return EdgeInsets.only(left: dx, top: dy, right: dx, bottom: dy);
   }
 }

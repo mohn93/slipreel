@@ -452,7 +452,14 @@ class ZoomFocalController {
     List<ZoomRegion> zoomRegions,
   ) {
     for (final z in zoomRegions) {
-      if (z.isActive(position)) return z;
+      // ZoomRegion.isActive is half-open `[start, end)` so two regions
+      // sharing an edge don't both claim the shared instant. The focal
+      // controller, however, must still emit the exit-ramp *completion*
+      // frame at exactly `endTime` (where the zoom factor reaches 1.0× and
+      // the focal must have arrived at video centre). So we include the
+      // closed end edge here — the first matching region wins, which for a
+      // shared edge is the earlier region's final completion frame.
+      if (z.isActive(position) || position == z.endTime) return z;
     }
     return null;
   }
