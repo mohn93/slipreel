@@ -39,6 +39,7 @@ import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import '../../state/recording_audio_streams_provider.dart';
 import 'playback/hover_scrub_controller.dart';
+import 'playback/trim_controller.dart';
 
 /// Debug hook: the active [PlaybackScreen] publishes its video
 /// controller here (in debug/profile builds) so VM-service extensions
@@ -73,7 +74,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // (settings dialog → progress dialog) when the bare screen flashes
   // for a frame.
   bool _isExporting = false;
-  TrimSelection? _trimSelection;
+  // Owns the trim selection and soft-enforces it during playback.
+  // Wired in [_initializeVideo] once the controller is initialised.
+  late final TrimController _trim;
+  // Read-only alias kept so the existing read sites (export pipeline
+  // args, EditorTimeline.trimSelection) keep working unchanged.
+  TrimSelection? get _trimSelection => _trim.selection;
   // State-shaped undo/redo for everything the editor notifier owns
   // (cursor visuals, animation configs, motion blur, zoom regions,
   // etc.). Wired in [_initializeVideo] after the project state loads
@@ -200,10 +206,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // listener callback during init.
       _frameSettings.setFrame(saved.windowFrame);
 
+      // Owns the trim selection + soft-enforces it during playback.
+      // Constructed before _trim.selection is assigned below.
+      _trim = TrimController(
+        pause: _controller.pause,
+        seekTo: _controller.seekTo,
+      );
+
       setState(() {
         _isInitialized = true;
         // Initialize trim selection to full duration
-        _trimSelection = TrimSelection(
+        _trim.selection = TrimSelection(
           start: Duration.zero,
           end: _controller.value.duration,
           videoDuration: _controller.value.duration,
@@ -221,9 +234,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         })
         ..start();
       // Auto-pause when playback reaches the trim end. Wired after
-      // _isInitialized + _trimSelection are set so the listener never
+      // _isInitialized + _trim.selection are set so the listener never
       // sees a half-initialized state.
-      _controller.addListener(_enforceTrimBounds);
+      _controller.addListener(_onTrimTick);
       // Seed the hover anchor from the freshly-initialised controller
       // so hover-end-before-any-other-action restores to a meaningful
       // value rather than Duration.zero (which would jump to start).
@@ -256,15 +269,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// playhead at trim.end when playback crosses it. Doesn't stop the
   /// user from manually seeking past trim.end — the dim overlay on
   /// the timeline communicates "you're in trimmed-out territory."
-  void _enforceTrimBounds() {
-    final trim = _trimSelection;
-    if (trim == null) return;
-    final value = _controller.value;
-    if (!value.isPlaying) return;
-    if (value.position >= trim.end) {
-      _controller.pause();
-      _controller.seekTo(trim.end);
-    }
+  void _onTrimTick() {
+    final v = _controller.value;
+    _trim.enforce(isPlaying: v.isPlaying, position: v.position);
   }
 
   /// Schedule a debounced save so a slider drag doesn't hammer the
@@ -287,7 +294,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _saveDebounce?.cancel();
     if (_isInitialized) {
       _projectStore.save(_project);
-      _controller.removeListener(_enforceTrimBounds);
+      _controller.removeListener(_onTrimTick);
       _controller.removeListener(_onHoverTrack);
     }
     _smoothPlayhead?.dispose();
@@ -1190,7 +1197,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onZoomAdded: _addZoomAt,
                 trimSelection: _trimSelection,
                 onTrimChanged: (next) {
-                  setState(() => _trimSelection = next);
+                  setState(() => _trim.selection = next);
                 },
               );
             },
