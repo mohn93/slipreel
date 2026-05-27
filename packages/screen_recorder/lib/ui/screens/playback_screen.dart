@@ -539,6 +539,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 cursorRecording: cursorRec,
                 projectState: _project,
                 settings: settings,
+                trim: _trimSelection,
               ).run(onProgress: (p) => progress.value = p)
             : await ExportPipeline(
                 sourcePath: widget.videoPath,
@@ -547,6 +548,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 cursorRecording: cursorRec,
                 projectState: _project,
                 settings: settings,
+                trim: _trimSelection,
               ).run(onProgress: (p) => progress.value = p);
 
         if (!mounted) return;
