@@ -8,6 +8,7 @@ import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
+import '../models/trim_selection.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
@@ -42,6 +43,9 @@ class ExportPipeline {
   /// Must have [ExportSettings.format] == [ExportFormat.mp4].
   final ExportSettings settings;
 
+  /// When set, only the slice [trim.start, trim.end] is exported.
+  final TrimSelection? trim;
+
   // Cache for a single ffprobe result per pipeline instance.
   FfmpegProbeResult? _probeCache;
 
@@ -52,6 +56,7 @@ class ExportPipeline {
     required this.cursorRecording,
     required this.projectState,
     required this.settings,
+    this.trim,
   }) {
     if (settings.format != ExportFormat.mp4) {
       throw ArgumentError.value(
@@ -125,6 +130,7 @@ class ExportPipeline {
       width: srcWidth,
       height: srcHeight,
       cfrFps: pipelineFps,
+      trim: trim,
     );
     final audioMixPlan =
         buildAudioMixArgs(probed.audioStreams, projectState.audioMix);
@@ -167,6 +173,9 @@ class ExportPipeline {
     // to a wrong percentage. (Final so Dart can promote across the
     // encode-stage closure that reads it.)
     final int? expectedFrames = () {
+      if (trim != null) {
+        return (trim!.duration.inMicroseconds / 1000000 * pipelineFps).round();
+      }
       final dur = probed.durationSec;
       if (dur != null && dur > 0) {
         return (dur * pipelineFps).round();
@@ -208,10 +217,15 @@ class ExportPipeline {
           // whether the source is VFR. Per-index timing is therefore
           // accurate against the cursor recording's wall clock.
           final tsMicros = (1000000 * index) ~/ pipelineFps;
+          // Decoded frames start at trim.start (the decoder reset PTS to 0),
+          // but cursor/zoom timestamps are relative to the full recording —
+          // so sample the scene at trim.start + elapsed.
+          final scenePosition =
+              (trim?.start ?? Duration.zero) + Duration(microseconds: tsMicros);
           compositeSw.start();
           final composited = await compositor.compose(
             bgra: raw,
-            position: Duration(microseconds: tsMicros),
+            position: scenePosition,
           );
           compositeSw.stop();
           await composedQueue.add(composited);

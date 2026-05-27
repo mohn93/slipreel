@@ -2,7 +2,10 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import '../models/trim_selection.dart';
 import '../utils/app_logger.dart';
+import 'ffmpeg_filters.dart';
 import 'ffmpeg_resolver.dart';
 
 /// Spawns `ffmpeg` to decode an input video into raw BGRA frames streamed
@@ -22,6 +25,10 @@ class FfmpegDecoder {
   /// duplicates frames so the stream is exactly N frames per second.
   final int? cfrFps;
 
+  /// When set, only decodes the slice [trim.start, trim.start + trim.duration]
+  /// via the ffmpeg `trim` filter with PTS reset (`setpts=PTS-STARTPTS`).
+  final TrimSelection? trim;
+
   /// Total wall-clock milliseconds spent reading/awaiting decoded bytes.
   /// Does not include subprocess spawn time.
   int totalDecodeMs = 0;
@@ -33,17 +40,31 @@ class FfmpegDecoder {
     required this.width,
     required this.height,
     this.cfrFps,
+    this.trim,
   });
 
-  Stream<Uint8List> frames() async* {
-    final args = <String>[
+  @visibleForTesting
+  List<String> argsForTesting() => _buildArgs();
+
+  List<String> _buildArgs() {
+    final vf = <String>[
+      if (trim != null)
+        'trim=start=${ffSeconds(trim!.start)}:duration=${ffSeconds(trim!.duration)},'
+            'setpts=PTS-STARTPTS',
+      if (cfrFps != null) 'fps=$cfrFps',
+    ];
+    return <String>[
       '-loglevel', 'error',
       '-i', inputPath,
-      if (cfrFps != null) ...['-vf', 'fps=$cfrFps'],
+      if (vf.isNotEmpty) ...['-vf', vf.join(',')],
       '-f', 'rawvideo',
       '-pix_fmt', 'bgra',
       '-',
     ];
+  }
+
+  Stream<Uint8List> frames() async* {
+    final args = _buildArgs();
     final binary = Ffmpeg.resolve();
     AppLogger.ffmpeg.d('decode: $binary ${args.join(" ")}');
 
