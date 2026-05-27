@@ -40,6 +40,7 @@ import 'package:slipreel_engine/models/recording_metadata.dart';
 import '../../state/recording_audio_streams_provider.dart';
 import 'playback/hover_scrub_controller.dart';
 import 'playback/trim_controller.dart';
+import 'playback/export_controller.dart';
 
 /// Debug hook: the active [PlaybackScreen] publishes its video
 /// controller here (in debug/profile builds) so VM-service extensions
@@ -537,81 +538,96 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         ),
       );
 
-      try {
-        final summary = settings.format == ExportFormat.gif
-            ? await GifExportPipeline(
-                sourcePath: widget.videoPath,
-                outputPath: outPath,
-                sourceMetadata: meta,
-                cursorRecording: cursorRec,
-                projectState: _project,
-                settings: settings,
-                trim: _trimSelection,
-              ).run(onProgress: (p) => progress.value = p)
-            : await ExportPipeline(
-                sourcePath: widget.videoPath,
-                outputPath: outPath,
-                sourceMetadata: meta,
-                cursorRecording: cursorRec,
-                projectState: _project,
-                settings: settings,
-                trim: _trimSelection,
-              ).run(onProgress: (p) => progress.value = p);
+      // Run the pipeline + deliver via the headless ExportController. The
+      // pipeline is picked by format inside the injected closure; this widget
+      // keeps all dialogs/snackbars/Navigator and maps the typed outcome to UI.
+      final exportController = ExportController(
+        runPipeline: ({required onProgress, required cancelToken}) {
+          return settings!.format == ExportFormat.gif
+              ? GifExportPipeline(
+                  sourcePath: widget.videoPath,
+                  outputPath: outPath!,
+                  sourceMetadata: meta,
+                  cursorRecording: cursorRec,
+                  projectState: _project,
+                  settings: settings,
+                  trim: _trimSelection,
+                ).run(onProgress: onProgress, cancelToken: cancelToken)
+              : ExportPipeline(
+                  sourcePath: widget.videoPath,
+                  outputPath: outPath!,
+                  sourceMetadata: meta,
+                  cursorRecording: cursorRec,
+                  projectState: _project,
+                  settings: settings,
+                  trim: _trimSelection,
+                ).run(onProgress: onProgress, cancelToken: cancelToken);
+        },
+      );
 
-        if (!mounted) return;
-        Navigator.of(context).pop(); // close progress dialog
+      final outcome = await exportController.run(
+        outputPath: outPath,
+        handler: handler,
+        onProgress: (p) => progress.value = p,
+      );
 
-        // Persist settings minus the title (plan rule 5).
-        await store.save(settings.copyWith(clearTitle: true));
+      if (!mounted) return;
+      Navigator.of(context).pop(); // close progress dialog
 
-        // Normalize the observed realtime multiplier to the estimator's
-        // baseline (1080p @ 30fps) and persist it so the next dialog
-        // open uses the actual hardware rate. Skipped for GIF because
-        // its two-pass pipeline costs are dominated by palette work,
-        // not the linear pixels-per-second model the estimator assumes.
-        if (settings.format == ExportFormat.mp4 &&
-            summary.realtimeMultiple > 0) {
-          final outDims = settings.resolution.dimensionsFor(sourceVideoSize);
-          final outArea = outDims.width * outDims.height;
-          final fpsScale = settings.frameRate / kBaselineFrameRate;
-          final areaScale = outArea / kBaselineAreaPixels;
-          final normalized = summary.realtimeMultiple * fpsScale * areaScale;
-          unawaited(telemetryStore.saveRealtimeMultiplier(normalized));
-        }
+      switch (outcome) {
+        case ExportSuccess(:final summary, :final result):
+          // Persist settings minus the title (plan rule 5).
+          await store.save(settings.copyWith(clearTitle: true));
 
-        final result = await handler.deliver(outPath);
-        if (!mounted) return;
+          // Normalize the observed realtime multiplier to the estimator's
+          // baseline (1080p @ 30fps) and persist it so the next dialog
+          // open uses the actual hardware rate. Skipped for GIF because
+          // its two-pass pipeline costs are dominated by palette work,
+          // not the linear pixels-per-second model the estimator assumes.
+          if (settings.format == ExportFormat.mp4 &&
+              summary.realtimeMultiple > 0) {
+            final outDims = settings.resolution.dimensionsFor(sourceVideoSize);
+            final outArea = outDims.width * outDims.height;
+            final fpsScale = settings.frameRate / kBaselineFrameRate;
+            final areaScale = outArea / kBaselineAreaPixels;
+            final normalized = summary.realtimeMultiple * fpsScale * areaScale;
+            unawaited(telemetryStore.saveRealtimeMultiplier(normalized));
+          }
 
-        // Record the export path so the reveal-in-Finder button lights up
-        // the next time the dialog is opened.
-        setState(() => _lastExportPath = outPath);
+          if (!mounted) return;
+          // Record the export path so the reveal-in-Finder button lights up
+          // the next time the dialog is opened.
+          setState(() => _lastExportPath = outPath);
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message),
-            backgroundColor: const Color(0xFF4CAF50),
-            action: result.revealPath != null
-                ? SnackBarAction(
-                    label: 'Show in Finder',
-                    onPressed: () {
-                      // macOS-only: reveal in Finder. No-op on other platforms.
-                      if (Platform.isMacOS) {
-                        Process.run('open', ['-R', result.revealPath!]);
-                      }
-                    },
-                  )
-                : null,
-          ),
-        );
-      } catch (e) {
-        if (!mounted) return;
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Export failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.message),
+              backgroundColor: const Color(0xFF4CAF50),
+              action: result.revealPath != null
+                  ? SnackBarAction(
+                      label: 'Show in Finder',
+                      onPressed: () {
+                        // macOS-only: reveal in Finder. No-op on other platforms.
+                        if (Platform.isMacOS) {
+                          Process.run('open', ['-R', result.revealPath!]);
+                        }
+                      },
+                    )
+                  : null,
+            ),
+          );
+        case ExportFailure(:final error):
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Export failed: $error'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        case ExportCancelled():
+          // No snackbar — user-initiated. (Today there's no cancel UI; this
+          // arm is here for when a cancel button is wired to
+          // exportController.cancel().)
+          break;
       }
     } finally {
       progress.dispose();
