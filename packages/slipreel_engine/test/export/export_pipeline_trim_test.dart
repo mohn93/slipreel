@@ -65,6 +65,19 @@ void main() {
     // ~0.5s ± 0.2s tolerance (encoder GOP / rounding).
     expect(probed.durationSec!, lessThan(0.8),
         reason: 'trimmed export must be ~0.5s, not the full ~1s fixture');
+
+    // Guard against the audio not being trimmed: the container duration
+    // (driven by the longest stream) must reflect the trim, not the full clip.
+    final probe = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=nokey=1:noprint_wrappers=1',
+      outPath,
+    ]);
+    final containerDur = double.tryParse((probe.stdout as String).trim());
+    expect(containerDur, isNotNull);
+    expect(containerDur!, lessThan(0.8),
+        reason: 'container (incl. audio) must reflect the 0.5s trim, not the full ~1s clip');
     tmp.deleteSync(recursive: true);
   });
 }

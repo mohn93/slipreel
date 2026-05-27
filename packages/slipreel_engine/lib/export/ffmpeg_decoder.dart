@@ -48,6 +48,9 @@ class FfmpegDecoder {
 
   List<String> _buildArgs() {
     final vf = <String>[
+      // Filter-based (`trim=`) seeking is frame-accurate but decodes from
+      // frame 0 (accuracy over speed — slower for trims that start late in a
+      // long source).
       if (trim != null)
         'trim=start=${ffSeconds(trim!.start)}:duration=${ffSeconds(trim!.duration)},'
             'setpts=PTS-STARTPTS',

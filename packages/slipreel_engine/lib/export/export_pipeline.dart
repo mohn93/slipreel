@@ -142,6 +142,7 @@ class ExportPipeline {
       bitrateKbps: bitrateKbps,
       audioSourcePath: sourcePath,
       audioMixPlan: audioMixPlan,
+      trim: trim,
       // The encoder receives composed frames at totalSize (the framed
       // output), not the source video resolution.
       sourceWidth: compositor.totalSize.width.toInt(),

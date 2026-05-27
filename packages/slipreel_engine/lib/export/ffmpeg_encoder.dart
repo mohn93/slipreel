@@ -2,8 +2,10 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import '../models/trim_selection.dart';
 import '../utils/app_logger.dart';
 import 'audio_mix_args.dart';
+import 'ffmpeg_filters.dart';
 import 'ffmpeg_resolver.dart';
 
 /// Pixel format of the raw frames arriving on the encoder's stdin.
@@ -58,6 +60,11 @@ class FfmpegEncoder {
   /// amix downmix) instead of copying. Null/`!hasAudio` ⇒ video-only output.
   final AudioMixPlan? audioMixPlan;
 
+  /// When set, the audio input is input-seek-trimmed (`-ss`/`-t`) to the same
+  /// range as the (already-trimmed) video so the muxed output stays A/V-synced
+  /// and the container length matches the trim. Null ⇒ full-length audio.
+  final TrimSelection? trim;
+
   Process? _process;
   StringBuffer? _stderrBuffer;
   Future<void>? _stderrDone;
@@ -77,6 +84,7 @@ class FfmpegEncoder {
     required this.bitrateKbps,
     this.audioSourcePath,
     this.audioMixPlan,
+    this.trim,
     int? sourceWidth,
     int? sourceHeight,
     int? sourceFps,
@@ -107,6 +115,12 @@ class FfmpegEncoder {
     if (hasAudio) {
       // Audio present: route video + audio through one -filter_complex so we
       // never mix -vf with -filter_complex (which can conflict).
+      // Input-seek the audio to the trim range so it matches the
+      // already-trimmed video; `[1:a:0]` in the mix plan then refers to the
+      // trimmed audio.
+      if (trim != null) {
+        args.addAll(['-ss', ffSeconds(trim!.start), '-t', ffSeconds(trim!.duration)]);
+      }
       args.addAll(['-i', audioSourcePath!]);
       final videoChain =
           needsScale ? '[0:v]$scaleChain[vout]' : '[0:v]null[vout]';
@@ -125,6 +139,11 @@ class FfmpegEncoder {
       }
       args.addAll(['-r', '$fps']);
     }
+    // Safety net: when trimming with audio, let the container length follow
+    // the shorter stream so audio overhang can't extend the file past the
+    // trimmed video. Only when trimming, to keep the no-trim arg shape that
+    // existing tests pin unchanged.
+    if (trim != null && hasAudio) args.add('-shortest');
     args.add(outputPath);
     return args;
   }
