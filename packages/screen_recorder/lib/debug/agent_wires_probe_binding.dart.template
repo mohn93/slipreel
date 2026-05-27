@@ -1,0 +1,19 @@
+// LOCAL DEV ONLY — see README.md in this folder.
+// Copy this file to `agent_wires_probe_binding.dart` (gitignored) and add the
+// dependency override described in the README to wire the real probe.
+import 'package:agent_wires_probe/agent_wires_probe.dart';
+import 'package:flutter/widgets.dart';
+
+import 'debug_probe.dart';
+
+/// Real probe binding backed by the agent-wires package.
+class AgentWiresDebugProbe implements DebugProbe {
+  const AgentWiresDebugProbe();
+
+  @override
+  void install() => AgentWiresProbe.install();
+
+  @override
+  NavigatorObserver? navigatorObserver() =>
+      AgentWiresProbe.routeTracker.createObserver();
+}

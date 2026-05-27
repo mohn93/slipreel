@@ -7,12 +7,16 @@ import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
+import '../models/trim_selection.dart';
 import '../state/editor_project_state.dart';
 import '../utils/app_logger.dart';
 import '../utils/perf_summary.dart';
+import 'export_cancellation.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
+import 'ffmpeg_filters.dart';
 import 'ffmpeg_probe.dart';
+import 'ffmpeg_resolver.dart';
 import 'frame_compositor.dart';
 
 /// Two-pass GIF export pipeline using ffmpeg's palettegen + paletteuse.
@@ -36,6 +40,7 @@ class GifExportPipeline {
     required this.cursorRecording,
     required this.projectState,
     required this.settings,
+    this.trim,
   }) {
     if (settings.format != ExportFormat.gif) {
       throw ArgumentError.value(
@@ -52,18 +57,34 @@ class GifExportPipeline {
   final CursorRecording cursorRecording;
   final EditorProjectState projectState;
   final ExportSettings settings;
+  final TrimSelection? trim;
 
   // Holds the directory created for the palette temp file so we can
   // delete it recursively in the finally block (fixes the dir-leak that
   // left empty gif_palette* dirs under /var/folders/…/T/).
   Directory? _paletteDir;
 
+  Process? _activeProc;
+  FfmpegDecoder? _activeDecoder;
+
   /// Runs both passes. [onProgress] receives a value in [0, 1]:
   /// pass 1 covers [0, 0.5], pass 2 covers [0.5, 1.0].
+  ///
+  /// Single-use: each pipeline instance and each [cancelToken] is meant for
+  /// one [run] call. The `whenCancelled` handler and the `_activeProc` /
+  /// `_activeDecoder` fields are wired/mutated per run, so don't reuse a
+  /// [CancelToken] across runs (kill() is idempotent, so reuse is currently
+  /// harmless, but the assumption may tighten later).
   Future<ExportPerfSummary> run({
     void Function(double progress)? onProgress,
+    CancelToken? cancelToken,
   }) async {
     final wallSw = Stopwatch()..start();
+    final ffmpegBin = Ffmpeg.resolve();
+    cancelToken?.whenCancelled.then((_) {
+      _activeProc?.kill(ProcessSignal.sigkill);
+      _activeDecoder?.kill();
+    });
 
     final probed = await ffmpegProbe(
       path: sourcePath,
@@ -81,11 +102,34 @@ class GifExportPipeline {
 
     final paletteSettings = gifPaletteSettings(settings.compression);
 
+    // Speed + fade are video-only for GIF (no audio track). Computed once and
+    // spliced into both pass-1 (palettegen) and pass-2 (paletteuse) chains.
+    final speed = projectState.playbackSpeed;
+    final fadeIn = projectState.fadeIn;
+    final fadeOut = projectState.fadeOut;
+    final inputDurSec = trim != null
+        ? trim!.duration.inMicroseconds / 1000000
+        : (probed.durationSec ?? 0);
+    final outputDurSec = speed != 0 ? inputDurSec / speed : inputDurSec;
+    final outputDuration =
+        Duration(microseconds: (outputDurSec * 1000000).round());
+    final fadeOutStart =
+        (outputDuration > fadeOut) ? outputDuration - fadeOut : Duration.zero;
+    final extraVideoFilters = <String>[
+      if (speed != 1.0) setptsForSpeed(speed),
+      if (fadeIn > Duration.zero) 'fade=t=in:st=0:d=${ffSeconds(fadeIn)}',
+      if (fadeOut > Duration.zero && outputDuration > Duration.zero)
+        'fade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(fadeOut)}',
+    ];
+    final extraVideo =
+        extraVideoFilters.isEmpty ? '' : '${extraVideoFilters.join(',')},';
+
     final palettePath = _makePaletteTmpPath();
 
     final int? expectedFrames = _expectedFrames(probed, fps);
 
     try {
+      try {
       final compositeSw1 = Stopwatch();
       var pass1Frames = 0;
 
@@ -111,28 +155,42 @@ class GifExportPipeline {
         '-vf',
         'scale=${outWidth}x$outHeight:force_original_aspect_ratio=decrease,'
             'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black,'
+            '$extraVideo'
             'palettegen=max_colors=${paletteSettings.maxColors}:stats_mode=full',
         palettePath,
       ];
-      AppLogger.ffmpeg.d('gif pass1: ffmpeg ${pass1Args.join(" ")}');
+      AppLogger.ffmpeg.d('gif pass1: $ffmpegBin ${pass1Args.join(" ")}');
 
-      final proc1 = await Process.start('ffmpeg', pass1Args);
+      final proc1 = await Process.start(ffmpegBin, pass1Args);
+      _activeProc = proc1;
+      final stderr1Buffer = StringBuffer();
+      final stderr1Done = proc1.stderr
+          .transform(const SystemEncoding().decoder)
+          .forEach(stderr1Buffer.write)
+          .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
 
       final decoder1 = FfmpegDecoder(
         inputPath: sourcePath,
         width: srcWidth,
         height: srcHeight,
         cfrFps: fps,
+        trim: trim,
       );
+      _activeDecoder = decoder1;
 
       try {
         var index = 0;
         await for (final raw in decoder1.frames()) {
+          if (cancelToken?.isCancelled ?? false) {
+            throw const ExportCancelledException();
+          }
           final tsMicros = (1000000 * index) ~/ fps;
           compositeSw1.start();
           final composed = await compositor1.compose(
             bgra: raw,
-            position: Duration(microseconds: tsMicros),
+            position:
+                (trim?.start ?? Duration.zero) +
+                    Duration(microseconds: tsMicros),
           );
           compositeSw1.stop();
           proc1.stdin.add(composed);
@@ -149,11 +207,9 @@ class GifExportPipeline {
       }
 
       final exit1 = await proc1.exitCode;
+      await stderr1Done;
       if (exit1 != 0) {
-        final stderr1 = await proc1.stderr
-            .transform(SystemEncoding().decoder)
-            .join();
-        throw Exception('GIF pass 1 (palettegen) exited $exit1: $stderr1');
+        throw Exception('GIF pass 1 (palettegen) exited $exit1: $stderr1Buffer');
       }
 
       // Pass 2: decode + compose → ffmpeg paletteuse → output.gif.
@@ -181,31 +237,45 @@ class GifExportPipeline {
         '-i', palettePath,
         '-lavfi',
         '[0:v]scale=${outWidth}x$outHeight:force_original_aspect_ratio=decrease,'
-            'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black [scaled];'
+            'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black,'
+            '${extraVideo}null [scaled];'
             '[scaled][1:v]paletteuse=dither=${paletteSettings.dither}',
         '-loop', '0',
         outputPath,
       ];
-      AppLogger.ffmpeg.d('gif pass2: ffmpeg ${pass2Args.join(" ")}');
+      AppLogger.ffmpeg.d('gif pass2: $ffmpegBin ${pass2Args.join(" ")}');
 
-      final proc2 = await Process.start('ffmpeg', pass2Args);
+      final proc2 = await Process.start(ffmpegBin, pass2Args);
+      _activeProc = proc2;
+      final stderr2Buffer = StringBuffer();
+      final stderr2Done = proc2.stderr
+          .transform(const SystemEncoding().decoder)
+          .forEach(stderr2Buffer.write)
+          .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
 
       final decoder2 = FfmpegDecoder(
         inputPath: sourcePath,
         width: srcWidth,
         height: srcHeight,
         cfrFps: fps,
+        trim: trim,
       );
+      _activeDecoder = decoder2;
 
       try {
         try {
           var index = 0;
           await for (final raw in decoder2.frames()) {
+            if (cancelToken?.isCancelled ?? false) {
+              throw const ExportCancelledException();
+            }
             final tsMicros = (1000000 * index) ~/ fps;
             compositeSw2.start();
             final composed = await compositor2.compose(
               bgra: raw,
-              position: Duration(microseconds: tsMicros),
+              position:
+                  (trim?.start ?? Duration.zero) +
+                      Duration(microseconds: tsMicros),
             );
             compositeSw2.stop();
             proc2.stdin.add(composed);
@@ -223,11 +293,9 @@ class GifExportPipeline {
         }
 
         final exit2 = await proc2.exitCode;
+        await stderr2Done;
         if (exit2 != 0) {
-          final stderr2 = await proc2.stderr
-              .transform(SystemEncoding().decoder)
-              .join();
-          throw Exception('GIF pass 2 (paletteuse) exited $exit2: $stderr2');
+          throw Exception('GIF pass 2 (paletteuse) exited $exit2: $stderr2Buffer');
         }
       } catch (e) {
         // Pass 2 failed: remove the partial output so callers cannot
@@ -266,6 +334,18 @@ class GifExportPipeline {
       );
       AppLogger.ffmpeg.i(summary.format());
       return summary;
+      } catch (_) {
+        // Best-effort: remove any partial output so a cancelled/failed GIF
+        // isn't mistaken for a real export.
+        try {
+          final out = File(outputPath);
+          if (await out.exists()) await out.delete();
+        } catch (_) {}
+        if (cancelToken?.isCancelled ?? false) {
+          throw const ExportCancelledException();
+        }
+        rethrow;
+      }
     } finally {
       // Recursively delete the temp directory that holds palette.png.
       // Deleting the dir (not just the file) avoids leaving behind
@@ -292,6 +372,9 @@ class GifExportPipeline {
   }
 
   int? _expectedFrames(FfmpegProbeResult probed, int fps) {
+    if (trim != null) {
+      return (trim!.duration.inMicroseconds / 1000000 * fps).round();
+    }
     final dur = probed.durationSec;
     if (dur != null && dur > 0) return (dur * fps).round();
     final nb = probed.nbFrames;

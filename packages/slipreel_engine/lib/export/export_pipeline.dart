@@ -8,17 +8,18 @@ import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
+import '../models/trim_selection.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
 import 'audio_mix_args.dart';
 import 'bounded_async_queue.dart';
+import 'export_cancellation.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
 import 'ffmpeg_encoder.dart';
 import 'ffmpeg_probe.dart';
 import 'frame_compositor.dart';
-import 'isolate_frame_compositor.dart';
 
 /// Orchestrates: decode source MP4 → composite (wallpaper + frame +
 /// video + cursor + zoom) via [FrameCompositor] → encode HW.
@@ -42,16 +43,11 @@ class ExportPipeline {
   /// Must have [ExportSettings.format] == [ExportFormat.mp4].
   final ExportSettings settings;
 
+  /// When set, only the slice [trim.start, trim.end] is exported.
+  final TrimSelection? trim;
+
   // Cache for a single ffprobe result per pipeline instance.
   FfmpegProbeResult? _probeCache;
-
-  /// Off by default — `Picture.toImage` in a background isolate
-  /// crashes the Flutter engine on macOS (segfaults on `flutter test`,
-  /// "Lost connection to device" on a real desktop run). The isolate
-  /// path stays in the tree behind this flag so we can revisit it
-  /// once engine support stabilizes; until then, compose runs on the
-  /// main isolate and we accept the throughput hit.
-  final bool useIsolateCompositor;
 
   ExportPipeline({
     required this.sourcePath,
@@ -60,7 +56,7 @@ class ExportPipeline {
     required this.cursorRecording,
     required this.projectState,
     required this.settings,
-    this.useIsolateCompositor = false,
+    this.trim,
   }) {
     if (settings.format != ExportFormat.mp4) {
       throw ArgumentError.value(
@@ -75,8 +71,14 @@ class ExportPipeline {
   /// `[0, 1]`. The denominator is `ffprobe`'s `nb_frames`; if that's
   /// unavailable the callback is suppressed (a determinate UI would
   /// rather show nothing than a wildly-wrong percentage).
+  ///
+  /// Single-use: each pipeline instance and each [cancelToken] is meant for
+  /// one [run] call. The `whenCancelled` handler is wired per run, so don't
+  /// reuse a [CancelToken] across runs (kill()/close() are idempotent, so
+  /// reuse is currently harmless, but the assumption may tighten later).
   Future<ExportPerfSummary> run({
     void Function(double progress)? onProgress,
+    CancelToken? cancelToken,
   }) async {
     // ffprobe is authoritative for dimensions. Recording metadata
     // stores the *capture* width/height returned by the native plugin,
@@ -115,30 +117,28 @@ class ExportPipeline {
     // frames internally to bridge two different rates.
     final pipelineFps = outFps;
 
-    final ExportCompositor compositor = useIsolateCompositor
-        ? await IsolateFrameCompositor.spawn(
-            projectState: projectState,
-            cursorRecording: cursorRecording,
-            metadata: sourceMetadata,
-            videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
-            fps: pipelineFps,
-          )
-        : InProcessExportCompositor(FrameCompositor(
-            projectState: projectState,
-            cursorRecording: cursorRecording,
-            metadata: sourceMetadata,
-            videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
-            fps: pipelineFps,
-          ));
+    final ExportCompositor compositor = InProcessExportCompositor(FrameCompositor(
+      projectState: projectState,
+      cursorRecording: cursorRecording,
+      metadata: sourceMetadata,
+      videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
+      fps: pipelineFps,
+    ));
 
     final decoder = FfmpegDecoder(
       inputPath: sourcePath,
       width: srcWidth,
       height: srcHeight,
       cfrFps: pipelineFps,
+      trim: trim,
     );
     final audioMixPlan =
         buildAudioMixArgs(probed.audioStreams, projectState.audioMix);
+    // Output duration after trim + speed, used to position the fade-out.
+    final inputDurationSec = trim != null
+        ? trim!.duration.inMicroseconds / 1000000
+        : (probed.durationSec ?? 0);
+    final outputDurationSec = inputDurationSec / projectState.playbackSpeed;
     final encoder = FfmpegEncoder(
       outputPath: outputPath,
       width: outWidth,
@@ -147,6 +147,13 @@ class ExportPipeline {
       bitrateKbps: bitrateKbps,
       audioSourcePath: sourcePath,
       audioMixPlan: audioMixPlan,
+      trim: trim,
+      playbackSpeed: projectState.playbackSpeed,
+      fadeIn: projectState.fadeIn,
+      fadeOut: projectState.fadeOut,
+      outputDuration: outputDurationSec > 0
+          ? Duration(microseconds: (outputDurationSec * 1000000).round())
+          : null,
       // The encoder receives composed frames at totalSize (the framed
       // output), not the source video resolution.
       sourceWidth: compositor.totalSize.width.toInt(),
@@ -156,6 +163,15 @@ class ExportPipeline {
     );
 
     await encoder.start();
+
+    final decodedQueue = BoundedAsyncQueue<Uint8List>(2);
+    final composedQueue = BoundedAsyncQueue<Uint8List>(2);
+    cancelToken?.whenCancelled.then((_) {
+      decoder.kill();
+      encoder.kill();
+      decodedQueue.close();
+      composedQueue.close();
+    });
 
     final wallSw = Stopwatch()..start();
     final compositeSw = Stopwatch();
@@ -169,6 +185,9 @@ class ExportPipeline {
     // to a wrong percentage. (Final so Dart can promote across the
     // encode-stage closure that reads it.)
     final int? expectedFrames = () {
+      if (trim != null) {
+        return (trim!.duration.inMicroseconds / 1000000 * pipelineFps).round();
+      }
       final dur = probed.durationSec;
       if (dur != null && dur > 0) {
         return (dur * pipelineFps).round();
@@ -189,9 +208,6 @@ class ExportPipeline {
     // frame in hand and one in flight so adjacent stages overlap their
     // I/O, while still bounding memory (a composed RGBA frame is ~10MB
     // at 1440p, so worst case ~7 frames in flight ≈ 70MB).
-    final decodedQueue = BoundedAsyncQueue<Uint8List>(2);
-    final composedQueue = BoundedAsyncQueue<Uint8List>(2);
-
     final decodeFuture = () async {
       try {
         await for (final raw in decoder.frames()) {
@@ -213,10 +229,15 @@ class ExportPipeline {
           // whether the source is VFR. Per-index timing is therefore
           // accurate against the cursor recording's wall clock.
           final tsMicros = (1000000 * index) ~/ pipelineFps;
+          // Decoded frames start at trim.start (the decoder reset PTS to 0),
+          // but cursor/zoom timestamps are relative to the full recording —
+          // so sample the scene at trim.start + elapsed.
+          final scenePosition =
+              (trim?.start ?? Duration.zero) + Duration(microseconds: tsMicros);
           compositeSw.start();
           final composited = await compositor.compose(
             bgra: raw,
-            position: Duration(microseconds: tsMicros),
+            position: scenePosition,
           );
           compositeSw.stop();
           await composedQueue.add(composited);
@@ -245,6 +266,8 @@ class ExportPipeline {
     try {
       await Future.wait(stageFutures, eagerError: true);
     } catch (_) {
+      decoder.kill();
+      encoder.kill();
       // First stage to fail surfaces here. Close the queues so any
       // sibling stage parked on take/add unblocks and exits, then wait
       // for them to fully wind down before we tear the compositor down
@@ -256,6 +279,16 @@ class ExportPipeline {
         stageFutures.map((f) => f.then<void>((_) {}, onError: (_) {})),
       );
       await compositor.dispose();
+      // The encoder was killed mid-write, so any output on disk is a
+      // truncated fragment — delete it so a cancelled/failed export isn't
+      // mistaken for a real MP4.
+      try {
+        final out = File(outputPath);
+        if (await out.exists()) await out.delete();
+      } catch (_) {}
+      if (cancelToken?.isCancelled ?? false) {
+        throw const ExportCancelledException();
+      }
       rethrow;
     }
     await compositor.dispose();

@@ -2,7 +2,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import '../models/trim_selection.dart';
 import '../utils/app_logger.dart';
+import 'ffmpeg_filters.dart';
+import 'ffmpeg_resolver.dart';
 
 /// Spawns `ffmpeg` to decode an input video into raw BGRA frames streamed
 /// on stdout. Each emitted [Uint8List] is exactly `width * height * 4` bytes.
@@ -21,32 +25,62 @@ class FfmpegDecoder {
   /// duplicates frames so the stream is exactly N frames per second.
   final int? cfrFps;
 
+  /// When set, only decodes the slice [trim.start, trim.start + trim.duration]
+  /// via the ffmpeg `trim` filter with PTS reset (`setpts=PTS-STARTPTS`).
+  final TrimSelection? trim;
+
   /// Total wall-clock milliseconds spent reading/awaiting decoded bytes.
   /// Does not include subprocess spawn time.
   int totalDecodeMs = 0;
+
+  Process? _process;
 
   FfmpegDecoder({
     required this.inputPath,
     required this.width,
     required this.height,
     this.cfrFps,
+    this.trim,
   });
 
-  Stream<Uint8List> frames() async* {
-    final args = <String>[
+  @visibleForTesting
+  List<String> argsForTesting() => _buildArgs();
+
+  List<String> _buildArgs() {
+    final vf = <String>[
+      // Filter-based (`trim=`) seeking is frame-accurate but decodes from
+      // frame 0 (accuracy over speed — slower for trims that start late in a
+      // long source).
+      if (trim != null)
+        'trim=start=${ffSeconds(trim!.start)}:duration=${ffSeconds(trim!.duration)},'
+            'setpts=PTS-STARTPTS',
+      if (cfrFps != null) 'fps=$cfrFps',
+    ];
+    return <String>[
       '-loglevel', 'error',
       '-i', inputPath,
-      if (cfrFps != null) ...['-vf', 'fps=$cfrFps'],
+      if (vf.isNotEmpty) ...['-vf', vf.join(',')],
       '-f', 'rawvideo',
       '-pix_fmt', 'bgra',
       '-',
     ];
-    AppLogger.ffmpeg.d('decode: ffmpeg ${args.join(" ")}');
+  }
 
-    final process = await Process.start('ffmpeg', args);
+  Stream<Uint8List> frames() async* {
+    final args = _buildArgs();
+    final binary = Ffmpeg.resolve();
+    AppLogger.ffmpeg.d('decode: $binary ${args.join(" ")}');
+
+    final process = _process = await Process.start(binary, args);
     final frameSize = width * height * 4;
     final buffer = BytesBuilder(copy: false);
     final stopwatch = Stopwatch()..start();
+
+    final stderrBuffer = StringBuffer();
+    final stderrDone = process.stderr
+        .transform(const SystemEncoding().decoder)
+        .forEach(stderrBuffer.write)
+        .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
 
     try {
       await for (final chunk in process.stdout) {
@@ -64,15 +98,19 @@ class FfmpegDecoder {
         }
       }
       final exit = await process.exitCode;
+      await stderrDone;
       if (exit != 0) {
-        final stderr = await process.stderr
-            .transform(SystemEncoding().decoder)
-            .join();
-        throw Exception('ffmpeg decode exited $exit: $stderr');
+        throw Exception('ffmpeg decode exited $exit: $stderrBuffer');
       }
     } finally {
       stopwatch.stop();
       totalDecodeMs = stopwatch.elapsedMilliseconds;
     }
+  }
+
+  /// Terminates the ffmpeg subprocess if running. Safe before start / after
+  /// exit. Used by the pipeline to avoid orphaning ffmpeg on error/cancel.
+  void kill() {
+    _process?.kill(ProcessSignal.sigkill);
   }
 }

@@ -4,10 +4,10 @@
 
 **Project Name**: Slipreel
 **Project Path**: `/Users/mohn93/Desktop/side_projects/screenflow_studio`
-**Target Platforms**: macOS, Windows, Linux (starting with macOS)
+**Target Platforms**: macOS (shipping). Windows & Linux are early placeholders, not integrated into the app — see screen_recorder_platform_interface/README.md for the parity matrix.
 
 ## Overview
-Build a cross-platform screen recording tool (macOS, Windows, Linux) using Flutter for UI and platform-specific plugins for native screen capture. Target all 6 core features for a production-ready MVP.
+Build a macOS-first screen recording tool using Flutter for UI and a federated native plugin for screen capture (Windows/Linux scaffolding exists but is not wired into the app). Target all 6 core features for a production-ready macOS MVP.
 
 **Target User**: Content creators and YouTubers who need polished, professional screen recordings with minimal effort.
 

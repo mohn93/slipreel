@@ -23,7 +23,7 @@ void ScreenRecorderWindowsPlugin::RegisterWithRegistrar(
   auto method_channel =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           registrar->messenger(),
-          "com.screenflow_studio.screen_recorder/methods",
+          "com.slipreel.screen_recorder/recording",
           &flutter::StandardMethodCodec::GetInstance());
 
   auto plugin = std::make_unique<ScreenRecorderWindowsPlugin>(registrar);
@@ -36,7 +36,7 @@ void ScreenRecorderWindowsPlugin::RegisterWithRegistrar(
   // Event channel for frames
   auto frames_channel = std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
       registrar->messenger(),
-      "com.screenflow_studio.screen_recorder/frames",
+      "com.slipreel.screen_recorder/frames",
       &flutter::StandardMethodCodec::GetInstance());
 
   auto frames_handler = std::make_unique<flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
@@ -63,7 +63,7 @@ void ScreenRecorderWindowsPlugin::RegisterWithRegistrar(
   // Event channel for cursor
   auto cursor_channel = std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
       registrar->messenger(),
-      "com.screenflow_studio.screen_recorder/cursor",
+      "com.slipreel.screen_recorder/cursor",
       &flutter::StandardMethodCodec::GetInstance());
 
   auto cursor_handler = std::make_unique<flutter::StreamHandlerFunctions<flutter::EncodableValue>>(

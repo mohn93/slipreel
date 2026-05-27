@@ -71,17 +71,6 @@ dependencies:
   # rotates inside the Export button while an export is running.
   cue: ^0.2.1
 
-  # In-process runtime probe that exposes the widget tree, captured
-  # debugPrint output, and synthesised gestures to an LLM agent via the
-  # Dart VM service. Paired with the `agent_wires_mcp` MCP server (a
-  # global Dart CLI) which bridges those VM-service extensions onto
-  # tools the agent can call. Path-depended on the local source so we
-  # can extend it with project-specific service extensions
-  # (`ext.slipreel.*`) as the debugging needs grow. The runtime call
-  # to `AgentWiresProbe.install()` is gated by `kDebugMode || kProfileMode`
-  # so it is a no-op in release builds.
-  agent_wires_probe:
-    path: ../../../agent-wires/packages/agent_wires_probe
   lucide_icons_flutter: ^3.1.14+2
 
 dev_dependencies:

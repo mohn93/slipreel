@@ -6,16 +6,13 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 /// Windows implementation of the ScreenRecorderPlatform
 class ScreenRecorderWindows extends ScreenRecorderPlatform {
   static const MethodChannel _channel =
-      MethodChannel('com.slipreel.screen_recorder/methods');
+      MethodChannel(ScreenRecorderChannels.recording);
 
   static const EventChannel _framesChannel =
-      EventChannel('com.slipreel.screen_recorder/frames');
+      EventChannel(ScreenRecorderChannels.frames);
 
   static const EventChannel _cursorChannel =
-      EventChannel('com.slipreel.screen_recorder/cursor');
-
-  static const EventChannel _audioChannel =
-      EventChannel('com.slipreel.screen_recorder/audio');
+      EventChannel(ScreenRecorderChannels.cursor);
 
   /// Registers this class as the default instance of [ScreenRecorderPlatform]
   static void registerWith() {
@@ -168,18 +165,9 @@ class ScreenRecorderWindows extends ScreenRecorderPlatform {
     });
   }
 
-  @override
-  Stream<AudioData> get audioStream {
-    return _audioChannel.receiveBroadcastStream().map((data) {
-      final map = data as Map<dynamic, dynamic>;
-      return AudioData(
-        data: map['data'] as Uint8List,
-        sampleRate: map['sampleRate'] as int,
-        channels: map['channels'] as int,
-        timestampMicros: map['timestampMicros'] as int,
-      );
-    });
-  }
+  // Audio capture is not supported on Windows (no native audio channel is
+  // registered), so [audioStream] falls back to the platform-interface default
+  // which throws UnimplementedError.
 
   @override
   Stream<CursorPosition> get cursorStream {

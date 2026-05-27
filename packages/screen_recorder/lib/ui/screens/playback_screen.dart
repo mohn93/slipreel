@@ -38,6 +38,9 @@ import 'package:slipreel_engine/export/audio_mix_args.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import '../../state/recording_audio_streams_provider.dart';
+import 'playback/hover_scrub_controller.dart';
+import 'playback/trim_controller.dart';
+import 'playback/export_controller.dart';
 
 /// Debug hook: the active [PlaybackScreen] publishes its video
 /// controller here (in debug/profile builds) so VM-service extensions
@@ -72,7 +75,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // (settings dialog → progress dialog) when the bare screen flashes
   // for a frame.
   bool _isExporting = false;
-  TrimSelection? _trimSelection;
+  // Owns the trim selection and soft-enforces it during playback.
+  // Wired in [_initializeVideo] once the controller is initialised.
+  late final TrimController _trim;
+  // Read-only alias kept so the existing read sites (export pipeline
+  // args, EditorTimeline.trimSelection) keep working unchanged.
+  TrimSelection? get _trimSelection => _trim.selection;
   // State-shaped undo/redo for everything the editor notifier owns
   // (cursor visuals, animation configs, motion blur, zoom regions,
   // etc.). Wired in [_initializeVideo] after the project state loads
@@ -100,22 +108,18 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
-  // The user's intended position — the spot we return to when a
-  // hover-preview ends. Updated continuously while the user is NOT
-  // hover-scrubbing (so it tracks playback and committed seeks), and
-  // frozen while [_isHovering] is true (so hover seeks don't
-  // overwrite the anchor with previewed positions). Replaces the
-  // earlier `_hoverFrozenPosition` capture-at-hover-start scheme,
-  // which raced against the previous hover's restore seek not yet
-  // applying — letting a re-entering hover capture the last preview
-  // position as the "parked" target instead of the user's actual
-  // stopped position.
-  Duration _intendedPosition = Duration.zero;
-  // True while a hover-scrub is in progress. The colored playhead and
-  // time labels display [_intendedPosition] (frozen) while this is
-  // set; PlaybackCanvas / SceneBlurOverlay receive it as
-  // `isHoverScrubbing` so their stateful smoothers bypass.
-  bool _isHovering = false;
+  // Owns hover-scrub state: the user's intended (anchor) position —
+  // the spot we return to when a hover-preview ends — and whether a
+  // hover-preview is in progress. The anchor is updated continuously
+  // while NOT hover-scrubbing (so it tracks playback and committed
+  // seeks) and frozen while hovering (so hover seeks don't overwrite
+  // it with previewed positions). The colored playhead and time
+  // labels display the frozen anchor while hovering; PlaybackCanvas /
+  // SceneBlurOverlay receive `isHovering` as `isHoverScrubbing` so
+  // their stateful smoothers bypass. Wired in [_initializeVideo] once
+  // the controller is initialised. setState is owned by this widget:
+  // it wraps the controller's mutating methods at the call sites.
+  late final HoverScrubController _hover;
   // Dev HUD: when on, draws a marker at the recorded cursor's video-pixel
   // position so we can visually confirm the zoom focal is tracking it.
   bool _showZoomDebug = false;
@@ -203,10 +207,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // listener callback during init.
       _frameSettings.setFrame(saved.windowFrame);
 
+      // Owns the trim selection + soft-enforces it during playback.
+      // Constructed before _trim.selection is assigned below.
+      _trim = TrimController(
+        pause: _controller.pause,
+        seekTo: _controller.seekTo,
+      );
+
       setState(() {
         _isInitialized = true;
         // Initialize trim selection to full duration
-        _trimSelection = TrimSelection(
+        _trim.selection = TrimSelection(
           start: Duration.zero,
           end: _controller.value.duration,
           videoDuration: _controller.value.duration,
@@ -224,14 +235,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         })
         ..start();
       // Auto-pause when playback reaches the trim end. Wired after
-      // _isInitialized + _trimSelection are set so the listener never
+      // _isInitialized + _trim.selection are set so the listener never
       // sees a half-initialized state.
-      _controller.addListener(_enforceTrimBounds);
-      // Seed [_intendedPosition] from the freshly-initialised controller
+      _controller.addListener(_onTrimTick);
+      // Seed the hover anchor from the freshly-initialised controller
       // so hover-end-before-any-other-action restores to a meaningful
       // value rather than Duration.zero (which would jump to start).
-      _intendedPosition = _controller.value.position;
-      _controller.addListener(_trackIntendedPosition);
+      _hover = HoverScrubController(
+        seekTo: _controller.seekTo,
+        initialPosition: _controller.value.position,
+      );
+      _controller.addListener(_onHoverTrack);
       // Auto-play on load
       _controller.play();
 
@@ -256,15 +270,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// playhead at trim.end when playback crosses it. Doesn't stop the
   /// user from manually seeking past trim.end — the dim overlay on
   /// the timeline communicates "you're in trimmed-out territory."
-  void _enforceTrimBounds() {
-    final trim = _trimSelection;
-    if (trim == null) return;
-    final value = _controller.value;
-    if (!value.isPlaying) return;
-    if (value.position >= trim.end) {
-      _controller.pause();
-      _controller.seekTo(trim.end);
-    }
+  void _onTrimTick() {
+    final v = _controller.value;
+    _trim.enforce(isPlaying: v.isPlaying, position: v.position);
   }
 
   /// Schedule a debounced save so a slider drag doesn't hammer the
@@ -287,8 +295,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _saveDebounce?.cancel();
     if (_isInitialized) {
       _projectStore.save(_project);
-      _controller.removeListener(_enforceTrimBounds);
-      _controller.removeListener(_trackIntendedPosition);
+      _controller.removeListener(_onTrimTick);
+      _controller.removeListener(_onHoverTrack);
     }
     _smoothPlayhead?.dispose();
     _controller.dispose();
@@ -420,7 +428,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           ),
           onRevealLastExport: _lastExportPath == null
               ? null
-              : () => Process.run('open', ['-R', _lastExportPath!]),
+              : () {
+                  if (Platform.isMacOS) {
+                    unawaited(Process.run('open', ['-R', _lastExportPath!])
+                        .catchError((_) => ProcessResult(0, 1, '', '')));
+                  }
+                },
         ),
       );
     } catch (e) {
@@ -530,79 +543,97 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         ),
       );
 
-      try {
-        final summary = settings.format == ExportFormat.gif
-            ? await GifExportPipeline(
-                sourcePath: widget.videoPath,
-                outputPath: outPath,
-                sourceMetadata: meta,
-                cursorRecording: cursorRec,
-                projectState: _project,
-                settings: settings,
-              ).run(onProgress: (p) => progress.value = p)
-            : await ExportPipeline(
-                sourcePath: widget.videoPath,
-                outputPath: outPath,
-                sourceMetadata: meta,
-                cursorRecording: cursorRec,
-                projectState: _project,
-                settings: settings,
-              ).run(onProgress: (p) => progress.value = p);
+      // Run the pipeline + deliver via the headless ExportController. The
+      // pipeline is picked by format inside the injected closure; this widget
+      // keeps all dialogs/snackbars/Navigator and maps the typed outcome to UI.
+      final exportController = ExportController(
+        runPipeline: ({required onProgress, required cancelToken}) {
+          return settings!.format == ExportFormat.gif
+              ? GifExportPipeline(
+                  sourcePath: widget.videoPath,
+                  outputPath: outPath!,
+                  sourceMetadata: meta,
+                  cursorRecording: cursorRec,
+                  projectState: _project,
+                  settings: settings,
+                  trim: _trimSelection,
+                ).run(onProgress: onProgress, cancelToken: cancelToken)
+              : ExportPipeline(
+                  sourcePath: widget.videoPath,
+                  outputPath: outPath!,
+                  sourceMetadata: meta,
+                  cursorRecording: cursorRec,
+                  projectState: _project,
+                  settings: settings,
+                  trim: _trimSelection,
+                ).run(onProgress: onProgress, cancelToken: cancelToken);
+        },
+      );
 
-        if (!mounted) return;
-        Navigator.of(context).pop(); // close progress dialog
+      final outcome = await exportController.run(
+        outputPath: outPath,
+        handler: handler,
+        onProgress: (p) => progress.value = p,
+      );
 
-        // Persist settings minus the title (plan rule 5).
-        await store.save(settings.copyWith(clearTitle: true));
+      if (!mounted) return;
+      Navigator.of(context).pop(); // close progress dialog
 
-        // Normalize the observed realtime multiplier to the estimator's
-        // baseline (1080p @ 30fps) and persist it so the next dialog
-        // open uses the actual hardware rate. Skipped for GIF because
-        // its two-pass pipeline costs are dominated by palette work,
-        // not the linear pixels-per-second model the estimator assumes.
-        if (settings.format == ExportFormat.mp4 &&
-            summary.realtimeMultiple > 0) {
-          final outDims = settings.resolution.dimensionsFor(sourceVideoSize);
-          final outArea = outDims.width * outDims.height;
-          final fpsScale = settings.frameRate / kBaselineFrameRate;
-          final areaScale = outArea / kBaselineAreaPixels;
-          final normalized = summary.realtimeMultiple * fpsScale * areaScale;
-          unawaited(telemetryStore.saveRealtimeMultiplier(normalized));
-        }
+      switch (outcome) {
+        case ExportSuccess(:final summary, :final result):
+          // Persist settings minus the title (plan rule 5).
+          await store.save(settings.copyWith(clearTitle: true));
 
-        final result = await handler.deliver(outPath);
-        if (!mounted) return;
+          // Normalize the observed realtime multiplier to the estimator's
+          // baseline (1080p @ 30fps) and persist it so the next dialog
+          // open uses the actual hardware rate. Skipped for GIF because
+          // its two-pass pipeline costs are dominated by palette work,
+          // not the linear pixels-per-second model the estimator assumes.
+          if (settings.format == ExportFormat.mp4 &&
+              summary.realtimeMultiple > 0) {
+            final outDims = settings.resolution.dimensionsFor(sourceVideoSize);
+            final outArea = outDims.width * outDims.height;
+            final fpsScale = settings.frameRate / kBaselineFrameRate;
+            final areaScale = outArea / kBaselineAreaPixels;
+            final normalized = summary.realtimeMultiple * fpsScale * areaScale;
+            unawaited(telemetryStore.saveRealtimeMultiplier(normalized));
+          }
 
-        // Record the export path so the reveal-in-Finder button lights up
-        // the next time the dialog is opened.
-        setState(() => _lastExportPath = outPath);
+          if (!mounted) return;
+          // Record the export path so the reveal-in-Finder button lights up
+          // the next time the dialog is opened.
+          setState(() => _lastExportPath = outPath);
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message),
-            backgroundColor: const Color(0xFF4CAF50),
-            action: result.revealPath != null
-                ? SnackBarAction(
-                    label: 'Show in Finder',
-                    onPressed: () {
-                      // macOS-only: reveal in Finder. No-op on other platforms.
-                      if (Platform.isMacOS) {
-                        Process.run('open', ['-R', result.revealPath!]);
-                      }
-                    },
-                  )
-                : null,
-          ),
-        );
-      } catch (e) {
-        if (!mounted) return;
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Export failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.message),
+              backgroundColor: const Color(0xFF4CAF50),
+              action: result.revealPath != null
+                  ? SnackBarAction(
+                      label: 'Show in Finder',
+                      onPressed: () {
+                        // macOS-only: reveal in Finder. No-op on other platforms.
+                        if (Platform.isMacOS) {
+                          unawaited(Process.run('open', ['-R', result.revealPath!])
+                              .catchError((_) => ProcessResult(0, 1, '', '')));
+                        }
+                      },
+                    )
+                  : null,
+            ),
+          );
+        case ExportFailure(:final error):
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Export failed: $error'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        case ExportCancelled():
+          // No snackbar — user-initiated. (Today there's no cancel UI; this
+          // arm is here for when a cancel button is wired to
+          // exportController.cancel().)
+          break;
       }
     } finally {
       progress.dispose();
@@ -620,34 +651,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   }
 
   // Updates the user's intended position whenever the controller's
-  // value changes AND we're not in the middle of a hover-scrub. Hover
-  // seeks are excluded so [_intendedPosition] freezes at the anchor
-  // we want to restore to when the hover ends.
-  void _trackIntendedPosition() {
-    if (_isHovering) return;
-    _intendedPosition = _controller.value.position;
-  }
+  // value changes AND we're not in the middle of a hover-scrub (the
+  // controller drops the update while hovering). Driven by the player
+  // listener — intentionally does NOT setState (mirrors the old
+  // _trackIntendedPosition).
+  void _onHoverTrack() => _hover.track(_controller.value.position);
 
-  void _seekToStart() {
-    setState(() {
-      _isHovering = false;
-      _intendedPosition = Duration.zero;
-    });
-    _controller.seekTo(Duration.zero);
-  }
+  void _seekToStart() => setState(() => _hover.seekToStart());
 
-  void _seekToEnd() {
-    setState(() {
-      _isHovering = false;
-    });
-    final dur = _controller.value.duration;
-    if (dur > Duration.zero) {
-      // 1ms back from the end so the player doesn't auto-rewind on
-      // the next tick (some VideoPlayer backends snap a position
-      // exactly at duration to 0).
-      _controller.seekTo(dur - const Duration(milliseconds: 1));
-    }
-  }
+  void _seekToEnd() =>
+      setState(() => _hover.seekToEnd(_controller.value.duration));
 
   /// `m:ss.hh` — used in the transport bar where the playhead's
   /// hundredths matter (frame-accurate scrubbing feedback).
@@ -939,12 +952,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       return const CircularProgressIndicator(color: Color(0xFF6C63FF));
     }
 
-    // _isHovering is set on the first hover-seek and cleared on
+    // isHovering is set on the first hover-seek and cleared on
     // hover-end / committed seek. It's a precise "we're scrubbing,
     // not playing" signal — the canvas uses it to bypass stateful
     // smoothers (EMA velocity, focal tween) so forward and backward
     // hover render the same frame at the same timestamp.
-    final isHoverScrubbing = _isHovering;
+    final isHoverScrubbing = _hover.isHovering;
     // Scene-blur is handled OUTSIDE PlaybackCanvas by
     // [SceneBlurOverlay] (matches the playground's working pipeline:
     // captures the full output then smears uniformly, avoiding the
@@ -1054,8 +1067,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     return AnimatedBuilder(
       animation: Listenable.merge([_controller, _smoothPlayhead]),
       builder: (context, _) {
-        final pos = _isHovering
-            ? _intendedPosition
+        final pos = _hover.isHovering
+            ? _hover.intendedPosition
             : (_smoothPlayhead?.position ?? _controller.value.position);
         final dur = _controller.value.duration;
         final isPlaying = _controller.value.isPlaying;
@@ -1139,11 +1152,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             animation: Listenable.merge([_controller, _smoothPlayhead]),
             builder: (context, _) {
               // The colored playhead and time labels stay parked at
-              // [_intendedPosition] (which is frozen while hovering)
+              // the hover anchor (which is frozen while hovering)
               // even though the controller is being seeked to preview
               // the hover frame.
-              final displayedPos = _isHovering
-                  ? _intendedPosition
+              final displayedPos = _hover.isHovering
+                  ? _hover.intendedPosition
                   : (_smoothPlayhead?.position ?? _controller.value.position);
               return EditorTimeline(
                 duration: _controller.value.duration,
@@ -1151,21 +1164,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 isPlaying: _controller.value.isPlaying,
                 onSeek: (next) {
                   // Committed seek: clear hover state and adopt the
-                  // click target as the new intended position. The
-                  // listener also picks this up after the seek lands,
-                  // but we set it explicitly to avoid even a one-frame
-                  // gap where _intendedPosition is still the old
+                  // click target as the new intended position, then
+                  // seek. The listener also picks this up after the
+                  // seek lands, but we set it explicitly to avoid even
+                  // a one-frame gap where the anchor is still the old
                   // pre-hover value.
-                  setState(() {
-                    _isHovering = false;
-                    _intendedPosition = next;
-                  });
-                  _controller.seekTo(next);
+                  setState(() => _hover.seek(next));
                   _checkZoomMarkerClick(next);
                 },
                 onHoverSeek: (next) {
                   // Mark hover active so the listener stops updating
-                  // [_intendedPosition]. The anchor we'll restore to on
+                  // the anchor. The anchor we'll restore to on
                   // hover-end is whatever the listener last wrote — i.e.
                   // the user's actual stopped position (the live
                   // playback position if they were playing, or the
@@ -1173,16 +1182,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   // sample `_controller.value.position` here, which
                   // could still be the previous hover's preview target
                   // if its restore-seek hadn't applied yet.
-                  if (!_isHovering) {
-                    setState(() => _isHovering = true);
-                  }
-                  _controller.seekTo(next);
+                  setState(() => _hover.hoverSeek(next));
                 },
                 onHoverEnd: () {
-                  if (_isHovering) {
-                    _controller.seekTo(_intendedPosition);
-                    setState(() => _isHovering = false);
-                  }
+                  setState(() => _hover.hoverEnd());
                 },
                 zoomRegions: _project.zoomRegions,
                 selectedZoomIndex: _selectedZoomIndex,
@@ -1216,7 +1219,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onZoomAdded: _addZoomAt,
                 trimSelection: _trimSelection,
                 onTrimChanged: (next) {
-                  setState(() => _trimSelection = next);
+                  setState(() => _trim.selection = next);
                 },
               );
             },

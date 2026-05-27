@@ -8,14 +8,33 @@ command:
     runPubGetInParallel: true
 
 scripts:
+  # NOTE: invoke these as `melos run <name> --no-select`, NOT `melos <name>`.
+  # `melos analyze` / `melos test` are Melos builtins that shadow same-named
+  # scripts, so `melos run` is required to reach these definitions; `--no-select`
+  # skips the interactive package-selection prompt (CI is non-interactive) while
+  # still applying the packageFilters below.
   analyze:
-    run: flutter analyze
-    description: Run Flutter analyze in all packages
+    # --no-fatal-infos defers info-level lints (deferred work) so they stay
+    # visible without failing CI; warnings/errors remain fatal.
+    exec: flutter analyze --no-fatal-infos
+    description: Run flutter analyze in all packages (infos non-fatal)
+    packageFilters:
+      ignore:
+        # *example* packages are generated Flutter scaffold; no real tests/lints.
+        - "*example*"
 
   test:
-    run: flutter test
+    exec: flutter test
     description: Run tests in all packages
+    packageFilters:
+      ignore:
+        # *example* packages have only the scaffold widget_test (meaningless here).
+        - "*example*"
+        # screen_recorder_windows: its test isn't Platform-guarded and hits the
+        # method channel with no mock, so it needs a real Windows runner. Excluded
+        # from `test` only; it stays in `analyze` (static analysis is host-agnostic).
+        - "screen_recorder_windows"
 
   clean:
-    run: flutter clean
+    exec: flutter clean
     description: Clean all packages

@@ -37,4 +37,8 @@ class ScreenRecorderMethods {
   static const String showSystemAudioMenu = 'showSystemAudioMenu';
   static const String startMicMonitor = 'startMicMonitor';
   static const String stopMicMonitor = 'stopMicMonitor';
+  static const String isAccessibilityTrusted = 'isAccessibilityTrusted';
+  static const String requestAccessibilityPermission =
+      'requestAccessibilityPermission';
+  static const String getStockCursorImages = 'getStockCursorImages';
 }

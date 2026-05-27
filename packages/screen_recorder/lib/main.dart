@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
-import 'package:agent_wires_probe/agent_wires_probe.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +15,7 @@ import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/state/motion_tuning_store.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
+import 'debug/debug_probe.dart';
 import 'platform/window_chrome_channel.dart';
 import 'state/window_mode_controller.dart';
 import 'ui/bar/recording_bar_screen.dart';
@@ -34,14 +34,19 @@ Future<void> main() async {
   // widget tree, capture debugPrint output, and synthesise gestures
   // for end-to-end debugging. No-op in release builds.
   if (kDebugMode || kProfileMode) {
-    AgentWiresProbe.install();
+    debugProbe.install();
     _registerSlipreelDebugExtensions();
     AppLogger.platform.i(
-      'AgentWiresProbe installed (ext.qa.* + ext.slipreel.* registered)',
+      'Debug probe installed (ext.slipreel.* registered)',
     );
   }
 
-  // Explicitly register the macOS platform implementation
+  // macOS platform registration. `dartPluginClass: ScreenRecorderMacos` in
+  // screen_recorder_macos/pubspec.yaml makes Flutter auto-register via
+  // GeneratedPluginRegistrant; this explicit call is kept as a harmless
+  // belt-and-suspenders (registerWith just re-sets the same instance) until
+  // auto-registration is confirmed on a real `flutter build macos` (which is
+  // broken in this dev env). Safe to remove once verified.
   ScreenRecorderMacos.registerWith();
   AppLogger.platform.i('macOS platform registered');
 
@@ -166,8 +171,7 @@ class MyApp extends StatelessWidget {
       // Lets agent-wires resolve routes so the agent can call
       // `wait_for_route("RecordingBarScreen")` etc.
       navigatorObservers: [
-        if (kDebugMode || kProfileMode)
-          AgentWiresProbe.routeTracker.createObserver(),
+        if (debugProbe.navigatorObserver() case final observer?) observer,
       ],
       home: const RecordingBarScreen(),
     );

@@ -6,14 +6,10 @@ import 'package:slipreel_engine/export/frame_compositor.dart';
 
 /// Per-frame compositor interface used by the export pipeline.
 ///
-/// Two implementations exist:
-///   * [InProcessExportCompositor] runs [FrameCompositor.compose]
-///     inline on the calling isolate. Used by `flutter test` runs
-///     because the test harness can't reliably attach a child
-///     isolate to the engine for `Picture.toImage` rasterization.
-///   * `IsolateFrameCompositor` (production default) hands compose
-///     work off to a background isolate so the main isolate stays
-///     free for decoder/encoder I/O.
+/// The sole implementation, [InProcessExportCompositor], runs
+/// [FrameCompositor.compose] inline on the calling isolate. (An
+/// isolate-based compositor was removed: `Picture.toImage` in a
+/// background isolate crashes the Flutter engine on macOS.)
 abstract class ExportCompositor {
   /// Output canvas size — see [FrameCompositor.totalSize].
   Size get totalSize;
@@ -33,8 +29,7 @@ abstract class ExportCompositor {
 }
 
 /// Adapter that wraps a [FrameCompositor] in the [ExportCompositor]
-/// interface, so the export pipeline can pick between in-process
-/// (test) and isolated (production) without branching the loop.
+/// interface.
 class InProcessExportCompositor implements ExportCompositor {
   InProcessExportCompositor(this._delegate);
 

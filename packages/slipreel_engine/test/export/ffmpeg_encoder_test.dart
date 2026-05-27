@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/export/ffmpeg_encoder.dart';
+import 'package:slipreel_engine/export/ffmpeg_resolver.dart';
 
 void main() {
   group('FfmpegEncoder', () {
@@ -48,6 +49,23 @@ void main() {
       }
 
       tmp.deleteSync(recursive: true);
+    });
+  });
+
+  group('FfmpegEncoder ffmpeg resolution', () {
+    tearDown(Ffmpeg.resetForTesting);
+
+    test('start() throws FfmpegNotFoundException when ffmpeg is absent '
+        '(not "Could not start with any encoder")', () async {
+      Ffmpeg.resolver = FfmpegResolver(fileExists: (_) => false, pathEnv: '');
+      final encoder = FfmpegEncoder(
+        outputPath: '${Directory.systemTemp.path}/none.mp4',
+        width: 320,
+        height: 240,
+        fps: 30,
+        bitrateKbps: 2000,
+      );
+      await expectLater(encoder.start(), throwsA(isA<FfmpegNotFoundException>()));
     });
   });
 }

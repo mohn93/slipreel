@@ -70,6 +70,12 @@ class LiveRecordingWriter {
   /// Number of times a sample was dropped because input was not ready.
   private(set) var appendVideoNotReadyCount: Int = 0
 
+  /// Serializes all access to the AVAssetWriter + inputs + state. appendVideo
+  /// (VideoToolbox queue), appendAudio (audio queues), and start/stop (Task
+  /// threads) all funnel through here — Apple requires serialized access to a
+  /// single AVAssetWriter.
+  private let writerQueue = DispatchQueue(label: "com.slipreel.screen_recorder.writer")
+
   // MARK: - Init
 
   init(outputPath: String, width: Int, height: Int, fps: Int, audioTracks: [AudioTrackRole]) {
@@ -87,34 +93,36 @@ class LiveRecordingWriter {
   /// `appendVideo` call so that a `sourceFormatHint` can be extracted from
   /// the first compressed sample. Call once before any `append*` call.
   func start() throws {
-    guard !isStarted else { throw WriterError.alreadyStarted }
+    try writerQueue.sync {
+      guard !isStarted else { throw WriterError.alreadyStarted }
 
-    // Remove any pre-existing file at the path
-    try? FileManager.default.removeItem(at: outputURL)
+      // Remove any pre-existing file at the path
+      try? FileManager.default.removeItem(at: outputURL)
 
-    let writer: AVAssetWriter
-    do {
-      writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
-    } catch {
-      throw WriterError.assetWriterCreateFailed(error)
-    }
-
-    // Audio inputs — one per requested track role.
-    // This uses an explicit outputSettings dict so canAdd() succeeds immediately.
-    for role in audioTracks {
-      let input = AVAssetWriterInput(mediaType: .audio, outputSettings: Self.audioSettings(for: role))
-      input.expectsMediaDataInRealTime = true
-      guard writer.canAdd(input) else {
-        throw WriterError.cannotAddAudioInput
+      let writer: AVAssetWriter
+      do {
+        writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+      } catch {
+        throw WriterError.assetWriterCreateFailed(error)
       }
-      writer.add(input)
-      audioInputs[role] = input
+
+      // Audio inputs — one per requested track role.
+      // This uses an explicit outputSettings dict so canAdd() succeeds immediately.
+      for role in audioTracks {
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: Self.audioSettings(for: role))
+        input.expectsMediaDataInRealTime = true
+        guard writer.canAdd(input) else {
+          throw WriterError.cannotAddAudioInput
+        }
+        writer.add(input)
+        audioInputs[role] = input
+      }
+
+      // Video input is intentionally NOT added here. See addVideoInputAndStartSession(_:pts:).
+
+      self.assetWriter = writer
+      self.isStarted = true
     }
-
-    // Video input is intentionally NOT added here. See addVideoInputAndStartSession(_:pts:).
-
-    self.assetWriter = writer
-    self.isStarted = true
   }
 
   // MARK: - Private helpers
@@ -166,29 +174,31 @@ class LiveRecordingWriter {
   /// Append a compressed video sample. The first call lazily adds the video
   /// input (with a format-description hint) and starts the write session.
   func appendVideo(_ sampleBuffer: CMSampleBuffer) {
-    appendVideoCallCount += 1
-    guard isStarted, let _ = assetWriter else { return }
+    writerQueue.sync {
+      appendVideoCallCount += 1
+      guard isStarted, let _ = assetWriter else { return }
 
-    if !writerActive {
-      guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else {
-        return
+      if !writerActive {
+        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else {
+          return
+        }
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        do {
+          try addVideoInputAndStartSession(formatDescription: formatDescription, pts: pts)
+        } catch {
+          return
+        }
       }
-      let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-      do {
-        try addVideoInputAndStartSession(formatDescription: formatDescription, pts: pts)
-      } catch {
-        return
-      }
-    }
 
-    guard let input = videoInput else { return }
-    if input.isReadyForMoreMediaData {
-      input.append(sampleBuffer)
-      appendVideoAcceptedCount += 1
-    } else {
-      appendVideoNotReadyCount += 1
-      // Drop. Capture queue depth + VT real-time mode should keep this rare;
-      // PerfSampler will report the drop count.
+      guard let input = videoInput else { return }
+      if input.isReadyForMoreMediaData {
+        input.append(sampleBuffer)
+        appendVideoAcceptedCount += 1
+      } else {
+        appendVideoNotReadyCount += 1
+        // Drop. Capture queue depth + VT real-time mode should keep this rare;
+        // PerfSampler will report the drop count.
+      }
     }
   }
 
@@ -197,38 +207,61 @@ class LiveRecordingWriter {
   /// silently dropped; the session start time is anchored to the first video
   /// sample's PTS so pre-session audio is outside the timeline anyway.
   func appendAudio(_ sampleBuffer: CMSampleBuffer, role: AudioTrackRole) {
-    guard isStarted, writerActive, let input = audioInputs[role] else { return }
-    if input.isReadyForMoreMediaData {
-      input.append(sampleBuffer)
+    writerQueue.sync {
+      guard isStarted, writerActive, let input = audioInputs[role] else { return }
+      if input.isReadyForMoreMediaData {
+        input.append(sampleBuffer)
+      }
     }
   }
 
   /// Finish writing and return the output path. Safe to call once.
   func stop(completion: @escaping (Result<String, Error>) -> Void) {
-    guard isStarted, let writer = assetWriter else {
-      completion(.failure(WriterError.notStarted))
-      return
+    // Result computed synchronously for the early-exit cases; for the normal
+    // finalize path the completion is invoked later by `finishWriting`.
+    enum SyncResult {
+      case notStarted
+      case nothingWritten(String)
+      case finalizing
     }
 
-    videoInput?.markAsFinished()
-    audioInputs.values.forEach { $0.markAsFinished() }
-
-    if !writerActive {
-      // Nothing was ever written; just clean up.
-      isStarted = false
-      completion(.success(outputURL.path))
-      return
-    }
-
-    let outputPath = outputURL.path
-    writer.finishWriting {
-      let status = writer.status
-      if status == .completed {
-        completion(.success(outputPath))
-      } else {
-        completion(.failure(WriterError.finalizeFailed(writer.error)))
+    let syncResult: SyncResult = writerQueue.sync {
+      guard isStarted, let writer = assetWriter else {
+        return .notStarted
       }
+
+      videoInput?.markAsFinished()
+      audioInputs.values.forEach { $0.markAsFinished() }
+
+      if !writerActive {
+        // Nothing was ever written; just clean up.
+        isStarted = false
+        return .nothingWritten(outputURL.path)
+      }
+
+      let outputPath = outputURL.path
+      writer.finishWriting {
+        let status = writer.status
+        if status == .completed {
+          completion(.success(outputPath))
+        } else {
+          completion(.failure(WriterError.finalizeFailed(writer.error)))
+        }
+      }
+      isStarted = false
+      return .finalizing
     }
-    isStarted = false
+
+    // Fire the completion for the early-exit cases OUTSIDE the queue so we never
+    // block the serial queue on the caller. The `.finalizing` case's completion
+    // is delivered later by `finishWriting` on AVFoundation's thread.
+    switch syncResult {
+    case .notStarted:
+      completion(.failure(WriterError.notStarted))
+    case .nothingWritten(let path):
+      completion(.success(path))
+    case .finalizing:
+      break
+    }
   }
 }
