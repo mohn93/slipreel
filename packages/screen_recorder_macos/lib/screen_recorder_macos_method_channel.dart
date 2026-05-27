@@ -100,7 +100,7 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   @override
   Future<bool> isAccessibilityTrusted() async {
     final result = await _recordingChannel.invokeMethod<bool>(
-      'isAccessibilityTrusted',
+      ScreenRecorderMethods.isAccessibilityTrusted,
     );
     return result ?? false;
   }
@@ -108,14 +108,14 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   @override
   Future<void> requestAccessibilityPermission() async {
     await _recordingChannel.invokeMethod<void>(
-      'requestAccessibilityPermission',
+      ScreenRecorderMethods.requestAccessibilityPermission,
     );
   }
 
   @override
   Future<Map<String, StockCursorImage>> getStockCursorImages() async {
     final raw = await _recordingChannel
-        .invokeMapMethod<String, dynamic>('getStockCursorImages');
+        .invokeMapMethod<String, dynamic>(ScreenRecorderMethods.getStockCursorImages);
     if (raw == null) return const {};
     final out = <String, StockCursorImage>{};
     for (final entry in raw.entries) {
