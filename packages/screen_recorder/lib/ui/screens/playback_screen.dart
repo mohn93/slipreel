@@ -38,6 +38,7 @@ import 'package:slipreel_engine/export/audio_mix_args.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import '../../state/recording_audio_streams_provider.dart';
+import 'playback/hover_scrub_controller.dart';
 
 /// Debug hook: the active [PlaybackScreen] publishes its video
 /// controller here (in debug/profile builds) so VM-service extensions
@@ -100,22 +101,18 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
-  // The user's intended position — the spot we return to when a
-  // hover-preview ends. Updated continuously while the user is NOT
-  // hover-scrubbing (so it tracks playback and committed seeks), and
-  // frozen while [_isHovering] is true (so hover seeks don't
-  // overwrite the anchor with previewed positions). Replaces the
-  // earlier `_hoverFrozenPosition` capture-at-hover-start scheme,
-  // which raced against the previous hover's restore seek not yet
-  // applying — letting a re-entering hover capture the last preview
-  // position as the "parked" target instead of the user's actual
-  // stopped position.
-  Duration _intendedPosition = Duration.zero;
-  // True while a hover-scrub is in progress. The colored playhead and
-  // time labels display [_intendedPosition] (frozen) while this is
-  // set; PlaybackCanvas / SceneBlurOverlay receive it as
-  // `isHoverScrubbing` so their stateful smoothers bypass.
-  bool _isHovering = false;
+  // Owns hover-scrub state: the user's intended (anchor) position —
+  // the spot we return to when a hover-preview ends — and whether a
+  // hover-preview is in progress. The anchor is updated continuously
+  // while NOT hover-scrubbing (so it tracks playback and committed
+  // seeks) and frozen while hovering (so hover seeks don't overwrite
+  // it with previewed positions). The colored playhead and time
+  // labels display the frozen anchor while hovering; PlaybackCanvas /
+  // SceneBlurOverlay receive `isHovering` as `isHoverScrubbing` so
+  // their stateful smoothers bypass. Wired in [_initializeVideo] once
+  // the controller is initialised. setState is owned by this widget:
+  // it wraps the controller's mutating methods at the call sites.
+  late final HoverScrubController _hover;
   // Dev HUD: when on, draws a marker at the recorded cursor's video-pixel
   // position so we can visually confirm the zoom focal is tracking it.
   bool _showZoomDebug = false;
@@ -227,11 +224,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // _isInitialized + _trimSelection are set so the listener never
       // sees a half-initialized state.
       _controller.addListener(_enforceTrimBounds);
-      // Seed [_intendedPosition] from the freshly-initialised controller
+      // Seed the hover anchor from the freshly-initialised controller
       // so hover-end-before-any-other-action restores to a meaningful
       // value rather than Duration.zero (which would jump to start).
-      _intendedPosition = _controller.value.position;
-      _controller.addListener(_trackIntendedPosition);
+      _hover = HoverScrubController(
+        seekTo: _controller.seekTo,
+        initialPosition: _controller.value.position,
+      );
+      _controller.addListener(_onHoverTrack);
       // Auto-play on load
       _controller.play();
 
@@ -288,7 +288,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     if (_isInitialized) {
       _projectStore.save(_project);
       _controller.removeListener(_enforceTrimBounds);
-      _controller.removeListener(_trackIntendedPosition);
+      _controller.removeListener(_onHoverTrack);
     }
     _smoothPlayhead?.dispose();
     _controller.dispose();
@@ -622,34 +622,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   }
 
   // Updates the user's intended position whenever the controller's
-  // value changes AND we're not in the middle of a hover-scrub. Hover
-  // seeks are excluded so [_intendedPosition] freezes at the anchor
-  // we want to restore to when the hover ends.
-  void _trackIntendedPosition() {
-    if (_isHovering) return;
-    _intendedPosition = _controller.value.position;
-  }
+  // value changes AND we're not in the middle of a hover-scrub (the
+  // controller drops the update while hovering). Driven by the player
+  // listener — intentionally does NOT setState (mirrors the old
+  // _trackIntendedPosition).
+  void _onHoverTrack() => _hover.track(_controller.value.position);
 
-  void _seekToStart() {
-    setState(() {
-      _isHovering = false;
-      _intendedPosition = Duration.zero;
-    });
-    _controller.seekTo(Duration.zero);
-  }
+  void _seekToStart() => setState(() => _hover.seekToStart());
 
-  void _seekToEnd() {
-    setState(() {
-      _isHovering = false;
-    });
-    final dur = _controller.value.duration;
-    if (dur > Duration.zero) {
-      // 1ms back from the end so the player doesn't auto-rewind on
-      // the next tick (some VideoPlayer backends snap a position
-      // exactly at duration to 0).
-      _controller.seekTo(dur - const Duration(milliseconds: 1));
-    }
-  }
+  void _seekToEnd() =>
+      setState(() => _hover.seekToEnd(_controller.value.duration));
 
   /// `m:ss.hh` — used in the transport bar where the playhead's
   /// hundredths matter (frame-accurate scrubbing feedback).
@@ -941,12 +923,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       return const CircularProgressIndicator(color: Color(0xFF6C63FF));
     }
 
-    // _isHovering is set on the first hover-seek and cleared on
+    // isHovering is set on the first hover-seek and cleared on
     // hover-end / committed seek. It's a precise "we're scrubbing,
     // not playing" signal — the canvas uses it to bypass stateful
     // smoothers (EMA velocity, focal tween) so forward and backward
     // hover render the same frame at the same timestamp.
-    final isHoverScrubbing = _isHovering;
+    final isHoverScrubbing = _hover.isHovering;
     // Scene-blur is handled OUTSIDE PlaybackCanvas by
     // [SceneBlurOverlay] (matches the playground's working pipeline:
     // captures the full output then smears uniformly, avoiding the
@@ -1056,8 +1038,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     return AnimatedBuilder(
       animation: Listenable.merge([_controller, _smoothPlayhead]),
       builder: (context, _) {
-        final pos = _isHovering
-            ? _intendedPosition
+        final pos = _hover.isHovering
+            ? _hover.intendedPosition
             : (_smoothPlayhead?.position ?? _controller.value.position);
         final dur = _controller.value.duration;
         final isPlaying = _controller.value.isPlaying;
@@ -1141,11 +1123,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             animation: Listenable.merge([_controller, _smoothPlayhead]),
             builder: (context, _) {
               // The colored playhead and time labels stay parked at
-              // [_intendedPosition] (which is frozen while hovering)
+              // the hover anchor (which is frozen while hovering)
               // even though the controller is being seeked to preview
               // the hover frame.
-              final displayedPos = _isHovering
-                  ? _intendedPosition
+              final displayedPos = _hover.isHovering
+                  ? _hover.intendedPosition
                   : (_smoothPlayhead?.position ?? _controller.value.position);
               return EditorTimeline(
                 duration: _controller.value.duration,
@@ -1153,21 +1135,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 isPlaying: _controller.value.isPlaying,
                 onSeek: (next) {
                   // Committed seek: clear hover state and adopt the
-                  // click target as the new intended position. The
-                  // listener also picks this up after the seek lands,
-                  // but we set it explicitly to avoid even a one-frame
-                  // gap where _intendedPosition is still the old
+                  // click target as the new intended position, then
+                  // seek. The listener also picks this up after the
+                  // seek lands, but we set it explicitly to avoid even
+                  // a one-frame gap where the anchor is still the old
                   // pre-hover value.
-                  setState(() {
-                    _isHovering = false;
-                    _intendedPosition = next;
-                  });
-                  _controller.seekTo(next);
+                  setState(() => _hover.seek(next));
                   _checkZoomMarkerClick(next);
                 },
                 onHoverSeek: (next) {
                   // Mark hover active so the listener stops updating
-                  // [_intendedPosition]. The anchor we'll restore to on
+                  // the anchor. The anchor we'll restore to on
                   // hover-end is whatever the listener last wrote — i.e.
                   // the user's actual stopped position (the live
                   // playback position if they were playing, or the
@@ -1175,16 +1153,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   // sample `_controller.value.position` here, which
                   // could still be the previous hover's preview target
                   // if its restore-seek hadn't applied yet.
-                  if (!_isHovering) {
-                    setState(() => _isHovering = true);
-                  }
-                  _controller.seekTo(next);
+                  setState(() => _hover.hoverSeek(next));
                 },
                 onHoverEnd: () {
-                  if (_isHovering) {
-                    _controller.seekTo(_intendedPosition);
-                    setState(() => _isHovering = false);
-                  }
+                  setState(() => _hover.hoverEnd());
                 },
                 zoomRegions: _project.zoomRegions,
                 selectedZoomIndex: _selectedZoomIndex,
