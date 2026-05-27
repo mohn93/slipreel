@@ -302,6 +302,42 @@ void main() {
       }
     });
 
+    test('speed + fade GIF export produces a non-empty valid GIF', () async {
+      final tmp = Directory.systemTemp.createTempSync('gif_pipe_speed_fade');
+      final outPath = '${tmp.path}/out.gif';
+
+      try {
+        final pipeline = GifExportPipeline(
+          sourcePath: 'test/fixtures/sample_recording.mp4',
+          outputPath: outPath,
+          sourceMetadata: _metadata(),
+          cursorRecording: CursorRecording(),
+          projectState: _bareState().copyWith(
+            playbackSpeed: 2.0,
+            fadeIn: const Duration(milliseconds: 200),
+            fadeOut: const Duration(milliseconds: 200),
+          ),
+          settings: _gifSettings(),
+        );
+
+        final summary = await pipeline.run();
+
+        final file = File(outPath);
+        expect(file.existsSync(), isTrue);
+        expect(summary.outputBytes, greaterThan(0));
+
+        final header = file.readAsBytesSync().sublist(0, 6);
+        final headerStr = String.fromCharCodes(header);
+        expect(
+          headerStr == 'GIF87a' || headerStr == 'GIF89a',
+          isTrue,
+          reason: 'Expected GIF magic bytes, got: $headerStr',
+        );
+      } finally {
+        tmp.deleteSync(recursive: true);
+      }
+    });
+
     test('gifPaletteSettings returns correct knobs for web tier', () {
       final s = gifPaletteSettings(CompressionTier.web);
       expect(s.maxColors, 128);

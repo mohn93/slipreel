@@ -14,6 +14,7 @@ import '../utils/perf_summary.dart';
 import 'export_cancellation.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
+import 'ffmpeg_filters.dart';
 import 'ffmpeg_probe.dart';
 import 'ffmpeg_resolver.dart';
 import 'frame_compositor.dart';
@@ -101,6 +102,28 @@ class GifExportPipeline {
 
     final paletteSettings = gifPaletteSettings(settings.compression);
 
+    // Speed + fade are video-only for GIF (no audio track). Computed once and
+    // spliced into both pass-1 (palettegen) and pass-2 (paletteuse) chains.
+    final speed = projectState.playbackSpeed;
+    final fadeIn = projectState.fadeIn;
+    final fadeOut = projectState.fadeOut;
+    final inputDurSec = trim != null
+        ? trim!.duration.inMicroseconds / 1000000
+        : (probed.durationSec ?? 0);
+    final outputDurSec = speed != 0 ? inputDurSec / speed : inputDurSec;
+    final outputDuration =
+        Duration(microseconds: (outputDurSec * 1000000).round());
+    final fadeOutStart =
+        (outputDuration > fadeOut) ? outputDuration - fadeOut : Duration.zero;
+    final extraVideoFilters = <String>[
+      if (speed != 1.0) setptsForSpeed(speed),
+      if (fadeIn > Duration.zero) 'fade=t=in:st=0:d=${ffSeconds(fadeIn)}',
+      if (fadeOut > Duration.zero)
+        'fade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(fadeOut)}',
+    ];
+    final extraVideo =
+        extraVideoFilters.isEmpty ? '' : '${extraVideoFilters.join(',')},';
+
     final palettePath = _makePaletteTmpPath();
 
     final int? expectedFrames = _expectedFrames(probed, fps);
@@ -132,6 +155,7 @@ class GifExportPipeline {
         '-vf',
         'scale=${outWidth}x$outHeight:force_original_aspect_ratio=decrease,'
             'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black,'
+            '$extraVideo'
             'palettegen=max_colors=${paletteSettings.maxColors}:stats_mode=full',
         palettePath,
       ];
@@ -213,7 +237,8 @@ class GifExportPipeline {
         '-i', palettePath,
         '-lavfi',
         '[0:v]scale=${outWidth}x$outHeight:force_original_aspect_ratio=decrease,'
-            'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black [scaled];'
+            'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black,'
+            '${extraVideo}null [scaled];'
             '[scaled][1:v]paletteuse=dither=${paletteSettings.dither}',
         '-loop', '0',
         outputPath,
