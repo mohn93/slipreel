@@ -286,7 +286,7 @@ void screen_recorder_linux_plugin_register_with_registrar(FlPluginRegistrar* reg
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   g_autoptr(FlMethodChannel) channel =
       fl_method_channel_new(fl_plugin_registrar_get_messenger(registrar),
-                            "com.screenflow_studio.screen_recorder/methods",
+                            "com.slipreel.screen_recorder/recording",
                             FL_METHOD_CODEC(codec));
   fl_method_channel_set_method_call_handler(channel, method_call_cb,
                                             g_object_ref(plugin),
@@ -295,7 +295,7 @@ void screen_recorder_linux_plugin_register_with_registrar(FlPluginRegistrar* reg
   // Set up event channel for frames
   plugin->frames_channel = fl_event_channel_new(
       fl_plugin_registrar_get_messenger(registrar),
-      "com.screenflow_studio.screen_recorder/frames",
+      "com.slipreel.screen_recorder/frames",
       FL_METHOD_CODEC(codec));
   fl_event_channel_set_stream_handlers(
       plugin->frames_channel,
@@ -307,7 +307,7 @@ void screen_recorder_linux_plugin_register_with_registrar(FlPluginRegistrar* reg
   // Register audio event channel
   plugin->audio_channel = fl_event_channel_new(
       fl_plugin_registrar_get_messenger(registrar),
-      "com.screenflow_studio.screen_recorder/audio",
+      "com.slipreel.screen_recorder/audio",
       FL_METHOD_CODEC(codec));
   fl_event_channel_set_stream_handlers(
       plugin->audio_channel,
@@ -319,7 +319,7 @@ void screen_recorder_linux_plugin_register_with_registrar(FlPluginRegistrar* reg
   // Register cursor event channel
   plugin->cursor_channel = fl_event_channel_new(
       fl_plugin_registrar_get_messenger(registrar),
-      "com.screenflow_studio.screen_recorder/cursor",
+      "com.slipreel.screen_recorder/cursor",
       FL_METHOD_CODEC(codec));
   fl_event_channel_set_stream_handlers(
       plugin->cursor_channel,
