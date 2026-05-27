@@ -428,7 +428,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           ),
           onRevealLastExport: _lastExportPath == null
               ? null
-              : () => Process.run('open', ['-R', _lastExportPath!]),
+              : () {
+                  if (Platform.isMacOS) {
+                    unawaited(Process.run('open', ['-R', _lastExportPath!])
+                        .catchError((_) => ProcessResult(0, 1, '', '')));
+                  }
+                },
         ),
       );
     } catch (e) {
@@ -609,7 +614,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       onPressed: () {
                         // macOS-only: reveal in Finder. No-op on other platforms.
                         if (Platform.isMacOS) {
-                          Process.run('open', ['-R', result.revealPath!]);
+                          unawaited(Process.run('open', ['-R', result.revealPath!])
+                              .catchError((_) => ProcessResult(0, 1, '', '')));
                         }
                       },
                     )

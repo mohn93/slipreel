@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,6 +57,41 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(windowModeControllerProvider.notifier).showBar();
     });
+
+    // Recording status → pill/panel/bar. Registered once (not per-build) so we
+    // don't re-subscribe every frame; the callback guards `mounted` before
+    // touching `ref` and fires the window morphs fire-and-forget (unawaited).
+    ref.listenManual<RecordingState>(recordingControllerProvider, (prev, next) {
+      if (!mounted) return;
+      if (next.status == RecordingStatus.recording ||
+          next.status == RecordingStatus.processing) {
+        unawaited(_window.showPill());
+      } else if (prev?.status != RecordingStatus.completed &&
+          next.status == RecordingStatus.completed &&
+          next.videoPath != null) {
+        unawaited(_openPanel(PlaybackScreen(videoPath: next.videoPath!)));
+      } else if (next.status == RecordingStatus.error) {
+        unawaited(_window.showBar());
+      }
+    });
+
+    // Keep the mic monitor in sync with window mode + selected mic. Driven by
+    // provider listeners (registered once) instead of a per-build post-frame
+    // callback, so we don't re-evaluate on every rebuild. `_syncMicMonitor`
+    // dedups via `_monitoredConfig`, so the initial call + listener fan-in are
+    // idempotent.
+    ref.listenManual<WindowMode>(windowModeControllerProvider, (_, mode) {
+      if (mounted) _syncMicMonitor(mode, ref.read(microphoneControllerProvider));
+    });
+    ref.listenManual<MicrophoneConfig?>(microphoneControllerProvider, (_, mic) {
+      if (mounted) {
+        _syncMicMonitor(ref.read(windowModeControllerProvider), mic);
+      }
+    });
+    _syncMicMonitor(
+      ref.read(windowModeControllerProvider),
+      ref.read(microphoneControllerProvider),
+    );
   }
 
   @override
@@ -189,23 +226,6 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   @override
   Widget build(BuildContext context) {
     final mode = ref.watch(windowModeControllerProvider);
-    final mic = ref.watch(microphoneControllerProvider);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncMicMonitor(mode, mic);
-    });
-
-    ref.listen<RecordingState>(recordingControllerProvider, (prev, next) {
-      if (next.status == RecordingStatus.recording ||
-          next.status == RecordingStatus.processing) {
-        _window.showPill();
-      } else if (prev?.status != RecordingStatus.completed &&
-          next.status == RecordingStatus.completed &&
-          next.videoPath != null) {
-        _openPanel(PlaybackScreen(videoPath: next.videoPath!));
-      } else if (next.status == RecordingStatus.error) {
-        _window.showBar();
-      }
-    });
 
     final Widget body;
     switch (mode) {
