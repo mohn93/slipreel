@@ -16,6 +16,7 @@ import 'models/screen_info.dart';
 import 'models/source_list.dart';
 import 'models/stock_cursor_image.dart';
 import 'models/window_info.dart';
+import 'permission_status.dart';
 
 /// The interface that platform-specific implementations must extend.
 abstract class ScreenRecorderPlatform extends PlatformInterface {
@@ -132,6 +133,26 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
     throw UnimplementedError(
         'requestAccessibilityPermission() has not been implemented.');
   }
+
+  /// Typed status query for Screen Recording (macOS ScreenCaptureKit).
+  /// Default returns [PermissionStatus.unsupported] for platforms that
+  /// haven't implemented this yet (Win/Linux).
+  Future<PermissionStatus> getScreenRecordingPermission() async =>
+      PermissionStatus.unsupported;
+
+  /// Typed status query for Microphone (macOS AVCaptureDevice).
+  Future<PermissionStatus> getMicrophonePermission() async =>
+      PermissionStatus.unsupported;
+
+  /// Typed status query for Accessibility (macOS AXIsProcessTrusted).
+  Future<PermissionStatus> getAccessibilityPermission() async =>
+      PermissionStatus.unsupported;
+
+  /// Triggers the system mic-permission prompt the first time, otherwise
+  /// returns the current status without re-prompting. No-op on unsupported
+  /// platforms.
+  Future<PermissionStatus> requestMicrophonePermission() async =>
+      PermissionStatus.unsupported;
 
   /// Fetch every stock cursor image macOS ships, so the renderer can
   /// blit the OS-accurate bitmap instead of hand-coded polygons.
