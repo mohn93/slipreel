@@ -77,6 +77,38 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  Future<PermissionStatus> getScreenRecordingPermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.getScreenRecordingPermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
+  }
+
+  @override
+  Future<PermissionStatus> getMicrophonePermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.getMicrophonePermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
+  }
+
+  @override
+  Future<PermissionStatus> getAccessibilityPermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.getAccessibilityPermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
+  }
+
+  @override
+  Future<PermissionStatus> requestMicrophonePermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.requestMicrophonePermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
+  }
+
+  @override
   Future<Map<String, StockCursorImage>> getStockCursorImages() async {
     final raw = await _recordingChannel
         .invokeMapMethod<String, dynamic>(ScreenRecorderMethods.getStockCursorImages);
