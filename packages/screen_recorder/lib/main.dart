@@ -18,6 +18,7 @@ import 'package:slipreel_engine/state/motion_tuning_store.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 import 'debug/debug_probe.dart';
 import 'platform/window_chrome_channel.dart';
+import 'onboarding/onboarding_store.dart';
 import 'state/permissions_controller.dart';
 import 'state/window_mode_controller.dart';
 import 'ui/bar/recording_bar_screen.dart';
@@ -84,9 +85,8 @@ Future<void> main() async {
       PermissionsController(ScreenRecorderPlatform.instance);
   await permissionsController.refreshAll();
 
-  // Onboarding flag is added in Task 7; for now hardcode true so we
-  // route straight to RecordingBarScreen.
-  const onboardingDone = true;
+  final onboardingStore = OnboardingStore();
+  final onboardingDone = await onboardingStore.load();
 
   runApp(ProviderScope(
     overrides: [
@@ -96,6 +96,7 @@ Future<void> main() async {
         ),
       ),
       motionTuningStoreProvider.overrideWithValue(tuningStore),
+      onboardingStoreProvider.overrideWithValue(onboardingStore),
       windowChromeProvider.overrideWithValue(MethodChannelWindowChrome()),
       permissionsControllerProvider.overrideWith((ref) => permissionsController),
     ],
