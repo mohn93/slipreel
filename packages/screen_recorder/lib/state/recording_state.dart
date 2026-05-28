@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'permissions_controller.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
@@ -106,10 +107,24 @@ class RecordingController extends StateNotifier<RecordingState> {
   Future<void> startRecording({
     MicrophoneConfig? microphone,
     SystemAudioConfig? systemAudio,
+    PermissionsSnapshot? permissions,
+    Future<void> Function(PermissionKind kind)? onDenied,
   }) async {
     if (!state.canStartRecording ||
         state.selectedSourceId == null ||
         state.selectedSourceKind == null) return;
+
+    // Permission gate: if the caller passed a snapshot AND a `onDenied`
+    // callback, short-circuit when Screen Recording isn't granted.
+    // (Both nullable so existing tests that don't care about permissions
+    // still work — non-passing callers just get the old behavior.)
+    if (permissions != null &&
+        permissions.screenRec != PermissionStatus.granted &&
+        permissions.screenRec != PermissionStatus.unsupported) {
+      await onDenied?.call(PermissionKind.screenRecording);
+      return;
+    }
+
     try {
       state = state.copyWith(
         status: RecordingStatus.recording,

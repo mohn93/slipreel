@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:screen_recorder/state/microphone_controller.dart';
+import 'package:screen_recorder/state/permissions_controller.dart';
 import 'package:screen_recorder/state/recording_state.dart';
 import 'package:screen_recorder/state/window_mode.dart';
 import 'package:screen_recorder/state/window_mode_controller.dart';
@@ -97,7 +98,13 @@ class _FakeRecordingController extends RecordingController {
   }
 
   @override
-  Future<void> startRecording({MicrophoneConfig? microphone, SystemAudioConfig? systemAudio}) async => startCalls++;
+  Future<void> startRecording({
+    MicrophoneConfig? microphone,
+    SystemAudioConfig? systemAudio,
+    PermissionsSnapshot? permissions,
+    Future<void> Function(PermissionKind kind)? onDenied,
+  }) async =>
+      startCalls++;
 
   @override
   Future<void> stopRecording() async => stopCalls++;
@@ -163,6 +170,9 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         recordingControllerProvider.overrideWith((ref) => fakeController),
+        permissionsControllerProvider.overrideWith(
+            (ref) => PermissionsController(ScreenRecorderPlatform.instance)
+              ..state = PermissionsSnapshot.initial),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -215,6 +225,9 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         recordingControllerProvider.overrideWith((ref) => fakeController),
+        permissionsControllerProvider.overrideWith(
+            (ref) => PermissionsController(ScreenRecorderPlatform.instance)
+              ..state = PermissionsSnapshot.initial),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
