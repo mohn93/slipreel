@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
+import 'dart:ui' show BlendMode, Canvas, Offset, Paint, Rect, Size;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show CustomPainter;
 
 /// Which scene-level motion-blur pipeline to use.
 enum SceneBlurMode {

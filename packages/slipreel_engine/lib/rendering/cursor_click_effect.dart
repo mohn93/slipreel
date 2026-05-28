@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'package:flutter/material.dart';
+import 'dart:ui' show BlendMode, Canvas, Color, ColorFilter, Offset, Paint, PaintingStyle, Rect;
 import 'package:flutter/physics.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../models/cursor_recording.dart';
@@ -177,7 +177,7 @@ void paintCursorRipple(
     ripple.radius,
     Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.white.withValues(alpha: ripple.opacity)
+      ..color = const Color(0xFFFFFFFF).withValues(alpha: ripple.opacity)
       ..strokeWidth = ripple.strokeWidth,
   );
 }

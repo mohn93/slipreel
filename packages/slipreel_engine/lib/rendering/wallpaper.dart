@@ -1,5 +1,5 @@
 import 'dart:math';
-import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
 
 /// Categories shown in the inspector's wallpaper picker. The order
 /// here matches the chip order so the picker UI doesn't need its own

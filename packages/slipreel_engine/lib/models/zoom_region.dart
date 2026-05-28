@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'dart:ui' show Rect, Size;
+
 import 'package:slipreel_engine/rendering/animation_curve.dart';
 
 /// How the zoom camera tracks the cursor while a region is active.

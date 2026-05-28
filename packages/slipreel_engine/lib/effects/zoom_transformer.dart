@@ -1,4 +1,7 @@
-import 'package:flutter/material.dart';
+import 'dart:ui' show Offset, Size;
+
+import 'package:flutter/animation.dart' show Curve, Curves;
+import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:slipreel_engine/models/zoom_region.dart';
 
 /// Builds the per-frame zoom matrix used by the playback preview.

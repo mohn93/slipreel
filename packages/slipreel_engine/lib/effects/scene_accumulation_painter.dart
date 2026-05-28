@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
+import 'dart:ui' show BlendMode, Canvas, Color, FilterQuality, Paint, Rect, Size;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show CustomPainter, Matrix4;
 
 /// True frame-accumulation motion blur for the scene composition, mirroring
 /// the cursor's [AccumulationCursorPainter] approach.
@@ -53,7 +54,7 @@ class AccumulationScenePainter extends CustomPainter {
     canvas.saveLayer(dstRect, Paint());
 
     final stampPaint = Paint()
-      ..color = Colors.white.withValues(alpha: alphaPerStamp)
+      ..color = const Color(0xFFFFFFFF).withValues(alpha: alphaPerStamp)
       ..blendMode = BlendMode.plus
       ..filterQuality = FilterQuality.medium;
 

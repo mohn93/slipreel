@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/painting.dart';
+import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';

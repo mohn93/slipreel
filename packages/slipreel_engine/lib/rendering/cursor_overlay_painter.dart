@@ -1,7 +1,10 @@
 // packages/screen_recorder/lib/ui/widgets/cursor_overlay_painter.dart
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'package:flutter/material.dart';
+import 'dart:ui' show Canvas, Color, FilterQuality, Offset, Paint, Rect, Size;
+
+import 'package:flutter/foundation.dart' show immutable;
+import 'package:flutter/rendering.dart' show CustomPainter;
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../../effects/motion_blur_samples.dart';
 import '../../effects/motion_blur_tuning.dart';
@@ -359,7 +362,7 @@ class CursorOverlayPainter extends CustomPainter {
               scaledSize,
             ),
             Paint()
-              ..color = Colors.white.withValues(alpha: samples.alphas[i])
+              ..color = const Color(0xFFFFFFFF).withValues(alpha: samples.alphas[i])
               ..filterQuality = FilterQuality.high,
           );
         }
