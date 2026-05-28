@@ -86,7 +86,9 @@ class RecordingBar extends StatelessWidget {
           children: [
             _CircleButton(
               barKey: const Key('bar-close'),
-              icon: LucideIcons.x,
+              // Material's close has heavier strokes than Lucide's hairline x,
+              // which reads better in the tiny inverted chip.
+              icon: Icons.close_rounded,
               onPressed: onClose,
             ),
             const _Divider(),
@@ -403,13 +405,15 @@ class _CircleButton extends StatelessWidget {
   const _CircleButton({required this.barKey, required this.icon, required this.onPressed});
 
   final Key barKey;
+  // Kept for API symmetry with the original `_CircleButton`; the close button
+  // now uses a hand-painted heavy X instead of a font glyph because Material's
+  // `weight:` axis is a no-op on the non-variable MaterialIcons font shipped
+  // with Flutter.
   final IconData icon;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    // Square hover container (like the other buttons), with an inverted chip:
-    // light fill, dark glyph.
     return SpringHoverButton(
       key: barKey,
       onTap: onPressed,
@@ -419,18 +423,43 @@ class _CircleButton extends StatelessWidget {
         height: _kBarButtonHeight,
         child: Center(
           child: Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE9E9EC),
-              borderRadius: BorderRadius.circular(9),
+            width: 22,
+            height: 22,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE9E9EC),
+              shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 16, color: const Color(0xFF2C2C30)),
+            child: const CustomPaint(painter: _HeavyXPainter()),
           ),
         ),
       ),
     );
   }
+}
+
+/// Draws a chunky "×" with rounded caps. Stroke is ~22% of the box edge so
+/// the X reads bold inside the small 22px chip without overflowing.
+class _HeavyXPainter extends CustomPainter {
+  const _HeavyXPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF2C2C30)
+      ..strokeWidth = size.shortestSide * 0.08
+      ..strokeCap = StrokeCap.round
+      ..isAntiAlias = true;
+    // Inset so the rounded caps don't kiss the circle's edge.
+    final inset = size.shortestSide * 0.30;
+    final r = Rect.fromLTRB(
+      inset, inset, size.width - inset, size.height - inset,
+    );
+    canvas.drawLine(r.topLeft, r.bottomRight, paint);
+    canvas.drawLine(r.topRight, r.bottomLeft, paint);
+  }
+
+  @override
+  bool shouldRepaint(_HeavyXPainter oldDelegate) => false;
 }
 
 class _GearButton extends StatelessWidget {

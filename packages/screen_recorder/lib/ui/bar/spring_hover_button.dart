@@ -74,6 +74,24 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
   // settles. See docs/superpowers/specs/2026-05-28-parallax-hover-button-design.md.
   final _innerDx = _Spring(0, stiffness: 300, zeta: 0.9);
   final _innerDy = _Spring(0, stiffness: 300, zeta: 0.9);
+  // 3D tilt of the child (icon + label as one rigid unit). Cursor-direction
+  // drives small rotations about X (pitch) and Y (yaw), max ±6°, projected
+  // through a 1/800 perspective. Same calm spring as the translate so the
+  // tilt and the lean settle together.
+  final _innerRotX = _Spring(0, stiffness: 300, zeta: 0.9);
+  final _innerRotY = _Spring(0, stiffness: 300, zeta: 0.9);
+  // The visible 2D edge-shift of a 3D tilt is ~ halfWidth² · sin(angle) ·
+  // perspective. To make all bar buttons read as equally tilted regardless
+  // of size, we scale perspective inversely with the button's halfWidth so
+  // perspective · halfWidth stays constant — making the FRACTIONAL shift
+  // (shift / halfWidth) constant across all sizes. _kPerspectiveScale is
+  // calibrated so a ~67px-halfWidth chip (the widest one in the bar) uses
+  // 1/180 (the value that read well by eye). A safety cap at 1/50 keeps the
+  // smallest buttons from looking distorted.
+  static const double _kMaxTiltRadians = 10 * math.pi / 180;
+  static const double _kPerspectiveScale = 67.0 / 180.0; // ≈ 0.372
+  static const double _kMaxPerspective = 1 / 50;
+  static const double _kFallbackPerspective = 1 / 180;
 
   bool _hovering = false;
 
@@ -101,7 +119,17 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
         ? 1 / 60
         : math.min((elapsed - _last).inMicroseconds / 1e6, 1 / 30);
     _last = elapsed;
-    for (final s in [_reveal, _scale, _press, _dx, _dy, _innerDx, _innerDy]) {
+    for (final s in [
+      _reveal,
+      _scale,
+      _press,
+      _dx,
+      _dy,
+      _innerDx,
+      _innerDy,
+      _innerRotX,
+      _innerRotY,
+    ]) {
       s.tick(dt);
     }
     setState(() {});
@@ -111,7 +139,9 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
         _dx.settled &&
         _dy.settled &&
         _innerDx.settled &&
-        _innerDy.settled) {
+        _innerDy.settled &&
+        _innerRotX.settled &&
+        _innerRotY.settled) {
       _ticker.stop();
     }
   }
@@ -132,11 +162,17 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
     _dy.value = rel.dy;
     _dx.target = (rel.dx * 0.12).clamp(-8.0, 8.0); // small magnetic lean
     _dy.target = (rel.dy * 0.12).clamp(-6.0, 6.0);
-    // Inner-content parallax: ~50% of the pill's range, calmer spring. The
+    // Inner-content parallax: ~25% of the pill's range, calmer spring. The
     // child does NOT start at the cursor like the pill does — it stays at
     // its layout position and springs into the (small) parallax offset.
-    _innerDx.target = (rel.dx * 0.06).clamp(-4.0, 4.0);
-    _innerDy.target = (rel.dy * 0.06).clamp(-3.0, 3.0);
+    // Inner translate paused while iterating on the tilt alone.
+    _innerDx.target = 0;
+    _innerDy.target = 0;
+    // 3D tilt of the icon+label as one unit. Cursor in the top-right → top-right
+    // edge of the button comes toward the viewer (rotateX with cursor below
+    // centre → bottom forward; rotateY with cursor to the right → right
+    // forward), so the surface "tilts toward the cursor."
+    _setTiltTargets(rel);
     _reveal.target = 1;
     _scale.value = 0.6;
     _scale.target = 1;
@@ -148,9 +184,34 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
     final rel = _centreRel(e.localPosition);
     _dx.target = (rel.dx * 0.12).clamp(-8.0, 8.0);
     _dy.target = (rel.dy * 0.12).clamp(-6.0, 6.0);
-    _innerDx.target = (rel.dx * 0.06).clamp(-4.0, 4.0);
-    _innerDy.target = (rel.dy * 0.06).clamp(-3.0, 3.0);
+    // Inner translate paused while iterating on the tilt alone.
+    _innerDx.target = 0;
+    _innerDy.target = 0;
+    _setTiltTargets(rel);
     _ensureTicking();
+  }
+
+  /// Drives [_innerRotX]/[_innerRotY] toward a "tilt-toward-cursor" pose.
+  /// `rel` is centre-relative pointer position; the button's half-size
+  /// normalizes the input so a full edge-of-button hover hits the ±6° clamp.
+  void _setTiltTargets(Offset rel) {
+    final s = _size;
+    final halfW = s.width / 2;
+    final halfH = s.height / 2;
+    // rotateX: positive angle tilts the bottom edge toward the viewer in
+    // Flutter's screen-down-Y frame. Cursor below centre (rel.dy > 0) → tilt
+    // bottom forward → positive rotX.
+    _innerRotX.target = halfH == 0
+        ? 0
+        : ((rel.dy / halfH) * _kMaxTiltRadians)
+            .clamp(-_kMaxTiltRadians, _kMaxTiltRadians);
+    // rotateY: positive angle in this frame tilts the LEFT edge toward the
+    // viewer; we want the RIGHT edge forward when the cursor is to the right,
+    // so negate.
+    _innerRotY.target = halfW == 0
+        ? 0
+        : (-(rel.dx / halfW) * _kMaxTiltRadians)
+            .clamp(-_kMaxTiltRadians, _kMaxTiltRadians);
   }
 
   void _onExit(PointerExitEvent e) {
@@ -162,9 +223,11 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
     final s = _size;
     _dx.target = dir.dx * (s.width * 0.5 + 14);
     _dy.target = dir.dy * (s.height * 0.5 + 14);
-    // Child glides home — only the pill flies off on exit.
+    // Child glides home + untilts — only the pill flies off on exit.
     _innerDx.target = 0;
     _innerDy.target = 0;
+    _innerRotX.target = 0;
+    _innerRotY.target = 0;
     _reveal.target = 0;
     // Barely shrink on the way out — the fade carries the vanish, so the pill
     // never reads as a tiny scaled-down dot.
@@ -189,6 +252,13 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
   Widget build(BuildContext context) {
     final reveal = _reveal.value.clamp(0.0, 1.0);
     final tappable = widget.onTap != null;
+    // Per-button-size perspective so all tilts feel equally 3D (see comment
+    // on _kPerspectiveScale). Falls back to the calibration value on the
+    // first build before layout (when _size is zero).
+    final halfW = _size.width / 2;
+    final perspective = halfW > 0
+        ? math.min(_kPerspectiveScale / halfW, _kMaxPerspective)
+        : _kFallbackPerspective;
     return MouseRegion(
       onEnter: _onEnter,
       onHover: _onHover,
@@ -225,7 +295,24 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
             ),
             Transform.translate(
               offset: Offset(_innerDx.value, _innerDy.value),
-              child: widget.child,
+              // Icon + label tilt as ONE rigid unit, centred on the child's
+              // bounding box. Perspective makes it read as 3D rather than a 2D
+              // skew. FilterQuality.high keeps the receding edge of the label
+              // from getting pixelated at the tilt angle.
+              // Note: NO `filterQuality` here. Setting it forces Flutter to
+              // raster the child to an offscreen image before sampling, which
+              // visibly drops small font glyphs (the bar gear's settings icon
+              // would vanish on hover) at non-identity perspective. The
+              // default tree-walked transform draws fonts directly and keeps
+              // them crisp through the tilt.
+              child: Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, perspective)
+                  ..rotateX(_innerRotX.value)
+                  ..rotateY(_innerRotY.value),
+                child: widget.child,
+              ),
             ),
           ],
         ),
