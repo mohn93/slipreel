@@ -1,55 +1,89 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
-import 'package:screen_recorder/state/frame_settings_provider.dart';
+import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Background tab — wallpaper picker, blur, padding, corners, inset.
 ///
-/// All controls write through to [FrameSettingsProvider] so the
-/// playback canvas re-renders live and the change persists via the
-/// per-clip sidecar.
-class BackgroundTab extends StatefulWidget {
-  const BackgroundTab({super.key, required this.frameSettings});
-  final FrameSettingsProvider frameSettings;
+/// All controls write through to [editorProjectControllerProvider]'s
+/// `windowFrame` so the playback canvas re-renders live and the change
+/// persists via the per-clip sidecar.
+class BackgroundTab extends ConsumerStatefulWidget {
+  const BackgroundTab({super.key});
 
   @override
-  State<BackgroundTab> createState() => _BackgroundTabState();
+  ConsumerState<BackgroundTab> createState() => _BackgroundTabState();
 }
 
-class _BackgroundTabState extends State<BackgroundTab> {
+class _BackgroundTabState extends ConsumerState<BackgroundTab> {
   /// Local-only because the user can pick a category without
   /// committing to a tile yet. Initialized from the model so the
-  /// chip selection persists across rebuilds.
-  late String _selectedCategory =
-      widget.frameSettings.currentFrame.wallpaperCategory ?? 'macOS';
+  /// chip selection persists across rebuilds. Lazily initialized on
+  /// first build so we can seed from the current project state.
+  String? _selectedCategory;
 
-  @override
-  void initState() {
-    super.initState();
-    widget.frameSettings.addListener(_onFrameChanged);
+  /// Apply a copyWith mutation to the project's current windowFrame and
+  /// re-tag the result as 'Custom' — matches the legacy
+  /// FrameSettingsProvider.updateXxx contract so the template chip
+  /// flips off the moment any field is hand-tweaked.
+  void _mutateFrame(WindowFrame Function(WindowFrame) update) {
+    final notifier = ref.read(editorProjectControllerProvider.notifier);
+    final current = notifier.current.windowFrame;
+    final next = update(current);
+    if (next == current) return;
+    notifier.setWindowFrame(next);
   }
 
-  @override
-  void dispose() {
-    widget.frameSettings.removeListener(_onFrameChanged);
-    super.dispose();
-  }
+  void _updatePadding(double padding) => _mutateFrame(
+        (f) => f.copyWith(padding: EdgeInsets.all(padding), name: 'Custom'),
+      );
 
-  void _onFrameChanged() {
-    final next = widget.frameSettings.currentFrame.wallpaperCategory;
-    if (next != null && next != _selectedCategory) {
-      setState(() => _selectedCategory = next);
-    }
+  void _updateCornerRadius(double radius) => _mutateFrame(
+        (f) => f.copyWith(cornerRadius: radius, name: 'Custom'),
+      );
+
+  void _updateBackgroundBlur(double sigma) => _mutateFrame(
+        (f) => f.copyWith(backgroundBlur: sigma, name: 'Custom'),
+      );
+
+  void _updateInset(double inset) => _mutateFrame(
+        (f) => f.copyWith(inset: inset, name: 'Custom'),
+      );
+
+  void _updateWallpaper({required String? category, int index = 0}) {
+    _mutateFrame((f) {
+      if (category == null) {
+        return f.copyWith(clearWallpaper: true, name: 'Custom');
+      }
+      return f.copyWith(
+        wallpaperCategory: category,
+        wallpaperIndex: index,
+        name: 'Custom',
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final frame = widget.frameSettings.currentFrame;
+    final frame = ref.watch(editorProjectControllerProvider).windowFrame;
+    // Seed/auto-sync the local category. Mirrors the previous
+    // FrameSettingsProvider listener (which jumped the chip to the
+    // chosen wallpaper's category when an external write — e.g. the
+    // sidecar load — landed).
+    _selectedCategory ??= frame.wallpaperCategory ?? 'macOS';
+    final liveCategory = frame.wallpaperCategory;
+    if (liveCategory != null && liveCategory != _selectedCategory) {
+      _selectedCategory = liveCategory;
+    }
+    final selectedCategory = _selectedCategory!;
+
     final padding = frame.padding.left;
     final cornerRadius = frame.cornerRadius;
-    final selectedIndex = frame.wallpaperCategory == _selectedCategory
+    final selectedIndex = frame.wallpaperCategory == selectedCategory
         ? frame.wallpaperIndex
         : -1;
 
@@ -62,15 +96,15 @@ class _BackgroundTabState extends State<BackgroundTab> {
           items: kWallpaperCategories,
           labelOf: (s) => s,
           iconOf: (s) => s == 'Favorite' ? Icons.star_border : null,
-          selected: _selectedCategory,
+          selected: selectedCategory,
           onSelected: (s) => setState(() {
             _selectedCategory = s;
           }),
         ),
         const SizedBox(height: 16),
-        _randomButton(),
+        _randomButton(selectedCategory),
         const SizedBox(height: 16),
-        _wallpaperGrid(selectedIndex),
+        _wallpaperGrid(selectedCategory, selectedIndex),
         const InspectorSectionDivider(),
         InspectorSlider(
           label: 'Background blur',
@@ -80,8 +114,8 @@ class _BackgroundTabState extends State<BackgroundTab> {
           value: frame.backgroundBlur,
           min: 0,
           max: 60,
-          onChanged: widget.frameSettings.updateBackgroundBlur,
-          onReset: () => widget.frameSettings.updateBackgroundBlur(0),
+          onChanged: _updateBackgroundBlur,
+          onReset: () => _updateBackgroundBlur(0),
           canReset: frame.backgroundBlur != 0,
         ),
         const InspectorSectionDivider(),
@@ -90,8 +124,8 @@ class _BackgroundTabState extends State<BackgroundTab> {
           value: padding,
           min: 0,
           max: 200,
-          onChanged: (v) => widget.frameSettings.updatePadding(v),
-          onReset: () => widget.frameSettings.updatePadding(40),
+          onChanged: _updatePadding,
+          onReset: () => _updatePadding(40),
           canReset: padding != 40,
         ),
         const SizedBox(height: 24),
@@ -100,8 +134,8 @@ class _BackgroundTabState extends State<BackgroundTab> {
           value: cornerRadius,
           min: 0,
           max: 60,
-          onChanged: (v) => widget.frameSettings.updateCornerRadius(v),
-          onReset: () => widget.frameSettings.updateCornerRadius(12),
+          onChanged: _updateCornerRadius,
+          onReset: () => _updateCornerRadius(12),
           canReset: cornerRadius != 12,
         ),
         const SizedBox(height: 24),
@@ -113,8 +147,8 @@ class _BackgroundTabState extends State<BackgroundTab> {
           value: frame.inset,
           min: 0,
           max: 60,
-          onChanged: widget.frameSettings.updateInset,
-          onReset: () => widget.frameSettings.updateInset(0),
+          onChanged: _updateInset,
+          onReset: () => _updateInset(0),
           canReset: frame.inset != 0,
         ),
         const SizedBox(height: 24),
@@ -133,10 +167,10 @@ class _BackgroundTabState extends State<BackgroundTab> {
     );
   }
 
-  Widget _randomButton() {
+  Widget _randomButton(String category) {
     return InkWell(
-      onTap: () => widget.frameSettings.updateWallpaper(
-        category: _selectedCategory,
+      onTap: () => _updateWallpaper(
+        category: category,
         index: Random().nextInt(kWallpapersPerCategory),
       ),
       borderRadius: BorderRadius.circular(12),
@@ -168,7 +202,7 @@ class _BackgroundTabState extends State<BackgroundTab> {
     );
   }
 
-  Widget _wallpaperGrid(int selectedIndex) {
+  Widget _wallpaperGrid(String category, int selectedIndex) {
     return GridView.count(
       crossAxisCount: 7,
       shrinkWrap: true,
@@ -180,10 +214,10 @@ class _BackgroundTabState extends State<BackgroundTab> {
       children: [
         for (int i = 0; i < kWallpapersPerCategory; i++)
           _WallpaperThumb(
-            decoration: wallpaperDecoration(_selectedCategory, i),
+            decoration: wallpaperDecoration(category, i),
             isSelected: i == selectedIndex,
-            onTap: () => widget.frameSettings.updateWallpaper(
-              category: _selectedCategory,
+            onTap: () => _updateWallpaper(
+              category: category,
               index: i,
             ),
           ),

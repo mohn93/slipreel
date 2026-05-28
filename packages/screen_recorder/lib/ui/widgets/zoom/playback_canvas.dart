@@ -25,7 +25,6 @@ import 'package:slipreel_engine/rendering/frame_painter.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
-import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:slipreel_engine/rendering/cursor_overlay_painter.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
@@ -42,7 +41,7 @@ import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 /// [ZoomFocalController], [CursorMotionController] — so the parent
 /// screen doesn't need to manage their lifecycles or expose their
 /// state. Reads its inputs purely as widget props; settings flow in
-/// through [frameSettings] / [screenAnimationConfig] /
+/// through [frame] / [screenAnimationConfig] /
 /// [cursorAnimationConfig] etc., and changes there rebuild the canvas
 /// without rebuilding the surrounding shell.
 
@@ -60,7 +59,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     super.key,
     required this.controller,
     required this.smoothPlayhead,
-    required this.frameSettings,
+    required this.frame,
     required this.metadata,
     required this.cursorRecording,
     required this.hideCursorOverlay,
@@ -95,7 +94,10 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
 
   final VideoPlayerController controller;
   final SmoothPlayheadController? smoothPlayhead;
-  final FrameSettingsProvider frameSettings;
+  /// Chrome (wallpaper, padding, corners, shadow, blur) for the current
+  /// recording. Read on every build to derive the composition layout
+  /// and drive scene-blur capture invalidation.
+  final WindowFrame frame;
   final RecordingMetadata? metadata;
   final CursorRecording cursorRecording;
   final bool hideCursorOverlay;
@@ -277,8 +279,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         oldWidget.screenZoomBlur != widget.screenZoomBlur ||
         oldWidget.zoomRegions != widget.zoomRegions ||
         oldWidget.screenAnimationConfig != widget.screenAnimationConfig ||
-        oldWidget.frameSettings.currentFrame !=
-            widget.frameSettings.currentFrame) {
+        oldWidget.frame != widget.frame) {
       _pendingSceneCapturePaint = true;
     }
     if (!_scenePassEnabled) {
@@ -316,7 +317,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     _tuning = ref.watch(motionTuningProvider);
     _scenePassBuilder.setTuning(_tuning);
     final videoSize = widget.controller.value.size;
-    final currentFrame = widget.frameSettings.currentFrame;
+    final currentFrame = widget.frame;
     if (_lastSeenFrame != currentFrame) {
       _lastSeenFrame = currentFrame;
       _pendingSceneCapturePaint = true;
