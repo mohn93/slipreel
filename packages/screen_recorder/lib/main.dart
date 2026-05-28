@@ -163,6 +163,15 @@ void _registerSlipreelDebugExtensions() {
     cameraFocalTraceEnabled = enabled;
     return developer.ServiceExtensionResponse.result('{"enabled": $enabled}');
   });
+
+  developer.registerExtension(
+    'ext.slipreel.resetOnboarding',
+    (method, params) async {
+      await OnboardingStore().reset();
+      await TipsStore().clearAll();
+      return developer.ServiceExtensionResponse.result('{"reset": true}');
+    },
+  );
 }
 
 String _playbackStateJson() {
