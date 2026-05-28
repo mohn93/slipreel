@@ -68,6 +68,12 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
   final _press = _Spring(0, stiffness: 520, zeta: 1.0); // press intensity 0..1
   final _dx = _Spring(0, stiffness: 300, zeta: 0.58); // offset from centre
   final _dy = _Spring(0, stiffness: 300, zeta: 0.58);
+  // Inner-content parallax. The child (icon + text) tracks the cursor at a
+  // smaller range than the pill, with a calmer spring (zeta 0.9 — no
+  // perceptible overshoot), producing a "depth" effect: pill leans, child
+  // settles. See docs/superpowers/specs/2026-05-28-parallax-hover-button-design.md.
+  final _innerDx = _Spring(0, stiffness: 300, zeta: 0.9);
+  final _innerDy = _Spring(0, stiffness: 300, zeta: 0.9);
 
   bool _hovering = false;
 
@@ -95,7 +101,7 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
         ? 1 / 60
         : math.min((elapsed - _last).inMicroseconds / 1e6, 1 / 30);
     _last = elapsed;
-    for (final s in [_reveal, _scale, _press, _dx, _dy]) {
+    for (final s in [_reveal, _scale, _press, _dx, _dy, _innerDx, _innerDy]) {
       s.tick(dt);
     }
     setState(() {});
@@ -103,7 +109,9 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
         _scale.settled &&
         _press.settled &&
         _dx.settled &&
-        _dy.settled) {
+        _dy.settled &&
+        _innerDx.settled &&
+        _innerDy.settled) {
       _ticker.stop();
     }
   }
@@ -205,7 +213,10 @@ class _SpringHoverButtonState extends State<SpringHoverButton>
                 ),
               ),
             ),
-            widget.child,
+            Transform.translate(
+              offset: Offset(_innerDx.value, _innerDy.value),
+              child: widget.child,
+            ),
           ],
         ),
       ),
