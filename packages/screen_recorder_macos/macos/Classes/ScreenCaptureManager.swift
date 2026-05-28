@@ -72,7 +72,14 @@ class ScreenCaptureManager: NSObject {
     }
   }
 
-  /// Get all available windows
+  /// Get all available windows.
+  ///
+  /// IMPORTANT: the `x`/`y`/`width`/`height` values returned here are in
+  /// display POINTS (`SCWindow.frame` is point-based). The actual capture
+  /// dimensions are POINTS × `backingScaleFactor` PIXELS on Retina
+  /// displays — see `captureDimensions(sourceId:isWindow:)` for the
+  /// pixel-accurate values used by the encoder. Don't size buffers off
+  /// the window bounds directly.
   func getAvailableWindows() async throws -> [[String: Any]] {
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 

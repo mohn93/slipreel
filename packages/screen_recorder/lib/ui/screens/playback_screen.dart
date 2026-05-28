@@ -19,7 +19,6 @@ import 'package:slipreel_engine/state/export_settings_store.dart';
 import 'package:slipreel_engine/state/export_telemetry_store.dart';
 import 'package:slipreel_engine/export/export_estimator.dart';
 import 'package:slipreel_engine/models/compression_bitrate.dart';
-import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/cta_spinner.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
@@ -105,7 +104,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   EditorProjectController get _projectController =>
       ref.read(editorProjectControllerProvider.notifier);
 
-  late FrameSettingsProvider _frameSettings;
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
   // Owns hover-scrub state: the user's intended (anchor) position —
@@ -145,8 +143,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   @override
   void initState() {
     super.initState();
-    _frameSettings = FrameSettingsProvider();
-    _frameSettings.addListener(_onFrameSettingsChanged);
     _initializeVideo();
   }
 
@@ -160,18 +156,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
     if (_isClipSelected) return const ClipSelected();
     return null;
-  }
-
-  void _onFrameSettingsChanged() {
-    // Mirror the FrameSettingsProvider's WindowFrame into the editor
-    // notifier so the unified state's `windowFrame` is always current
-    // and the auto-persist `ref.listen` in build() sees the change.
-    // setState fires because frame chrome bits (background, shadow)
-    // are rendered from `_frameSettings` directly, not from the
-    // notifier — until those move too, the screen needs a kick to
-    // redraw when the frame mutates.
-    _projectController.setWindowFrame(_frameSettings.currentFrame);
-    setState(() {});
   }
 
   Future<void> _initializeVideo() async {
@@ -201,11 +185,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // ref.listen wired up in build() will route subsequent changes
       // back into _persistProject().
       _projectController.replace(saved);
-      // Frame chrome (wallpaper, padding, corners, shadow, blur) is
-      // also per-clip. Restore via setFrame BEFORE flipping the
-      // _isInitialized flag so _persistProject won't fire on the
-      // listener callback during init.
-      _frameSettings.setFrame(saved.windowFrame);
 
       // Owns the trim selection + soft-enforces it during playback.
       // Constructed before _trim.selection is assigned below.
@@ -246,8 +225,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         initialPosition: _controller.value.position,
       );
       _controller.addListener(_onHoverTrack);
-      // Auto-play on load
-      _controller.play();
+      // Auto-play on load; fire-and-forget — the play state is tracked via
+      // the controller's value listener, not by awaiting this future.
+      unawaited(_controller.play());
 
       // Probe the recording's audio streams so the audio tab knows which
       // per-track controls to show. Non-fatal — failure leaves it empty.
@@ -300,8 +280,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
     _smoothPlayhead?.dispose();
     _controller.dispose();
-    _frameSettings.removeListener(_onFrameSettingsChanged);
-    _frameSettings.dispose();
     _history?.dispose();
     _zoomDebugSnapshot.dispose();
     super.dispose();
@@ -359,7 +337,20 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   void _openFrameSettings() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => SettingsScreen(settingsProvider: _frameSettings),
+        builder: (context) {
+          // Watch the controller so a sidecar load (or external
+          // mutation) pushed into the notifier while this route is
+          // mounted is reflected in the settings UI.
+          return Consumer(builder: (context, ref, _) {
+            final frame = ref.watch(editorProjectControllerProvider).windowFrame;
+            return SettingsScreen(
+              frame: frame,
+              onChanged: ref
+                  .read(editorProjectControllerProvider.notifier)
+                  .setWindowFrame,
+            );
+          });
+        },
       ),
     );
   }
@@ -508,7 +499,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
     final progress = ValueNotifier<double?>(null);
     try {
-      showDialog<void>(
+      // Fire-and-forget: the dialog is dismissed via Navigator.pop below;
+      // we don't need the returned Future<void>.
+      unawaited(showDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => AlertDialog(
@@ -541,7 +534,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             ),
           ),
         ),
-      );
+      ));
 
       // Run the pipeline + deliver via the headless ExportController. The
       // pipeline is picked by format inside the injected closure; this widget
@@ -896,7 +889,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   ),
                   if (_isInitialized)
                     InspectorPanel(
-                      frameSettings: _frameSettings,
                       selection: _currentSelection(),
                       zoomRegions: project.zoomRegions,
                       clipDuration: _controller.value.duration,
@@ -971,7 +963,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final playbackCanvas = PlaybackCanvas(
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
-      frameSettings: _frameSettings,
+      frame: project.windowFrame,
       metadata: _metadata,
       cursorRecording: _cursorRecording,
       hideCursorOverlay: project.hideCursorOverlay,
@@ -1249,11 +1241,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 disabledColor: Colors.white24,
               ),
 
-              // Frame settings button
+              // Frame settings button. Reads windowFrame through the
+              // controller so the tint flips the moment the user picks
+              // a non-None template — same source of truth as the
+              // PlaybackCanvas's `frame` prop above.
               IconButton(
                 onPressed: _openFrameSettings,
                 icon: const Icon(Icons.settings),
-                color: _frameSettings.currentFrame.name != 'None'
+                color: ref.watch(editorProjectControllerProvider).windowFrame.name !=
+                        'None'
                     ? const Color(0xFF6C63FF)
                     : Colors.white70,
                 tooltip: 'Frame Settings',

@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 
 /// Settings screen for customizing window frame appearance.
+///
+/// Pure value+callback widget — the caller owns the current
+/// [WindowFrame] and persists changes via [onChanged]. This keeps the
+/// screen reusable across contexts (playback editor writes to the
+/// editor notifier; the recording bar uses it as a read-only preview
+/// without persistence).
 ///
 /// Provides controls for:
 /// - Selecting frame templates
@@ -11,11 +16,13 @@ import 'package:slipreel_engine/models/window_frame.dart';
 /// - Adjusting shadow blur
 /// - Selecting background colors
 class SettingsScreen extends StatefulWidget {
-  final FrameSettingsProvider settingsProvider;
+  final WindowFrame frame;
+  final ValueChanged<WindowFrame> onChanged;
 
   const SettingsScreen({
     super.key,
-    required this.settingsProvider,
+    required this.frame,
+    required this.onChanged,
   });
 
   @override
@@ -23,26 +30,48 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  @override
-  void initState() {
-    super.initState();
-    // Listen to provider changes to rebuild UI
-    widget.settingsProvider.addListener(_onSettingsChanged);
-  }
+  late WindowFrame _frame = widget.frame;
 
   @override
-  void dispose() {
-    widget.settingsProvider.removeListener(_onSettingsChanged);
-    super.dispose();
+  void didUpdateWidget(covariant SettingsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Adopt updates pushed in from outside (e.g. the editor notifier
+    // publishing a new frame while this screen is mounted).
+    if (oldWidget.frame != widget.frame && widget.frame != _frame) {
+      _frame = widget.frame;
+    }
   }
 
-  void _onSettingsChanged() {
-    setState(() {});
+  void _commit(WindowFrame next) {
+    if (next == _frame) return;
+    setState(() => _frame = next);
+    widget.onChanged(next);
   }
+
+  void _selectTemplate(String name) {
+    final template = WindowFrame.templates.firstWhere(
+      (f) => f.name == name,
+      orElse: () => WindowFrame.none(),
+    );
+    _commit(template);
+  }
+
+  void _updatePadding(double padding) => _commit(
+        _frame.copyWith(padding: EdgeInsets.all(padding), name: 'Custom'),
+      );
+
+  void _updateCornerRadius(double radius) =>
+      _commit(_frame.copyWith(cornerRadius: radius, name: 'Custom'));
+
+  void _updateShadowBlur(double blur) =>
+      _commit(_frame.copyWith(shadowBlur: blur, name: 'Custom'));
+
+  void _updateBackgroundColor(Color? color) =>
+      _commit(_frame.copyWith(backgroundColor: color, name: 'Custom'));
 
   @override
   Widget build(BuildContext context) {
-    final frame = widget.settingsProvider.currentFrame;
+    final frame = _frame;
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E2E),
@@ -72,9 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               max: 100,
               label: '${frame.padding.left.toInt()}px',
               divisions: 20,
-              onChanged: (value) {
-                widget.settingsProvider.updatePadding(value);
-              },
+              onChanged: _updatePadding,
             ),
 
             const SizedBox(height: 32),
@@ -88,9 +115,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               max: 32,
               label: '${frame.cornerRadius.toInt()}px',
               divisions: 16,
-              onChanged: (value) {
-                widget.settingsProvider.updateCornerRadius(value);
-              },
+              onChanged: _updateCornerRadius,
             ),
 
             const SizedBox(height: 32),
@@ -104,9 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               max: 80,
               label: '${frame.shadowBlur.toInt()}px',
               divisions: 16,
-              onChanged: (value) {
-                widget.settingsProvider.updateShadowBlur(value);
-              },
+              onChanged: _updateShadowBlur,
             ),
 
             const SizedBox(height: 32),
@@ -150,7 +173,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           selected: isSelected,
           onSelected: (selected) {
             if (selected) {
-              widget.settingsProvider.selectTemplate(template.name);
+              _selectTemplate(template.name);
             }
           },
           selectedColor: const Color(0xFF6C63FF),
@@ -231,7 +254,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final isSelected = currentFrame.backgroundColor == color;
         return GestureDetector(
           onTap: () {
-            widget.settingsProvider.updateBackgroundColor(color);
+            _updateBackgroundColor(color);
           },
           child: Container(
             width: 56,

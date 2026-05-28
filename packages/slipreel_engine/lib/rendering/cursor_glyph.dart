@@ -1,6 +1,6 @@
 import 'dart:math' as math;
+import 'dart:ui' show Canvas, Color, Offset, Paint, PaintingStyle, Path, StrokeJoin;
 
-import 'package:flutter/material.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 import 'cursor_state_glyphs.dart';
@@ -89,14 +89,14 @@ void paintCursorGlyph(
     canvas.drawCircle(
       position,
       diameter / 2,
-      Paint()..color = Colors.white.withValues(alpha: 0.85),
+      Paint()..color = const Color(0xFFFFFFFF).withValues(alpha: 0.85),
     );
     canvas.drawCircle(
       position,
       diameter / 2,
       Paint()
         ..style = PaintingStyle.stroke
-        ..color = Colors.black.withValues(alpha: 0.6)
+        ..color = const Color(0xFF000000).withValues(alpha: 0.6)
         ..strokeWidth = diameter / 24 * 1.0,
     );
     return;
@@ -157,25 +157,27 @@ void paintCursorGlyph(
     // especially around the sharp tip. Both paths get the same
     // corner-radius rounding so the halo stays parallel to the body.
     final haloPath = buildRoundedPath(_kHaloVertices);
-    canvas.drawPath(haloPath, Paint()..color = Colors.white);
-    canvas.drawPath(bodyPath, Paint()..color = Colors.black);
+    canvas.drawPath(haloPath, Paint()..color = const Color(0xFFFFFFFF));
+    canvas.drawPath(bodyPath, Paint()..color = const Color(0xFF000000));
     return;
   }
 
   // Other arrow styles share the macOS body shape but use a single
   // fill+stroke rendering so each style's visual identity (bold,
   // outlined, dark glyph) is preserved.
+  const white = Color(0xFFFFFFFF);
+  const black = Color(0xFF000000);
   final (Color fill, Color outline, double strokePx) = switch (style) {
     CursorStyle.modernDark =>
-      (Colors.white, Colors.black, diameter / 24 * 1.4),
-    CursorStyle.bold => (Colors.white, Colors.white, 0.0),
+      (white, black, diameter / 24 * 1.4),
+    CursorStyle.bold => (white, white, 0.0),
     CursorStyle.outlined =>
-      (Colors.white, Colors.black, diameter / 24 * 2.4),
+      (white, black, diameter / 24 * 2.4),
     CursorStyle.classic => throw StateError('handled above'),
     CursorStyle.dot => throw StateError('handled above'),
   };
 
-  if (fill != Colors.transparent) {
+  if (fill != const Color(0x00000000)) {
     canvas.drawPath(bodyPath, Paint()..color = fill);
   }
   if (strokePx > 0) {

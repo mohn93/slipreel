@@ -217,8 +217,7 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
     RegionSelection? region,
   }) {
     throw UnsupportedError(
-      'startLiveRecording() is not supported on this platform; '
-      'use startRecording() with the spool-based path instead.',
+      'startLiveRecording() is not supported on this platform.',
     );
   }
 

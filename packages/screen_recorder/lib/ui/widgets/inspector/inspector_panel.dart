@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
-import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/clip_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_tab.dart';
@@ -29,7 +28,6 @@ import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
 class InspectorPanel extends StatefulWidget {
   const InspectorPanel({
     super.key,
-    required this.frameSettings,
     this.width = 380,
     this.initialTab = InspectorTab.background,
     this.selection,
@@ -42,10 +40,6 @@ class InspectorPanel extends StatefulWidget {
     required this.curveLibrary,
   });
 
-  /// Frame chrome (wallpaper, padding, corners, shadow, blur) — kept
-  /// separate from the editor notifier for now; the background tab
-  /// listens to this ChangeNotifier directly.
-  final FrameSettingsProvider frameSettings;
   final double width;
   final InspectorTab initialTab;
 
@@ -118,9 +112,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       child: switch (_selected) {
-        InspectorTab.background => BackgroundTab(
-          frameSettings: widget.frameSettings,
-        ),
+        InspectorTab.background => const BackgroundTab(),
         InspectorTab.cursor =>
             CursorTab(canHideCursor: widget.canHideCursor),
         InspectorTab.camera => const CameraTab(),

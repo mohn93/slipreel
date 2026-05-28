@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:screen_recorder_macos/screen_recorder_macos.dart';
-import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 void main() {
   // Register the macOS implementation
@@ -21,8 +21,7 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   String _status = 'Initializing...';
   bool _isRecording = false;
-  int _audioSampleCount = 0;
-  StreamSubscription<AudioData>? _audioSubscription;
+  String? _lastOutputPath;
   StreamSubscription<CursorPosition>? _cursorSubscription;
   int _cursorSampleCount = 0;
   CursorPosition? _lastCursorPosition;
@@ -35,7 +34,6 @@ class _MyAppState extends State<MyApp> {
 
   @override
   void dispose() {
-    _audioSubscription?.cancel();
     _cursorSubscription?.cancel();
     super.dispose();
   }
@@ -44,8 +42,10 @@ class _MyAppState extends State<MyApp> {
     String status;
     try {
       // Try to check permissions as a simple test
-      final hasPermissions = await ScreenRecorderPlatform.instance.checkPermissions();
-      status = 'Plugin loaded. Permissions: ${hasPermissions ? 'Granted' : 'Not granted'}';
+      final hasPermissions =
+          await ScreenRecorderPlatform.instance.checkPermissions();
+      status =
+          'Plugin loaded. Permissions: ${hasPermissions ? 'Granted' : 'Not granted'}';
     } on PlatformException catch (e) {
       status = 'Plugin loaded. Error: ${e.message}';
     }
@@ -59,51 +59,43 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> _startRecording() async {
     try {
-      // Subscribe to audio stream
-      _audioSubscription = ScreenRecorderPlatform.instance.audioStream.listen(
-        (audioData) {
-          setState(() {
-            _audioSampleCount++;
-          });
-          if (_audioSampleCount % 10 == 0) {
-            print('Audio sample #$_audioSampleCount: ${audioData.sampleRate}Hz, ${audioData.channels}ch, ${audioData.data.length} bytes');
-          }
-        },
-        onError: (error) {
-          print('Audio stream error: $error');
-        },
-      );
-
-      // Subscribe to cursor stream
-      _cursorSubscription = ScreenRecorderPlatform.instance.cursorStream.listen(
+      // Subscribe to cursor stream (still available on the live path).
+      _cursorSubscription =
+          ScreenRecorderPlatform.instance.cursorStream.listen(
         (cursorData) {
           setState(() {
             _cursorSampleCount++;
             _lastCursorPosition = cursorData;
           });
-
-          if (_cursorSampleCount % 60 == 0) {
-            print('Cursor sample #$_cursorSampleCount: ${cursorData.x}, ${cursorData.y}, clicked: ${cursorData.isClicked}');
-          }
         },
         onError: (error) {
+          // ignore: avoid_print
           print('Cursor stream error: $error');
         },
       );
 
-      // Start recording with audio
-      await ScreenRecorderPlatform.instance.startRecording(
-        const RecordingSettings(
+      final tmp = Directory.systemTemp;
+      final outputPath =
+          '${tmp.path}/screen_recorder_macos_example_${DateTime.now().millisecondsSinceEpoch}.mp4';
+
+      // Use the live recording path — writes a finalized MP4 directly to
+      // [outputPath]. (The legacy spool path that emitted raw frames over
+      // an EventChannel has been removed.)
+      await ScreenRecorderPlatform.instance.startLiveRecording(
+        settings: const RecordingSettings(
           source: RecordingSource.screen,
           frameRate: 30,
         ),
+        outputPath: outputPath,
+        width: 1920,
+        height: 1080,
       );
 
       setState(() {
         _isRecording = true;
-        _audioSampleCount = 0;
         _cursorSampleCount = 0;
-        _status = 'Recording with audio and cursor...';
+        _lastOutputPath = outputPath;
+        _status = 'Recording (live) to ${outputPath.split(Platform.pathSeparator).last}…';
       });
     } catch (e) {
       setState(() {
@@ -114,15 +106,16 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> _stopRecording() async {
     try {
-      await ScreenRecorderPlatform.instance.stopRecording();
-      await _audioSubscription?.cancel();
-      _audioSubscription = null;
+      final result = await ScreenRecorderPlatform.instance.stopLiveRecording();
       await _cursorSubscription?.cancel();
       _cursorSubscription = null;
 
       setState(() {
         _isRecording = false;
-        _status = 'Recording stopped. Received $_audioSampleCount audio samples and $_cursorSampleCount cursor samples.';
+        _lastOutputPath = result.outputPath;
+        _status = 'Stopped. Wrote ${result.outputPath} '
+            '(${result.width}x${result.height}). '
+            'Cursor samples: $_cursorSampleCount.';
       });
     } catch (e) {
       setState(() {
@@ -145,17 +138,20 @@ class _MyAppState extends State<MyApp> {
               Text('Status: $_status'),
               const SizedBox(height: 20),
               if (_isRecording) ...[
-                Text('Audio samples received: $_audioSampleCount'),
-                const SizedBox(height: 10),
                 Text('Cursor samples received: $_cursorSampleCount'),
                 const SizedBox(height: 10),
                 if (_lastCursorPosition != null)
-                  Text('Last cursor position: (${_lastCursorPosition!.x.toStringAsFixed(1)}, ${_lastCursorPosition!.y.toStringAsFixed(1)})${_lastCursorPosition!.isClicked ? " CLICKED" : ""}'),
+                  Text(
+                      'Last cursor position: (${_lastCursorPosition!.x.toStringAsFixed(1)}, ${_lastCursorPosition!.y.toStringAsFixed(1)})${_lastCursorPosition!.isClicked ? " CLICKED" : ""}'),
+              ],
+              if (_lastOutputPath != null && !_isRecording) ...[
+                const SizedBox(height: 10),
+                Text('Last output: $_lastOutputPath'),
               ],
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: _isRecording ? null : _startRecording,
-                child: const Text('Start Recording with Audio'),
+                child: const Text('Start Live Recording'),
               ),
               const SizedBox(height: 10),
               ElevatedButton(

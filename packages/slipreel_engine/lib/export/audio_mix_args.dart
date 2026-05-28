@@ -23,7 +23,19 @@ class _Usable {
 }
 
 /// ffmpeg volume fraction, e.g. 1.0 / 1.5 / 0.5.
-String _fracStr(double f) => f.toString();
+///
+/// Formats to a stable, short string: fixed 3 decimals (so a gain percent
+/// like 145 yields `1.450` instead of a long binary-float tail such as
+/// `1.4500000000000002`), then strips trailing zeros while keeping at least
+/// one digit after the point. ffmpeg's `volume=` accepts this plain decimal.
+String _fracStr(double f) {
+  var s = f.toStringAsFixed(3);
+  if (s.contains('.')) {
+    s = s.replaceFirst(RegExp(r'0+$'), '');
+    if (s.endsWith('.')) s += '0';
+  }
+  return s;
+}
 
 /// Builds the export audio plan from probed [streams] and the editor [mix].
 /// Input 1 (the recording) carries the audio streams.

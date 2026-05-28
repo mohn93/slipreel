@@ -70,4 +70,70 @@ void main() {
         systemAudio: const SystemAudioConfig(mode: SystemAudioMode.allApps));
     expect(d.systemAudio!.mode, SystemAudioMode.allApps);
   });
+
+  group('RecordingSettings.copyWith clearing nullable fields', () {
+    const populated = RecordingSettings(
+      source: RecordingSource.window,
+      sourceId: 'win-42',
+      frameRate: 60,
+      microphone: MicrophoneConfig(deviceUid: 'u', deviceLabel: 'L'),
+      systemAudio: SystemAudioConfig(mode: SystemAudioMode.allApps),
+      captureCursor: true,
+      maxDurationSeconds: 120,
+    );
+
+    test('omitting params preserves previous values', () {
+      final copy = populated.copyWith();
+      expect(copy.sourceId, 'win-42');
+      expect(copy.microphone, isNotNull);
+      expect(copy.microphone!.deviceUid, 'u');
+      expect(copy.systemAudio, isNotNull);
+      expect(copy.systemAudio!.mode, SystemAudioMode.allApps);
+      expect(copy.maxDurationSeconds, 120);
+    });
+
+    test('passing microphone: null clears it', () {
+      final cleared = populated.copyWith(microphone: null);
+      expect(cleared.microphone, isNull);
+      // Other fields untouched.
+      expect(cleared.sourceId, 'win-42');
+      expect(cleared.systemAudio, isNotNull);
+      expect(cleared.maxDurationSeconds, 120);
+    });
+
+    test('passing systemAudio: null clears it', () {
+      final cleared = populated.copyWith(systemAudio: null);
+      expect(cleared.systemAudio, isNull);
+      expect(cleared.microphone, isNotNull);
+    });
+
+    test('passing sourceId: null clears it', () {
+      final cleared = populated.copyWith(sourceId: null);
+      expect(cleared.sourceId, isNull);
+      expect(cleared.microphone, isNotNull);
+    });
+
+    test('passing maxDurationSeconds: null clears it', () {
+      final cleared = populated.copyWith(maxDurationSeconds: null);
+      expect(cleared.maxDurationSeconds, isNull);
+      expect(cleared.sourceId, 'win-42');
+    });
+
+    test('multiple nullable params can be cleared at once', () {
+      final cleared = populated.copyWith(
+        microphone: null,
+        systemAudio: null,
+        sourceId: null,
+        maxDurationSeconds: null,
+      );
+      expect(cleared.microphone, isNull);
+      expect(cleared.systemAudio, isNull);
+      expect(cleared.sourceId, isNull);
+      expect(cleared.maxDurationSeconds, isNull);
+      // Non-nullable fields preserved.
+      expect(cleared.source, RecordingSource.window);
+      expect(cleared.frameRate, 60);
+      expect(cleared.captureCursor, true);
+    });
+  });
 }

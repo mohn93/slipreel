@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'package:flutter/material.dart';
+import 'dart:ui' show Paint;
 import 'background_effect.dart';
 
 /// Blur background effect

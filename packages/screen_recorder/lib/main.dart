@@ -116,11 +116,13 @@ void _registerSlipreelDebugExtensions() {
   // transport (play / pause / seek) and read position without hunting
   // for the on-screen buttons. `seek` takes `ms`.
   developer.registerExtension('ext.slipreel.play', (method, params) async {
-    debugPlaybackController?.play();
+    // Fire-and-forget: the debug VM hook returns the state snapshot
+    // immediately; we don't need to block on the play future completing.
+    debugPlaybackController?.play().ignore();
     return developer.ServiceExtensionResponse.result(_playbackStateJson());
   });
   developer.registerExtension('ext.slipreel.pause', (method, params) async {
-    debugPlaybackController?.pause();
+    debugPlaybackController?.pause().ignore();
     return developer.ServiceExtensionResponse.result(_playbackStateJson());
   });
   developer.registerExtension('ext.slipreel.seek', (method, params) async {

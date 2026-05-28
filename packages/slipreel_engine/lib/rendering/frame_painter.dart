@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
+import 'package:flutter/rendering.dart' show CustomPainter;
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
 

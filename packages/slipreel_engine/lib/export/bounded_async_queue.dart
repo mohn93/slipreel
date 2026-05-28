@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 /// Single-producer / single-consumer async FIFO with a fixed capacity.
 ///
@@ -16,7 +17,8 @@ class BoundedAsyncQueue<T> {
   BoundedAsyncQueue(this.capacity) : assert(capacity > 0);
 
   final int capacity;
-  final List<T> _buffer = [];
+  // Queue gives O(1) removeFirst(); a List + removeAt(0) is O(n) per dequeue.
+  final Queue<T> _buffer = Queue<T>();
   Completer<void>? _spaceAvailable;
   Completer<void>? _itemAvailable;
   bool _closed = false;
@@ -44,7 +46,7 @@ class BoundedAsyncQueue<T> {
       await _itemAvailable!.future;
     }
     if (_buffer.isEmpty) return null;
-    final item = _buffer.removeAt(0);
+    final item = _buffer.removeFirst();
     final w = _spaceAvailable;
     _spaceAvailable = null;
     w?.complete();

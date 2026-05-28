@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import 'package:slipreel_engine/models/recording_history.dart';
@@ -44,10 +45,12 @@ class _RecentsScreenState extends State<RecentsScreen> {
   Future<void> _refresh() async {
     setState(() => _loading = true);
     final list = await _store.load();
-    final exists = <String, bool>{};
-    for (final e in list) {
-      exists[e.videoPath] = await File(e.videoPath).exists();
-    }
+    // Check all files in parallel, preserving the original list order.
+    final existsResults =
+        await Future.wait(list.map((e) => File(e.videoPath).exists()));
+    final exists = <String, bool>{
+      for (var i = 0; i < list.length; i++) list[i].videoPath: existsResults[i],
+    };
     if (!mounted) return;
     setState(() {
       _entries = list;
@@ -81,6 +84,9 @@ class _RecentsScreenState extends State<RecentsScreen> {
   }
 
   void _openPlayground(RecordingHistoryEntry e) {
+    // Dev-only screen: unreachable in release builds so the playground
+    // doesn't appear in the production binary's navigation graph.
+    if (!kDebugMode) return;
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) =>
           MotionBlurPlaygroundScreen(videoPath: e.videoPath),

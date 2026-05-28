@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'package:slipreel_engine/models/window_frame.dart';
 
-import '../../state/frame_settings_provider.dart';
 import '../../state/microphone_controller.dart';
 import '../../state/recording_state.dart';
 import '../../state/system_audio_controller.dart';
@@ -27,10 +27,12 @@ class RecordingBarScreen extends ConsumerStatefulWidget {
 }
 
 class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
-  // `FrameSettingsProvider` is a plain ChangeNotifier (not exposed through a
-  // Riverpod provider). The Settings panel edits frame appearance through it;
-  // we own one instance for the screen's lifetime and pass it down.
-  final FrameSettingsProvider _frameSettings = FrameSettingsProvider();
+  // Frame chrome shown by the gear → Settings panel when opened from
+  // the bar. Held locally because the bar has no recording context to
+  // persist against — edits are discarded on close, matching the
+  // pre-refactor behaviour (the panel previously wrote into a
+  // FrameSettingsProvider that nothing else read).
+  WindowFrame _barFrame = WindowFrame.rounded();
 
   // Auto-size: the bar window hugs its content, which varies with the mic
   // (and later system-audio) label. We measure the content Row's intrinsic
@@ -99,7 +101,6 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     if (_monitoredConfig != null) {
       ScreenRecorderPlatform.instance.stopMicMonitor();
     }
-    _frameSettings.dispose();
     super.dispose();
   }
 
@@ -217,7 +218,10 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
       case 'recents':
         await _openPanel(const RecentsScreen());
       case 'settings':
-        await _openPanel(SettingsScreen(settingsProvider: _frameSettings));
+        await _openPanel(SettingsScreen(
+          frame: _barFrame,
+          onChanged: (next) => setState(() => _barFrame = next),
+        ));
       case 'quit':
         await SystemNavigator.pop();
     }

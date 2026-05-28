@@ -59,25 +59,45 @@ class RecordingSettings {
     );
   }
 
+  /// Creates a copy with the given fields replaced.
+  ///
+  /// Nullable fields ([sourceId], [microphone], [systemAudio],
+  /// [maxDurationSeconds]) use a sentinel pattern so callers can pass
+  /// `null` to clear them — omitting the parameter preserves the current
+  /// value, while passing `null` resets the field to null. (The naive
+  /// `field ?? this.field` idiom can't distinguish "not provided" from
+  /// "provided as null".)
   RecordingSettings copyWith({
     RecordingSource? source,
-    String? sourceId,
+    Object? sourceId = _unset,
     int? frameRate,
-    MicrophoneConfig? microphone,
-    SystemAudioConfig? systemAudio,
+    Object? microphone = _unset,
+    Object? systemAudio = _unset,
     bool? captureCursor,
-    int? maxDurationSeconds,
+    Object? maxDurationSeconds = _unset,
   }) {
     return RecordingSettings(
       source: source ?? this.source,
-      sourceId: sourceId ?? this.sourceId,
+      sourceId: identical(sourceId, _unset)
+          ? this.sourceId
+          : sourceId as String?,
       frameRate: frameRate ?? this.frameRate,
-      microphone: microphone ?? this.microphone,
-      systemAudio: systemAudio ?? this.systemAudio,
+      microphone: identical(microphone, _unset)
+          ? this.microphone
+          : microphone as MicrophoneConfig?,
+      systemAudio: identical(systemAudio, _unset)
+          ? this.systemAudio
+          : systemAudio as SystemAudioConfig?,
       captureCursor: captureCursor ?? this.captureCursor,
-      maxDurationSeconds: maxDurationSeconds ?? this.maxDurationSeconds,
+      maxDurationSeconds: identical(maxDurationSeconds, _unset)
+          ? this.maxDurationSeconds
+          : maxDurationSeconds as int?,
     );
   }
+
+  /// Sentinel used by [copyWith] to distinguish "parameter omitted"
+  /// from "parameter explicitly passed as null".
+  static const Object _unset = Object();
 
   @override
   String toString() {

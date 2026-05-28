@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
+import 'dart:ui' show Canvas, Color, Offset, Paint, PaintingStyle, Path, Rect, StrokeCap, StrokeJoin;
 
-import 'package:flutter/material.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 import 'cursor_image_cache.dart';
@@ -157,13 +157,13 @@ void _paintGlyph(Canvas canvas, Offset position, double diameter, _GlyphSpec spe
     path,
     Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.white
+      ..color = const Color(0xFFFFFFFF)
       ..strokeWidth = haloWidth
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round,
   );
   // Body (black fill on top).
-  canvas.drawPath(path, Paint()..color = Colors.black);
+  canvas.drawPath(path, Paint()..color = const Color(0xFF000000));
 }
 
 // =====================================================================
@@ -410,7 +410,7 @@ void _paintNotAllowed(Canvas canvas, Offset position, double diameter) {
   // Halo: slightly fatter ring + slash.
   final haloPaint = Paint()
     ..style = PaintingStyle.stroke
-    ..color = Colors.white
+    ..color = const Color(0xFFFFFFFF)
     ..strokeCap = StrokeCap.round;
   haloPaint.strokeWidth = ringWidth + 2 * haloPadding;
   canvas.drawCircle(position, radius, haloPaint);
@@ -428,7 +428,7 @@ void _paintNotAllowed(Canvas canvas, Offset position, double diameter) {
   // Body (black ring + slash).
   final bodyPaint = Paint()
     ..style = PaintingStyle.stroke
-    ..color = Colors.black
+    ..color = const Color(0xFF000000)
     ..strokeCap = StrokeCap.round;
   bodyPaint.strokeWidth = ringWidth;
   canvas.drawCircle(position, radius, bodyPaint);

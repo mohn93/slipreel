@@ -1,6 +1,8 @@
 import 'dart:ui' as ui;
+import 'dart:ui' show BlendMode, Canvas, Color, FilterQuality, Offset, Paint, Rect, Size;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show immutable;
+import 'package:flutter/rendering.dart' show CustomPainter;
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 import 'package:slipreel_engine/models/cursor_recording.dart';
@@ -353,7 +355,7 @@ class AccumulationCursorPainter extends CustomPainter {
         mapping.top + cursorVideo.dy * scaleY,
       );
       final stampPaint = Paint()
-        ..color = Colors.white.withValues(alpha: alphaPerStamp)
+        ..color = const Color(0xFFFFFFFF).withValues(alpha: alphaPerStamp)
         ..blendMode = BlendMode.plus
         ..filterQuality = FilterQuality.high;
       if (sigma > 0.01) {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -21,7 +22,6 @@ import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/frame_painter.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
-import 'package:screen_recorder/state/frame_settings_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/motion_blur_tuning_panel.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
@@ -50,7 +50,10 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     with TickerProviderStateMixin {
   late VideoPlayerController _controller;
   SmoothPlayheadController? _smoothPlayhead;
-  final FrameSettingsProvider _frameSettings = FrameSettingsProvider();
+  // Playground-local chrome state. Mirrors the editor's per-clip
+  // windowFrame but lives in a `setState`-driven field so we can swap
+  // it without standing up Riverpod scopes for the workshop bench.
+  WindowFrame _frame = WindowFrame.rounded();
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
   bool _ready = false;
@@ -168,7 +171,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
         videoController: _controller,
         vsync: this,
       );
-      _controller.setVolume(0);
+      unawaited(_controller.setVolume(0)); // mute playground; result unneeded
       _controller.addListener(_onTick);
       // Also tick off the smoothPlayhead — it runs an internal Ticker
       // at animation-frame rate (60 Hz) while playing, whereas the
@@ -177,8 +180,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       // and looked like ~5–10 fps.
       _smoothPlayhead!.addListener(_onTick);
       // Default to a chromed frame so the wallpaper backdrop is visible
-      // — that's the realistic preview context.
-      _frameSettings.setFrame(WindowFrame.rounded());
+      // — that's the realistic preview context. `_frame` is already
+      // seeded with `WindowFrame.rounded()` at field-init time, so no
+      // mutation is needed here.
       // Load the scene motion blur shader. Used by the frameBlur mode
       // to apply a radial motion smear to a captured snapshot of the
       // composition. Loaded lazily so the playground doesn't block
@@ -206,7 +210,6 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     _smoothPlayhead?.removeListener(_onTick);
     _smoothPlayhead?.dispose();
     _controller.dispose();
-    _frameSettings.dispose();
     _capturedScene?.dispose();
     super.dispose();
   }
@@ -469,7 +472,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
         ? const Size(1728, 1117)
         : Size(_metadata!.widthPx.toDouble(), _metadata!.heightPx.toDouble());
     final totalSize = FramePainter.calculateTotalSize(
-      frame: _frameSettings.currentFrame,
+      frame: _frame,
       videoSize: videoSize,
     );
     final fitScale = _sceneFitScale(outputSize, totalSize);
@@ -890,20 +893,19 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
         ? CursorBlurMode.shader
         : CursorBlurMode.accumulation;
     final inScenePass = _mode == _RenderMode.scenePass;
-    // Sync chrome toggle into the frame provider. setFrame is a no-op
-    // when the frame matches, so doing it from build is fine.
+    // Sync chrome toggle into the playground's local frame. Deferred to
+    // post-frame so the build doesn't setState reentrantly.
     final desiredFrame = _chromeOn ? WindowFrame.rounded() : WindowFrame.none();
-    if (_frameSettings.currentFrame != desiredFrame) {
-      // Defer mutation so we don't notifyListeners inside build.
+    if (_frame != desiredFrame) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _frameSettings.setFrame(desiredFrame);
+        setState(() => _frame = desiredFrame);
       });
     }
     return PlaybackCanvas(
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
-      frameSettings: _frameSettings,
+      frame: _frame,
       metadata: _metadata,
       cursorRecording: _cursorRecording,
       hideCursorOverlay: false,

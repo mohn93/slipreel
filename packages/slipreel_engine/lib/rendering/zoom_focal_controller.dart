@@ -447,15 +447,15 @@ class ZoomFocalController {
   // delegates per-frame target resolution to a pluggable strategy
   // keyed by FollowMode.
 
+  // Closed-end lookup: includes `position == endTime` so the focal
+  // controller still emits the exit-ramp completion frame (zoom factor
+  // at 1.0×, focal at video centre). Delegates to [ZoomRegion.activeAt]
+  // so all engine call sites share one definition of "active zoom at t".
   static ZoomRegion? _activeZoomAt(
     Duration position,
     List<ZoomRegion> zoomRegions,
-  ) {
-    for (final z in zoomRegions) {
-      if (z.isActive(position)) return z;
-    }
-    return null;
-  }
+  ) =>
+      ZoomRegion.activeAt(position, zoomRegions);
 }
 
 /// Result of a [ZoomFocalController.update] call when a zoom is active.

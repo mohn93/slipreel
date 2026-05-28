@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
@@ -152,7 +153,7 @@ void main() {
       await Future.delayed(const Duration(seconds: 1));
       await platform.stopRecording();
 
-      subscription.cancel();
+      unawaited(subscription.cancel());
 
       // Should have captured frames
       expect(frames.isNotEmpty, true);

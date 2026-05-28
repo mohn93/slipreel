@@ -57,7 +57,10 @@ class AudioCaptureManager: NSObject {
   /// Start capturing audio
   /// - Parameters:
   ///   - includeMicrophone: Whether to capture microphone input
-  ///   - includeSystem: Whether to capture system audio (not yet supported on macOS)
+  ///   - includeSystem: Legacy flag; ignored. This manager only handles
+  ///     microphone input. System audio is implemented via
+  ///     `SystemAudioCaptureManager` (ScreenCaptureKit-backed, macOS 13+),
+  ///     wired separately by the plugin for the live recording path.
   func startCapture(includeMicrophone: Bool, includeSystem: Bool) throws {
     guard !isCapturing else {
       throw AudioCaptureError.alreadyCapturing
@@ -74,8 +77,10 @@ class AudioCaptureManager: NSObject {
       throw AudioCaptureError.engineCreationFailed
     }
 
-    // Note: System audio capture on macOS requires ScreenCaptureKit audio
-    // For now, we'll focus on microphone input
+    // This manager only handles microphone input. System audio is
+    // captured separately via `SystemAudioCaptureManager` (ScreenCaptureKit,
+    // macOS 13+) and mixed in by the export pipeline. The `includeSystem`
+    // flag here is intentionally a no-op kept for API compatibility.
     if includeMicrophone {
       try setupMicrophoneCapture(engine: engine)
     }
@@ -278,7 +283,7 @@ enum AudioCaptureError: LocalizedError {
     case .noInputDevice:
       return "No audio input device found."
     case .systemAudioNotSupported:
-      return "System audio capture is not yet supported. Use ScreenCaptureKit for system audio."
+      return "Legacy error case retained for API stability. System audio is captured by SystemAudioCaptureManager (ScreenCaptureKit) — this manager handles microphone only."
     }
   }
 }

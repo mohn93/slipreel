@@ -37,7 +37,9 @@ class EmaVelocityFilter {
   /// Backward scrubs are smoothed using `|dt|` for the time-aware
   /// alpha — scene velocity is direction-agnostic, so the filter
   /// shouldn't reset its history just because the user is moving
-  /// the playhead backwards through time.
+  /// the playhead backwards through time. Note backward `dt` only
+  /// happens in the interactive preview; export drives [position]
+  /// monotonically forward, so this `|dt|` branch is preview-only.
   Offset filter(Offset raw, Duration position) {
     final last = _lastPosition;
     final gap = last == null

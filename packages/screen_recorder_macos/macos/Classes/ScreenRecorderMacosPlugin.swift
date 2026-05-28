@@ -11,8 +11,6 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var captureManager: ScreenCaptureManager?
   private var audioCaptureManager: AudioCaptureManager?
   private var systemAudioManager: Any?  // SystemAudioCaptureManager (gated to macOS 13+)
-  private var frameStreamHandler: FrameStreamHandler?
-  private var audioStreamHandler: AudioStreamHandler?
   private var cursorStreamHandler: CursorStreamHandler?
   private var cursorTracker: CursorTracker?
   private var micLevelStreamHandler: MicLevelStreamHandler?
@@ -43,6 +41,23 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   /// video by exactly that delay.
   private var firstVideoFrameAt: Date?
 
+  /// Verbose diagnostic logger for the cursor-coordinate transform
+  /// (`makeCursorTransform`) and the partial-teardown path
+  /// (`tearDownPartialLiveRecording`). These call sites can emit dozens
+  /// of lines per recording — fine when debugging cursor mis-mapping or
+  /// a botched start, but pure noise in normal use. Compiled out of
+  /// release builds via `#if DEBUG`; runtime-gated in debug builds by
+  /// the `SLIPREEL_VERBOSE_LOGGING=1` env var so day-to-day debug runs
+  /// stay quiet too.
+  @inline(__always)
+  fileprivate static func vlog(_ message: @autoclosure () -> String) {
+    #if DEBUG
+    if ProcessInfo.processInfo.environment["SLIPREEL_VERBOSE_LOGGING"] == "1" {
+      print(message())
+    }
+    #endif
+  }
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     // Main method channel for recording control
     let recordingChannel = FlutterMethodChannel(
@@ -53,22 +68,6 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     let instance = ScreenRecorderMacosPlugin()
     instance.recordingChannel = recordingChannel
     registrar.addMethodCallDelegate(instance, channel: recordingChannel)
-
-    // Event channel for video frames
-    let framesChannel = FlutterEventChannel(
-      name: "com.slipreel.screen_recorder/frames",
-      binaryMessenger: registrar.messenger
-    )
-    instance.frameStreamHandler = FrameStreamHandler()
-    framesChannel.setStreamHandler(instance.frameStreamHandler)
-
-    // Event channel for audio samples
-    let audioChannel = FlutterEventChannel(
-      name: "com.slipreel.screen_recorder/audio",
-      binaryMessenger: registrar.messenger
-    )
-    instance.audioStreamHandler = AudioStreamHandler()
-    audioChannel.setStreamHandler(instance.audioStreamHandler)
 
     // Event channel for cursor tracking
     let cursorChannel = FlutterEventChannel(
@@ -152,18 +151,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     case "stopMicMonitor":
       micLevelMonitor.stop()
       result(nil)
-    case "startRecording":
-      startRecording(call: call, result: result)
-    case "stopRecording":
-      stopRecording(result: result)
     case "startLiveRecording":
       startLiveRecording(call: call, result: result)
     case "stopLiveRecording":
       stopLiveRecording(result: result)
-    case "pauseRecording":
-      pauseRecording(result: result)
-    case "resumeRecording":
-      resumeRecording(result: result)
     case "requestPermissions":
       requestPermissions(result: result)
     case "checkPermissions":
@@ -413,195 +404,6 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     }
   }
 
-  // MARK: - Recording Control
-
-  private func startRecording(call: FlutterMethodCall, result: @escaping FlutterResult) {
-    guard let args = call.arguments as? [String: Any],
-          let source = args["source"] as? String,
-          let fps = args["frameRate"] as? Int else {
-      result(FlutterError(
-        code: "INVALID_ARGUMENTS",
-        message: "Missing required parameters: source, frameRate",
-        details: nil
-      ))
-      return
-    }
-
-    let sourceId = args["sourceId"] as? String
-    let captureAudio = args["captureAudio"] as? Bool ?? false
-
-    Task {
-      do {
-        // Create capture manager if not exists
-        if captureManager == nil {
-          captureManager = ScreenCaptureManager()
-        }
-
-        let isWindow = source == "window"
-
-        // If sourceId is nil and we're capturing a screen, get the main display
-        var actualSourceId = sourceId
-        if actualSourceId == nil && !isWindow {
-          // Get main display ID
-          actualSourceId = String(CGMainDisplayID())
-        }
-
-        guard let finalSourceId = actualSourceId else {
-          result(FlutterError(
-            code: "INVALID_ARGUMENTS",
-            message: "sourceId is required for window capture",
-            details: nil
-          ))
-          return
-        }
-
-        // Set up frame callback
-        captureManager?.onFrameReceived = { [weak self] sampleBuffer in
-          self?.frameStreamHandler?.sendFrame(sampleBuffer)
-        }
-
-        // Start capture
-        try await captureManager?.startCapture(sourceId: finalSourceId, fps: fps, isWindow: isWindow)
-
-        // Start audio capture if requested
-        if captureAudio {
-          if audioCaptureManager == nil {
-            audioCaptureManager = AudioCaptureManager()
-          }
-
-          // Set up error callback
-          audioCaptureManager?.onError = { error in
-            print("[Plugin] Audio capture error: \(error)")
-          }
-
-          // Set up audio callback with error handling
-          audioCaptureManager?.onAudioReceived = { [weak self] data, timestamp in
-            guard let self = self else { return }
-            guard let audioHandler = self.audioStreamHandler else {
-              print("[Plugin] Warning: Audio data but no stream handler")
-              return
-            }
-            guard let audioManager = self.audioCaptureManager else { return }
-            audioHandler.sendAudio(
-              data: data,
-              timestamp: timestamp,
-              sampleRate: Int(audioManager.sampleRate),
-              channels: audioManager.channelCount
-            )
-          }
-
-          // Start microphone capture
-          try audioCaptureManager?.startCapture(includeMicrophone: true, includeSystem: false)
-        }
-
-        // Start cursor tracking if enabled
-        let captureCursor = args["captureCursor"] as? Bool ?? true
-
-        if captureCursor {
-          if cursorTracker == nil {
-            cursorTracker = CursorTracker()
-          }
-
-          // Set up cursor callback
-          cursorTracker?.onCursorUpdate = { [weak self] x, y, timestamp, isClicked, state in
-            guard let self = self else { return }
-            guard let handler = self.cursorStreamHandler else {
-              print("[Plugin] Warning: Cursor data but no stream handler")
-              return
-            }
-
-            handler.sendCursorPosition(
-              x: x, y: y, timestamp: timestamp, isClicked: isClicked, state: state
-            )
-          }
-
-          cursorTracker?.onError = { error in
-            print("[Plugin] Cursor tracking error: \(error)")
-          }
-
-          // Start tracking at 60 Hz
-          try cursorTracker?.startTracking(frequency: 60)
-        }
-
-        result(true)
-      } catch {
-        result(FlutterError(
-          code: "CAPTURE_FAILED",
-          message: "Failed to start recording: \(error.localizedDescription)",
-          details: nil
-        ))
-      }
-    }
-  }
-
-  private func pauseRecording(result: @escaping FlutterResult) {
-    // TODO: Implement later
-    result(FlutterError(
-      code: "NOT_IMPLEMENTED",
-      message: "pauseRecording not yet implemented",
-      details: nil
-    ))
-  }
-
-  private func resumeRecording(result: @escaping FlutterResult) {
-    // TODO: Implement later
-    result(FlutterError(
-      code: "NOT_IMPLEMENTED",
-      message: "resumeRecording not yet implemented",
-      details: nil
-    ))
-  }
-
-  private func stopRecording(result: @escaping FlutterResult) {
-    Task {
-      do {
-        guard let manager = captureManager else {
-          result(FlutterError(
-            code: "NOT_RECORDING",
-            message: "No active recording session",
-            details: nil
-          ))
-          return
-        }
-
-        try await manager.stopCapture()
-        captureManager = nil
-
-        // Stop audio capture if active
-        if let audioManager = audioCaptureManager, audioManager.isCaptureActive() {
-          // Clear callbacks first
-          audioManager.onAudioReceived = nil
-          audioManager.onError = nil
-
-          // Then stop
-          audioManager.stopCapture()
-          audioCaptureManager = nil
-        }
-
-        // Stop cursor tracking if active
-        if let tracker = cursorTracker {
-          tracker.onCursorUpdate = nil
-          tracker.onError = nil
-
-          if tracker.isCurrentlyTracking() {
-            tracker.stopTracking()
-          }
-
-          cursorTracker = nil
-        }
-
-        // Return empty string - video encoding happens on Flutter side
-        result("")
-      } catch {
-        result(FlutterError(
-          code: "STOP_FAILED",
-          message: "Failed to stop recording: \(error.localizedDescription)",
-          details: nil
-        ))
-      }
-    }
-  }
-
   // MARK: - Permissions
 
   private func requestPermissions(result: @escaping FlutterResult) {
@@ -846,7 +648,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   /// for some of these subsystems to be nil here (the failure may
   /// have happened before they were created).
   private func tearDownPartialLiveRecording() async {
-    print("[tearDown] entering — "
+    Self.vlog("[tearDown] entering — "
       + "captureManager=\(captureManager != nil) "
       + "audioMgr=\(audioCaptureManager != nil)(active=\(audioCaptureManager?.isCaptureActive() ?? false)) "
       + "cursorTracker=\(cursorTracker != nil)(tracking=\(cursorTracker?.isCurrentlyTracking() ?? false)) "
@@ -888,7 +690,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     perfSampler = nil
     liveStartTime = nil
     await MainActor.run { RegionRecordingIndicator.shared.hide() }
-    print("[tearDown] done")
+    Self.vlog("[tearDown] done")
   }
 
   private func stopLiveRecording(result: @escaping FlutterResult) {
@@ -989,7 +791,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
           as? CGDirectDisplayID) == r.displayId
       }) else {
-        print("[CursorTransform] area branch BAILED — "
+        Self.vlog("[CursorTransform] area branch BAILED — "
           + "no NSScreen matches displayId=\(r.displayId). "
           + "Cursor will be in raw global coords.")
         return nil
@@ -999,7 +801,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       let scale = Double(screen.backingScaleFactor)
       let regionXPx = Double(r.x)
       let regionYPx = Double(r.y)
-      print("[CursorTransform] area branch INITIALISED — "
+      Self.vlog("[CursorTransform] area branch INITIALISED — "
         + "displayId=\(r.displayId) "
         + "displayMinX=\(displayMinX) displayMaxY=\(displayMaxY) "
         + "regionPx=(\(regionXPx), \(regionYPx), \(r.widthPx)×\(r.heightPx)) "
@@ -1016,7 +818,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           regionYPx: regionYPx)
         let n = sampleCounter.bump()
         if n <= 30 {
-          print("[CursorTransform/area] #\(n) "
+          Self.vlog("[CursorTransform/area] #\(n) "
             + "global=(\(gx), \(gy)) → px=(\(mapped.x), \(mapped.y))")
         }
         return mapped
@@ -1036,7 +838,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       let displayHeightPts = Double(screen.frame.height)
       let widthPx = videoWidthPx
       let heightPx = videoHeightPx
-      print("[CursorTransform] screen branch INITIALISED — "
+      Self.vlog("[CursorTransform] screen branch INITIALISED — "
         + "displayId=\(displayId) "
         + "displayMin=(\(displayMinX),?) displayMax=(?,\(displayMaxY)) "
         + "displayPts=\(displayWidthPts)×\(displayHeightPts) "
@@ -1054,7 +856,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           videoHeightPx: heightPx)
         let n = sampleCounter.bump()
         if n <= 30 {
-          print("[CursorTransform/screen] #\(n) "
+          Self.vlog("[CursorTransform/screen] #\(n) "
             + "global=(\(gx), \(gy)) → px=(\(mapped.x), \(mapped.y))")
         }
         return mapped
@@ -1068,7 +870,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     // divided by the window's *initial* size — SCStream's framebuffer
     // dims don't update if the user resizes the window mid-recording,
     // so the math wouldn't be meaningful for that case anyway.
-    print("[CursorTransform] makeCursorTransform "
+    Self.vlog("[CursorTransform] makeCursorTransform "
       + "source=\(source) sourceId=\(sourceId) "
       + "videoPx=\(videoWidthPx)×\(videoHeightPx)")
     if source == "window", let idRaw = UInt32(sourceId) {
@@ -1076,7 +878,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       guard let initialBounds = Self.fetchWindowBoundsPts(windowID: windowID),
             initialBounds.width > 0, initialBounds.height > 0
       else {
-        print("[CursorTransform] window branch BAILED — "
+        Self.vlog("[CursorTransform] window branch BAILED — "
           + "fetchWindowBoundsPts returned nil or zero size for "
           + "windowID=\(windowID). Cursor will be in raw global coords.")
         return nil
@@ -1094,7 +896,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         Double(videoWidthPx) / Double(initialBounds.width)
       let pixelsPerPointY =
         Double(videoHeightPx) / Double(initialBounds.height)
-      print("[CursorTransform] window branch INITIALISED — "
+      Self.vlog("[CursorTransform] window branch INITIALISED — "
         + "windowID=\(windowID) "
         + "initialBounds=\(initialBounds) "
         + "primaryHeight=\(primaryScreenHeightPts) "
@@ -1119,7 +921,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           pixelsPerPointY: pixelsPerPointY)
         let n = sampleCounter.bump()
         if n <= 30 {
-          print("[CursorTransform] #\(n) "
+          Self.vlog("[CursorTransform] #\(n) "
             + "global=(\(gx), \(gy)) "
             + "winQuartz=(\(liveBounds.origin.x), \(liveBounds.origin.y)) "
             + "winSize=(\(liveBounds.size.width), \(liveBounds.size.height)) "
@@ -1128,7 +930,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         return mapped
       }
     }
-    print("[CursorTransform] no branch matched — "
+    Self.vlog("[CursorTransform] no branch matched — "
       + "cursor will be in raw global coords")
     return nil
   }
@@ -1399,120 +1201,6 @@ final class SysAudioMenuTarget: NSObject {
   var action: Action = .none
   @objc func pickAll(_ s: Any) { action = .all }
   @objc func dontRecord(_ s: Any) { action = .dontRecord }
-}
-
-// MARK: - Frame Stream Handler
-
-class FrameStreamHandler: NSObject, FlutterStreamHandler {
-  private var eventSink: FlutterEventSink?
-  private var frameCount: Int = 0
-
-  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
-    self.eventSink = events
-    self.frameCount = 0
-    return nil
-  }
-
-  func onCancel(withArguments arguments: Any?) -> FlutterError? {
-    self.eventSink = nil
-    return nil
-  }
-
-  func sendFrame(_ sampleBuffer: CMSampleBuffer) {
-    guard let eventSink = eventSink else { return }
-
-    // Convert CMSampleBuffer to pixel data
-    guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-      return
-    }
-
-    // Lock the pixel buffer
-    CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-    defer {
-      CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-    }
-
-    // Get pixel buffer info
-    let width = CVPixelBufferGetWidth(pixelBuffer)
-    let height = CVPixelBufferGetHeight(pixelBuffer)
-    let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-    let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer)
-
-    // Get timestamp in microseconds
-    let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-    let timestampMicros = Int64(CMTimeGetSeconds(timestamp) * 1_000_000)
-
-    // Create FlutterStandardTypedData with pixel data
-    guard let address = baseAddress else { return }
-    let dataLength = bytesPerRow * height
-    let data = Data(bytes: address, count: dataLength)
-    let flutterData = FlutterStandardTypedData(bytes: data)
-
-    // Create frame data dictionary
-    let frameData: [String: Any] = [
-      "data": flutterData,
-      "width": width,
-      "height": height,
-      "timestampMicros": timestampMicros,
-      "bytesPerRow": bytesPerRow
-    ]
-
-    // Send to Flutter on main thread
-    DispatchQueue.main.async {
-      eventSink(frameData)
-    }
-
-    frameCount += 1
-  }
-}
-
-// MARK: - Audio Stream Handler
-
-class AudioStreamHandler: NSObject, FlutterStreamHandler {
-  private var eventSink: FlutterEventSink?
-  private var sampleCount: Int = 0
-  private var isListening = false
-
-  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
-    self.eventSink = events
-    self.sampleCount = 0
-    self.isListening = true
-    return nil
-  }
-
-  func onCancel(withArguments arguments: Any?) -> FlutterError? {
-    self.eventSink = nil
-    self.isListening = false
-    return nil
-  }
-
-  func sendAudio(data: Data, timestamp: Int64, sampleRate: Int, channels: Int) {
-    guard isListening, let eventSink = eventSink else { return }
-
-    // Validate audio data
-    guard !data.isEmpty, sampleRate > 0, channels > 0 else {
-      print("[AudioStreamHandler] Invalid audio data")
-      return
-    }
-
-    // Create FlutterStandardTypedData with audio data
-    let flutterData = FlutterStandardTypedData(bytes: data)
-
-    // Create audio data dictionary
-    let audioData: [String: Any] = [
-      "data": flutterData,
-      "sampleRate": sampleRate,
-      "channels": channels,
-      "timestampMicros": timestamp
-    ]
-
-    // Send to Flutter on main thread
-    DispatchQueue.main.async {
-      eventSink(audioData)
-    }
-
-    sampleCount += 1
-  }
 }
 
 // MARK: - Cursor Stream Handler

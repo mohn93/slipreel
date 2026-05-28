@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
-import 'package:flutter/material.dart';
+import 'dart:ui' show Color;
 import 'background_effect.dart';
 
 /// Solid color background effect

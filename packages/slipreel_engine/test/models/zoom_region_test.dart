@@ -33,6 +33,67 @@ void main() {
       expect(region.isActive(const Duration(seconds: 6)), false);
     });
 
+    test('isActive is a half-open interval [start, end)', () {
+      final region = ZoomRegion(
+        rect: const Rect.fromLTWH(100, 100, 200, 150),
+        startTime: const Duration(seconds: 2),
+        duration: const Duration(seconds: 3),
+        zoomLevel: 2.0,
+      );
+      // endTime == 5s.
+      // Active exactly at the start edge.
+      expect(region.isActive(const Duration(seconds: 2)), true);
+      // Active just before the end edge.
+      expect(
+        region.isActive(const Duration(seconds: 5) - const Duration(microseconds: 1)),
+        true,
+      );
+      // Inactive exactly at the end edge (half-open).
+      expect(region.isActive(const Duration(seconds: 5)), false);
+    });
+
+    test('activeAt covers the closed end edge with earlier-wins at shared edges',
+        () {
+      // A and B abut at t=2s. activeAt must report A for everything inside
+      // A (including exactly endTime=2s), and B for the body of B.
+      final a = ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2.0,
+      );
+      final b = ZoomRegion(
+        rect: const Rect.fromLTWH(200, 200, 100, 100),
+        startTime: const Duration(seconds: 2),
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2.0,
+      );
+
+      // Just before the seam → A.
+      expect(
+        ZoomRegion.activeAt(
+            const Duration(seconds: 2) - const Duration(microseconds: 1),
+            [a, b]),
+        same(a),
+      );
+      // At the shared edge → A wins via loop order (closed end-edge match).
+      expect(ZoomRegion.activeAt(const Duration(seconds: 2), [a, b]), same(a));
+      // Just past the seam → B (A.isActive false, A.endTime != position).
+      expect(
+        ZoomRegion.activeAt(
+            const Duration(seconds: 2) + const Duration(microseconds: 1),
+            [a, b]),
+        same(b),
+      );
+      // At B's end (closed) → B.
+      expect(ZoomRegion.activeAt(const Duration(seconds: 4), [a, b]), same(b));
+      // Beyond everything → null.
+      expect(
+        ZoomRegion.activeAt(const Duration(seconds: 5), [a, b]),
+        isNull,
+      );
+    });
+
     test('should calculate progress within zoom region', () {
       final region = ZoomRegion(
         rect: const Rect.fromLTWH(100, 100, 200, 150),

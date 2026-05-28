@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/painting.dart';
+import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
@@ -47,9 +49,23 @@ class FrameCompositor {
            videoSize: videoSize,
          ),
        ),
-       _effectivePadding = FramePainter.effectivePadding(
-         projectState.windowFrame.padding,
+       // Start from the raw FramePainter.effectivePadding so any per-side
+       // asymmetry from the WindowFrame survives — preview honors that, and
+       // export must too. Then distribute only the even-rounding slack
+       // (≤1px per axis) symmetrically so the video stays centered after
+       // the canvas is rounded to even pixel dimensions for yuv420p.
+       _effectivePadding = _centeredPadding(
+         _evenSize(
+           FramePainter.calculateTotalSize(
+             frame: projectState.windowFrame,
+             videoSize: videoSize,
+           ),
+         ),
          videoSize,
+         FramePainter.effectivePadding(
+           projectState.windowFrame.padding,
+           videoSize,
+         ),
        );
 
   final EditorProjectState projectState;
@@ -417,13 +433,7 @@ class FrameCompositor {
       );
     }
 
-    ZoomRegion? active;
-    for (final region in projectState.zoomRegions) {
-      if (region.isActive(t)) {
-        active = region;
-        break;
-      }
-    }
+    final active = ZoomRegion.activeAt(t, projectState.zoomRegions);
     if (active == null) {
       return SceneCameraSample(
         position: t,
@@ -659,5 +669,23 @@ class FrameCompositor {
     }
 
     return Size(even(s.width).toDouble(), even(s.height).toDouble());
+  }
+
+  /// Padding that places [videoSize] inside the (already even-rounded)
+  /// [totalSize] while preserving the per-side ratios in [raw]. Only the
+  /// extra slack introduced by the even-rounding step (≤1px per axis) is
+  /// split symmetrically — the underlying asymmetric padding from the
+  /// WindowFrame is left intact, so export matches the preview path
+  /// (`FramePainter.paint` uses [FramePainter.effectivePadding] directly).
+  static EdgeInsets _centeredPadding(
+      Size totalSize, Size videoSize, EdgeInsets raw) {
+    final extraX = totalSize.width - videoSize.width - raw.left - raw.right;
+    final extraY = totalSize.height - videoSize.height - raw.top - raw.bottom;
+    return EdgeInsets.only(
+      left: raw.left + extraX / 2,
+      right: raw.right + extraX / 2,
+      top: raw.top + extraY / 2,
+      bottom: raw.bottom + extraY / 2,
+    );
   }
 }
