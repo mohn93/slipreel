@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -168,7 +169,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
         videoController: _controller,
         vsync: this,
       );
-      _controller.setVolume(0);
+      unawaited(_controller.setVolume(0)); // mute playground; result unneeded
       _controller.addListener(_onTick);
       // Also tick off the smoothPlayhead — it runs an internal Ticker
       // at animation-frame rate (60 Hz) while playing, whereas the

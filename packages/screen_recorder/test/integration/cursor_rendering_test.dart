@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
@@ -44,7 +46,7 @@ void main() {
       // Wait for some cursor events
       await Future.delayed(const Duration(milliseconds: 500));
 
-      subscription.cancel();
+      unawaited(subscription.cancel());
 
       // Should have received cursor updates
       expect(cursorData.isNotEmpty, true);
@@ -73,7 +75,7 @@ void main() {
       // Wait for potential clicks
       await Future.delayed(const Duration(seconds: 2));
 
-      subscription.cancel();
+      unawaited(subscription.cancel());
 
       // If user clicked, should be detected
       // Can't guarantee clicks in test, so just verify stream structure

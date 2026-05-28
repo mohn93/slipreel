@@ -246,8 +246,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         initialPosition: _controller.value.position,
       );
       _controller.addListener(_onHoverTrack);
-      // Auto-play on load
-      _controller.play();
+      // Auto-play on load; fire-and-forget — the play state is tracked via
+      // the controller's value listener, not by awaiting this future.
+      unawaited(_controller.play());
 
       // Probe the recording's audio streams so the audio tab knows which
       // per-track controls to show. Non-fatal — failure leaves it empty.
@@ -508,7 +509,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
     final progress = ValueNotifier<double?>(null);
     try {
-      showDialog<void>(
+      // Fire-and-forget: the dialog is dismissed via Navigator.pop below;
+      // we don't need the returned Future<void>.
+      unawaited(showDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => AlertDialog(
@@ -541,7 +544,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             ),
           ),
         ),
-      );
+      ));
 
       // Run the pipeline + deliver via the headless ExportController. The
       // pipeline is picked by format inside the injected closure; this widget

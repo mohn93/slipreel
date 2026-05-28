@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
@@ -259,7 +261,7 @@ class _CurveEditorState extends State<CurveEditor>
               onTap: () => widget.onCurveChanged(s.curve),
               onLongPress: () async {
                 await widget.library.delete(s.id);
-                _refreshLibrary();
+                unawaited(_refreshLibrary()); // refresh list; mounted-check inside
               },
             ),
         ]),
@@ -289,7 +291,7 @@ class _CurveEditorState extends State<CurveEditor>
                 _saveName.clear();
                 if (!mounted) return;
                 setState(() => _showSaveField = false);
-                _refreshLibrary();
+                unawaited(_refreshLibrary()); // refresh list; mounted-check inside
               },
               child: const Text('Save'),
             ),
