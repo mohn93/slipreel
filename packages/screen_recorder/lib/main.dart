@@ -100,7 +100,7 @@ Future<void> main() async {
       windowChromeProvider.overrideWithValue(MethodChannelWindowChrome()),
       permissionsControllerProvider.overrideWith((ref) => permissionsController),
     ],
-    child: const MyApp(onboardingDone: onboardingDone),
+    child: MyApp(onboardingDone: onboardingDone),
   ));
 }
 
