@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder/onboarding/tips_controller.dart';
+import 'package:screen_recorder/onboarding/tips_store.dart';
 import 'package:screen_recorder/ui/bar/recording_bar.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void _wide(WidgetTester tester) {
   tester.view.physicalSize = const Size(1100, 600);
@@ -10,31 +14,47 @@ void _wide(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+/// A TipsController with all tips pre-seen so TipAnchor overlays don't
+/// appear during bar tests (which test bar behaviour, not tips).
+Future<TipsController> _allSeenController() async {
+  SharedPreferences.setMockInitialValues({});
+  final c = TipsController(TipsStore());
+  await c.load();
+  for (final id in TipId.values) {
+    await c.markSeen(id);
+  }
+  return c;
+}
+
+Widget _wrap(Widget child, TipsController tips) => ProviderScope(
+      overrides: [tipsControllerProvider.overrideWith((ref) => tips)],
+      child: MaterialApp(home: Scaffold(body: child)),
+    );
+
+RecordingBar _bar({
+  void Function(BarSourceMode)? onPickMode,
+  VoidCallback? onClose,
+  VoidCallback? onGearTap,
+  VoidCallback? onDragStart,
+  MicrophoneConfig? microphone,
+  VoidCallback? onMicTap,
+  VoidCallback? onSystemAudioTap,
+}) =>
+    RecordingBar(
+      onPickMode: onPickMode ?? (_) {},
+      onClose: onClose ?? () {},
+      onGearTap: onGearTap ?? () {},
+      onDragStart: onDragStart ?? () {},
+      microphone: microphone,
+      onMicTap: onMicTap ?? () {},
+      onSystemAudioTap: onSystemAudioTap ?? () {},
+    );
+
 void main() {
-  RecordingBar bar({
-    void Function(BarSourceMode)? onPickMode,
-    VoidCallback? onClose,
-    VoidCallback? onGearTap,
-    VoidCallback? onDragStart,
-    MicrophoneConfig? microphone,
-    VoidCallback? onMicTap,
-    VoidCallback? onSystemAudioTap,
-  }) =>
-      RecordingBar(
-        onPickMode: onPickMode ?? (_) {},
-        onClose: onClose ?? () {},
-        onGearTap: onGearTap ?? () {},
-        onDragStart: onDragStart ?? () {},
-        microphone: microphone,
-        onMicTap: onMicTap ?? () {},
-        onSystemAudioTap: onSystemAudioTap ?? () {},
-      );
-
-  Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
-
   testWidgets('renders the four source modes', (tester) async {
     _wide(tester);
-    await tester.pumpWidget(wrap(bar()));
+    final tips = await _allSeenController();
+    await tester.pumpWidget(_wrap(_bar(), tips));
     expect(find.text('Display'), findsOneWidget);
     expect(find.text('Window'), findsOneWidget);
     expect(find.text('Area'), findsOneWidget);
@@ -43,7 +63,8 @@ void main() {
 
   testWidgets('shows the three disabled A/V placeholders', (tester) async {
     _wide(tester);
-    await tester.pumpWidget(wrap(bar()));
+    final tips = await _allSeenController();
+    await tester.pumpWidget(_wrap(_bar(), tips));
     expect(find.text('No camera'), findsOneWidget);
     expect(find.text('No microphone'), findsOneWidget);
     expect(find.text('No system audio'), findsOneWidget);
@@ -52,7 +73,8 @@ void main() {
   testWidgets('tapping Window fires onPickMode(window)', (tester) async {
     _wide(tester);
     BarSourceMode? picked;
-    await tester.pumpWidget(wrap(bar(onPickMode: (m) => picked = m)));
+    final tips = await _allSeenController();
+    await tester.pumpWidget(_wrap(_bar(onPickMode: (m) => picked = m), tips));
     await tester.tap(find.text('Window'));
     expect(picked, BarSourceMode.window);
   });
@@ -61,7 +83,8 @@ void main() {
       (tester) async {
     _wide(tester);
     BarSourceMode? picked;
-    await tester.pumpWidget(wrap(bar(onPickMode: (m) => picked = m)));
+    final tips = await _allSeenController();
+    await tester.pumpWidget(_wrap(_bar(onPickMode: (m) => picked = m), tips));
     await tester.tap(find.text('Device'), warnIfMissed: false);
     expect(picked, isNull);
   });
@@ -69,7 +92,8 @@ void main() {
   testWidgets('close button fires onClose', (tester) async {
     _wide(tester);
     var closed = false;
-    await tester.pumpWidget(wrap(bar(onClose: () => closed = true)));
+    final tips = await _allSeenController();
+    await tester.pumpWidget(_wrap(_bar(onClose: () => closed = true), tips));
     await tester.tap(find.byKey(const Key('bar-close')));
     expect(closed, isTrue);
   });
@@ -77,7 +101,9 @@ void main() {
   testWidgets('tapping the gear fires onGearTap', (tester) async {
     _wide(tester);
     var gearTapped = false;
-    await tester.pumpWidget(wrap(bar(onGearTap: () => gearTapped = true)));
+    final tips = await _allSeenController();
+    await tester
+        .pumpWidget(_wrap(_bar(onGearTap: () => gearTapped = true), tips));
     await tester.tap(find.byKey(const Key('bar-gear')));
     expect(gearTapped, isTrue);
   });
@@ -86,7 +112,9 @@ void main() {
       (tester) async {
     _wide(tester);
     var dragged = false;
-    await tester.pumpWidget(wrap(bar(onDragStart: () => dragged = true)));
+    final tips = await _allSeenController();
+    await tester
+        .pumpWidget(_wrap(_bar(onDragStart: () => dragged = true), tips));
     await tester.drag(find.byType(RecordingBar), const Offset(60, 0));
     expect(dragged, isTrue);
   });

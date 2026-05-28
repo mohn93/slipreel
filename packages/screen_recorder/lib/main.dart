@@ -19,6 +19,8 @@ import 'package:slipreel_engine/utils/app_logger.dart';
 import 'debug/debug_probe.dart';
 import 'platform/window_chrome_channel.dart';
 import 'onboarding/onboarding_store.dart';
+import 'onboarding/tips_controller.dart';
+import 'onboarding/tips_store.dart';
 import 'state/permissions_controller.dart';
 import 'state/window_mode_controller.dart';
 import 'ui/bar/recording_bar_screen.dart';
@@ -88,6 +90,10 @@ Future<void> main() async {
   final onboardingStore = OnboardingStore();
   final onboardingDone = await onboardingStore.load();
 
+  final tipsStore = TipsStore();
+  final tipsController = TipsController(tipsStore);
+  await tipsController.load();
+
   runApp(ProviderScope(
     overrides: [
       motionTuningProvider.overrideWith(
@@ -97,6 +103,8 @@ Future<void> main() async {
       ),
       motionTuningStoreProvider.overrideWithValue(tuningStore),
       onboardingStoreProvider.overrideWithValue(onboardingStore),
+      tipsStoreProvider.overrideWithValue(tipsStore),
+      tipsControllerProvider.overrideWith((ref) => tipsController),
       windowChromeProvider.overrideWithValue(MethodChannelWindowChrome()),
       permissionsControllerProvider.overrideWith((ref) => permissionsController),
     ],

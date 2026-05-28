@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
+import '../../onboarding/tip_anchor.dart';
+import '../../onboarding/tips_controller.dart';
 import 'mic_status.dart';
 import 'spring_hover_button.dart';
 
@@ -92,10 +94,13 @@ class RecordingBar extends StatelessWidget {
               onPressed: onClose,
             ),
             const _Divider(),
-            _Mode(
-              icon: LucideIcons.monitor,
-              label: 'Display',
-              onTap: () => onPickMode(BarSourceMode.display),
+            TipAnchor(
+              tipId: TipId.barModePicker,
+              child: _Mode(
+                icon: LucideIcons.monitor,
+                label: 'Display',
+                onTap: () => onPickMode(BarSourceMode.display),
+              ),
             ),
             _Mode(
               icon: LucideIcons.appWindowMac,

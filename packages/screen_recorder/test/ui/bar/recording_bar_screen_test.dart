@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:screen_recorder/onboarding/tips_controller.dart';
+import 'package:screen_recorder/onboarding/tips_store.dart';
 import 'package:screen_recorder/state/microphone_controller.dart';
 import 'package:screen_recorder/state/permissions_controller.dart';
 import 'package:screen_recorder/state/recording_state.dart';
@@ -11,6 +13,7 @@ import 'package:screen_recorder/ui/bar/recording_bar.dart';
 import 'package:screen_recorder/ui/bar/recording_pill.dart';
 import 'package:screen_recorder/ui/bar/recording_bar_screen.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeChrome implements WindowChrome {
   final List<WindowMode> calls = [];
@@ -119,11 +122,26 @@ void _wide(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+/// Returns a TipsController override with all tips already seen so
+/// TipAnchor overlays don't interfere with bar-screen tests.
+Future<Override> _tipsOverride() async {
+  SharedPreferences.setMockInitialValues({});
+  final c = TipsController(TipsStore());
+  await c.load();
+  for (final id in TipId.values) {
+    await c.markSeen(id);
+  }
+  return tipsControllerProvider.overrideWith((ref) => c);
+}
+
 void main() {
   testWidgets('bar mode renders the RecordingBar', (tester) async {
     _wide(tester);
     await tester.pumpWidget(ProviderScope(
-      overrides: [windowChromeProvider.overrideWithValue(_FakeChrome())],
+      overrides: [
+        windowChromeProvider.overrideWithValue(_FakeChrome()),
+        await _tipsOverride(),
+      ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
     await tester.pump();
@@ -135,7 +153,10 @@ void main() {
     _wide(tester);
     late WidgetRef capturedRef;
     await tester.pumpWidget(ProviderScope(
-      overrides: [windowChromeProvider.overrideWithValue(_FakeChrome())],
+      overrides: [
+        windowChromeProvider.overrideWithValue(_FakeChrome()),
+        await _tipsOverride(),
+      ],
       child: MaterialApp(
         home: Consumer(builder: (c, ref, _) {
           capturedRef = ref;
@@ -173,6 +194,7 @@ void main() {
         permissionsControllerProvider.overrideWith(
             (ref) => PermissionsController(ScreenRecorderPlatform.instance)
               ..state = PermissionsSnapshot.initial),
+        await _tipsOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -199,6 +221,7 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         recordingControllerProvider.overrideWith((ref) => fakeController),
+        await _tipsOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -228,6 +251,7 @@ void main() {
         permissionsControllerProvider.overrideWith(
             (ref) => PermissionsController(ScreenRecorderPlatform.instance)
               ..state = PermissionsSnapshot.initial),
+        await _tipsOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -253,6 +277,7 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         recordingControllerProvider.overrideWith((ref) => fakeController),
+        await _tipsOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -274,7 +299,10 @@ void main() {
 
     late WidgetRef capturedRef;
     await tester.pumpWidget(ProviderScope(
-      overrides: [windowChromeProvider.overrideWithValue(_FakeChrome())],
+      overrides: [
+        windowChromeProvider.overrideWithValue(_FakeChrome()),
+        await _tipsOverride(),
+      ],
       child: MaterialApp(
         home: Consumer(builder: (c, ref, _) {
           capturedRef = ref;
@@ -299,7 +327,10 @@ void main() {
     final chrome = _FakeChrome();
 
     await tester.pumpWidget(ProviderScope(
-      overrides: [windowChromeProvider.overrideWithValue(chrome)],
+      overrides: [
+        windowChromeProvider.overrideWithValue(chrome),
+        await _tipsOverride(),
+      ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
     await tester.pumpAndSettle();
@@ -329,7 +360,10 @@ void main() {
     ScreenRecorderPlatform.instance = fakePlatform;
 
     await tester.pumpWidget(ProviderScope(
-      overrides: [windowChromeProvider.overrideWithValue(_FakeChrome())],
+      overrides: [
+        windowChromeProvider.overrideWithValue(_FakeChrome()),
+        await _tipsOverride(),
+      ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
     await tester.pump();
@@ -345,7 +379,10 @@ void main() {
 
     late WidgetRef ref;
     await tester.pumpWidget(ProviderScope(
-      overrides: [windowChromeProvider.overrideWithValue(_FakeChrome())],
+      overrides: [
+        windowChromeProvider.overrideWithValue(_FakeChrome()),
+        await _tipsOverride(),
+      ],
       child: MaterialApp(
         home: Consumer(builder: (c, r, _) {
           ref = r;
