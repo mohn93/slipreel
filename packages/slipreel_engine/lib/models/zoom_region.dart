@@ -127,10 +127,28 @@ class ZoomRegion {
   ///
   /// Half-open interval `[startTime, endTime)`: active at the start edge,
   /// inactive exactly at the end edge. This removes the one-frame boundary
-  /// ambiguity when two regions share an edge (only the later one is active
-  /// at the shared instant).
+  /// ambiguity when two regions share an edge — `isActive` alone resolves
+  /// the shared instant to the LATER region. For the canonical "what zoom
+  /// is in effect right now (including the exit-ramp completion frame at
+  /// endTime)" lookup, use [activeAt]: it adds an explicit `position ==
+  /// endTime` check so the just-ended region still wins at shared edges
+  /// via loop order, matching the pre-half-open behavior.
   bool isActive(Duration position) {
     return position >= startTime && position < endTime;
+  }
+
+  /// Returns the first region whose `[startTime, endTime]` (closed) covers
+  /// [position], or null. Uses [isActive] for the open `[start, end)` body
+  /// plus an explicit `position == endTime` check so the zoom exit-ramp
+  /// completion frame at endTime resolves to the just-ended region — and at
+  /// a shared edge, the EARLIER region wins (loop order), preserving the
+  /// pre-half-open behavior at shared edges.
+  static ZoomRegion? activeAt(
+      Duration position, Iterable<ZoomRegion> regions) {
+    for (final z in regions) {
+      if (z.isActive(position) || position == z.endTime) return z;
+    }
+    return null;
   }
 
   /// Get progress within zoom region (0.0 to 1.0)

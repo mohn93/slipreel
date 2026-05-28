@@ -178,10 +178,12 @@ class ScenePassBuilder {
     );
   }
 
-  ZoomRegion? _activeZoomAt(Duration position, List<ZoomRegion> regions) {
-    for (final z in regions) {
-      if (z.isActive(position)) return z;
-    }
-    return null;
-  }
+  // Delegates to [ZoomRegion.activeAt] so this matches the focal
+  // controller and frame compositor at the closed end edge — at
+  // `position == endTime` the just-ended region (or, for a shared
+  // edge, the earlier one) is still reported as active. Debug overlays
+  // and the predictive window setup downstream depend on this not
+  // going null for the exit-ramp completion frame.
+  ZoomRegion? _activeZoomAt(Duration position, List<ZoomRegion> regions) =>
+      ZoomRegion.activeAt(position, regions);
 }

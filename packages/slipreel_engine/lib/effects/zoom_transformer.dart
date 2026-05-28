@@ -23,7 +23,14 @@ class ZoomTransformer {
     Offset? focalPoint,
     Curve rampCurve = Curves.easeInOutQuad,
   }) {
-    if (!zoomRegion.isActive(position)) {
+    // Route the activation check through [ZoomRegion.activeAt] so the
+    // closed end-edge frame (`position == endTime`) resolves consistently
+    // with the focal controller, scene-pass builder, and frame compositor:
+    // at exactly endTime the just-ended region still wins and the math
+    // below collapses to identity via the 1.0× zoom factor — keeping the
+    // ramp completion frame coherent across every consumer.
+    final active = ZoomRegion.activeAt(position, <ZoomRegion>[zoomRegion]);
+    if (active == null) {
       return Matrix4.identity();
     }
     final z = _calculateZoomFactor(position, zoomRegion, rampCurve);

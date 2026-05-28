@@ -47,12 +47,11 @@ class FrameCompositor {
            videoSize: videoSize,
          ),
        ),
-       // Center the video within the EVEN canvas. The raw effective padding
-       // would leave the video positioned for the pre-rounding total size, so
-       // the up-to-1px the even-rounding adds to width/height would all land
-       // on the right/bottom — shifting the video off-center. Deriving the
-       // padding from (evenTotal − videoSize)/2 splits that pixel evenly and
-       // keeps the video centered (no 1px offset).
+       // Start from the raw FramePainter.effectivePadding so any per-side
+       // asymmetry from the WindowFrame survives — preview honors that, and
+       // export must too. Then distribute only the even-rounding slack
+       // (≤1px per axis) symmetrically so the video stays centered after
+       // the canvas is rounded to even pixel dimensions for yuv420p.
        _effectivePadding = _centeredPadding(
          _evenSize(
            FramePainter.calculateTotalSize(
@@ -61,6 +60,10 @@ class FrameCompositor {
            ),
          ),
          videoSize,
+         FramePainter.effectivePadding(
+           projectState.windowFrame.padding,
+           videoSize,
+         ),
        );
 
   final EditorProjectState projectState;
@@ -428,13 +431,7 @@ class FrameCompositor {
       );
     }
 
-    ZoomRegion? active;
-    for (final region in projectState.zoomRegions) {
-      if (region.isActive(t)) {
-        active = region;
-        break;
-      }
-    }
+    final active = ZoomRegion.activeAt(t, projectState.zoomRegions);
     if (active == null) {
       return SceneCameraSample(
         position: t,
@@ -672,14 +669,21 @@ class FrameCompositor {
     return Size(even(s.width).toDouble(), even(s.height).toDouble());
   }
 
-  /// Padding that centers [videoSize] inside the (already even-rounded)
-  /// [totalSize]. Computing the left/top inset from the rounded canvas —
-  /// rather than the raw aspect-scaled padding — keeps the video centered
-  /// after the even-up step, instead of letting the extra rounding pixel
-  /// push it off-center toward the right/bottom.
-  static EdgeInsets _centeredPadding(Size totalSize, Size videoSize) {
-    final dx = (totalSize.width - videoSize.width) / 2;
-    final dy = (totalSize.height - videoSize.height) / 2;
-    return EdgeInsets.only(left: dx, top: dy, right: dx, bottom: dy);
+  /// Padding that places [videoSize] inside the (already even-rounded)
+  /// [totalSize] while preserving the per-side ratios in [raw]. Only the
+  /// extra slack introduced by the even-rounding step (≤1px per axis) is
+  /// split symmetrically — the underlying asymmetric padding from the
+  /// WindowFrame is left intact, so export matches the preview path
+  /// (`FramePainter.paint` uses [FramePainter.effectivePadding] directly).
+  static EdgeInsets _centeredPadding(
+      Size totalSize, Size videoSize, EdgeInsets raw) {
+    final extraX = totalSize.width - videoSize.width - raw.left - raw.right;
+    final extraY = totalSize.height - videoSize.height - raw.top - raw.bottom;
+    return EdgeInsets.only(
+      left: raw.left + extraX / 2,
+      right: raw.right + extraX / 2,
+      top: raw.top + extraY / 2,
+      bottom: raw.bottom + extraY / 2,
+    );
   }
 }

@@ -336,6 +336,73 @@ void main() {
       );
     });
 
+    test(
+      'shared-edge: at t == A.endTime == B.startTime, A wins and '
+      'activeZoom stays non-null across the seam',
+      () {
+        // Two abutting bounded zooms: A [0s, 2s], B [2s, 4s]. The
+        // exit-ramp completion frame at exactly t=2s must:
+        //   - resolve to A via ZoomRegion.activeAt (earlier wins by loop
+        //     order at the closed end edge), AND
+        //   - flow through ScenePassBuilder so ScenePass.activeZoom is
+        //     non-null AND === A (no one-frame "no zoom" drop-out
+        //     between adjacent regions).
+        // This guards every call site that was migrated to activeAt:
+        // a regression to bare isActive at the seam would either drop
+        // activeZoom or hand the frame to B.
+        final a = _bounded(
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 2),
+          rect: const Rect.fromLTWH(480, 270, 0, 0),
+        );
+        final b = _bounded(
+          startTime: const Duration(seconds: 2),
+          duration: const Duration(seconds: 2),
+          rect: const Rect.fromLTWH(1440, 810, 0, 0),
+        );
+
+        // 1) Helper-level contract.
+        expect(
+          ZoomRegion.activeAt(const Duration(seconds: 2), [a, b]),
+          same(a),
+          reason:
+              'At the shared edge, earlier region wins via activeAt loop order',
+        );
+
+        // 2) ScenePassBuilder propagates that decision through to
+        //    ScenePass.activeZoom at the seam.
+        final builder = ScenePassBuilder();
+        final project = _projectWith(zooms: [a, b]);
+        final recording = _eastBoundRecording(durationMs: 2200);
+
+        // Prime the builder up through the seam.
+        _drive(
+          builder,
+          project: project,
+          recording: recording,
+          from: Duration.zero,
+          to: const Duration(seconds: 2) - const Duration(milliseconds: 16),
+        );
+
+        final atSeam = builder.build(
+          position: const Duration(seconds: 2),
+          zoomRegions: project.zoomRegions,
+          cursorAnimationConfig: project.cursorAnimationConfig,
+          cursorRecording: recording,
+          videoSize: _videoSize,
+          fps: 60,
+          hasCursorData: true,
+        );
+
+        expect(atSeam.activeZoom, isNotNull,
+            reason:
+                'Closed end-edge lookup must keep the exit-ramp completion '
+                'frame attributed to a zoom');
+        expect(atSeam.activeZoom, same(a),
+            reason: 'Earlier region wins at the shared edge');
+      },
+    );
+
     test('bypassVelocityFilter=true returns raw velocity as filtered', () {
       // Hover-scrub semantics: with bypass on, the filtered output
       // equals the raw input so timeline-scrubbing renders are
