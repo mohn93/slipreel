@@ -6,12 +6,6 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   /// The method channel for recording control
   final _recordingChannel = const MethodChannel(ScreenRecorderChannels.recording);
 
-  /// Event channel for video frames
-  final _framesChannel = const EventChannel(ScreenRecorderChannels.frames);
-
-  /// Event channel for audio samples
-  final _audioChannel = const EventChannel(ScreenRecorderChannels.audio);
-
   /// Event channel for cursor positions
   final _cursorChannel = const EventChannel(ScreenRecorderChannels.cursor);
 
@@ -49,36 +43,6 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
     return result
         .map((e) => AudioDeviceInfo.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
-  }
-
-  @override
-  Future<void> startRecording(RecordingSettings settings) async {
-    await _recordingChannel.invokeMethod<void>(
-      ScreenRecorderMethods.startRecording,
-      settings.toJson(),
-    );
-  }
-
-  @override
-  Future<void> pauseRecording() async {
-    await _recordingChannel.invokeMethod<void>(
-      ScreenRecorderMethods.pauseRecording,
-    );
-  }
-
-  @override
-  Future<void> resumeRecording() async {
-    await _recordingChannel.invokeMethod<void>(
-      ScreenRecorderMethods.resumeRecording,
-    );
-  }
-
-  @override
-  Future<String> stopRecording() async {
-    final result = await _recordingChannel.invokeMethod<String>(
-      ScreenRecorderMethods.stopRecording,
-    );
-    return result ?? '';
   }
 
   @override
@@ -125,28 +89,6 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
       }
     }
     return out;
-  }
-
-  @override
-  Stream<FrameData> get frameStream {
-    return _framesChannel.receiveBroadcastStream().map((event) {
-      return FrameData.fromJson(Map<String, dynamic>.from(event as Map));
-    });
-  }
-
-  @override
-  Stream<AudioData> get audioStream {
-    return _audioChannel.receiveBroadcastStream().map((event) {
-      try {
-        final map = event as Map;
-        return AudioData.fromJson(Map<String, dynamic>.from(map));
-      } catch (e) {
-        throw Exception('Failed to parse audio data: $e');
-      }
-    }).handleError((error) {
-      print('[ScreenRecorder] Audio stream error: $error');
-      throw error;
-    });
   }
 
   @override

@@ -1,4 +1,12 @@
-/// Information about an available window
+/// Information about an available window.
+///
+/// IMPORTANT: [x], [y], [width], and [height] are in DISPLAY POINTS, not
+/// pixels. On Retina displays (`backingScaleFactor` > 1) the actual
+/// captured video dimensions are `points × backingScaleFactor` pixels —
+/// e.g. a 1280×720-point window typically records as 2560×1440 px on a
+/// 2× display. Don't use these bounds as encoder dimensions; resolve
+/// pixel dimensions from the capture pipeline (see e.g. macOS
+/// `captureDimensions`).
 class WindowInfo {
   final String id;
   final String title;
