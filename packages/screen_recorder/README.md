@@ -1,16 +1,33 @@
 # screen_recorder
 
-A new Flutter project.
+The main Flutter application package for **Slipreel** (`com.slipreel.app`) — a macOS-first
+Flutter desktop screen recorder and non-linear editor.
 
-## Getting Started
+## Running the app
 
-This project is a starting point for a Flutter application.
+```bash
+flutter run -d macos
+```
 
-A few resources to get you started if this is your first Flutter project:
+Requires Flutter 3.41.5+. Full specs live under `docs/superpowers/specs/`.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Workspace bootstrap
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+This repo uses [Melos](https://melos.invertase.dev/) to manage the multi-package workspace.
+From the repo root:
+
+```bash
+melos bootstrap
+```
+
+## Architecture
+
+| Package | Role |
+|---|---|
+| `packages/screen_recorder` | Flutter UI (this package) |
+| `packages/slipreel_engine` | Rendering and export engine (FFmpeg pipeline) |
+| `packages/screen_recorder_macos` | Native macOS plugin (ScreenCaptureKit, VideoToolbox) |
+| `packages/screen_recorder_platform_interface` | Federated plugin contract |
+
+Platform parity matrix: see
+[`packages/screen_recorder_platform_interface/README.md`](../screen_recorder_platform_interface/README.md).
