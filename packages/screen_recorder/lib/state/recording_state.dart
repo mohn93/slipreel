@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'cursor_checkpointer.dart';
 import 'permissions_controller.dart';
+import 'session_marker.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
@@ -75,8 +77,11 @@ class RecordingState {
 }
 
 class RecordingController extends StateNotifier<RecordingState> {
-  RecordingController({RecordingHistoryStore? historyStore})
-      : _historyStore = historyStore ?? RecordingHistoryStore(),
+  RecordingController({
+    RecordingHistoryStore? historyStore,
+    SessionMarkerStore? sessionMarkerStore,
+  })  : _historyStore = historyStore ?? RecordingHistoryStore(),
+        _sessionMarkerStore = sessionMarkerStore,
         super(const RecordingState());
 
   @visibleForTesting
@@ -84,6 +89,10 @@ class RecordingController extends StateNotifier<RecordingState> {
 
   final VideoEncoder _videoEncoder = VideoEncoder();
   final RecordingHistoryStore _historyStore;
+  final SessionMarkerStore? _sessionMarkerStore;
+  CursorCheckpointer? _cursorCheckpointer;
+  String? _activeMarkerId;
+  String? _activeNdjsonPath;
   StreamSubscription<CursorPosition>? _cursorSubscription;
   CursorRecording? _cursorRecording;
   Timer? _durationTimer;
@@ -151,6 +160,35 @@ class RecordingController extends StateNotifier<RecordingState> {
       final ts = DateTime.now().millisecondsSinceEpoch;
       final outputPath = '${docsDir.path}/recording_$ts.mp4';
 
+      final markerId = '$ts';
+      final ndjsonPath = '$outputPath.cursor.ndjson';
+      if (_sessionMarkerStore != null) {
+        try {
+          await _sessionMarkerStore!.add(SessionMarker(
+            id: markerId,
+            videoPath: outputPath,
+            cursorNdjsonPath: ndjsonPath,
+            startedAt: DateTime.now().toUtc(),
+            width: 0, // unknown at start — RecoveryService probes the file at scan time
+            height: 0,
+            fps: _defaultFps,
+          ));
+          _activeMarkerId = markerId;
+          _activeNdjsonPath = ndjsonPath;
+        } catch (e, st) {
+          AppLogger.recording.w('Failed to write session marker; recording proceeds',
+              error: e, stackTrace: st);
+        }
+      }
+      _cursorCheckpointer = CursorCheckpointer(ndjsonPath: ndjsonPath);
+      try {
+        await _cursorCheckpointer!.start();
+      } catch (e, st) {
+        AppLogger.recording.w('Cursor checkpointer start failed; cursor recovery disabled',
+            error: e, stackTrace: st);
+        _cursorCheckpointer = null;
+      }
+
       final settings = RecordingSettings(
         source: state.selectedSourceKind!,
         sourceId: state.selectedSourceId,
@@ -170,7 +208,10 @@ class RecordingController extends StateNotifier<RecordingState> {
 
       _cursorRecording = CursorRecording();
       _cursorSubscription = ScreenRecorderPlatform.instance.cursorStream.listen(
-        (pos) => _cursorRecording?.addPosition(pos),
+        (pos) {
+          _cursorRecording?.addPosition(pos);
+          _cursorCheckpointer?.add(pos);
+        },
         onError: (e) => AppLogger.recording.w('Cursor stream error', error: e),
       );
 
@@ -248,6 +289,27 @@ class RecordingController extends StateNotifier<RecordingState> {
         AppLogger.recording.w('Failed to append to recording history: $e');
       }
 
+      try {
+        await _cursorCheckpointer?.stop();
+        _cursorCheckpointer = null;
+        if (_activeNdjsonPath != null && await File(_activeNdjsonPath!).exists()) {
+          await File(_activeNdjsonPath!).delete();
+        }
+      } catch (e, st) {
+        AppLogger.recording.w('CursorCheckpointer stop/cleanup failed',
+            error: e, stackTrace: st);
+      }
+      _activeNdjsonPath = null;
+      if (_activeMarkerId != null && _sessionMarkerStore != null) {
+        try {
+          await _sessionMarkerStore!.remove(_activeMarkerId!);
+        } catch (e, st) {
+          AppLogger.recording.w('SessionMarker remove failed',
+              error: e, stackTrace: st);
+        }
+        _activeMarkerId = null;
+      }
+
       // Build and log the perf summary.
       final fileSize = await File(result.outputPath).length();
       final expectedFrames =
@@ -307,6 +369,13 @@ class RecordingController extends StateNotifier<RecordingState> {
   }
 
   void _handleError(String message) {
+    if (_activeMarkerId != null && _sessionMarkerStore != null) {
+      _sessionMarkerStore!.remove(_activeMarkerId!).ignore();
+      _activeMarkerId = null;
+    }
+    _cursorCheckpointer?.stop().ignore();
+    _cursorCheckpointer = null;
+    _activeNdjsonPath = null;
     state = state.copyWith(status: RecordingStatus.error, error: message);
     _cursorSubscription?.cancel();
     _cursorSubscription = null;
