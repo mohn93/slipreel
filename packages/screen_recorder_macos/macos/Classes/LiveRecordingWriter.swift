@@ -117,6 +117,11 @@ class LiveRecordingWriter {
         throw WriterError.assetWriterCreateFailed(error)
       }
 
+      // Crash resilience: emit a self-contained moof+mdat fragment every 5 s.
+      // On a process kill, the file on disk is still playable up to the last
+      // complete fragment. (Sub-project C.)
+      writer.movieFragmentInterval = CMTimeMakeWithSeconds(5.0, preferredTimescale: 600)
+
       // Audio inputs — one per requested track role.
       // This uses an explicit outputSettings dict so canAdd() succeeds immediately.
       for role in audioTracks {
