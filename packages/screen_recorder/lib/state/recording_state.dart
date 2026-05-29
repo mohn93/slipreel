@@ -125,6 +125,14 @@ class RecordingController extends StateNotifier<RecordingState> {
       return;
     }
 
+    if (microphone != null &&
+        permissions != null &&
+        permissions.microphone != PermissionStatus.granted &&
+        permissions.microphone != PermissionStatus.unsupported) {
+      await onDenied?.call(PermissionKind.microphone);
+      return;
+    }
+
     try {
       state = state.copyWith(
         status: RecordingStatus.recording,
