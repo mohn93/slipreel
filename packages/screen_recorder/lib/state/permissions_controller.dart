@@ -52,8 +52,7 @@ class PermissionsController extends StateNotifier<PermissionsSnapshot> {
     PermissionStatus result;
     switch (kind) {
       case PermissionKind.screenRecording:
-        final granted = await _platform.requestPermissions();
-        result = granted ? PermissionStatus.granted : PermissionStatus.denied;
+        result = await _platform.requestScreenRecordingPermission();
       case PermissionKind.microphone:
         result = await _platform.requestMicrophonePermission();
       case PermissionKind.accessibility:

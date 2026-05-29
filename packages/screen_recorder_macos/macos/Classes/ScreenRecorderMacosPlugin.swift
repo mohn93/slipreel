@@ -159,6 +159,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       requestPermissions(result: result)
     case "checkPermissions":
       checkPermissions(result: result)
+    case "requestScreenRecordingPermission":
+      requestScreenRecordingPermission(result: result)
     case "getStockCursorImages":
       getStockCursorImages(result: result)
     case "isAccessibilityTrusted":
@@ -442,6 +444,24 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         result(FlutterError(
           code: "PERMISSION_ERROR",
           message: "Failed to request permissions: \(error.localizedDescription)",
+          details: nil
+        ))
+      }
+    }
+  }
+
+  /// Typed variant of requestPermissions — returns a PermissionStatus wire
+  /// string ("granted" / "denied" / "notDetermined") instead of a Bool.
+  private func requestScreenRecordingPermission(result: @escaping FlutterResult) {
+    Task {
+      do {
+        let manager = ScreenCaptureManager()
+        let granted = try await manager.requestPermission()
+        result(granted ? "granted" : "denied")
+      } catch {
+        result(FlutterError(
+          code: "PERMISSION_ERROR",
+          message: "Failed to request screen recording permission: \(error.localizedDescription)",
           details: nil
         ))
       }

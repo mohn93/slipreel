@@ -46,6 +46,8 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  // ignore: deprecated_member_use_from_same_package
+  @Deprecated('Use requestScreenRecordingPermission() instead')
   Future<bool> requestPermissions() async {
     final result = await _recordingChannel.invokeMethod<bool>(
       ScreenRecorderMethods.requestPermissions,
@@ -54,11 +56,21 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  // ignore: deprecated_member_use_from_same_package
+  @Deprecated('Use getScreenRecordingPermission() instead')
   Future<bool> checkPermissions() async {
     final result = await _recordingChannel.invokeMethod<bool>(
       ScreenRecorderMethods.checkPermissions,
     );
     return result ?? false;
+  }
+
+  @override
+  Future<PermissionStatus> requestScreenRecordingPermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.requestScreenRecordingPermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
   }
 
   @override

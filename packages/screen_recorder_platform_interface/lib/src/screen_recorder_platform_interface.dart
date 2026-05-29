@@ -104,15 +104,24 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
 
   // Permission methods
 
-  /// Request necessary permissions (screen recording, audio)
-  Future<bool> requestPermissions() {
-    throw UnimplementedError('requestPermissions() has not been implemented.');
-  }
+  /// Legacy screen-recording-only path retained because [PermissionsController]
+  /// used it to bridge to the older Bool return. New code should prefer the
+  /// typed [requestScreenRecordingPermission] method.
+  /// Will be removed once all call sites are migrated.
+  @Deprecated('Use requestScreenRecordingPermission() instead')
+  Future<bool> requestPermissions() async => false;
 
-  /// Check if permissions are granted
-  Future<bool> checkPermissions() {
-    throw UnimplementedError('checkPermissions() has not been implemented.');
-  }
+  /// Legacy screen-recording-only check. See [requestPermissions] for why this
+  /// is retained.
+  @Deprecated('Use getScreenRecordingPermission() instead')
+  Future<bool> checkPermissions() async => false;
+
+  /// Triggers the macOS Screen Recording permission prompt the first time,
+  /// otherwise returns the current status without re-prompting. Returns a
+  /// typed [PermissionStatus] — prefer this over the legacy [requestPermissions].
+  /// No-op on unsupported platforms.
+  Future<PermissionStatus> requestScreenRecordingPermission() async =>
+      PermissionStatus.unsupported;
 
   /// Whether the host process is currently trusted by the macOS
   /// Accessibility system. Required for cursor-state detection
