@@ -7,12 +7,10 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import 'package:slipreel_engine/models/window_frame.dart';
 
 import '../../state/microphone_controller.dart';
-import '../../state/permissions_controller.dart';
 import '../../state/recording_action_router.dart';
 import '../../state/recording_state.dart';
 import '../../state/system_audio_controller.dart';
 import '../widgets/countdown_overlay.dart';
-import '../widgets/permission_denied_sheet.dart';
 import '../../state/window_mode.dart';
 import '../../state/window_mode_controller.dart';
 import '../screens/playback_screen.dart';
