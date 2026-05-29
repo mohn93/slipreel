@@ -28,7 +28,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Future<void> _finish() async {
-    await ref.read(onboardingStoreProvider).markComplete();
+    try {
+      await ref.read(onboardingStoreProvider).markComplete();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Couldn't save onboarding state — you may see this screen again next launch.",
+            ),
+          ),
+        );
+      }
+    }
     if (!mounted) return;
     unawaited(
       Navigator.of(context).pushReplacement(
