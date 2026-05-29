@@ -162,24 +162,7 @@ class RecordingController extends StateNotifier<RecordingState> {
 
       final markerId = '$ts';
       final ndjsonPath = '$outputPath.cursor.ndjson';
-      if (_sessionMarkerStore != null) {
-        try {
-          await _sessionMarkerStore.add(SessionMarker(
-            id: markerId,
-            videoPath: outputPath,
-            cursorNdjsonPath: ndjsonPath,
-            startedAt: DateTime.now().toUtc(),
-            width: 0, // unknown at start — RecoveryService probes the file at scan time
-            height: 0,
-            fps: _defaultFps,
-          ));
-          _activeMarkerId = markerId;
-          _activeNdjsonPath = ndjsonPath;
-        } catch (e, st) {
-          AppLogger.recording.w('Failed to write session marker; recording proceeds',
-              error: e, stackTrace: st);
-        }
-      }
+
       _cursorCheckpointer = CursorCheckpointer(ndjsonPath: ndjsonPath);
       try {
         await _cursorCheckpointer!.start();
@@ -205,6 +188,25 @@ class RecordingController extends StateNotifier<RecordingState> {
         height: _defaultHeight,
         region: state.selectedRegion,
       );
+
+      if (_sessionMarkerStore != null) {
+        try {
+          await _sessionMarkerStore.add(SessionMarker(
+            id: markerId,
+            videoPath: outputPath,
+            cursorNdjsonPath: ndjsonPath,
+            startedAt: DateTime.now().toUtc(),
+            width: _videoEncoder.width,
+            height: _videoEncoder.height,
+            fps: _videoEncoder.fps,
+          ));
+          _activeMarkerId = markerId;
+          _activeNdjsonPath = ndjsonPath;
+        } catch (e, st) {
+          AppLogger.recording.w('Failed to write session marker; recording proceeds',
+              error: e, stackTrace: st);
+        }
+      }
 
       _cursorRecording = CursorRecording();
       _cursorSubscription = ScreenRecorderPlatform.instance.cursorStream.listen(
