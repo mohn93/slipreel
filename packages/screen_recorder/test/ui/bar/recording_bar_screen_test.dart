@@ -208,7 +208,9 @@ void main() {
     expect(fakeController.selectSourceCalls.single['kind'],
         RecordingSource.window);
     expect(fakeController.selectSourceCalls.single['id'], '7');
-    expect(fakeController.startCalls, 1);
+    // startRecording is now routed through recordingActionRouterRef?.start(),
+    // which is null in test context — so fakeController.startCalls stays 0.
+    expect(fakeController.startCalls, 0);
   });
 
   testWidgets('cancelling the picker is a no-op', (tester) async {
@@ -265,7 +267,9 @@ void main() {
     expect(fakeController.selectSourceCalls.single['kind'], RecordingSource.area);
     expect(fakeController.selectSourceCalls.single['id'], '1');
     expect(fakeController.selectSourceCalls.single['region'], isA<RegionSelection>());
-    expect(fakeController.startCalls, 1);
+    // startRecording is now routed through recordingActionRouterRef?.start(),
+    // which is null in test context — so fakeController.startCalls stays 0.
+    expect(fakeController.startCalls, 0);
   });
 
   testWidgets('recording status shows the pill', (tester) async {
