@@ -12,6 +12,12 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   /// Event channel for live microphone level
   final _micLevelChannel = const EventChannel(ScreenRecorderChannels.micLevel);
 
+  /// Event channel for global recording hotkey events
+  static const _hotkeysChannel = EventChannel(ScreenRecorderChannels.hotkeys);
+
+  /// Event channel for system sleep/wake events
+  static const _sleepChannel = EventChannel(ScreenRecorderChannels.sleep);
+
   @override
   Future<List<ScreenInfo>> getAvailableScreens() async {
     final result = await _recordingChannel.invokeMethod<List<dynamic>>(
@@ -189,6 +195,32 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
       ScreenRecorderMethods.resumeRecording,
     );
   }
+
+  @override
+  Future<void> registerRecordingHotkeys() async {
+    await _recordingChannel.invokeMethod<void>(
+        ScreenRecorderMethods.registerRecordingHotkeys);
+  }
+
+  @override
+  Future<void> unregisterRecordingHotkeys() async {
+    await _recordingChannel.invokeMethod<void>(
+        ScreenRecorderMethods.unregisterRecordingHotkeys);
+  }
+
+  @override
+  Future<void> startSleepObserver() async {
+    await _recordingChannel.invokeMethod<void>(
+        ScreenRecorderMethods.startSleepObserver);
+  }
+
+  @override
+  Stream<Map<dynamic, dynamic>> get hotkeyEvents =>
+      _hotkeysChannel.receiveBroadcastStream().cast<Map<dynamic, dynamic>>();
+
+  @override
+  Stream<Map<dynamic, dynamic>> get sleepEvents =>
+      _sleepChannel.receiveBroadcastStream().cast<Map<dynamic, dynamic>>();
 
   @override
   Future<SourceList> listSources({bool strictFilter = true}) async {
