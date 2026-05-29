@@ -8,6 +8,7 @@ import 'package:slipreel_engine/models/window_frame.dart';
 
 import '../../state/microphone_controller.dart';
 import '../../state/permissions_controller.dart';
+import '../../state/recording_action_router.dart';
 import '../../state/recording_state.dart';
 import '../../state/system_audio_controller.dart';
 import '../widgets/permission_denied_sheet.dart';
@@ -244,8 +245,10 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
       case WindowMode.pill:
         final state = ref.watch(recordingControllerProvider);
         body = RecordingPill(
+          status: state.status,
           elapsed: state.duration,
           onStop: ref.read(recordingControllerProvider.notifier).stopRecording,
+          onPauseOrResume: () => recordingActionRouterRef?.pauseOrResume(),
         );
       case WindowMode.bar:
       case WindowMode.panel:
