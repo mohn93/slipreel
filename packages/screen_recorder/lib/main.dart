@@ -29,18 +29,30 @@ import 'state/recording_settings_controller.dart';
 import 'state/recording_settings_store.dart';
 import 'state/sleep_observer.dart';
 import 'state/window_mode_controller.dart';
+import 'state/recording_state.dart';
+import 'state/recovery_service.dart';
+import 'state/session_marker.dart';
 import 'ui/bar/recording_bar_screen.dart';
 import 'ui/bar/recording_toast.dart';
 import 'ui/bar/wake_modal.dart';
 import 'ui/screens/onboarding/onboarding_screen.dart';
 import 'ui/screens/playback_screen.dart';
+import 'ui/widgets/recovery_modal.dart';
 import 'ui/widgets/scene_blur_overlay.dart';
 import 'ui/widgets/zoom/playback_canvas.dart';
+import 'package:slipreel_engine/models/recording_history.dart';
 
 /// Navigator key used by the recording surface widgets (WakeModal,
 /// RecordingToast) to obtain a valid [BuildContext] outside the normal
 /// widget tree.
 final rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// Application-wide [RecordingHistoryStore] provider.
+/// Exposed here so tests and other entry points can override it via
+/// [ProviderScope.overrides].
+final recordingHistoryStoreProvider = Provider<RecordingHistoryStore>(
+  (ref) => RecordingHistoryStore(),
+);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -99,6 +111,15 @@ Future<void> main() async {
       PermissionsController(ScreenRecorderPlatform.instance);
   await permissionsController.refreshAll();
 
+  final sessionMarkerStore = SessionMarkerStore(
+    path: p.join(
+      (await getApplicationSupportDirectory()).path,
+      'current_sessions.json',
+    ),
+  );
+  final recoveryService = RecoveryService(markerStore: sessionMarkerStore);
+  final recoveryCandidates = await recoveryService.scan();
+
   final onboardingStore = OnboardingStore();
   final onboardingDone = await onboardingStore.load();
 
@@ -136,8 +157,16 @@ Future<void> main() async {
           RecordingSettingsController(
               store: recordingSettingsStore,
               initial: initialRecordingSettings)),
+      sessionMarkerStoreProvider.overrideWithValue(sessionMarkerStore),
+      recoveryServiceProvider.overrideWith((ref) => recoveryService),
+      recordingControllerProvider.overrideWith((ref) => RecordingController(
+            sessionMarkerStore: sessionMarkerStore,
+          )),
     ],
-    child: MyApp(onboardingDone: onboardingDone),
+    child: MyApp(
+      onboardingDone: onboardingDone,
+      recoveryCandidates: recoveryCandidates,
+    ),
   ));
 }
 
@@ -226,9 +255,14 @@ String _playbackStateJson() {
 }
 
 class MyApp extends ConsumerStatefulWidget {
-  const MyApp({super.key, required this.onboardingDone});
+  const MyApp({
+    super.key,
+    required this.onboardingDone,
+    required this.recoveryCandidates,
+  });
 
   final bool onboardingDone;
+  final List<RecoveryCandidate> recoveryCandidates;
 
   @override
   ConsumerState<MyApp> createState() => _MyAppState();
@@ -281,6 +315,27 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     _longWatcher = LongRecordingWatcher(
       container: container,
       onFire: _onThresholdFire,
+    );
+
+    if (widget.recoveryCandidates.isNotEmpty) {
+      _showRecoveryModal(widget.recoveryCandidates);
+    }
+  }
+
+  Future<void> _showRecoveryModal(List<RecoveryCandidate> candidates) async {
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx == null) return;
+    final container = ProviderScope.containerOf(context);
+    final svc = container.read(recoveryServiceProvider);
+    final history = container.read(recordingHistoryStoreProvider);
+    await showDialog<void>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => RecoveryModal(
+        candidates: candidates,
+        onRecover: (c) => svc.recover(c, history),
+        onDiscard: (c) => svc.discard(c),
+      ),
     );
   }
 
