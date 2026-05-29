@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
@@ -77,6 +78,9 @@ class RecordingController extends StateNotifier<RecordingState> {
   RecordingController({RecordingHistoryStore? historyStore})
       : _historyStore = historyStore ?? RecordingHistoryStore(),
         super(const RecordingState());
+
+  @visibleForTesting
+  set state(RecordingState value) => super.state = value;
 
   final VideoEncoder _videoEncoder = VideoEncoder();
   final RecordingHistoryStore _historyStore;
@@ -273,6 +277,33 @@ class RecordingController extends StateNotifier<RecordingState> {
     } catch (e) {
       _handleError('Failed to stop recording: $e');
     }
+  }
+
+  Future<void> pauseRecording() async {
+    if (state.status != RecordingStatus.recording) return;
+    _durationTimer?.cancel();
+    _durationTimer = null;
+    // Capture elapsed-so-far so resume can restart from where we paused.
+    final elapsed = _startTime != null
+        ? DateTime.now().difference(_startTime!)
+        : state.duration;
+    _startTime = null;
+    state = state.copyWith(status: RecordingStatus.paused, duration: elapsed);
+    await ScreenRecorderPlatform.instance.pauseRecording();
+  }
+
+  Future<void> resumeRecording() async {
+    if (state.status != RecordingStatus.paused) return;
+    await ScreenRecorderPlatform.instance.resumeRecording();
+    // Re-anchor _startTime to "now minus elapsed" so the periodic timer
+    // continues to fire correct durations from where we paused.
+    _startTime = DateTime.now().subtract(state.duration);
+    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_startTime != null) {
+        state = state.copyWith(duration: DateTime.now().difference(_startTime!));
+      }
+    });
+    state = state.copyWith(status: RecordingStatus.recording);
   }
 
   void _handleError(String message) {
