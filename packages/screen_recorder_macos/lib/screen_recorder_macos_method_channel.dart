@@ -177,6 +177,20 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  Future<void> pauseRecording() async {
+    await _recordingChannel.invokeMethod<void>(
+      ScreenRecorderMethods.pauseRecording,
+    );
+  }
+
+  @override
+  Future<void> resumeRecording() async {
+    await _recordingChannel.invokeMethod<void>(
+      ScreenRecorderMethods.resumeRecording,
+    );
+  }
+
+  @override
   Future<SourceList> listSources({bool strictFilter = true}) async {
     final raw = await _recordingChannel.invokeMapMethod<String, dynamic>(
       ScreenRecorderMethods.listSources,
