@@ -164,7 +164,7 @@ class RecordingController extends StateNotifier<RecordingState> {
       final ndjsonPath = '$outputPath.cursor.ndjson';
       if (_sessionMarkerStore != null) {
         try {
-          await _sessionMarkerStore!.add(SessionMarker(
+          await _sessionMarkerStore.add(SessionMarker(
             id: markerId,
             videoPath: outputPath,
             cursorNdjsonPath: ndjsonPath,
@@ -302,7 +302,7 @@ class RecordingController extends StateNotifier<RecordingState> {
       _activeNdjsonPath = null;
       if (_activeMarkerId != null && _sessionMarkerStore != null) {
         try {
-          await _sessionMarkerStore!.remove(_activeMarkerId!);
+          await _sessionMarkerStore.remove(_activeMarkerId!);
         } catch (e, st) {
           AppLogger.recording.w('SessionMarker remove failed',
               error: e, stackTrace: st);
@@ -370,7 +370,7 @@ class RecordingController extends StateNotifier<RecordingState> {
 
   void _handleError(String message) {
     if (_activeMarkerId != null && _sessionMarkerStore != null) {
-      _sessionMarkerStore!.remove(_activeMarkerId!).ignore();
+      _sessionMarkerStore.remove(_activeMarkerId!).ignore();
       _activeMarkerId = null;
     }
     _cursorCheckpointer?.stop().ignore();
