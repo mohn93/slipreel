@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -17,6 +18,7 @@ class CursorCheckpointer {
 
   RandomAccessFile? _raf;
   final List<String> _buffer = [];
+  Timer? _flushTimer;
 
   /// Open the file for write (truncates any existing content).
   Future<void> start() async {
@@ -26,6 +28,7 @@ class CursorCheckpointer {
     }
     // FileMode.write truncates existing content.
     _raf = await file.open(mode: FileMode.write);
+    _flushTimer = Timer.periodic(const Duration(seconds: 5), (_) => _flushSync());
   }
 
   /// Buffer a single position. Flushes synchronously if the buffer reaches
@@ -45,6 +48,8 @@ class CursorCheckpointer {
 
   /// Flush any remaining buffer entries and close the file.
   Future<void> stop() async {
+    _flushTimer?.cancel();
+    _flushTimer = null;
     _flushSync();
     await _raf?.close();
     _raf = null;
