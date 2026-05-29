@@ -41,7 +41,6 @@ Future<void> main() async {
   // for end-to-end debugging. No-op in release builds.
   if (kDebugMode || kProfileMode) {
     debugProbe.install();
-    _registerSlipreelDebugExtensions();
     AppLogger.platform.i(
       'Debug probe installed (ext.slipreel.* registered)',
     );
@@ -94,6 +93,10 @@ Future<void> main() async {
   final tipsController = TipsController(tipsStore);
   await tipsController.load();
 
+  if (kDebugMode || kProfileMode) {
+    _registerSlipreelDebugExtensions(tipsController: tipsController);
+  }
+
   runApp(ProviderScope(
     overrides: [
       motionTuningProvider.overrideWith(
@@ -117,10 +120,16 @@ Future<void> main() async {
 /// Pairs with the agent-wires probe — the probe exposes the standard
 /// QA tools, this surface is for slipreel-specific instrumentation.
 ///
+/// [tipsController] is the live in-memory instance created in [main]; passing
+/// it here lets the reset hook call [TipsController.load] to refresh the
+/// in-memory seen-set immediately after clearing the store, so the next
+/// [TipAnchor] that checks [shouldShow] sees the cleared state without
+/// requiring an app restart.
+///
 /// Each extension returns `{'enabled': bool}` so callers can probe
 /// state without needing a separate getter. Add new toggles here as
 /// the debugging surface grows.
-void _registerSlipreelDebugExtensions() {
+void _registerSlipreelDebugExtensions({TipsController? tipsController}) {
   developer.registerExtension(
     'ext.slipreel.setSceneBlurTrace',
     (method, params) async {
@@ -168,7 +177,12 @@ void _registerSlipreelDebugExtensions() {
     'ext.slipreel.resetOnboarding',
     (method, params) async {
       await OnboardingStore().reset();
-      await TipsStore().clearAll();
+      final store = TipsStore();
+      await store.clearAll();
+      // Reload the in-memory TipsController so the seen-set is cleared
+      // immediately; TipAnchors that haven't fired yet will see the reset
+      // state on their next shouldShow() check without requiring a restart.
+      await tipsController?.load();
       return developer.ServiceExtensionResponse.result('{"reset": true}');
     },
   );
