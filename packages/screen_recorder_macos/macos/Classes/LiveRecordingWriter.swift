@@ -285,9 +285,15 @@ class LiveRecordingWriter {
   }
 
   /// Pause appending sample buffers. Idempotent.
+  ///
+  /// Requires `writerActive` (the AVAssetWriter session is open at a known
+  /// source-time). If pause arrives before the first compressed frame opens
+  /// the session, this is a no-op — pausing nothing-yet-captured has no
+  /// observable effect, and skipping it avoids a broken state where the
+  /// rebase offset accumulates before any session start exists.
   func pause() {
     writerQueue.sync {
-      guard isStarted, !isPaused else { return }
+      guard isStarted, writerActive, !isPaused else { return }
       isPaused = true
       pauseStart = CMClockGetTime(CMClockGetHostTimeClock())
     }

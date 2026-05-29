@@ -253,6 +253,11 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     _hotkeyController?.dispose();
     _sleepObserver?.dispose();
     _longWatcher?.dispose();
+    // Clear the global so a hot-reload-replaced MyApp doesn't keep callers
+    // pointing at the now-disposed router + its stale ProviderContainer.
+    if (recordingActionRouterRef == _router) {
+      recordingActionRouterRef = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

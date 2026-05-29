@@ -63,7 +63,12 @@ final class HotkeyManager {
         onConflict?(id)
       }
     }
-    registered = true
+    // Latch the registered flag only when at least one hotkey actually
+    // registered; otherwise a subsequent call should be allowed to retry
+    // (e.g. the conflicting app may have released its binding).
+    if !hotKeyRefs.isEmpty {
+      registered = true
+    }
   }
 
   func unregisterAll() {
