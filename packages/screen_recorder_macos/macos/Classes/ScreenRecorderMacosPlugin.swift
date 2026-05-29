@@ -155,6 +155,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       startLiveRecording(call: call, result: result)
     case "stopLiveRecording":
       stopLiveRecording(result: result)
+
+    case "pauseRecording":
+      pauseRecording(result: result)
+
+    case "resumeRecording":
+      resumeRecording(result: result)
     case "requestPermissions":
       requestPermissions(result: result)
     case "checkPermissions":
@@ -805,6 +811,26 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
                             details: nil))
       }
     }
+  }
+
+  private func pauseRecording(result: @escaping FlutterResult) {
+    guard let writer = liveWriter else {
+      result(FlutterError(code: "NOT_RECORDING",
+                          message: "No active recording to pause", details: nil))
+      return
+    }
+    writer.pause()
+    result(nil)
+  }
+
+  private func resumeRecording(result: @escaping FlutterResult) {
+    guard let writer = liveWriter else {
+      result(FlutterError(code: "NOT_RECORDING",
+                          message: "No active recording to resume", details: nil))
+      return
+    }
+    writer.resume()
+    result(nil)
   }
 
   // MARK: - Source picker
