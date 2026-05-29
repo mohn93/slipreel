@@ -14,6 +14,12 @@ class ScreenRecorderChannels {
 
   /// Event channel for the live microphone level (0..1) stream.
   static const String micLevel = 'com.slipreel.screen_recorder/micLevel';
+
+  /// Event channel for global recording hotkey events.
+  static const String hotkeys = 'com.slipreel.screen_recorder/hotkeys';
+
+  /// Event channel for system sleep/wake events.
+  static const String sleep = 'com.slipreel.screen_recorder/sleep';
 }
 
 /// Method names for the recording channel
@@ -47,4 +53,7 @@ class ScreenRecorderMethods {
   static const String requestScreenRecordingPermission =
       'requestScreenRecordingPermission';
   static const String getStockCursorImages = 'getStockCursorImages';
+  static const String registerRecordingHotkeys = 'registerRecordingHotkeys';
+  static const String unregisterRecordingHotkeys = 'unregisterRecordingHotkeys';
+  static const String startSleepObserver = 'startSleepObserver';
 }
