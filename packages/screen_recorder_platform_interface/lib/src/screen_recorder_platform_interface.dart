@@ -256,4 +256,20 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   Future<RecordingResult> stopLiveRecording() {
     throw UnsupportedError('stopLiveRecording() is not supported on this platform.');
   }
+
+  /// Register global recording hotkeys with the OS.
+  Future<void> registerRecordingHotkeys() async {}
+
+  /// Unregister previously registered recording hotkeys.
+  Future<void> unregisterRecordingHotkeys() async {}
+
+  /// Start observing system sleep/wake notifications.
+  Future<void> startSleepObserver() async {}
+
+  /// Hotkey events. Each event is a Map: `{"action": "start"|"stop"|"pauseToggle"}`
+  /// or `{"event": "conflict", "id": int}` for registration conflicts.
+  Stream<Map<dynamic, dynamic>> get hotkeyEvents => const Stream.empty();
+
+  /// Sleep events. Each event is a Map: `{"event": "willSleep"|"didWake"}`.
+  Stream<Map<dynamic, dynamic>> get sleepEvents => const Stream.empty();
 }

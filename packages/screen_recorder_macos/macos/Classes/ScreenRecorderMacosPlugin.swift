@@ -16,6 +16,40 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var micLevelStreamHandler: MicLevelStreamHandler?
   private let micLevelMonitor = MicLevelMonitor()
 
+  // Hotkey + Sleep
+  private let hotkeyManager = HotkeyManager()
+  private let sleepObserver = SleepObserver()
+  private var hotkeyEventSink: FlutterEventSink?
+  private var sleepEventSink: FlutterEventSink?
+
+  private lazy var hotkeysStreamHandler: StreamHandler = StreamHandler(
+    onListen: { [weak self] sink in
+      self?.hotkeyEventSink = sink
+      self?.hotkeyManager.onAction = { (action: HotkeyManager.Action) in
+        sink(["action": action.rawValue])
+      }
+      self?.hotkeyManager.onConflict = { (id: UInt32) in
+        sink(["event": "conflict", "id": id])
+      }
+    },
+    onCancel: { [weak self] in
+      self?.hotkeyEventSink = nil
+      self?.hotkeyManager.onAction = nil
+      self?.hotkeyManager.onConflict = nil
+    })
+
+  private lazy var sleepStreamHandler: StreamHandler = StreamHandler(
+    onListen: { [weak self] sink in
+      self?.sleepEventSink = sink
+      self?.sleepObserver.onEvent = { (event: SleepObserver.Event) in
+        sink(["event": event.rawValue])
+      }
+    },
+    onCancel: { [weak self] in
+      self?.sleepEventSink = nil
+      self?.sleepObserver.onEvent = nil
+    })
+
   // NEW: Live recording state.
   private var liveWriter: LiveRecordingWriter?
   private var liveEncoder: VideoToolboxEncoder?
@@ -87,6 +121,15 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       instance?.micLevelStreamHandler?.send(level)
     }
 
+    let hotkeysChannel = FlutterEventChannel(
+      name: "com.slipreel.screen_recorder/hotkeys",
+      binaryMessenger: registrar.messenger)
+    let sleepChannel = FlutterEventChannel(
+      name: "com.slipreel.screen_recorder/sleep",
+      binaryMessenger: registrar.messenger)
+    hotkeysChannel.setStreamHandler(instance.hotkeysStreamHandler)
+    sleepChannel.setStreamHandler(instance.sleepStreamHandler)
+
     // Register the app with macOS's Accessibility TCC list at plugin
     // load. Without this an app that has never asked for the permission
     // doesn't appear in System Settings → Privacy & Security →
@@ -155,6 +198,24 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       startLiveRecording(call: call, result: result)
     case "stopLiveRecording":
       stopLiveRecording(result: result)
+
+    case "pauseRecording":
+      pauseRecording(result: result)
+
+    case "resumeRecording":
+      resumeRecording(result: result)
+
+    case "registerRecordingHotkeys":
+      hotkeyManager.registerAll()
+      result(nil)
+
+    case "unregisterRecordingHotkeys":
+      hotkeyManager.unregisterAll()
+      result(nil)
+
+    case "startSleepObserver":
+      sleepObserver.start()
+      result(nil)
     case "requestPermissions":
       requestPermissions(result: result)
     case "checkPermissions":
@@ -807,6 +868,26 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     }
   }
 
+  private func pauseRecording(result: @escaping FlutterResult) {
+    guard let writer = liveWriter else {
+      result(FlutterError(code: "NOT_RECORDING",
+                          message: "No active recording to pause", details: nil))
+      return
+    }
+    writer.pause()
+    result(nil)
+  }
+
+  private func resumeRecording(result: @escaping FlutterResult) {
+    guard let writer = liveWriter else {
+      result(FlutterError(code: "NOT_RECORDING",
+                          message: "No active recording to resume", details: nil))
+      return
+    }
+    writer.resume()
+    result(nil)
+  }
+
   // MARK: - Source picker
 
   /// Build a closure that maps NSEvent.mouseLocation (global, AppKit
@@ -1315,5 +1396,24 @@ class MicLevelStreamHandler: NSObject, FlutterStreamHandler {
   func send(_ level: Double) {
     guard let sink = eventSink, level.isFinite else { return }
     sink(level)
+  }
+}
+
+// MARK: - Generic Stream Handler
+
+private final class StreamHandler: NSObject, FlutterStreamHandler {
+  let onListenCb: (@escaping FlutterEventSink) -> Void
+  let onCancelCb: () -> Void
+  init(onListen: @escaping (@escaping FlutterEventSink) -> Void,
+       onCancel: @escaping () -> Void) {
+    self.onListenCb = onListen
+    self.onCancelCb = onCancel
+  }
+  func onListen(withArguments _: Any?, eventSink: @escaping FlutterEventSink)
+      -> FlutterError? {
+    onListenCb(eventSink); return nil
+  }
+  func onCancel(withArguments _: Any?) -> FlutterError? {
+    onCancelCb(); return nil
   }
 }

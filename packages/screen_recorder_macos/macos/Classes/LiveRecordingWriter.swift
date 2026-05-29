@@ -63,6 +63,17 @@ class LiveRecordingWriter {
   /// Set to true once `assetWriter.startWriting()` and `startSession` have been called.
   private var writerActive = false
 
+  /// True when pause() has been called and not yet matched by resume().
+  /// Sample buffers are dropped while this is true.
+  private var isPaused = false
+
+  /// Host-clock time when pause() was called. Set on pause, cleared on resume.
+  private var pauseStart: CMTime?
+
+  /// Accumulated paused duration. Subtracted from every sample's PTS so the
+  /// output timeline has no gap.
+  private var pausedOffset: CMTime = .zero
+
   /// Number of times appendVideo was called.
   private(set) var appendVideoCallCount: Int = 0
   /// Number of times a sample was successfully appended (input was ready).
@@ -177,6 +188,7 @@ class LiveRecordingWriter {
     writerQueue.sync {
       appendVideoCallCount += 1
       guard isStarted, let _ = assetWriter else { return }
+      if isPaused { return }
 
       if !writerActive {
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else {
@@ -192,12 +204,11 @@ class LiveRecordingWriter {
 
       guard let input = videoInput else { return }
       if input.isReadyForMoreMediaData {
-        input.append(sampleBuffer)
+        let rebased = rebaseSampleBuffer(sampleBuffer)
+        input.append(rebased ?? sampleBuffer)
         appendVideoAcceptedCount += 1
       } else {
         appendVideoNotReadyCount += 1
-        // Drop. Capture queue depth + VT real-time mode should keep this rare;
-        // PerfSampler will report the drop count.
       }
     }
   }
@@ -209,8 +220,10 @@ class LiveRecordingWriter {
   func appendAudio(_ sampleBuffer: CMSampleBuffer, role: AudioTrackRole) {
     writerQueue.sync {
       guard isStarted, writerActive, let input = audioInputs[role] else { return }
+      if isPaused { return }
       if input.isReadyForMoreMediaData {
-        input.append(sampleBuffer)
+        let rebased = rebaseSampleBuffer(sampleBuffer)
+        input.append(rebased ?? sampleBuffer)
       }
     }
   }
@@ -228,6 +241,12 @@ class LiveRecordingWriter {
     let syncResult: SyncResult = writerQueue.sync {
       guard isStarted, let writer = assetWriter else {
         return .notStarted
+      }
+
+      // Unpause before finalizing so writer drains its queues.
+      if isPaused {
+        isPaused = false
+        pauseStart = nil
       }
 
       videoInput?.markAsFinished()
@@ -263,5 +282,67 @@ class LiveRecordingWriter {
     case .finalizing:
       break
     }
+  }
+
+  /// Pause appending sample buffers. Idempotent.
+  ///
+  /// Requires `writerActive` (the AVAssetWriter session is open at a known
+  /// source-time). If pause arrives before the first compressed frame opens
+  /// the session, this is a no-op — pausing nothing-yet-captured has no
+  /// observable effect, and skipping it avoids a broken state where the
+  /// rebase offset accumulates before any session start exists.
+  func pause() {
+    writerQueue.sync {
+      guard isStarted, writerActive, !isPaused else { return }
+      isPaused = true
+      pauseStart = CMClockGetTime(CMClockGetHostTimeClock())
+    }
+  }
+
+  /// Resume appending. Adds the elapsed paused duration to `pausedOffset` so
+  /// subsequent samples have their PTS rebased seamlessly. Idempotent.
+  func resume() {
+    writerQueue.sync {
+      guard isStarted, isPaused, let start = pauseStart else {
+        isPaused = false
+        pauseStart = nil
+        return
+      }
+      let now = CMClockGetTime(CMClockGetHostTimeClock())
+      pausedOffset = CMTimeAdd(pausedOffset, CMTimeSubtract(now, start))
+      isPaused = false
+      pauseStart = nil
+    }
+  }
+
+  /// Returns a new `CMSampleBuffer` with its PTS shifted back by `pausedOffset`
+  /// so the output timeline excludes paused intervals. Returns `nil` if the
+  /// offset is zero or the buffer can't be rewritten (caller falls back to
+  /// the original sample).
+  private func rebaseSampleBuffer(_ sampleBuffer: CMSampleBuffer) -> CMSampleBuffer? {
+    if pausedOffset == .zero { return nil }
+    var count: CMItemCount = 0
+    CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, entryCount: 0, arrayToFill: nil, entriesNeededOut: &count)
+    if count == 0 { return nil }
+    var timing = Array(repeating: CMSampleTimingInfo(), count: count)
+    CMSampleBufferGetSampleTimingInfoArray(
+      sampleBuffer, entryCount: count, arrayToFill: &timing, entriesNeededOut: nil)
+    for i in 0..<count {
+      timing[i].presentationTimeStamp =
+        CMTimeSubtract(timing[i].presentationTimeStamp, pausedOffset)
+      if CMTimeCompare(timing[i].decodeTimeStamp, .invalid) != 0 &&
+         CMTimeCompare(timing[i].decodeTimeStamp, .indefinite) != 0 {
+        timing[i].decodeTimeStamp =
+          CMTimeSubtract(timing[i].decodeTimeStamp, pausedOffset)
+      }
+    }
+    var rebased: CMSampleBuffer?
+    let status = CMSampleBufferCreateCopyWithNewTiming(
+      allocator: kCFAllocatorDefault,
+      sampleBuffer: sampleBuffer,
+      sampleTimingEntryCount: count,
+      sampleTimingArray: &timing,
+      sampleBufferOut: &rebased)
+    return status == noErr ? rebased : nil
   }
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
+import '../../state/recording_settings_controller.dart';
 
 /// Settings screen for customizing window frame appearance.
 ///
@@ -15,7 +17,7 @@ import 'package:slipreel_engine/models/window_frame.dart';
 /// - Adjusting corner radius
 /// - Adjusting shadow blur
 /// - Selecting background colors
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   final WindowFrame frame;
   final ValueChanged<WindowFrame> onChanged;
 
@@ -26,10 +28,10 @@ class SettingsScreen extends StatefulWidget {
   });
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late WindowFrame _frame = widget.frame;
 
   @override
@@ -85,6 +87,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Recording section
+            _buildSectionTitle('Recording'),
+            const SizedBox(height: 12),
+            _buildCountdownPicker(),
+            const SizedBox(height: 16),
+            _buildShortcutsCard(),
+            const SizedBox(height: 32),
+
             // Template selector
             _buildSectionTitle('Template'),
             const SizedBox(height: 12),
@@ -350,6 +360,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
               fontWeight: FontWeight.w500,
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCountdownPicker() {
+    final value = ref.watch(recordingSettingsControllerProvider).countdownSeconds;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text('Countdown before recording',
+            style: TextStyle(color: Colors.white)),
+        ToggleButtons(
+          isSelected: [value == 0, value == 3, value == 5],
+          onPressed: (i) {
+            final next = [0, 3, 5][i];
+            ref
+                .read(recordingSettingsControllerProvider.notifier)
+                .setCountdownSeconds(next);
+          },
+          borderRadius: BorderRadius.circular(8),
+          children: const [Text(' Off '), Text(' 3 s '), Text(' 5 s ')],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShortcutsCard() {
+    const rows = [
+      ('⌘⇧1', 'Start recording'),
+      ('⌘⇧2', 'Stop recording'),
+      ('⌘⇧P', 'Pause / Resume'),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2B2B3D),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Keyboard shortcuts',
+              style: TextStyle(color: Colors.white70, fontSize: 12)),
+          const SizedBox(height: 6),
+          for (final r in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(children: [
+                SizedBox(
+                    width: 56,
+                    child: Text(r.$1,
+                        style: const TextStyle(
+                            color: Colors.white, fontFamily: 'Menlo'))),
+                Text(r.$2, style: const TextStyle(color: Colors.white70)),
+              ]),
+            ),
         ],
       ),
     );

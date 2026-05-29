@@ -21,13 +21,26 @@ import 'platform/window_chrome_channel.dart';
 import 'onboarding/onboarding_store.dart';
 import 'onboarding/tips_controller.dart';
 import 'onboarding/tips_store.dart';
+import 'state/hotkey_controller.dart';
+import 'state/long_recording_watcher.dart';
 import 'state/permissions_controller.dart';
+import 'state/recording_action_router.dart';
+import 'state/recording_settings_controller.dart';
+import 'state/recording_settings_store.dart';
+import 'state/sleep_observer.dart';
 import 'state/window_mode_controller.dart';
 import 'ui/bar/recording_bar_screen.dart';
+import 'ui/bar/recording_toast.dart';
+import 'ui/bar/wake_modal.dart';
 import 'ui/screens/onboarding/onboarding_screen.dart';
 import 'ui/screens/playback_screen.dart';
 import 'ui/widgets/scene_blur_overlay.dart';
 import 'ui/widgets/zoom/playback_canvas.dart';
+
+/// Navigator key used by the recording surface widgets (WakeModal,
+/// RecordingToast) to obtain a valid [BuildContext] outside the normal
+/// widget tree.
+final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -93,6 +106,14 @@ Future<void> main() async {
   final tipsController = TipsController(tipsStore);
   await tipsController.load();
 
+  final recordingSettingsStore = RecordingSettingsStore(
+    path: p.join(
+      (await getApplicationSupportDirectory()).path,
+      'recording_settings.json',
+    ),
+  );
+  final initialRecordingSettings = await recordingSettingsStore.load();
+
   if (kDebugMode || kProfileMode) {
     _registerSlipreelDebugExtensions(tipsController: tipsController);
   }
@@ -110,6 +131,11 @@ Future<void> main() async {
       tipsControllerProvider.overrideWith((ref) => tipsController),
       windowChromeProvider.overrideWithValue(MethodChannelWindowChrome()),
       permissionsControllerProvider.overrideWith((ref) => permissionsController),
+      recordingSettingsStoreProvider.overrideWithValue(recordingSettingsStore),
+      recordingSettingsControllerProvider.overrideWith((ref) =>
+          RecordingSettingsController(
+              store: recordingSettingsStore,
+              initial: initialRecordingSettings)),
     ],
     child: MyApp(onboardingDone: onboardingDone),
   ));
@@ -209,16 +235,108 @@ class MyApp extends ConsumerStatefulWidget {
 }
 
 class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
+  RecordingActionRouter? _router;
+  HotkeyController? _hotkeyController;
+  SleepObserver? _sleepObserver;
+  LongRecordingWatcher? _longWatcher;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _initRecordingSurfaces());
   }
 
   @override
   void dispose() {
+    _hotkeyController?.dispose();
+    _sleepObserver?.dispose();
+    _longWatcher?.dispose();
+    // Clear the global so a hot-reload-replaced MyApp doesn't keep callers
+    // pointing at the now-disposed router + its stale ProviderContainer.
+    if (recordingActionRouterRef == _router) {
+      recordingActionRouterRef = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _initRecordingSurfaces() {
+    final container = ProviderScope.containerOf(context);
+    final router = RecordingActionRouter(container);
+    _router = router;
+    recordingActionRouterRef = router;
+    _hotkeyController = HotkeyController(
+      platform: ScreenRecorderPlatform.instance,
+      router: router,
+      rootContextProvider: () => rootNavigatorKey.currentContext,
+    );
+    _sleepObserver = SleepObserver(
+      platform: ScreenRecorderPlatform.instance,
+      router: router,
+      container: container,
+      onWake: _showWakeModal,
+    );
+    _longWatcher = LongRecordingWatcher(
+      container: container,
+      onFire: _onThresholdFire,
+    );
+  }
+
+  void _showWakeModal() {
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx == null) return;
+    showDialog<void>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => WakeModal(
+        title: 'Welcome back',
+        body: 'Your recording was paused while the Mac slept.',
+        primaryLabel: 'Resume',
+        secondaryLabel: 'Stop & save',
+        autoStopAfter: const Duration(seconds: 10),
+        onPrimary: () {
+          Navigator.of(ctx).pop();
+          _router?.pauseOrResume();
+        },
+        onSecondary: () {
+          Navigator.of(ctx).pop();
+          _router?.stop();
+        },
+      ),
+    );
+  }
+
+  void _onThresholdFire(ThresholdAction action) {
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx == null) return;
+    switch (action) {
+      case ThresholdAction.toast30:
+        RecordingToast.show(ctx, "You've been recording for 30 minutes");
+      case ThresholdAction.toast60:
+        RecordingToast.show(ctx, "You've been recording for 60 minutes");
+      case ThresholdAction.modal90:
+        showDialog<void>(
+          context: ctx,
+          barrierDismissible: false,
+          builder: (_) => WakeModal(
+            title: 'Still recording?',
+            body: "You've been recording for 90 minutes.",
+            primaryLabel: 'Continue recording',
+            secondaryLabel: 'Stop & save',
+            autoStopAfter: const Duration(seconds: 30),
+            onPrimary: () => Navigator.of(ctx).pop(),
+            onSecondary: () {
+              Navigator.of(ctx).pop();
+              _router?.stop();
+            },
+          ),
+        );
+      case ThresholdAction.hardStop:
+        _router?.stop();
+        RecordingToast.show(ctx, 'Recording capped at 2 hours and saved');
+    }
   }
 
   @override
@@ -232,6 +350,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       title: 'Slipreel',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
