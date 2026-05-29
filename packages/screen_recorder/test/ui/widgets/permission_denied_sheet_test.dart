@@ -8,6 +8,8 @@ import 'package:url_launcher_platform_interface/link.dart';
 
 class _FakeUrlLauncher extends UrlLauncherPlatform with MockPlatformInterfaceMixin {
   String? lastUrl;
+  bool returnValue = true;
+
   @override
   LinkDelegate? get linkDelegate => null;
   @override
@@ -15,7 +17,7 @@ class _FakeUrlLauncher extends UrlLauncherPlatform with MockPlatformInterfaceMix
   @override
   Future<bool> launchUrl(String url, LaunchOptions options) async {
     lastUrl = url;
-    return true;
+    return returnValue;
   }
   @override
   Future<bool> launch(String url, {
@@ -28,7 +30,7 @@ class _FakeUrlLauncher extends UrlLauncherPlatform with MockPlatformInterfaceMix
     String? webOnlyWindowName,
   }) async {
     lastUrl = url;
-    return true;
+    return returnValue;
   }
 }
 
@@ -88,5 +90,26 @@ void main() {
       fake.lastUrl,
       'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
     );
+  });
+
+  testWidgets(
+      'shows inline error and does NOT pop when launchUrl returns false',
+      (tester) async {
+    fake.returnValue = false;
+    await pumpAndShow(tester, PermissionKind.screenRecording);
+
+    // Sheet is open — no error yet.
+    expect(find.textContaining("Couldn't open"), findsNothing);
+
+    await tester.tap(find.text('Open System Settings'));
+    await tester.pumpAndSettle();
+
+    // Error text appears.
+    expect(find.textContaining("Couldn't open System Settings"), findsOneWidget);
+
+    // Sheet is still visible (not popped): the title and "Not now" button
+    // remain in the tree.
+    expect(find.text('Screen Recording permission required'), findsOneWidget);
+    expect(find.text('Not now'), findsOneWidget);
   });
 }

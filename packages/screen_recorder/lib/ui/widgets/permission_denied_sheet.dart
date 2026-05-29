@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class PermissionDeniedSheet extends StatelessWidget {
+class PermissionDeniedSheet extends StatefulWidget {
   const PermissionDeniedSheet({super.key, required this.kind});
   final PermissionKind kind;
 
@@ -40,25 +41,57 @@ class PermissionDeniedSheet extends StatelessWidget {
   }
 
   @override
+  State<PermissionDeniedSheet> createState() => _PermissionDeniedSheetState();
+}
+
+class _PermissionDeniedSheetState extends State<PermissionDeniedSheet> {
+  String? _error;
+
+  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(_titles[kind]!,
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(PermissionDeniedSheet._titles[widget.kind]!,
+                style: theme.textTheme.titleLarge),
             const SizedBox(height: 12),
-            Text(_bodies[kind]!,
-                style: Theme.of(context).textTheme.bodyMedium),
+            Text(PermissionDeniedSheet._bodies[widget.kind]!,
+                style: theme.textTheme.bodyMedium),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton(
               onPressed: () async {
-                final ok = await launchUrl(Uri.parse(_urls[kind]!));
-                if (!context.mounted) return;
-                if (ok) Navigator.of(context).pop();
+                bool ok = false;
+                try {
+                  ok = await launchUrl(
+                      Uri.parse(PermissionDeniedSheet._urls[widget.kind]!));
+                } on PlatformException catch (_) {
+                  ok = false;
+                } catch (_) {
+                  ok = false;
+                }
+                if (!mounted) return;
+                if (ok) {
+                  Navigator.of(context).pop();
+                } else {
+                  setState(() {
+                    _error =
+                        "Couldn't open System Settings. Open Privacy & Security manually.";
+                  });
+                }
               },
               child: const Text('Open System Settings'),
             ),
@@ -73,3 +106,4 @@ class PermissionDeniedSheet extends StatelessWidget {
     );
   }
 }
+
