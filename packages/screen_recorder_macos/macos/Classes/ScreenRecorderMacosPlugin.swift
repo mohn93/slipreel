@@ -159,6 +159,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       requestPermissions(result: result)
     case "checkPermissions":
       checkPermissions(result: result)
+    case "requestScreenRecordingPermission":
+      requestScreenRecordingPermission(result: result)
     case "getStockCursorImages":
       getStockCursorImages(result: result)
     case "isAccessibilityTrusted":
@@ -173,6 +175,32 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       let options = [promptKey: true] as CFDictionary
       _ = AXIsProcessTrustedWithOptions(options)
       result(nil)
+    case "getScreenRecordingPermission":
+      Task {
+        let manager = ScreenCaptureManager()
+        // ScreenCaptureKit only reports Bool — no notDetermined/restricted
+        // nuance available, so map directly to granted/denied.
+        let granted = await manager.checkPermission()
+        result(granted ? "granted" : "denied")
+      }
+    case "getMicrophonePermission":
+      let status = AVCaptureDevice.authorizationStatus(for: .audio)
+      switch status {
+      case .authorized: result("granted")
+      case .denied:     result("denied")
+      case .notDetermined: result("notDetermined")
+      case .restricted: result("restricted")
+      @unknown default: result("notDetermined")
+      }
+    case "getAccessibilityPermission":
+      // AX has no `notDetermined` — you're either trusted or not.
+      result(AXIsProcessTrusted() ? "granted" : "denied")
+    case "requestMicrophonePermission":
+      AVCaptureDevice.requestAccess(for: .audio) { granted in
+        DispatchQueue.main.async {
+          result(granted ? "granted" : "denied")
+        }
+      }
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -416,6 +444,24 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         result(FlutterError(
           code: "PERMISSION_ERROR",
           message: "Failed to request permissions: \(error.localizedDescription)",
+          details: nil
+        ))
+      }
+    }
+  }
+
+  /// Typed variant of requestPermissions — returns a PermissionStatus wire
+  /// string ("granted" / "denied" / "notDetermined") instead of a Bool.
+  private func requestScreenRecordingPermission(result: @escaping FlutterResult) {
+    Task {
+      do {
+        let manager = ScreenCaptureManager()
+        let granted = try await manager.requestPermission()
+        result(granted ? "granted" : "denied")
+      } catch {
+        result(FlutterError(
+          code: "PERMISSION_ERROR",
+          message: "Failed to request screen recording permission: \(error.localizedDescription)",
           details: nil
         ))
       }

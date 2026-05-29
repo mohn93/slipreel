@@ -8,6 +8,7 @@ import 'package:logger/logger.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_macos/screen_recorder_macos.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/rendering/cursor_image_cache.dart';
 import 'package:slipreel_engine/rendering/cursor_overlay_painter.dart';
@@ -17,8 +18,13 @@ import 'package:slipreel_engine/state/motion_tuning_store.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 import 'debug/debug_probe.dart';
 import 'platform/window_chrome_channel.dart';
+import 'onboarding/onboarding_store.dart';
+import 'onboarding/tips_controller.dart';
+import 'onboarding/tips_store.dart';
+import 'state/permissions_controller.dart';
 import 'state/window_mode_controller.dart';
 import 'ui/bar/recording_bar_screen.dart';
+import 'ui/screens/onboarding/onboarding_screen.dart';
 import 'ui/screens/playback_screen.dart';
 import 'ui/widgets/scene_blur_overlay.dart';
 import 'ui/widgets/zoom/playback_canvas.dart';
@@ -35,7 +41,6 @@ Future<void> main() async {
   // for end-to-end debugging. No-op in release builds.
   if (kDebugMode || kProfileMode) {
     debugProbe.install();
-    _registerSlipreelDebugExtensions();
     AppLogger.platform.i(
       'Debug probe installed (ext.slipreel.* registered)',
     );
@@ -77,6 +82,21 @@ Future<void> main() async {
     AppLogger.platform.i('MotionTuning loaded from ${tuningStore.path}');
   }
 
+  final permissionsController =
+      PermissionsController(ScreenRecorderPlatform.instance);
+  await permissionsController.refreshAll();
+
+  final onboardingStore = OnboardingStore();
+  final onboardingDone = await onboardingStore.load();
+
+  final tipsStore = TipsStore();
+  final tipsController = TipsController(tipsStore);
+  await tipsController.load();
+
+  if (kDebugMode || kProfileMode) {
+    _registerSlipreelDebugExtensions(tipsController: tipsController);
+  }
+
   runApp(ProviderScope(
     overrides: [
       motionTuningProvider.overrideWith(
@@ -85,9 +105,13 @@ Future<void> main() async {
         ),
       ),
       motionTuningStoreProvider.overrideWithValue(tuningStore),
+      onboardingStoreProvider.overrideWithValue(onboardingStore),
+      tipsStoreProvider.overrideWithValue(tipsStore),
+      tipsControllerProvider.overrideWith((ref) => tipsController),
       windowChromeProvider.overrideWithValue(MethodChannelWindowChrome()),
+      permissionsControllerProvider.overrideWith((ref) => permissionsController),
     ],
-    child: const MyApp(),
+    child: MyApp(onboardingDone: onboardingDone),
   ));
 }
 
@@ -96,10 +120,16 @@ Future<void> main() async {
 /// Pairs with the agent-wires probe — the probe exposes the standard
 /// QA tools, this surface is for slipreel-specific instrumentation.
 ///
+/// [tipsController] is the live in-memory instance created in [main]; passing
+/// it here lets the reset hook call [TipsController.load] to refresh the
+/// in-memory seen-set immediately after clearing the store, so the next
+/// [TipAnchor] that checks [shouldShow] sees the cleared state without
+/// requiring an app restart.
+///
 /// Each extension returns `{'enabled': bool}` so callers can probe
 /// state without needing a separate getter. Add new toggles here as
 /// the debugging surface grows.
-void _registerSlipreelDebugExtensions() {
+void _registerSlipreelDebugExtensions({TipsController? tipsController}) {
   developer.registerExtension(
     'ext.slipreel.setSceneBlurTrace',
     (method, params) async {
@@ -142,6 +172,20 @@ void _registerSlipreelDebugExtensions() {
     cameraFocalTraceEnabled = enabled;
     return developer.ServiceExtensionResponse.result('{"enabled": $enabled}');
   });
+
+  developer.registerExtension(
+    'ext.slipreel.resetOnboarding',
+    (method, params) async {
+      await OnboardingStore().reset();
+      final store = TipsStore();
+      await store.clearAll();
+      // Reload the in-memory TipsController so the seen-set is cleared
+      // immediately; TipAnchors that haven't fired yet will see the reset
+      // state on their next shouldShow() check without requiring a restart.
+      await tipsController?.load();
+      return developer.ServiceExtensionResponse.result('{"reset": true}');
+    },
+  );
 }
 
 String _playbackStateJson() {
@@ -155,8 +199,35 @@ String _playbackStateJson() {
       '"durationMs": ${v.duration.inMilliseconds}}';
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class MyApp extends ConsumerStatefulWidget {
+  const MyApp({super.key, required this.onboardingDone});
+
+  final bool onboardingDone;
+
+  @override
+  ConsumerState<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // User may have flipped a permission in System Settings; re-probe.
+      ref.read(permissionsControllerProvider.notifier).refreshAll();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -175,7 +246,9 @@ class MyApp extends StatelessWidget {
       navigatorObservers: [
         if (debugProbe.navigatorObserver() case final observer?) observer,
       ],
-      home: const RecordingBarScreen(),
+      home: widget.onboardingDone
+          ? const RecordingBarScreen()
+          : const OnboardingScreen(),
     );
   }
 }

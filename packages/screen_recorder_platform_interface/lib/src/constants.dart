@@ -40,5 +40,11 @@ class ScreenRecorderMethods {
   static const String isAccessibilityTrusted = 'isAccessibilityTrusted';
   static const String requestAccessibilityPermission =
       'requestAccessibilityPermission';
+  static const String getScreenRecordingPermission = 'getScreenRecordingPermission';
+  static const String getMicrophonePermission = 'getMicrophonePermission';
+  static const String getAccessibilityPermission = 'getAccessibilityPermission';
+  static const String requestMicrophonePermission = 'requestMicrophonePermission';
+  static const String requestScreenRecordingPermission =
+      'requestScreenRecordingPermission';
   static const String getStockCursorImages = 'getStockCursorImages';
 }

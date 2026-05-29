@@ -7,8 +7,10 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import 'package:slipreel_engine/models/window_frame.dart';
 
 import '../../state/microphone_controller.dart';
+import '../../state/permissions_controller.dart';
 import '../../state/recording_state.dart';
 import '../../state/system_audio_controller.dart';
+import '../widgets/permission_denied_sheet.dart';
 import '../../state/window_mode.dart';
 import '../../state/window_mode_controller.dart';
 import '../screens/playback_screen.dart';
@@ -141,9 +143,12 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         final picked = await ScreenRecorderPlatform.instance.pickSource(kind);
         if (picked == null) return;
         controller.selectSource(kind: picked.kind, id: picked.id);
+        final snapshot = ref.read(permissionsControllerProvider);
         await controller.startRecording(
             microphone: ref.read(microphoneControllerProvider),
-            systemAudio: ref.read(systemAudioControllerProvider));
+            systemAudio: ref.read(systemAudioControllerProvider),
+            permissions: snapshot,
+            onDenied: (kind) => PermissionDeniedSheet.show(context, kind));
       case BarSourceMode.area:
         final region = await ScreenRecorderPlatform.instance.selectRegion();
         if (region == null) return;
@@ -152,9 +157,12 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
           id: region.displayId,
           region: region,
         );
+        final snapshot = ref.read(permissionsControllerProvider);
         await controller.startRecording(
             microphone: ref.read(microphoneControllerProvider),
-            systemAudio: ref.read(systemAudioControllerProvider));
+            systemAudio: ref.read(systemAudioControllerProvider),
+            permissions: snapshot,
+            onDenied: (kind) => PermissionDeniedSheet.show(context, kind));
       case BarSourceMode.device:
         break;
     }

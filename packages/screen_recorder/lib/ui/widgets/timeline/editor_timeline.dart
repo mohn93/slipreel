@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:screen_recorder/onboarding/tip_anchor.dart';
+import 'package:screen_recorder/onboarding/tips_controller.dart';
 
 const _trackBg = Color(0xFF1B1B26);
 const _clipFill = Color(0xFFE69E5A);
@@ -221,18 +223,21 @@ class _EditorTimelineState extends State<EditorTimeline> {
                       ),
                     ),
                     const SizedBox(height: _laneSpacing),
-                    SizedBox(
-                      height: zoomLaneHeight,
-                      child: _ZoomLane(
-                        duration: widget.duration,
-                        width: width,
-                        zoomRegions: widget.zoomRegions,
-                        selectedIndex: widget.selectedZoomIndex,
-                        onZoomChanged: widget.onZoomChanged,
-                        onZoomSelected: widget.onZoomSelected,
-                        onZoomDeleted: widget.onZoomDeleted,
-                        onZoomAdded: widget.onZoomAdded,
-                        onSeek: widget.onSeek,
+                    TipAnchor(
+                      tipId: TipId.editorZoomKeyframe,
+                      child: SizedBox(
+                        height: zoomLaneHeight,
+                        child: _ZoomLane(
+                          duration: widget.duration,
+                          width: width,
+                          zoomRegions: widget.zoomRegions,
+                          selectedIndex: widget.selectedZoomIndex,
+                          onZoomChanged: widget.onZoomChanged,
+                          onZoomSelected: widget.onZoomSelected,
+                          onZoomDeleted: widget.onZoomDeleted,
+                          onZoomAdded: widget.onZoomAdded,
+                          onSeek: widget.onSeek,
+                        ),
                       ),
                     ),
                   ],
@@ -525,14 +530,17 @@ class _ClipLaneState extends State<_ClipLane> {
               top: 0,
               width: _handleHitWidth,
               bottom: 0,
-              child: _PillEdgeHandle(
-                alignment: Alignment.center,
-                showHandle: _hovered,
-                verticalPadding: 10,
-                onDragStart: _beginTrimStartDrag,
-                onDragUpdate: _onTrimStartDrag,
-                onDragEnd: _endTrimStartDrag,
-                onTap: widget.onTap,
+              child: TipAnchor(
+                tipId: TipId.editorTrimHandles,
+                child: _PillEdgeHandle(
+                  alignment: Alignment.center,
+                  showHandle: _hovered,
+                  verticalPadding: 10,
+                  onDragStart: _beginTrimStartDrag,
+                  onDragUpdate: _onTrimStartDrag,
+                  onDragEnd: _endTrimStartDrag,
+                  onTap: widget.onTap,
+                ),
               ),
             ),
             Positioned(

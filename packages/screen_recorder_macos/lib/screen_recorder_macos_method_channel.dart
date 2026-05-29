@@ -46,6 +46,8 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  // ignore: deprecated_member_use_from_same_package
+  @Deprecated('Use requestScreenRecordingPermission() instead')
   Future<bool> requestPermissions() async {
     final result = await _recordingChannel.invokeMethod<bool>(
       ScreenRecorderMethods.requestPermissions,
@@ -54,11 +56,21 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  // ignore: deprecated_member_use_from_same_package
+  @Deprecated('Use getScreenRecordingPermission() instead')
   Future<bool> checkPermissions() async {
     final result = await _recordingChannel.invokeMethod<bool>(
       ScreenRecorderMethods.checkPermissions,
     );
     return result ?? false;
+  }
+
+  @override
+  Future<PermissionStatus> requestScreenRecordingPermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.requestScreenRecordingPermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
   }
 
   @override
@@ -74,6 +86,38 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
     await _recordingChannel.invokeMethod<void>(
       ScreenRecorderMethods.requestAccessibilityPermission,
     );
+  }
+
+  @override
+  Future<PermissionStatus> getScreenRecordingPermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.getScreenRecordingPermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
+  }
+
+  @override
+  Future<PermissionStatus> getMicrophonePermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.getMicrophonePermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
+  }
+
+  @override
+  Future<PermissionStatus> getAccessibilityPermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.getAccessibilityPermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
+  }
+
+  @override
+  Future<PermissionStatus> requestMicrophonePermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.requestMicrophonePermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
   }
 
   @override

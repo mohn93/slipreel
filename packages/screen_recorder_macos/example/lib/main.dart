@@ -42,10 +42,10 @@ class _MyAppState extends State<MyApp> {
     String status;
     try {
       // Try to check permissions as a simple test
-      final hasPermissions =
-          await ScreenRecorderPlatform.instance.checkPermissions();
+      final permStatus =
+          await ScreenRecorderPlatform.instance.getScreenRecordingPermission();
       status =
-          'Plugin loaded. Permissions: ${hasPermissions ? 'Granted' : 'Not granted'}';
+          'Plugin loaded. Permissions: ${permStatus.name}';
     } on PlatformException catch (e) {
       status = 'Plugin loaded. Error: ${e.message}';
     }

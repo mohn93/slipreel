@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:screen_recorder/onboarding/tip_anchor.dart';
+import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/clip_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';
@@ -99,9 +101,12 @@ class _InspectorPanelState extends State<InspectorPanel> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _Rail(
-          selected: _selected,
-          onSelect: (t) => setState(() => _selected = t),
+        TipAnchor(
+          tipId: TipId.editorInspector,
+          child: _Rail(
+            selected: _selected,
+            onSelect: (t) => setState(() => _selected = t),
+          ),
         ),
         Expanded(child: _formatContent()),
       ],

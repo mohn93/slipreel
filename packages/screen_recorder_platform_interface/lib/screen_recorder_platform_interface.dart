@@ -21,3 +21,4 @@ export 'src/models/region_selection.dart';
 export 'src/models/stock_cursor_image.dart';
 export 'src/models/microphone_config.dart';
 export 'src/models/system_audio_config.dart';
+export 'src/permission_status.dart';

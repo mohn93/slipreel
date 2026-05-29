@@ -37,6 +37,8 @@ import 'package:slipreel_engine/export/audio_mix_args.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import '../../state/recording_audio_streams_provider.dart';
+import '../../onboarding/tip_anchor.dart';
+import '../../onboarding/tips_controller.dart';
 import 'playback/hover_scrub_controller.dart';
 import 'playback/trim_controller.dart';
 import 'playback/export_controller.dart';
@@ -796,31 +798,34 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             // anyway, but the visual cue matters).
             Padding(
               padding: const EdgeInsets.only(right: 12),
-              child: ElevatedButton.icon(
-                onPressed: _isExporting ? null : _export,
-                icon: _isExporting
-                    ? const CtaSpinner(size: 16)
-                    : const Icon(Icons.file_download_outlined, size: 18),
-                label: Text(
-                  _isExporting ? 'Exporting…' : 'Export',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6C63FF),
-                  foregroundColor: Colors.white,
-                  // Keep the button looking active (not greyed out)
-                  // while in the loading state — the spinner already
-                  // says "busy", the disabled colour would just
-                  // wash out the CTA.
-                  disabledBackgroundColor: const Color(0xFF6C63FF),
-                  disabledForegroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 12,
+              child: TipAnchor(
+                tipId: TipId.editorExport,
+                child: ElevatedButton.icon(
+                  onPressed: _isExporting ? null : _export,
+                  icon: _isExporting
+                      ? const CtaSpinner(size: 16)
+                      : const Icon(Icons.file_download_outlined, size: 18),
+                  label: Text(
+                    _isExporting ? 'Exporting…' : 'Export',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6C63FF),
+                    foregroundColor: Colors.white,
+                    // Keep the button looking active (not greyed out)
+                    // while in the loading state — the spinner already
+                    // says "busy", the disabled colour would just
+                    // wash out the CTA.
+                    disabledBackgroundColor: const Color(0xFF6C63FF),
+                    disabledForegroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
               ),
