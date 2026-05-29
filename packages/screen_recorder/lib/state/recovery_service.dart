@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/export/ffmpeg_resolver.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
+import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 
 import 'cursor_checkpointer.dart';
@@ -79,6 +80,24 @@ class RecoveryService {
       return null;
     }
 
+    // Probe duration for the .meta.json sidecar.
+    double? recoveredDurationSeconds;
+    try {
+      final ffprobePath = Ffmpeg.resolve().replaceFirst(RegExp(r'ffmpeg$'), 'ffprobe');
+      final probe = await runProcess(ffprobePath, [
+        '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'default=nokey=1:noprint_wrappers=1',
+        recovered,
+      ]);
+      if (probe.exitCode == 0) {
+        recoveredDurationSeconds = double.tryParse(probe.stdout.toString().trim());
+      }
+    } catch (e, st) {
+      AppLogger.platform.w('ffprobe of recovered file failed',
+          error: e, stackTrace: st);
+    }
+
     // Rebuild the cursor sidecar from the NDJSON, if present.
     try {
       final positions =
@@ -93,6 +112,24 @@ class RecoveryService {
     } catch (e, st) {
       AppLogger.platform.w('Cursor restore failed; recovered clip has no cursor',
           error: e, stackTrace: st);
+    }
+
+    // Write the .meta.json sidecar so the editor / Recents have a duration.
+    if (recoveredDurationSeconds != null) {
+      try {
+        final meta = RecordingMetadata(
+          isPureSource: true,
+          recordedAt: candidate.marker.startedAt,
+          widthPx: candidate.marker.width,
+          heightPx: candidate.marker.height,
+          fps: candidate.marker.fps,
+          duration: Duration(milliseconds: (recoveredDurationSeconds * 1000).round()),
+        );
+        await meta.saveForVideo(recovered);
+      } catch (e, st) {
+        AppLogger.platform.w('Recovered .meta.json write failed',
+            error: e, stackTrace: st);
+      }
     }
 
     // Append to history.
