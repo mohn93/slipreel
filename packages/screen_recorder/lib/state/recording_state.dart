@@ -11,7 +11,7 @@ import 'package:slipreel_engine/utils/app_logger.dart';
 import 'package:slipreel_engine/utils/perf_summary.dart';
 import 'package:slipreel_engine/video_encoder.dart';
 
-enum RecordingStatus { idle, recording, processing, completed, error }
+enum RecordingStatus { idle, recording, paused, processing, completed, error }
 
 class RecordingState {
   final RecordingStatus status;
@@ -61,7 +61,8 @@ class RecordingState {
     );
   }
 
-  bool get isRecording => status == RecordingStatus.recording;
+  bool get isRecording =>
+      status == RecordingStatus.recording || status == RecordingStatus.paused;
   bool get isProcessing => status == RecordingStatus.processing;
   // [error] is recoverable — the next `startRecording` call clears
   // `error` and resets `status` to `recording`. Excluding error here
