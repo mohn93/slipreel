@@ -47,6 +47,13 @@ import 'package:slipreel_engine/models/recording_history.dart';
 /// widget tree.
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
+/// Application-wide [RecordingHistoryStore] provider.
+/// Exposed here so tests and other entry points can override it via
+/// [ProviderScope.overrides].
+final recordingHistoryStoreProvider = Provider<RecordingHistoryStore>(
+  (ref) => RecordingHistoryStore(),
+);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -318,8 +325,9 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   Future<void> _showRecoveryModal(List<RecoveryCandidate> candidates) async {
     final ctx = rootNavigatorKey.currentContext;
     if (ctx == null) return;
-    final svc = ProviderScope.containerOf(context).read(recoveryServiceProvider);
-    final history = RecordingHistoryStore();
+    final container = ProviderScope.containerOf(context);
+    final svc = container.read(recoveryServiceProvider);
+    final history = container.read(recordingHistoryStoreProvider);
     await showDialog<void>(
       context: ctx,
       barrierDismissible: false,
