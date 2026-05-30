@@ -34,8 +34,10 @@ import 'package:slipreel_engine/export/export_pipeline.dart';
 import 'package:slipreel_engine/export/gif_export_pipeline.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/export/audio_mix_args.dart';
+import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
+import 'package:slipreel_engine/utils/app_logger.dart';
 import '../../state/recording_audio_streams_provider.dart';
 import '../../onboarding/tip_anchor.dart';
 import '../../onboarding/tips_controller.dart';
@@ -182,11 +184,38 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // build sees the persisted state and the canvas doesn't flash
       // its defaults for a frame.
       final saved = await _projectStore.load();
+
+      EditorProjectState restored = saved;
+      try {
+        final hasNoZooms = saved.zoomRegions.isEmpty;
+        final hasClicks = _cursorRecording.positions.any((p) => p.isClicked);
+        if (hasNoZooms && hasClicks && _metadata != null) {
+          final detected = const AutoZoomDetector().detect(
+            cursor: _cursorRecording,
+            videoSize: Size(
+              _metadata!.widthPx.toDouble(),
+              _metadata!.heightPx.toDouble(),
+            ),
+            videoDuration: _controller.value.duration,
+          );
+          if (detected.isNotEmpty) {
+            restored = saved.copyWith(zoomRegions: detected);
+            // Make auto-placed regions immediately "user-owned" so a
+            // subsequent open skips detection — otherwise a user who
+            // deletes a region could see it come back next launch.
+            await _projectStore.save(restored);
+          }
+        }
+      } catch (e) {
+        AppLogger.ui.w(
+          'Auto-zoom detection failed; opening editor with empty zoom lane: $e',
+        );
+      }
       // Push the loaded state into the Riverpod notifier — single
       // source of truth for everything the inspector edits. The
       // ref.listen wired up in build() will route subsequent changes
       // back into _persistProject().
-      _projectController.replace(saved);
+      _projectController.replace(restored);
 
       // Owns the trim selection + soft-enforces it during playback.
       // Constructed before _trim.selection is assigned below.

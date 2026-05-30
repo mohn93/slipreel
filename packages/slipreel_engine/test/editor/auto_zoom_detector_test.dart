@@ -1,0 +1,186 @@
+import 'dart:ui';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
+import 'package:slipreel_engine/models/cursor_recording.dart';
+
+CursorPosition _p({
+  required int ms,
+  required bool clicked,
+  double x = 100,
+  double y = 100,
+}) =>
+    CursorPosition(
+      x: x,
+      y: y,
+      timestampMicros: ms * 1000,
+      isClicked: clicked,
+      state: CursorState.arrow,
+    );
+
+CursorRecording _rec(List<CursorPosition> positions) {
+  final r = CursorRecording();
+  for (final p in positions) {
+    r.addPosition(p);
+  }
+  return r;
+}
+
+/// A synthetic isClicked plateau: `down` ms with !clicked, then `hold` ms with
+/// clicked, simulating a real mouse-down at the down→up transition we want.
+List<CursorPosition> _clickAt({
+  required int atMs,
+  required double x,
+  required double y,
+  int holdMs = 50,
+}) {
+  return [
+    _p(ms: atMs - 16, clicked: false, x: x, y: y),
+    _p(ms: atMs, clicked: true, x: x, y: y),
+    _p(ms: atMs + holdMs, clicked: true, x: x, y: y),
+    _p(ms: atMs + holdMs + 16, clicked: false, x: x, y: y),
+  ];
+}
+
+void main() {
+  const detector = AutoZoomDetector();
+  const videoSize = Size(1920, 1080);
+  const videoDuration = Duration(seconds: 30);
+
+  test('empty recording returns no regions', () {
+    final out = detector.detect(
+      cursor: CursorRecording(),
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, isEmpty);
+  });
+
+  test('recording with positions but zero clicks returns no regions', () {
+    final cursor = _rec([
+      _p(ms: 0, clicked: false),
+      _p(ms: 100, clicked: false),
+      _p(ms: 200, clicked: false),
+    ]);
+    final out = detector.detect(
+      cursor: cursor,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, isEmpty);
+  });
+
+  test('single isolated click → one region centered on click', () {
+    final cursor = _rec(_clickAt(atMs: 5000, x: 800, y: 600));
+    final out = detector.detect(
+      cursor: cursor,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    final r = out.first;
+    // startTime = 5000 - 400 leadIn = 4600 ms
+    expect(r.startTime, const Duration(milliseconds: 4600));
+    // duration = 400 + 1800 + 300 = 2500 ms
+    expect(r.duration, const Duration(milliseconds: 2500));
+    expect(r.zoomLevel, 1.5);
+    // rect.center == (800, 600) (no clamping needed for this position)
+    expect(r.rect.center, const Offset(800, 600));
+    // rect dims = videoSize / zoom
+    expect(r.rect.width, closeTo(1920 / 1.5, 0.001));
+    expect(r.rect.height, closeTo(1080 / 1.5, 0.001));
+    expect(r.followCursor, isFalse);
+  });
+
+  test('two clicks 3 s apart → two regions', () {
+    // Positions chosen within the non-clamped zone for 1.5× zoom on
+    // 1920×1080: cx ∈ [640, 1280], cy ∈ [360, 720].
+    final cursor = _rec([
+      ..._clickAt(atMs: 2000, x: 700, y: 450),
+      ..._clickAt(atMs: 5000, x: 1100, y: 600),
+    ]);
+    final out = detector.detect(
+      cursor: cursor,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(2));
+    expect(out[0].rect.center, const Offset(700, 450));
+    expect(out[1].rect.center, const Offset(1100, 600));
+  });
+
+  test('two clicks 0.5 s apart → no regions (both fail isolation)', () {
+    final cursor = _rec([
+      ..._clickAt(atMs: 2000, x: 400, y: 300),
+      ..._clickAt(atMs: 2500, x: 800, y: 600),
+    ]);
+    final out = detector.detect(
+      cursor: cursor,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, isEmpty);
+  });
+
+  test('two clicks 1.6 s apart → only the first survives (overlap drops second)', () {
+    // Both pass the 1.5 s isolation gate. But region1 = [1600, 4100] (start
+    // 1600, duration 2500); region2 = [3200, 5700]. They overlap → second
+    // dropped.
+    // Positions within the non-clamped zone for 1.5× on 1920×1080:
+    // cx ∈ [640, 1280], cy ∈ [360, 720].
+    final cursor = _rec([
+      ..._clickAt(atMs: 2000, x: 700, y: 450),
+      ..._clickAt(atMs: 3600, x: 1100, y: 600),
+    ]);
+    final out = detector.detect(
+      cursor: cursor,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    expect(out.first.rect.center, const Offset(700, 450));
+  });
+
+  test('click at t=100 ms clamps region start to zero', () {
+    final cursor = _rec(_clickAt(atMs: 100, x: 800, y: 600));
+    final out = detector.detect(
+      cursor: cursor,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    expect(out.first.startTime, Duration.zero);
+  });
+
+  test('click at top-left edge clamps rect center inward', () {
+    final cursor = _rec(_clickAt(atMs: 5000, x: 0, y: 0));
+    final out = detector.detect(
+      cursor: cursor,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    final rect = out.first.rect;
+    // rect must stay fully inside the video bounds
+    expect(rect.left, greaterThanOrEqualTo(0));
+    expect(rect.top, greaterThanOrEqualTo(0));
+    expect(rect.right, lessThanOrEqualTo(videoSize.width));
+    expect(rect.bottom, lessThanOrEqualTo(videoSize.height));
+  });
+
+  test('click near end of video clamps duration', () {
+    // Video is 30s; click at 29.0s. start = 29000-400 = 28600 ms.
+    // raw duration = 2500 → end = 31100 ms which exceeds 30000.
+    // Should clamp to 30000-28600 = 1400 ms.
+    final cursor = _rec(_clickAt(atMs: 29000, x: 800, y: 600));
+    final out = detector.detect(
+      cursor: cursor,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    expect(out.first.startTime, const Duration(milliseconds: 28600));
+    expect(out.first.duration, const Duration(milliseconds: 1400));
+  });
+}
