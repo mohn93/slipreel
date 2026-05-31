@@ -29,6 +29,8 @@ import 'package:screen_recorder/ui/widgets/transport/transport_buttons.dart';
 import 'package:screen_recorder/ui/widgets/scene_blur_overlay.dart';
 import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
 import 'package:screen_recorder/state/zoom_preview_override.dart';
+import 'package:screen_recorder/ui/widgets/canvas_toolbar/aspect_ratio_picker.dart';
+import 'package:screen_recorder/ui/widgets/canvas_toolbar/canvas_toolbar.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
@@ -930,22 +932,33 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Expanded(
-                    child: Stack(
+                    child: Column(
                       children: [
-                        Container(
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Color(0xFF181826),
-                                Color(0xFF0E0E18),
-                              ],
-                            ),
+                        CanvasToolbar(children: [
+                          AspectRatioPicker(
+                            current: project.outputAspect,
+                            onChanged: (v) => ref
+                                .read(editorProjectControllerProvider.notifier)
+                                .setOutputAspect(v),
                           ),
-                          alignment: Alignment.center,
-                          child: _buildVideoPlayer(),
-                        ),
+                        ]),
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Container(
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0xFF181826),
+                                      Color(0xFF0E0E18),
+                                    ],
+                                  ),
+                                ),
+                                alignment: Alignment.center,
+                                child: _buildVideoPlayer(),
+                              ),
                         // Zoom debug readout — rendered at the top-left
                         // of the preview pane, OUTSIDE the playback
                         // canvas's zoom Transform so the text stays
@@ -979,6 +992,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                               },
                             ),
                           ),
+                      ],
+                    ),
+                  ),
                       ],
                     ),
                   ),
