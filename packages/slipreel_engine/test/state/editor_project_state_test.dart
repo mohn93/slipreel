@@ -1,5 +1,6 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
@@ -258,18 +259,55 @@ void main() {
     expect(EditorProjectState.defaults().audioMix, const AudioMix());
   });
 
-  test('a v3 sidecar (no audioMix) migrates to v4 with unity defaults', () {
+  test('a v3 sidecar (no audioMix) migrates forward to current with unity defaults', () {
     final v3 = {
       'schemaVersion': 3,
       'timeline': {'zoomTracks': [{'regions': <dynamic>[]}]},
     };
     final migrated = migrateEditorProjectJson(v3);
-    expect(migrated['schemaVersion'], 4);
+    expect(migrated['schemaVersion'], EditorProjectState.currentSchemaVersion);
     final state = EditorProjectState.fromJson(v3);
     expect(state.audioMix, const AudioMix());
   });
 
-  test('toJson advertises schemaVersion 4', () {
-    expect(EditorProjectState.defaults().toJson()['schemaVersion'], 4);
+  test('toJson advertises schemaVersion 5', () {
+    expect(EditorProjectState.defaults().toJson()['schemaVersion'], 5);
+  });
+
+  group('outputAspect', () {
+    test('defaults to OutputAspect.auto', () {
+      final state = EditorProjectState.defaults();
+      expect(state.outputAspect, OutputAspect.auto);
+    });
+
+    test('copyWith updates outputAspect', () {
+      final base = EditorProjectState.defaults();
+      final next = base.copyWith(outputAspect: OutputAspect.vertical9x16);
+      expect(next.outputAspect, OutputAspect.vertical9x16);
+      expect(base.outputAspect, OutputAspect.auto, reason: 'immutable');
+    });
+
+    test('JSON round-trip preserves outputAspect for every variant', () {
+      for (final variant in OutputAspect.values) {
+        final state = EditorProjectState.defaults().copyWith(outputAspect: variant);
+        final decoded = EditorProjectState.fromJson(state.toJson());
+        expect(decoded.outputAspect, variant, reason: 'variant=$variant');
+      }
+    });
+
+    test('JSON without outputAspect defaults to auto', () {
+      final json = EditorProjectState.defaults().toJson();
+      json.remove('outputAspect');
+      final decoded = EditorProjectState.fromJson(json);
+      expect(decoded.outputAspect, OutputAspect.auto);
+    });
+
+    test('v4 JSON (pre-outputAspect) migrates forward to current and defaults aspect', () {
+      final v4Json = EditorProjectState.defaults().toJson()
+        ..['schemaVersion'] = 4
+        ..remove('outputAspect');
+      final decoded = EditorProjectState.fromJson(v4Json);
+      expect(decoded.outputAspect, OutputAspect.auto);
+    });
   });
 }
