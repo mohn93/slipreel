@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/export/frame_compositor.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -35,10 +36,10 @@ void main() {
       expect(compositor.totalSize, const Size(320, 240));
     });
 
-    test('totalSize includes aspect-scaled padding for a framed clip', () {
-      // 320×240 → aspect 4/3. EdgeInsets.all(30) → top/bottom=30,
-      // left/right = 30 * 4/3 = 40. totalSize = 320+80, 240+60 =
-      // 400, 300. (Already even — yuv420p happy.)
+    test('totalSize includes uniform padding for a framed clip (auto aspect)', () {
+      // 320×240 + EdgeInsets.all(30) uniform padding:
+      // width = 320 + 30 + 30 = 380, height = 240 + 30 + 30 = 300.
+      // (Already even — yuv420p happy.)
       final compositor = FrameCompositor(
         projectState: EditorProjectState.defaults().copyWith(
           windowFrame: const WindowFrame(
@@ -56,15 +57,15 @@ void main() {
         videoSize: const Size(320, 240),
         fps: 30,
       );
-      expect(compositor.totalSize, const Size(400, 300));
+      expect(compositor.totalSize, const Size(380, 300));
     });
 
     test('totalSize rounds up to even for yuv420p compatibility', () {
       // Pick padding that produces an odd dimension before rounding.
-      // 320×240 + EdgeInsets.all(15.7): top/bottom=15.7,
-      // left/right=15.7*4/3=20.93. Raw total = (320+41.86, 240+31.4)
-      // = (361.86, 271.4) → rounds to (362, 271) → (362, 272) after
-      // the even-up step.
+      // 320×240 + EdgeInsets.all(15.7) uniform:
+      // raw total = (320 + 15.7 + 15.7, 240 + 15.7 + 15.7)
+      //           = (351.4, 271.4) → rounds to (352, 271) → (352, 272)
+      // after the even-up step.
       final compositor = FrameCompositor(
         projectState: EditorProjectState.defaults().copyWith(
           windowFrame: const WindowFrame(
@@ -85,6 +86,35 @@ void main() {
       // Width should be even.
       expect(compositor.totalSize.width.toInt().isEven, isTrue);
       expect(compositor.totalSize.height.toInt().isEven, isTrue);
+    });
+
+    test('totalSize honors OutputAspect.vertical9x16 (canvas grows vertically)', () {
+      final compositor = FrameCompositor(
+        projectState: EditorProjectState.defaults().copyWith(
+          outputAspect: OutputAspect.vertical9x16,
+          windowFrame: const WindowFrame(
+            name: 'Custom',
+            padding: EdgeInsets.zero,
+            cornerRadius: 0,
+            shadowBlur: 0,
+            shadowOffset: Offset.zero,
+            shadowColor: Color(0x00000000),
+            borderWidth: 0,
+          ),
+        ),
+        cursorRecording: CursorRecording(),
+        metadata: _meta(),
+        videoSize: const Size(1920, 1080),
+        fps: 30,
+      );
+      expect(compositor.totalSize.width, 1920);
+      // 1920 / (9/16) = 3413.33 → rounded to nearest even: 3412 or 3414.
+      expect(
+        [3412, 3414].contains(compositor.totalSize.height.toInt()),
+        isTrue,
+        reason: 'Expected even-rounded 1920/(9/16) ≈ 3413, got '
+            '${compositor.totalSize.height}',
+      );
     });
 
     test('compose returns RGBA bytes sized to totalSize', () async {

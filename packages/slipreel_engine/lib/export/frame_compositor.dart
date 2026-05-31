@@ -11,6 +11,7 @@ import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -18,6 +19,7 @@ import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
 import 'package:slipreel_engine/rendering/frame_painter.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
+import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
@@ -44,28 +46,26 @@ class FrameCompositor {
          videoSize: videoSize,
        ),
        totalSize = _evenSize(
-         FramePainter.calculateTotalSize(
-           frame: projectState.windowFrame,
+         OutputCanvasResolver.resolve(
            videoSize: videoSize,
-         ),
+           padding: projectState.windowFrame.padding,
+           aspect: projectState.outputAspect,
+         ).canvasSize,
        ),
-       // Start from the raw FramePainter.effectivePadding so any per-side
-       // asymmetry from the WindowFrame survives — preview honors that, and
-       // export must too. Then distribute only the even-rounding slack
-       // (≤1px per axis) symmetrically so the video stays centered after
-       // the canvas is rounded to even pixel dimensions for yuv420p.
-       _effectivePadding = _centeredPadding(
+       // Center the video inside the (even-rounded) canvas. The resolver
+       // already positions the video rect; after rounding the canvas to
+       // even pixel dimensions for yuv420p there can be up to 1px of
+       // slack per axis — _centeredVideoRect redistributes that slack
+       // symmetrically so the video stays centered.
+       _videoRect = _centeredVideoRect(
          _evenSize(
-           FramePainter.calculateTotalSize(
-             frame: projectState.windowFrame,
+           OutputCanvasResolver.resolve(
              videoSize: videoSize,
-           ),
+             padding: projectState.windowFrame.padding,
+             aspect: projectState.outputAspect,
+           ).canvasSize,
          ),
          videoSize,
-         FramePainter.effectivePadding(
-           projectState.windowFrame.padding,
-           videoSize,
-         ),
        );
 
   final EditorProjectState projectState;
@@ -86,7 +86,7 @@ class FrameCompositor {
   final Size totalSize;
 
   final FramePainter _framePainter;
-  final EdgeInsets _effectivePadding;
+  final Rect _videoRect;
 
   /// Shared scene-state production for preview and export. Owns the
   /// spring controllers and EMA filter; one source of truth means
@@ -159,9 +159,9 @@ class FrameCompositor {
       // Apply the zoom Transform around totalSize/2, matching the
       // preview's `Transform(alignment: Alignment.center, ...)`.
       // The matrix's translation is built against videoSize/2; the
-      // arithmetic happens to land the focal at the alignment origin
-      // because effPadding centers the video inside totalSize, so
-      // `effPad.left - totalSize.width/2 = -videoSize.width/2`.
+      // arithmetic lands the focal at the alignment origin because
+      // _videoRect centers the video inside totalSize, so
+      // `_videoRect.left - totalSize.width/2 = -videoSize.width/2`.
       Matrix4 zoomTransform = Matrix4.identity();
       if (focalUpdate != null) {
         final ramp =
@@ -570,8 +570,8 @@ class FrameCompositor {
 
   void _paintVideoFrame(Canvas canvas, ui.Image videoImage) {
     final dst = Rect.fromLTWH(
-      _effectivePadding.left,
-      _effectivePadding.top,
+      _videoRect.left,
+      _videoRect.top,
       videoSize.width,
       videoSize.height,
     );
@@ -635,8 +635,8 @@ class FrameCompositor {
       // padding (matches PlaybackCanvas, which sizes its cursor
       // layer to totalSize for the same reason).
       videoRect: Rect.fromLTWH(
-        _effectivePadding.left,
-        _effectivePadding.top,
+        _videoRect.left,
+        _videoRect.top,
         videoSize.width,
         videoSize.height,
       ),
@@ -671,21 +671,15 @@ class FrameCompositor {
     return Size(even(s.width).toDouble(), even(s.height).toDouble());
   }
 
-  /// Padding that places [videoSize] inside the (already even-rounded)
-  /// [totalSize] while preserving the per-side ratios in [raw]. Only the
-  /// extra slack introduced by the even-rounding step (≤1px per axis) is
-  /// split symmetrically — the underlying asymmetric padding from the
-  /// WindowFrame is left intact, so export matches the preview path
-  /// (`FramePainter.paint` uses [FramePainter.effectivePadding] directly).
-  static EdgeInsets _centeredPadding(
-      Size totalSize, Size videoSize, EdgeInsets raw) {
-    final extraX = totalSize.width - videoSize.width - raw.left - raw.right;
-    final extraY = totalSize.height - videoSize.height - raw.top - raw.bottom;
-    return EdgeInsets.only(
-      left: raw.left + extraX / 2,
-      right: raw.right + extraX / 2,
-      top: raw.top + extraY / 2,
-      bottom: raw.bottom + extraY / 2,
-    );
+  /// Position the video centered inside the (even-rounded) canvas, in
+  /// canvas coordinates. Replaces the prior `_centeredPadding` helper now
+  /// that [OutputCanvasResolver] returns a single canonical videoRect —
+  /// the even-rounding pass can still add up to 1px slack per axis, and
+  /// this redistributes it symmetrically so the video stays centered in
+  /// the final encoded frame.
+  static Rect _centeredVideoRect(Size canvas, Size videoSize) {
+    final dx = (canvas.width - videoSize.width) / 2;
+    final dy = (canvas.height - videoSize.height) / 2;
+    return Rect.fromLTWH(dx, dy, videoSize.width, videoSize.height);
   }
 }
