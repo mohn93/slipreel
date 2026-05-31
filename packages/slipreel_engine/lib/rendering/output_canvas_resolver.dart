@@ -22,9 +22,13 @@ class ResolvedCanvas {
 ///
 /// Composes three inputs into a canvas + video rect:
 ///   • [videoSize] — the raw source video resolution.
-///   • [padding] — uniform inset around the video (from `WindowFrame`).
-///   • [aspect] — the target output aspect; [OutputAspect.auto] defers
-///     to the source video's intrinsic aspect.
+///   • [padding] — uniform inset around the video. Pass
+///     `WindowFrame.padding` directly; the resolver treats every side
+///     as a literal pixel value (no aspect-scaling).
+///   • [aspect] — the target output aspect. [OutputAspect.auto] doesn't
+///     impose a target ratio — the canvas matches the padded inner
+///     region's aspect (equal to the source video's aspect when
+///     padding is zero).
 ///
 /// Letterbox-fit only — when the chosen aspect doesn't match the
 /// padded inner region, the canvas GROWS along the under-sized axis to
