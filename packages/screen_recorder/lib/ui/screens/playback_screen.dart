@@ -1293,7 +1293,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     if (selected) _selectedZoomIndex = null;
                   });
                 },
-                onZoomChanged: _projectController.updateZoomAt,
+                onZoomChanged: (i, next) {
+                  _zoomPreviewOverride.value = null;
+                  _projectController.updateZoomAt(i, next);
+                },
                 onZoomDeleted: (index) {
                   _projectController.removeZoomAt(index);
                   _zoomPreviewOverride.value = null;
