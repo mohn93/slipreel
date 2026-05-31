@@ -4,6 +4,7 @@ import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
+import 'package:screen_recorder/ui/widgets/inspector/zoom_placement_picker.dart';
 
 /// Properties view shown when a zoom pill is selected on the timeline.
 ///
@@ -21,6 +22,9 @@ class ZoomContextInspector extends StatelessWidget {
     required this.onClose,
     required this.curveLibrary,
     required this.onCurveOverrideChanged,
+    required this.videoSize,
+    this.onPlacementPreview,
+    this.onPlacementCommit,
   });
 
   final ZoomRegion zoom;
@@ -31,6 +35,18 @@ class ZoomContextInspector extends StatelessWidget {
   final VoidCallback onClose;
   final CurveLibrary curveLibrary;
   final ValueChanged<CubicBezierCurve?> onCurveOverrideChanged;
+
+  /// Video frame size; needed to drive the placement picker's
+  /// coordinate model. Zero ⇒ video not yet measured ⇒ section hidden.
+  final Size videoSize;
+
+  /// Live placement preview: fires for every drag-update with the
+  /// in-flight rect, so the canvas can live-preview the framing.
+  final ValueChanged<Rect>? onPlacementPreview;
+
+  /// Placement commit: fires once on drag release with the final
+  /// rect, so the editor can persist it via `updateZoomAt`.
+  final ValueChanged<Rect>? onPlacementCommit;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +67,33 @@ class ZoomContextInspector extends StatelessWidget {
             // macOS Scrollbar's hit zone.
             padding: const EdgeInsets.only(right: 12),
             children: [
+              if (!zoom.followCursor && !videoSize.isEmpty) ...[
+                const Text(
+                  'Placement',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Drag to set the zoom focal.',
+                  style: TextStyle(
+                    color: kInspectorMuted,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ZoomPlacementPicker(
+                  videoSize: videoSize,
+                  rect: zoom.rect,
+                  zoomLevel: zoom.zoomLevel,
+                  onPreview: (r) => onPlacementPreview?.call(r),
+                  onCommit: (r) => onPlacementCommit?.call(r),
+                ),
+                const InspectorSectionDivider(),
+              ],
               InspectorSlider(
                 label: 'Zoom level',
                 value: zoom.zoomLevel,

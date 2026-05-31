@@ -40,6 +40,9 @@ class InspectorPanel extends StatefulWidget {
     this.onSelectionCleared,
     this.canHideCursor = false,
     required this.curveLibrary,
+    this.videoSize = Size.zero,
+    this.onPlacementPreview,
+    this.onPlacementCommit,
   });
 
   final double width;
@@ -76,6 +79,16 @@ class InspectorPanel extends StatefulWidget {
 
   /// User asked to leave context mode (X button).
   final VoidCallback? onSelectionCleared;
+
+  /// Video frame size; passed to `ZoomContextInspector` so the
+  /// placement picker can render and compute coordinates.
+  final Size videoSize;
+
+  /// Live placement preview callback for the zoom context.
+  final ValueChanged<Rect>? onPlacementPreview;
+
+  /// Placement commit callback for the zoom context.
+  final ValueChanged<Rect>? onPlacementCommit;
 
   @override
   State<InspectorPanel> createState() => _InspectorPanelState();
@@ -162,6 +175,9 @@ class _InspectorPanelState extends State<InspectorPanel> {
             : zoom.copyWith(rampCurveOverride: curve);
         widget.onZoomChanged?.call(index, next);
       },
+      videoSize: widget.videoSize,
+      onPlacementPreview: widget.onPlacementPreview,
+      onPlacementCommit: widget.onPlacementCommit,
     );
   }
 

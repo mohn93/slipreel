@@ -1,4 +1,3 @@
-import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';

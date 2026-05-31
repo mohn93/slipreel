@@ -214,8 +214,10 @@ class ZoomFocalController {
     required Size videoSize,
     Offset cursorVelocity = Offset.zero,
     bool forceSnap = false,
+    ZoomRegion? activeRegionOverride,
   }) {
-    final activeZoom = _activeZoomAt(position, zoomRegions);
+    final activeZoom =
+        activeRegionOverride ?? _activeZoomAt(position, zoomRegions);
     if (activeZoom == null) {
       _smoothedFocal = null;
       _focalVx = 0;
