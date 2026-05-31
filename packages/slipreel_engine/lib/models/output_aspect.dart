@@ -1,5 +1,3 @@
-// packages/slipreel_engine/lib/models/output_aspect.dart
-
 /// Output canvas aspect ratio. Picked from the editor's canvas toolbar
 /// and persisted on `EditorProjectState`. Drives canvas dimensions in
 /// both the live preview (PlaybackCanvas) and the export pipeline
@@ -20,42 +18,24 @@ enum OutputAspect {
 
   /// Numeric width/height ratio. `null` for [auto] — callers resolve
   /// against the source video size at render time.
-  double? get ratio {
-    switch (this) {
-      case OutputAspect.auto:
-        return null;
-      case OutputAspect.wide16x9:
-        return 16 / 9;
-      case OutputAspect.square1x1:
-        return 1.0;
-      case OutputAspect.classic4x3:
-        return 4 / 3;
-      case OutputAspect.vertical9x16:
-        return 9 / 16;
-      case OutputAspect.tall3x4:
-        return 3 / 4;
-      case OutputAspect.portrait4x5:
-        return 4 / 5;
-    }
-  }
+  double? get ratio => switch (this) {
+        OutputAspect.auto => null,
+        OutputAspect.wide16x9 => 16 / 9,
+        OutputAspect.square1x1 => 1.0,
+        OutputAspect.classic4x3 => 4 / 3,
+        OutputAspect.vertical9x16 => 9 / 16,
+        OutputAspect.tall3x4 => 3 / 4,
+        OutputAspect.portrait4x5 => 4 / 5,
+      };
 
   /// Human-readable label shown in the editor's aspect picker.
-  String get label {
-    switch (this) {
-      case OutputAspect.auto:
-        return 'Auto';
-      case OutputAspect.wide16x9:
-        return 'Wide 16:9';
-      case OutputAspect.square1x1:
-        return 'Square 1:1';
-      case OutputAspect.classic4x3:
-        return 'Classic 4:3';
-      case OutputAspect.vertical9x16:
-        return 'Vertical 9:16';
-      case OutputAspect.tall3x4:
-        return 'Tall 3:4';
-      case OutputAspect.portrait4x5:
-        return 'Portrait 4:5';
-    }
-  }
+  String get label => switch (this) {
+        OutputAspect.auto => 'Auto',
+        OutputAspect.wide16x9 => 'Wide 16:9',
+        OutputAspect.square1x1 => 'Square 1:1',
+        OutputAspect.classic4x3 => 'Classic 4:3',
+        OutputAspect.vertical9x16 => 'Vertical 9:16',
+        OutputAspect.tall3x4 => 'Tall 3:4',
+        OutputAspect.portrait4x5 => 'Portrait 4:5',
+      };
 }
