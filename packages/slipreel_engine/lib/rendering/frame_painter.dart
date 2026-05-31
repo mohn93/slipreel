@@ -1,6 +1,8 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter/rendering.dart' show CustomPainter;
+import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
+import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
 
 /// A custom painter that renders window frames around video content.
@@ -27,15 +29,12 @@ class FramePainter extends CustomPainter {
       return;
     }
 
-    final p = effectivePadding(frame.padding, videoSize);
-
-    // Calculate the rect for the video content within the frame
-    final contentRect = Rect.fromLTWH(
-      p.left,
-      p.top,
-      videoSize.width,
-      videoSize.height,
+    final resolved = OutputCanvasResolver.resolve(
+      videoSize: videoSize,
+      padding: frame.padding,
+      aspect: OutputAspect.auto,
     );
+    final contentRect = resolved.videoRect;
 
     // Create rounded rectangle for the frame
     final rrect = RRect.fromRectAndRadius(
@@ -46,7 +45,7 @@ class FramePainter extends CustomPainter {
     // Inset ring sits between the wallpaper and the video. Cap the
     // requested width at whatever fits inside the smallest padding
     // side — without padding there's nowhere to draw it.
-    final insetWidth = _resolveInset(p);
+    final insetWidth = _resolveInset(frame.padding);
     final insetRRect = insetWidth > 0
         ? RRect.fromRectAndRadius(
             contentRect.inflate(insetWidth),
@@ -135,43 +134,27 @@ class FramePainter extends CustomPainter {
     return oldDelegate.frame != frame || oldDelegate.videoSize != videoSize;
   }
 
-  /// Calculates the total size needed for the frame including padding.
+  /// Total canvas size (wallpaper + padding + video), shaped by the
+  /// chosen [aspect]. Defaults to [OutputAspect.auto] (canvas matches
+  /// the padded inner region's aspect — equal to the video aspect when
+  /// padding is zero).
   ///
-  /// Padding is aspect-scaled (X scaled by video aspect ratio) so the
-  /// canvas keeps the video's aspect — without this, sliding the
-  /// padding control would change the framedVideo's aspect, the outer
-  /// FittedBox would re-fit it to the available area, and the user
-  /// sees the entire composition (wallpaper + video) visibly resize.
-  /// If the frame is 'None', returns the video size unchanged.
+  /// Padding is uniform now — no aspect-scaling trick. The previous
+  /// behavior horizontally aspect-scaled `frame.padding` so the canvas
+  /// retained the video aspect; with aspect now an explicit input,
+  /// uniform padding is the cleaner model.
   static Size calculateTotalSize({
     required WindowFrame frame,
     required Size videoSize,
+    OutputAspect aspect = OutputAspect.auto,
   }) {
     if (frame.name == 'None') {
       return videoSize;
     }
-    final p = effectivePadding(frame.padding, videoSize);
-    return Size(
-      videoSize.width + p.left + p.right,
-      videoSize.height + p.top + p.bottom,
-    );
-  }
-
-  /// Aspect-scaled padding used by [calculateTotalSize] and [paint].
-  /// Stored padding is treated as the vertical (top/bottom) value;
-  /// horizontal padding is scaled by the video's aspect ratio so the
-  /// resulting canvas matches the video's aspect.
-  static EdgeInsets effectivePadding(
-    EdgeInsets base,
-    Size videoSize,
-  ) {
-    if (videoSize.height <= 0) return base;
-    final aspect = videoSize.width / videoSize.height;
-    return EdgeInsets.only(
-      left: base.left * aspect,
-      right: base.right * aspect,
-      top: base.top,
-      bottom: base.bottom,
-    );
+    return OutputCanvasResolver.resolve(
+      videoSize: videoSize,
+      padding: frame.padding,
+      aspect: aspect,
+    ).canvasSize;
   }
 }
