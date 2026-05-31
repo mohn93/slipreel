@@ -46,3 +46,6 @@ DerivedData/
 # Local-only debug probe wiring (see packages/screen_recorder/lib/debug/README.md)
 packages/screen_recorder/lib/debug/agent_wires_probe_binding.dart
 packages/screen_recorder/lib/main_dev.dart
+
+# Superpowers brainstorm session artifacts (mockups, server state)
+.superpowers/
