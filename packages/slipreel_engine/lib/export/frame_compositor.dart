@@ -11,7 +11,6 @@ import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
-import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -44,6 +43,7 @@ class FrameCompositor {
   }) : _framePainter = FramePainter(
          frame: projectState.windowFrame,
          videoSize: videoSize,
+         aspect: projectState.outputAspect,
        ),
        totalSize = _evenSize(
          OutputCanvasResolver.resolve(

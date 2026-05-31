@@ -17,9 +17,16 @@ class FramePainter extends CustomPainter {
   /// The size of the video content (without frame)
   final Size videoSize;
 
+  /// Output canvas aspect ratio. Must match whatever was used to size
+  /// the CustomPaint — otherwise [paint] computes the videoRect at a
+  /// different position than the consumer expects and the shadow /
+  /// inset ring / border end up offset from the actual video.
+  final OutputAspect aspect;
+
   const FramePainter({
     required this.frame,
     required this.videoSize,
+    this.aspect = OutputAspect.auto,
   });
 
   @override
@@ -32,7 +39,7 @@ class FramePainter extends CustomPainter {
     final resolved = OutputCanvasResolver.resolve(
       videoSize: videoSize,
       padding: frame.padding,
-      aspect: OutputAspect.auto,
+      aspect: aspect,
     );
     final contentRect = resolved.videoRect;
 
@@ -130,8 +137,11 @@ class FramePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant FramePainter oldDelegate) {
-    // Repaint if frame or video size changes
-    return oldDelegate.frame != frame || oldDelegate.videoSize != videoSize;
+    // Repaint if frame, video size, or aspect changes — all three feed
+    // the contentRect computation in paint().
+    return oldDelegate.frame != frame ||
+        oldDelegate.videoSize != videoSize ||
+        oldDelegate.aspect != aspect;
   }
 
   /// Total canvas size (wallpaper + padding + video), shaped by the

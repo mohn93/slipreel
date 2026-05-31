@@ -613,6 +613,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                   painter: FramePainter(
                     frame: currentFrame,
                     videoSize: videoSize,
+                    aspect: widget.outputAspect,
                   ),
                 ),
                 Positioned(
