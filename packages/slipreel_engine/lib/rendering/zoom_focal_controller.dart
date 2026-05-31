@@ -279,6 +279,22 @@ class ZoomFocalController {
       _lastSnapAt = position;
     }
 
+    // Placement-picker preview: when a caller injects an override AND
+    // asks for forceSnap, teleport the focal to the override's
+    // rect.center directly. Without this, the spring would have to
+    // integrate over many frames to chase the new target — fine when
+    // playing (frames keep arriving) but invisible while paused (no
+    // frame loop). Returning the override frame here keeps the camera
+    // glued to the dragged rect even when the video is paused.
+    if (forceSnap && activeRegionOverride != null) {
+      _smoothedFocal = activeRegionOverride.rect.center;
+      _focalVx = 0;
+      _focalVy = 0;
+      _lastSnapReason = 'forceSnap+override (teleport)';
+      _lastSnapAt = position;
+      return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
+    }
+
     final prevPosition = _lastUpdatePosition;
     _lastUpdatePosition = position;
 

@@ -428,7 +428,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               videoSize: videoSize,
               fps: widget.metadata?.fps ?? 60,
               hasCursorData: hasCursorData,
-              forceSnap: widget.isHoverScrubbing,
+              // When the placement-picker override is active we want the
+              // focal to lock onto the previewed rect immediately — the
+              // spring otherwise barely advances while the video is paused
+              // (no frame loop to integrate), so the user sees nothing
+              // change until they resume playback.
+              forceSnap: widget.isHoverScrubbing ||
+                  widget.zoomPreviewOverride?.value != null,
               bypassVelocityFilter: widget.isHoverScrubbing,
               activeRegionOverride: widget.zoomPreviewOverride?.value,
             );
