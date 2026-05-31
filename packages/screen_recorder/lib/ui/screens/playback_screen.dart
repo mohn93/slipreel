@@ -978,7 +978,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       canHideCursor: _metadata?.isPureSource == true &&
                           _cursorRecording.count > 0,
                       curveLibrary: _curveLibrary,
-                      onZoomChanged: _projectController.updateZoomAt,
+                      onZoomChanged: (i, next) {
+                        _zoomPreviewOverride.value = null;
+                        _projectController.updateZoomAt(i, next);
+                      },
                       onZoomDeleted: (index) {
                         _projectController.removeZoomAt(index);
                         _setSelectedZoomIndex(null);
