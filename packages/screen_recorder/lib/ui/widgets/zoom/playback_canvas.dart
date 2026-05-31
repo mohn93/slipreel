@@ -30,6 +30,7 @@ import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.d
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
+import 'package:screen_recorder/state/zoom_preview_override.dart';
 
 /// The composed playback canvas: wallpaper layer, framed video,
 /// cursor overlay, optional debug HUD, all wrapped in a zoom Transform
@@ -90,6 +91,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     this.sceneBlurMode = SceneBlurMode.shader,
     this.sceneAccumSampleCount = 16,
     this.debugSnapshot,
+    this.zoomPreviewOverride,
   });
 
   final VideoPlayerController controller;
@@ -114,6 +116,12 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// trail) — those need to live inside the Transform to align with
   /// the video pixels.
   final ValueNotifier<ZoomDebugSnapshot?>? debugSnapshot;
+
+  /// Editor-only: when non-null, the canvas reads its current value
+  /// per build and passes it to `ScenePassBuilder.build` so a manual
+  /// placement-picker drag live-previews the proposed rect. Pure
+  /// playback callers leave this null.
+  final ZoomPreviewOverride? zoomPreviewOverride;
 
   final List<ZoomRegion> zoomRegions;
   final ScreenAnimationConfig screenAnimationConfig;
@@ -265,11 +273,16 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   void initState() {
     super.initState();
     _loadSceneBlurProgram();
+    widget.zoomPreviewOverride?.addListener(_onPreviewChanged);
   }
 
   @override
   void didUpdateWidget(covariant PlaybackCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.zoomPreviewOverride != widget.zoomPreviewOverride) {
+      oldWidget.zoomPreviewOverride?.removeListener(_onPreviewChanged);
+      widget.zoomPreviewOverride?.addListener(_onPreviewChanged);
+    }
     // The scene-blur signal is now a pure function of (pos, sampleAt),
     // so there is no per-controller state to reset on trajectory
     // changes — `compute` reads fresh on every call.
@@ -289,8 +302,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
 
   @override
   void dispose() {
+    widget.zoomPreviewOverride?.removeListener(_onPreviewChanged);
     _disposeCapturedScene();
     super.dispose();
+  }
+
+  void _onPreviewChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadSceneBlurProgram() async {
@@ -412,6 +430,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               hasCursorData: hasCursorData,
               forceSnap: widget.isHoverScrubbing,
               bypassVelocityFilter: widget.isHoverScrubbing,
+              activeRegionOverride: widget.zoomPreviewOverride?.value,
             );
             final motion = scenePass.motion;
             final focalUpdate = scenePass.focalUpdate;
