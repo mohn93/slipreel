@@ -270,8 +270,9 @@ void main() {
     expect(state.audioMix, const AudioMix());
   });
 
-  test('toJson advertises schemaVersion 5', () {
-    expect(EditorProjectState.defaults().toJson()['schemaVersion'], 5);
+  test('toJson advertises currentSchemaVersion', () {
+    expect(EditorProjectState.defaults().toJson()['schemaVersion'],
+        EditorProjectState.currentSchemaVersion);
   });
 
   group('outputAspect', () {
