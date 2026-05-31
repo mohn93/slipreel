@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
@@ -84,6 +85,9 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
 
   void setWindowFrame(WindowFrame value) =>
       state = state.copyWith(windowFrame: value);
+
+  void setOutputAspect(OutputAspect value) =>
+      state = state.copyWith(outputAspect: value);
 
   void setPlaybackSpeed(double value) =>
       state = state.copyWith(playbackSpeed: value);

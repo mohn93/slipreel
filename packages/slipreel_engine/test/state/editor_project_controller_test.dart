@@ -1,5 +1,6 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
@@ -132,6 +133,17 @@ void main() {
       controller.removeZoomAt(0);
       expect(controller.state.zoomRegions, hasLength(1));
       expect(controller.state.zoomRegions[0].zoomLevel, 3.0);
+    });
+
+    group('setOutputAspect', () {
+      test('publishes new state with the chosen aspect', () {
+        final controller = EditorProjectController();
+        expect(controller.current.outputAspect, OutputAspect.auto);
+
+        controller.setOutputAspect(OutputAspect.vertical9x16);
+
+        expect(controller.current.outputAspect, OutputAspect.vertical9x16);
+      });
     });
 
     test('notifies listeners exactly once per mutator call', () {
