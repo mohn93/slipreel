@@ -11,6 +11,7 @@ import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
+import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/services/destination_handlers.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
@@ -459,6 +460,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final ExportSettingsStore store;
     final ExportTelemetryStore telemetryStore;
     final Size sourceVideoSize;
+    // Composed output canvas (sourceVideoSize + aspect-ratio + padding).
+    // Drives both the export-dialog dimensions label and the post-export
+    // telemetry's area-based normalization so they agree with what the
+    // export pipeline actually writes.
+    final Size composedVideoSize;
 
     try {
       store = await ExportSettingsStore.resolveDefault();
@@ -472,6 +478,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // sub-label) and for the pipeline.
       meta = await RecordingMetadata.loadForVideo(widget.videoPath);
       sourceVideoSize = Size(meta.widthPx.toDouble(), meta.heightPx.toDouble());
+      final projectForExport = ref.read(editorProjectControllerProvider);
+      composedVideoSize = OutputCanvasResolver.resolve(
+        videoSize: sourceVideoSize,
+        padding: projectForExport.windowFrame.padding,
+        aspect: projectForExport.outputAspect,
+      ).canvasSize;
 
       // Probe the video to get the authoritative duration + audio bitrate.
       final probed = await ffmpegProbe(
@@ -488,7 +500,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         context: context,
         builder: (_) => ExportDialog(
           initialSettings: defaults,
-          sourceVideoSize: sourceVideoSize,
+          sourceVideoSize: composedVideoSize,
           videoDuration: videoDuration,
           audioBitrateKbps: buildAudioMixArgs(
                   probed.audioStreams,
@@ -664,7 +676,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           // not the linear pixels-per-second model the estimator assumes.
           if (settings.format == ExportFormat.mp4 &&
               summary.realtimeMultiple > 0) {
-            final outDims = settings.resolution.dimensionsFor(sourceVideoSize);
+            final outDims = settings.resolution.dimensionsFor(composedVideoSize);
             final outArea = outDims.width * outDims.height;
             final fpsScale = settings.frameRate / kBaselineFrameRate;
             final areaScale = outArea / kBaselineAreaPixels;
@@ -1056,6 +1068,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
       frame: project.windowFrame,
+      outputAspect: project.outputAspect,
       metadata: _metadata,
       cursorRecording: _cursorRecording,
       hideCursorOverlay: project.hideCursorOverlay,
