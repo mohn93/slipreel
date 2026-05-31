@@ -27,6 +27,7 @@ import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
 import 'package:screen_recorder/ui/widgets/transport/transport_buttons.dart';
 import 'package:screen_recorder/ui/widgets/scene_blur_overlay.dart';
 import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
+import 'package:screen_recorder/state/zoom_preview_override.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
@@ -92,6 +93,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // [EditorProjectState] alongside the timeline container (P2-10).
   EditorHistoryController? _history;
   int? _selectedZoomIndex;
+  final _zoomPreviewOverride = ZoomPreviewOverride();
   // Whether the main clip bar is currently selected. Mutually
   // exclusive with [_selectedZoomIndex]: selecting one clears the
   // other. Drives the inspector's context-mode display.
@@ -299,6 +301,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
   @override
   void dispose() {
+    _zoomPreviewOverride.dispose();
     // Flush any pending debounced save before tearing down so the
     // user doesn't lose the last change they made before navigating
     // away. Fire-and-forget — atomic write + the store's mutation
@@ -319,6 +322,51 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   void _handleUndo() => _history?.undo();
   void _handleRedo() => _history?.redo();
 
+  void _setSelectedZoomIndex(int? next) {
+    if (next != _selectedZoomIndex) {
+      _zoomPreviewOverride.value = null;
+    }
+    setState(() => _selectedZoomIndex = next);
+  }
+
+  void _onPlacementPreview(Rect newRect) {
+    final idx = _selectedZoomIndex;
+    if (idx == null) return;
+    final region = _project.zoomRegions[idx];
+    _zoomPreviewOverride.value = region.copyWith(
+      rect: newRect,
+      videoBounds: _metadata == null
+          ? null
+          : Size(_metadata!.widthPx.toDouble(), _metadata!.heightPx.toDouble()),
+    );
+  }
+
+  void _onPlacementCommit(Rect newRect) {
+    final idx = _selectedZoomIndex;
+    if (idx != null) {
+      final region = _project.zoomRegions[idx];
+      _projectController.updateZoomAt(
+        idx,
+        region.copyWith(
+          rect: newRect,
+          videoBounds: _metadata == null
+              ? null
+              : Size(
+                  _metadata!.widthPx.toDouble(),
+                  _metadata!.heightPx.toDouble(),
+                ),
+        ),
+      );
+    }
+    _zoomPreviewOverride.value = null;
+  }
+
+  Size _videoSize() {
+    final m = _metadata;
+    if (m == null) return Size.zero;
+    return Size(m.widthPx.toDouble(), m.heightPx.toDouble());
+  }
+
   /// Click-to-add zoom from the timeline ghost. Spatial rect defaults
   /// to the full video frame; the cursor-follow pipeline handles
   /// re-centering on the recorded cursor.
@@ -337,6 +385,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     );
 
     _projectController.addZoom(zoomRegion);
+    _zoomPreviewOverride.value = null;
     setState(() {
       // Auto-select the new zoom so the inspector opens on it.
       _selectedZoomIndex = _project.zoomRegions.length - 1;
@@ -361,7 +410,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // video panel (gradient backdrop + 80px-blur frame shadow + ClipRRect +
     // Transform), making the seek visibly heavy.
     if (newIndex != _selectedZoomIndex) {
-      setState(() => _selectedZoomIndex = newIndex);
+      _setSelectedZoomIndex(newIndex);
     }
   }
 
@@ -932,12 +981,18 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       onZoomChanged: _projectController.updateZoomAt,
                       onZoomDeleted: (index) {
                         _projectController.removeZoomAt(index);
-                        setState(() => _selectedZoomIndex = null);
+                        _setSelectedZoomIndex(null);
                       },
-                      onSelectionCleared: () => setState(() {
-                        _selectedZoomIndex = null;
-                        _isClipSelected = false;
-                      }),
+                      onSelectionCleared: () {
+                        _zoomPreviewOverride.value = null;
+                        setState(() {
+                          _selectedZoomIndex = null;
+                          _isClipSelected = false;
+                        });
+                      },
+                      videoSize: _videoSize(),
+                      onPlacementPreview: _onPlacementPreview,
+                      onPlacementCommit: _onPlacementCommit,
                     ),
                 ],
               ),
@@ -1037,6 +1092,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       cursorDelay: project.cursorDelay,
       isHoverScrubbing: isHoverScrubbing,
       cursorPostProcess: project.cursorPostProcess,
+      zoomPreviewOverride: _zoomPreviewOverride,
     );
 
     final videoSize = _controller.value.size;
@@ -1216,6 +1272,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 zoomRegions: _project.zoomRegions,
                 selectedZoomIndex: _selectedZoomIndex,
                 onZoomSelected: (i) {
+                  if (i != _selectedZoomIndex) {
+                    _zoomPreviewOverride.value = null;
+                  }
                   setState(() {
                     _selectedZoomIndex = i;
                     // Zoom and clip selections are mutually exclusive
@@ -1225,6 +1284,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 },
                 clipSelected: _isClipSelected,
                 onClipSelected: (selected) {
+                  if (selected) _zoomPreviewOverride.value = null;
                   setState(() {
                     _isClipSelected = selected;
                     if (selected) _selectedZoomIndex = null;
@@ -1233,6 +1293,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onZoomChanged: _projectController.updateZoomAt,
                 onZoomDeleted: (index) {
                   _projectController.removeZoomAt(index);
+                  _zoomPreviewOverride.value = null;
                   setState(() {
                     if (_selectedZoomIndex == index) {
                       _selectedZoomIndex = null;
