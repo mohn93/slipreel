@@ -8,6 +8,7 @@ import '../models/cursor_recording.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
 import '../models/trim_selection.dart';
+import '../rendering/output_canvas_resolver.dart';
 import '../state/editor_project_state.dart';
 import '../utils/app_logger.dart';
 import '../utils/perf_summary.dart';
@@ -94,9 +95,17 @@ class GifExportPipeline {
     final srcHeight = probed.height;
 
     final fps = settings.frameRate;
-    final outputDims = settings.resolution.dimensionsFor(
-      Size(srcWidth.toDouble(), srcHeight.toDouble()),
-    );
+    // Output dimensions follow the COMPOSITED canvas (aspect + padding),
+    // not the raw source. Without this, a vertical-9:16 export at 1080p
+    // would still produce a 16:9 GIF because `dimensionsFor` would
+    // width-scale from the raw 1920×1080 source aspect instead of the
+    // 9:16 canvas the user picked.
+    final composedCanvas = OutputCanvasResolver.resolve(
+      videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
+      padding: projectState.windowFrame.padding,
+      aspect: projectState.outputAspect,
+    ).canvasSize;
+    final outputDims = settings.resolution.dimensionsFor(composedCanvas);
     final outWidth = outputDims.width.toInt();
     final outHeight = outputDims.height.toInt();
 
