@@ -126,6 +126,12 @@ class ScenePassBuilder {
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
     bool forceSnap = false,
     bool bypassVelocityFilter = false,
+    /// When non-null, replaces the natural `ZoomRegion.activeAt`
+    /// lookup result for this frame. Used by the editor's manual
+    /// placement picker to live-preview a drag-in-flight rect, and by
+    /// any other caller that wants to bypass timing-driven activation
+    /// for one frame. Cleared by the caller when the preview ends.
+    ZoomRegion? activeRegionOverride,
   }) {
     final motionSample = hasCursorData
         ? motion.update(
@@ -143,7 +149,8 @@ class ScenePassBuilder {
     // excursions and frame whatever the user is looking at. Other
     // modes track the spring sprite so the camera and the visible
     // cursor never disagree.
-    final activeZoom = _activeZoomAt(position, zoomRegions);
+    final activeZoom =
+        activeRegionOverride ?? _activeZoomAt(position, zoomRegions);
     final Offset? cursorForFocal =
         activeZoom?.followMode == FollowMode.predictive
             ? medianCursorOver(
@@ -162,6 +169,7 @@ class ScenePassBuilder {
       videoSize: videoSize,
       cursorVelocity: rawVelocity,
       forceSnap: forceSnap,
+      activeRegionOverride: activeRegionOverride,
     );
 
     final filteredVelocity = bypassVelocityFilter
