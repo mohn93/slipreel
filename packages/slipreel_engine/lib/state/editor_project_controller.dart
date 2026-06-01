@@ -108,6 +108,31 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   void setSystemMuted(bool value) => state = state.copyWith(
       audioMix: state.audioMix.copyWith(systemMuted: value));
 
+  /// Set the timeline horizontal scale. Clamped to [1.0, 8.0]. The
+  /// optional [anchorTime] is a one-shot hint stored on the next
+  /// state's [EditorProjectState.pendingScaleAnchor] for the timeline
+  /// widget to consume; the widget then calls
+  /// [clearPendingScaleAnchor]. Persistence is handled by the
+  /// playback screen's debounced `ref.listen` — no need to debounce
+  /// here.
+  void setTimelineScale(double scale, {Duration? anchorTime}) {
+    final clamped = scale.isNaN ? 1.0 : scale.clamp(1.0, 8.0);
+    if (clamped == state.timelineScale && anchorTime == null) return;
+    state = state.copyWith(
+      timelineScale: clamped,
+      pendingScaleAnchor: anchorTime,
+      clearPendingScaleAnchor: anchorTime == null,
+    );
+  }
+
+  /// Reset the transient anchor hint. Called by the timeline widget
+  /// after applying an anchor-preserving scale change. No-ops when
+  /// the anchor is already null so it doesn't dirty the state stream.
+  void clearPendingScaleAnchor() {
+    if (state.pendingScaleAnchor == null) return;
+    state = state.copyWith(clearPendingScaleAnchor: true);
+  }
+
   // ---- zoom region list -------------------------------------------------
   //
   // Mutates the active (first) zoom track on the timeline. Reaches
