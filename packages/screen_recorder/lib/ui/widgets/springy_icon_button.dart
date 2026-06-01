@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
@@ -43,6 +45,9 @@ class _SpringyIconButtonState extends State<SpringyIconButton>
     value: 1.0,
   );
 
+  final LayerLink _link = LayerLink();
+  final GlobalKey<_LeftTooltipState> _tooltipKey = GlobalKey<_LeftTooltipState>();
+
   bool _hovered = false;
   bool _pressed = false;
 
@@ -75,57 +80,68 @@ class _SpringyIconButtonState extends State<SpringyIconButton>
         widget.isActive ? palette.accent : palette.textSecondary;
     final bgColor = _backgroundColor(palette);
 
-    return MouseRegion(
-      onEnter: (_) {
-        setState(() => _hovered = true);
-        _animateToTarget();
-      },
-      onExit: (_) {
-        setState(() {
-          _hovered = false;
-          _pressed = false;
-        });
-        _animateToTarget();
-      },
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) {
-          setState(() => _pressed = true);
-          _animateToTarget();
-        },
-        onTapUp: (_) {
-          setState(() => _pressed = false);
-          _animateToTarget();
-        },
-        onTapCancel: () {
-          setState(() => _pressed = false);
-          _animateToTarget();
-        },
-        onTap: widget.onTap,
-        child: AnimatedBuilder(
-          animation: _scaleAc,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOutCubic,
-            width: widget.size,
-            height: widget.size,
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              widget.icon,
-              size: widget.iconSize,
-              color: iconColor,
+    return _LeftTooltip(
+      key: _tooltipKey,
+      link: _link,
+      message: widget.tooltip,
+      child: CompositedTransformTarget(
+        link: _link,
+        child: MouseRegion(
+          onEnter: (_) {
+            setState(() => _hovered = true);
+            _animateToTarget();
+            _tooltipKey.currentState?.scheduleShow();
+          },
+          onExit: (_) {
+            setState(() {
+              _hovered = false;
+              _pressed = false;
+            });
+            _animateToTarget();
+            _tooltipKey.currentState?.cancel();
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (_) {
+              setState(() => _pressed = true);
+              _animateToTarget();
+              _tooltipKey.currentState?.cancel();
+            },
+            onTapUp: (_) {
+              setState(() => _pressed = false);
+              _animateToTarget();
+            },
+            onTapCancel: () {
+              setState(() => _pressed = false);
+              _animateToTarget();
+            },
+            onTap: widget.onTap,
+            child: AnimatedBuilder(
+              animation: _scaleAc,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                width: widget.size,
+                height: widget.size,
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  widget.icon,
+                  size: widget.iconSize,
+                  color: iconColor,
+                ),
+              ),
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: _scaleAc.value,
+                  child: child,
+                );
+              },
             ),
           ),
-          builder: (context, child) {
-            return Transform.scale(
-              scale: _scaleAc.value,
-              child: child,
-            );
-          },
         ),
       ),
     );
@@ -146,4 +162,97 @@ class _SpringyIconButtonState extends State<SpringyIconButton>
     if (alphaMultiplier == 0.0) return Colors.transparent;
     return palette.accent.withValues(alpha: 0.18 * alphaMultiplier);
   }
+}
+
+/// Tooltip that pops to the LEFT of its child after a hover delay.
+/// Owns its own [OverlayEntry] lifecycle; parent triggers
+/// [scheduleShow]/[cancel] via the [GlobalKey].
+class _LeftTooltip extends StatefulWidget {
+  const _LeftTooltip({
+    super.key,
+    required this.link,
+    required this.message,
+    required this.child,
+    this.delay = const Duration(milliseconds: 500),
+  });
+
+  final LayerLink link;
+  final String message;
+  final Widget child;
+  final Duration delay;
+
+  @override
+  State<_LeftTooltip> createState() => _LeftTooltipState();
+}
+
+class _LeftTooltipState extends State<_LeftTooltip> {
+  Timer? _showTimer;
+  OverlayEntry? _entry;
+
+  void scheduleShow() {
+    _showTimer?.cancel();
+    _showTimer = Timer(widget.delay, _show);
+  }
+
+  void cancel() {
+    _showTimer?.cancel();
+    _showTimer = null;
+    _entry?.remove();
+    _entry = null;
+  }
+
+  void _show() {
+    if (_entry != null) return;
+    final overlay = Overlay.of(context);
+    // Capture palette from host context before entering the overlay's context.
+    final palette = context.palette;
+    final entry = OverlayEntry(builder: (ctx) {
+      return Positioned(
+        left: 0,
+        top: 0,
+        child: CompositedTransformFollower(
+          link: widget.link,
+          targetAnchor: Alignment.centerLeft,
+          followerAnchor: Alignment.centerRight,
+          offset: const Offset(-8, 0),
+          showWhenUnlinked: false,
+          child: AnimatedOpacity(
+            opacity: 1,
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOutCubic,
+            child: Material(
+              type: MaterialType.transparency,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: palette.surfaceCard,
+                  border: Border.all(color: palette.dividerSubtle),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  widget.message,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+    overlay.insert(entry);
+    _entry = entry;
+  }
+
+  @override
+  void dispose() {
+    cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
