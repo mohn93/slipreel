@@ -174,7 +174,6 @@ class EditorTimeline extends StatefulWidget {
 class _EditorTimelineState extends State<EditorTimeline> {
   double? _hoverProgress;
   final ScrollController _scrollController = ScrollController();
-  // ignore: unused_field — consumed by G3 anchor-preserving scale change.
   double _lastViewportWidth = 0;
 
   void _updateHover(Offset local, double width) {
@@ -205,6 +204,46 @@ class _EditorTimelineState extends State<EditorTimeline> {
     // If playback resumes, the hover indicator should disappear.
     if (widget.isPlaying && _hoverProgress != null) {
       _hoverProgress = null;
+    }
+
+    final scaleChanged = widget.timelineScale != old.timelineScale;
+    final anchorPresent = widget.pendingScaleAnchor != null;
+    if (scaleChanged || anchorPresent) {
+      // Defer to post-frame so LayoutBuilder has run and the
+      // SingleChildScrollView's content has been measured with the new
+      // width before we jumpTo.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _applyScale(old.timelineScale, widget.timelineScale,
+            widget.pendingScaleAnchor);
+      });
+    }
+  }
+
+  void _applyScale(double oldScale, double newScale, Duration? anchor) {
+    final viewport = _lastViewportWidth;
+    if (viewport <= 0 || widget.duration.inMilliseconds == 0) return;
+    final anchorTime = anchor ?? widget.position;
+
+    final oldPps = _pixelsPerSecond(viewport, widget.duration, oldScale);
+    final newPps = _pixelsPerSecond(viewport, widget.duration, newScale);
+    final oldOffset =
+        _scrollController.hasClients ? _scrollController.offset : 0.0;
+
+    final anchorViewportX = _timeToX(anchorTime, oldPps) - oldOffset;
+    final newAnchorContentX = _timeToX(anchorTime, newPps);
+    final newOffset = newAnchorContentX - anchorViewportX;
+
+    final maxOffset = (_contentWidth(viewport, newScale) - viewport)
+        .clamp(0.0, double.infinity);
+    final clamped = newOffset.clamp(0.0, maxOffset);
+
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(clamped);
+    }
+
+    if (anchor != null) {
+      widget.onAnchorConsumed?.call();
     }
   }
 
