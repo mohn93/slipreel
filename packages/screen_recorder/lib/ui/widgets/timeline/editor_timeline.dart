@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -51,18 +52,34 @@ const double _trimHandleInset = 6;
 /// as the cursor leaves the pill body).
 const double _zoomBadgeAreaHeight = 32;
 
-double _timeToX(Duration t, double width, Duration total) {
-  if (total.inMicroseconds <= 0) return 0;
-  return (t.inMicroseconds / total.inMicroseconds) * width;
+double _pixelsPerSecond(double viewportWidth, Duration total, double scale) {
+  if (total.inMilliseconds == 0) return 0.0;
+  return viewportWidth / (total.inMilliseconds / 1000.0) * scale;
 }
 
-Duration _xToTime(double x, double width, Duration total) {
-  if (width <= 0 || total.inMicroseconds <= 0) return Duration.zero;
-  final clamped = x.clamp(0.0, width);
-  return Duration(
-    microseconds: (clamped / width * total.inMicroseconds).round(),
-  );
+double _timeToX(Duration t, double pixelsPerSecond) =>
+    t.inMilliseconds / 1000.0 * pixelsPerSecond;
+
+Duration _xToTime(double x, double pixelsPerSecond) {
+  if (pixelsPerSecond <= 0) return Duration.zero;
+  return Duration(milliseconds: (x / pixelsPerSecond * 1000.0).round());
 }
+
+double _contentWidth(double viewportWidth, double scale) =>
+    viewportWidth * scale;
+
+// Test-only re-exports (private helpers in lib code can't be reached
+// from `test/`; these proxies keep the helpers private to lib but
+// addressable from unit tests).
+@visibleForTesting
+double pixelsPerSecondForTest(double v, Duration t, double s) =>
+    _pixelsPerSecond(v, t, s);
+@visibleForTesting
+double timeToXForTest(Duration t, double pps) => _timeToX(t, pps);
+@visibleForTesting
+Duration xToTimeForTest(double x, double pps) => _xToTime(x, pps);
+@visibleForTesting
+double contentWidthForTest(double v, double s) => _contentWidth(v, s);
 
 String _formatSecondsLabel(double secs) {
   final s = secs.round();
@@ -279,8 +296,10 @@ class _TimeRuler extends StatelessWidget {
   final double width;
   final ValueChanged<Duration> onSeek;
 
-  void _seek(Offset local) =>
-      onSeek(_xToTime(local.dx, width, duration));
+  void _seek(Offset local) {
+    final pps = _pixelsPerSecond(width, duration, 1.0);
+    onSeek(_xToTime(local.dx, pps));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -393,8 +412,10 @@ class _ClipLaneState extends State<_ClipLane> {
   Duration? _trimEndAnchor;
   double _trimEndAccum = 0;
 
-  void _seek(Offset local) =>
-      widget.onSeek(_xToTime(local.dx, widget.width, widget.duration));
+  void _seek(Offset local) {
+    final pps = _pixelsPerSecond(widget.width, widget.duration, 1.0);
+    widget.onSeek(_xToTime(local.dx, pps));
+  }
 
   Duration get _minTrimDuration =>
       const Duration(milliseconds: _minTrimDurationMs);
@@ -465,11 +486,12 @@ class _ClipLaneState extends State<_ClipLane> {
     final hasTrim = trim != null &&
         widget.onTrimChanged != null &&
         widget.duration > Duration.zero;
+    final pps = _pixelsPerSecond(widget.width, widget.duration, 1.0);
     final startX = hasTrim
-        ? _timeToX(trim.start, widget.width, widget.duration)
+        ? _timeToX(trim.start, pps)
         : 0.0;
     final endX = hasTrim
-        ? _timeToX(trim.end, widget.width, widget.duration)
+        ? _timeToX(trim.end, pps)
         : widget.width;
 
     return MouseRegion(
@@ -707,8 +729,8 @@ class _ZoomLaneState extends State<_ZoomLane> {
     final hoverX = _hoverX;
     if (hoverX == null || widget.duration <= Duration.zero) return null;
 
-    final hoverTime =
-        _xToTime(hoverX, widget.width, widget.duration);
+    final pps = _pixelsPerSecond(widget.width, widget.duration, 1.0);
+    final hoverTime = _xToTime(hoverX, pps);
 
     // If the cursor is over an existing zoom, the ghost is hidden —
     // that pill catches its own clicks anyway.
@@ -776,8 +798,8 @@ class _ZoomLaneState extends State<_ZoomLane> {
                   return;
                 }
                 widget.onZoomSelected?.call(null);
-                widget.onSeek(_xToTime(
-                    d.localPosition.dx, widget.width, widget.duration));
+                final pps = _pixelsPerSecond(widget.width, widget.duration, 1.0);
+                widget.onSeek(_xToTime(d.localPosition.dx, pps));
               },
               child: const SizedBox.expand(),
             ),
@@ -843,8 +865,9 @@ class _ZoomGhost extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final left = _timeToX(start, laneWidth, duration);
-    final width = _timeToX(end, laneWidth, duration) - left;
+    final pps = _pixelsPerSecond(laneWidth, duration, 1.0);
+    final left = _timeToX(start, pps);
+    final width = _timeToX(end, pps) - left;
     // Only paint the "+" affordance when the ghost is wide enough to
     // avoid the icon spilling past the rounded edges.
     final showAddIcon = width >= 28;
@@ -927,10 +950,15 @@ class _ZoomPillState extends State<_ZoomPill> {
   Duration? _exitAnchor;
   double _exitAccum = 0;
 
-  double get _startX =>
-      _timeToX(widget.zoom.startTime, widget.laneWidth, widget.duration);
-  double get _endX =>
-      _timeToX(widget.zoom.endTime, widget.laneWidth, widget.duration);
+  double get _startX {
+    final pps = _pixelsPerSecond(widget.laneWidth, widget.duration, 1.0);
+    return _timeToX(widget.zoom.startTime, pps);
+  }
+
+  double get _endX {
+    final pps = _pixelsPerSecond(widget.laneWidth, widget.duration, 1.0);
+    return _timeToX(widget.zoom.endTime, pps);
+  }
 
   Duration get _minStart =>
       widget.neighbors.prevEnd ?? Duration.zero;
