@@ -15,6 +15,8 @@ import 'package:screen_recorder/ui/widgets/inspector/tabs/captions_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/cursor_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/shortcuts_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
+import '../animated_indicator_bar.dart';
+import '../springy_icon_button.dart';
 
 /// Right-hand inspector for the playback editor.
 ///
@@ -196,82 +198,49 @@ class _Rail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 56,
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Column(
-        children: [
-          for (final t in InspectorTab.values) ...[
-            _RailButton(
-              tab: t,
-              isSelected: t == selected,
-              onTap: () => onSelect(t),
+    const railWidth = 56.0;
+    const railVerticalPad = 12.0;
+    const itemHeight = 40.0;
+    const itemGap = 8.0;
+
+    return SizedBox(
+      width: railWidth,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: railVerticalPad),
+        child: Stack(
+          children: [
+            AnimatedIndicatorBar(
+              selectedIndex: InspectorTab.values.indexOf(selected),
+              itemCount: InspectorTab.values.length,
+              itemHeight: itemHeight,
+              itemGap: itemGap,
             ),
-            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.topCenter,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final t in InspectorTab.values) ...[
+                    SpringyIconButton(
+                      icon: t.icon,
+                      tooltip: t.label,
+                      isActive: t == selected,
+                      onTap: () => onSelect(t),
+                      size: itemHeight,
+                    ),
+                    if (t != InspectorTab.values.last)
+                      const SizedBox(height: itemGap),
+                  ],
+                ],
+              ),
+            ),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class _RailButton extends StatelessWidget {
-  const _RailButton({
-    required this.tab,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final InspectorTab tab;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isSelected ? kInspectorAccent : Colors.white60;
-    return Tooltip(
-      message: tab.label,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: isSelected
-                ? kInspectorAccent.withValues(alpha: 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(tab.icon, color: color, size: 20),
-              if (isSelected)
-                const Positioned(top: 6, right: 6, child: _AccentDot()),
-            ],
-          ),
         ),
       ),
     );
   }
 }
 
-class _AccentDot extends StatelessWidget {
-  const _AccentDot();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 6,
-      height: 6,
-      decoration: const BoxDecoration(
-        color: kInspectorAccent,
-        shape: BoxShape.circle,
-      ),
-    );
-  }
-}
 
 // _ClipLocalState removed — clip-level fields (playbackSpeed,
 // fadeIn, fadeOut) moved into EditorProjectState via P2-8 bugfix
