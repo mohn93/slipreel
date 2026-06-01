@@ -311,4 +311,89 @@ void main() {
       expect(decoded.outputAspect, OutputAspect.auto);
     });
   });
+
+  group('timelineScale field', () {
+    test('default is 1.0', () {
+      expect(EditorProjectState.defaults().timelineScale, 1.0);
+    });
+
+    test('copyWith updates only timelineScale', () {
+      final base = EditorProjectState.defaults();
+      final next = base.copyWith(timelineScale: 4.0);
+      expect(next.timelineScale, 4.0);
+      expect(next.cursorSize, base.cursorSize);
+      expect(next.audioMix, base.audioMix);
+    });
+
+    test('round-trips through toJson/fromJson', () {
+      final base = EditorProjectState.defaults().copyWith(timelineScale: 3.5);
+      final decoded = EditorProjectState.fromJson(base.toJson());
+      expect(decoded.timelineScale, 3.5);
+    });
+
+    test('missing key in JSON falls back to 1.0', () {
+      final json = EditorProjectState.defaults().toJson()
+        ..remove('timelineScale');
+      expect(EditorProjectState.fromJson(json).timelineScale, 1.0);
+    });
+
+    test('invalid JSON values fall back to 1.0', () {
+      final base = EditorProjectState.defaults().toJson();
+      for (final bad in <Object?>[-1, 0, 100, 'foo', null, double.nan, double.infinity]) {
+        final json = {...base, 'timelineScale': bad};
+        expect(
+          EditorProjectState.fromJson(json).timelineScale,
+          1.0,
+          reason: 'bad input: $bad',
+        );
+      }
+    });
+
+    test('equality and hashCode include timelineScale', () {
+      final a = EditorProjectState.defaults().copyWith(timelineScale: 2.0);
+      final b = EditorProjectState.defaults().copyWith(timelineScale: 2.0);
+      final c = EditorProjectState.defaults().copyWith(timelineScale: 3.0);
+      expect(a == b, isTrue);
+      expect(a.hashCode == b.hashCode, isTrue);
+      expect(a == c, isFalse);
+    });
+  });
+
+  group('pendingScaleAnchor field (transient)', () {
+    test('defaults to null', () {
+      expect(EditorProjectState.defaults().pendingScaleAnchor, isNull);
+    });
+
+    test('copyWith sets and clears via clearPendingScaleAnchor flag', () {
+      final base = EditorProjectState.defaults();
+      final withAnchor =
+          base.copyWith(pendingScaleAnchor: const Duration(seconds: 3));
+      expect(withAnchor.pendingScaleAnchor, const Duration(seconds: 3));
+      final cleared = withAnchor.copyWith(clearPendingScaleAnchor: true);
+      expect(cleared.pendingScaleAnchor, isNull);
+    });
+
+    test('NOT serialized to JSON', () {
+      final state = EditorProjectState.defaults()
+          .copyWith(pendingScaleAnchor: const Duration(seconds: 5));
+      expect(state.toJson().containsKey('pendingScaleAnchor'), isFalse);
+    });
+
+    test('NOT read from JSON (always starts null after fromJson)', () {
+      final base = EditorProjectState.defaults().toJson();
+      final hostile = {...base, 'pendingScaleAnchor': 12345};
+      expect(EditorProjectState.fromJson(hostile).pendingScaleAnchor, isNull);
+    });
+
+    test('NOT included in equality or hashCode', () {
+      final a = EditorProjectState.defaults()
+          .copyWith(pendingScaleAnchor: const Duration(seconds: 1));
+      final b = EditorProjectState.defaults()
+          .copyWith(pendingScaleAnchor: const Duration(seconds: 9));
+      final c = EditorProjectState.defaults();
+      expect(a == b, isTrue, reason: 'anchor must not affect ==');
+      expect(a == c, isTrue);
+      expect(a.hashCode == c.hashCode, isTrue);
+    });
+  });
 }
