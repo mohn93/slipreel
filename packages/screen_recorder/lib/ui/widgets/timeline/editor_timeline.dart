@@ -68,6 +68,24 @@ Duration _xToTime(double x, double pixelsPerSecond) {
 double _contentWidth(double viewportWidth, double scale) =>
     viewportWidth * scale;
 
+/// Computes the hover-scrub progress fraction (0..1 of total content)
+/// from the raw inputs that [_updateHover] has available.
+///
+///   viewportX   — cursor x relative to the viewport (MouseRegion local.dx)
+///   scrollOffset — current [ScrollController.offset]
+///   viewportWidth — LayoutBuilder width passed to _updateHover
+///   scale       — widget.timelineScale
+double _progressFromHover(
+  double viewportX,
+  double scrollOffset,
+  double viewportWidth,
+  double scale,
+) {
+  final content = _contentWidth(viewportWidth, scale);
+  if (content <= 0) return 0.0;
+  return ((viewportX + scrollOffset) / content).clamp(0.0, 1.0);
+}
+
 // Test-only re-exports (private helpers in lib code can't be reached
 // from `test/`; these proxies keep the helpers private to lib but
 // addressable from unit tests).
@@ -80,6 +98,14 @@ double timeToXForTest(Duration t, double pps) => _timeToX(t, pps);
 Duration xToTimeForTest(double x, double pps) => _xToTime(x, pps);
 @visibleForTesting
 double contentWidthForTest(double v, double s) => _contentWidth(v, s);
+@visibleForTesting
+double progressFromHoverForTest(
+  double viewportX,
+  double scrollOffset,
+  double viewportWidth,
+  double scale,
+) =>
+    _progressFromHover(viewportX, scrollOffset, viewportWidth, scale);
 
 String _formatSecondsLabel(double secs) {
   final s = secs.round();
@@ -188,7 +214,18 @@ class _EditorTimelineState extends State<EditorTimeline> {
 
   void _updateHover(Offset local, double width) {
     if (widget.isPlaying || width <= 0) return;
-    final progress = (local.dx / width).clamp(0.0, 1.0);
+    // Compute progress as a fraction of CONTENT width, not viewport
+    // width — at scale > 1 the cursor's viewport-x corresponds to
+    // (viewport_x + scrollOffset) in content coords.
+    final scrollOffset = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
+    final progress = _progressFromHover(
+      local.dx,
+      scrollOffset,
+      width,
+      widget.timelineScale,
+    );
     if (_hoverProgress != progress) {
       setState(() => _hoverProgress = progress);
     }
@@ -353,8 +390,6 @@ class _EditorTimelineState extends State<EditorTimeline> {
             // hover-only, onTap/onPan still flow through to the lanes
             // below.
             opaque: false,
-            // FIXME(G3/G4): hover progress ignores _scrollController.offset;
-            // correct at scale==1, drifts at scale>1.
             onHover: (e) => _updateHover(e.localPosition, width),
             onExit: (_) => _clearHover(),
             child: SingleChildScrollView(
