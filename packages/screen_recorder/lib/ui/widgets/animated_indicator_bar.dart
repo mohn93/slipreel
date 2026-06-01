@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import 'package:screen_recorder/ui/theme/app_palette_context.dart';
@@ -73,10 +71,12 @@ class _AnimatedIndicatorBarState extends State<AnimatedIndicatorBar> {
     final targetTop = isVisible ? _targetTop(widget.selectedIndex) : 0.0;
     final beginTop =
         _previousIndex != null ? _targetTop(_previousIndex!) : targetTop;
-    // First mount snaps; subsequent rebuilds spring.
+    // First mount snaps; subsequent rebuilds glide on easeOutQuint to
+    // match the alert deck and other app-wide transitions — no spring
+    // overshoot.
     final duration = _previousIndex == null
         ? Duration.zero
-        : const Duration(milliseconds: 320);
+        : const Duration(milliseconds: 280);
 
     return SizedBox(
       width: width,
@@ -90,7 +90,7 @@ class _AnimatedIndicatorBarState extends State<AnimatedIndicatorBar> {
             TweenAnimationBuilder<double>(
               tween: Tween<double>(begin: beginTop, end: targetTop),
               duration: duration,
-              curve: _SpringCurve(),
+              curve: Curves.easeOutQuint,
               builder: (context, top, _) {
                 return Positioned(
                   top: top,
@@ -113,18 +113,3 @@ class _AnimatedIndicatorBarState extends State<AnimatedIndicatorBar> {
   }
 }
 
-/// Spring-ish curve with ~12% overshoot that settles by t≈0.9. Cheaper
-/// than a SpringSimulation-driven AnimationController for a single
-/// scalar tween; if the look ever needs tuning, this is the place.
-class _SpringCurve extends Curve {
-  const _SpringCurve();
-
-  @override
-  double transform(double t) {
-    if (t >= 1.0) return 1.0;
-    // Damped cosine: 1 - exp(-6t) * cos(12t). Crosses 1.0 ~t=0.18, peaks
-    // near 1.12 around t=0.32, settles by t≈0.9.
-    final v = 1.0 - math.exp(-6 * t) * math.cos(12 * t);
-    return v;
-  }
-}

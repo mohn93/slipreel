@@ -215,7 +215,8 @@ class _Rail extends StatelessWidget {
               itemHeight: itemHeight,
               itemGap: itemGap,
             ),
-            Center(
+            Align(
+              alignment: Alignment.topCenter,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [

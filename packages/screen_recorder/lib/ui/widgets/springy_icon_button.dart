@@ -155,9 +155,9 @@ class _SpringyIconButtonState extends State<SpringyIconButton>
     final hovering = _hovered || _pressed;
     final double alphaMultiplier;
     if (widget.isActive) {
-      alphaMultiplier = hovering ? 1.1 : 1.0;
+      alphaMultiplier = hovering ? 1.3 : 1.0;
     } else {
-      alphaMultiplier = hovering ? 0.4 : 0.0;
+      alphaMultiplier = hovering ? 0.85 : 0.0;
     }
     if (alphaMultiplier == 0.0) return Colors.transparent;
     return palette.accent.withValues(alpha: 0.18 * alphaMultiplier);
