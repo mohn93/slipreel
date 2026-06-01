@@ -4,6 +4,7 @@ import 'package:slipreel_engine/models/window_frame.dart';
 import '../../state/recording_settings_controller.dart';
 import '../app_alerts/app_alert_types.dart';
 import '../app_alerts/app_alerts.dart';
+import '../theme/app_palette_context.dart';
 import 'theme_playground_screen.dart';
 
 /// Settings screen for customizing window frame appearance.
@@ -79,11 +80,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final frame = _frame;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1E2E),
+      backgroundColor: context.palette.appBackground,
       appBar: AppBar(
         title: const Text('Frame Settings'),
-        backgroundColor: const Color(0xFF2B2B3D),
+        backgroundColor: context.palette.surfaceElevated,
         elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: context.palette.dividerSubtle),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -169,20 +174,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
-                color: const Color(0xFF2B2B3D),
+                color: context.palette.surfaceCard,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: ListTile(
-                leading: const Icon(Icons.palette_outlined,
-                    color: Colors.white),
-                title: const Text('Theme playground',
-                    style: TextStyle(color: Colors.white)),
-                subtitle: const Text(
+                leading: Icon(Icons.palette_outlined,
+                    color: context.palette.textPrimary),
+                title: Text('Theme playground',
+                    style: TextStyle(color: context.palette.textPrimary)),
+                subtitle: Text(
                   'Preview and pick the app theme',
-                  style: TextStyle(color: Colors.white70),
+                  style: TextStyle(color: context.palette.textSecondary),
                 ),
-                trailing:
-                    const Icon(Icons.chevron_right, color: Colors.white70),
+                trailing: Icon(Icons.chevron_right,
+                    color: context.palette.textSecondary),
                 contentPadding: EdgeInsets.zero,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
@@ -224,8 +229,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               _selectTemplate(template.name);
             }
           },
-          selectedColor: const Color(0xFF6C63FF),
-          backgroundColor: const Color(0xFF2B2B3D),
+          selectedColor: context.palette.accent,
+          backgroundColor: context.palette.surfaceCard,
           labelStyle: TextStyle(
             color: isSelected ? Colors.white : Colors.white70,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
@@ -246,7 +251,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2B3D),
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -256,8 +261,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             children: [
               Text(
                 label,
-                style: const TextStyle(
-                  color: Color(0xFF6C63FF),
+                style: TextStyle(
+                  color: context.palette.accent,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -276,7 +281,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             min: min,
             max: max,
             divisions: divisions,
-            activeColor: const Color(0xFF6C63FF),
+            activeColor: context.palette.accent,
             inactiveColor: Colors.white24,
             onChanged: onChanged,
           ),
@@ -290,7 +295,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       null, // Transparent
       const Color(0xFFFFFFFF), // White
       const Color(0xFF000000), // Black
-      const Color(0xFF6C63FF), // Purple
+      context.palette.accent, // Purple
       const Color(0xFFFF6B6B), // Red
       const Color(0xFF4ECDC4), // Teal
     ];
@@ -308,10 +313,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: color ?? const Color(0xFF2B2B3D),
+              color: color ?? context.palette.surfaceCard,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isSelected ? const Color(0xFF6C63FF) : Colors.white24,
+                color: isSelected ? context.palette.accent : Colors.white24,
                 width: isSelected ? 3 : 1,
               ),
             ),
@@ -334,10 +339,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2B3D),
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: const Color(0x4D6C63FF), // 30% opacity
+          color: context.palette.dividerSubtle,
           width: 1,
         ),
       ),
@@ -346,9 +351,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.info_outline,
-                color: Color(0xFF6C63FF),
+                color: context.palette.accent,
                 size: 20,
               ),
               const SizedBox(width: 8),
@@ -444,7 +449,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2B3D),
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -522,7 +527,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2B3D),
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
