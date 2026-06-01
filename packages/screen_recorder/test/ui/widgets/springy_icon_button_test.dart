@@ -125,6 +125,87 @@ void main() {
     expect(transform.entry(0, 0), greaterThan(1.0));
   });
 
+  testWidgets('disabled icon color is dimmer than enabled', (tester) async {
+    await tester.pumpWidget(_host(SpringyIconButton(
+      icon: Icons.mouse,
+      tooltip: 'Cursor — coming soon',
+      isActive: false,
+      isEnabled: false,
+      onTap: () {},
+    )));
+    await tester.pumpAndSettle();
+    final icon = tester.widget<Icon>(find.byIcon(Icons.mouse));
+    final expectedAlpha = AppPalette.midnight.textSecondary.a * 0.35;
+    expect(icon.color, isNotNull);
+    expect(icon.color!.a, closeTo(expectedAlpha, 0.02));
+  });
+
+  testWidgets('disabled tap does NOT fire onTap', (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(_host(SpringyIconButton(
+      icon: Icons.mouse,
+      tooltip: 'Cursor — coming soon',
+      isActive: false,
+      isEnabled: false,
+      onTap: () => taps++,
+    )));
+    await tester.tap(find.byType(SpringyIconButton));
+    expect(taps, 0);
+  });
+
+  testWidgets('disabled hover background is dimmer than enabled hover',
+      (tester) async {
+    // Pump an enabled button first, capture its hover bg alpha.
+    await tester.pumpWidget(_host(SpringyIconButton(
+      icon: Icons.mouse,
+      tooltip: 'Cursor',
+      isActive: false,
+      onTap: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(gesture.removePointer);
+    await gesture.addPointer(location: Offset.zero);
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(find.byType(SpringyIconButton)));
+    await tester.pumpAndSettle();
+
+    double bgAlpha(WidgetTester t) {
+      for (final c
+          in t.widgetList<AnimatedContainer>(find.byType(AnimatedContainer))) {
+        final d = c.decoration;
+        if (d is BoxDecoration &&
+            d.color != null &&
+            d.color != Colors.transparent) {
+          return d.color!.a;
+        }
+      }
+      return 0.0;
+    }
+
+    final enabledHoverAlpha = bgAlpha(tester);
+    expect(enabledHoverAlpha, greaterThan(0.0));
+
+    // Now pump a disabled button and hover it.
+    await tester.pumpWidget(_host(SpringyIconButton(
+      icon: Icons.mouse,
+      tooltip: 'Cursor — coming soon',
+      isActive: false,
+      isEnabled: false,
+      onTap: () {},
+    )));
+    await tester.pumpAndSettle();
+    await gesture.moveTo(const Offset(2000, 2000));
+    await tester.pumpAndSettle();
+    await gesture.moveTo(tester.getCenter(find.byType(SpringyIconButton)));
+    await tester.pumpAndSettle();
+
+    final disabledHoverAlpha = bgAlpha(tester);
+    expect(disabledHoverAlpha, greaterThan(0.0));
+    expect(disabledHoverAlpha, lessThan(enabledHoverAlpha));
+  });
+
   testWidgets('hover exit returns scale to 1.0', (tester) async {
     await tester.pumpWidget(_host(SpringyIconButton(
       icon: Icons.mouse,

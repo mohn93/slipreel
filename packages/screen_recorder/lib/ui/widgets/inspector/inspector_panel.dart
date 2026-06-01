@@ -223,8 +223,10 @@ class _Rail extends StatelessWidget {
                   for (final t in InspectorTab.values) ...[
                     SpringyIconButton(
                       icon: t.icon,
-                      tooltip: t.label,
+                      tooltip:
+                          t.isEnabled ? t.label : '${t.label} — coming soon',
                       isActive: t == selected,
+                      isEnabled: t.isEnabled,
                       onTap: () => onSelect(t),
                       size: itemHeight,
                     ),

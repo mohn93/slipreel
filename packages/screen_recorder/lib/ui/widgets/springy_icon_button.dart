@@ -17,6 +17,7 @@ class SpringyIconButton extends StatefulWidget {
     required this.tooltip,
     required this.isActive,
     required this.onTap,
+    this.isEnabled = true,
     this.size = 40,
     this.iconSize = 20,
   });
@@ -25,6 +26,12 @@ class SpringyIconButton extends StatefulWidget {
   final String tooltip;
   final bool isActive;
   final VoidCallback onTap;
+
+  /// When false the tap is a no-op, the press scale is suppressed,
+  /// and the hover background tint is dimmer. Tooltip + hover scale
+  /// still play so the button feels alive — the caller is expected
+  /// to provide a tooltip explaining why the button is disabled.
+  final bool isEnabled;
   final double size;
   final double iconSize;
 
@@ -76,8 +83,15 @@ class _SpringyIconButtonState extends State<SpringyIconButton>
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final iconColor =
-        widget.isActive ? palette.accent : palette.textSecondary;
+    final Color iconColor;
+    if (!widget.isEnabled) {
+      // Visibly muted so disabled tabs read as unavailable at a glance.
+      iconColor = palette.textSecondary.withValues(alpha: 0.35);
+    } else if (widget.isActive) {
+      iconColor = palette.accent;
+    } else {
+      iconColor = palette.textSecondary;
+    }
     final bgColor = _backgroundColor(palette);
 
     return _LeftTooltip(
@@ -102,20 +116,26 @@ class _SpringyIconButtonState extends State<SpringyIconButton>
           },
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTapDown: (_) {
-              setState(() => _pressed = true);
-              _animateToTarget();
-              _tooltipKey.currentState?.cancel();
-            },
-            onTapUp: (_) {
-              setState(() => _pressed = false);
-              _animateToTarget();
-            },
-            onTapCancel: () {
-              setState(() => _pressed = false);
-              _animateToTarget();
-            },
-            onTap: widget.onTap,
+            onTapDown: widget.isEnabled
+                ? (_) {
+                    setState(() => _pressed = true);
+                    _animateToTarget();
+                    _tooltipKey.currentState?.cancel();
+                  }
+                : null,
+            onTapUp: widget.isEnabled
+                ? (_) {
+                    setState(() => _pressed = false);
+                    _animateToTarget();
+                  }
+                : null,
+            onTapCancel: widget.isEnabled
+                ? () {
+                    setState(() => _pressed = false);
+                    _animateToTarget();
+                  }
+                : null,
+            onTap: widget.isEnabled ? widget.onTap : null,
             child: AnimatedBuilder(
               animation: _scaleAc,
               child: AnimatedContainer(
@@ -149,12 +169,14 @@ class _SpringyIconButtonState extends State<SpringyIconButton>
 
   Color _backgroundColor(AppPalette palette) {
     // Base alpha is whatever AppPalette.accentMuted encodes (~0.18).
-    // Inactive: 0 (transparent) at rest; 0.4× at hover/press.
-    // Active: 1.0× at rest; 1.1× at hover/press.
-    // We compose by alpha-scaling the accent color.
+    // Disabled: 0 at rest; 0.45× at hover (dimmer than enabled).
+    // Inactive: 0 at rest; 0.85× at hover/press.
+    // Active: 1.0× at rest; 1.3× at hover/press.
     final hovering = _hovered || _pressed;
     final double alphaMultiplier;
-    if (widget.isActive) {
+    if (!widget.isEnabled) {
+      alphaMultiplier = hovering ? 0.45 : 0.0;
+    } else if (widget.isActive) {
       alphaMultiplier = hovering ? 1.3 : 1.0;
     } else {
       alphaMultiplier = hovering ? 0.85 : 0.0;
