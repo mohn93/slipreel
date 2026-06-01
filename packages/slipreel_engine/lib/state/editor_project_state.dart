@@ -41,6 +41,8 @@ class EditorProjectState {
     this.fadeOut = Duration.zero,
     this.outputAspect = OutputAspect.auto,
     this.audioMix = const AudioMix(),
+    this.timelineScale = 1.0,
+    this.pendingScaleAnchor,
   });
 
   /// Sensible blank slate for a freshly-loaded recording with no saved
@@ -140,9 +142,26 @@ class EditorProjectState {
   /// export. Preview is unaffected (export-only mixing).
   final AudioMix audioMix;
 
+  /// Horizontal timeline zoom. 1.0 = fit-to-width (default; visually
+  /// identical to pre-feature behavior). Up to 8.0 = 8× wider content.
+  /// Clamped at the controller boundary; this field assumes a valid
+  /// value.
+  final double timelineScale;
+
+  /// Transient one-shot anchor hint set by [EditorProjectController.
+  /// setTimelineScale] and consumed by the timeline widget. The widget
+  /// preserves the on-screen x-position of this timestamp across a
+  /// scale change, then calls [EditorProjectController.
+  /// clearPendingScaleAnchor] to reset to null.
+  ///
+  /// Excluded from `==`/`hashCode` so a re-emit at the same scale with
+  /// a different anchor still drives the widget. Excluded from JSON
+  /// so a project file never reflects a transient UI signal.
+  final Duration? pendingScaleAnchor;
+
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 5;
+  static const int currentSchemaVersion = 6;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -171,6 +190,9 @@ class EditorProjectState {
     Duration? fadeOut,
     OutputAspect? outputAspect,
     AudioMix? audioMix,
+    double? timelineScale,
+    Duration? pendingScaleAnchor,
+    bool clearPendingScaleAnchor = false,
   }) {
     // `zoomRegions:` is a convenience override that writes through to
     // the active (first) zoom track on the timeline — matches today's
@@ -216,6 +238,10 @@ class EditorProjectState {
       fadeOut: fadeOut ?? this.fadeOut,
       outputAspect: outputAspect ?? this.outputAspect,
       audioMix: audioMix ?? this.audioMix,
+      timelineScale: timelineScale ?? this.timelineScale,
+      pendingScaleAnchor: clearPendingScaleAnchor
+          ? null
+          : (pendingScaleAnchor ?? this.pendingScaleAnchor),
     );
   }
 
@@ -242,6 +268,8 @@ class EditorProjectState {
     'fadeOutMicros': fadeOut.inMicroseconds,
     'outputAspect': outputAspect.name,
     'audioMix': audioMix.toJson(),
+    'timelineScale': timelineScale,
+    // pendingScaleAnchor is transient; not serialized.
   };
 
   factory EditorProjectState.fromJson(Map<String, dynamic> rawJson) {
@@ -343,7 +371,17 @@ class EditorProjectState {
       audioMix: json['audioMix'] is Map<String, dynamic>
           ? AudioMix.fromJson(json['audioMix'] as Map<String, dynamic>)
           : defaults.audioMix,
+      timelineScale: _readTimelineScale(json['timelineScale']),
+      // pendingScaleAnchor is transient; always null after load.
     );
+  }
+
+  static double _readTimelineScale(Object? raw) {
+    if (raw is num) {
+      final v = raw.toDouble();
+      if (v.isFinite && v >= 1.0 && v <= 8.0) return v;
+    }
+    return 1.0;
   }
 
   static T _decodeEnum<T extends Enum>(
@@ -359,6 +397,62 @@ class EditorProjectState {
       'EditorProjectState: unknown enum value "$name" for ${values.first.runtimeType}',
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is EditorProjectState &&
+        other.timeline == timeline &&
+        other.screenAnimationConfig == screenAnimationConfig &&
+        other.cursorAnimationConfig == cursorAnimationConfig &&
+        other.cursorSize == cursorSize &&
+        other.cursorStyle == cursorStyle &&
+        other.cursorClickEffect == cursorClickEffect &&
+        other.hideCursorOverlay == hideCursorOverlay &&
+        other.motionBlur == motionBlur &&
+        other.cursorMovementBlur == cursorMovementBlur &&
+        other.screenMovementBlur == screenMovementBlur &&
+        other.screenZoomBlur == screenZoomBlur &&
+        other.cursorShadow == cursorShadow &&
+        other.clickSpring == clickSpring &&
+        other.cursorDelay == cursorDelay &&
+        other.cursorPostProcess == cursorPostProcess &&
+        other.windowFrame == windowFrame &&
+        other.playbackSpeed == playbackSpeed &&
+        other.fadeIn == fadeIn &&
+        other.fadeOut == fadeOut &&
+        other.outputAspect == outputAspect &&
+        other.audioMix == audioMix &&
+        other.timelineScale == timelineScale;
+    // pendingScaleAnchor intentionally excluded.
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+        timeline,
+        screenAnimationConfig,
+        cursorAnimationConfig,
+        cursorSize,
+        cursorStyle,
+        cursorClickEffect,
+        hideCursorOverlay,
+        motionBlur,
+        cursorMovementBlur,
+        screenMovementBlur,
+        screenZoomBlur,
+        cursorShadow,
+        clickSpring,
+        cursorDelay,
+        cursorPostProcess,
+        windowFrame,
+        playbackSpeed,
+        fadeIn,
+        fadeOut,
+        outputAspect,
+        audioMix,
+        timelineScale,
+        // pendingScaleAnchor intentionally excluded.
+      ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +512,9 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>)>
   // v4 → v5: add the per-project outputAspect (no value transform —
   // fromJson fills the auto default when the key is absent).
   (json) => {...json, 'schemaVersion': 5},
+  // v5 → v6: add the per-project timelineScale (no value transform —
+  // fromJson fills 1.0 when the key is absent).
+  (json) => {...json, 'schemaVersion': 6},
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its

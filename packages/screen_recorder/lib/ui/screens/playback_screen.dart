@@ -31,9 +31,11 @@ import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
 import 'package:screen_recorder/state/zoom_preview_override.dart';
 import 'package:screen_recorder/ui/widgets/canvas_toolbar/aspect_ratio_picker.dart';
 import 'package:screen_recorder/ui/widgets/canvas_toolbar/canvas_toolbar.dart';
+import 'package:screen_recorder/ui/widgets/canvas_toolbar/timeline_scale_slider.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
+import 'package:screen_recorder/ui/screens/zoom_shortcuts.dart';
 import 'package:slipreel_engine/export/export_pipeline.dart';
 import 'package:slipreel_engine/export/gif_export_pipeline.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
@@ -823,210 +825,229 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
         return KeyEventResult.ignored;
       },
-      child: Scaffold(
-        backgroundColor: context.palette.appBackground,
-        appBar: AppBar(
-          title: const Text('Playback'),
-          backgroundColor: context.palette.surfaceElevated,
-          elevation: 0,
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(1),
-            child: Container(height: 1, color: context.palette.dividerSubtle),
+      child: Shortcuts(
+        shortcuts: buildZoomShortcuts(),
+        child: Actions(
+          actions: buildZoomActions(
+            getScale: () =>
+                ref.read(editorProjectControllerProvider).timelineScale,
+            setScale: (next) => ref
+                .read(editorProjectControllerProvider.notifier)
+                .setTimelineScale(
+                  next,
+                  anchorTime: _controller.value.position,
+                ),
           ),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          actions: [
-            // Secondary action — ghost style so the eye lands on the
-            // CTA next to it. Returns to the recording screen for a
-            // fresh take.
-            TextButton.icon(
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(
-                Icons.fiber_manual_record,
-                size: 16,
-                color: Colors.white70,
+          child: Scaffold(
+            backgroundColor: context.palette.appBackground,
+            appBar: AppBar(
+              title: const Text('Playback'),
+              backgroundColor: context.palette.surfaceElevated,
+              elevation: 0,
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(1),
+                child: Container(height: 1, color: context.palette.dividerSubtle),
               ),
-              label: const Text(
-                'Record another',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontWeight: FontWeight.w500,
-                ),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.of(context).pop(),
               ),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Primary CTA — filled indigo, matches the brand accent
-            // used for selected zoom regions / active toggles. The
-            // leading icon swaps for a rotating arc while an export
-            // is in flight, and the button is disabled to block
-            // re-entry (the _isExporting guard in _export covers it
-            // anyway, but the visual cue matters).
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: TipAnchor(
-                tipId: TipId.editorExport,
-                child: ElevatedButton.icon(
-                  onPressed: _isExporting ? null : _export,
-                  icon: _isExporting
-                      ? const CtaSpinner(size: 16)
-                      : const Icon(Icons.file_download_outlined, size: 18),
-                  label: Text(
-                    _isExporting ? 'Exporting…' : 'Export',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+              actions: [
+                // Secondary action — ghost style so the eye lands on the
+                // CTA next to it. Returns to the recording screen for a
+                // fresh take.
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(
+                    Icons.fiber_manual_record,
+                    size: 16,
+                    color: Colors.white70,
                   ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: context.palette.accent,
-                    foregroundColor: Colors.white,
-                    // Keep the button looking active (not greyed out)
-                    // while in the loading state — the spinner already
-                    // says "busy", the disabled colour would just
-                    // wash out the CTA.
-                    disabledBackgroundColor: context.palette.accent,
-                    disabledForegroundColor: Colors.white,
-                    elevation: 0,
+                  label: const Text(
+                    'Record another',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 12,
+                      horizontal: 14,
+                      vertical: 10,
                     ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                // Primary CTA — filled indigo, matches the brand accent
+                // used for selected zoom regions / active toggles. The
+                // leading icon swaps for a rotating arc while an export
+                // is in flight, and the button is disabled to block
+                // re-entry (the _isExporting guard in _export covers it
+                // anyway, but the visual cue matters).
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: TipAnchor(
+                    tipId: TipId.editorExport,
+                    child: ElevatedButton.icon(
+                      onPressed: _isExporting ? null : _export,
+                      icon: _isExporting
+                          ? const CtaSpinner(size: 16)
+                          : const Icon(Icons.file_download_outlined, size: 18),
+                      label: Text(
+                        _isExporting ? 'Exporting…' : 'Export',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: context.palette.accent,
+                        foregroundColor: Colors.white,
+                        // Keep the button looking active (not greyed out)
+                        // while in the loading state — the spinner already
+                        // says "busy", the disabled colour would just
+                        // wash out the CTA.
+                        disabledBackgroundColor: context.palette.accent,
+                        disabledForegroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        body: Column(
-          children: [
-            // Preview backdrop on the left, inspector panel on the right.
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Divider(
-                            height: 1,
+            body: Column(
+              children: [
+                // Preview backdrop on the left, inspector panel on the right.
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: context.palette.dividerSubtle),
+                            CanvasToolbar(children: [
+                              AspectRatioPicker(
+                                current: project.outputAspect,
+                                onChanged: (v) => ref
+                                    .read(editorProjectControllerProvider.notifier)
+                                    .setOutputAspect(v),
+                              ),
+                              TimelineScaleSlider(
+                                playheadPosition: _smoothPlayhead?.position ??
+                                    _controller.value.position,
+                              ),
+                            ]),
+                            Expanded(
+                              child: Stack(
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          context.palette.surfaceLow,
+                                          context.palette.appBackground,
+                                        ],
+                                      ),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: _buildVideoPlayer(),
+                                  ),
+                            // Zoom debug readout — rendered at the top-left
+                            // of the preview pane, OUTSIDE the playback
+                            // canvas's zoom Transform so the text stays
+                            // anchored even when the video is zoomed in
+                            // and the canvas content slides off-screen.
+                            if (_showZoomDebug)
+                              Positioned(
+                                top: 12,
+                                left: 12,
+                                child: ValueListenableBuilder<ZoomDebugSnapshot?>(
+                                  valueListenable: _zoomDebugSnapshot,
+                                  builder: (context, snap, _) {
+                                    if (snap == null) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return ZoomDebugReadoutPanel(
+                                      cursor: snap.cursor,
+                                      smoothedFocal: snap.smoothedFocal,
+                                      activeZoom: snap.activeZoom,
+                                      inFlight: snap.inFlight,
+                                      focalVelocity: snap.focalVelocity,
+                                      cursorVelocity: snap.cursorVelocity,
+                                      videoSize: snap.videoSize,
+                                      cursorSampleCount: snap.cursorSampleCount,
+                                      position: snap.position,
+                                      cursorXRange: snap.cursorXRange,
+                                      cursorYRange: snap.cursorYRange,
+                                      lastSnapReason: snap.lastSnapReason,
+                                      lastSnapAt: snap.lastSnapAt,
+                                    );
+                                  },
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                          ],
+                        ),
+                      ),
+                      if (_isInitialized)
+                        VerticalDivider(
+                            width: 1,
                             thickness: 1,
                             color: context.palette.dividerSubtle),
-                        CanvasToolbar(children: [
-                          AspectRatioPicker(
-                            current: project.outputAspect,
-                            onChanged: (v) => ref
-                                .read(editorProjectControllerProvider.notifier)
-                                .setOutputAspect(v),
-                          ),
-                        ]),
-                        Expanded(
-                          child: Stack(
-                            children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      context.palette.surfaceLow,
-                                      context.palette.appBackground,
-                                    ],
-                                  ),
-                                ),
-                                alignment: Alignment.center,
-                                child: _buildVideoPlayer(),
-                              ),
-                        // Zoom debug readout — rendered at the top-left
-                        // of the preview pane, OUTSIDE the playback
-                        // canvas's zoom Transform so the text stays
-                        // anchored even when the video is zoomed in
-                        // and the canvas content slides off-screen.
-                        if (_showZoomDebug)
-                          Positioned(
-                            top: 12,
-                            left: 12,
-                            child: ValueListenableBuilder<ZoomDebugSnapshot?>(
-                              valueListenable: _zoomDebugSnapshot,
-                              builder: (context, snap, _) {
-                                if (snap == null) {
-                                  return const SizedBox.shrink();
-                                }
-                                return ZoomDebugReadoutPanel(
-                                  cursor: snap.cursor,
-                                  smoothedFocal: snap.smoothedFocal,
-                                  activeZoom: snap.activeZoom,
-                                  inFlight: snap.inFlight,
-                                  focalVelocity: snap.focalVelocity,
-                                  cursorVelocity: snap.cursorVelocity,
-                                  videoSize: snap.videoSize,
-                                  cursorSampleCount: snap.cursorSampleCount,
-                                  position: snap.position,
-                                  cursorXRange: snap.cursorXRange,
-                                  cursorYRange: snap.cursorYRange,
-                                  lastSnapReason: snap.lastSnapReason,
-                                  lastSnapAt: snap.lastSnapAt,
-                                );
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
+                      if (_isInitialized)
+                        InspectorPanel(
+                          selection: _currentSelection(),
+                          zoomRegions: project.zoomRegions,
+                          clipDuration: _controller.value.duration,
+                          canHideCursor: _metadata?.isPureSource == true &&
+                              _cursorRecording.count > 0,
+                          curveLibrary: _curveLibrary,
+                          onZoomChanged: (i, next) {
+                            _zoomPreviewOverride.value = null;
+                            _projectController.updateZoomAt(i, next);
+                          },
+                          onZoomDeleted: (index) {
+                            _projectController.removeZoomAt(index);
+                            _setSelectedZoomIndex(null);
+                          },
+                          onSelectionCleared: () {
+                            _zoomPreviewOverride.value = null;
+                            setState(() {
+                              _selectedZoomIndex = null;
+                              _isClipSelected = false;
+                            });
+                          },
+                          videoSize: _videoSize(),
+                          onPlacementPreview: _onPlacementPreview,
+                          onPlacementCommit: _onPlacementCommit,
+                        ),
+                    ],
                   ),
-                      ],
-                    ),
-                  ),
-                  if (_isInitialized)
-                    VerticalDivider(
-                        width: 1,
-                        thickness: 1,
-                        color: context.palette.dividerSubtle),
-                  if (_isInitialized)
-                    InspectorPanel(
-                      selection: _currentSelection(),
-                      zoomRegions: project.zoomRegions,
-                      clipDuration: _controller.value.duration,
-                      canHideCursor: _metadata?.isPureSource == true &&
-                          _cursorRecording.count > 0,
-                      curveLibrary: _curveLibrary,
-                      onZoomChanged: (i, next) {
-                        _zoomPreviewOverride.value = null;
-                        _projectController.updateZoomAt(i, next);
-                      },
-                      onZoomDeleted: (index) {
-                        _projectController.removeZoomAt(index);
-                        _setSelectedZoomIndex(null);
-                      },
-                      onSelectionCleared: () {
-                        _zoomPreviewOverride.value = null;
-                        setState(() {
-                          _selectedZoomIndex = null;
-                          _isClipSelected = false;
-                        });
-                      },
-                      videoSize: _videoSize(),
-                      onPlacementPreview: _onPlacementPreview,
-                      onPlacementCommit: _onPlacementCommit,
-                    ),
-                ],
-              ),
+                ),
+                Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: context.palette.dividerSubtle),
+                _buildControls(),
+              ],
             ),
-            Divider(
-                height: 1,
-                thickness: 1,
-                color: context.palette.dividerSubtle),
-            _buildControls(),
-          ],
+          ),
         ),
       ),
     );
@@ -1273,6 +1294,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 duration: _controller.value.duration,
                 position: displayedPos,
                 isPlaying: _controller.value.isPlaying,
+                timelineScale:
+                    ref.watch(editorProjectControllerProvider).timelineScale,
+                pendingScaleAnchor: ref
+                    .watch(editorProjectControllerProvider)
+                    .pendingScaleAnchor,
+                onAnchorConsumed: () => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .clearPendingScaleAnchor(),
+                onPinchScale: (newScale, anchor) => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .setTimelineScale(newScale, anchorTime: anchor),
                 onSeek: (next) {
                   // Committed seek: clear hover state and adopt the
                   // click target as the new intended position, then
