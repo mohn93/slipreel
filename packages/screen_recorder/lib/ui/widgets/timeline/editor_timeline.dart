@@ -211,8 +211,15 @@ class _EditorTimelineState extends State<EditorTimeline> {
   // Captured at onScaleStart so each ongoing pinch computes
   // (start * d.scale) rather than compounding across frames.
   double? _pinchStartScale;
+  // Last global pointer position seen by onHover. Used to distinguish
+  // a real cursor move from a hover event synthesized when the scrolled
+  // content shifts under a stationary cursor (two-finger trackpad
+  // scroll at scale > 1). The visual hover indicator should follow the
+  // content under the cursor, but the playhead must NOT seek unless
+  // the user actually moved the pointer.
+  Offset? _lastHoverGlobal;
 
-  void _updateHover(Offset local, double width) {
+  void _updateHover(Offset local, double width, {Offset? global}) {
     if (widget.isPlaying || width <= 0) return;
     // Compute progress as a fraction of CONTENT width, not viewport
     // width — at scale > 1 the cursor's viewport-x corresponds to
@@ -229,7 +236,16 @@ class _EditorTimelineState extends State<EditorTimeline> {
     if (_hoverProgress != progress) {
       setState(() => _hoverProgress = progress);
     }
-    if (widget.onHoverSeek != null) {
+    // Two-finger trackpad scroll at scale > 1 makes Flutter re-dispatch
+    // onHover events as the content shifts under a stationary cursor,
+    // even though the cursor's global position is unchanged. Treat that
+    // as a scroll (not a scrub) — only call onHoverSeek when the global
+    // pointer position actually moved.
+    final didPointerMove = global == null ||
+        _lastHoverGlobal == null ||
+        global != _lastHoverGlobal;
+    _lastHoverGlobal = global;
+    if (didPointerMove && widget.onHoverSeek != null) {
       final hoverTime = Duration(
         microseconds: (widget.duration.inMicroseconds * progress).round(),
       );
@@ -242,6 +258,7 @@ class _EditorTimelineState extends State<EditorTimeline> {
     if (wasHovering) {
       setState(() => _hoverProgress = null);
     }
+    _lastHoverGlobal = null;
     if (wasHovering) widget.onHoverEnd?.call();
   }
 
@@ -390,7 +407,7 @@ class _EditorTimelineState extends State<EditorTimeline> {
             // hover-only, onTap/onPan still flow through to the lanes
             // below.
             opaque: false,
-            onHover: (e) => _updateHover(e.localPosition, width),
+            onHover: (e) => _updateHover(e.localPosition, width, global: e.position),
             onExit: (_) => _clearHover(),
             child: SingleChildScrollView(
               controller: _scrollController,
