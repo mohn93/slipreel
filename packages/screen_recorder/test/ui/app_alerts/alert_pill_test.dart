@@ -2,7 +2,9 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/ui/app_alerts/alert_pill.dart';
+import 'package:screen_recorder/ui/app_alerts/alert_stack_overlay.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
+import 'package:screen_recorder/ui/app_alerts/app_alerts_controller.dart';
 
 void main() {
   Future<void> pump(WidgetTester tester, AlertEntry entry, {
@@ -109,5 +111,36 @@ void main() {
     await gesture.moveTo(const Offset(2000, 2000));
     await tester.pump();
     expect(exit, 1);
+  });
+
+  group('AlertStackOverlay', () {
+    testWidgets('renders pills for every entry in the controller stack',
+        (tester) async {
+      final controller = AppAlertsController();
+      controller.pushEntry(AlertEntry(
+        type: AlertType.success,
+        message: 'one',
+        duration: Duration.zero,
+      ));
+      controller.pushEntry(AlertEntry(
+        type: AlertType.error,
+        message: 'two',
+        duration: Duration.zero,
+      ));
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: AlertStackOverlay(controller: controller),
+        ),
+      ));
+
+      expect(find.text('one'), findsOneWidget);
+      expect(find.text('two'), findsOneWidget);
+
+      controller.dismiss(controller.stack.value.first);
+      await tester.pumpAndSettle();
+      expect(find.text('one'), findsNothing);
+      expect(find.text('two'), findsOneWidget);
+    });
   });
 }
