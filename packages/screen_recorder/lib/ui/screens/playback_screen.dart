@@ -45,6 +45,7 @@ import 'package:slipreel_engine/utils/app_logger.dart';
 import '../../state/recording_audio_streams_provider.dart';
 import '../../onboarding/tip_anchor.dart';
 import '../../onboarding/tips_controller.dart';
+import '../theme/app_palette_context.dart';
 import 'playback/hover_scrub_controller.dart';
 import 'playback/trim_controller.dart';
 import 'playback/export_controller.dart';
@@ -823,11 +824,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         return KeyEventResult.ignored;
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFF1E1E2E),
+        backgroundColor: context.palette.appBackground,
         appBar: AppBar(
           title: const Text('Playback'),
-          backgroundColor: const Color(0xFF2B2B3D),
+          backgroundColor: context.palette.surfaceElevated,
           elevation: 0,
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(1),
+            child: Container(height: 1, color: context.palette.dividerSubtle),
+          ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.of(context).pop(),
@@ -881,13 +886,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6C63FF),
+                    backgroundColor: context.palette.accent,
                     foregroundColor: Colors.white,
                     // Keep the button looking active (not greyed out)
                     // while in the loading state — the spinner already
                     // says "busy", the disabled colour would just
                     // wash out the CTA.
-                    disabledBackgroundColor: const Color(0xFF6C63FF),
+                    disabledBackgroundColor: context.palette.accent,
                     disabledForegroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(
@@ -913,6 +918,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   Expanded(
                     child: Column(
                       children: [
+                        Divider(
+                            height: 1,
+                            thickness: 1,
+                            color: context.palette.dividerSubtle),
                         CanvasToolbar(children: [
                           AspectRatioPicker(
                             current: project.outputAspect,
@@ -925,13 +934,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           child: Stack(
                             children: [
                               Container(
-                                decoration: const BoxDecoration(
+                                decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                     colors: [
-                                      Color(0xFF181826),
-                                      Color(0xFF0E0E18),
+                                      context.palette.surfaceLow,
+                                      context.palette.appBackground,
                                     ],
                                   ),
                                 ),
@@ -978,6 +987,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     ),
                   ),
                   if (_isInitialized)
+                    VerticalDivider(
+                        width: 1,
+                        thickness: 1,
+                        color: context.palette.dividerSubtle),
+                  if (_isInitialized)
                     InspectorPanel(
                       selection: _currentSelection(),
                       zoomRegions: project.zoomRegions,
@@ -1007,6 +1021,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 ],
               ),
             ),
+            Divider(
+                height: 1,
+                thickness: 1,
+                color: context.palette.dividerSubtle),
             _buildControls(),
           ],
         ),
@@ -1040,7 +1058,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
 
     if (!_isInitialized) {
-      return const CircularProgressIndicator(color: Color(0xFF6C63FF));
+      return CircularProgressIndicator(color: context.palette.accent);
     }
 
     // isHovering is set on the first hover-seek and cleared on
@@ -1225,9 +1243,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
-        color: Color(0xFF2B2B3D),
-        boxShadow: [
+      decoration: BoxDecoration(
+        color: context.palette.surfaceCard,
+        boxShadow: const [
           BoxShadow(
             color: Colors.black26,
             blurRadius: 8,
@@ -1337,7 +1355,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onPressed: (_history?.canUndo ?? false) ? _handleUndo : null,
                 icon: const Icon(Icons.undo),
                 tooltip: 'Undo (Cmd+Z)',
-                color: const Color(0xFF6C63FF),
+                color: context.palette.accent,
                 disabledColor: Colors.white24,
               ),
 
@@ -1346,7 +1364,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onPressed: (_history?.canRedo ?? false) ? _handleRedo : null,
                 icon: const Icon(Icons.redo),
                 tooltip: 'Redo (Cmd+Shift+Z)',
-                color: const Color(0xFF6C63FF),
+                color: context.palette.accent,
                 disabledColor: Colors.white24,
               ),
 
@@ -1359,7 +1377,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 icon: const Icon(Icons.settings),
                 color: ref.watch(editorProjectControllerProvider).windowFrame.name !=
                         'None'
-                    ? const Color(0xFF6C63FF)
+                    ? context.palette.accent
                     : Colors.white70,
                 tooltip: 'Frame Settings',
               ),
@@ -1372,7 +1390,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     setState(() => _showZoomDebug = !_showZoomDebug),
                 icon: const Icon(Icons.gps_fixed),
                 color: _showZoomDebug
-                    ? const Color(0xFF6C63FF)
+                    ? context.palette.accent
                     : Colors.white38,
                 tooltip: _showZoomDebug ? 'Hide cursor HUD' : 'Show cursor HUD',
               ),

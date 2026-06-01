@@ -8,6 +8,7 @@ import 'package:screen_recorder/ui/screens/motion_blur_playground_screen.dart';
 import 'package:screen_recorder/ui/screens/playback_screen.dart';
 import 'package:screen_recorder/ui/screens/recents/recording_card.dart';
 import 'package:screen_recorder/ui/screens/recents/recording_thumbnail_service.dart';
+import '../theme/app_palette_context.dart';
 
 /// Lists previously recorded videos so the user can re-open or remove
 /// them. Each row checks whether its file still exists; missing rows are
@@ -96,12 +97,16 @@ class _RecentsScreenState extends State<RecentsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1E2E),
+      backgroundColor: context.palette.appBackground,
       appBar: AppBar(
         title: const Text('Recent recordings',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-        backgroundColor: const Color(0xFF2B2B3D),
+        backgroundColor: context.palette.surfaceElevated,
         elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: context.palette.dividerSubtle),
+        ),
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -116,8 +121,9 @@ class _RecentsScreenState extends State<RecentsScreen> {
 
   Widget _buildBody() {
     if (_loading && _entries == null) {
-      return const Center(
-          child: CircularProgressIndicator(color: Color(0xFF6C63FF)));
+      return Center(
+          child:
+              CircularProgressIndicator(color: context.palette.accent));
     }
     final entries = _entries ?? const [];
     if (entries.isEmpty) {

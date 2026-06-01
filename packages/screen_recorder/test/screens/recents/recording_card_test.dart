@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
 import 'package:screen_recorder/ui/screens/recents/recording_card.dart';
 import 'package:screen_recorder/ui/screens/recents/recording_thumbnail_service.dart';
+import 'package:screen_recorder/ui/theme/app_palette.dart';
 
 RecordingHistoryEntry _entry() => RecordingHistoryEntry(
       videoPath: '/tmp/recording_1.mp4',
@@ -17,8 +18,13 @@ RecordingHistoryEntry _entry() => RecordingHistoryEntry(
       fps: 60,
     );
 
-Widget _host(Widget child) =>
-    MaterialApp(home: Scaffold(body: Center(child: SizedBox(width: 280, child: child))));
+Widget _host(Widget child) => MaterialApp(
+      theme: ThemeData(
+        extensions: const [AppPalette.midnight],
+        useMaterial3: true,
+      ),
+      home: Scaffold(body: Center(child: SizedBox(width: 280, child: child))),
+    );
 
 void main() {
   testWidgets('missing file → shows placeholder, hover reveals working remove',

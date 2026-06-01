@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_palette_context.dart';
+
 /// Shared visual building blocks for the inspector tabs. Kept in one
 /// place so every tab has the same chip / slider / toggle styling.
 
@@ -36,9 +38,13 @@ class InspectorSectionDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 20),
-      child: Divider(height: 1, thickness: 1, color: Color(0xFF2A2A38)),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Divider(
+        height: 1,
+        thickness: 1,
+        color: context.palette.dividerSubtle,
+      ),
     );
   }
 }

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
 import 'package:screen_recorder/ui/screens/recents_screen.dart';
 import 'package:screen_recorder/ui/screens/recents/recording_card.dart';
+import 'package:screen_recorder/ui/theme/app_palette.dart';
 
 void main() {
   testWidgets('renders a GridView of RecordingCards from the store', (tester) async {
@@ -18,7 +19,10 @@ void main() {
           widthPx: 1280, heightPx: 720, fps: 30),
     ]);
     await tester.runAsync(() async {
-      await tester.pumpWidget(MaterialApp(home: RecentsScreen(store: store)));
+      await tester.pumpWidget(MaterialApp(
+        theme: ThemeData(extensions: const [AppPalette.midnight]),
+        home: RecentsScreen(store: store),
+      ));
       // Allow _refresh's async I/O chain (load + File.exists × 2) to complete.
       await Future.delayed(const Duration(milliseconds: 100));
     });

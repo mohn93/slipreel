@@ -29,6 +29,7 @@ import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
+import '../theme/app_palette_context.dart';
 
 /// A dev-only screen for iterating on the cursor motion-blur algorithm
 /// without rebuilding the entire editor every time. Loads a recording
@@ -251,7 +252,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
   Widget build(BuildContext context) {
     if (_error != null) {
       return Scaffold(
-        backgroundColor: const Color(0xFF1E1E2E),
+        backgroundColor: context.palette.appBackground,
         appBar: AppBar(title: const Text('Motion blur playground')),
         body: Center(
           child: Text(_error!, style: const TextStyle(color: Colors.white)),
@@ -260,16 +261,20 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     }
     if (!_ready) {
       return Scaffold(
-        backgroundColor: const Color(0xFF1E1E2E),
+        backgroundColor: context.palette.appBackground,
         appBar: AppBar(title: const Text('Motion blur playground')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     return Scaffold(
-      backgroundColor: const Color(0xFF1E1E2E),
+      backgroundColor: context.palette.appBackground,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2B2B3D),
+        backgroundColor: context.palette.surfaceElevated,
         title: const Text('Motion blur playground'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: context.palette.dividerSubtle),
+        ),
         actions: [
           IconButton(
             tooltip: 'Save frame to ~/Desktop',
@@ -1011,7 +1016,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     final durMs = dur.inMilliseconds == 0 ? 1 : dur.inMilliseconds;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      color: const Color(0xFF2B2B3D),
+      color: context.palette.surfaceElevated,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1076,7 +1081,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
 
   Widget _buildRight() {
     return Container(
-      color: const Color(0xFF1E1E2E),
+      color: context.palette.appBackground,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -1238,7 +1243,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2B3D),
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
       ),
       child: const Text(
@@ -1255,7 +1260,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2B3D),
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -1347,7 +1352,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2B3D),
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -1408,7 +1413,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2B3D),
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -1523,7 +1528,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2B3D),
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -1767,7 +1772,7 @@ class _ReadoutsCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2B3D),
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
       ),
       child: DefaultTextStyle(
@@ -1796,7 +1801,7 @@ class _ReadoutsCard extends StatelessWidget {
                   ? 'pos        — (no sample)'
                   : 'pos        (${fmt(cur.x.toDouble())}, ${fmt(cur.y.toDouble())}) of ${videoSize.width.toInt()}×${videoSize.height.toInt()}',
             ),
-            const Divider(color: Colors.white12),
+            Divider(color: context.palette.dividerSubtle),
             Text(
               'chord      ${fmt(chord)} px  (exposure ${fmt(tuning.maxExposureMs, 0)}ms)',
             ),
@@ -1806,7 +1811,7 @@ class _ReadoutsCard extends StatelessWidget {
             Text(
               'v_gate     ${fmt(vGate, 0)} px/s  (lookback ${fmt(tuning.gateLookbackMs)}ms)',
             ),
-            const Divider(color: Colors.white12),
+            Divider(color: context.palette.dividerSubtle),
             Text(
               'ramp       ${fmt(ramp, 3)}  (${fmt(tuning.vTriggerLowPxPerSec, 0)}→${fmt(tuning.vTriggerHighPxPerSec, 0)} px/s)',
             ),
