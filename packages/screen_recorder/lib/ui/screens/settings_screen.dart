@@ -4,6 +4,7 @@ import 'package:slipreel_engine/models/window_frame.dart';
 import '../../state/recording_settings_controller.dart';
 import '../app_alerts/app_alert_types.dart';
 import '../app_alerts/app_alerts.dart';
+import 'theme_playground_screen.dart';
 
 /// Settings screen for customizing window frame appearance.
 ///
@@ -160,6 +161,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _buildSectionTitle('Alert demo'),
             const SizedBox(height: 12),
             _buildAlertDemo(),
+
+            const SizedBox(height: 32),
+            _buildSectionTitle('Appearance'),
+            const SizedBox(height: 12),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2B2B3D),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ListTile(
+                leading: const Icon(Icons.palette_outlined,
+                    color: Colors.white),
+                title: const Text('Theme playground',
+                    style: TextStyle(color: Colors.white)),
+                subtitle: const Text(
+                  'Preview and pick the app theme',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                trailing:
+                    const Icon(Icons.chevron_right, color: Colors.white70),
+                contentPadding: EdgeInsets.zero,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ThemePlaygroundScreen(),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
