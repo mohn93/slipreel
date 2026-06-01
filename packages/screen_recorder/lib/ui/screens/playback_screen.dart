@@ -48,6 +48,8 @@ import '../../onboarding/tips_controller.dart';
 import 'playback/hover_scrub_controller.dart';
 import 'playback/trim_controller.dart';
 import 'playback/export_controller.dart';
+import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
+import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 
 /// Debug hook: the active [PlaybackScreen] publishes its video
 /// controller here (in debug/profile builds) so VM-service extensions
@@ -523,12 +525,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Couldn\'t prepare export: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      AppAlerts.error('Couldn\'t prepare export: $e');
       return;
     }
 
@@ -536,14 +533,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
     // ── GIF >60s gate ──────────────────────────────────────────────────
     if (settings.format == ExportFormat.gif && videoDuration.inSeconds > 60) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'GIF export is limited to clips of 60 seconds or less. '
-            'Try MP4 instead.',
-          ),
-          backgroundColor: Colors.orange,
-        ),
+      AppAlerts.warning(
+        'GIF export is limited to clips of 60 seconds or less. '
+        'Try MP4 instead.',
       );
       return;
     }
@@ -572,12 +564,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       outPath = await handler.resolveOutputPath(suggestedFileName: suggested);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Couldn\'t pick a save location: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      AppAlerts.error('Couldn\'t pick a save location: $e');
       return;
     }
 
@@ -691,31 +678,23 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           // the next time the dialog is opened.
           setState(() => _lastExportPath = outPath);
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result.message),
-              backgroundColor: const Color(0xFF4CAF50),
-              action: result.revealPath != null
-                  ? SnackBarAction(
-                      label: 'Show in Finder',
-                      onPressed: () {
-                        // macOS-only: reveal in Finder. No-op on other platforms.
-                        if (Platform.isMacOS) {
-                          unawaited(Process.run('open', ['-R', result.revealPath!])
-                              .catchError((_) => ProcessResult(0, 1, '', '')));
-                        }
-                      },
-                    )
-                  : null,
-            ),
+          AppAlerts.success(
+            result.message,
+            action: result.revealPath != null
+                ? AppAlertAction(
+                    label: 'Show in Finder',
+                    onPressed: () {
+                      // macOS-only: reveal in Finder. No-op on other platforms.
+                      if (Platform.isMacOS) {
+                        unawaited(Process.run('open', ['-R', result.revealPath!])
+                            .catchError((_) => ProcessResult(0, 1, '', '')));
+                      }
+                    },
+                  )
+                : null,
           );
         case ExportFailure(:final error):
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Export failed: $error'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          AppAlerts.error('Export failed: $error');
         case ExportCancelled():
           // No snackbar — user-initiated. (Today there's no cancel UI; this
           // arm is here for when a cancel button is wired to
