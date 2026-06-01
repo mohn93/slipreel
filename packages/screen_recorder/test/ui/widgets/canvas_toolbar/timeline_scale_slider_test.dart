@@ -109,4 +109,27 @@ void main() {
     await tester.pumpAndSettle();
     // No exception means we're good.
   });
+
+  testWidgets('reset is no-op when already at 1.0', (tester) async {
+    final c = EditorProjectController();
+    await tester.pumpWidget(_host(controller: c));
+    await tester.pumpAndSettle();
+
+    final beforeRef = c.current;
+    await tester.tap(find.text('1×'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    expect(identical(c.current, beforeRef), isTrue,
+        reason: 'no state emit expected when already at fit');
+  });
+
+  testWidgets('tooltip waitDuration is 400ms', (tester) async {
+    final c = EditorProjectController();
+    await tester.pumpWidget(_host(controller: c));
+    await tester.pumpAndSettle();
+
+    final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+    expect(tooltip.waitDuration, const Duration(milliseconds: 400));
+  });
 }
