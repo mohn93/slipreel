@@ -10,6 +10,8 @@ import 'package:screen_recorder/ui/widgets/canvas_toolbar/timeline_scale_slider.
 Widget _host({
   required EditorProjectController controller,
   Duration playhead = Duration.zero,
+  double previewPlaybackSpeed = 1.0,
+  ValueChanged<double>? onPreviewSpeedChanged,
 }) =>
     ProviderScope(
       overrides: [
@@ -23,7 +25,11 @@ Widget _host({
         ),
         home: Scaffold(
           body: Center(
-            child: TimelineScaleSlider(playheadPosition: playhead),
+            child: TimelineScaleSlider(
+              playheadPosition: playhead,
+              previewPlaybackSpeed: previewPlaybackSpeed,
+              onPreviewSpeedChanged: onPreviewSpeedChanged ?? (_) {},
+            ),
           ),
         ),
       ),
@@ -78,52 +84,6 @@ void main() {
     expect(c.current.pendingScaleAnchor, const Duration(seconds: 4));
   });
 
-  testWidgets('tapping the "1×" reset label animates back to 1.0',
-      (tester) async {
-    final c = EditorProjectController();
-    c.setTimelineScale(5.0);
-    await tester.pumpWidget(_host(controller: c));
-    await tester.pumpAndSettle();
-
-    // Tap the reset label.
-    await tester.tap(find.text('1×'));
-    // Pump through the animation (200ms easeOutQuint).
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
-    await tester.pumpAndSettle();
-
-    expect(c.current.timelineScale, closeTo(1.0, 0.01));
-  });
-
-  testWidgets('reset animation cleanup on unmount mid-animation does not throw',
-      (tester) async {
-    final c = EditorProjectController();
-    c.setTimelineScale(5.0);
-    await tester.pumpWidget(_host(controller: c));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('1×'));
-    await tester.pump(); // start the animation
-    await tester.pump(const Duration(milliseconds: 50)); // mid-animation
-    // Unmount by pumping an empty widget tree.
-    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
-    await tester.pumpAndSettle();
-    // No exception means we're good.
-  });
-
-  testWidgets('reset is no-op when already at 1.0', (tester) async {
-    final c = EditorProjectController();
-    await tester.pumpWidget(_host(controller: c));
-    await tester.pumpAndSettle();
-
-    final beforeRef = c.current;
-    await tester.tap(find.text('1×'));
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pumpAndSettle();
-
-    expect(identical(c.current, beforeRef), isTrue,
-        reason: 'no state emit expected when already at fit');
-  });
-
   testWidgets('tooltip waitDuration is 400ms', (tester) async {
     final c = EditorProjectController();
     await tester.pumpWidget(_host(controller: c));
@@ -131,5 +91,57 @@ void main() {
 
     final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
     expect(tooltip.waitDuration, const Duration(milliseconds: 400));
+  });
+
+  testWidgets('preview speed badge shows the current speed', (tester) async {
+    final c = EditorProjectController();
+    await tester.pumpWidget(_host(
+      controller: c,
+      previewPlaybackSpeed: 4.0,
+    ));
+    await tester.pumpAndSettle();
+    // The badge renders "4×" (no decimals for integer-valued speeds).
+    expect(find.text('4×'), findsOneWidget);
+  });
+
+  testWidgets('tapping the preview speed badge opens a menu with 1×/2×/4×/8×',
+      (tester) async {
+    final c = EditorProjectController();
+    await tester.pumpWidget(_host(
+      controller: c,
+      previewPlaybackSpeed: 1.0,
+    ));
+    await tester.pumpAndSettle();
+
+    // The closed badge shows "1×". Tap it to open the menu.
+    await tester.tap(find.text('1×'));
+    await tester.pumpAndSettle();
+
+    // The menu now has menu items for all four options. The closed
+    // badge's "1×" is still on-screen, so we expect at least two "1×"
+    // matches (badge + menu item).
+    expect(find.text('1×'), findsWidgets);
+    expect(find.text('2×'), findsOneWidget);
+    expect(find.text('4×'), findsOneWidget);
+    expect(find.text('8×'), findsOneWidget);
+  });
+
+  testWidgets('selecting a menu option fires onPreviewSpeedChanged',
+      (tester) async {
+    final c = EditorProjectController();
+    double? picked;
+    await tester.pumpWidget(_host(
+      controller: c,
+      previewPlaybackSpeed: 1.0,
+      onPreviewSpeedChanged: (s) => picked = s,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('1×'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2×'));
+    await tester.pumpAndSettle();
+
+    expect(picked, 2.0);
   });
 }
