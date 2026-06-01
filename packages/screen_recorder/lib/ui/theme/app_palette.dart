@@ -33,12 +33,12 @@ class AppPalette extends ThemeExtension<AppPalette> {
   final Color textSecondary;
 
   static const AppPalette midnight = AppPalette(
-    appBackground: Color(0xFF0B0B10),
-    surfaceLow: Color(0xFF0F0F16),
-    surfaceElevated: Color(0xFF13131A),
-    surfaceCard: Color(0xFF1A1A23),
-    dividerSubtle: Color(0xFF22222C),
-    dividerStrong: Color(0xFF33333F),
+    appBackground: Color(0xFF050507),
+    surfaceLow: Color(0xFF08080C),
+    surfaceElevated: Color(0xFF0C0C12),
+    surfaceCard: Color(0xFF121218),
+    dividerSubtle: Color(0xFF1C1C24),
+    dividerStrong: Color(0xFF2A2A36),
     accent: Color(0xFF7C6CFF),
     accentMuted: Color(0x2E7C6CFF), // 18% alpha
     textPrimary: Color(0xFFF2F2F5),
