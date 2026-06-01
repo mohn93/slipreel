@@ -1,0 +1,141 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder/onboarding/tips_controller.dart';
+import 'package:screen_recorder/onboarding/tips_store.dart';
+import 'package:screen_recorder/ui/theme/app_palette.dart';
+import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+Future<TipsController> _freshTips() async {
+  SharedPreferences.setMockInitialValues({});
+  final c = TipsController(TipsStore());
+  await c.load();
+  return c;
+}
+
+Widget _host(Widget child, TipsController tips, {double width = 600}) =>
+    ProviderScope(
+      overrides: [tipsControllerProvider.overrideWith((ref) => tips)],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: Scaffold(
+          body: SizedBox(width: width, height: 200, child: child),
+        ),
+      ),
+    );
+
+double _scrollOffset(WidgetTester tester) {
+  final scroll = tester.widget<SingleChildScrollView>(
+      find.byType(SingleChildScrollView));
+  return scroll.controller!.offset;
+}
+
+void main() {
+  testWidgets('playhead crossing 80% viewport while playing triggers snap',
+      (tester) async {
+    final tips = await _freshTips();
+    // scale=4.0, total=10s, viewport=600 → content=2400, pps=240.
+    await tester.pumpWidget(_host(
+      EditorTimeline(
+        duration: const Duration(seconds: 10),
+        position: Duration.zero,
+        onSeek: (_) {},
+        timelineScale: 4.0,
+        isPlaying: true,
+      ),
+      tips,
+    ));
+    await tester.pumpAndSettle();
+
+    // Advance position to 2s → content-x = 480. With offset=0,
+    // viewport-x = 480. That's exactly 0.8 * 600. Not yet > 0.8, no snap.
+    await tester.pumpWidget(_host(
+      EditorTimeline(
+        duration: const Duration(seconds: 10),
+        position: const Duration(seconds: 2),
+        onSeek: (_) {},
+        timelineScale: 4.0,
+        isPlaying: true,
+      ),
+      tips,
+    ));
+    await tester.pumpAndSettle();
+    expect(_scrollOffset(tester), 0.0);
+
+    // Advance to 2.5s → content-x = 600 → viewport-x = 600 > 480 → snap.
+    // Target offset = 600 - 0.2 * 600 = 480.
+    await tester.pumpWidget(_host(
+      EditorTimeline(
+        duration: const Duration(seconds: 10),
+        position: const Duration(milliseconds: 2500),
+        onSeek: (_) {},
+        timelineScale: 4.0,
+        isPlaying: true,
+      ),
+      tips,
+    ));
+    await tester.pumpAndSettle();
+    expect(_scrollOffset(tester), closeTo(480.0, 1.0));
+  });
+
+  testWidgets('no snap when isPlaying=false', (tester) async {
+    final tips = await _freshTips();
+    await tester.pumpWidget(_host(
+      EditorTimeline(
+        duration: const Duration(seconds: 10),
+        position: Duration.zero,
+        onSeek: (_) {},
+        timelineScale: 4.0,
+        isPlaying: false,
+      ),
+      tips,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(_host(
+      EditorTimeline(
+        duration: const Duration(seconds: 10),
+        position: const Duration(seconds: 8), // way past 80%
+        onSeek: (_) {},
+        timelineScale: 4.0,
+        isPlaying: false,
+      ),
+      tips,
+    ));
+    await tester.pumpAndSettle();
+    expect(_scrollOffset(tester), 0.0);
+  });
+
+  testWidgets('no snap at scale==1.0', (tester) async {
+    final tips = await _freshTips();
+    await tester.pumpWidget(_host(
+      EditorTimeline(
+        duration: const Duration(seconds: 10),
+        position: Duration.zero,
+        onSeek: (_) {},
+        timelineScale: 1.0,
+        isPlaying: true,
+      ),
+      tips,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(_host(
+      EditorTimeline(
+        duration: const Duration(seconds: 10),
+        position: const Duration(seconds: 9),
+        onSeek: (_) {},
+        timelineScale: 1.0,
+        isPlaying: true,
+      ),
+      tips,
+    ));
+    await tester.pumpAndSettle();
+    expect(_scrollOffset(tester), 0.0,
+        reason: 'NeverScrollable physics — offset stays 0');
+  });
+}

@@ -218,6 +218,39 @@ class _EditorTimelineState extends State<EditorTimeline> {
             widget.pendingScaleAnchor);
       });
     }
+
+    if (widget.position != old.position) {
+      // Defer to post-frame so the new scale (if it changed in the same
+      // build) has been applied first.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _maybeAutoFollow(widget.position);
+      });
+    }
+  }
+
+  void _maybeAutoFollow(Duration playhead) {
+    if (!widget.isPlaying) return;
+    if (widget.timelineScale == 1.0) return;
+
+    final viewport = _lastViewportWidth;
+    if (viewport <= 0 || widget.duration.inMilliseconds == 0) return;
+
+    final pps = _pixelsPerSecond(viewport, widget.duration, widget.timelineScale);
+    final playheadContentX = _timeToX(playhead, pps);
+    final offset = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
+    final playheadViewportX = playheadContentX - offset;
+
+    if (playheadViewportX > 0.8 * viewport || playheadViewportX < 0) {
+      final targetOffset = playheadContentX - 0.2 * viewport;
+      final maxOffset = (_contentWidth(viewport, widget.timelineScale) - viewport)
+          .clamp(0.0, double.infinity);
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(targetOffset.clamp(0.0, maxOffset));
+      }
+    }
   }
 
   void _applyScale(double oldScale, double newScale, Duration? anchor) {
