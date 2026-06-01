@@ -28,10 +28,13 @@ import 'state/recording_action_router.dart';
 import 'state/recording_settings_controller.dart';
 import 'state/recording_settings_store.dart';
 import 'state/sleep_observer.dart';
+import 'state/app_palette_controller.dart';
+import 'state/app_palette_store.dart';
 import 'state/window_mode_controller.dart';
 import 'ui/app_alerts/alert_stack_overlay.dart';
 import 'ui/app_alerts/app_alerts.dart';
 import 'ui/app_alerts/app_alerts_controller.dart';
+import 'ui/theme/app_palette.dart';
 import 'state/recording_state.dart';
 import 'state/recovery_service.dart';
 import 'state/session_marker.dart';
@@ -138,6 +141,9 @@ Future<void> main() async {
   );
   final initialRecordingSettings = await recordingSettingsStore.load();
 
+  final paletteStore = await AppPaletteStore.resolveDefault();
+  final initialPalette = (await paletteStore.load()) ?? PaletteId.midnight;
+
   if (kDebugMode || kProfileMode) {
     _registerSlipreelDebugExtensions(tipsController: tipsController);
   }
@@ -165,6 +171,12 @@ Future<void> main() async {
       recordingControllerProvider.overrideWith((ref) => RecordingController(
             sessionMarkerStore: sessionMarkerStore,
           )),
+      appPaletteControllerProvider.overrideWith(
+        (ref) => AppPaletteController(
+          store: paletteStore,
+          initial: initialPalette,
+        ),
+      ),
     ],
     child: MyApp(
       onboardingDone: onboardingDone,
@@ -407,6 +419,8 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final selectedPalette = ref.watch(appPaletteControllerProvider);
+    final palette = AppPalette.byId(selectedPalette);
     // Re-attach the alerts overlay on every build. attach() is idempotent
     // — it tears down any prior OverlayEntry/timers — so this safely
     // covers cold start AND hot-restart (which re-runs the App's build).
@@ -424,10 +438,8 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       navigatorKey: rootNavigatorKey,
       title: 'Slipreel',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C63FF),
-          brightness: Brightness.dark,
-        ),
+        colorScheme: palette.toColorScheme(),
+        extensions: [palette],
         useMaterial3: true,
       ),
       debugShowCheckedModeBanner: false,
