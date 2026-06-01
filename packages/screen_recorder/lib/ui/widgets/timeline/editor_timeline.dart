@@ -219,6 +219,33 @@ class _EditorTimelineState extends State<EditorTimeline> {
   // the user actually moved the pointer.
   Offset? _lastHoverGlobal;
 
+  // True while [_maybeAutoFollow] or [_applyScale] is driving the
+  // scroll controller via jumpTo. The scroll listener uses this to
+  // distinguish our own programmatic scrolls (which shouldn't disable
+  // auto-follow) from genuine user-initiated scrolls (which should).
+  bool _programmaticScrollInProgress = false;
+
+  // Set to true when the user manually scrolls the timeline during
+  // playback. Suppresses auto-follow for the rest of the current play
+  // session. Resets on every isPlaying transition so a fresh play
+  // session re-engages auto-follow.
+  bool _userOverrodeScroll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    // Ignore our own programmatic jumps (auto-follow + anchor-preserve);
+    // treat any other scroll change while playing as a user override.
+    if (_programmaticScrollInProgress) return;
+    if (widget.isPlaying && widget.timelineScale > 1.0) {
+      _userOverrodeScroll = true;
+    }
+  }
+
   void _updateHover(Offset local, double width, {Offset? global}) {
     if (widget.isPlaying || width <= 0) return;
     // Compute progress as a fraction of CONTENT width, not viewport
@@ -269,6 +296,13 @@ class _EditorTimelineState extends State<EditorTimeline> {
     if (widget.isPlaying && _hoverProgress != null) {
       _hoverProgress = null;
     }
+    // Reset the user-scroll override on every isPlaying transition so
+    // a fresh play session re-engages auto-follow. (Scale changes
+    // intentionally do NOT reset the override — pinching to a new zoom
+    // level shouldn't undo a deliberate scroll-away.)
+    if (widget.isPlaying != old.isPlaying) {
+      _userOverrodeScroll = false;
+    }
 
     final scaleChanged = widget.timelineScale != old.timelineScale;
     final anchorPresent = widget.pendingScaleAnchor != null;
@@ -296,6 +330,9 @@ class _EditorTimelineState extends State<EditorTimeline> {
   void _maybeAutoFollow(Duration playhead) {
     if (!widget.isPlaying) return;
     if (widget.timelineScale == 1.0) return;
+    // The user scrolled the timeline this play session — respect that
+    // and don't snap them back. Resets on the next play/pause edge.
+    if (_userOverrodeScroll) return;
 
     final viewport = _lastViewportWidth;
     if (viewport <= 0 || widget.duration.inMilliseconds == 0) return;
@@ -312,7 +349,12 @@ class _EditorTimelineState extends State<EditorTimeline> {
       final maxOffset = (_contentWidth(viewport, widget.timelineScale) - viewport)
           .clamp(0.0, double.infinity);
       if (_scrollController.hasClients) {
-        _scrollController.jumpTo(targetOffset.clamp(0.0, maxOffset));
+        _programmaticScrollInProgress = true;
+        try {
+          _scrollController.jumpTo(targetOffset.clamp(0.0, maxOffset));
+        } finally {
+          _programmaticScrollInProgress = false;
+        }
       }
     }
   }
@@ -336,7 +378,14 @@ class _EditorTimelineState extends State<EditorTimeline> {
     final clamped = newOffset.clamp(0.0, maxOffset);
 
     if (_scrollController.hasClients) {
-      _scrollController.jumpTo(clamped);
+      // Guard with the programmatic flag so the scroll listener doesn't
+      // mistake an anchor-preserve jump for a user-initiated scroll.
+      _programmaticScrollInProgress = true;
+      try {
+        _scrollController.jumpTo(clamped);
+      } finally {
+        _programmaticScrollInProgress = false;
+      }
     }
 
     if (anchor != null) {
@@ -346,6 +395,7 @@ class _EditorTimelineState extends State<EditorTimeline> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
