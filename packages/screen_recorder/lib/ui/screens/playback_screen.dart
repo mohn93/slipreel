@@ -1281,6 +1281,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onAnchorConsumed: () => ref
                     .read(editorProjectControllerProvider.notifier)
                     .clearPendingScaleAnchor(),
+                onPinchScale: (newScale, anchor) => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .setTimelineScale(newScale, anchorTime: anchor),
                 onSeek: (next) {
                   // Committed seek: clear hover state and adopt the
                   // click target as the new intended position, then

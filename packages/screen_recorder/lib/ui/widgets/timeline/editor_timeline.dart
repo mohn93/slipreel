@@ -115,6 +115,7 @@ class EditorTimeline extends StatefulWidget {
     this.timelineScale = 1.0,
     this.pendingScaleAnchor,
     this.onAnchorConsumed,
+    this.onPinchScale,
   });
 
   final Duration duration;
@@ -167,6 +168,12 @@ class EditorTimeline extends StatefulWidget {
   /// `EditorProjectController.clearPendingScaleAnchor()`.
   final VoidCallback? onAnchorConsumed;
 
+  /// Fires on each trackpad-pinch update over the timeline lanes.
+  /// Args: `(newScale, anchorTime)`. The caller routes through
+  /// `EditorProjectController.setTimelineScale(newScale, anchorTime:
+  /// anchorTime)`. Single-finger drags are filtered out.
+  final void Function(double scale, Duration anchorTime)? onPinchScale;
+
   @override
   State<EditorTimeline> createState() => _EditorTimelineState();
 }
@@ -175,6 +182,9 @@ class _EditorTimelineState extends State<EditorTimeline> {
   double? _hoverProgress;
   final ScrollController _scrollController = ScrollController();
   double _lastViewportWidth = 0;
+  // Captured at onScaleStart so each ongoing pinch computes
+  // (start * d.scale) rather than compounding across frames.
+  double? _pinchStartScale;
 
   void _updateHover(Offset local, double width) {
     if (widget.isPlaying || width <= 0) return;
@@ -310,7 +320,34 @@ class _EditorTimelineState extends State<EditorTimeline> {
         return SizedBox(
           height: totalHeight,
           width: width,
-          child: MouseRegion(
+          child: GestureDetector(
+            // Trackpad pinch → zoom the timeline anchored at the cursor.
+            // `translucent` so single-finger taps/drags still reach the
+            // lane gesture detectors underneath; we only consume events
+            // once a true two-finger pinch is recognized.
+            behavior: HitTestBehavior.translucent,
+            onScaleStart: (_) => _pinchStartScale = widget.timelineScale,
+            onScaleUpdate: (d) {
+              // Filter out single-finger drags: pointerCount < 2 OR
+              // scale == 1 (one-finger pan reports scale == 1.0). Those
+              // belong to the SingleChildScrollView / lane handlers.
+              if (d.pointerCount < 2 || d.scale == 1.0) return;
+              final start = _pinchStartScale ?? widget.timelineScale;
+              final next = (start * d.scale).clamp(1.0, 8.0);
+
+              final viewport = _lastViewportWidth;
+              if (viewport <= 0) return;
+              final offset = _scrollController.hasClients
+                  ? _scrollController.offset
+                  : 0.0;
+              final pps = _pixelsPerSecond(
+                  viewport, widget.duration, widget.timelineScale);
+              final anchorContentX = d.localFocalPoint.dx + offset;
+              final anchorTime = _xToTime(anchorContentX, pps);
+              widget.onPinchScale?.call(next, anchorTime);
+            },
+            onScaleEnd: (_) => _pinchStartScale = null,
+            child: MouseRegion(
             // Hover-to-scrub when paused. The MouseRegion sits above the
             // gesture detectors but doesn't consume events — onHover is
             // hover-only, onTap/onPan still flow through to the lanes
@@ -399,6 +436,7 @@ class _EditorTimelineState extends State<EditorTimeline> {
                 ),
               ),
             ),
+          ),
           ),
         );
       },
