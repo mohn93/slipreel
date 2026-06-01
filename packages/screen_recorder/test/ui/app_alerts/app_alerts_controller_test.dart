@@ -1,6 +1,7 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
+import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alerts_controller.dart';
 
 void main() {
@@ -120,6 +121,49 @@ void main() {
         async.elapse(const Duration(seconds: 5));
         expect(c.stack.value, isEmpty, reason: 'timer fires normally');
       });
+    });
+  });
+
+  group('AppAlerts facade', () {
+    setUp(() {
+      AppAlertsController.instance.stack.value = const [];
+    });
+
+    test('success() pushes an AlertType.success entry', () {
+      AppAlerts.success('saved');
+      final s = AppAlertsController.instance.stack.value;
+      expect(s.length, 1);
+      expect(s.single.type, AlertType.success);
+      expect(s.single.message, 'saved');
+      expect(s.single.duration, AlertType.success.defaultDuration);
+    });
+
+    test('error() respects custom duration override', () {
+      AppAlerts.error('boom', duration: const Duration(seconds: 10));
+      final s = AppAlertsController.instance.stack.value;
+      expect(s.single.type, AlertType.error);
+      expect(s.single.duration, const Duration(seconds: 10));
+    });
+
+    test('warning() and info() route to the right types', () {
+      AppAlerts.warning('w');
+      AppAlerts.info('i');
+      final types = AppAlertsController.instance.stack.value
+          .map((e) => e.type)
+          .toList();
+      expect(types, [AlertType.warning, AlertType.info]);
+    });
+
+    test('action argument round-trips to the entry', () {
+      var fired = 0;
+      AppAlerts.success(
+        'done',
+        action: AppAlertAction(label: 'Show', onPressed: () => fired++),
+      );
+      final entry = AppAlertsController.instance.stack.value.single;
+      expect(entry.action?.label, 'Show');
+      entry.action!.onPressed();
+      expect(fired, 1);
     });
   });
 }
