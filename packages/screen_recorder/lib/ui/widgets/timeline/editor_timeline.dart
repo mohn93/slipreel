@@ -945,9 +945,6 @@ class _ZoomPillState extends State<_ZoomPill> {
     _dragEndTime = widget.zoom.endTime;
     _mode = mode;
     widget.onSelected?.call(widget.index);
-    if (mode == _ZoomDragMode.body) {
-      widget.onSeek(widget.zoom.startTime);
-    }
   }
 
   void _endDrag() {
@@ -1071,8 +1068,11 @@ class _ZoomPillState extends State<_ZoomPill> {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapDown: (d) {
+                    // Select-only; don't seek the playhead. The user
+                    // wants to inspect/edit the region's properties
+                    // from wherever they are in the clip, not jump to
+                    // its start.
                     widget.onSelected?.call(widget.index);
-                    widget.onSeek(widget.zoom.startTime);
                   },
                   onHorizontalDragStart: (_) =>
                       _beginMode(_ZoomDragMode.body),

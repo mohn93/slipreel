@@ -1,4 +1,4 @@
-import 'package:slipreel_engine/state/audio_mix.dart';
+import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
@@ -6,6 +6,7 @@ import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
+import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
 
@@ -38,6 +39,7 @@ class EditorProjectState {
     this.playbackSpeed = 1.0,
     this.fadeIn = Duration.zero,
     this.fadeOut = Duration.zero,
+    this.outputAspect = OutputAspect.auto,
     this.audioMix = const AudioMix(),
   });
 
@@ -129,13 +131,18 @@ class EditorProjectState {
   /// Fade-out duration applied at the end of the clip. See [fadeIn].
   final Duration fadeOut;
 
+  /// Output canvas aspect ratio. Drives canvas dimensions for both the
+  /// editor preview and the export pipeline via `OutputCanvasResolver`.
+  /// Defaults to [OutputAspect.auto] — match the source video aspect.
+  final OutputAspect outputAspect;
+
   /// Per-track recording-audio volume/mute, applied as an ffmpeg downmix at
   /// export. Preview is unaffected (export-only mixing).
   final AudioMix audioMix;
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 4;
+  static const int currentSchemaVersion = 5;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -162,6 +169,7 @@ class EditorProjectState {
     double? playbackSpeed,
     Duration? fadeIn,
     Duration? fadeOut,
+    OutputAspect? outputAspect,
     AudioMix? audioMix,
   }) {
     // `zoomRegions:` is a convenience override that writes through to
@@ -206,6 +214,7 @@ class EditorProjectState {
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       fadeIn: fadeIn ?? this.fadeIn,
       fadeOut: fadeOut ?? this.fadeOut,
+      outputAspect: outputAspect ?? this.outputAspect,
       audioMix: audioMix ?? this.audioMix,
     );
   }
@@ -231,6 +240,7 @@ class EditorProjectState {
     'playbackSpeed': playbackSpeed,
     'fadeInMicros': fadeIn.inMicroseconds,
     'fadeOutMicros': fadeOut.inMicroseconds,
+    'outputAspect': outputAspect.name,
     'audioMix': audioMix.toJson(),
   };
 
@@ -326,6 +336,10 @@ class EditorProjectState {
       fadeOut: json['fadeOutMicros'] is num
           ? Duration(microseconds: (json['fadeOutMicros'] as num).round())
           : defaults.fadeOut,
+      outputAspect: (json['outputAspect'] is String) &&
+              OutputAspect.values.any((v) => v.name == json['outputAspect'])
+          ? OutputAspect.values.byName(json['outputAspect'] as String)
+          : defaults.outputAspect,
       audioMix: json['audioMix'] is Map<String, dynamic>
           ? AudioMix.fromJson(json['audioMix'] as Map<String, dynamic>)
           : defaults.audioMix,
@@ -401,6 +415,9 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>)>
   // unity default when the key is absent, so the migration only bumps the
   // version marker so the chain reaches v4.
   (json) => {...json, 'schemaVersion': 4},
+  // v4 → v5: add the per-project outputAspect (no value transform —
+  // fromJson fills the auto default when the key is absent).
+  (json) => {...json, 'schemaVersion': 5},
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its

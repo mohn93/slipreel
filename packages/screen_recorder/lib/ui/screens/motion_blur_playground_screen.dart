@@ -11,6 +11,7 @@ import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
+import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
@@ -474,6 +475,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     final totalSize = FramePainter.calculateTotalSize(
       frame: _frame,
       videoSize: videoSize,
+      aspect: OutputAspect.auto,
     );
     final fitScale = _sceneFitScale(outputSize, totalSize);
     final centre = videoSize.center(Offset.zero);
@@ -906,6 +908,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
       frame: _frame,
+      outputAspect: OutputAspect.auto,
       metadata: _metadata,
       cursorRecording: _cursorRecording,
       hideCursorOverlay: false,

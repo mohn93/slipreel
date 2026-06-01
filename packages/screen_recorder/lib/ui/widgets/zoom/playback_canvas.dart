@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
+import 'package:slipreel_engine/models/output_aspect.dart';
+import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
@@ -92,6 +94,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     this.sceneAccumSampleCount = 16,
     this.debugSnapshot,
     this.zoomPreviewOverride,
+    required this.outputAspect,
   });
 
   final VideoPlayerController controller;
@@ -223,6 +226,11 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// frame rate on a typical recording.
   final int sceneAccumSampleCount;
 
+  /// Desired output canvas aspect ratio. Passed to [OutputCanvasResolver]
+  /// on every build so the canvas size and the video inset both reflect
+  /// the chosen ratio.
+  final OutputAspect outputAspect;
+
   @override
   ConsumerState<PlaybackCanvas> createState() => _PlaybackCanvasState();
 }
@@ -340,16 +348,17 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       _lastSeenFrame = currentFrame;
       _pendingSceneCapturePaint = true;
     }
-    final totalSize = FramePainter.calculateTotalSize(
-      frame: currentFrame,
+    final resolved = OutputCanvasResolver.resolve(
       videoSize: videoSize,
+      padding: currentFrame.padding,
+      aspect: widget.outputAspect,
     );
-    // Effective padding has X scaled by the video aspect so layout
-    // matches the canvas computed by calculateTotalSize.
-    final effPadding = FramePainter.effectivePadding(
-      currentFrame.padding,
-      videoSize,
-    );
+    final totalSize = resolved.canvasSize;
+    // Top-left of the video inside the canvas. Replaces the previous
+    // `effPadding.left / .top` use sites verbatim — the resolver already
+    // returns the inset, including any aspect-driven recentering.
+    final videoOriginX = resolved.videoRect.left;
+    final videoOriginY = resolved.videoRect.top;
 
     // Single AnimatedBuilder rebuilt per frame: drives the cursor
     // overlay (needs current playhead) AND the zoom Transform. The
@@ -428,7 +437,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               videoSize: videoSize,
               fps: widget.metadata?.fps ?? 60,
               hasCursorData: hasCursorData,
-              forceSnap: widget.isHoverScrubbing,
+              // When the placement-picker override is active we want the
+              // focal to lock onto the previewed rect immediately — the
+              // spring otherwise barely advances while the video is paused
+              // (no frame loop to integrate), so the user sees nothing
+              // change until they resume playback.
+              forceSnap: widget.isHoverScrubbing ||
+                  widget.zoomPreviewOverride?.value != null,
               bypassVelocityFilter: widget.isHoverScrubbing,
               activeRegionOverride: widget.zoomPreviewOverride?.value,
             );
@@ -517,8 +532,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                         focalAt: widget.accumulationCameraFocalAt,
                         scaleAt: widget.accumulationCameraScaleAt,
                         videoRect: Rect.fromLTWH(
-                          effPadding.left,
-                          effPadding.top,
+                          videoOriginX,
+                          videoOriginY,
                           videoSize.width,
                           videoSize.height,
                         ),
@@ -541,8 +556,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                     child: Stack(
                       children: [
                         Positioned(
-                          left: effPadding.left,
-                          top: effPadding.top,
+                          left: videoOriginX,
+                          top: videoOriginY,
                           child: SizedBox(
                             width: videoSize.width,
                             height: videoSize.height,
@@ -598,11 +613,12 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                   painter: FramePainter(
                     frame: currentFrame,
                     videoSize: videoSize,
+                    aspect: widget.outputAspect,
                   ),
                 ),
                 Positioned(
-                  left: effPadding.left,
-                  top: effPadding.top,
+                  left: videoOriginX,
+                  top: videoOriginY,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(
                       currentFrame.cornerRadius,

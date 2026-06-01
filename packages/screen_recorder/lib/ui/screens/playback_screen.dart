@@ -11,6 +11,7 @@ import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
+import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/services/destination_handlers.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
@@ -28,6 +29,8 @@ import 'package:screen_recorder/ui/widgets/transport/transport_buttons.dart';
 import 'package:screen_recorder/ui/widgets/scene_blur_overlay.dart';
 import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
 import 'package:screen_recorder/state/zoom_preview_override.dart';
+import 'package:screen_recorder/ui/widgets/canvas_toolbar/aspect_ratio_picker.dart';
+import 'package:screen_recorder/ui/widgets/canvas_toolbar/canvas_toolbar.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/export_dialog.dart';
 import 'package:screen_recorder/ui/screens/settings_screen.dart';
@@ -459,6 +462,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final ExportSettingsStore store;
     final ExportTelemetryStore telemetryStore;
     final Size sourceVideoSize;
+    // Composed output canvas (sourceVideoSize + aspect-ratio + padding).
+    // Drives both the export-dialog dimensions label and the post-export
+    // telemetry's area-based normalization so they agree with what the
+    // export pipeline actually writes.
+    final Size composedVideoSize;
 
     try {
       store = await ExportSettingsStore.resolveDefault();
@@ -472,6 +480,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // sub-label) and for the pipeline.
       meta = await RecordingMetadata.loadForVideo(widget.videoPath);
       sourceVideoSize = Size(meta.widthPx.toDouble(), meta.heightPx.toDouble());
+      final projectForExport = ref.read(editorProjectControllerProvider);
+      composedVideoSize = OutputCanvasResolver.resolve(
+        videoSize: sourceVideoSize,
+        padding: projectForExport.windowFrame.padding,
+        aspect: projectForExport.outputAspect,
+      ).canvasSize;
 
       // Probe the video to get the authoritative duration + audio bitrate.
       final probed = await ffmpegProbe(
@@ -488,7 +502,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         context: context,
         builder: (_) => ExportDialog(
           initialSettings: defaults,
-          sourceVideoSize: sourceVideoSize,
+          sourceVideoSize: composedVideoSize,
           videoDuration: videoDuration,
           audioBitrateKbps: buildAudioMixArgs(
                   probed.audioStreams,
@@ -664,7 +678,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           // not the linear pixels-per-second model the estimator assumes.
           if (settings.format == ExportFormat.mp4 &&
               summary.realtimeMultiple > 0) {
-            final outDims = settings.resolution.dimensionsFor(sourceVideoSize);
+            final outDims = settings.resolution.dimensionsFor(composedVideoSize);
             final outArea = outDims.width * outDims.height;
             final fpsScale = settings.frameRate / kBaselineFrameRate;
             final areaScale = outArea / kBaselineAreaPixels;
@@ -918,22 +932,33 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Expanded(
-                    child: Stack(
+                    child: Column(
                       children: [
-                        Container(
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Color(0xFF181826),
-                                Color(0xFF0E0E18),
-                              ],
-                            ),
+                        CanvasToolbar(children: [
+                          AspectRatioPicker(
+                            current: project.outputAspect,
+                            onChanged: (v) => ref
+                                .read(editorProjectControllerProvider.notifier)
+                                .setOutputAspect(v),
                           ),
-                          alignment: Alignment.center,
-                          child: _buildVideoPlayer(),
-                        ),
+                        ]),
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Container(
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0xFF181826),
+                                      Color(0xFF0E0E18),
+                                    ],
+                                  ),
+                                ),
+                                alignment: Alignment.center,
+                                child: _buildVideoPlayer(),
+                              ),
                         // Zoom debug readout — rendered at the top-left
                         // of the preview pane, OUTSIDE the playback
                         // canvas's zoom Transform so the text stays
@@ -967,6 +992,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                               },
                             ),
                           ),
+                      ],
+                    ),
+                  ),
                       ],
                     ),
                   ),
@@ -1056,6 +1084,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
       frame: project.windowFrame,
+      outputAspect: project.outputAspect,
       metadata: _metadata,
       cursorRecording: _cursorRecording,
       hideCursorOverlay: project.hideCursorOverlay,

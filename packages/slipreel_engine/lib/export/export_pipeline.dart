@@ -9,6 +9,7 @@ import '../models/cursor_recording.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
 import '../models/trim_selection.dart';
+import '../rendering/output_canvas_resolver.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
@@ -95,9 +96,17 @@ class ExportPipeline {
     final srcWidth = probed.width;
     final srcHeight = probed.height;
 
-    final outDims = settings.resolution.dimensionsFor(
-      Size(srcWidth.toDouble(), srcHeight.toDouble()),
-    );
+    // Output dimensions follow the COMPOSITED canvas (aspect + padding),
+    // not the raw source. Without this, a vertical-9:16 export at 1080p
+    // would still produce a 16:9 MP4 because `dimensionsFor` would
+    // width-scale from the raw 1920×1080 source aspect instead of the
+    // 9:16 canvas the user picked.
+    final composedCanvas = OutputCanvasResolver.resolve(
+      videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
+      padding: projectState.windowFrame.padding,
+      aspect: projectState.outputAspect,
+    ).canvasSize;
+    final outDims = settings.resolution.dimensionsFor(composedCanvas);
     final outWidth = outDims.width.toInt();
     final outHeight = outDims.height.toInt();
     final outFps = settings.frameRate;
