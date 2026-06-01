@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
+import '../../theme/app_palette_context.dart';
 import 'recording_thumbnail_service.dart';
 
 class RecordingCard extends StatefulWidget {
@@ -50,7 +51,7 @@ class _RecordingCardState extends State<RecordingCard> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: Material(
-                    color: const Color(0xFF2B2B3D),
+                    color: context.palette.surfaceCard,
                     child: InkWell(
                       onTap: enabled ? widget.onOpen : null,
                       onLongPress: enabled ? widget.onOpenPlayground : null,
