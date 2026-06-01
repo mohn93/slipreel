@@ -62,6 +62,21 @@ import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 /// editor is open.
 VideoPlayerController? debugPlaybackController;
 
+/// Pure helper: the effective preview playback rate sent to the video
+/// controller is `clipSpeed × previewSpeed`. Exposed at top level so
+/// unit tests can verify the math without spinning up the full screen.
+@visibleForTesting
+double effectivePreviewRate(double clipSpeed, double previewSpeed) =>
+    clipSpeed * previewSpeed;
+
+/// Pure helper: returns true when the play-state listener should
+/// re-apply the effective rate. The trigger is the false→true edge
+/// (resume), because video_player on macOS resets `rate` to 1.0 on
+/// every `play()` call. Same-state ticks and pause edges return false.
+@visibleForTesting
+bool shouldReapplyOnResume({required bool prev, required bool next}) =>
+    next && !prev;
+
 class PlaybackScreen extends ConsumerStatefulWidget {
   final String videoPath;
 
@@ -106,6 +121,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // exclusive with [_selectedZoomIndex]: selecting one clears the
   // other. Drives the inspector's context-mode display.
   bool _isClipSelected = false;
+
+  // Session-only preview-playback-speed multiplier (1×/2×/4×/8×).
+  // Picked from the dropdown next to the timeline-zoom slider in the
+  // transport bar. Multiplies on top of the per-clip [playbackSpeed]
+  // (which drives export) — the effective preview rate sent to the
+  // video player is `clipSpeed × _previewPlaybackSpeed`. Not persisted,
+  // not undo/redo-tracked, resets to 1.0 each time a project opens.
+  double _previewPlaybackSpeed = 1.0;
+  // Last value pushed to [_controller.setPlaybackSpeed]. Used so we
+  // can re-apply the product when either input changes.
+  double _lastClipSpeedApplied = 1.0;
 
   // Editor-state values (cursor visuals, animation configs, motion-
   // blur knobs, zoom regions, etc.) all live on
@@ -170,6 +196,35 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
     if (_isClipSelected) return const ClipSelected();
     return null;
+  }
+
+  /// Pushes the current effective preview playback rate
+  /// (`clipSpeed × _previewPlaybackSpeed`) onto the video controller.
+  /// Called whenever either input changes (project state's
+  /// [EditorProjectState.playbackSpeed] via a `ref.listen` in build, or
+  /// the preview dropdown via [TimelineScaleSlider]).
+  void _applyEffectivePlaybackSpeed(double clipSpeed) {
+    if (!_isInitialized) return;
+    _lastClipSpeedApplied = clipSpeed;
+    final effective = effectivePreviewRate(clipSpeed, _previewPlaybackSpeed);
+    // VideoPlayerController.setPlaybackSpeed clamps to a non-zero,
+    // non-negative value; guard against degenerate inputs.
+    if (effective <= 0) return;
+    _controller.setPlaybackSpeed(effective);
+  }
+
+  // Tracks the previous `isPlaying` value so [_onPlayStateTick] can
+  // detect false→true transitions. video_player on macOS (AVPlayer)
+  // resets the `rate` to 1.0 on every `play()` call, so we must
+  // re-apply the multiplied speed each time playback resumes.
+  bool _prevIsPlaying = false;
+  void _onPlayStateTick() {
+    if (!_isInitialized) return;
+    final isPlaying = _controller.value.isPlaying;
+    if (shouldReapplyOnResume(prev: _prevIsPlaying, next: isPlaying)) {
+      _applyEffectivePlaybackSpeed(_lastClipSpeedApplied);
+    }
+    _prevIsPlaying = isPlaying;
   }
 
   Future<void> _initializeVideo() async {
@@ -243,6 +298,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           videoDuration: _controller.value.duration,
         );
       });
+      // Seed the preview-rate cache from the restored project so
+      // the first dropdown-driven multiply uses the correct base.
+      // _previewPlaybackSpeed stays at 1.0 (session default).
+      _applyEffectivePlaybackSpeed(restored.playbackSpeed);
+      // Re-apply the effective rate every time playback resumes:
+      // AVPlayer (video_player on macOS) resets `rate` to 1.0 on
+      // every `play()` call, so without this listener the dropdown
+      // value would silently drop back to 1× after pause/resume.
+      _prevIsPlaying = _controller.value.isPlaying;
+      _controller.addListener(_onPlayStateTick);
       // Wire state-shaped undo/redo. Starts AFTER `replace(saved)` so
       // the initial history floor is the on-disk snapshot, not the
       // defaults — Cmd-Z from a fresh-loaded recording does nothing
@@ -319,6 +384,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       _projectStore.save(_project);
       _controller.removeListener(_onTrimTick);
       _controller.removeListener(_onHoverTrack);
+      _controller.removeListener(_onPlayStateTick);
     }
     _smoothPlayhead?.dispose();
     _controller.dispose();
@@ -764,6 +830,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       editorProjectControllerProvider,
       (_, __) => _persistProject(),
     );
+    // When the per-clip playback speed changes (edited via the
+    // ClipContextInspector), re-apply the product onto the preview
+    // player. Preview rate = clipSpeed × _previewPlaybackSpeed.
+    ref.listen<double>(
+      editorProjectControllerProvider.select((s) => s.playbackSpeed),
+      (_, next) => _applyEffectivePlaybackSpeed(next),
+    );
     return Focus(
       autofocus: true,
       onKeyEvent: (node, event) {
@@ -943,10 +1016,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                                 onChanged: (v) => ref
                                     .read(editorProjectControllerProvider.notifier)
                                     .setOutputAspect(v),
-                              ),
-                              TimelineScaleSlider(
-                                playheadPosition: _smoothPlayhead?.position ??
-                                    _controller.value.position,
                               ),
                             ]),
                             Expanded(
@@ -1204,51 +1273,73 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             : (_smoothPlayhead?.position ?? _controller.value.position);
         final dur = _controller.value.duration;
         final isPlaying = _controller.value.isPlaying;
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        // Stack lets the play-controls Row stay perfectly centered
+        // while the zoom slider + preview-speed dropdown right-aligns
+        // independently. Both children share the same vertical extent,
+        // so the slider stays visually aligned with the play button.
+        return Stack(
+          alignment: Alignment.center,
           children: [
-            SizedBox(
-              width: 64,
-              child: Text(
-                _formatPreciseDuration(pos),
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 13,
-                  fontFeatures: [FontFeature.tabularFigures()],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 64,
+                  child: Text(
+                    _formatPreciseDuration(pos),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 13,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 24),
-            TransportButton(
-              icon: Icons.skip_previous,
-              tooltip: 'Go to first frame',
-              shortcut: '$modKey ←',
-              onPressed: _seekToStart,
-            ),
-            const SizedBox(width: 16),
-            TransportPlayButton(
-              isPlaying: isPlaying,
-              onPressed: _togglePlayPause,
-            ),
-            const SizedBox(width: 16),
-            TransportButton(
-              icon: Icons.skip_next,
-              tooltip: 'Go to last frame',
-              shortcut: '$modKey →',
-              onPressed: _seekToEnd,
-            ),
-            const SizedBox(width: 24),
-            SizedBox(
-              width: 64,
-              child: Text(
-                _formatPreciseDuration(dur),
-                textAlign: TextAlign.left,
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 13,
-                  fontFeatures: [FontFeature.tabularFigures()],
+                const SizedBox(width: 24),
+                TransportButton(
+                  icon: Icons.skip_previous,
+                  tooltip: 'Go to first frame',
+                  shortcut: '$modKey ←',
+                  onPressed: _seekToStart,
                 ),
+                const SizedBox(width: 16),
+                TransportPlayButton(
+                  isPlaying: isPlaying,
+                  onPressed: _togglePlayPause,
+                ),
+                const SizedBox(width: 16),
+                TransportButton(
+                  icon: Icons.skip_next,
+                  tooltip: 'Go to last frame',
+                  shortcut: '$modKey →',
+                  onPressed: _seekToEnd,
+                ),
+                const SizedBox(width: 24),
+                SizedBox(
+                  width: 64,
+                  child: Text(
+                    _formatPreciseDuration(dur),
+                    textAlign: TextAlign.left,
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 13,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TimelineScaleSlider(
+                playheadPosition: pos,
+                previewPlaybackSpeed: _previewPlaybackSpeed,
+                onPreviewSpeedChanged: (s) {
+                  setState(() {
+                    _previewPlaybackSpeed = s;
+                  });
+                  _applyEffectivePlaybackSpeed(_lastClipSpeedApplied);
+                },
               ),
             ),
           ],
