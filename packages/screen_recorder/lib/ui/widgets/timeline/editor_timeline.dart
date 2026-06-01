@@ -112,6 +112,9 @@ class EditorTimeline extends StatefulWidget {
     this.isPlaying = false,
     this.onHoverSeek,
     this.onHoverEnd,
+    this.timelineScale = 1.0,
+    this.pendingScaleAnchor,
+    this.onAnchorConsumed,
   });
 
   final Duration duration;
@@ -149,12 +152,30 @@ class EditorTimeline extends StatefulWidget {
   // restore the playback position to where it was before hover started.
   final VoidCallback? onHoverEnd;
 
+  /// Horizontal zoom: 1.0 = fit-to-width, up to 8.0 = 8× wider.
+  /// Threaded down from EditorProjectState so the widget stays
+  /// Riverpod-free.
+  final double timelineScale;
+
+  /// One-shot anchor hint. When set + when [timelineScale] changes,
+  /// the widget preserves this timestamp's on-screen x-position by
+  /// adjusting its scroll offset. Cleared via [onAnchorConsumed].
+  final Duration? pendingScaleAnchor;
+
+  /// Invoked by the widget after consuming a non-null
+  /// [pendingScaleAnchor]. The parent should reset the anchor via
+  /// `EditorProjectController.clearPendingScaleAnchor()`.
+  final VoidCallback? onAnchorConsumed;
+
   @override
   State<EditorTimeline> createState() => _EditorTimelineState();
 }
 
 class _EditorTimelineState extends State<EditorTimeline> {
   double? _hoverProgress;
+  final ScrollController _scrollController = ScrollController();
+  // ignore: unused_field — consumed by G3 anchor-preserving scale change.
+  double _lastViewportWidth = 0;
 
   void _updateHover(Offset local, double width) {
     if (widget.isPlaying || width <= 0) return;
@@ -188,10 +209,23 @@ class _EditorTimelineState extends State<EditorTimeline> {
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
+        // Intentional build-time side effect: cache the latest viewport
+        // width so G3's anchor-preserve math can read it without an
+        // extra LayoutBuilder round-trip.
+        _lastViewportWidth = width;
+        final pps = _pixelsPerSecond(
+            width, widget.duration, widget.timelineScale);
+        final contentWidth = _contentWidth(width, widget.timelineScale);
         // Zoom lane is always rendered, even when empty, so users can
         // hover/click an empty patch to add a new zoom.
         final zoomLaneHeight = _laneHeight + _zoomBadgeAreaHeight;
@@ -210,71 +244,88 @@ class _EditorTimelineState extends State<EditorTimeline> {
             // hover-only, onTap/onPan still flow through to the lanes
             // below.
             opaque: false,
+            // FIXME(G3/G4): hover progress ignores _scrollController.offset;
+            // correct at scale==1, drifts at scale>1.
             onHover: (e) => _updateHover(e.localPosition, width),
             onExit: (_) => _clearHover(),
-            child: Stack(
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              scrollDirection: Axis.horizontal,
+              physics: widget.timelineScale > 1.0
+                  ? const ClampingScrollPhysics()
+                  : const NeverScrollableScrollPhysics(),
+              child: SizedBox(
+                width: contentWidth,
+                height: totalHeight,
+                child: Stack(
                   children: [
-                    SizedBox(
-                      height: _rulerHeight,
-                      child: _TimeRuler(
-                          duration: widget.duration,
-                          width: width,
-                          onSeek: widget.onSeek),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          height: _rulerHeight,
+                          child: _TimeRuler(
+                            duration: widget.duration,
+                            pixelsPerSecond: pps,
+                            contentWidth: contentWidth,
+                            onSeek: widget.onSeek,
+                          ),
+                        ),
+                        const SizedBox(height: _laneSpacing),
+                        SizedBox(
+                          height: _laneHeight,
+                          child: _ClipLane(
+                            duration: widget.duration,
+                            pixelsPerSecond: pps,
+                            contentWidth: contentWidth,
+                            onSeek: widget.onSeek,
+                            speedLabel: widget.playbackSpeedLabel,
+                            isSelected: widget.clipSelected,
+                            onTap: () => widget.onClipSelected
+                                ?.call(!widget.clipSelected),
+                            trimSelection: widget.trimSelection,
+                            onTrimChanged: widget.onTrimChanged,
+                          ),
+                        ),
+                        const SizedBox(height: _laneSpacing),
+                        TipAnchor(
+                          tipId: TipId.editorZoomKeyframe,
+                          child: SizedBox(
+                            height: zoomLaneHeight,
+                            child: _ZoomLane(
+                              duration: widget.duration,
+                              pixelsPerSecond: pps,
+                              contentWidth: contentWidth,
+                              zoomRegions: widget.zoomRegions,
+                              selectedIndex: widget.selectedZoomIndex,
+                              onZoomChanged: widget.onZoomChanged,
+                              onZoomSelected: widget.onZoomSelected,
+                              onZoomDeleted: widget.onZoomDeleted,
+                              onZoomAdded: widget.onZoomAdded,
+                              onSeek: widget.onSeek,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: _laneSpacing),
-                    SizedBox(
-                      height: _laneHeight,
-                      child: _ClipLane(
-                        duration: widget.duration,
-                        width: width,
-                        onSeek: widget.onSeek,
-                        speedLabel: widget.playbackSpeedLabel,
-                        isSelected: widget.clipSelected,
-                        onTap: () => widget.onClipSelected
-                            ?.call(!widget.clipSelected),
-                        trimSelection: widget.trimSelection,
-                        onTrimChanged: widget.onTrimChanged,
-                      ),
-                    ),
-                    const SizedBox(height: _laneSpacing),
-                    TipAnchor(
-                      tipId: TipId.editorZoomKeyframe,
-                      child: SizedBox(
-                        height: zoomLaneHeight,
-                        child: _ZoomLane(
-                          duration: widget.duration,
-                          width: width,
-                          zoomRegions: widget.zoomRegions,
-                          selectedIndex: widget.selectedZoomIndex,
-                          onZoomChanged: widget.onZoomChanged,
-                          onZoomSelected: widget.onZoomSelected,
-                          onZoomDeleted: widget.onZoomDeleted,
-                          onZoomAdded: widget.onZoomAdded,
-                          onSeek: widget.onSeek,
+                    IgnorePointer(
+                      child: CustomPaint(
+                        size: Size(contentWidth, totalHeight),
+                        painter: _PlayheadPainter(
+                          progress: widget.duration.inMicroseconds == 0
+                              ? 0
+                              : (widget.position.inMicroseconds /
+                                      widget.duration.inMicroseconds)
+                                  .clamp(0.0, 1.0),
+                          hoverProgress:
+                              widget.isPlaying ? null : _hoverProgress,
+                          rulerHeight: _rulerHeight,
                         ),
                       ),
                     ),
                   ],
                 ),
-                IgnorePointer(
-                  child: CustomPaint(
-                    size: Size(width, totalHeight),
-                    painter: _PlayheadPainter(
-                      progress: widget.duration.inMicroseconds == 0
-                          ? 0
-                          : (widget.position.inMicroseconds /
-                                  widget.duration.inMicroseconds)
-                              .clamp(0.0, 1.0),
-                      hoverProgress:
-                          widget.isPlaying ? null : _hoverProgress,
-                      rulerHeight: _rulerHeight,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         );
@@ -288,17 +339,22 @@ class _EditorTimelineState extends State<EditorTimeline> {
 class _TimeRuler extends StatelessWidget {
   const _TimeRuler({
     required this.duration,
-    required this.width,
+    required this.pixelsPerSecond,
+    required this.contentWidth,
     required this.onSeek,
   });
 
   final Duration duration;
-  final double width;
+  final double pixelsPerSecond;
+  final double contentWidth;
   final ValueChanged<Duration> onSeek;
 
   void _seek(Offset local) {
-    final pps = _pixelsPerSecond(width, duration, 1.0);
-    onSeek(_xToTime(local.dx, pps));
+    // Clamp the gesture x to [0, contentWidth] so out-of-range drag
+    // events (post-scroll-wrap, possible during fast drags) don't
+    // produce negative or beyond-duration seek targets.
+    final x = local.dx.clamp(0.0, contentWidth);
+    onSeek(_xToTime(x, pixelsPerSecond));
   }
 
   @override
@@ -379,7 +435,8 @@ class _TimeRulerPainter extends CustomPainter {
 class _ClipLane extends StatefulWidget {
   const _ClipLane({
     required this.duration,
-    required this.width,
+    required this.pixelsPerSecond,
+    required this.contentWidth,
     required this.onSeek,
     required this.speedLabel,
     required this.isSelected,
@@ -389,7 +446,8 @@ class _ClipLane extends StatefulWidget {
   });
 
   final Duration duration;
-  final double width;
+  final double pixelsPerSecond;
+  final double contentWidth;
   final ValueChanged<Duration> onSeek;
   final String speedLabel;
   final bool isSelected;
@@ -413,8 +471,11 @@ class _ClipLaneState extends State<_ClipLane> {
   double _trimEndAccum = 0;
 
   void _seek(Offset local) {
-    final pps = _pixelsPerSecond(widget.width, widget.duration, 1.0);
-    widget.onSeek(_xToTime(local.dx, pps));
+    // Clamp the gesture x to lane bounds so out-of-range positions
+    // from fast drags inside the scroll-wrapped lane can't seek past
+    // the duration's endpoints.
+    final x = local.dx.clamp(0.0, widget.contentWidth);
+    widget.onSeek(_xToTime(x, widget.pixelsPerSecond));
   }
 
   Duration get _minTrimDuration =>
@@ -432,7 +493,7 @@ class _ClipLaneState extends State<_ClipLane> {
       return;
     }
     _trimStartAccum += dx;
-    final scale = widget.duration.inMicroseconds / widget.width;
+    final scale = widget.duration.inMicroseconds / widget.contentWidth;
     final deltaUs = (_trimStartAccum * scale).round();
     final maxStartUs = trim.end.inMicroseconds -
         _minTrimDuration.inMicroseconds;
@@ -462,7 +523,7 @@ class _ClipLaneState extends State<_ClipLane> {
       return;
     }
     _trimEndAccum += dx;
-    final scale = widget.duration.inMicroseconds / widget.width;
+    final scale = widget.duration.inMicroseconds / widget.contentWidth;
     final deltaUs = (_trimEndAccum * scale).round();
     final minEndUs = trim.start.inMicroseconds +
         _minTrimDuration.inMicroseconds;
@@ -486,13 +547,13 @@ class _ClipLaneState extends State<_ClipLane> {
     final hasTrim = trim != null &&
         widget.onTrimChanged != null &&
         widget.duration > Duration.zero;
-    final pps = _pixelsPerSecond(widget.width, widget.duration, 1.0);
+    final pps = widget.pixelsPerSecond;
     final startX = hasTrim
         ? _timeToX(trim.start, pps)
         : 0.0;
     final endX = hasTrim
         ? _timeToX(trim.end, pps)
-        : widget.width;
+        : widget.contentWidth;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -530,7 +591,7 @@ class _ClipLaneState extends State<_ClipLane> {
                 child: ColoredBox(color: Color(0x99000000)),
               ),
             ),
-          if (hasTrim && endX < widget.width)
+          if (hasTrim && endX < widget.contentWidth)
             Positioned(
               left: endX,
               top: 0,
@@ -688,7 +749,8 @@ class _ClipLanePainter extends CustomPainter {
 class _ZoomLane extends StatefulWidget {
   const _ZoomLane({
     required this.duration,
-    required this.width,
+    required this.pixelsPerSecond,
+    required this.contentWidth,
     required this.zoomRegions,
     required this.onSeek,
     this.selectedIndex,
@@ -699,7 +761,8 @@ class _ZoomLane extends StatefulWidget {
   });
 
   final Duration duration;
-  final double width;
+  final double pixelsPerSecond;
+  final double contentWidth;
   final List<ZoomRegion> zoomRegions;
   final ValueChanged<Duration> onSeek;
   final int? selectedIndex;
@@ -729,8 +792,8 @@ class _ZoomLaneState extends State<_ZoomLane> {
     final hoverX = _hoverX;
     if (hoverX == null || widget.duration <= Duration.zero) return null;
 
-    final pps = _pixelsPerSecond(widget.width, widget.duration, 1.0);
-    final hoverTime = _xToTime(hoverX, pps);
+    final pps = widget.pixelsPerSecond;
+    final hoverTime = _xToTime(hoverX.clamp(0.0, widget.contentWidth), pps);
 
     // If the cursor is over an existing zoom, the ghost is hidden —
     // that pill catches its own clicks anyway.
@@ -798,8 +861,8 @@ class _ZoomLaneState extends State<_ZoomLane> {
                   return;
                 }
                 widget.onZoomSelected?.call(null);
-                final pps = _pixelsPerSecond(widget.width, widget.duration, 1.0);
-                widget.onSeek(_xToTime(d.localPosition.dx, pps));
+                final x = d.localPosition.dx.clamp(0.0, widget.contentWidth);
+                widget.onSeek(_xToTime(x, widget.pixelsPerSecond));
               },
               child: const SizedBox.expand(),
             ),
@@ -808,8 +871,7 @@ class _ZoomLaneState extends State<_ZoomLane> {
             _ZoomGhost(
               start: ghost.start,
               end: ghost.end,
-              laneWidth: widget.width,
-              duration: widget.duration,
+              pixelsPerSecond: widget.pixelsPerSecond,
             ),
           for (var i = 0; i < widget.zoomRegions.length; i++)
             _ZoomPill(
@@ -818,7 +880,8 @@ class _ZoomLaneState extends State<_ZoomLane> {
               zoom: widget.zoomRegions[i],
               isSelected: widget.selectedIndex == i,
               duration: widget.duration,
-              laneWidth: widget.width,
+              pixelsPerSecond: widget.pixelsPerSecond,
+              contentWidth: widget.contentWidth,
               neighbors: _neighborsOf(i),
               onChanged: widget.onZoomChanged,
               onSelected: widget.onZoomSelected,
@@ -854,18 +917,16 @@ class _ZoomGhost extends StatelessWidget {
   const _ZoomGhost({
     required this.start,
     required this.end,
-    required this.laneWidth,
-    required this.duration,
+    required this.pixelsPerSecond,
   });
 
   final Duration start;
   final Duration end;
-  final double laneWidth;
-  final Duration duration;
+  final double pixelsPerSecond;
 
   @override
   Widget build(BuildContext context) {
-    final pps = _pixelsPerSecond(laneWidth, duration, 1.0);
+    final pps = pixelsPerSecond;
     final left = _timeToX(start, pps);
     final width = _timeToX(end, pps) - left;
     // Only paint the "+" affordance when the ghost is wide enough to
@@ -906,7 +967,8 @@ class _ZoomPill extends StatefulWidget {
     required this.zoom,
     required this.isSelected,
     required this.duration,
-    required this.laneWidth,
+    required this.pixelsPerSecond,
+    required this.contentWidth,
     required this.neighbors,
     required this.onSeek,
     this.onChanged,
@@ -918,7 +980,8 @@ class _ZoomPill extends StatefulWidget {
   final ZoomRegion zoom;
   final bool isSelected;
   final Duration duration;
-  final double laneWidth;
+  final double pixelsPerSecond;
+  final double contentWidth;
   final ({Duration? prevEnd, Duration? nextStart}) neighbors;
   final ValueChanged<Duration> onSeek;
   final void Function(int, ZoomRegion)? onChanged;
@@ -950,15 +1013,11 @@ class _ZoomPillState extends State<_ZoomPill> {
   Duration? _exitAnchor;
   double _exitAccum = 0;
 
-  double get _startX {
-    final pps = _pixelsPerSecond(widget.laneWidth, widget.duration, 1.0);
-    return _timeToX(widget.zoom.startTime, pps);
-  }
+  double get _startX =>
+      _timeToX(widget.zoom.startTime, widget.pixelsPerSecond);
 
-  double get _endX {
-    final pps = _pixelsPerSecond(widget.laneWidth, widget.duration, 1.0);
-    return _timeToX(widget.zoom.endTime, pps);
-  }
+  double get _endX =>
+      _timeToX(widget.zoom.endTime, widget.pixelsPerSecond);
 
   Duration get _minStart =>
       widget.neighbors.prevEnd ?? Duration.zero;
@@ -985,7 +1044,7 @@ class _ZoomPillState extends State<_ZoomPill> {
   void _update(double dxDelta) {
     if (widget.onChanged == null) return;
     _dxAccum += dxDelta;
-    final scale = widget.duration.inMicroseconds / widget.laneWidth;
+    final scale = widget.duration.inMicroseconds / widget.contentWidth;
     final deltaUs = (_dxAccum * scale).round();
     final delta = Duration(microseconds: deltaUs);
 
@@ -1206,7 +1265,7 @@ class _ZoomPillState extends State<_ZoomPill> {
     if (widget.onChanged == null || _enterAnchor == null) return;
     _enterAccum += dx;
     final usPerPx =
-        widget.duration.inMicroseconds / widget.laneWidth;
+        widget.duration.inMicroseconds / widget.contentWidth;
     final deltaUs = (_enterAccum * usPerPx).round();
     final maxEnterUs = widget.zoom.duration.inMicroseconds -
         widget.zoom.exitDuration.inMicroseconds;
@@ -1234,7 +1293,7 @@ class _ZoomPillState extends State<_ZoomPill> {
     if (widget.onChanged == null || _exitAnchor == null) return;
     _exitAccum += dx;
     final usPerPx =
-        widget.duration.inMicroseconds / widget.laneWidth;
+        widget.duration.inMicroseconds / widget.contentWidth;
     // Dragging the exit divider rightward shortens the exit ramp.
     final deltaUs = (-_exitAccum * usPerPx).round();
     final maxExitUs = widget.zoom.duration.inMicroseconds -

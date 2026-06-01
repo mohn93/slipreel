@@ -1273,6 +1273,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 duration: _controller.value.duration,
                 position: displayedPos,
                 isPlaying: _controller.value.isPlaying,
+                timelineScale:
+                    ref.watch(editorProjectControllerProvider).timelineScale,
+                pendingScaleAnchor: ref
+                    .watch(editorProjectControllerProvider)
+                    .pendingScaleAnchor,
+                onAnchorConsumed: () => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .clearPendingScaleAnchor(),
                 onSeek: (next) {
                   // Committed seek: clear hover state and adopt the
                   // click target as the new intended position, then
