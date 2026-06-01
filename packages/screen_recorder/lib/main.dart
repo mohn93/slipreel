@@ -29,6 +29,9 @@ import 'state/recording_settings_controller.dart';
 import 'state/recording_settings_store.dart';
 import 'state/sleep_observer.dart';
 import 'state/window_mode_controller.dart';
+import 'ui/app_alerts/alert_stack_overlay.dart';
+import 'ui/app_alerts/app_alerts.dart';
+import 'ui/app_alerts/app_alerts_controller.dart';
 import 'state/recording_state.dart';
 import 'state/recovery_service.dart';
 import 'state/session_marker.dart';
@@ -404,6 +407,19 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // Re-attach the alerts overlay on every build. attach() is idempotent
+    // — it tears down any prior OverlayEntry/timers — so this safely
+    // covers cold start AND hot-restart (which re-runs the App's build).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final overlay = rootNavigatorKey.currentState?.overlay;
+      if (overlay != null) {
+        AppAlerts.attach(
+          overlay,
+          (_) => AlertStackOverlay(controller: AppAlertsController.instance),
+        );
+      }
+    });
+
     return MaterialApp(
       navigatorKey: rootNavigatorKey,
       title: 'Slipreel',
