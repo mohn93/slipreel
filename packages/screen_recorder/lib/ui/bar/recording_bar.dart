@@ -96,6 +96,7 @@ class RecordingBar extends StatelessWidget {
             const _Divider(),
             TipAnchor(
               tipId: TipId.barModePicker,
+              dimBackdrop: false,
               child: _Mode(
                 icon: LucideIcons.monitor,
                 label: 'Display',

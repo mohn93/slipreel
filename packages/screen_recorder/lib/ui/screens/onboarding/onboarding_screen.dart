@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder/onboarding/onboarding_store.dart';
+import 'package:screen_recorder/state/window_mode_controller.dart';
 import 'package:screen_recorder/ui/bar/recording_bar_screen.dart';
 import 'pages/permissions_page.dart';
 import 'pages/ready_page.dart';
@@ -18,6 +19,18 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _pageController = PageController();
   int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Default app window is the 68px-tall recording bar; onboarding needs the
+    // full panel chrome so its pages aren't clipped. RecordingBarScreen
+    // restores `bar` mode in its own initState after _finish navigates.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(windowModeControllerProvider.notifier).showPanel();
+    });
+  }
 
   void _next() {
     _pageController.animateToPage(

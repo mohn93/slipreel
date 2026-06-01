@@ -4,10 +4,20 @@ import 'tips_controller.dart';
 import 'tip_overlay.dart';
 
 class TipAnchor extends ConsumerStatefulWidget {
-  const TipAnchor({super.key, required this.tipId, required this.child});
+  const TipAnchor({
+    super.key,
+    required this.tipId,
+    required this.child,
+    this.dimBackdrop = true,
+  });
 
   final TipId tipId;
   final Widget child;
+  // When false, the overlay skips the dimming/cutout backdrop and the bubble
+  // is placed strictly below the anchor's host bottom edge — used in the bar
+  // window where the host grows to make room for the bubble and dimming the
+  // already-tiny bar would obscure its content.
+  final bool dimBackdrop;
 
   @override
   ConsumerState<TipAnchor> createState() => _TipAnchorState();
@@ -42,6 +52,7 @@ class _TipAnchorState extends ConsumerState<TipAnchor> {
         anchorRect: rect,
         message: controller.copyFor(widget.tipId),
         onDismiss: _dismiss,
+        dimBackdrop: widget.dimBackdrop,
       ),
     );
     Overlay.of(context).insert(_entry!);

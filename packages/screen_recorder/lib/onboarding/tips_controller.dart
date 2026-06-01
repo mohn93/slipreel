@@ -49,12 +49,14 @@ class TipsController extends ChangeNotifier {
   bool tryClaim(TipId id) {
     if (_activeTip != null) return false;
     _activeTip = id;
+    notifyListeners();
     return true;
   }
 
   void release(TipId id) {
     if (_activeTip == id) {
       _activeTip = null;
+      notifyListeners();
     }
   }
 

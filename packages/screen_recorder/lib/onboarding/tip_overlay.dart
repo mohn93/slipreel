@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// Draws a 60% black backdrop with a rounded-rect cutout around
@@ -8,22 +10,27 @@ class TipOverlay extends StatelessWidget {
     required this.anchorRect,
     required this.message,
     required this.onDismiss,
+    this.dimBackdrop = true,
   });
 
   final Rect anchorRect;
   final String message;
   final VoidCallback onDismiss;
+  // When false, no dim/cutout backdrop is drawn and the callout sits strictly
+  // below the anchor's host bottom edge. Used by the recording-bar tip where
+  // the host window grows downward to host the bubble.
+  final bool dimBackdrop;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Backdrop with cutout.
-        Positioned.fill(
-          child: IgnorePointer(
-            child: CustomPaint(painter: _BackdropPainter(anchorRect)),
+        if (dimBackdrop)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(painter: _BackdropPainter(anchorRect)),
+            ),
           ),
-        ),
         // Tap outside the bubble dismisses.
         Positioned.fill(
           child: GestureDetector(
@@ -36,6 +43,7 @@ class TipOverlay extends StatelessWidget {
           anchorRect: anchorRect,
           message: message,
           onDismiss: onDismiss,
+          forceBelow: !dimBackdrop,
         ),
       ],
     );
@@ -67,26 +75,92 @@ class _Callout extends StatelessWidget {
     required this.anchorRect,
     required this.message,
     required this.onDismiss,
+    this.forceBelow = false,
   });
   final Rect anchorRect;
   final String message;
   final VoidCallback onDismiss;
+  // When true, the bubble is placed strictly below the anchor with a fixed
+  // gap — no clamp, no above-anchor fallback. The host window is sized to
+  // accommodate it (recording-bar tip).
+  final bool forceBelow;
 
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context).size;
+    final scheme = Theme.of(context).colorScheme;
+    if (forceBelow) {
+      // Compact, free-floating chip below the anchor's host. Lighter than the
+      // bar's surfaceContainerHigh, with its own border + heavier shadow so it
+      // reads as a separate element instead of fusing with the bar chrome.
+      return Positioned(
+        top: anchorRect.bottom + 24,
+        left: 0,
+        right: 0,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            // No shadow — Flutter's blur rasterises with hard banding/outlines
+            // against the borderless transparent NSWindow. Rely on the lighter
+            // surfaceContainerHighest + outline border + dark window gap for
+            // visual separation from the bar instead.
+            child: Material(
+              type: MaterialType.card,
+              elevation: 0,
+              borderRadius: BorderRadius.circular(14),
+              color: scheme.surfaceContainerHighest,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.5),
+                    width: 1,
+                  ),
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      message,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: scheme.onSurface,
+                            height: 1.35,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton(
+                        onPressed: onDismiss,
+                        child: const Text('Got it'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Default (editor) placement: full-width with clamped top.
     final spaceBelow = mq.height - anchorRect.bottom;
     final placeBelow = spaceBelow >= 140;
     final dy = placeBelow ? anchorRect.bottom + 16 : anchorRect.top - 140;
-
+    final maxTop = math.max(16.0, mq.height - 160);
+    final top = dy.clamp(16.0, maxTop);
     return Positioned(
-      top: dy.clamp(16.0, mq.height - 160),
+      top: top,
       left: 16,
       right: 16,
       child: Material(
         elevation: 8,
         borderRadius: BorderRadius.circular(12),
-        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        color: scheme.surfaceContainerHigh,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

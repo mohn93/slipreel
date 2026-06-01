@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 
+import '../../onboarding/tips_controller.dart';
 import '../../state/microphone_controller.dart';
 import '../../state/recording_action_router.dart';
 import '../../state/recording_state.dart';
@@ -40,6 +41,12 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   // (and later system-audio) label. We measure the content Row's intrinsic
   // width after each bar frame and ask the native window to match it.
   static const double _kBarHeight = 68;
+
+  // Extra vertical room added to the bar window while a bar-mode tip is
+  // showing, so the compact tip chip can render below the bar without
+  // covering it. Chip = 24 top gap + 14 padding + 1-2 lines of body text +
+  // 10 + ~38 FilledButton + 14 padding ≈ 130; round up to clear shadows.
+  static const double _kBarTipExtraHeight = 150;
 
   final GlobalKey _barContentKey = GlobalKey();
   ({double w, double h})? _lastBarSize;
@@ -91,6 +98,13 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
       if (mounted) {
         _syncMicMonitor(ref.read(windowModeControllerProvider), mic);
       }
+    });
+    // Re-measure the bar when a tip activates/dismisses so its height grows
+    // (to host the bubble) and shrinks back.
+    ref.listenManual<TipsController>(tipsControllerProvider, (_, __) {
+      if (!mounted) return;
+      _lastBarSize = null;
+      _scheduleBarSync();
     });
     _syncMicMonitor(
       ref.read(windowModeControllerProvider),
@@ -173,16 +187,29 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
             : null,
       );
 
-  /// Measures the bar content's intrinsic width and pairs it with the constant
-  /// bar height. Intrinsic width keeps native resizes from feeding back into
-  /// the measurement.
+  /// Schedules a single post-frame `_syncBarSize` call per frame.
+  void _scheduleBarSync() {
+    if (_barSizeCallbackPending) return;
+    _barSizeCallbackPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _barSizeCallbackPending = false;
+      if (mounted) _syncBarSize();
+    });
+  }
+
+  /// Measures the bar content's intrinsic width and pairs it with a bar
+  /// height that grows when a bar-mode tip is active so the tip bubble has
+  /// room to render below the bar without covering it. Intrinsic width keeps
+  /// native resizes from feeding back into the measurement.
   void _syncBarSize() {
     final box = _barContentKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final content = box.getMaxIntrinsicWidth(double.infinity);
     if (!content.isFinite || content <= 0) return;
     final width = (content + 12).ceilToDouble(); // h-padding 6+6
-    final height = _kBarHeight;
+    final hasBarTip =
+        ref.read(tipsControllerProvider).activeTip == TipId.barModePicker;
+    final height = _kBarHeight + (hasBarTip ? _kBarTipExtraHeight : 0);
     final size = (w: width, h: height);
     if (_lastBarSize != null &&
         (_lastBarSize!.w - size.w).abs() < 0.5 &&
@@ -255,17 +282,26 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     // Hug the bar window to its content after this frame lays out. Only in bar
     // mode — the pill/panel own their own sizes (native also guards on mode).
     // The pending flag coalesces the per-build callbacks into one per frame.
-    if (mode == WindowMode.bar && !_barSizeCallbackPending) {
-      _barSizeCallbackPending = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _barSizeCallbackPending = false;
-        if (mounted) _syncBarSize();
-      });
-    }
+    if (mode == WindowMode.bar) _scheduleBarSync();
+
+    // In bar mode the window may be taller than the bar itself (to host a
+    // tip bubble below it). Pin the bar to the top at its natural height so
+    // the extra space below is transparent — the bar's solid colour stops at
+    // _kBarHeight and the tip overlay renders against the desktop.
+    final Widget pinnedBody = mode == WindowMode.bar
+        ? Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              height: _kBarHeight,
+              width: double.infinity,
+              child: body,
+            ),
+          )
+        : body;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Stack(children: [body, const CountdownOverlay()]),
+      body: Stack(children: [pinnedBody, const CountdownOverlay()]),
     );
   }
 }
