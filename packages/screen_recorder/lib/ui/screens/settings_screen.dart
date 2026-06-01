@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import '../../state/recording_settings_controller.dart';
+import '../app_alerts/app_alert_types.dart';
+import '../app_alerts/app_alerts.dart';
 
 /// Settings screen for customizing window frame appearance.
 ///
@@ -153,6 +155,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
             // Current frame info
             _buildCurrentFrameInfo(frame),
+
+            const SizedBox(height: 32),
+            _buildSectionTitle('Alert demo'),
+            const SizedBox(height: 12),
+            _buildAlertDemo(),
           ],
         ),
       ),
@@ -384,6 +391,94 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           children: const [Text(' Off '), Text(' 3 s '), Text(' 5 s ')],
         ),
       ],
+    );
+  }
+
+  Widget _buildAlertDemo() {
+    Widget tile({
+      required IconData icon,
+      required Color iconColor,
+      required String title,
+      required VoidCallback onTap,
+    }) {
+      return ListTile(
+        leading: Icon(icon, color: iconColor),
+        title: Text(title, style: const TextStyle(color: Colors.white)),
+        onTap: onTap,
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2B2B3D),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          tile(
+            icon: AlertType.success.icon,
+            iconColor: AlertType.success.accent,
+            title: 'Show success',
+            onTap: () => AppAlerts.success('Saved to ~/Movies/clip.mp4'),
+          ),
+          tile(
+            icon: AlertType.error.icon,
+            iconColor: AlertType.error.accent,
+            title: 'Show error',
+            onTap: () => AppAlerts.error(
+              "Couldn't pick a save location: permission denied",
+            ),
+          ),
+          tile(
+            icon: AlertType.warning.icon,
+            iconColor: AlertType.warning.accent,
+            title: 'Show warning',
+            onTap: () => AppAlerts.warning(
+              'System audio not available on macOS 12',
+            ),
+          ),
+          tile(
+            icon: AlertType.info.icon,
+            iconColor: AlertType.info.accent,
+            title: 'Show info',
+            onTap: () => AppAlerts.info('Recording paused'),
+          ),
+          tile(
+            icon: Icons.layers_rounded,
+            iconColor: Colors.white70,
+            title: 'Fire 3 in a row (stack test)',
+            onTap: () {
+              AppAlerts.success('First');
+              AppAlerts.warning('Second');
+              AppAlerts.error('Third');
+            },
+          ),
+          tile(
+            icon: Icons.push_pin_rounded,
+            iconColor: Colors.white70,
+            title: 'Sticky info (no auto-dismiss)',
+            onTap: () => AppAlerts.info(
+              'Hover me, click to dismiss. Stays until you do.',
+              duration: Duration.zero,
+            ),
+          ),
+          tile(
+            icon: Icons.touch_app_rounded,
+            iconColor: Colors.white70,
+            title: 'Success with action button',
+            onTap: () => AppAlerts.success(
+              'Exported clip.mp4',
+              action: AppAlertAction(
+                label: 'Show in Finder',
+                onPressed: () {},
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

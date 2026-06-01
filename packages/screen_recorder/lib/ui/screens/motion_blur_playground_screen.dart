@@ -28,6 +28,7 @@ import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.d
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
+import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 
 /// A dev-only screen for iterating on the cursor motion-blur algorithm
 /// without rebuilding the entire editor every time. Loads a recording
@@ -243,12 +244,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     );
     await out.writeAsBytes(bytes.buffer.asUint8List());
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Saved ${out.path}'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    AppAlerts.info('Saved ${out.path}');
   }
 
   @override

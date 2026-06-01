@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder/onboarding/onboarding_store.dart';
 import 'package:screen_recorder/state/window_mode_controller.dart';
 import 'package:screen_recorder/ui/bar/recording_bar_screen.dart';
+import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'pages/permissions_page.dart';
 import 'pages/ready_page.dart';
 import 'pages/welcome_page.dart';
@@ -45,12 +46,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       await ref.read(onboardingStoreProvider).markComplete();
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              "Couldn't save onboarding state — you may see this screen again next launch.",
-            ),
-          ),
+        AppAlerts.error(
+          "Couldn't save onboarding state — you may see this screen again next launch.",
         );
       }
     }
