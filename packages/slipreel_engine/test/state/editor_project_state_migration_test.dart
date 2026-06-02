@@ -19,7 +19,7 @@ void main() {
           'motionBlur': 0.3,
         };
 
-        final state = EditorProjectState.fromJson(v1Json);
+        final state = EditorProjectState.fromJson(v1Json, videoDuration: const Duration(seconds: 60));
 
         expect(state.cursorSize, 1.5);
         expect(state.motionBlur, 0.3);
@@ -36,7 +36,7 @@ void main() {
       expect(v2Json['schemaVersion'], EditorProjectState.currentSchemaVersion);
 
       // Round-trip parse.
-      final state = EditorProjectState.fromJson(v2Json);
+      final state = EditorProjectState.fromJson(v2Json, videoDuration: const Duration(seconds: 60));
       expect(state.cursorSize, EditorProjectState.defaults().cursorSize);
     });
 
@@ -52,7 +52,7 @@ void main() {
         };
 
         expect(
-          () => EditorProjectState.fromJson(futureJson),
+          () => EditorProjectState.fromJson(futureJson, videoDuration: const Duration(seconds: 60)),
           throwsFormatException,
         );
       },
@@ -68,7 +68,7 @@ void main() {
           'cursorSize': 2.5,
           // No schemaVersion → v1
         };
-        final migrated = migrateEditorProjectJson(v1Json);
+        final migrated = migrateEditorProjectJson(v1Json, videoDuration: const Duration(seconds: 60));
         expect(
           migrated['schemaVersion'],
           EditorProjectState.currentSchemaVersion,
@@ -90,7 +90,7 @@ void main() {
           'cursorSize': 3.0,
         };
 
-        final state = EditorProjectState.fromJson(v1Explicit);
+        final state = EditorProjectState.fromJson(v1Explicit, videoDuration: const Duration(seconds: 60));
         expect(state.cursorSize, 3.0);
       },
     );
@@ -122,7 +122,7 @@ void main() {
           'cursorSize': 2.5,
         };
 
-        final migrated = migrateEditorProjectJson(v2Json);
+        final migrated = migrateEditorProjectJson(v2Json, videoDuration: const Duration(seconds: 60));
         expect(migrated['schemaVersion'], EditorProjectState.currentSchemaVersion);
         expect(migrated.containsKey('zoomRegions'), isFalse,
             reason: 'top-level zoomRegions must be removed in v3');
@@ -131,7 +131,7 @@ void main() {
 
         // Parse through fromJson — every region should survive, accessible
         // via the convenience shim.
-        final state = EditorProjectState.fromJson(v2Json);
+        final state = EditorProjectState.fromJson(v2Json, videoDuration: const Duration(seconds: 60));
         expect(state.zoomRegions, hasLength(2));
         expect(state.zoomRegions.first.zoomLevel, 1.7);
         expect(state.zoomRegions.last.zoomLevel, 2.2);
@@ -147,7 +147,7 @@ void main() {
         'cursorSize': 1.0,
         // No zoomRegions key (hand-edited / partial sidecar).
       };
-      final state = EditorProjectState.fromJson(v2Json);
+      final state = EditorProjectState.fromJson(v2Json, videoDuration: const Duration(seconds: 60));
       expect(state.timeline.zoomTracks, hasLength(1));
       expect(state.zoomRegions, isEmpty);
     });
@@ -164,7 +164,7 @@ void main() {
           },
         ],
       };
-      final state = EditorProjectState.fromJson(v1Json);
+      final state = EditorProjectState.fromJson(v1Json, videoDuration: const Duration(seconds: 60));
       // Both steps ran: schemaVersion marker added (v1→v2), then regions
       // moved into the timeline (v2→v3).
       expect(state.zoomRegions, hasLength(1));

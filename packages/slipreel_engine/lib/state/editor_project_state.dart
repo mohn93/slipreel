@@ -161,7 +161,7 @@ class EditorProjectState {
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 6;
+  static const int currentSchemaVersion = 7;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -272,7 +272,10 @@ class EditorProjectState {
     // pendingScaleAnchor is transient; not serialized.
   };
 
-  factory EditorProjectState.fromJson(Map<String, dynamic> rawJson) {
+  factory EditorProjectState.fromJson(
+    Map<String, dynamic> rawJson, {
+    required Duration videoDuration,
+  }) {
     final version = rawJson['schemaVersion'];
     if (version is int && version > currentSchemaVersion) {
       throw FormatException(
@@ -285,7 +288,7 @@ class EditorProjectState {
     // field readers below only ever see the current shape. A v2 JSON
     // (flat zoomRegions list) is reshaped into a v3 JSON (timeline
     // container) by the v2→v3 step before we look up `timeline`.
-    final json = migrateEditorProjectJson(rawJson);
+    final json = migrateEditorProjectJson(rawJson, videoDuration: videoDuration);
 
     final timelineJson = json['timeline'];
     final timeline = timelineJson is Map<String, dynamic>
@@ -479,23 +482,23 @@ class EditorProjectState {
 
 /// Ordered list of vN → vN+1 migration functions. Index `i` migrates
 /// from schemaVersion `i` to `i + 1`.
-final List<Map<String, dynamic> Function(Map<String, dynamic>)>
+final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
     _schemaMigrations = [
   // v0 → v1: no-op. v0 is hypothetical (pre-public builds); v1
   // recordings exist in the wild, so the chain starts at v1.
-  (json) => json,
+  (json, _) => json,
   // v1 → v2: insert the schemaVersion field. v1 sidecars predate
   // the version marker and assume the current build can identify
   // them by its absence. Any additional v1→v2 shape changes go here
   // too — today there are none, but the comment block above explains
   // how to grow this.
-  (json) => {...json, 'schemaVersion': 2},
+  (json, _) => {...json, 'schemaVersion': 2},
   // v2 → v3: move the flat `zoomRegions` list onto a single zoom
   // track inside a `timeline` container — scaffolding for captions,
   // audio, and multi-clip support that all land on the same root
   // object. The transform is lossless for v2 projects: the active
   // (only) zoom track wraps the previous list.
-  (json) {
+  (json, _) {
     final next = {...json, 'schemaVersion': 3};
     final regions = next.remove('zoomRegions');
     next['timeline'] = {
@@ -508,13 +511,46 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>)>
   // v3 → v4: add the per-track `audioMix` block. Additive — fromJson fills the
   // unity default when the key is absent, so the migration only bumps the
   // version marker so the chain reaches v4.
-  (json) => {...json, 'schemaVersion': 4},
+  (json, _) => {...json, 'schemaVersion': 4},
   // v4 → v5: add the per-project outputAspect (no value transform —
   // fromJson fills the auto default when the key is absent).
-  (json) => {...json, 'schemaVersion': 5},
+  (json, _) => {...json, 'schemaVersion': 5},
   // v5 → v6: add the per-project timelineScale (no value transform —
   // fromJson fills 1.0 when the key is absent).
-  (json) => {...json, 'schemaVersion': 6},
+  (json, _) => {...json, 'schemaVersion': 6},
+  // v6 → v7: synthesize a single clip from existing globals. The clip
+  // covers the whole video; its fields take the values from the
+  // top-level globals where present, or ClipSlice defaults where not.
+  // The globals stay on the JSON for now — Task 4 removes them once
+  // EditorProjectState stops reading them.
+  (json, videoDuration) {
+    final next = Map<String, dynamic>.from(json);
+    final speed = (next['playbackSpeed'] as num?)?.toDouble() ?? 1.0;
+    final fadeInMicros = (next['fadeInMicros'] as num?)?.toInt() ?? 0;
+    final fadeOutMicros = (next['fadeOutMicros'] as num?)?.toInt() ?? 0;
+    final audio = next['audioMix'] as Map<String, dynamic>?;
+    final clip = <String, dynamic>{
+      'startMicros': 0,
+      'endMicros': videoDuration.inMicroseconds,
+      'playbackSpeed': speed,
+      'fadeInMicros': fadeInMicros,
+      'fadeOutMicros': fadeOutMicros,
+      'micGainPercent': (audio?['micGainPercent'] as num?)?.toInt() ?? 100,
+      'micMuted': (audio?['micMuted'] as bool?) ?? false,
+      'systemGainPercent':
+          (audio?['systemGainPercent'] as num?)?.toInt() ?? 100,
+      'systemMuted': (audio?['systemMuted'] as bool?) ?? false,
+      'hideCursor': false,
+      'disableSmoothMouse': false,
+    };
+    final timeline = (next['timeline'] as Map<String, dynamic>?) ?? const {};
+    next['timeline'] = {
+      ...timeline,
+      'clips': [clip],
+    };
+    next['schemaVersion'] = 7;
+    return next;
+  },
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its
@@ -524,7 +560,10 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>)>
 ///
 /// A JSON without a `schemaVersion` field is treated as v1 — the
 /// pre-versioned shape — since v0 was hypothetical and never shipped.
-Map<String, dynamic> migrateEditorProjectJson(Map<String, dynamic> json) {
+Map<String, dynamic> migrateEditorProjectJson(
+  Map<String, dynamic> json, {
+  required Duration videoDuration,
+}) {
   final rawVersion = json['schemaVersion'];
   var version = (rawVersion is int && rawVersion >= 0) ? rawVersion : 1;
   var current = json;
@@ -536,7 +575,7 @@ Map<String, dynamic> migrateEditorProjectJson(Map<String, dynamic> json) {
         'step or update currentSchemaVersion.',
       );
     }
-    current = _schemaMigrations[version](current);
+    current = _schemaMigrations[version](current, videoDuration);
     version++;
   }
   return current;

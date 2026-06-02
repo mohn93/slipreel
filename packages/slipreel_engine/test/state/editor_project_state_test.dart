@@ -64,7 +64,7 @@ void main() {
         fadeOut: const Duration(milliseconds: 600),
       );
       final json = original.toJson();
-      final loaded = EditorProjectState.fromJson(json);
+      final loaded = EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60));
       expect(loaded.playbackSpeed, 1.5);
       expect(loaded.fadeIn, const Duration(milliseconds: 400));
       expect(loaded.fadeOut, const Duration(milliseconds: 600));
@@ -225,7 +225,7 @@ void main() {
       expect(json['timeline'], isA<Map<String, dynamic>>());
       expect(json.containsKey('zoomRegions'), isFalse);
 
-      final restored = EditorProjectState.fromJson(json);
+      final restored = EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60));
       expect(restored.zoomRegions, hasLength(1));
       expect(restored.zoomRegions.first.zoomLevel, 1.4);
     });
@@ -250,7 +250,7 @@ void main() {
   test('audioMix round-trips through toJson/fromJson', () {
     final s = EditorProjectState.defaults().copyWith(
         audioMix: const AudioMix(systemGainPercent: 60, micMuted: true));
-    final restored = EditorProjectState.fromJson(s.toJson());
+    final restored = EditorProjectState.fromJson(s.toJson(), videoDuration: const Duration(seconds: 60));
     expect(restored.audioMix,
         const AudioMix(systemGainPercent: 60, micMuted: true));
   });
@@ -264,9 +264,9 @@ void main() {
       'schemaVersion': 3,
       'timeline': {'zoomTracks': [{'regions': <dynamic>[]}]},
     };
-    final migrated = migrateEditorProjectJson(v3);
+    final migrated = migrateEditorProjectJson(v3, videoDuration: const Duration(seconds: 60));
     expect(migrated['schemaVersion'], EditorProjectState.currentSchemaVersion);
-    final state = EditorProjectState.fromJson(v3);
+    final state = EditorProjectState.fromJson(v3, videoDuration: const Duration(seconds: 60));
     expect(state.audioMix, const AudioMix());
   });
 
@@ -291,7 +291,7 @@ void main() {
     test('JSON round-trip preserves outputAspect for every variant', () {
       for (final variant in OutputAspect.values) {
         final state = EditorProjectState.defaults().copyWith(outputAspect: variant);
-        final decoded = EditorProjectState.fromJson(state.toJson());
+        final decoded = EditorProjectState.fromJson(state.toJson(), videoDuration: const Duration(seconds: 60));
         expect(decoded.outputAspect, variant, reason: 'variant=$variant');
       }
     });
@@ -299,7 +299,7 @@ void main() {
     test('JSON without outputAspect defaults to auto', () {
       final json = EditorProjectState.defaults().toJson();
       json.remove('outputAspect');
-      final decoded = EditorProjectState.fromJson(json);
+      final decoded = EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60));
       expect(decoded.outputAspect, OutputAspect.auto);
     });
 
@@ -307,7 +307,7 @@ void main() {
       final v4Json = EditorProjectState.defaults().toJson()
         ..['schemaVersion'] = 4
         ..remove('outputAspect');
-      final decoded = EditorProjectState.fromJson(v4Json);
+      final decoded = EditorProjectState.fromJson(v4Json, videoDuration: const Duration(seconds: 60));
       expect(decoded.outputAspect, OutputAspect.auto);
     });
   });
@@ -327,14 +327,14 @@ void main() {
 
     test('round-trips through toJson/fromJson', () {
       final base = EditorProjectState.defaults().copyWith(timelineScale: 3.5);
-      final decoded = EditorProjectState.fromJson(base.toJson());
+      final decoded = EditorProjectState.fromJson(base.toJson(), videoDuration: const Duration(seconds: 60));
       expect(decoded.timelineScale, 3.5);
     });
 
     test('missing key in JSON falls back to 1.0', () {
       final json = EditorProjectState.defaults().toJson()
         ..remove('timelineScale');
-      expect(EditorProjectState.fromJson(json).timelineScale, 1.0);
+      expect(EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60)).timelineScale, 1.0);
     });
 
     test('invalid JSON values fall back to 1.0', () {
@@ -342,7 +342,7 @@ void main() {
       for (final bad in <Object?>[-1, 0, 100, 'foo', null, double.nan, double.infinity]) {
         final json = {...base, 'timelineScale': bad};
         expect(
-          EditorProjectState.fromJson(json).timelineScale,
+          EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60)).timelineScale,
           1.0,
           reason: 'bad input: $bad',
         );
@@ -382,7 +382,7 @@ void main() {
     test('NOT read from JSON (always starts null after fromJson)', () {
       final base = EditorProjectState.defaults().toJson();
       final hostile = {...base, 'pendingScaleAnchor': 12345};
-      expect(EditorProjectState.fromJson(hostile).pendingScaleAnchor, isNull);
+      expect(EditorProjectState.fromJson(hostile, videoDuration: const Duration(seconds: 60)).pendingScaleAnchor, isNull);
     });
 
     test('NOT included in equality or hashCode', () {

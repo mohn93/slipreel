@@ -64,7 +64,7 @@ void main() {
       );
 
       final json = state.toJson();
-      final restored = EditorProjectState.fromJson(json);
+      final restored = EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60));
 
       expect(restored.zoomRegions, state.zoomRegions);
       expect(restored.cursorSize, 1.75);
@@ -87,7 +87,7 @@ void main() {
       // continue to load — the new field reads as the default 50 ms.
       final json = EditorProjectState.defaults().toJson();
       json.remove('cursorDelayMicros');
-      final restored = EditorProjectState.fromJson(json);
+      final restored = EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60));
       expect(restored.cursorDelay, EditorProjectState.defaults().cursorDelay);
     });
 
@@ -101,7 +101,7 @@ void main() {
       json['cursorMovementBlur'] = 1.95;
       json['screenMovementBlur'] = 1.5;
       json['screenZoomBlur'] = 2.0;
-      final restored = EditorProjectState.fromJson(json);
+      final restored = EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60));
       expect(restored.motionBlur, closeTo(0.5, 1e-9));
       expect(restored.cursorMovementBlur, closeTo(1.0, 1e-9));
       expect(restored.screenMovementBlur, closeTo(1.0, 1e-9));
@@ -114,7 +114,7 @@ void main() {
       json['schemaVersion'] = EditorProjectState.currentSchemaVersion + 1;
 
       expect(
-        () => EditorProjectState.fromJson(json),
+        () => EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60)),
         throwsA(isA<FormatException>()),
       );
     });

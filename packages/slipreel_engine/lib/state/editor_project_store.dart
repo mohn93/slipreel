@@ -34,7 +34,8 @@ class EditorProjectStore {
         return EditorProjectState.defaults();
       }
       final json = jsonDecode(text) as Map<String, dynamic>;
-      return EditorProjectState.fromJson(json);
+      // TODO(slice-editor T5): replumb actual videoDuration through load().
+      return EditorProjectState.fromJson(json, videoDuration: Duration.zero);
     } catch (e, stack) {
       AppLogger.ui.w(
         'EditorProjectStore: failed to load $sidecarPath, using defaults',
