@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder/state/recording_audio_streams_provider.dart';
+import 'package:screen_recorder/ui/theme/app_palette.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/audio_tab.dart';
 import 'package:slipreel_engine/export/audio_streams.dart';
 
@@ -10,7 +11,13 @@ void main() {
         overrides: [
           recordingAudioStreamsProvider.overrideWith((ref) => streams),
         ],
-        child: const MaterialApp(home: Scaffold(body: AudioTab())),
+        child: MaterialApp(
+          theme: ThemeData(
+            extensions: const [AppPalette.midnight],
+            useMaterial3: true,
+          ),
+          home: const Scaffold(body: AudioTab()),
+        ),
       );
 
   testWidgets('shows Microphone + System rows for a mic+system recording',
