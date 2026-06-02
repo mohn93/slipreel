@@ -138,7 +138,7 @@ class EditorProjectState {
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 7;
+  static const int currentSchemaVersion = 8;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -495,6 +495,36 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
       'clips': [clip],
     };
     next['schemaVersion'] = 7;
+    return next;
+  },
+  // v7 → v8: split each clip's source-time `start`/`end` into
+  // immutable cut bounds AND mutable trim bounds. Pre-cut-tool
+  // recordings have no trimming, so trim equals cut on load.
+  (json, _) {
+    final next = Map<String, dynamic>.from(json);
+    final timeline = next['timeline'] as Map<String, dynamic>?;
+    if (timeline != null) {
+      final rawClips = timeline['clips'];
+      if (rawClips is List) {
+        final updated = <Map<String, dynamic>>[];
+        for (final c in rawClips) {
+          if (c is! Map<String, dynamic>) continue;
+          final clip = Map<String, dynamic>.from(c);
+          final s = clip.remove('startMicros');
+          final e = clip.remove('endMicros');
+          if (s is num && e is num) {
+            clip['cutStartMicros'] = s.toInt();
+            clip['cutEndMicros'] = e.toInt();
+            clip['trimStartMicros'] = s.toInt();
+            clip['trimEndMicros'] = e.toInt();
+          }
+          updated.add(clip);
+        }
+        timeline['clips'] = updated;
+        next['timeline'] = timeline;
+      }
+    }
+    next['schemaVersion'] = 8;
     return next;
   },
 ];
