@@ -7,6 +7,7 @@ import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
@@ -160,6 +161,42 @@ void main() {
             reason: 'a fresh track must be synthesized, not silently dropped');
         expect(next.zoomRegions, hasLength(1));
         expect(next.zoomRegions.first.zoomLevel, 1.6);
+      },
+    );
+
+    test(
+      'copyWith(zoomRegions:) preserves the slice list — auto-zoom must '
+      'not wipe the seeded clip',
+      () {
+        // Regression: the convenience override used to construct a fresh
+        // Timeline from `zoomTracks` only; `clips` defaulted to const [],
+        // so a state.copyWith(zoomRegions: ...) silently dropped the
+        // single slice seeded at load time. Auto-zoom detection runs that
+        // path on every fresh open — the editor showed an empty clip
+        // lane until the user manually re-seeded.
+        final base = EditorProjectState.defaults();
+        final seeded = base.copyWith(
+          timeline: base.timeline.copyWith(clips: [
+            ClipSlice(
+              cutStart: Duration.zero,
+              cutEnd: const Duration(seconds: 5),
+            ),
+          ]),
+        );
+        expect(seeded.timeline.clips, hasLength(1));
+
+        final region = ZoomRegion(
+          rect: const Rect.fromLTWH(0, 0, 1, 1),
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 1),
+          zoomLevel: 1.5,
+        );
+        final next = seeded.copyWith(zoomRegions: [region]);
+        expect(next.timeline.clips, hasLength(1),
+            reason: 'auto-zoom write-back must not erase the seeded slice');
+        expect(next.timeline.clips.first.cutEnd,
+            const Duration(seconds: 5));
+        expect(next.zoomRegions, hasLength(1));
       },
     );
 

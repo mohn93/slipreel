@@ -176,12 +176,19 @@ class EditorProjectState {
       nextTimeline = timeline;
     } else if (zoomRegions != null) {
       final tracks = this.timeline.zoomTracks;
+      // Preserve existing clips — the zoom convenience override must not
+      // wipe the slice list (B+C: a fresh Timeline constructor defaults
+      // clips to const [], which would erase the seeded single slice).
+      final existingClips = this.timeline.clips;
       if (tracks.isEmpty) {
-        nextTimeline = Timeline(zoomTracks: [ZoomTrack(regions: zoomRegions)]);
+        nextTimeline = Timeline(
+          zoomTracks: [ZoomTrack(regions: zoomRegions)],
+          clips: existingClips,
+        );
       } else {
         final updated = List<ZoomTrack>.from(tracks);
         updated[0] = tracks[0].copyWith(regions: zoomRegions);
-        nextTimeline = Timeline(zoomTracks: updated);
+        nextTimeline = Timeline(zoomTracks: updated, clips: existingClips);
       }
     } else {
       nextTimeline = this.timeline;
