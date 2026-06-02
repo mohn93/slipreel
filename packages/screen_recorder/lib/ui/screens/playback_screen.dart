@@ -216,9 +216,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
   /// Pushes the current effective preview playback rate
   /// (`clipSpeed × _previewPlaybackSpeed`) onto the video controller.
-  /// Called whenever either input changes (project state's
-  /// [EditorProjectState.playbackSpeed] via a `ref.listen` in build, or
-  /// the preview dropdown via [TimelineScaleSlider]).
+  /// Called whenever either input changes (slice 0's [ClipSlice.playbackSpeed]
+  /// via a `ref.listen` in build, or the preview dropdown via
+  /// [TimelineScaleSlider]).
   void _applyEffectivePlaybackSpeed(double clipSpeed) {
     if (!_isInitialized) return;
     _lastClipSpeedApplied = clipSpeed;
@@ -318,9 +318,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       });
       // Seed the preview-rate cache from the restored project so
       // the first dropdown-driven multiply uses the correct base.
-      // _previewPlaybackSpeed stays at 1.0 (session default).
-      // TODO(slice-editor T9): read from active clip once playback follows
-      // the playhead; for now bridge through clips[0].
+      // _previewPlaybackSpeed stays at 1.0 (session default). Slice 0
+      // is the single source of truth for per-clip playback speed
+      // until the editor follows the playhead across multiple slices.
       _applyEffectivePlaybackSpeed(restored.timeline.clips.isEmpty
           ? 1.0
           : restored.timeline.clips.first.playbackSpeed);
@@ -855,10 +855,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       (_, __) => _persistProject(),
     );
     // When the per-clip playback speed changes (edited via the
-    // ClipContextInspector), re-apply the product onto the preview
-    // player. Preview rate = clipSpeed × _previewPlaybackSpeed.
-    // TODO(slice-editor T9): listen to the active clip's playbackSpeed once
-    // the editor follows the playhead; for now bridge through clips[0].
+    // ClipContextInspector or the slice editor), re-apply the product
+    // onto the preview player. Slice 0 carries the speed today; preview
+    // rate = sliceSpeed × _previewPlaybackSpeed.
     ref.listen<double>(
       editorProjectControllerProvider.select(
         (s) => s.timeline.clips.isEmpty
