@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:screen_recorder/ui/widgets/timeline/clip_lane.dart';
@@ -522,6 +523,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline> {
                               pixelsPerSecond: pps,
                               contentWidth: cw,
                               zoomRegions: widget.zoomRegions,
+                              clips: widget.clips,
                               selectedIndex: widget.selectedZoomIndex,
                               onZoomChanged: widget.onZoomChanged,
                               onZoomSelected: widget.onZoomSelected,
@@ -569,6 +571,7 @@ class _ZoomLane extends StatefulWidget {
     required this.pixelsPerSecond,
     required this.contentWidth,
     required this.zoomRegions,
+    required this.clips,
     required this.onSeek,
     this.selectedIndex,
     this.onZoomChanged,
@@ -581,6 +584,12 @@ class _ZoomLane extends StatefulWidget {
   final double pixelsPerSecond;
   final double contentWidth;
   final List<ZoomRegion> zoomRegions;
+
+  /// Slice list — needed to map zoom regions (stored in source time)
+  /// to the timeline's edited-time x-axis. Empty list means identity
+  /// (legacy single-clip flow).
+  final List<ClipSlice> clips;
+
   final ValueChanged<Duration> onSeek;
   final int? selectedIndex;
   final void Function(int, ZoomRegion)? onZoomChanged;
@@ -605,6 +614,14 @@ class _ZoomLaneState extends State<_ZoomLane> {
   /// Returns null when no ghost should render — either the cursor is
   /// outside the lane, hovering inside an existing zoom, or the
   /// available gap is too small to fit a meaningful zoom.
+  // Zooms are stored in SOURCE time; the timeline x-axis is edited.
+  // Convert at the boundaries — ghost computation runs entirely in
+  // edited time so neighbor gaps line up with what the user sees.
+  Duration _sourceToEdited(Duration t) =>
+      widget.clips.isEmpty ? t : sourceToEdited(widget.clips, t);
+  Duration _editedToSource(Duration t) =>
+      widget.clips.isEmpty ? t : editedToSource(widget.clips, t);
+
   ({Duration start, Duration end})? _ghostRange() {
     final hoverX = _hoverX;
     if (hoverX == null || widget.duration <= Duration.zero) return null;
@@ -615,18 +632,25 @@ class _ZoomLaneState extends State<_ZoomLane> {
     // If the cursor is over an existing zoom, the ghost is hidden —
     // that pill catches its own clicks anyway.
     for (final z in widget.zoomRegions) {
-      if (hoverTime > z.startTime && hoverTime < z.endTime) return null;
+      final zStartE = _sourceToEdited(z.startTime);
+      final zEndE = _sourceToEdited(z.endTime);
+      if (hoverTime > zStartE && hoverTime < zEndE) return null;
     }
 
-    // Find the gap [prevEnd, nextStart] surrounding hoverTime.
+    // Find the gap [prevEnd, nextStart] surrounding hoverTime in edited
+    // time. widget.duration is already edited, and we compare against
+    // each zoom's edited projection so the visual gap (what the user
+    // sees) drives the math, not the underlying source layout.
     var prevEnd = Duration.zero;
     var nextStart = widget.duration;
     for (final z in widget.zoomRegions) {
-      if (z.endTime <= hoverTime && z.endTime > prevEnd) {
-        prevEnd = z.endTime;
+      final zStartE = _sourceToEdited(z.startTime);
+      final zEndE = _sourceToEdited(z.endTime);
+      if (zEndE <= hoverTime && zEndE > prevEnd) {
+        prevEnd = zEndE;
       }
-      if (z.startTime >= hoverTime && z.startTime < nextStart) {
-        nextStart = z.startTime;
+      if (zStartE >= hoverTime && zStartE < nextStart) {
+        nextStart = zStartE;
       }
     }
 
@@ -674,7 +698,12 @@ class _ZoomLaneState extends State<_ZoomLane> {
               onTapDown: (d) {
                 final g = _ghostRange();
                 if (g != null && widget.onZoomAdded != null) {
-                  widget.onZoomAdded!(g.start, g.end);
+                  // _ghostRange returns edited bounds; the caller wants
+                  // source-time so it can store the zoom in source time.
+                  widget.onZoomAdded!(
+                    _editedToSource(g.start),
+                    _editedToSource(g.end),
+                  );
                   return;
                 }
                 widget.onZoomSelected?.call(null);
@@ -699,6 +728,7 @@ class _ZoomLaneState extends State<_ZoomLane> {
               duration: widget.duration,
               pixelsPerSecond: widget.pixelsPerSecond,
               contentWidth: widget.contentWidth,
+              clips: widget.clips,
               neighbors: _neighborsOf(i),
               onChanged: widget.onZoomChanged,
               onSelected: widget.onZoomSelected,
@@ -786,6 +816,7 @@ class _ZoomPill extends StatefulWidget {
     required this.duration,
     required this.pixelsPerSecond,
     required this.contentWidth,
+    required this.clips,
     required this.neighbors,
     required this.onSeek,
     this.onChanged,
@@ -799,6 +830,7 @@ class _ZoomPill extends StatefulWidget {
   final Duration duration;
   final double pixelsPerSecond;
   final double contentWidth;
+  final List<ClipSlice> clips;
   final ({Duration? prevEnd, Duration? nextStart}) neighbors;
   final ValueChanged<Duration> onSeek;
   final void Function(int, ZoomRegion)? onChanged;
@@ -830,11 +862,19 @@ class _ZoomPillState extends State<_ZoomPill> {
   Duration? _exitAnchor;
   double _exitAccum = 0;
 
+  // Zooms are stored in SOURCE time but the timeline x-axis is edited
+  // time (compressed by slice playback speed + collapsed across trimmed
+  // ranges). Map source → edited at the rendering and drag-clamp seams.
+  Duration _sourceToEdited(Duration t) =>
+      widget.clips.isEmpty ? t : sourceToEdited(widget.clips, t);
+  Duration _editedToSource(Duration t) =>
+      widget.clips.isEmpty ? t : editedToSource(widget.clips, t);
+
   double get _startX =>
-      timeToX(widget.zoom.startTime, widget.pixelsPerSecond);
+      timeToX(_sourceToEdited(widget.zoom.startTime), widget.pixelsPerSecond);
 
   double get _endX =>
-      timeToX(widget.zoom.endTime, widget.pixelsPerSecond);
+      timeToX(_sourceToEdited(widget.zoom.endTime), widget.pixelsPerSecond);
 
   Duration get _minStart =>
       widget.neighbors.prevEnd ?? Duration.zero;
@@ -865,40 +905,53 @@ class _ZoomPillState extends State<_ZoomPill> {
     final deltaUs = (_dxAccum * scale).round();
     final delta = Duration(microseconds: deltaUs);
 
-    var nextStart = _dragStartTime;
-    var nextEnd = _dragEndTime;
+    // Drags happen in edited time (1px = 1/pps edited seconds), so we
+    // operate on the EDITED projections of the anchored source-time
+    // start/end, then map back to source time at commit. Neighbor and
+    // duration clamps also live in edited space so the visual gap to
+    // neighbors stays constant on the timeline.
+    final editedDragStart = _sourceToEdited(_dragStartTime);
+    final editedDragEnd = _sourceToEdited(_dragEndTime);
+    final editedMinStart = _sourceToEdited(_minStart);
+    final editedMaxEnd = _sourceToEdited(_maxEnd);
+
+    var editedNextStart = editedDragStart;
+    var editedNextEnd = editedDragEnd;
 
     switch (_mode) {
       case _ZoomDragMode.body:
-        nextStart = _dragStartTime + delta;
-        nextEnd = _dragEndTime + delta;
-        final span = nextEnd - nextStart;
-        if (nextStart < _minStart) {
-          nextStart = _minStart;
-          nextEnd = nextStart + span;
+        editedNextStart = editedDragStart + delta;
+        editedNextEnd = editedDragEnd + delta;
+        final span = editedNextEnd - editedNextStart;
+        if (editedNextStart < editedMinStart) {
+          editedNextStart = editedMinStart;
+          editedNextEnd = editedNextStart + span;
         }
-        if (nextEnd > _maxEnd) {
-          nextEnd = _maxEnd;
-          nextStart = nextEnd - span;
+        if (editedNextEnd > editedMaxEnd) {
+          editedNextEnd = editedMaxEnd;
+          editedNextStart = editedNextEnd - span;
         }
         break;
       case _ZoomDragMode.leftEdge:
-        nextStart = _dragStartTime + delta;
-        if (nextStart < _minStart) nextStart = _minStart;
-        if (nextEnd - nextStart < _minDuration) {
-          nextStart = nextEnd - _minDuration;
+        editedNextStart = editedDragStart + delta;
+        if (editedNextStart < editedMinStart) editedNextStart = editedMinStart;
+        if (editedNextEnd - editedNextStart < _minDuration) {
+          editedNextStart = editedNextEnd - _minDuration;
         }
         break;
       case _ZoomDragMode.rightEdge:
-        nextEnd = _dragEndTime + delta;
-        if (nextEnd > _maxEnd) nextEnd = _maxEnd;
-        if (nextEnd - nextStart < _minDuration) {
-          nextEnd = nextStart + _minDuration;
+        editedNextEnd = editedDragEnd + delta;
+        if (editedNextEnd > editedMaxEnd) editedNextEnd = editedMaxEnd;
+        if (editedNextEnd - editedNextStart < _minDuration) {
+          editedNextEnd = editedNextStart + _minDuration;
         }
         break;
       case _ZoomDragMode.none:
         return;
     }
+
+    var nextStart = _editedToSource(editedNextStart);
+    var nextEnd = _editedToSource(editedNextEnd);
 
     final newDuration = nextEnd - nextStart;
     // Scale the enter / exit ramps if the new region is shorter than
