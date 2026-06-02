@@ -74,6 +74,7 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.onSliceTrimEndChanged,
     this.cutModeActive = false,
     this.onCutModeChanged,
+    this.playheadFlashOn = false,
     this.playbackSpeedLabel = '1x',
     this.isPlaying = false,
     this.onHoverSeek,
@@ -127,6 +128,11 @@ class EditorTimeline extends ConsumerStatefulWidget {
   /// Bubbled by the overlay to the parent on Esc / successful cut.
   /// Parent flips its own `_cutModeActive` state field.
   final ValueChanged<bool>? onCutModeChanged;
+
+  /// Drives a brief 120ms accent-color flash on the playhead pill.
+  /// Parent flips this true → false after the timer to signal a
+  /// rejected Cmd+K cut.
+  final bool playheadFlashOn;
   final String playbackSpeedLabel;
   final bool isPlaying;
   // Live preview seek while the cursor hovers the timeline (paused only).
@@ -539,6 +545,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline> {
                           hoverProgress:
                               widget.isPlaying ? null : _hoverProgress,
                           rulerHeight: rulerHeight,
+                          flashOn: widget.playheadFlashOn,
                         ),
                       ),
                     ),
@@ -1630,11 +1637,19 @@ class _PlayheadPainter extends CustomPainter {
     required this.progress,
     required this.hoverProgress,
     required this.rulerHeight,
+    this.flashOn = false,
   });
 
   final double progress;
   final double? hoverProgress;
   final double rulerHeight;
+  /// When true, the line/knob gradient swaps to a solid accent fill
+  /// signalling a rejected Cmd+K cut. The parent holds this true for
+  /// 120ms before flipping it back; this painter just renders the
+  /// current snapshot.
+  final bool flashOn;
+
+  static const Color _flashAccent = Color(0xFF6C63FF);
 
   static const _knobRadius = 6.5;
   static const _lineWidth = 2.0;
@@ -1676,18 +1691,32 @@ class _PlayheadPainter extends CustomPainter {
       size.height - lineTop,
     );
 
-    // ── Vertical line: blue → dark purple → transparent
-    final lineGradient = const LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [
-        playheadTop,
-        playheadMid,
-        playheadBottom,
-        Color(0x003D26AA),
-      ],
-      stops: [0.0, 0.35, 0.7, 1.0],
-    ).createShader(lineRect);
+    // ── Vertical line: blue → dark purple → transparent. The flash
+    // path swaps the saturated colours for the accent so a rejected
+    // Cmd+K reads as a deliberate signal, not a colour glitch.
+    final lineGradient = flashOn
+        ? const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              _flashAccent,
+              _flashAccent,
+              _flashAccent,
+              Color(0x006C63FF),
+            ],
+            stops: [0.0, 0.35, 0.7, 1.0],
+          ).createShader(lineRect)
+        : const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              playheadTop,
+              playheadMid,
+              playheadBottom,
+              Color(0x003D26AA),
+            ],
+            stops: [0.0, 0.35, 0.7, 1.0],
+          ).createShader(lineRect);
 
     // Soft outer glow for the line.
     final glowPaint = Paint()
@@ -1713,11 +1742,17 @@ class _PlayheadPainter extends CustomPainter {
       center: knobCenter,
       radius: _knobRadius,
     );
-    final knobGradient = const LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [playheadTop, playheadBottom],
-    ).createShader(knobRect);
+    final knobGradient = flashOn
+        ? const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [_flashAccent, _flashAccent],
+          ).createShader(knobRect)
+        : const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [playheadTop, playheadBottom],
+          ).createShader(knobRect);
 
     // Drop shadow underneath.
     canvas.drawCircle(
@@ -1762,5 +1797,6 @@ class _PlayheadPainter extends CustomPainter {
   bool shouldRepaint(_PlayheadPainter old) =>
       old.progress != progress ||
       old.hoverProgress != hoverProgress ||
-      old.rulerHeight != rulerHeight;
+      old.rulerHeight != rulerHeight ||
+      old.flashOn != flashOn;
 }

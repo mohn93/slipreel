@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_history_controller.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
@@ -94,6 +95,17 @@ double effectivePreviewRate(double clipSpeed, double previewSpeed) =>
 bool shouldReapplyOnResume({required bool prev, required bool next}) =>
     next && !prev;
 
+/// Pure helper extracted from _PlaybackScreenState's Cmd+K handler so
+/// the keybind logic can be unit-tested without a video controller.
+/// Returns true on successful split, false otherwise.
+@visibleForTesting
+bool handleCutKeybind({
+  required EditorProjectController controller,
+  required Duration currentEditedTime,
+  required List<ClipSlice> clips,
+}) =>
+    controller.splitAtPlayhead(currentEditedTime, clips);
+
 class PlaybackScreen extends ConsumerStatefulWidget {
   final String videoPath;
 
@@ -150,6 +162,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // commits a cut at that edited-time x. Esc / a successful cut /
   // re-pressing the button all flip this back to false.
   bool _cutModeActive = false;
+
+  // 120ms accent flash on the playhead pill after a rejected Cmd+K
+  // cut. Driven by [_flashPlayhead], cancelled in [dispose].
+  bool _playheadFlashOn = false;
+  Timer? _flashTimer;
 
   // Session-only preview-playback-speed multiplier (1×/2×/4×/8×).
   // Picked from the dropdown next to the timeline-zoom slider in the
@@ -213,6 +230,43 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   void initState() {
     super.initState();
     _initializeVideo();
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  /// Global Cmd+K → split at the current playhead's edited time.
+  /// Success: clear slice selection. Failure: flash the playhead pill.
+  bool _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    final isCmdK = event.logicalKey == LogicalKeyboardKey.keyK &&
+        HardwareKeyboard.instance.isMetaPressed;
+    if (!isCmdK) return false;
+    // Need an initialised controller to read the playhead. Bail
+    // quietly so the keypress falls through to system handling.
+    if (!_isInitialized) return false;
+    final clips = ref.read(editorProjectControllerProvider).timeline.clips;
+    final sourcePos = _controller.value.position;
+    final editedPos = sourceToEdited(clips, sourcePos);
+    final ok = handleCutKeybind(
+      controller: ref.read(editorProjectControllerProvider.notifier),
+      currentEditedTime: editedPos,
+      clips: clips,
+    );
+    if (ok) {
+      setState(() => _selectedSliceIndex = null);
+    } else {
+      _flashPlayhead();
+    }
+    return true;
+  }
+
+  void _flashPlayhead() {
+    if (!mounted) return;
+    setState(() => _playheadFlashOn = true);
+    _flashTimer?.cancel();
+    _flashTimer = Timer(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      setState(() => _playheadFlashOn = false);
+    });
   }
 
   /// Compute the inspector's current timeline-selection input from
@@ -409,6 +463,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    _flashTimer?.cancel();
     _zoomPreviewOverride.dispose();
     // Flush any pending debounced save before tearing down so the
     // user doesn't lose the last change they made before navigating
@@ -1541,6 +1597,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 cutModeActive: _cutModeActive,
                 onCutModeChanged: (v) =>
                     setState(() => _cutModeActive = v),
+                playheadFlashOn: _playheadFlashOn,
                 // cursorXListenable stays unset — when cut mode is on,
                 // EditorTimeline pipes its own overlay's cursor in. Off
                 // mode falls back to a no-op notifier.
