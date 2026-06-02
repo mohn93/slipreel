@@ -174,6 +174,12 @@ class ScreenCaptureManager: NSObject {
       )
       config.width = region.widthPx
       config.height = region.heightPx
+      // On Retina, sourceRect is in points (e.g. 400×300pt) but
+      // config.width/height are in pixels (e.g. 800×600). Without
+      // scalesToFit, SCStream maps 1 source point → 1 dest pixel and
+      // leaves the right/bottom half of the framebuffer black. Enable
+      // scaling so the source area fills the configured pixel buffer.
+      config.scalesToFit = true
     } else if isWindow {
       guard let windowID = UInt32(sourceId),
             let window = content.windows.first(where: { $0.windowID == windowID }) else {
