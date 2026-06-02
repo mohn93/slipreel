@@ -8,12 +8,14 @@ ClipSlice _slice({
   int ce = 10,
   int? ts,
   int? te,
+  double speed = 1.0,
 }) =>
     ClipSlice(
       cutStart: Duration(seconds: cs),
       cutEnd: Duration(seconds: ce),
       trimStart: ts == null ? null : Duration(seconds: ts),
       trimEnd: te == null ? null : Duration(seconds: te),
+      playbackSpeed: speed,
     );
 
 Duration _s(int s) => Duration(seconds: s);
@@ -149,6 +151,60 @@ void main() {
     test('past all slices -> null', () {
       final clips = [_slice(cs: 0, ce: 5)];
       expect(nextPlayPosition(clips, _s(7)), null);
+    });
+  });
+
+  group('speed-aware helpers', () {
+    test('totalEditedDuration halves at 2x speed', () {
+      expect(
+        totalEditedDuration([_slice(cs: 0, ce: 10, speed: 2.0)]),
+        _s(5),
+      );
+    });
+
+    test('totalEditedDuration doubles at 0.5x speed', () {
+      expect(
+        totalEditedDuration([_slice(cs: 0, ce: 10, speed: 0.5)]),
+        _s(20),
+      );
+    });
+
+    test('totalEditedDuration sums mixed speeds', () {
+      final clips = [
+        _slice(cs: 0, ce: 10, speed: 2.0),  // -> 5s edited
+        _slice(cs: 10, ce: 16, speed: 0.5), // -> 12s edited
+      ];
+      expect(totalEditedDuration(clips), _s(17));
+    });
+
+    test('editedToSource scales offset by playbackSpeed', () {
+      final clips = [_slice(cs: 0, ce: 10, speed: 2.0)]; // 5s edited
+      // Edited 2s into the slice = source 4s (2 × 2.0).
+      expect(editedToSource(clips, _s(2)), _s(4));
+      // Edited at end (5s) = source trimEnd (10s).
+      expect(editedToSource(clips, _s(5)), _s(10));
+    });
+
+    test('editedToSource walks across speed-adjusted boundary', () {
+      final clips = [
+        _slice(cs: 0, ce: 10, speed: 2.0),  // 5s edited
+        _slice(cs: 10, ce: 14, speed: 1.0), // 4s edited
+      ];
+      // Edited 6s = 1s into slice 1 at 1x = source 11s.
+      expect(editedToSource(clips, _s(6)), _s(11));
+    });
+
+    test('sourceToEdited compresses source offset by speed', () {
+      final clips = [_slice(cs: 0, ce: 10, speed: 2.0)]; // 5s edited
+      // Source 4s -> edited 2s.
+      expect(sourceToEdited(clips, _s(4)), _s(2));
+      expect(sourceToEdited(clips, _s(10)), _s(5));
+    });
+
+    test('sourceToEdited round-trips through editedToSource at 1.5x', () {
+      final clips = [_slice(cs: 0, ce: 9, speed: 1.5)]; // 6s edited
+      final s = editedToSource(clips, _s(3));
+      expect(sourceToEdited(clips, s), _s(3));
     });
   });
 }

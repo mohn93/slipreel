@@ -65,8 +65,21 @@ class ClipSlice {
   /// cutStart.
   Duration get cutSpan => cutEnd - cutStart;
 
-  /// Effective playable length — what shows up in the edited timeline.
+  /// Effective playable length in SOURCE time — the trim range, before
+  /// any speed adjustment.
   Duration get effectiveLength => trimEnd - trimStart;
+
+  /// Output-time length: how long this slice plays in the final edit
+  /// after speed adjustment (`effectiveLength / playbackSpeed`). This
+  /// is what drives the timeline's visual width and the total edited
+  /// duration — a 30s slice at 2x speed renders as 15s on the ruler.
+  Duration get editedLength {
+    if (playbackSpeed <= 0) return effectiveLength;
+    return Duration(
+      microseconds:
+          (effectiveLength.inMicroseconds / playbackSpeed).round(),
+    );
+  }
 
   /// True when the user has trimmed the slice's left side inward from
   /// the original cut. UI draws a notched chevron on this side to

@@ -31,12 +31,15 @@ class ClipLane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Walk the clips to compute each slice's edited-time start.
+    // Walk the clips to compute each slice's edited-time start. Use
+    // editedLength (effective length / playbackSpeed) so a 30s slice
+    // at 2x lays out as 15s wide — the ruler shows output duration,
+    // faster slices visually compress.
     final editedStarts = <Duration>[];
     var acc = Duration.zero;
     for (final c in clips) {
       editedStarts.add(acc);
-      acc += c.effectiveLength;
+      acc += c.editedLength;
     }
 
     return Stack(

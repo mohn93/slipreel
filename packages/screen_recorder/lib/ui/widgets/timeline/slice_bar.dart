@@ -45,10 +45,21 @@ class _SliceBarState extends State<SliceBar> {
   Duration? _trimEndAnchor;
   double? _dragStartGlobalX;
 
+  // The slice is rendered in EDITED time on the timeline, so 1 pixel
+  // corresponds to `1 / pixelsPerSecond` edited seconds. The underlying
+  // trim bounds live in SOURCE time, so converting a pixel delta back to
+  // a trim delta multiplies by playbackSpeed (1 edited-second of drag =
+  // `speed` source-seconds of trim movement at the slice's speed).
   double get _widthPx =>
-      widget.slice.effectiveLength.inMilliseconds / 1000.0 * widget.pixelsPerSecond;
+      widget.slice.editedLength.inMilliseconds / 1000.0 * widget.pixelsPerSecond;
   double get _editedStartPx =>
       widget.editedStart.inMilliseconds / 1000.0 * widget.pixelsPerSecond;
+  double get _sourceSecondsPerPixel {
+    if (widget.pixelsPerSecond <= 0) return 0;
+    final speed =
+        widget.slice.playbackSpeed > 0 ? widget.slice.playbackSpeed : 1.0;
+    return speed / widget.pixelsPerSecond;
+  }
 
   void _onLeftDragStart(DragStartDetails d) {
     _trimStartAnchor = widget.slice.trimStart;
@@ -59,7 +70,7 @@ class _SliceBarState extends State<SliceBar> {
     final anchor = _trimStartAnchor;
     final startX = _dragStartGlobalX;
     if (anchor == null || startX == null) return;
-    final deltaSec = (d.globalPosition.dx - startX) / widget.pixelsPerSecond;
+    final deltaSec = (d.globalPosition.dx - startX) * _sourceSecondsPerPixel;
     final next = anchor + Duration(microseconds: (deltaSec * 1e6).round());
     widget.onTrimStartChanged(next);
   }
@@ -73,7 +84,7 @@ class _SliceBarState extends State<SliceBar> {
     final anchor = _trimEndAnchor;
     final startX = _dragStartGlobalX;
     if (anchor == null || startX == null) return;
-    final deltaSec = (d.globalPosition.dx - startX) / widget.pixelsPerSecond;
+    final deltaSec = (d.globalPosition.dx - startX) * _sourceSecondsPerPixel;
     final next = anchor + Duration(microseconds: (deltaSec * 1e6).round());
     widget.onTrimEndChanged(next);
   }
@@ -107,6 +118,41 @@ class _SliceBarState extends State<SliceBar> {
                 border: Border.all(color: clipStroke),
               ),
             ),
+            // Tick marks every 0.5s of edited time — visually communicate
+            // the slice's playback "density": at higher speed the ticks
+            // compress closer together because the slice body is shorter.
+            if (_widthPx >= 48)
+              Positioned(
+                left: 0,
+                top: 0,
+                width: _widthPx,
+                height: laneHeight,
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _SliceTickPainter(
+                      widthPx: _widthPx,
+                      editedSeconds:
+                          widget.slice.editedLength.inMilliseconds / 1000.0,
+                    ),
+                  ),
+                ),
+              ),
+            // "Clip · Ns · 1x" label centered inside the body, only when
+            // wide enough not to feel cramped.
+            if (_widthPx >= 80)
+              Positioned(
+                left: 0,
+                top: 0,
+                width: _widthPx,
+                height: laneHeight,
+                child: IgnorePointer(
+                  child: _SliceLabel(
+                    editedLength: widget.slice.editedLength,
+                    playbackSpeed: widget.slice.playbackSpeed,
+                    wide: _widthPx >= 140,
+                  ),
+                ),
+              ),
             if (widget.slice.isLeftTrimmed)
               const Positioned(
                 key: ValueKey('slice-bar-left-chevron'),
@@ -191,6 +237,114 @@ class _ChevronNotch extends StatelessWidget {
         pointsRight ? Icons.chevron_right : Icons.chevron_left,
         color: const Color(0xFF6C63FF), // kInspectorAccent
         size: 14,
+      ),
+    );
+  }
+}
+
+/// Paints faint vertical tick marks every 0.5s of edited time inside the
+/// slice body. Higher playback speed compresses the slice's width on the
+/// timeline, so the ticks naturally appear closer together — a visual
+/// cue for "this slice plays fast." Skips ticks that would render closer
+/// than ~8px apart to avoid a moiré effect on very compressed slices.
+class _SliceTickPainter extends CustomPainter {
+  const _SliceTickPainter({
+    required this.widthPx,
+    required this.editedSeconds,
+  });
+
+  final double widthPx;
+  final double editedSeconds;
+
+  static const double _intervalSec = 0.5;
+  static const double _minSpacingPx = 8.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (editedSeconds <= 0 || widthPx <= 0) return;
+    final pxPerSecond = widthPx / editedSeconds;
+    var step = _intervalSec;
+    while (step * pxPerSecond < _minSpacingPx) {
+      step *= 2;
+      if (step > editedSeconds) return;
+    }
+    final paint = Paint()
+      ..color = clipStroke.withValues(alpha: 0.32)
+      ..strokeWidth = 1;
+    final inset = 4.0;
+    var t = step;
+    while (t < editedSeconds) {
+      final x = t * pxPerSecond;
+      canvas.drawLine(
+        Offset(x, inset),
+        Offset(x, size.height - inset),
+        paint,
+      );
+      t += step;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SliceTickPainter old) =>
+      old.widthPx != widthPx || old.editedSeconds != editedSeconds;
+}
+
+/// Centered "Clip / Ns · 1x" badge inside the slice body. [wide] toggles
+/// the "Clip" caption row — narrow slices show only the duration+speed
+/// line so the text doesn't overflow.
+class _SliceLabel extends StatelessWidget {
+  const _SliceLabel({
+    required this.editedLength,
+    required this.playbackSpeed,
+    required this.wide,
+  });
+
+  final Duration editedLength;
+  final double playbackSpeed;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) {
+    final secs = editedLength.inMilliseconds / 1000.0;
+    final durLabel = secs >= 10
+        ? '${secs.round()}s'
+        : '${secs.toStringAsFixed(1)}s';
+    final speedLabel = playbackSpeed == playbackSpeed.roundToDouble()
+        ? '${playbackSpeed.toInt()}x'
+        : '${playbackSpeed.toStringAsFixed(1)}x';
+    final captionStyle = TextStyle(
+      color: Colors.white.withValues(alpha: 0.55),
+      fontSize: 11,
+      fontWeight: FontWeight.w500,
+      letterSpacing: 0.2,
+    );
+    const valueStyle = TextStyle(
+      color: Colors.white,
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      fontFeatures: [FontFeature.tabularFigures()],
+    );
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (wide) Text('Clip', style: captionStyle),
+          if (wide) const SizedBox(height: 1),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(durLabel, style: valueStyle),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.timer_outlined,
+                size: 11,
+                color: Colors.white.withValues(alpha: 0.65),
+              ),
+              const SizedBox(width: 6),
+              Text(speedLabel, style: valueStyle),
+            ],
+          ),
+        ],
       ),
     );
   }
