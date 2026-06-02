@@ -10,6 +10,7 @@ import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
+import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
 
 /// Single source of truth for per-recording editor settings.
@@ -254,6 +255,73 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     if (s == null) return;
     if (value == s.disableSmoothMouse) return;
     _replaceSlice(sliceIndex, s.copyWith(disableSmoothMouse: value));
+  }
+
+  /// Cuts the slice at [sliceIndex] into two at [sourcePosition].
+  /// Both halves inherit all per-slice settings (speed, audio, fades,
+  /// cursor flags). Returns false (and doesn't mutate state) if any
+  /// precondition fails: out-of-range index, sourcePosition outside
+  /// the slice's trim range, or fewer than 100ms on either side.
+  bool splitSlice(int sliceIndex, Duration sourcePosition) {
+    const minLen = Duration(milliseconds: 100);
+    final clips = state.timeline.clips;
+    if (sliceIndex < 0 || sliceIndex >= clips.length) return false;
+    final parent = clips[sliceIndex];
+    if (sourcePosition - parent.trimStart < minLen) return false;
+    if (parent.trimEnd - sourcePosition < minLen) return false;
+    final left = parent.copyWith(
+      cutEnd: sourcePosition,
+      trimEnd: sourcePosition,
+    );
+    final right = parent.copyWith(
+      cutStart: sourcePosition,
+      trimStart: sourcePosition,
+    );
+    final updated = List<ClipSlice>.from(clips);
+    updated.replaceRange(sliceIndex, sliceIndex + 1, [left, right]);
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(clips: updated),
+    );
+    return true;
+  }
+
+  /// Convenience: maps [editedPosition] (timeline-x-axis time) to
+  /// source time, finds the containing slice, and splits there.
+  /// [clips] is passed explicitly so the caller can avoid re-reading
+  /// state in a tight UI event handler. Returns false when no slice
+  /// contains the mapped source position or split preconditions fail.
+  bool splitAtPlayhead(Duration editedPosition, List<ClipSlice> clips) {
+    if (clips.isEmpty) return false;
+    final sourcePosition = editedToSource(clips, editedPosition);
+    for (var i = 0; i < clips.length; i++) {
+      final s = clips[i];
+      if (sourcePosition > s.trimStart && sourcePosition < s.trimEnd) {
+        return splitSlice(i, sourcePosition);
+      }
+    }
+    return false;
+  }
+
+  void setSliceTrimStart(int sliceIndex, Duration trimStart) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    var clamped = trimStart;
+    if (clamped < s.cutStart) clamped = s.cutStart;
+    final upper = s.trimEnd - const Duration(milliseconds: 100);
+    if (clamped > upper) clamped = upper < s.cutStart ? s.cutStart : upper;
+    if (clamped == s.trimStart) return;
+    _replaceSlice(sliceIndex, s.copyWith(trimStart: clamped));
+  }
+
+  void setSliceTrimEnd(int sliceIndex, Duration trimEnd) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    var clamped = trimEnd;
+    if (clamped > s.cutEnd) clamped = s.cutEnd;
+    final lower = s.trimStart + const Duration(milliseconds: 100);
+    if (clamped < lower) clamped = lower > s.cutEnd ? s.cutEnd : lower;
+    if (clamped == s.trimEnd) return;
+    _replaceSlice(sliceIndex, s.copyWith(trimEnd: clamped));
   }
 
   void removeSlice(int sliceIndex) {
