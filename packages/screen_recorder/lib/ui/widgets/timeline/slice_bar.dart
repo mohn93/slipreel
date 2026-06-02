@@ -118,9 +118,12 @@ class _SliceBarState extends State<SliceBar> {
                 border: Border.all(color: clipStroke),
               ),
             ),
-            // Tick marks every 0.5s of edited time — visually communicate
-            // the slice's playback "density": at higher speed the ticks
-            // compress closer together because the slice body is shorter.
+            // Tick marks every 0.5s of SOURCE time. The slice is rendered
+            // in edited time (compressed by speed), so 0.5s of source
+            // becomes 0.5/speed of edited width — at 2x speed the ticks
+            // sit half as far apart, giving a "this slice plays fast"
+            // visual rhythm. Source 0.5s also matches a natural cue —
+            // tick density corresponds to recording-time half-seconds.
             if (_widthPx >= 48)
               Positioned(
                 left: 0,
@@ -131,8 +134,8 @@ class _SliceBarState extends State<SliceBar> {
                   child: CustomPaint(
                     painter: _SliceTickPainter(
                       widthPx: _widthPx,
-                      editedSeconds:
-                          widget.slice.editedLength.inMilliseconds / 1000.0,
+                      sourceSeconds:
+                          widget.slice.effectiveLength.inMilliseconds / 1000.0,
                     ),
                   ),
                 ),
@@ -242,39 +245,39 @@ class _ChevronNotch extends StatelessWidget {
   }
 }
 
-/// Paints faint vertical tick marks every 0.5s of edited time inside the
-/// slice body. Higher playback speed compresses the slice's width on the
-/// timeline, so the ticks naturally appear closer together — a visual
-/// cue for "this slice plays fast." Skips ticks that would render closer
-/// than ~8px apart to avoid a moiré effect on very compressed slices.
+/// Paints faint vertical tick marks every 0.5s of SOURCE time inside
+/// the slice body. The slice is rendered in edited time (compressed by
+/// playbackSpeed), so denser source content packs ticks closer together
+/// — a "this slice plays fast" visual rhythm. Doubles the interval
+/// (1s, 2s, ...) when ticks would land closer than 8px to avoid moiré.
 class _SliceTickPainter extends CustomPainter {
   const _SliceTickPainter({
     required this.widthPx,
-    required this.editedSeconds,
+    required this.sourceSeconds,
   });
 
   final double widthPx;
-  final double editedSeconds;
+  final double sourceSeconds;
 
   static const double _intervalSec = 0.5;
   static const double _minSpacingPx = 8.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (editedSeconds <= 0 || widthPx <= 0) return;
-    final pxPerSecond = widthPx / editedSeconds;
+    if (sourceSeconds <= 0 || widthPx <= 0) return;
+    final pxPerSourceSec = widthPx / sourceSeconds;
     var step = _intervalSec;
-    while (step * pxPerSecond < _minSpacingPx) {
+    while (step * pxPerSourceSec < _minSpacingPx) {
       step *= 2;
-      if (step > editedSeconds) return;
+      if (step > sourceSeconds) return;
     }
     final paint = Paint()
       ..color = clipStroke.withValues(alpha: 0.32)
       ..strokeWidth = 1;
     final inset = 4.0;
     var t = step;
-    while (t < editedSeconds) {
-      final x = t * pxPerSecond;
+    while (t < sourceSeconds) {
+      final x = t * pxPerSourceSec;
       canvas.drawLine(
         Offset(x, inset),
         Offset(x, size.height - inset),
@@ -286,7 +289,7 @@ class _SliceTickPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SliceTickPainter old) =>
-      old.widthPx != widthPx || old.editedSeconds != editedSeconds;
+      old.widthPx != widthPx || old.sourceSeconds != sourceSeconds;
 }
 
 /// Centered "Clip / Ns · 1x" badge inside the slice body. [wide] toggles
