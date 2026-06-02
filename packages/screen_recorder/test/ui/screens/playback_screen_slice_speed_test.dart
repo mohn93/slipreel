@@ -23,7 +23,6 @@ import 'package:screen_recorder/ui/screens/playback_screen.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
-import 'package:slipreel_engine/timeline/timeline.dart';
 
 /// Mirrors the selector inside [PlaybackScreen]'s `ref.listen<double>`:
 ///   `(s) => s.timeline.clips.isEmpty ? 1.0 : s.timeline.clips.first.playbackSpeed`.
