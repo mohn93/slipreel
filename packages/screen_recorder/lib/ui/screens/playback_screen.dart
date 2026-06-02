@@ -724,7 +724,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   cursorRecording: cursorRec,
                   projectState: _project,
                   settings: settings,
-                  trim: _trimSelection,
                 ).run(onProgress: onProgress, cancelToken: cancelToken)
               : ExportPipeline(
                   sourcePath: widget.videoPath,
@@ -733,11 +732,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   cursorRecording: cursorRec,
                   projectState: _project,
                   settings: settings,
-                  // N-slice export: per-slice trim/speed/fade/audio come
-                  // from state.timeline.clips. The B-era top-level trim is
-                  // not threaded through MP4 export any more; GIF still
-                  // honours it pending its own N-slice generalization.
                 ).run(onProgress: onProgress, cancelToken: cancelToken);
+          // N-slice export for both formats: per-slice trim/speed/fade come
+          // from state.timeline.clips. The B-era top-level TrimSelection is
+          // no longer plumbed into either pipeline.
         },
       );
 

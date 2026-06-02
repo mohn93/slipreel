@@ -3,11 +3,12 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show Size;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
-import '../models/trim_selection.dart';
 import '../rendering/output_canvas_resolver.dart';
 import '../state/clip_slice.dart';
 import '../state/editor_project_state.dart';
@@ -16,10 +17,10 @@ import '../utils/perf_summary.dart';
 import 'export_cancellation.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
-import 'ffmpeg_filters.dart';
 import 'ffmpeg_probe.dart';
 import 'ffmpeg_resolver.dart';
 import 'frame_compositor.dart';
+import 'n_slice_filter_graph.dart';
 
 /// Two-pass GIF export pipeline using ffmpeg's palettegen + paletteuse.
 ///
@@ -34,6 +35,13 @@ import 'frame_compositor.dart';
 /// and zoom-focal controllers carry state across [compose] calls — reusing
 /// a compositor from pass 1 in pass 2 would start mid-animation and produce
 /// different frames than pass 1 showed ffmpeg for palette sampling.
+///
+/// N-slice model: per-slice `trim=trimStart:trimEnd` + `setpts` + fades + concat
+/// are built by [buildExportFilterGraph] with `audioStreams: []` (GIFs strip
+/// audio). The result's `[outv]` feeds the palette-generation / palettized-
+/// encode stages. Single-slice and empty-timeline projects both go through
+/// this path (N=1 produces `concat=n=1`; empty timelines synthesize a
+/// full-source slice).
 class GifExportPipeline {
   GifExportPipeline({
     required this.sourcePath,
@@ -42,7 +50,6 @@ class GifExportPipeline {
     required this.cursorRecording,
     required this.projectState,
     required this.settings,
-    this.trim,
   }) {
     if (settings.format != ExportFormat.gif) {
       throw ArgumentError.value(
@@ -59,7 +66,6 @@ class GifExportPipeline {
   final CursorRecording cursorRecording;
   final EditorProjectState projectState;
   final ExportSettings settings;
-  final TrimSelection? trim;
 
   // Holds the directory created for the palette temp file so we can
   // delete it recursively in the finally block (fixes the dir-leak that
@@ -112,30 +118,21 @@ class GifExportPipeline {
 
     final paletteSettings = gifPaletteSettings(settings.compression);
 
-    // Speed + fade are video-only for GIF (no audio track). Computed once and
-    // spliced into both pass-1 (palettegen) and pass-2 (paletteuse) chains.
-    // Slice-editor model: these live on the timeline's first clip slice;
-    // pipelines stay single-slice for now.
-    final clip0 = _firstClipOrEmpty(projectState);
-    final speed = clip0.playbackSpeed;
-    final fadeIn = clip0.fadeIn;
-    final fadeOut = clip0.fadeOut;
-    final inputDurSec = trim != null
-        ? trim!.duration.inMicroseconds / 1000000
-        : (probed.durationSec ?? 0);
-    final outputDurSec = speed != 0 ? inputDurSec / speed : inputDurSec;
-    final outputDuration =
-        Duration(microseconds: (outputDurSec * 1000000).round());
-    final fadeOutStart =
-        (outputDuration > fadeOut) ? outputDuration - fadeOut : Duration.zero;
-    final extraVideoFilters = <String>[
-      if (speed != 1.0) setptsForSpeed(speed),
-      if (fadeIn > Duration.zero) 'fade=t=in:st=0:d=${ffSeconds(fadeIn)}',
-      if (fadeOut > Duration.zero && outputDuration > Duration.zero)
-        'fade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(fadeOut)}',
-    ];
-    final extraVideo =
-        extraVideoFilters.isEmpty ? '' : '${extraVideoFilters.join(',')},';
+    // Resolve the slice list for the filter graph. An empty timeline (no
+    // saved editor project, B-era recordings) gets a synthetic full-source
+    // slice so the N-slice filter graph degenerates to a clean
+    // concat=n=1 + scale/pad + palette chain. Mirrors ExportPipeline's
+    // _ensureSlices helper.
+    final sourceDuration = probed.durationSec != null
+        ? Duration(microseconds: (probed.durationSec! * 1000000).round())
+        : Duration.zero;
+    final slicedState = _ensureSlices(projectState, sourceDuration);
+
+    // Per-slice video graph; GIFs strip audio so the helper sees no streams.
+    final graph = buildExportFilterGraph(
+      state: slicedState,
+      audioStreams: const [],
+    );
 
     final palettePath = _makePaletteTmpPath();
 
@@ -157,6 +154,12 @@ class GifExportPipeline {
         fps: fps,
       ));
 
+      final pass1FilterComplex = buildGifPass1FilterComplex(
+        videoGraph: graph,
+        outWidth: outWidth,
+        outHeight: outHeight,
+        paletteSettings: paletteSettings,
+      );
       final pass1Args = [
         '-loglevel', 'error',
         '-y',
@@ -165,11 +168,8 @@ class GifExportPipeline {
         '-s', '${compositor1.totalSize.width.toInt()}x${compositor1.totalSize.height.toInt()}',
         '-r', '$fps',
         '-i', '-',
-        '-vf',
-        'scale=${outWidth}x$outHeight:force_original_aspect_ratio=decrease,'
-            'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black,'
-            '$extraVideo'
-            'palettegen=max_colors=${paletteSettings.maxColors}:stats_mode=full',
+        '-filter_complex', pass1FilterComplex,
+        '-map', '[outpal]',
         palettePath,
       ];
       AppLogger.ffmpeg.d('gif pass1: $ffmpegBin ${pass1Args.join(" ")}');
@@ -190,31 +190,40 @@ class GifExportPipeline {
       );
       _activeDecoder = decoder1;
 
+      var pass1StdinClosed = false;
       try {
         var index = 0;
         await for (final raw in decoder1.frames()) {
           if (cancelToken?.isCancelled ?? false) {
             throw const ExportCancelledException();
           }
+          // Decoder emits all source frames at source-time; per-slice
+          // trimming happens inside the filter_complex via per-slice
+          // `trim=trimStart:trimEnd` nodes built by the N-slice helper.
           final tsMicros = (1000000 * index) ~/ fps;
           index++;
-          // The decoder no longer trims (FfmpegDecoder dropped its `trim`
-          // field as part of the N-slice MP4 refactor). When a top-level
-          // trim is set, skip source frames outside the window in dart
-          // before they hit the compositor / palettegen.
-          if (trim != null) {
-            final sourcePos = Duration(microseconds: tsMicros);
-            if (sourcePos < trim!.start) continue;
-            if (sourcePos >= trim!.end) break;
-          }
           compositeSw1.start();
           final composed = await compositor1.compose(
             bgra: raw,
             position: Duration(microseconds: tsMicros),
           );
           compositeSw1.stop();
-          proc1.stdin.add(composed);
-          await proc1.stdin.flush();
+          if (pass1StdinClosed) continue;
+          try {
+            proc1.stdin.add(composed);
+            await proc1.stdin.flush();
+          } on SocketException {
+            // ffmpeg closed stdin (filter trim satisfied, palettegen done).
+            // Same cooperative-exit logic as ExportPipeline. Stop pushing
+            // frames but keep the loop alive so the decoder drains.
+            pass1StdinClosed = true;
+            decoder1.kill();
+            continue;
+          } on FileSystemException {
+            pass1StdinClosed = true;
+            decoder1.kill();
+            continue;
+          }
           pass1Frames++;
           if (onProgress != null && expectedFrames != null && expectedFrames > 0) {
             onProgress((pass1Frames / expectedFrames * 0.5).clamp(0.0, 0.5));
@@ -222,7 +231,13 @@ class GifExportPipeline {
         }
       } finally {
         await compositor1.dispose();
-        await proc1.stdin.close();
+        if (!pass1StdinClosed) {
+          try {
+            await proc1.stdin.close();
+          } catch (_) {
+            // ffmpeg already closed its end; nothing to do.
+          }
+        }
       }
 
       final exit1 = await proc1.exitCode;
@@ -245,6 +260,12 @@ class GifExportPipeline {
         fps: fps,
       ));
 
+      final pass2FilterComplex = buildGifPass2FilterComplex(
+        videoGraph: graph,
+        outWidth: outWidth,
+        outHeight: outHeight,
+        paletteSettings: paletteSettings,
+      );
       final pass2Args = [
         '-loglevel', 'error',
         '-y',
@@ -254,11 +275,8 @@ class GifExportPipeline {
         '-r', '$fps',
         '-i', '-',
         '-i', palettePath,
-        '-lavfi',
-        '[0:v]scale=${outWidth}x$outHeight:force_original_aspect_ratio=decrease,'
-            'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black,'
-            '${extraVideo}null [scaled];'
-            '[scaled][1:v]paletteuse=dither=${paletteSettings.dither}',
+        '-filter_complex', pass2FilterComplex,
+        '-map', '[gifout]',
         '-loop', '0',
         outputPath,
       ];
@@ -280,6 +298,7 @@ class GifExportPipeline {
       );
       _activeDecoder = decoder2;
 
+      var pass2StdinClosed = false;
       try {
         try {
           var index = 0;
@@ -289,20 +308,25 @@ class GifExportPipeline {
             }
             final tsMicros = (1000000 * index) ~/ fps;
             index++;
-            // Trim-window dart-side skip (see pass 1 for context).
-            if (trim != null) {
-              final sourcePos = Duration(microseconds: tsMicros);
-              if (sourcePos < trim!.start) continue;
-              if (sourcePos >= trim!.end) break;
-            }
             compositeSw2.start();
             final composed = await compositor2.compose(
               bgra: raw,
               position: Duration(microseconds: tsMicros),
             );
             compositeSw2.stop();
-            proc2.stdin.add(composed);
-            await proc2.stdin.flush();
+            if (pass2StdinClosed) continue;
+            try {
+              proc2.stdin.add(composed);
+              await proc2.stdin.flush();
+            } on SocketException {
+              pass2StdinClosed = true;
+              decoder2.kill();
+              continue;
+            } on FileSystemException {
+              pass2StdinClosed = true;
+              decoder2.kill();
+              continue;
+            }
             pass2Frames++;
             if (onProgress != null && expectedFrames != null && expectedFrames > 0) {
               onProgress(
@@ -311,7 +335,13 @@ class GifExportPipeline {
           }
         } finally {
           await compositor2.dispose();
-          await proc2.stdin.close();
+          if (!pass2StdinClosed) {
+            try {
+              await proc2.stdin.close();
+            } catch (_) {
+              // ffmpeg already closed its end; nothing to do.
+            }
+          }
         }
 
         final exit2 = await proc2.exitCode;
@@ -394,9 +424,6 @@ class GifExportPipeline {
   }
 
   int? _expectedFrames(FfmpegProbeResult probed, int fps) {
-    if (trim != null) {
-      return (trim!.duration.inMicroseconds / 1000000 * fps).round();
-    }
     final dur = probed.durationSec;
     if (dur != null && dur > 0) return (dur * fps).round();
     final nb = probed.nbFrames;
@@ -415,13 +442,63 @@ class GifExportPipeline {
   }
 }
 
-/// Returns the first slice in [state.timeline.clips], or a zero-length default
-/// when the timeline is empty. Centralises the "single-slice bridge" the
-/// export pipelines use to read playback/fade fields off the timeline.
-ClipSlice _firstClipOrEmpty(EditorProjectState state) {
-  final clips = state.timeline.clips;
-  if (clips.isEmpty) {
-    return ClipSlice(cutStart: Duration.zero, cutEnd: Duration.zero);
-  }
-  return clips.first;
+/// Ensures [state.timeline.clips] is non-empty for filter-graph construction.
+/// B-era recordings (no saved editor project) have an empty slice list —
+/// synthesize a full-source slice so the N-slice video graph degenerates
+/// cleanly to N=1. Mirrors the same helper in `export_pipeline.dart`.
+EditorProjectState _ensureSlices(
+  EditorProjectState state,
+  Duration sourceDuration,
+) {
+  if (state.timeline.clips.isNotEmpty) return state;
+  final span = sourceDuration > Duration.zero
+      ? sourceDuration
+      : const Duration(milliseconds: 1);
+  return state.copyWith(
+    timeline: state.timeline.copyWith(
+      clips: [
+        ClipSlice(cutStart: Duration.zero, cutEnd: span),
+      ],
+    ),
+  );
+}
+
+/// Pass-1 `-filter_complex` payload: per-slice video chains + concat from
+/// the N-slice helper → `[outv]`, then a scale/pad stage to the export
+/// resolution, then `palettegen` → `[outpal]`. The encoder maps `[outpal]`
+/// to write `palette.png`.
+@visibleForTesting
+String buildGifPass1FilterComplex({
+  required NSliceFilterGraph videoGraph,
+  required int outWidth,
+  required int outHeight,
+  required GifPaletteSettings paletteSettings,
+}) {
+  final videoLabel = videoGraph.videoMapLabel ?? '[outv]';
+  return '${videoGraph.filterComplex};'
+      '${videoLabel}scale=$outWidth:$outHeight:'
+      'force_original_aspect_ratio=decrease,'
+      'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black,'
+      'palettegen=max_colors=${paletteSettings.maxColors}:stats_mode=full'
+      '[outpal]';
+}
+
+/// Pass-2 `-filter_complex` payload: per-slice video chains + concat from
+/// the N-slice helper → `[outv]`, then a scale/pad stage → `[scaled]`,
+/// then `paletteuse` against the palette PNG fed as `[1:v]` → `[gifout]`.
+@visibleForTesting
+String buildGifPass2FilterComplex({
+  required NSliceFilterGraph videoGraph,
+  required int outWidth,
+  required int outHeight,
+  required GifPaletteSettings paletteSettings,
+}) {
+  final videoLabel = videoGraph.videoMapLabel ?? '[outv]';
+  return '${videoGraph.filterComplex};'
+      '${videoLabel}scale=$outWidth:$outHeight:'
+      'force_original_aspect_ratio=decrease,'
+      'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black'
+      '[scaled];'
+      '[scaled][1:v]paletteuse=dither=${paletteSettings.dither}'
+      '[gifout]';
 }

@@ -8,7 +8,6 @@ import 'package:slipreel_engine/models/compression_bitrate.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
-import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
@@ -268,7 +267,10 @@ void main() {
       }
     });
 
-    test('trimmed GIF export produces a non-empty valid GIF', () async {
+    test('per-slice trim GIF export produces a non-empty valid GIF', () async {
+      // B-era TrimSelection field is gone; per-slice trimStart/trimEnd
+      // replaces it. This pins the same behavioural outcome (a trimmed
+      // GIF still produces valid output) for the N-slice path.
       final tmp = Directory.systemTemp.createTempSync('gif_pipe_trim');
       final outPath = '${tmp.path}/out.gif';
 
@@ -278,12 +280,19 @@ void main() {
           outputPath: outPath,
           sourceMetadata: _metadata(),
           cursorRecording: CursorRecording(),
-          projectState: _bareState(),
-          settings: _gifSettings(),
-          trim: TrimSelection(
-            start: Duration.zero,
-            end: const Duration(milliseconds: 500),
+          projectState: _bareState().copyWith(
+            timeline: Timeline(
+              clips: [
+                ClipSlice(
+                  cutStart: Duration.zero,
+                  cutEnd: const Duration(seconds: 1),
+                  trimStart: Duration.zero,
+                  trimEnd: const Duration(milliseconds: 500),
+                ),
+              ],
+            ),
           ),
+          settings: _gifSettings(),
         );
 
         final summary = await pipeline.run();
