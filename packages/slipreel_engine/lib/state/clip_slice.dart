@@ -87,19 +87,29 @@ class ClipSlice {
     return ClipSlice(
       start: Duration(microseconds: startRaw.toInt()),
       end: Duration(microseconds: endRaw.toInt()),
-      playbackSpeed: (json['playbackSpeed'] as num?)?.toDouble() ?? 1.0,
+      playbackSpeed: json['playbackSpeed'] is num
+          ? (json['playbackSpeed'] as num).toDouble()
+          : 1.0,
       fadeIn: json['fadeInMicros'] is num
           ? Duration(microseconds: (json['fadeInMicros'] as num).toInt())
           : Duration.zero,
       fadeOut: json['fadeOutMicros'] is num
           ? Duration(microseconds: (json['fadeOutMicros'] as num).toInt())
           : Duration.zero,
-      micGainPercent: (json['micGainPercent'] as num?)?.toInt() ?? 100,
-      micMuted: (json['micMuted'] as bool?) ?? false,
-      systemGainPercent: (json['systemGainPercent'] as num?)?.toInt() ?? 100,
-      systemMuted: (json['systemMuted'] as bool?) ?? false,
-      hideCursor: (json['hideCursor'] as bool?) ?? false,
-      disableSmoothMouse: (json['disableSmoothMouse'] as bool?) ?? false,
+      micGainPercent: json['micGainPercent'] is num
+          ? (json['micGainPercent'] as num).toInt()
+          : 100,
+      micMuted: json['micMuted'] is bool ? json['micMuted'] as bool : false,
+      systemGainPercent: json['systemGainPercent'] is num
+          ? (json['systemGainPercent'] as num).toInt()
+          : 100,
+      systemMuted:
+          json['systemMuted'] is bool ? json['systemMuted'] as bool : false,
+      hideCursor:
+          json['hideCursor'] is bool ? json['hideCursor'] as bool : false,
+      disableSmoothMouse: json['disableSmoothMouse'] is bool
+          ? json['disableSmoothMouse'] as bool
+          : false,
     );
   }
 

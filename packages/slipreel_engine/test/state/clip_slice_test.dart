@@ -98,5 +98,29 @@ void main() {
         throwsFormatException,
       );
     });
+
+    test('fromJson tolerates non-numeric optional fields by using defaults',
+        () {
+      final s = ClipSlice.fromJson({
+        'startMicros': 0,
+        'endMicros': 10_000_000,
+        'playbackSpeed': 'fast',     // wrong type
+        'micMuted': 'yes',           // wrong type
+        'micGainPercent': null,      // wrong type
+      });
+      expect(s.playbackSpeed, 1.0);
+      expect(s.micMuted, isFalse);
+      expect(s.micGainPercent, 100);
+    });
+
+    test('copyWith re-applies the gain clamp', () {
+      final s = ClipSlice(
+        start: Duration.zero,
+        end: const Duration(seconds: 10),
+      );
+      final next = s.copyWith(micGainPercent: 999, systemGainPercent: -5);
+      expect(next.micGainPercent, 200);
+      expect(next.systemGainPercent, 0);
+    });
   });
 }
