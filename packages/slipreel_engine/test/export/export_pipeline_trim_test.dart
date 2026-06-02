@@ -134,4 +134,61 @@ void main() {
         reason: 'two-slice concat should be ~0.8s');
     tmp.deleteSync(recursive: true);
   });
+
+  // Regression guard: the cooperative early-exit path relies on the encoder's
+  // SocketException-as-stdin-closed translation + the pipeline's
+  // decoder.kill()/queue.close() teardown. When the filter window is much
+  // smaller than the decoded source, this path is exercised aggressively —
+  // ffmpeg closes stdin almost immediately after the first ~100ms of frames
+  // satisfy the trim, while the decoder still has ~900ms of frames queued
+  // up. The output MP4 must still finalize cleanly at ~100ms.
+  //
+  // If this test fails, suspect: (a) the decoder's exit-code check now
+  // treats SIGKILL-after-explicit-kill() as a hard failure instead of a
+  // clean cooperative teardown, or (b) the encoder catches more than the
+  // narrowed SocketException/FileSystemException pair (regressing Fix 1).
+  test('aggressively trimmed slice (~100ms window inside a much longer cut) '
+      'finalizes a valid MP4 via cooperative early-exit', () async {
+    final tmp = Directory.systemTemp.createTempSync('aggressive_trim');
+    final outPath = '${tmp.path}/out.mp4';
+
+    // Fixture is ~1s. Cut declares [0, 1s] (the immutable source range),
+    // trim cuts hard to [0, 100ms]. Decoder reads all 30 source frames;
+    // the filter graph only wants ~3 frames; ffmpeg closes stdin early.
+    final state = _noneFrameState(clips: [
+      ClipSlice(
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 1),
+        trimStart: Duration.zero,
+        trimEnd: const Duration(milliseconds: 100),
+      ),
+    ]);
+
+    await ExportPipeline(
+      sourcePath: 'test/fixtures/sample_recording.mp4',
+      outputPath: outPath,
+      sourceMetadata: RecordingMetadata(
+        isPureSource: true,
+        recordedAt: DateTime.now(),
+        widthPx: 320,
+        heightPx: 240,
+        fps: 30,
+      ),
+      cursorRecording: CursorRecording(),
+      projectState: state,
+      settings: _settings,
+    ).run();
+
+    final outFile = File(outPath);
+    expect(outFile.existsSync(), isTrue,
+        reason: 'cooperative early-exit must still produce an output file');
+    expect(outFile.lengthSync(), greaterThan(1000),
+        reason: 'output must be a real MP4, not a truncated fragment');
+
+    final probed = await ffmpegProbe(path: outPath, metadataFps: 30);
+    expect(probed.durationSec, isNotNull);
+    expect(probed.durationSec!, inInclusiveRange(0.05, 0.15),
+        reason: 'aggressive trim window of 100ms ± 50ms slop');
+    tmp.deleteSync(recursive: true);
+  });
 }

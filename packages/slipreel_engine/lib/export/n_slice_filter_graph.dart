@@ -101,60 +101,50 @@ NSliceFilterGraph buildExportFilterGraph({
   // Audio: per-track per-slice chains, concat per track, then amix the two
   // tracks. Muted/0% slices still contribute volume=0 to keep concat input
   // counts aligned with video.
-  final hasMic = micIdx != null && _anySliceUsesMic(clips);
-  final hasSys = sysIdx != null && _anySliceUsesSys(clips);
+  final hasMic = micIdx != null;
+  final hasSys = sysIdx != null;
 
   String? audioMapLabel;
   if (hasMic && hasSys) {
-    for (var i = 0; i < clips.length; i++) {
-      chains.add(_audioChainFor(
-        clips[i], i,
-        streamLabel: '[1:a:$micIdx]',
-        chainTag: 'a_mic',
-        gainPercent: clips[i].micGainPercent,
-        muted: clips[i].micMuted,
-      ));
-    }
-    chains.add('${_labels('a_mic', clips.length)}'
-        'concat=n=${clips.length}:v=0:a=1[mic_track]');
-    for (var i = 0; i < clips.length; i++) {
-      chains.add(_audioChainFor(
-        clips[i], i,
-        streamLabel: '[1:a:$sysIdx]',
-        chainTag: 'a_sys',
-        gainPercent: clips[i].systemGainPercent,
-        muted: clips[i].systemMuted,
-      ));
-    }
-    chains.add('${_labels('a_sys', clips.length)}'
-        'concat=n=${clips.length}:v=0:a=1[sys_track]');
+    // Both tracks: each concats into its own intermediate label so they can
+    // be amixed at the end.
+    chains.addAll(_trackChainBlock(
+      clips: clips,
+      streamLabel: '[1:a:$micIdx]',
+      chainTag: 'a_mic',
+      outLabel: '[mic_track]',
+      gainOf: (c) => c.micGainPercent,
+      mutedOf: (c) => c.micMuted,
+    ));
+    chains.addAll(_trackChainBlock(
+      clips: clips,
+      streamLabel: '[1:a:$sysIdx]',
+      chainTag: 'a_sys',
+      outLabel: '[sys_track]',
+      gainOf: (c) => c.systemGainPercent,
+      mutedOf: (c) => c.systemMuted,
+    ));
     chains.add('[mic_track][sys_track]amix=inputs=2:normalize=0[outa]');
     audioMapLabel = '[outa]';
   } else if (hasMic) {
-    for (var i = 0; i < clips.length; i++) {
-      chains.add(_audioChainFor(
-        clips[i], i,
-        streamLabel: '[1:a:$micIdx]',
-        chainTag: 'a_mic',
-        gainPercent: clips[i].micGainPercent,
-        muted: clips[i].micMuted,
-      ));
-    }
-    chains.add('${_labels('a_mic', clips.length)}'
-        'concat=n=${clips.length}:v=0:a=1[outa]');
+    chains.addAll(_trackChainBlock(
+      clips: clips,
+      streamLabel: '[1:a:$micIdx]',
+      chainTag: 'a_mic',
+      outLabel: '[outa]',
+      gainOf: (c) => c.micGainPercent,
+      mutedOf: (c) => c.micMuted,
+    ));
     audioMapLabel = '[outa]';
   } else if (hasSys) {
-    for (var i = 0; i < clips.length; i++) {
-      chains.add(_audioChainFor(
-        clips[i], i,
-        streamLabel: '[1:a:$sysIdx]',
-        chainTag: 'a_sys',
-        gainPercent: clips[i].systemGainPercent,
-        muted: clips[i].systemMuted,
-      ));
-    }
-    chains.add('${_labels('a_sys', clips.length)}'
-        'concat=n=${clips.length}:v=0:a=1[outa]');
+    chains.addAll(_trackChainBlock(
+      clips: clips,
+      streamLabel: '[1:a:$sysIdx]',
+      chainTag: 'a_sys',
+      outLabel: '[outa]',
+      gainOf: (c) => c.systemGainPercent,
+      mutedOf: (c) => c.systemMuted,
+    ));
     audioMapLabel = '[outa]';
   }
 
@@ -175,14 +165,32 @@ String _labels(String tag, int n) {
   return sb.toString();
 }
 
-bool _anySliceUsesMic(List<ClipSlice> clips) {
-  // Mic always present in the graph if the source has a mic stream — muted
-  // slices keep their slot via volume=0 so concat input counts align with
-  // the video chains.
-  return clips.isNotEmpty;
+/// Per-track block: one per-slice atrim/asetpts/atempo/volume/afade chain
+/// for each slice, followed by a `concat=n=N:v=0:a=1` collapsing them all
+/// into [outLabel]. The caller picks the labels (mic vs system) and the
+/// gain/muted accessors; this function is otherwise track-agnostic.
+List<String> _trackChainBlock({
+  required List<ClipSlice> clips,
+  required String streamLabel,
+  required String chainTag,
+  required String outLabel,
+  required int Function(ClipSlice) gainOf,
+  required bool Function(ClipSlice) mutedOf,
+}) {
+  final out = <String>[];
+  for (var i = 0; i < clips.length; i++) {
+    out.add(_audioChainFor(
+      clips[i], i,
+      streamLabel: streamLabel,
+      chainTag: chainTag,
+      gainPercent: gainOf(clips[i]),
+      muted: mutedOf(clips[i]),
+    ));
+  }
+  out.add('${_labels(chainTag, clips.length)}'
+      'concat=n=${clips.length}:v=0:a=1$outLabel');
+  return out;
 }
-
-bool _anySliceUsesSys(List<ClipSlice> clips) => clips.isNotEmpty;
 
 String _videoChainFor(ClipSlice s, int i) {
   final tsSec = ffSeconds(s.trimStart);

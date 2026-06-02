@@ -243,8 +243,9 @@ void main() {
       // Both mic chains still emitted
       expect(graph.filterComplex, contains('[a_mic0]'));
       expect(graph.filterComplex, contains('[a_mic1]'));
-      // Second slice's mic chain pins volume=0
-      expect(graph.filterComplex, contains('volume=0'));
+      // Second slice's mic chain pins volume=0 — match only exact zero so a
+      // fractional volume like volume=0.5 can't accidentally satisfy this.
+      expect(graph.filterComplex, matches(RegExp(r'volume=0(\D|$)')));
       // Concat across slices stays at N=2, not 1
       expect(
         graph.filterComplex,

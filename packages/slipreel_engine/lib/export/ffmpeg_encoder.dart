@@ -211,7 +211,12 @@ class FfmpegEncoder {
   /// closed the pipe (e.g., the filter graph trimmed the output and ffmpeg
   /// already has enough frames). The caller should stop writing further
   /// frames when this returns false — pushing more produces "Broken pipe"
-  /// SocketExceptions on macOS.
+  /// errors on macOS.
+  ///
+  /// Only broken-pipe errors are caught and translated to a `false`
+  /// return. Real encoder failures (OOM, type errors, malformed state)
+  /// must propagate so the pipeline's `eagerError: true` tear-down sees
+  /// the actual cause instead of a silent truncated output.
   Future<bool> writeFrame(Uint8List bgra) async {
     final p = _process;
     if (p == null) throw StateError('FfmpegEncoder.writeFrame before start');
@@ -220,9 +225,19 @@ class FfmpegEncoder {
       p.stdin.add(bgra);
       await p.stdin.flush();
       return true;
-    } on Object catch (e) {
+    } on SocketException catch (e) {
       // ffmpeg closed stdin (filter trim satisfied, process exiting).
       // Mark and let the caller drain instead of crashing the pipeline.
+      _stdinClosed = true;
+      AppLogger.ffmpeg
+          .d('FfmpegEncoder: stdin closed mid-write (likely trim-satisfied): $e');
+      return false;
+    } on FileSystemException catch (e) {
+      // Some Dart versions on macOS surface broken pipes as
+      // FileSystemException("Write failed", OSError(errno: 32)). Treat
+      // those identically to SocketException; anything else (a real
+      // disk-level error) still propagates because writeFrame doesn't
+      // touch the filesystem.
       _stdinClosed = true;
       AppLogger.ffmpeg
           .d('FfmpegEncoder: stdin closed mid-write (likely trim-satisfied): $e');

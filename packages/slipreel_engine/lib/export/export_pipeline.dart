@@ -295,6 +295,15 @@ class ExportPipeline {
           // ffmpeg closed stdin early — typically because the filter graph's
           // trim window is satisfied and ffmpeg has all frames it needs.
           // Drop any remaining frames; tear down the upstream stages.
+          //
+          // Correctness here relies on FfmpegDecoder treating `kill()`
+          // followed by SIGKILL-exit as a clean stream termination (the
+          // `frames()` stream ends cleanly rather than raising). The
+          // aggressive-trim regression test in
+          // export_pipeline_trim_test.dart pins that contract; if a
+          // future decoder refactor makes SIGKILL surface as an exception
+          // here, the test will fail and the cooperative teardown will
+          // need an explicit catch.
           decoder.kill();
           decodedQueue.close();
           composedQueue.close();
