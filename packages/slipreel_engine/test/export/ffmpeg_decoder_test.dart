@@ -2,7 +2,6 @@
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/export/ffmpeg_decoder.dart';
-import 'package:slipreel_engine/models/trim_selection.dart';
 
 void main() {
   group('FfmpegDecoder', () {
@@ -48,30 +47,24 @@ void main() {
     });
   });
 
-  group('FfmpegDecoder trim args', () {
-    test('no trim => -vf is just fps', () {
-      final d = FfmpegDecoder(
-          inputPath: 'in.mp4', width: 320, height: 240, cfrFps: 30);
-      final vfIndex = d.argsForTesting().indexOf('-vf');
-      expect(vfIndex, greaterThanOrEqualTo(0));
-      expect(d.argsForTesting()[vfIndex + 1], 'fps=30');
-    });
-
-    test('trim => -vf has trim,setpts,fps in order', () {
+  group('FfmpegDecoder args', () {
+    test('no cfrFps => no -vf', () {
       final d = FfmpegDecoder(
         inputPath: 'in.mp4',
         width: 320,
         height: 240,
-        cfrFps: 30,
-        trim: TrimSelection(
-          start: const Duration(seconds: 1),
-          end: const Duration(seconds: 3),
-        ),
       );
       final args = d.argsForTesting();
-      final vf = args[args.indexOf('-vf') + 1];
-      expect(vf,
-          'trim=start=1.000000:duration=2.000000,setpts=PTS-STARTPTS,fps=30');
+      expect(args.contains('-vf'), isFalse);
+    });
+
+    test('cfrFps => -vf is just fps', () {
+      final d = FfmpegDecoder(
+          inputPath: 'in.mp4', width: 320, height: 240, cfrFps: 30);
+      final args = d.argsForTesting();
+      final vfIndex = args.indexOf('-vf');
+      expect(vfIndex, greaterThanOrEqualTo(0));
+      expect(args[vfIndex + 1], 'fps=30');
     });
   });
 }

@@ -2,10 +2,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import '../models/trim_selection.dart';
 import '../utils/app_logger.dart';
-import 'audio_mix_args.dart';
-import 'ffmpeg_filters.dart';
 import 'ffmpeg_resolver.dart';
 
 /// Pixel format of the raw frames arriving on the encoder's stdin.
@@ -25,9 +22,25 @@ enum FfmpegPixelFormat {
 /// Spawns `ffmpeg` to encode raw BGRA/RGBA frames piped into its stdin.
 /// Tries `h264_videotoolbox` first; falls back to `libx264` if startup fails.
 ///
-/// [sourceWidth]/[sourceHeight] describe the raw frames arriving on stdin
-/// (decoder output). [width]/[height] are the output dimensions. When they
-/// differ a `-vf scale` filter is inserted automatically.
+/// Two modes:
+///
+///   1. **Filter-graph mode** (used by [ExportPipeline] for N-slice export).
+///      Caller passes [filterComplex] (a full `-filter_complex` payload built
+///      by `buildExportFilterGraph`) plus output labels. The encoder routes
+///      the composed-frame stdin as input `[0]` and (when [audioSourcePath]
+///      is set) the audio source MP4 as input `[1]`, then maps
+///      [videoOutLabel] for video and (when set) [audioOutLabel] for audio.
+///      The filter graph owns scale/pad/trim/setpts/fade/atempo/concat/amix —
+///      the encoder just routes inputs and outputs.
+///
+///   2. **Plain-scale mode** (back-compat for tests and any future video-only
+///      caller that doesn't need slice-aware filters). [filterComplex] is
+///      null, the encoder builds a `-vf scale=...,pad=...,setsar=1` chain
+///      automatically when output dimensions differ from source, and no
+///      audio is muxed.
+///
+/// Single-slice and N-slice MP4 exports both run through filter-graph mode
+/// today (N=1 just produces `concat=n=1`).
 class FfmpegEncoder {
   final String outputPath;
 
@@ -50,34 +63,31 @@ class FfmpegEncoder {
   /// Pixel format of frames arriving on stdin.
   final FfmpegPixelFormat pixelFormat;
 
-  /// Optional path to the source MP4 carrying the recording's audio. When an
-  /// [audioMixPlan] with audio is supplied, its audio streams are mixed and
-  /// re-encoded to AAC into the output; otherwise the output has no audio.
+  /// Optional path to the source MP4 carrying the recording's audio. Mapped
+  /// to input `[1]` of the filter graph; ignored when [audioOutLabel] is
+  /// null (no audio) or [filterComplex] is null (plain-scale mode).
   final String? audioSourcePath;
 
-  /// When non-null and [AudioMixPlan.hasAudio], the export muxes audio from
-  /// [audioSourcePath] through this ffmpeg filtergraph (per-track volume +
-  /// amix downmix) instead of copying. Null/`!hasAudio` ⇒ video-only output.
-  final AudioMixPlan? audioMixPlan;
+  /// Full `-filter_complex` payload. When set, the encoder runs in
+  /// filter-graph mode and bypasses the built-in `-vf scale/pad` shim. The
+  /// graph must produce [videoOutLabel] and (optionally) [audioOutLabel].
+  ///
+  /// `null` ⇒ plain-scale mode (back-compat); the encoder builds its own
+  /// `-vf` chain from output/source dimensions, with no audio.
+  final String? filterComplex;
 
-  /// When set, the audio input is input-seek-trimmed (`-ss`/`-t`) to the same
-  /// range as the (already-trimmed) video so the muxed output stays A/V-synced
-  /// and the container length matches the trim. Null ⇒ full-length audio.
-  final TrimSelection? trim;
+  /// `-map` target for video. Required when [filterComplex] is set; ignored
+  /// in plain-scale mode.
+  final String? videoOutLabel;
 
-  /// Playback-speed factor applied at encode (2.0 ⇒ 2× faster). 1.0 ⇒ no-op.
-  /// Drives `setpts` on the video chain and `atempo` on the audio mix.
-  final double playbackSpeed;
+  /// `-map` target for audio. When non-null, the encoder also maps audio
+  /// and emits `-c:a aac -b:a {audioBitrateKbps}k`. Null ⇒ video-only.
+  /// Ignored in plain-scale mode (audio is never muxed there).
+  final String? audioOutLabel;
 
-  /// Fade-in / fade-out durations applied at encode. Zero ⇒ no fade.
-  /// Drive `fade`/`afade` on the video/audio chains.
-  final Duration fadeIn;
-  final Duration fadeOut;
-
-  /// Duration of the encoded output (after trim + speed). Required to position
-  /// the fade-out (`st = outputDuration - fadeOut`); when null, fade-out is
-  /// skipped.
-  final Duration? outputDuration;
+  /// AAC bitrate for the muxed audio track. Defaults to 192 kbps (matches
+  /// the historical `kMixedAudioBitrateKbps` from `audio_mix_args.dart`).
+  final int audioBitrateKbps;
 
   Process? _process;
   StringBuffer? _stderrBuffer;
@@ -97,12 +107,10 @@ class FfmpegEncoder {
     required this.fps,
     required this.bitrateKbps,
     this.audioSourcePath,
-    this.audioMixPlan,
-    this.trim,
-    this.playbackSpeed = 1.0,
-    this.fadeIn = Duration.zero,
-    this.fadeOut = Duration.zero,
-    this.outputDuration,
+    this.filterComplex,
+    this.videoOutLabel,
+    this.audioOutLabel,
+    this.audioBitrateKbps = 192,
     int? sourceWidth,
     int? sourceHeight,
     int? sourceFps,
@@ -112,9 +120,9 @@ class FfmpegEncoder {
         sourceFps = sourceFps ?? fps;
 
   List<String> _argsFor(String codec) {
-    final plan = audioMixPlan;
-    final hasAudio = audioSourcePath != null && (plan?.hasAudio ?? false);
-    final needsScale = width != sourceWidth || height != sourceHeight;
+    final useGraph = filterComplex != null && filterComplex!.isNotEmpty;
+    final hasAudio =
+        useGraph && audioOutLabel != null && audioSourcePath != null;
 
     final args = <String>[
       '-loglevel', 'error',
@@ -126,79 +134,40 @@ class FfmpegEncoder {
       '-i', '-',
     ];
 
-    // Fade-out begins at outputDuration - fadeOut, clamped to >= 0 so a fade
-    // longer than the (trim/speed-shortened) output doesn't start negative
-    // (which would make the clip open already partially faded).
-    final fadeOutStart = (outputDuration != null && outputDuration! > fadeOut)
-        ? outputDuration! - fadeOut
-        : Duration.zero;
-
-    // Video filter chain: scale/pad (when output res differs), then speed
-    // (setpts) and fades, then setsar (only needed when we scaled/padded).
-    final videoFilters = <String>[
-      if (needsScale) ...[
-        'scale=$width:$height:force_original_aspect_ratio=decrease',
-        'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black',
-      ],
-      if (playbackSpeed != 1.0) setptsForSpeed(playbackSpeed),
-      if (fadeIn > Duration.zero) 'fade=t=in:st=0:d=${ffSeconds(fadeIn)}',
-      if (fadeOut > Duration.zero && outputDuration != null)
-        'fade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(fadeOut)}',
-      if (needsScale) 'setsar=1',
-    ];
-    final videoChain = videoFilters.join(',');
-
-    if (hasAudio) {
-      // Audio present: route video + audio through one -filter_complex so we
-      // never mix -vf with -filter_complex (which can conflict).
-      // Input-seek the audio to the trim range so it matches the
-      // already-trimmed video; `[1:a:0]` in the mix plan then refers to the
-      // trimmed audio.
-      if (trim != null) {
-        args.addAll(['-ss', ffSeconds(trim!.start), '-t', ffSeconds(trim!.duration)]);
+    if (useGraph) {
+      if (hasAudio) {
+        args.addAll(['-i', audioSourcePath!]);
       }
-      args.addAll(['-i', audioSourcePath!]);
-      final vlabel =
-          videoChain.isEmpty ? '[0:v]null[vout]' : '[0:v]$videoChain[vout]';
-      // Audio post-processing (speed/fade) appended after the mix's [aout].
-      // The mix plan already trimmed the audio at the input (`-ss`/`-t`); these
-      // operate on the mix output, so they compose with the input trim.
-      final audioPost = <String>[
-        if (playbackSpeed != 1.0) speedAtempo(playbackSpeed),
-        if (fadeIn > Duration.zero) 'afade=t=in:st=0:d=${ffSeconds(fadeIn)}',
-        if (fadeOut > Duration.zero && outputDuration != null)
-          'afade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(fadeOut)}',
-      ];
-      final String audioMapLabel;
-      final String audioGraph;
-      if (audioPost.isEmpty) {
-        audioGraph = plan!.filterComplex!;
-        audioMapLabel = plan.mapLabel!;
-      } else {
-        audioGraph =
-            '${plan!.filterComplex!};${plan.mapLabel!}${audioPost.join(',')}[aoutx]';
-        audioMapLabel = '[aoutx]';
+      args.addAll(['-filter_complex', filterComplex!]);
+      args.addAll(['-map', videoOutLabel!]);
+      if (hasAudio) {
+        args.addAll(['-map', audioOutLabel!]);
       }
-      args.addAll(['-filter_complex', '$vlabel;$audioGraph']);
-      args.addAll(['-map', '[vout]', '-map', audioMapLabel]);
       args.addAll(
           ['-c:v', codec, '-b:v', '${bitrateKbps}k', '-pix_fmt', 'yuv420p']);
       args.addAll(['-r', '$fps']);
-      args.addAll(['-c:a', 'aac', '-b:a', '${plan.bitrateKbps}k']);
+      if (hasAudio) {
+        args.addAll(['-c:a', 'aac', '-b:a', '${audioBitrateKbps}k']);
+      }
     } else {
-      // Video only (today's path): -vf for the scale/speed/fade chain, no audio.
+      // Plain-scale back-compat path: simple -vf scale/pad when needed, no
+      // audio. Used by FfmpegEncoder unit tests and any video-only caller
+      // that doesn't need the N-slice filter graph.
+      final needsScale = width != sourceWidth || height != sourceHeight;
+      final videoFilters = <String>[
+        if (needsScale) ...[
+          'scale=$width:$height:force_original_aspect_ratio=decrease',
+          'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black',
+          'setsar=1',
+        ],
+      ];
       args.addAll(
           ['-c:v', codec, '-b:v', '${bitrateKbps}k', '-pix_fmt', 'yuv420p']);
-      if (videoChain.isNotEmpty) {
-        args.addAll(['-vf', videoChain]);
+      if (videoFilters.isNotEmpty) {
+        args.addAll(['-vf', videoFilters.join(',')]);
       }
       args.addAll(['-r', '$fps']);
     }
-    // Safety net: when trimming with audio, let the container length follow
-    // the shorter stream so audio overhang can't extend the file past the
-    // trimmed video. Only when trimming, to keep the no-trim arg shape that
-    // existing tests pin unchanged.
-    if (trim != null && hasAudio) args.add('-shortest');
     args.add(outputPath);
     return args;
   }
@@ -238,17 +207,42 @@ class FfmpegEncoder {
     _sw.start();
   }
 
-  Future<void> writeFrame(Uint8List bgra) async {
+  /// Returns true while ffmpeg is still consuming stdin; false once it has
+  /// closed the pipe (e.g., the filter graph trimmed the output and ffmpeg
+  /// already has enough frames). The caller should stop writing further
+  /// frames when this returns false — pushing more produces "Broken pipe"
+  /// SocketExceptions on macOS.
+  Future<bool> writeFrame(Uint8List bgra) async {
     final p = _process;
     if (p == null) throw StateError('FfmpegEncoder.writeFrame before start');
-    p.stdin.add(bgra);
-    await p.stdin.flush();
+    if (_stdinClosed) return false;
+    try {
+      p.stdin.add(bgra);
+      await p.stdin.flush();
+      return true;
+    } on Object catch (e) {
+      // ffmpeg closed stdin (filter trim satisfied, process exiting).
+      // Mark and let the caller drain instead of crashing the pipeline.
+      _stdinClosed = true;
+      AppLogger.ffmpeg
+          .d('FfmpegEncoder: stdin closed mid-write (likely trim-satisfied): $e');
+      return false;
+    }
   }
+
+  bool _stdinClosed = false;
 
   Future<void> finish() async {
     final p = _process;
     if (p == null) return;
-    await p.stdin.close();
+    if (!_stdinClosed) {
+      try {
+        await p.stdin.close();
+      } catch (_) {
+        // ffmpeg already exited and closed its end of the pipe.
+      }
+      _stdinClosed = true;
+    }
     final exit = await p.exitCode;
     _sw.stop();
     totalEncodeMs = _sw.elapsedMilliseconds;

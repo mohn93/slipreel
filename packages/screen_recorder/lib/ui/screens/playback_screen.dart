@@ -733,7 +733,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   cursorRecording: cursorRec,
                   projectState: _project,
                   settings: settings,
-                  trim: _trimSelection,
+                  // N-slice export: per-slice trim/speed/fade/audio come
+                  // from state.timeline.clips. The B-era top-level trim is
+                  // not threaded through MP4 export any more; GIF still
+                  // honours it pending its own N-slice generalization.
                 ).run(onProgress: onProgress, cancelToken: cancelToken);
         },
       );

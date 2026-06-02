@@ -187,7 +187,6 @@ class GifExportPipeline {
         width: srcWidth,
         height: srcHeight,
         cfrFps: fps,
-        trim: trim,
       );
       _activeDecoder = decoder1;
 
@@ -198,12 +197,20 @@ class GifExportPipeline {
             throw const ExportCancelledException();
           }
           final tsMicros = (1000000 * index) ~/ fps;
+          index++;
+          // The decoder no longer trims (FfmpegDecoder dropped its `trim`
+          // field as part of the N-slice MP4 refactor). When a top-level
+          // trim is set, skip source frames outside the window in dart
+          // before they hit the compositor / palettegen.
+          if (trim != null) {
+            final sourcePos = Duration(microseconds: tsMicros);
+            if (sourcePos < trim!.start) continue;
+            if (sourcePos >= trim!.end) break;
+          }
           compositeSw1.start();
           final composed = await compositor1.compose(
             bgra: raw,
-            position:
-                (trim?.start ?? Duration.zero) +
-                    Duration(microseconds: tsMicros),
+            position: Duration(microseconds: tsMicros),
           );
           compositeSw1.stop();
           proc1.stdin.add(composed);
@@ -212,7 +219,6 @@ class GifExportPipeline {
           if (onProgress != null && expectedFrames != null && expectedFrames > 0) {
             onProgress((pass1Frames / expectedFrames * 0.5).clamp(0.0, 0.5));
           }
-          index++;
         }
       } finally {
         await compositor1.dispose();
@@ -271,7 +277,6 @@ class GifExportPipeline {
         width: srcWidth,
         height: srcHeight,
         cfrFps: fps,
-        trim: trim,
       );
       _activeDecoder = decoder2;
 
@@ -283,12 +288,17 @@ class GifExportPipeline {
               throw const ExportCancelledException();
             }
             final tsMicros = (1000000 * index) ~/ fps;
+            index++;
+            // Trim-window dart-side skip (see pass 1 for context).
+            if (trim != null) {
+              final sourcePos = Duration(microseconds: tsMicros);
+              if (sourcePos < trim!.start) continue;
+              if (sourcePos >= trim!.end) break;
+            }
             compositeSw2.start();
             final composed = await compositor2.compose(
               bgra: raw,
-              position:
-                  (trim?.start ?? Duration.zero) +
-                      Duration(microseconds: tsMicros),
+              position: Duration(microseconds: tsMicros),
             );
             compositeSw2.stop();
             proc2.stdin.add(composed);
@@ -298,7 +308,6 @@ class GifExportPipeline {
               onProgress(
                   (0.5 + pass2Frames / expectedFrames * 0.5).clamp(0.5, 1.0));
             }
-            index++;
           }
         } finally {
           await compositor2.dispose();

@@ -3,13 +3,16 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import '../models/trim_selection.dart';
 import '../utils/app_logger.dart';
-import 'ffmpeg_filters.dart';
 import 'ffmpeg_resolver.dart';
 
 /// Spawns `ffmpeg` to decode an input video into raw BGRA frames streamed
 /// on stdout. Each emitted [Uint8List] is exactly `width * height * 4` bytes.
+///
+/// The decoder always reads the whole source. Slice-level trimming lives in
+/// the encoder's `-filter_complex` (per-slice `trim=trimStart:trimEnd` nodes
+/// built by `buildExportFilterGraph`); the decoder doesn't need to know
+/// about cuts or trims any more.
 class FfmpegDecoder {
   final String inputPath;
   final int width;
@@ -25,10 +28,6 @@ class FfmpegDecoder {
   /// duplicates frames so the stream is exactly N frames per second.
   final int? cfrFps;
 
-  /// When set, only decodes the slice [trim.start, trim.start + trim.duration]
-  /// via the ffmpeg `trim` filter with PTS reset (`setpts=PTS-STARTPTS`).
-  final TrimSelection? trim;
-
   /// Total wall-clock milliseconds spent reading/awaiting decoded bytes.
   /// Does not include subprocess spawn time.
   int totalDecodeMs = 0;
@@ -40,7 +39,6 @@ class FfmpegDecoder {
     required this.width,
     required this.height,
     this.cfrFps,
-    this.trim,
   });
 
   @visibleForTesting
@@ -48,12 +46,6 @@ class FfmpegDecoder {
 
   List<String> _buildArgs() {
     final vf = <String>[
-      // Filter-based (`trim=`) seeking is frame-accurate but decodes from
-      // frame 0 (accuracy over speed — slower for trims that start late in a
-      // long source).
-      if (trim != null)
-        'trim=start=${ffSeconds(trim!.start)}:duration=${ffSeconds(trim!.duration)},'
-            'setpts=PTS-STARTPTS',
       if (cfrFps != null) 'fps=$cfrFps',
     ];
     return <String>[
