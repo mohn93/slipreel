@@ -98,6 +98,7 @@ class _SliceBarState extends State<SliceBar> {
         child: Stack(
           children: [
             Container(
+              key: const ValueKey('slice-bar-body'),
               width: _widthPx,
               height: laneHeight,
               decoration: BoxDecoration(

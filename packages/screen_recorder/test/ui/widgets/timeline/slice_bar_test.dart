@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:screen_recorder/ui/widgets/timeline/slice_bar.dart';
+import 'package:screen_recorder/ui/widgets/timeline/timeline_constants.dart';
 
 Widget _harness(SliceBar bar) =>
     MaterialApp(home: Scaffold(body: SizedBox(width: 800, height: 60, child: bar)));
@@ -29,7 +30,7 @@ void main() {
         onTrimStartChanged: (_) {},
         onTrimEndChanged: (_) {},
       )));
-      await tester.tap(find.byType(SliceBar));
+      await tester.tap(find.byKey(const ValueKey('slice-bar-body')));
       expect(toggled, 2);
     });
 
@@ -45,15 +46,11 @@ void main() {
         onTrimStartChanged: (_) {},
         onTrimEndChanged: (_) {},
       )));
-      // The DecoratedBox's color is clipFillTop when selected, clipFill otherwise.
       final box = tester.widget<Container>(
-        find.descendant(
-          of: find.byType(SliceBar),
-          matching: find.byWidgetPredicate((w) => w is Container && w.decoration is BoxDecoration),
-        ).first,
+        find.byKey(const ValueKey('slice-bar-body')),
       );
       final deco = box.decoration as BoxDecoration;
-      expect(deco.color, isNot(equals(const Color(0xFFE69E5A))));
+      expect(deco.color, equals(clipFillTop));
     });
   });
 
