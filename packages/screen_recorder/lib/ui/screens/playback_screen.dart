@@ -282,9 +282,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   }
 
   /// Compute the inspector's current timeline-selection input from
-  /// the screen's selection state. Zoom selection wins if both are
+  /// the screen's selection state. Slice selection wins if both are
   /// somehow set (only one can be set under normal flow because the
-  /// tap handlers clear the other).
+  /// tap handlers clear the other) — exposing the slice context is
+  /// the more recoverable state in an undo-replay edge case.
   TimelineSelection? _currentSelection() {
     if (_selectedSliceIndex != null) {
       return SliceSelected(_selectedSliceIndex!);
