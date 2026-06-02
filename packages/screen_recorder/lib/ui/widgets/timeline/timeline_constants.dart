@@ -28,6 +28,7 @@ const int minZoomDurationMs = 250;
 const int minTrimDurationMs = 250;
 const double trimHandleInset = 6;
 const double zoomBadgeAreaHeight = 32;
+const double kClipSeamWidth = 2.0;
 
 double pixelsPerSecond(double viewportWidth, Duration total, double scale) {
   if (total.inMilliseconds == 0) return 0.0;

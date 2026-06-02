@@ -65,7 +65,6 @@ class ClipLane extends StatelessWidget {
             child: CustomPaint(
               key: const ValueKey('clip-lane-seams'),
               painter: _SeamPainter(
-                clips: clips,
                 editedStarts: editedStarts,
                 pixelsPerSecond: pixelsPerSecond,
               ),
@@ -79,12 +78,10 @@ class ClipLane extends StatelessWidget {
 
 class _SeamPainter extends CustomPainter {
   _SeamPainter({
-    required this.clips,
     required this.editedStarts,
     required this.pixelsPerSecond,
   });
 
-  final List<ClipSlice> clips;
   final List<Duration> editedStarts;
   final double pixelsPerSecond;
 
@@ -92,16 +89,21 @@ class _SeamPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = trackBg
-      ..strokeWidth = 2;
-    for (var i = 1; i < clips.length; i++) {
+      ..strokeWidth = kClipSeamWidth;
+    // First entry is always Duration.zero (no seam before the first
+    // slice); start at index 1 to draw seams between adjacent slices.
+    for (var i = 1; i < editedStarts.length; i++) {
       final x = editedStarts[i].inMilliseconds / 1000.0 * pixelsPerSecond;
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
   }
 
+  // ClipLane allocates a fresh List<Duration> every build, so identity
+  // comparison would force a repaint per frame. Compare content instead;
+  // editedStarts is derived from clip.effectiveLength so it captures
+  // every clip change that moves a seam.
   @override
   bool shouldRepaint(_SeamPainter old) =>
-      old.clips != clips ||
-      old.editedStarts != editedStarts ||
-      old.pixelsPerSecond != pixelsPerSecond;
+      old.pixelsPerSecond != pixelsPerSecond ||
+      !listEquals(old.editedStarts, editedStarts);
 }
