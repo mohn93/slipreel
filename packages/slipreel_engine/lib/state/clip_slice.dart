@@ -144,3 +144,17 @@ class ClipSlice {
         disableSmoothMouse,
       );
 }
+
+/// Returns the slice covering [position]. Falls back to the last slice
+/// when [position] is at or past the final end (final frame); falls
+/// back to a fresh empty slice when [clips] is empty. The lookup is
+/// linear (O(n)) — fine for B (n=1) and for typical slice counts in C.
+ClipSlice clipSliceAt(List<ClipSlice> clips, Duration position) {
+  if (clips.isEmpty) {
+    return ClipSlice(start: Duration.zero, end: Duration.zero);
+  }
+  for (final s in clips) {
+    if (position >= s.start && position < s.end) return s;
+  }
+  return clips.last;
+}

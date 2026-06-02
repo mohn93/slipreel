@@ -165,4 +165,41 @@ void main() {
       expect(t.clips, isEmpty);
     });
   });
+
+  group('clipSliceAt', () {
+    test('returns the slice containing the position', () {
+      final clips = [
+        ClipSlice(start: Duration.zero, end: const Duration(seconds: 5)),
+        ClipSlice(
+          start: const Duration(seconds: 5),
+          end: const Duration(seconds: 10),
+        ),
+      ];
+      expect(
+        clipSliceAt(clips, const Duration(seconds: 3)).end,
+        const Duration(seconds: 5),
+      );
+      expect(
+        clipSliceAt(clips, const Duration(seconds: 7)).start,
+        const Duration(seconds: 5),
+      );
+    });
+    test('returns the last slice when position is past the end', () {
+      final clips = [
+        ClipSlice(start: Duration.zero, end: const Duration(seconds: 5)),
+        ClipSlice(
+          start: const Duration(seconds: 5),
+          end: const Duration(seconds: 10),
+        ),
+      ];
+      expect(
+        clipSliceAt(clips, const Duration(seconds: 20)).end,
+        const Duration(seconds: 10),
+      );
+    });
+    test('returns an empty fallback when clips is empty', () {
+      final s = clipSliceAt(const [], const Duration(seconds: 1));
+      expect(s.end, Duration.zero);
+    });
+  });
 }

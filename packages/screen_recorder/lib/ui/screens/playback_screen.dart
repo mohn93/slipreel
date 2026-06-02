@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_history_controller.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:video_player/video_player.dart';
@@ -1196,6 +1197,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // channel stays live because cursor accumulation runs in
     // PlaybackCanvas (no capture lag — it stamps from the recording).
     final project = ref.watch(editorProjectControllerProvider);
+    final currentSlice = clipSliceAt(
+      project.timeline.clips,
+      _controller.value.position,
+    );
     final playbackCanvas = PlaybackCanvas(
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
@@ -1204,6 +1209,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       metadata: _metadata,
       cursorRecording: _cursorRecording,
       hideCursorOverlay: project.hideCursorOverlay,
+      sliceHideCursor: currentSlice.hideCursor,
+      sliceDisableSmoothMouse: currentSlice.disableSmoothMouse,
       cursorSize: project.cursorSize,
       cursorStyle: project.cursorStyle,
       cursorClickEffect: project.cursorClickEffect,

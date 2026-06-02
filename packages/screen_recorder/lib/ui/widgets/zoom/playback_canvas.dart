@@ -20,6 +20,7 @@ import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
+import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
@@ -66,6 +67,8 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     required this.metadata,
     required this.cursorRecording,
     required this.hideCursorOverlay,
+    this.sliceHideCursor = false,
+    this.sliceDisableSmoothMouse = false,
     required this.cursorSize,
     required this.cursorStyle,
     required this.cursorClickEffect,
@@ -106,6 +109,18 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   final RecordingMetadata? metadata;
   final CursorRecording cursorRecording;
   final bool hideCursorOverlay;
+
+  /// Per-slice override from `ClipSlice.hideCursor`. The current slice
+  /// (resolved upstream from the playhead) hides the sprite even when
+  /// the project-global toggle is off. ORed with [hideCursorOverlay].
+  final bool sliceHideCursor;
+
+  /// Per-slice override from `ClipSlice.disableSmoothMouse`. When true,
+  /// the cursor animation config used for this build is swapped for the
+  /// "none" preset (raw, instant focal chase) regardless of the user's
+  /// chosen [cursorAnimationConfig].
+  final bool sliceDisableSmoothMouse;
+
   final double cursorSize;
   final CursorStyle cursorStyle;
   final CursorClickEffect cursorClickEffect;
@@ -416,7 +431,9 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             final hasCursorData =
                 widget.metadata?.isPureSource == true &&
                 widget.cursorRecording.count > 0;
-            final showCursor = hasCursorData && !widget.hideCursorOverlay;
+            final showCursor = hasCursorData
+                && !widget.hideCursorOverlay
+                && !widget.sliceHideCursor;
 
             // Single call into the shared scene builder. The export
             // pipeline calls the same builder with the same inputs in
@@ -427,10 +444,15 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             //
             // Hover-scrub bypasses the EMA filter so the same timestamp
             // renders the same regardless of approach direction.
+            final cursorAnimationConfig = widget.sliceDisableSmoothMouse
+                ? const CursorAnimationConfig.preset(
+                    CursorAnimationStyle.none,
+                  )
+                : widget.cursorAnimationConfig;
             final scenePass = _scenePassBuilder.build(
               position: pos,
               zoomRegions: widget.zoomRegions,
-              cursorAnimationConfig: widget.cursorAnimationConfig,
+              cursorAnimationConfig: cursorAnimationConfig,
               cursorDelay: widget.cursorDelay,
               cursorPostProcess: widget.cursorPostProcess,
               cursorRecording: widget.cursorRecording,
