@@ -9,6 +9,7 @@ import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
 import '../models/trim_selection.dart';
 import '../rendering/output_canvas_resolver.dart';
+import '../state/clip_slice.dart';
 import '../state/editor_project_state.dart';
 import '../utils/app_logger.dart';
 import '../utils/perf_summary.dart';
@@ -113,9 +114,15 @@ class GifExportPipeline {
 
     // Speed + fade are video-only for GIF (no audio track). Computed once and
     // spliced into both pass-1 (palettegen) and pass-2 (paletteuse) chains.
-    final speed = projectState.playbackSpeed;
-    final fadeIn = projectState.fadeIn;
-    final fadeOut = projectState.fadeOut;
+    // TODO(slice-editor T7): read per-slice values once exports iterate
+    // clips; for now bridge through the first clip (single-slice projects).
+    final clips = projectState.timeline.clips;
+    final firstClip = clips.isEmpty
+        ? ClipSlice(start: Duration.zero, end: Duration.zero)
+        : clips.first;
+    final speed = firstClip.playbackSpeed;
+    final fadeIn = firstClip.fadeIn;
+    final fadeOut = firstClip.fadeOut;
     final inputDurSec = trim != null
         ? trim!.duration.inMicroseconds / 1000000
         : (probed.durationSec ?? 0);

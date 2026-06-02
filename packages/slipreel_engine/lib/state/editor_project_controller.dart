@@ -89,25 +89,6 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   void setOutputAspect(OutputAspect value) =>
       state = state.copyWith(outputAspect: value);
 
-  void setPlaybackSpeed(double value) =>
-      state = state.copyWith(playbackSpeed: value);
-
-  void setFadeIn(Duration value) => state = state.copyWith(fadeIn: value);
-
-  void setFadeOut(Duration value) => state = state.copyWith(fadeOut: value);
-
-  void setMicGain(int percent) => state = state.copyWith(
-      audioMix: state.audioMix.copyWith(micGainPercent: percent));
-
-  void setMicMuted(bool value) => state = state.copyWith(
-      audioMix: state.audioMix.copyWith(micMuted: value));
-
-  void setSystemGain(int percent) => state = state.copyWith(
-      audioMix: state.audioMix.copyWith(systemGainPercent: percent));
-
-  void setSystemMuted(bool value) => state = state.copyWith(
-      audioMix: state.audioMix.copyWith(systemMuted: value));
-
   /// Set the timeline horizontal scale. Clamped to [1.0, 8.0]. The
   /// optional [anchorTime] is a one-shot hint stored on the next
   /// state's [EditorProjectState.pendingScaleAnchor] for the timeline

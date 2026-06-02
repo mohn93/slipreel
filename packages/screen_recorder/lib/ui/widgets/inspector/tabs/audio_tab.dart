@@ -128,26 +128,33 @@ class _RecordingAudioSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final streams = ref.watch(recordingAudioStreamsProvider);
     final roles = inferAudioRoles(streams);
-    final mix = ref.watch(editorProjectControllerProvider).audioMix;
-    final ctl = ref.read(editorProjectControllerProvider.notifier);
+    // TODO(slice-editor T10): re-wire the inspector to the active clip's
+    // audio fields via the new slice-addressed controller setters. The
+    // body is intentionally read-only until T10 lands; the controls
+    // render but their callbacks are inert.
+    final clips = ref.watch(editorProjectControllerProvider).timeline.clips;
+    final micGain = clips.isEmpty ? 100 : clips.first.micGainPercent;
+    final micMuted = clips.isEmpty ? false : clips.first.micMuted;
+    final systemGain = clips.isEmpty ? 100 : clips.first.systemGainPercent;
+    final systemMuted = clips.isEmpty ? false : clips.first.systemMuted;
 
     final rows = <Widget>[];
     if (roles.containsKey(AudioRole.microphone)) {
       rows.add(_VolumeRow(
         label: 'Microphone',
-        percent: mix.micGainPercent,
-        muted: mix.micMuted,
-        onChanged: ctl.setMicGain,
-        onMuteToggle: () => ctl.setMicMuted(!mix.micMuted),
+        percent: micGain,
+        muted: micMuted,
+        onChanged: (_) {},
+        onMuteToggle: () {},
       ));
     }
     if (roles.containsKey(AudioRole.system)) {
       rows.add(_VolumeRow(
         label: 'System audio',
-        percent: mix.systemGainPercent,
-        muted: mix.systemMuted,
-        onChanged: ctl.setSystemGain,
-        onMuteToggle: () => ctl.setSystemMuted(!mix.systemMuted),
+        percent: systemGain,
+        muted: systemMuted,
+        onChanged: (_) {},
+        onMuteToggle: () {},
       ));
     }
 

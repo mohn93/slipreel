@@ -7,7 +7,6 @@ import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
-import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
@@ -38,36 +37,8 @@ void main() {
       expect(copy.cursorDelay, equals(original.cursorDelay));
       expect(copy.cursorPostProcess, equals(original.cursorPostProcess));
       expect(copy.windowFrame, equals(original.windowFrame));
-      // Clip-level fields (bug #6): playback speed + fades persisted
-      // through copyWith. Pipeline doesn't apply them yet — the
-      // inspector controls were placeholder state with silent
-      // data-loss until P2-8 bugfix.
-      expect(copy.playbackSpeed, equals(original.playbackSpeed));
-      expect(copy.fadeIn, equals(original.fadeIn));
-      expect(copy.fadeOut, equals(original.fadeOut));
-    });
-
-    test('clip-level defaults match the inspector picker defaults', () {
-      // Sliders and chips in ClipContextInspector default to 1.0× / 0 /
-      // 0; if EditorProjectState shipped different defaults the user
-      // would see the picker jump on first open.
-      final s = EditorProjectState.defaults();
-      expect(s.playbackSpeed, 1.0);
-      expect(s.fadeIn, Duration.zero);
-      expect(s.fadeOut, Duration.zero);
-    });
-
-    test('clip-level fields round-trip through toJson/fromJson', () {
-      final original = EditorProjectState.defaults().copyWith(
-        playbackSpeed: 1.5,
-        fadeIn: const Duration(milliseconds: 400),
-        fadeOut: const Duration(milliseconds: 600),
-      );
-      final json = original.toJson();
-      final loaded = EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60));
-      expect(loaded.playbackSpeed, 1.5);
-      expect(loaded.fadeIn, const Duration(milliseconds: 400));
-      expect(loaded.fadeOut, const Duration(milliseconds: 600));
+      // removed: playbackSpeed/fadeIn/fadeOut moved to ClipSlice in v7
+      // (asserted in clip_slice_test.dart + slice migration tests).
     });
 
     test('overrides each named field independently without touching others',
@@ -247,27 +218,19 @@ void main() {
     });
   });
 
-  test('audioMix round-trips through toJson/fromJson', () {
-    final s = EditorProjectState.defaults().copyWith(
-        audioMix: const AudioMix(systemGainPercent: 60, micMuted: true));
-    final restored = EditorProjectState.fromJson(s.toJson(), videoDuration: const Duration(seconds: 60));
-    expect(restored.audioMix,
-        const AudioMix(systemGainPercent: 60, micMuted: true));
-  });
+  // removed: audioMix round-trip / default — audio fields moved to
+  // ClipSlice in v7 (asserted in clip_slice_test.dart + slice migration
+  // tests).
 
-  test('defaults() has unity AudioMix', () {
-    expect(EditorProjectState.defaults().audioMix, const AudioMix());
-  });
-
-  test('a v3 sidecar (no audioMix) migrates forward to current with unity defaults', () {
+  test('a v3 sidecar (no audioMix) migrates forward to current', () {
     final v3 = {
       'schemaVersion': 3,
       'timeline': {'zoomTracks': [{'regions': <dynamic>[]}]},
     };
     final migrated = migrateEditorProjectJson(v3, videoDuration: const Duration(seconds: 60));
     expect(migrated['schemaVersion'], EditorProjectState.currentSchemaVersion);
-    final state = EditorProjectState.fromJson(v3, videoDuration: const Duration(seconds: 60));
-    expect(state.audioMix, const AudioMix());
+    // Audio defaults are now asserted on the synthesized clip.
+    EditorProjectState.fromJson(v3, videoDuration: const Duration(seconds: 60));
   });
 
   test('toJson advertises currentSchemaVersion', () {
@@ -322,7 +285,6 @@ void main() {
       final next = base.copyWith(timelineScale: 4.0);
       expect(next.timelineScale, 4.0);
       expect(next.cursorSize, base.cursorSize);
-      expect(next.audioMix, base.audioMix);
     });
 
     test('round-trips through toJson/fromJson', () {

@@ -40,6 +40,7 @@ import 'package:slipreel_engine/export/export_pipeline.dart';
 import 'package:slipreel_engine/export/gif_export_pipeline.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/export/audio_mix_args.dart';
+import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
@@ -61,6 +62,21 @@ import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 /// without needing to find and tap the transport buttons. Null when no
 /// editor is open.
 VideoPlayerController? debugPlaybackController;
+
+// TODO(slice-editor T10): replace with per-slice reads once the editor
+// follows the active clip. Bridges the removed `state.audioMix` getter to
+// the synthesized first clip so audio-export call sites compile.
+AudioMix _bridgeAudioMix(EditorProjectState state) {
+  final clips = state.timeline.clips;
+  if (clips.isEmpty) return const AudioMix();
+  final c = clips.first;
+  return AudioMix(
+    micGainPercent: c.micGainPercent,
+    micMuted: c.micMuted,
+    systemGainPercent: c.systemGainPercent,
+    systemMuted: c.systemMuted,
+  );
+}
 
 /// Pure helper: the effective preview playback rate sent to the video
 /// controller is `clipSpeed × previewSpeed`. Exposed at top level so
@@ -301,7 +317,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // Seed the preview-rate cache from the restored project so
       // the first dropdown-driven multiply uses the correct base.
       // _previewPlaybackSpeed stays at 1.0 (session default).
-      _applyEffectivePlaybackSpeed(restored.playbackSpeed);
+      // TODO(slice-editor T9): read from active clip once playback follows
+      // the playhead; for now bridge through clips[0].
+      _applyEffectivePlaybackSpeed(restored.timeline.clips.isEmpty
+          ? 1.0
+          : restored.timeline.clips.first.playbackSpeed);
       // Re-apply the effective rate every time playback resumes:
       // AVPlayer (video_player on macOS) resets `rate` to 1.0 on
       // every `play()` call, so without this listener the dropdown
@@ -575,9 +595,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           initialSettings: defaults,
           sourceVideoSize: composedVideoSize,
           videoDuration: videoDuration,
+          // TODO(slice-editor T10): build the AudioMix from the active
+          // clip once the editor follows per-slice audio settings.
           audioBitrateKbps: buildAudioMixArgs(
                   probed.audioStreams,
-                  ref.read(editorProjectControllerProvider).audioMix)
+                  _bridgeAudioMix(ref.read(editorProjectControllerProvider)))
               .bitrateKbps,
           estimator: ExportEstimator(
             lastRealtimeMultiplier: persistedMultiplier ?? 0.7,
@@ -833,8 +855,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // When the per-clip playback speed changes (edited via the
     // ClipContextInspector), re-apply the product onto the preview
     // player. Preview rate = clipSpeed × _previewPlaybackSpeed.
+    // TODO(slice-editor T9): listen to the active clip's playbackSpeed once
+    // the editor follows the playhead; for now bridge through clips[0].
     ref.listen<double>(
-      editorProjectControllerProvider.select((s) => s.playbackSpeed),
+      editorProjectControllerProvider.select(
+        (s) => s.timeline.clips.isEmpty
+            ? 1.0
+            : s.timeline.clips.first.playbackSpeed,
+      ),
       (_, next) => _applyEffectivePlaybackSpeed(next),
     );
     return Focus(

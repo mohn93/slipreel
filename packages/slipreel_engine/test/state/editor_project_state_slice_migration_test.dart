@@ -68,6 +68,24 @@ void main() {
       expect(clip.systemMuted, isFalse);
     });
 
+    test('v7 JSON has no top-level playbackSpeed/fade/audioMix', () {
+      final v6 = <String, dynamic>{
+        'schemaVersion': 6,
+        'playbackSpeed': 1.5,
+        'fadeInMicros': 500_000,
+        'fadeOutMicros': 250_000,
+        'audioMix': {'micGainPercent': 120, 'micMuted': true},
+      };
+      final v7 = migrateEditorProjectJson(
+        v6,
+        videoDuration: const Duration(seconds: 10),
+      );
+      expect(v7.containsKey('playbackSpeed'), isFalse);
+      expect(v7.containsKey('fadeInMicros'), isFalse);
+      expect(v7.containsKey('fadeOutMicros'), isFalse);
+      expect(v7.containsKey('audioMix'), isFalse);
+    });
+
     test('v6 without a timeline key still produces a v7 with a clip', () {
       final v6 = <String, dynamic>{
         'schemaVersion': 6,

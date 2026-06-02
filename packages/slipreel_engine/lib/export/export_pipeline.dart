@@ -10,6 +10,8 @@ import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
 import '../models/trim_selection.dart';
 import '../rendering/output_canvas_resolver.dart';
+import '../state/audio_mix.dart';
+import '../state/clip_slice.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
@@ -141,13 +143,25 @@ class ExportPipeline {
       cfrFps: pipelineFps,
       trim: trim,
     );
+    // TODO(slice-editor T7): read per-slice values once exports iterate
+    // clips; for now bridge through the first clip (single-slice projects).
+    final clips = projectState.timeline.clips;
+    final firstClip = clips.isEmpty
+        ? ClipSlice(start: Duration.zero, end: Duration.zero)
+        : clips.first;
+    final bridgedAudioMix = AudioMix(
+      micGainPercent: firstClip.micGainPercent,
+      micMuted: firstClip.micMuted,
+      systemGainPercent: firstClip.systemGainPercent,
+      systemMuted: firstClip.systemMuted,
+    );
     final audioMixPlan =
-        buildAudioMixArgs(probed.audioStreams, projectState.audioMix);
+        buildAudioMixArgs(probed.audioStreams, bridgedAudioMix);
     // Output duration after trim + speed, used to position the fade-out.
     final inputDurationSec = trim != null
         ? trim!.duration.inMicroseconds / 1000000
         : (probed.durationSec ?? 0);
-    final outputDurationSec = inputDurationSec / projectState.playbackSpeed;
+    final outputDurationSec = inputDurationSec / firstClip.playbackSpeed;
     final encoder = FfmpegEncoder(
       outputPath: outputPath,
       width: outWidth,
@@ -157,9 +171,9 @@ class ExportPipeline {
       audioSourcePath: sourcePath,
       audioMixPlan: audioMixPlan,
       trim: trim,
-      playbackSpeed: projectState.playbackSpeed,
-      fadeIn: projectState.fadeIn,
-      fadeOut: projectState.fadeOut,
+      playbackSpeed: firstClip.playbackSpeed,
+      fadeIn: firstClip.fadeIn,
+      fadeOut: firstClip.fadeOut,
       outputDuration: outputDurationSec > 0
           ? Duration(microseconds: (outputDurationSec * 1000000).round())
           : null,

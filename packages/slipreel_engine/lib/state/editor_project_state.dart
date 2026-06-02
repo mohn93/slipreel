@@ -6,7 +6,6 @@ import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
-import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
 
@@ -36,11 +35,7 @@ class EditorProjectState {
     required this.cursorDelay,
     required this.windowFrame,
     this.cursorPostProcess = CursorPostProcess.none,
-    this.playbackSpeed = 1.0,
-    this.fadeIn = Duration.zero,
-    this.fadeOut = Duration.zero,
     this.outputAspect = OutputAspect.auto,
-    this.audioMix = const AudioMix(),
     this.timelineScale = 1.0,
     this.pendingScaleAnchor,
   });
@@ -119,28 +114,10 @@ class EditorProjectState {
   /// section. Defaults to [CursorPostProcess.none] — all filters off.
   final CursorPostProcess cursorPostProcess;
 
-  /// Playback speed multiplier for the clip (1.0 = native). Edited
-  /// from the Clip context inspector. The MP4 export pipeline applies
-  /// this (setpts on video, atempo on audio); GIF speed is being wired
-  /// separately. Round-tripped through persistence.
-  final double playbackSpeed;
-
-  /// Fade-in duration applied at the start of the clip. The MP4 export
-  /// pipeline applies this (fade on video, afade on audio); GIF fades
-  /// are being wired separately. See [playbackSpeed].
-  final Duration fadeIn;
-
-  /// Fade-out duration applied at the end of the clip. See [fadeIn].
-  final Duration fadeOut;
-
   /// Output canvas aspect ratio. Drives canvas dimensions for both the
   /// editor preview and the export pipeline via `OutputCanvasResolver`.
   /// Defaults to [OutputAspect.auto] — match the source video aspect.
   final OutputAspect outputAspect;
-
-  /// Per-track recording-audio volume/mute, applied as an ffmpeg downmix at
-  /// export. Preview is unaffected (export-only mixing).
-  final AudioMix audioMix;
 
   /// Horizontal timeline zoom. 1.0 = fit-to-width (default; visually
   /// identical to pre-feature behavior). Up to 8.0 = 8× wider content.
@@ -185,11 +162,7 @@ class EditorProjectState {
     Duration? cursorDelay,
     CursorPostProcess? cursorPostProcess,
     WindowFrame? windowFrame,
-    double? playbackSpeed,
-    Duration? fadeIn,
-    Duration? fadeOut,
     OutputAspect? outputAspect,
-    AudioMix? audioMix,
     double? timelineScale,
     Duration? pendingScaleAnchor,
     bool clearPendingScaleAnchor = false,
@@ -233,11 +206,7 @@ class EditorProjectState {
       cursorDelay: cursorDelay ?? this.cursorDelay,
       cursorPostProcess: cursorPostProcess ?? this.cursorPostProcess,
       windowFrame: windowFrame ?? this.windowFrame,
-      playbackSpeed: playbackSpeed ?? this.playbackSpeed,
-      fadeIn: fadeIn ?? this.fadeIn,
-      fadeOut: fadeOut ?? this.fadeOut,
       outputAspect: outputAspect ?? this.outputAspect,
-      audioMix: audioMix ?? this.audioMix,
       timelineScale: timelineScale ?? this.timelineScale,
       pendingScaleAnchor: clearPendingScaleAnchor
           ? null
@@ -263,11 +232,7 @@ class EditorProjectState {
     'cursorDelayMicros': cursorDelay.inMicroseconds,
     'windowFrame': windowFrame.toJson(),
     'cursorPostProcess': cursorPostProcess.toJson(),
-    'playbackSpeed': playbackSpeed,
-    'fadeInMicros': fadeIn.inMicroseconds,
-    'fadeOutMicros': fadeOut.inMicroseconds,
     'outputAspect': outputAspect.name,
-    'audioMix': audioMix.toJson(),
     'timelineScale': timelineScale,
     // pendingScaleAnchor is transient; not serialized.
   };
@@ -359,21 +324,10 @@ class EditorProjectState {
               json['cursorPostProcess'] as Map<String, dynamic>,
             )
           : CursorPostProcess.none,
-      playbackSpeed:
-          (json['playbackSpeed'] as num?)?.toDouble() ?? defaults.playbackSpeed,
-      fadeIn: json['fadeInMicros'] is num
-          ? Duration(microseconds: (json['fadeInMicros'] as num).round())
-          : defaults.fadeIn,
-      fadeOut: json['fadeOutMicros'] is num
-          ? Duration(microseconds: (json['fadeOutMicros'] as num).round())
-          : defaults.fadeOut,
       outputAspect: (json['outputAspect'] is String) &&
               OutputAspect.values.any((v) => v.name == json['outputAspect'])
           ? OutputAspect.values.byName(json['outputAspect'] as String)
           : defaults.outputAspect,
-      audioMix: json['audioMix'] is Map<String, dynamic>
-          ? AudioMix.fromJson(json['audioMix'] as Map<String, dynamic>)
-          : defaults.audioMix,
       timelineScale: _readTimelineScale(json['timelineScale']),
       // pendingScaleAnchor is transient; always null after load.
     );
@@ -421,11 +375,7 @@ class EditorProjectState {
         other.cursorDelay == cursorDelay &&
         other.cursorPostProcess == cursorPostProcess &&
         other.windowFrame == windowFrame &&
-        other.playbackSpeed == playbackSpeed &&
-        other.fadeIn == fadeIn &&
-        other.fadeOut == fadeOut &&
         other.outputAspect == outputAspect &&
-        other.audioMix == audioMix &&
         other.timelineScale == timelineScale;
     // pendingScaleAnchor intentionally excluded.
   }
@@ -448,11 +398,7 @@ class EditorProjectState {
         cursorDelay,
         cursorPostProcess,
         windowFrame,
-        playbackSpeed,
-        fadeIn,
-        fadeOut,
         outputAspect,
-        audioMix,
         timelineScale,
         // pendingScaleAnchor intentionally excluded.
       ]);
@@ -521,14 +467,14 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
   // v6 → v7: synthesize a single clip from existing globals. The clip
   // covers the whole video; its fields take the values from the
   // top-level globals where present, or ClipSlice defaults where not.
-  // The globals stay on the JSON for now — Task 4 removes them once
-  // EditorProjectState stops reading them.
+  // Globals are MOVED into the clip and removed from the top-level v7
+  // JSON — EditorProjectState no longer reads them.
   (json, videoDuration) {
     final next = Map<String, dynamic>.from(json);
-    final speed = (next['playbackSpeed'] as num?)?.toDouble() ?? 1.0;
-    final fadeInMicros = (next['fadeInMicros'] as num?)?.toInt() ?? 0;
-    final fadeOutMicros = (next['fadeOutMicros'] as num?)?.toInt() ?? 0;
-    final audio = next['audioMix'] as Map<String, dynamic>?;
+    final speed = (next.remove('playbackSpeed') as num?)?.toDouble() ?? 1.0;
+    final fadeInMicros = (next.remove('fadeInMicros') as num?)?.toInt() ?? 0;
+    final fadeOutMicros = (next.remove('fadeOutMicros') as num?)?.toInt() ?? 0;
+    final audio = next.remove('audioMix') as Map<String, dynamic>?;
     final clip = <String, dynamic>{
       'startMicros': 0,
       'endMicros': videoDuration.inMicroseconds,
