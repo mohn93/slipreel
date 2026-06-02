@@ -201,8 +201,18 @@ void main() {
         ),
       ),
     ));
-    // Find the Hide cursor row's switch (Switch.adaptive renders as Switch on macOS/Linux test env).
-    await tester.tap(find.byType(Switch).first);
+    // Target the Hide cursor switch via its label, not positionally —
+    // the inspector body section order is UX-driven (Speed, Audio,
+    // Cursor, Fades) and the _GainRow widgets also contain Switches.
+    final hideCursorRow = find.ancestor(
+      of: find.text('Hide cursor'),
+      matching: find.byType(Row),
+    ).last;
+    final hideCursorSwitch = find.descendant(
+      of: hideCursorRow,
+      matching: find.byType(Switch),
+    );
+    await tester.tap(hideCursorSwitch);
     await tester.pumpAndSettle();
     expect(
       container.read(editorProjectControllerProvider).timeline.clips.first

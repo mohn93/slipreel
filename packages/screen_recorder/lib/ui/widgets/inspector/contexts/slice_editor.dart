@@ -50,20 +50,6 @@ class SliceEditor extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const InspectorSectionLabel('Cursor'),
-                InspectorToggle(
-                  label: 'Hide cursor',
-                  value: clip.hideCursor,
-                  onChanged: (v) =>
-                      notifier.setSliceHideCursor(sliceIndex, v),
-                ),
-                InspectorToggle(
-                  label: 'Disable smooth mouse',
-                  value: clip.disableSmoothMouse,
-                  onChanged: (v) =>
-                      notifier.setSliceDisableSmoothMouse(sliceIndex, v),
-                ),
-                const InspectorSectionDivider(),
                 const InspectorSectionLabel('Speed'),
                 Wrap(
                   spacing: 8,
@@ -111,6 +97,20 @@ class SliceEditor extends ConsumerWidget {
                       notifier.setSliceSystemGain(sliceIndex, v),
                   onMutedChanged: (v) =>
                       notifier.setSliceSystemMuted(sliceIndex, v),
+                ),
+                const InspectorSectionDivider(),
+                const InspectorSectionLabel('Cursor'),
+                InspectorToggle(
+                  label: 'Hide cursor',
+                  value: clip.hideCursor,
+                  onChanged: (v) =>
+                      notifier.setSliceHideCursor(sliceIndex, v),
+                ),
+                InspectorToggle(
+                  label: 'Disable smooth mouse',
+                  value: clip.disableSmoothMouse,
+                  onChanged: (v) =>
+                      notifier.setSliceDisableSmoothMouse(sliceIndex, v),
                 ),
                 const InspectorSectionDivider(),
                 const InspectorSectionLabel('Fades'),
