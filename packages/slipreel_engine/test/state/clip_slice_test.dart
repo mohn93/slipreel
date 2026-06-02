@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
+import 'package:slipreel_engine/timeline/timeline.dart';
 
 void main() {
   group('ClipSlice', () {
@@ -121,6 +122,47 @@ void main() {
       final next = s.copyWith(micGainPercent: 999, systemGainPercent: -5);
       expect(next.micGainPercent, 200);
       expect(next.systemGainPercent, 0);
+    });
+  });
+
+  group('Timeline.clips', () {
+    test('defaults to an empty clip list', () {
+      final t = Timeline.defaults();
+      expect(t.clips, isEmpty);
+    });
+
+    test('copyWith replaces clips', () {
+      final t = Timeline.defaults();
+      final clips = [
+        ClipSlice(start: Duration.zero, end: const Duration(seconds: 10)),
+      ];
+      final next = t.copyWith(clips: clips);
+      expect(next.clips, hasLength(1));
+      expect(next.clips.first.length, const Duration(seconds: 10));
+    });
+
+    test('toJson + fromJson round-trip preserves clips', () {
+      final clips = [
+        ClipSlice(
+          start: Duration.zero,
+          end: const Duration(seconds: 5),
+          playbackSpeed: 1.5,
+        ),
+        ClipSlice(
+          start: const Duration(seconds: 5),
+          end: const Duration(seconds: 10),
+          micMuted: true,
+        ),
+      ];
+      final t = Timeline(clips: clips);
+      final round = Timeline.fromJson(t.toJson());
+      expect(round.clips, hasLength(2));
+      expect(round.clips, equals(clips));
+    });
+
+    test('fromJson tolerates a missing clips key', () {
+      final t = Timeline.fromJson({'zoomTracks': []});
+      expect(t.clips, isEmpty);
     });
   });
 }
