@@ -274,10 +274,20 @@ class _SliceTickPainter extends CustomPainter {
     final paint = Paint()
       ..color = clipStroke.withValues(alpha: 0.32)
       ..strokeWidth = 1;
-    final inset = 4.0;
+    const inset = 4.0;
+    // Skip ticks near the right edge so they don't visually merge with
+    // the seam between slices (which already paints a strong vertical
+    // line at that x).
+    const edgeSuppressionPx = 6.0;
+    final lastDrawX = widthPx - edgeSuppressionPx;
     var t = step;
     while (t < sourceSeconds) {
-      final x = t * pxPerSourceSec;
+      // Snap to integer pixels so adjacent ticks don't smear across
+      // half-columns at different sub-pixel offsets — that's what made
+      // some look "close" and others "far" even though the math was
+      // uniform.
+      final x = (t * pxPerSourceSec).roundToDouble() + 0.5;
+      if (x > lastDrawX) break;
       canvas.drawLine(
         Offset(x, inset),
         Offset(x, size.height - inset),
