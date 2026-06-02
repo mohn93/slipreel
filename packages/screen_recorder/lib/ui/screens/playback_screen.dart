@@ -145,6 +145,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // Task 9 we only need the state to set/clear on tap.
   int? _selectedSliceIndex;
 
+  // True while the scissors toolbar button is engaged. The timeline
+  // mounts a CutOverlay above its clip lane, and any tap on the lane
+  // commits a cut at that edited-time x. Esc / a successful cut /
+  // re-pressing the button all flip this back to false.
+  bool _cutModeActive = false;
+
   // Session-only preview-playback-speed multiplier (1×/2×/4×/8×).
   // Picked from the dropdown next to the timeline-zoom slider in the
   // transport bar. Multiplies on top of the per-clip [playbackSpeed]
@@ -1374,15 +1380,33 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: TimelineScaleSlider(
-                playheadPosition: pos,
-                previewPlaybackSpeed: _previewPlaybackSpeed,
-                onPreviewSpeedChanged: (s) {
-                  setState(() {
-                    _previewPlaybackSpeed = s;
-                  });
-                  _applyEffectivePlaybackSpeed(_lastClipSpeedApplied);
-                },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Tooltip(
+                    message: 'Cut tool (Esc to exit)',
+                    child: IconButton(
+                      icon: const Icon(Icons.content_cut, size: 18),
+                      isSelected: _cutModeActive,
+                      color: _cutModeActive
+                          ? const Color(0xFF6C63FF)
+                          : Colors.white70,
+                      onPressed: () => setState(
+                          () => _cutModeActive = !_cutModeActive),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TimelineScaleSlider(
+                    playheadPosition: pos,
+                    previewPlaybackSpeed: _previewPlaybackSpeed,
+                    onPreviewSpeedChanged: (s) {
+                      setState(() {
+                        _previewPlaybackSpeed = s;
+                      });
+                      _applyEffectivePlaybackSpeed(_lastClipSpeedApplied);
+                    },
+                  ),
+                ],
               ),
             ),
           ],
@@ -1514,9 +1538,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onSliceTrimEndChanged: (idx, v) => ref
                     .read(editorProjectControllerProvider.notifier)
                     .setSliceTrimEnd(idx, v),
-                // cursorXListenable left null — EditorTimeline supplies a
-                // no-op notifier. Task 10 will pipe the real cut-overlay
-                // cursor x in here so SliceBars get magnetic pull.
+                cutModeActive: _cutModeActive,
+                onCutModeChanged: (v) =>
+                    setState(() => _cutModeActive = v),
+                // cursorXListenable stays unset — when cut mode is on,
+                // EditorTimeline pipes its own overlay's cursor in. Off
+                // mode falls back to a no-op notifier.
               );
             },
           ),

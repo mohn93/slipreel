@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
+import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:screen_recorder/ui/widgets/timeline/clip_lane.dart';
+import 'package:screen_recorder/ui/widgets/timeline/cut_overlay.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_constants.dart';
 import 'package:screen_recorder/ui/widgets/timeline/time_ruler.dart';
 
@@ -51,7 +54,7 @@ double progressFromHoverForTest(
 /// optional zoom lane on the bottom. A single playhead line runs across all
 /// rows. Designed to be redrawn at vsync (caller passes a smoothed
 /// `position`) so the playhead glides instead of stepping.
-class EditorTimeline extends StatefulWidget {
+class EditorTimeline extends ConsumerStatefulWidget {
   const EditorTimeline({
     super.key,
     required this.duration,
@@ -69,6 +72,8 @@ class EditorTimeline extends StatefulWidget {
     this.cursorXListenable,
     this.onSliceTrimStartChanged,
     this.onSliceTrimEndChanged,
+    this.cutModeActive = false,
+    this.onCutModeChanged,
     this.playbackSpeedLabel = '1x',
     this.isPlaying = false,
     this.onHoverSeek,
@@ -113,6 +118,15 @@ class EditorTimeline extends StatefulWidget {
   /// `EditorProjectController.setSliceTrimStart/setSliceTrimEnd`.
   final void Function(int sliceIndex, Duration trimStart)? onSliceTrimStartChanged;
   final void Function(int sliceIndex, Duration trimEnd)? onSliceTrimEndChanged;
+
+  /// True while the scissors tool is engaged. When on, the timeline
+  /// renders a [CutOverlay] above the clip lane and routes its
+  /// cursor-x notifier into [ClipLane] so SliceBars get magnetic pull.
+  final bool cutModeActive;
+
+  /// Bubbled by the overlay to the parent on Esc / successful cut.
+  /// Parent flips its own `_cutModeActive` state field.
+  final ValueChanged<bool>? onCutModeChanged;
   final String playbackSpeedLabel;
   final bool isPlaying;
   // Live preview seek while the cursor hovers the timeline (paused only).
@@ -146,15 +160,20 @@ class EditorTimeline extends StatefulWidget {
   final void Function(double scale, Duration anchorTime)? onPinchScale;
 
   @override
-  State<EditorTimeline> createState() => _EditorTimelineState();
+  ConsumerState<EditorTimeline> createState() => _EditorTimelineState();
 }
 
-class _EditorTimelineState extends State<EditorTimeline> {
+class _EditorTimelineState extends ConsumerState<EditorTimeline> {
   double? _hoverProgress;
   final ScrollController _scrollController = ScrollController();
   // Fallback no-op cursor source so SliceBars always have something to
-  // listen to — Task 10 wires the real cut-overlay cursor in.
+  // listen to — used when cut mode is off and the caller hasn't passed
+  // its own cursorXListenable.
   final ValueNotifier<double?> _nullCursor = ValueNotifier<double?>(null);
+  // Live cut-mode cursor x, owned by the timeline state (lifecycle
+  // outlives the conditional CutOverlay so SliceBars don't re-subscribe
+  // every time the overlay mounts/unmounts).
+  final ValueNotifier<double?> _cutCursorX = ValueNotifier<double?>(null);
   double _lastViewportWidth = 0;
   // Captured at onScaleStart so each ongoing pinch computes
   // (start * d.scale) rather than compounding across frames.
@@ -346,7 +365,20 @@ class _EditorTimelineState extends State<EditorTimeline> {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _nullCursor.dispose();
+    _cutCursorX.dispose();
     super.dispose();
+  }
+
+  /// Maps the overlay's click x to an edited-time and asks the engine
+  /// to split. Returns false when the split was rejected (e.g. too
+  /// close to a cut boundary) so the caller can leave cut mode active
+  /// for another attempt.
+  bool _attemptSplit(Duration editedTime) {
+    final ok = ref
+        .read(editorProjectControllerProvider.notifier)
+        .splitAtPlayhead(editedTime, widget.clips);
+    if (ok) widget.onSliceSelected?.call(null);
+    return ok;
   }
 
   @override
@@ -434,18 +466,44 @@ class _EditorTimelineState extends State<EditorTimeline> {
                         const SizedBox(height: laneSpacing),
                         SizedBox(
                           height: laneHeight,
-                          child: ClipLane(
-                            clips: widget.clips,
-                            selectedSliceIndex: widget.selectedSliceIndex,
-                            pixelsPerSecond: pps,
-                            cursorXListenable:
-                                widget.cursorXListenable ?? _nullCursor,
-                            onSliceSelected: (i) =>
-                                widget.onSliceSelected?.call(i),
-                            onSliceTrimStartChanged: (i, v) =>
-                                widget.onSliceTrimStartChanged?.call(i, v),
-                            onSliceTrimEndChanged: (i, v) =>
-                                widget.onSliceTrimEndChanged?.call(i, v),
+                          child: Stack(
+                            children: [
+                              ClipLane(
+                                clips: widget.clips,
+                                selectedSliceIndex: widget.selectedSliceIndex,
+                                pixelsPerSecond: pps,
+                                // Cut mode wires SliceBars to the live
+                                // cut-overlay cursor; off-mode falls back
+                                // to the caller's listenable (or our
+                                // no-op notifier).
+                                cursorXListenable: widget.cutModeActive
+                                    ? _cutCursorX
+                                    : (widget.cursorXListenable ??
+                                        _nullCursor),
+                                onSliceSelected: (i) =>
+                                    widget.onSliceSelected?.call(i),
+                                onSliceTrimStartChanged: (i, v) =>
+                                    widget.onSliceTrimStartChanged?.call(i, v),
+                                onSliceTrimEndChanged: (i, v) =>
+                                    widget.onSliceTrimEndChanged?.call(i, v),
+                              ),
+                              if (widget.cutModeActive)
+                                Positioned.fill(
+                                  child: CutOverlay(
+                                    pixelsPerSecond: pps,
+                                    totalEditedDuration: widget.duration,
+                                    cursorX: _cutCursorX,
+                                    onCommitCut: (editedTime) {
+                                      final ok = _attemptSplit(editedTime);
+                                      if (ok) {
+                                        widget.onCutModeChanged?.call(false);
+                                      }
+                                    },
+                                    onExitMode: () =>
+                                        widget.onCutModeChanged?.call(false),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: laneSpacing),
