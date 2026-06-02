@@ -318,8 +318,8 @@ void main() {
             timeline: Timeline(
               clips: [
                 ClipSlice(
-                  start: Duration.zero,
-                  end: const Duration(seconds: 60),
+                  cutStart: Duration.zero,
+                  cutEnd: const Duration(seconds: 60),
                   playbackSpeed: 2.0,
                   fadeIn: const Duration(milliseconds: 200),
                   fadeOut: const Duration(milliseconds: 200),

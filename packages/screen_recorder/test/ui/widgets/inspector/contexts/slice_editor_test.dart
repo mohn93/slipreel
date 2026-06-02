@@ -16,8 +16,8 @@ EditorProjectState _stateWithOneSlice({
       clips: [
         slice ??
             ClipSlice(
-              start: Duration.zero,
-              end: const Duration(seconds: 10),
+              cutStart: Duration.zero,
+              cutEnd: const Duration(seconds: 10),
             ),
       ],
     ),
@@ -28,10 +28,10 @@ EditorProjectState _stateWithTwoSlices() {
   return EditorProjectState.defaults().copyWith(
     timeline: const Timeline(zoomTracks: []).copyWith(
       clips: [
-        ClipSlice(start: Duration.zero, end: const Duration(seconds: 5)),
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 5)),
         ClipSlice(
-          start: const Duration(seconds: 5),
-          end: const Duration(seconds: 10),
+          cutStart: const Duration(seconds: 5),
+          cutEnd: const Duration(seconds: 10),
         ),
       ],
     ),
@@ -69,8 +69,8 @@ void main() {
       (tester) async {
     await tester.pumpWidget(_host(initial: _stateWithOneSlice(
       slice: ClipSlice(
-        start: Duration.zero,
-        end: const Duration(seconds: 90),
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 90),
         playbackSpeed: 1.5,
       ),
     )));

@@ -476,8 +476,8 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
     final fadeOutMicros = (next.remove('fadeOutMicros') as num?)?.toInt() ?? 0;
     final audio = next.remove('audioMix') as Map<String, dynamic>?;
     final clip = <String, dynamic>{
-      'startMicros': 0,
-      'endMicros': videoDuration.inMicroseconds,
+      'cutStartMicros': 0,
+      'cutEndMicros': videoDuration.inMicroseconds,
       'playbackSpeed': speed,
       'fadeInMicros': fadeInMicros,
       'fadeOutMicros': fadeOutMicros,

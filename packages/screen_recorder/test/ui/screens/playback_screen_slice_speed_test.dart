@@ -35,8 +35,8 @@ EditorProjectState _stateWithSliceSpeed(double speed) {
     timeline: base.timeline.copyWith(
       clips: [
         ClipSlice(
-          start: Duration.zero,
-          end: const Duration(seconds: 10),
+          cutStart: Duration.zero,
+          cutEnd: const Duration(seconds: 10),
           playbackSpeed: speed,
         ),
       ],

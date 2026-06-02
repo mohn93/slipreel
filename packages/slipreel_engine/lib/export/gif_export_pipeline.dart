@@ -412,7 +412,7 @@ class GifExportPipeline {
 ClipSlice _firstClipOrEmpty(EditorProjectState state) {
   final clips = state.timeline.clips;
   if (clips.isEmpty) {
-    return ClipSlice(start: Duration.zero, end: Duration.zero);
+    return ClipSlice(cutStart: Duration.zero, cutEnd: Duration.zero);
   }
   return clips.first;
 }

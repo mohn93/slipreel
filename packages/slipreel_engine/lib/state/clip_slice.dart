@@ -1,12 +1,24 @@
 /// A temporal segment of the source video with its own playback,
-/// audio, fade, and cursor settings. Sliceable timelines are
-/// addressed via `Timeline.clips`; in sub-project B every project
-/// has exactly one slice covering the whole video, sub-project C
-/// introduces the cut tool that splits a slice into multiple.
+/// audio, fade, and cursor settings. Sliceable timelines are addressed
+/// via `Timeline.clips`.
+///
+/// Cut bounds (`cutStart`, `cutEnd`) are immutable — they're where the
+/// user cut, fixing where the slice's source-range lives.
+///
+/// Trim bounds (`trimStart`, `trimEnd`) are mutable — they're the
+/// effective playable range inside the cut bounds. Trimming inward
+/// removes content from playback/export; dragging the trim handle
+/// back outward restores it, up to the cut bound.
+///
+/// Invariants:
+///   cutStart <= trimStart <= trimEnd <= cutEnd
+///   trimEnd - trimStart >= 100ms (degenerate JSON gets clamped)
 class ClipSlice {
   ClipSlice({
-    required this.start,
-    required this.end,
+    required this.cutStart,
+    required this.cutEnd,
+    Duration? trimStart,
+    Duration? trimEnd,
     this.playbackSpeed = 1.0,
     this.fadeIn = Duration.zero,
     this.fadeOut = Duration.zero,
@@ -16,11 +28,20 @@ class ClipSlice {
     this.systemMuted = false,
     this.hideCursor = false,
     this.disableSmoothMouse = false,
-  })  : micGainPercent = _clampGain(micGainPercent),
+  })  : trimStart = _clampTrimStart(cutStart, cutEnd, trimStart ?? cutStart),
+        trimEnd = _clampTrimEnd(
+          cutStart,
+          cutEnd,
+          _clampTrimStart(cutStart, cutEnd, trimStart ?? cutStart),
+          trimEnd ?? cutEnd,
+        ),
+        micGainPercent = _clampGain(micGainPercent),
         systemGainPercent = _clampGain(systemGainPercent);
 
-  final Duration start;
-  final Duration end;
+  final Duration cutStart;
+  final Duration cutEnd;
+  final Duration trimStart;
+  final Duration trimEnd;
   final double playbackSpeed;
   final Duration fadeIn;
   final Duration fadeOut;
@@ -31,13 +52,61 @@ class ClipSlice {
   final bool hideCursor;
   final bool disableSmoothMouse;
 
-  Duration get length => end - start;
+  /// B-era alias: pre-cut-tool callers asked for "the playable left
+  /// edge" via `start` — that's the trim start now.
+  Duration get start => trimStart;
+
+  /// B-era alias: pre-cut-tool callers asked for "the playable right
+  /// edge" via `end` — that's the trim end now.
+  Duration get end => trimEnd;
+
+  /// Total cut span (immutable cut bounds). Read by trim-handle clamp
+  /// code: a trim handle can extend back out to its slice's cutEnd /
+  /// cutStart.
+  Duration get cutSpan => cutEnd - cutStart;
+
+  /// Effective playable length — what shows up in the edited timeline.
+  Duration get effectiveLength => trimEnd - trimStart;
+
+  /// True when the user has trimmed the slice's left side inward from
+  /// the original cut. UI draws a notched chevron on this side to
+  /// indicate "drag to restore".
+  bool get isLeftTrimmed => trimStart > cutStart;
+
+  /// True when the user has trimmed the slice's right side inward.
+  bool get isRightTrimmed => trimEnd < cutEnd;
+
+  /// Total trimmed-away duration, summed across both sides. Used by
+  /// the slice-editor header subtitle ("trimmed Ns").
+  Duration get trimmedDuration => cutSpan - effectiveLength;
+
+  static const Duration _minLen = Duration(milliseconds: 100);
 
   static int _clampGain(int v) => v < 0 ? 0 : (v > 200 ? 200 : v);
 
+  static Duration _clampTrimStart(Duration cs, Duration ce, Duration ts) {
+    if (ts < cs) return cs;
+    // Reserve room for at least _minLen between trimStart and cutEnd
+    // (so trimEnd has somewhere to live).
+    final cap = ce - _minLen;
+    if (cap < cs) return cs; // degenerate cut span < _minLen
+    if (ts > cap) return cap;
+    return ts;
+  }
+
+  static Duration _clampTrimEnd(
+      Duration cs, Duration ce, Duration ts, Duration te) {
+    if (te > ce) te = ce;
+    if (te < ts + _minLen) te = ts + _minLen;
+    if (te > ce) te = ce; // unreachable unless cut span < _minLen
+    return te;
+  }
+
   ClipSlice copyWith({
-    Duration? start,
-    Duration? end,
+    Duration? cutStart,
+    Duration? cutEnd,
+    Duration? trimStart,
+    Duration? trimEnd,
     double? playbackSpeed,
     Duration? fadeIn,
     Duration? fadeOut,
@@ -49,8 +118,10 @@ class ClipSlice {
     bool? disableSmoothMouse,
   }) =>
       ClipSlice(
-        start: start ?? this.start,
-        end: end ?? this.end,
+        cutStart: cutStart ?? this.cutStart,
+        cutEnd: cutEnd ?? this.cutEnd,
+        trimStart: trimStart ?? this.trimStart,
+        trimEnd: trimEnd ?? this.trimEnd,
         playbackSpeed: playbackSpeed ?? this.playbackSpeed,
         fadeIn: fadeIn ?? this.fadeIn,
         fadeOut: fadeOut ?? this.fadeOut,
@@ -63,8 +134,10 @@ class ClipSlice {
       );
 
   Map<String, dynamic> toJson() => {
-        'startMicros': start.inMicroseconds,
-        'endMicros': end.inMicroseconds,
+        'cutStartMicros': cutStart.inMicroseconds,
+        'cutEndMicros': cutEnd.inMicroseconds,
+        'trimStartMicros': trimStart.inMicroseconds,
+        'trimEndMicros': trimEnd.inMicroseconds,
         'playbackSpeed': playbackSpeed,
         'fadeInMicros': fadeIn.inMicroseconds,
         'fadeOutMicros': fadeOut.inMicroseconds,
@@ -77,16 +150,22 @@ class ClipSlice {
       };
 
   factory ClipSlice.fromJson(Map<String, dynamic> json) {
-    final startRaw = json['startMicros'];
-    final endRaw = json['endMicros'];
-    if (startRaw is! num || endRaw is! num) {
+    final csRaw = json['cutStartMicros'];
+    final ceRaw = json['cutEndMicros'];
+    if (csRaw is! num || ceRaw is! num) {
       throw const FormatException(
-        'ClipSlice.fromJson: startMicros and endMicros are required',
+        'ClipSlice.fromJson: cutStartMicros and cutEndMicros are required',
       );
     }
+    final cs = Duration(microseconds: csRaw.toInt());
+    final ce = Duration(microseconds: ceRaw.toInt());
+    final tsRaw = json['trimStartMicros'];
+    final teRaw = json['trimEndMicros'];
     return ClipSlice(
-      start: Duration(microseconds: startRaw.toInt()),
-      end: Duration(microseconds: endRaw.toInt()),
+      cutStart: cs,
+      cutEnd: ce,
+      trimStart: tsRaw is num ? Duration(microseconds: tsRaw.toInt()) : null,
+      trimEnd: teRaw is num ? Duration(microseconds: teRaw.toInt()) : null,
       playbackSpeed: json['playbackSpeed'] is num
           ? (json['playbackSpeed'] as num).toDouble()
           : 1.0,
@@ -117,8 +196,10 @@ class ClipSlice {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is ClipSlice &&
-          other.start == start &&
-          other.end == end &&
+          other.cutStart == cutStart &&
+          other.cutEnd == cutEnd &&
+          other.trimStart == trimStart &&
+          other.trimEnd == trimEnd &&
           other.playbackSpeed == playbackSpeed &&
           other.fadeIn == fadeIn &&
           other.fadeOut == fadeOut &&
@@ -131,8 +212,10 @@ class ClipSlice {
 
   @override
   int get hashCode => Object.hash(
-        start,
-        end,
+        cutStart,
+        cutEnd,
+        trimStart,
+        trimEnd,
         playbackSpeed,
         fadeIn,
         fadeOut,
@@ -145,16 +228,20 @@ class ClipSlice {
       );
 }
 
-/// Returns the slice covering [position]. Falls back to the last slice
-/// when [position] is at or past the final end (final frame); falls
-/// back to a fresh empty slice when [clips] is empty. The lookup is
-/// linear (O(n)) — fine for B (n=1) and for typical slice counts in C.
+/// Returns the slice covering [position] in source time. Falls back to
+/// the last slice when [position] is at or past the final trimEnd
+/// (final-frame behaviour for cursor lookup); falls back to a fresh
+/// empty slice when [clips] is empty.
+///
+/// This is the B-era helper kept for cursor/preview-cosmetic lookups
+/// that always want SOME slice. The cut-tool playback-skip path uses
+/// the strictly-containing variant in `edited_time.dart`.
 ClipSlice clipSliceAt(List<ClipSlice> clips, Duration position) {
   if (clips.isEmpty) {
-    return ClipSlice(start: Duration.zero, end: Duration.zero);
+    return ClipSlice(cutStart: Duration.zero, cutEnd: Duration.zero);
   }
   for (final s in clips) {
-    if (position >= s.start && position < s.end) return s;
+    if (position >= s.trimStart && position < s.trimEnd) return s;
   }
   return clips.last;
 }
