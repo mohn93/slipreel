@@ -114,15 +114,12 @@ class GifExportPipeline {
 
     // Speed + fade are video-only for GIF (no audio track). Computed once and
     // spliced into both pass-1 (palettegen) and pass-2 (paletteuse) chains.
-    // TODO(slice-editor T7): read per-slice values once exports iterate
-    // clips; for now bridge through the first clip (single-slice projects).
-    final clips = projectState.timeline.clips;
-    final firstClip = clips.isEmpty
-        ? ClipSlice(start: Duration.zero, end: Duration.zero)
-        : clips.first;
-    final speed = firstClip.playbackSpeed;
-    final fadeIn = firstClip.fadeIn;
-    final fadeOut = firstClip.fadeOut;
+    // Slice-editor model: these live on the timeline's first clip slice;
+    // pipelines stay single-slice for now.
+    final clip0 = _firstClipOrEmpty(projectState);
+    final speed = clip0.playbackSpeed;
+    final fadeIn = clip0.fadeIn;
+    final fadeOut = clip0.fadeOut;
     final inputDurSec = trim != null
         ? trim!.duration.inMicroseconds / 1000000
         : (probed.durationSec ?? 0);
@@ -407,4 +404,15 @@ class GifExportPipeline {
       return 0;
     }
   }
+}
+
+/// Returns the first slice in [state.timeline.clips], or a zero-length default
+/// when the timeline is empty. Centralises the "single-slice bridge" the
+/// export pipelines use to read playback/fade fields off the timeline.
+ClipSlice _firstClipOrEmpty(EditorProjectState state) {
+  final clips = state.timeline.clips;
+  if (clips.isEmpty) {
+    return ClipSlice(start: Duration.zero, end: Duration.zero);
+  }
+  return clips.first;
 }
