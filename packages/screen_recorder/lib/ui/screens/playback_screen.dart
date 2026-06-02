@@ -106,6 +106,23 @@ bool handleCutKeybind({
 }) =>
     controller.splitAtPlayhead(currentEditedTime, clips);
 
+/// Computes the new selected-slice index after [removed] is dropped
+/// from clips. Pure for unit testing.
+///   - selected == removed → null (the selected slice is gone)
+///   - selected > removed → selected - 1 (everything right shifts left)
+///   - selected < removed → unchanged
+///   - selected == null → null
+@visibleForTesting
+int? decrementSelectionOnRemoval({
+  required int? selected,
+  required int removed,
+}) {
+  if (selected == null) return null;
+  if (selected == removed) return null;
+  if (selected > removed) return selected - 1;
+  return selected;
+}
+
 class PlaybackScreen extends ConsumerStatefulWidget {
   final String videoPath;
 
@@ -147,14 +164,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   EditorHistoryController? _history;
   int? _selectedZoomIndex;
   final _zoomPreviewOverride = ZoomPreviewOverride();
-  // Whether the main clip bar is currently selected. Mutually
-  // exclusive with [_selectedZoomIndex]: selecting one clears the
-  // other. Drives the inspector's context-mode display.
-  bool _isClipSelected = false;
   // Which slice (if any) the user has tapped in the multi-slice clip
-  // lane. Mutually exclusive with [_selectedZoomIndex] and
-  // [_isClipSelected]. Task 12 consumes this in the inspector; for
-  // Task 9 we only need the state to set/clear on tap.
+  // lane. Mutually exclusive with [_selectedZoomIndex]: selecting one
+  // clears the other. Drives the inspector's context-mode display.
   int? _selectedSliceIndex;
 
   // True while the scissors toolbar button is engaged. The timeline
@@ -274,10 +286,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// somehow set (only one can be set under normal flow because the
   /// tap handlers clear the other).
   TimelineSelection? _currentSelection() {
+    if (_selectedSliceIndex != null) {
+      return SliceSelected(_selectedSliceIndex!);
+    }
     if (_selectedZoomIndex != null) {
       return ZoomSelected(_selectedZoomIndex!);
     }
-    if (_isClipSelected) return const ClipSelected();
     return null;
   }
 
@@ -554,7 +568,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     setState(() {
       // Auto-select the new zoom so the inspector opens on it.
       _selectedZoomIndex = _project.zoomRegions.length - 1;
-      _isClipSelected = false;
+      _selectedSliceIndex = null;
     });
     _controller.seekTo(start);
   }
@@ -1198,7 +1212,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                             _zoomPreviewOverride.value = null;
                             setState(() {
                               _selectedZoomIndex = null;
-                              _isClipSelected = false;
+                              _selectedSliceIndex = null;
+                            });
+                          },
+                          onSliceRemoved: (removed) {
+                            setState(() {
+                              _selectedSliceIndex =
+                                  decrementSelectionOnRemoval(
+                                selected: _selectedSliceIndex,
+                                removed: removed,
+                              );
                             });
                           },
                           videoSize: _videoSize(),
@@ -1552,9 +1575,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   }
                   setState(() {
                     _selectedZoomIndex = i;
-                    // Zoom and clip selections are mutually exclusive
-                    // — selecting a zoom clears any clip selection.
-                    if (i != null) _isClipSelected = false;
+                    // Zoom and slice selections are mutually exclusive
+                    // — selecting a zoom clears any slice selection.
+                    if (i != null) _selectedSliceIndex = null;
                   });
                 },
                 onZoomChanged: (i, next) {
@@ -1584,7 +1607,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     _selectedSliceIndex = idx;
                     if (idx != null) {
                       _selectedZoomIndex = null;
-                      _isClipSelected = false;
                     }
                   });
                 },

@@ -40,6 +40,7 @@ class InspectorPanel extends StatefulWidget {
     this.onZoomChanged,
     this.onZoomDeleted,
     this.onSelectionCleared,
+    this.onSliceRemoved,
     this.canHideCursor = false,
     required this.curveLibrary,
     this.videoSize = Size.zero,
@@ -81,6 +82,11 @@ class InspectorPanel extends StatefulWidget {
 
   /// User asked to leave context mode (X button).
   final VoidCallback? onSelectionCleared;
+
+  /// Fires BEFORE the controller drops the slice, so the parent can
+  /// migrate its [_selectedSliceIndex] via [decrementSelectionOnRemoval]
+  /// before the index becomes stale.
+  final ValueChanged<int>? onSliceRemoved;
 
   /// Video frame size; passed to `ZoomContextInspector` so the
   /// placement picker can render and compute coordinates.
@@ -148,7 +154,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       child: switch (selection) {
-        ClipSelected() => _clipContext(),
+        SliceSelected(:final index) => _sliceContext(index),
         ZoomSelected(:final index) => _zoomContext(index),
       },
     );
@@ -183,10 +189,11 @@ class _InspectorPanelState extends State<InspectorPanel> {
     );
   }
 
-  Widget _clipContext() {
+  Widget _sliceContext(int index) {
     return SliceEditor(
-      sliceIndex: 0,
+      sliceIndex: index,
       onClose: () => widget.onSelectionCleared?.call(),
+      onRemove: widget.onSliceRemoved,
     );
   }
 }
