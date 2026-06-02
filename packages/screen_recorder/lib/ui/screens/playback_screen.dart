@@ -123,6 +123,34 @@ int? decrementSelectionOnRemoval({
   return selected;
 }
 
+/// Returns the source-time position the video controller should seek
+/// to when its position-tick reaches [sourcePosition]; null when the
+/// current position is already inside a slice's playable trim range.
+///
+/// When the helper returns the final slice's trimEnd, the caller
+/// should ALSO pause the controller — we've walked off the end of
+/// the edited timeline.
+@visibleForTesting
+Duration? shouldSeekOnTick(List<ClipSlice> clips, Duration sourcePosition) {
+  if (clips.isEmpty) return null;
+  // Already inside a slice's trim range? No seek needed.
+  for (final c in clips) {
+    if (sourcePosition >= c.trimStart && sourcePosition < c.trimEnd) {
+      return null;
+    }
+  }
+  final next = nextPlayPosition(clips, sourcePosition);
+  if (next != null) return next;
+  return clips.last.trimEnd;
+}
+
+/// Source-time position to seek to when the user scrubs to
+/// [editedTime] on the timeline. Thin wrapper over editedToSource so
+/// the playback-screen call site documents intent.
+@visibleForTesting
+Duration seekFromEditedTime(List<ClipSlice> clips, Duration editedTime) =>
+    editedToSource(clips, editedTime);
+
 class PlaybackScreen extends ConsumerStatefulWidget {
   final String videoPath;
 
@@ -427,6 +455,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // _isInitialized + _trim.selection are set so the listener never
       // sees a half-initialized state.
       _controller.addListener(_onTrimTick);
+      // Skip removed regions during playback. Wired alongside the
+      // soft-trim tick so the two enforce-on-tick paths stay together.
+      _controller.addListener(_onSkipTick);
       // Seed the hover anchor from the freshly-initialised controller
       // so hover-end-before-any-other-action restores to a meaningful
       // value rather than Duration.zero (which would jump to start).
@@ -465,6 +496,40 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _trim.enforce(isPlaying: v.isPlaying, position: v.position);
   }
 
+  // Tracks the last position we asked the controller to skip to so we
+  // don't fire another seek before the previous one has landed. Without
+  // this guard a slow seek would let position-ticks keep emitting the
+  // stale "still in removed region" position, and we'd queue duplicate
+  // seekTo calls every frame.
+  Duration? _lastSkipTarget;
+
+  /// Position-tick listener that skips removed regions. When playback
+  /// walks off a slice's trimEnd, seeks to the next slice's trimStart;
+  /// when it lands inside a removed region (e.g. from a manual seek),
+  /// seeks forward to the closest playable position; when it's past the
+  /// final trimEnd, parks at the final trimEnd and pauses.
+  void _onSkipTick() {
+    if (!_isInitialized) return;
+    final v = _controller.value;
+    final clips = ref.read(editorProjectControllerProvider).timeline.clips;
+    final target = shouldSeekOnTick(clips, v.position);
+    if (target == null) {
+      _lastSkipTarget = null;
+      return;
+    }
+    // Already issued this exact seek — wait for the controller to land
+    // before issuing another. Without the guard we'd hammer seekTo on
+    // every frame while the in-flight seek is still pending.
+    if (_lastSkipTarget == target) return;
+    _lastSkipTarget = target;
+    if (clips.isNotEmpty &&
+        target == clips.last.trimEnd &&
+        v.position >= target) {
+      _controller.pause();
+    }
+    _controller.seekTo(target);
+  }
+
   /// Schedule a debounced save so a slider drag doesn't hammer the
   /// disk on every tick. Wired automatically: a `ref.listen` in
   /// build() calls this on every notifier publish.
@@ -489,6 +554,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     if (_isInitialized) {
       _projectStore.save(_project);
       _controller.removeListener(_onTrimTick);
+      _controller.removeListener(_onSkipTick);
       _controller.removeListener(_onHoverTrack);
       _controller.removeListener(_onPlayStateTick);
     }
@@ -1528,9 +1594,23 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               final displayedPos = _hover.isHovering
                   ? _hover.intendedPosition
                   : (_smoothPlayhead?.position ?? _controller.value.position);
+              // The timeline's x-axis is edited time: ruler width =
+              // total edited duration, playhead = source mapped to
+              // edited, scrub callbacks deliver edited and we convert
+              // back to source before seeking the controller.
+              final clipsForTimeline = ref
+                  .watch(editorProjectControllerProvider)
+                  .timeline
+                  .clips;
+              final editedDuration = clipsForTimeline.isEmpty
+                  ? _controller.value.duration
+                  : totalEditedDuration(clipsForTimeline);
+              final editedPos = clipsForTimeline.isEmpty
+                  ? displayedPos
+                  : sourceToEdited(clipsForTimeline, displayedPos);
               return EditorTimeline(
-                duration: _controller.value.duration,
-                position: displayedPos,
+                duration: editedDuration,
+                position: editedPos,
                 isPlaying: _controller.value.isPlaying,
                 timelineScale:
                     ref.watch(editorProjectControllerProvider).timelineScale,
@@ -1543,27 +1623,34 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onPinchScale: (newScale, anchor) => ref
                     .read(editorProjectControllerProvider.notifier)
                     .setTimelineScale(newScale, anchorTime: anchor),
-                onSeek: (next) {
-                  // Committed seek: clear hover state and adopt the
-                  // click target as the new intended position, then
-                  // seek. The listener also picks this up after the
-                  // seek lands, but we set it explicitly to avoid even
-                  // a one-frame gap where the anchor is still the old
-                  // pre-hover value.
-                  setState(() => _hover.seek(next));
-                  _checkZoomMarkerClick(next);
+                onSeek: (editedNext) {
+                  // EditorTimeline emits edited-time positions; convert
+                  // to source before feeding the controller-bound hover
+                  // chain so the controller seeks to the correct frame.
+                  final clips = ref
+                      .read(editorProjectControllerProvider)
+                      .timeline
+                      .clips;
+                  final sourceNext = clips.isEmpty
+                      ? editedNext
+                      : seekFromEditedTime(clips, editedNext);
+                  setState(() => _hover.seek(sourceNext));
+                  _checkZoomMarkerClick(sourceNext);
                 },
-                onHoverSeek: (next) {
+                onHoverSeek: (editedNext) {
                   // Mark hover active so the listener stops updating
                   // the anchor. The anchor we'll restore to on
                   // hover-end is whatever the listener last wrote — i.e.
-                  // the user's actual stopped position (the live
-                  // playback position if they were playing, or the
-                  // paused position otherwise). Crucially we do NOT
-                  // sample `_controller.value.position` here, which
-                  // could still be the previous hover's preview target
-                  // if its restore-seek hadn't applied yet.
-                  setState(() => _hover.hoverSeek(next));
+                  // the user's actual stopped position. Convert edited
+                  // → source so the controller seeks the right frame.
+                  final clips = ref
+                      .read(editorProjectControllerProvider)
+                      .timeline
+                      .clips;
+                  final sourceNext = clips.isEmpty
+                      ? editedNext
+                      : seekFromEditedTime(clips, editedNext);
+                  setState(() => _hover.hoverSeek(sourceNext));
                 },
                 onHoverEnd: () {
                   setState(() => _hover.hoverEnd());
