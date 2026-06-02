@@ -14,7 +14,6 @@ import 'package:slipreel_engine/models/compression_bitrate.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
-import 'package:slipreel_engine/timeline/timeline.dart';
 
 EditorProjectState _stateWith(List<ClipSlice> clips) {
   final base = EditorProjectState.defaults();

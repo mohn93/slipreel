@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
-import 'package:slipreel_engine/timeline/timeline.dart';
 
 EditorProjectController _controllerWithClips(List<ClipSlice> clips) {
   final base = EditorProjectState.defaults();

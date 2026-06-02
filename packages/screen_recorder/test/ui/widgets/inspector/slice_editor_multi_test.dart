@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
-import 'package:slipreel_engine/timeline/timeline.dart';
 
 import 'package:screen_recorder/ui/theme/app_palette.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/slice_editor.dart';
