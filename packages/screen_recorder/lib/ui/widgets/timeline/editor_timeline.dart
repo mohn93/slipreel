@@ -1,9 +1,10 @@
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:slipreel_engine/models/trim_selection.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
+import 'package:screen_recorder/ui/widgets/timeline/clip_lane.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_constants.dart';
 import 'package:screen_recorder/ui/widgets/timeline/time_ruler.dart';
 
@@ -62,10 +63,12 @@ class EditorTimeline extends StatefulWidget {
     this.onZoomSelected,
     this.onZoomDeleted,
     this.onZoomAdded,
-    this.clipSelected = false,
-    this.onClipSelected,
-    this.trimSelection,
-    this.onTrimChanged,
+    this.clips = const [],
+    this.selectedSliceIndex,
+    this.onSliceSelected,
+    this.cursorXListenable,
+    this.onSliceTrimStartChanged,
+    this.onSliceTrimEndChanged,
     this.playbackSpeedLabel = '1x',
     this.isPlaying = false,
     this.onHoverSeek,
@@ -87,19 +90,29 @@ class EditorTimeline extends StatefulWidget {
   /// Click-to-add: fires with `(start, end)` for the ghost the user
   /// just committed by tapping in the empty area of the zoom lane.
   final void Function(Duration start, Duration end)? onZoomAdded;
-  /// Whether the main clip bar is currently selected (drives the
-  /// inspector's clip-context view).
-  final bool clipSelected;
-  /// Called when the user taps the clip lane. Passes `true` to select
-  /// the clip, `false` to clear if it was already selected. Selection
-  /// fires alongside seeking — the playhead still moves to the tap.
-  final ValueChanged<bool>? onClipSelected;
-  /// Optional in/out trim. When non-null the clip lane renders the
-  /// trimmed-out regions as a dim overlay and exposes drag handles at
-  /// the trim points (visible on hover). Null = no trim affordance.
-  final TrimSelection? trimSelection;
-  /// Fires continuously while the user drags a trim handle.
-  final ValueChanged<TrimSelection>? onTrimChanged;
+
+  /// The project's clip slices. Rendered in edited-time order by the
+  /// embedded [ClipLane] — trimmed-away source regions disappear.
+  final List<ClipSlice> clips;
+
+  /// Index of the slice the user has tapped (null = none). Drives the
+  /// per-slice selection highlight; the parent uses this to swap the
+  /// inspector into the slice editor.
+  final int? selectedSliceIndex;
+
+  /// Bubbles up from [ClipLane] when the user taps a slice. Null
+  /// payload means "deselect" — same callback handles both directions.
+  final ValueChanged<int?>? onSliceSelected;
+
+  /// Drives the magnetic-pull transform on each [SliceBar]. Task 10
+  /// wires this to the real cut-mode cursor; everywhere else a null
+  /// notifier is fine (no pull).
+  final ValueListenable<double?>? cursorXListenable;
+
+  /// Per-slice trim-handle drag callbacks. Routed by the parent to
+  /// `EditorProjectController.setSliceTrimStart/setSliceTrimEnd`.
+  final void Function(int sliceIndex, Duration trimStart)? onSliceTrimStartChanged;
+  final void Function(int sliceIndex, Duration trimEnd)? onSliceTrimEndChanged;
   final String playbackSpeedLabel;
   final bool isPlaying;
   // Live preview seek while the cursor hovers the timeline (paused only).
@@ -139,6 +152,9 @@ class EditorTimeline extends StatefulWidget {
 class _EditorTimelineState extends State<EditorTimeline> {
   double? _hoverProgress;
   final ScrollController _scrollController = ScrollController();
+  // Fallback no-op cursor source so SliceBars always have something to
+  // listen to — Task 10 wires the real cut-overlay cursor in.
+  final ValueNotifier<double?> _nullCursor = ValueNotifier<double?>(null);
   double _lastViewportWidth = 0;
   // Captured at onScaleStart so each ongoing pinch computes
   // (start * d.scale) rather than compounding across frames.
@@ -329,6 +345,7 @@ class _EditorTimelineState extends State<EditorTimeline> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _nullCursor.dispose();
     super.dispose();
   }
 
@@ -417,17 +434,18 @@ class _EditorTimelineState extends State<EditorTimeline> {
                         const SizedBox(height: laneSpacing),
                         SizedBox(
                           height: laneHeight,
-                          child: _ClipLane(
-                            duration: widget.duration,
+                          child: ClipLane(
+                            clips: widget.clips,
+                            selectedSliceIndex: widget.selectedSliceIndex,
                             pixelsPerSecond: pps,
-                            contentWidth: cw,
-                            onSeek: widget.onSeek,
-                            speedLabel: widget.playbackSpeedLabel,
-                            isSelected: widget.clipSelected,
-                            onTap: () => widget.onClipSelected
-                                ?.call(!widget.clipSelected),
-                            trimSelection: widget.trimSelection,
-                            onTrimChanged: widget.onTrimChanged,
+                            cursorXListenable:
+                                widget.cursorXListenable ?? _nullCursor,
+                            onSliceSelected: (i) =>
+                                widget.onSliceSelected?.call(i),
+                            onSliceTrimStartChanged: (i, v) =>
+                                widget.onSliceTrimStartChanged?.call(i, v),
+                            onSliceTrimEndChanged: (i, v) =>
+                                widget.onSliceTrimEndChanged?.call(i, v),
                           ),
                         ),
                         const SizedBox(height: laneSpacing),
@@ -476,320 +494,6 @@ class _EditorTimelineState extends State<EditorTimeline> {
       },
     );
   }
-}
-
-// ─────────────────────────────── Clip lane ──────────────────────────────
-
-class _ClipLane extends StatefulWidget {
-  const _ClipLane({
-    required this.duration,
-    required this.pixelsPerSecond,
-    required this.contentWidth,
-    required this.onSeek,
-    required this.speedLabel,
-    required this.isSelected,
-    required this.onTap,
-    required this.trimSelection,
-    required this.onTrimChanged,
-  });
-
-  final Duration duration;
-  final double pixelsPerSecond;
-  final double contentWidth;
-  final ValueChanged<Duration> onSeek;
-  final String speedLabel;
-  final bool isSelected;
-  final VoidCallback onTap;
-  final TrimSelection? trimSelection;
-  final ValueChanged<TrimSelection>? onTrimChanged;
-
-  @override
-  State<_ClipLane> createState() => _ClipLaneState();
-}
-
-class _ClipLaneState extends State<_ClipLane> {
-  bool _hovered = false;
-
-  // Drag anchors + accumulators — same pattern as the zoom pill's
-  // body / divider drags. Reading widget.trimSelection on each tick
-  // can lose deltas if multiple updates fire inside one frame.
-  Duration? _trimStartAnchor;
-  double _trimStartAccum = 0;
-  Duration? _trimEndAnchor;
-  double _trimEndAccum = 0;
-
-  void _seek(Offset local) {
-    // Clamp the gesture x to lane bounds so out-of-range positions
-    // from fast drags inside the scroll-wrapped lane can't seek past
-    // the duration's endpoints.
-    final x = local.dx.clamp(0.0, widget.contentWidth);
-    widget.onSeek(xToTime(x, widget.pixelsPerSecond));
-  }
-
-  Duration get _minTrimDuration =>
-      const Duration(milliseconds: minTrimDurationMs);
-
-  void _beginTrimStartDrag() {
-    _trimStartAnchor = widget.trimSelection?.start;
-    _trimStartAccum = 0;
-  }
-
-  void _onTrimStartDrag(double dx) {
-    final trim = widget.trimSelection;
-    final anchor = _trimStartAnchor;
-    if (trim == null || anchor == null || widget.onTrimChanged == null) {
-      return;
-    }
-    _trimStartAccum += dx;
-    final scale = widget.duration.inMicroseconds / widget.contentWidth;
-    final deltaUs = (_trimStartAccum * scale).round();
-    final maxStartUs = trim.end.inMicroseconds -
-        _minTrimDuration.inMicroseconds;
-    final newStartUs = (anchor.inMicroseconds + deltaUs)
-        .clamp(0, maxStartUs);
-    widget.onTrimChanged!(TrimSelection(
-      start: Duration(microseconds: newStartUs),
-      end: trim.end,
-      videoDuration: widget.duration,
-    ));
-  }
-
-  void _endTrimStartDrag() {
-    _trimStartAnchor = null;
-    _trimStartAccum = 0;
-  }
-
-  void _beginTrimEndDrag() {
-    _trimEndAnchor = widget.trimSelection?.end;
-    _trimEndAccum = 0;
-  }
-
-  void _onTrimEndDrag(double dx) {
-    final trim = widget.trimSelection;
-    final anchor = _trimEndAnchor;
-    if (trim == null || anchor == null || widget.onTrimChanged == null) {
-      return;
-    }
-    _trimEndAccum += dx;
-    final scale = widget.duration.inMicroseconds / widget.contentWidth;
-    final deltaUs = (_trimEndAccum * scale).round();
-    final minEndUs = trim.start.inMicroseconds +
-        _minTrimDuration.inMicroseconds;
-    final newEndUs = (anchor.inMicroseconds + deltaUs)
-        .clamp(minEndUs, widget.duration.inMicroseconds);
-    widget.onTrimChanged!(TrimSelection(
-      start: trim.start,
-      end: Duration(microseconds: newEndUs),
-      videoDuration: widget.duration,
-    ));
-  }
-
-  void _endTrimEndDrag() {
-    _trimEndAnchor = null;
-    _trimEndAccum = 0;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final trim = widget.trimSelection;
-    final hasTrim = trim != null &&
-        widget.onTrimChanged != null &&
-        widget.duration > Duration.zero;
-    final pps = widget.pixelsPerSecond;
-    final startX = hasTrim
-        ? timeToX(trim.start, pps)
-        : 0.0;
-    final endX = hasTrim
-        ? timeToX(trim.end, pps)
-        : widget.contentWidth;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Clip body — seek on tap/drag, painter underneath.
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (d) {
-                _seek(d.localPosition);
-                widget.onTap();
-              },
-              onHorizontalDragStart: (d) => _seek(d.localPosition),
-              onHorizontalDragUpdate: (d) => _seek(d.localPosition),
-              child: CustomPaint(
-                painter: _ClipLanePainter(
-                  duration: widget.duration,
-                  speedLabel: widget.speedLabel,
-                  isSelected: widget.isSelected,
-                ),
-              ),
-            ),
-          ),
-          // Dimmed shading over trimmed-out regions.
-          if (hasTrim && startX > 0)
-            Positioned(
-              left: 0,
-              top: 0,
-              width: startX,
-              bottom: 0,
-              child: const IgnorePointer(
-                child: ColoredBox(color: Color(0x99000000)),
-              ),
-            ),
-          if (hasTrim && endX < widget.contentWidth)
-            Positioned(
-              left: endX,
-              top: 0,
-              right: 0,
-              bottom: 0,
-              child: const IgnorePointer(
-                child: ColoredBox(color: Color(0x99000000)),
-              ),
-            ),
-          // Trim handles — visible on hover, drag to adjust the
-          // trim range. Cursor flips to resizeLeftRight inside the
-          // hit zone immediately (the MouseRegion is always live).
-          // The hit zone is centered on (trimPoint ± trimHandleInset)
-          // so the visible bar sits inside the clip bar's rounded
-          // corners even at full-duration trim.
-          if (hasTrim) ...[
-            Positioned(
-              left: startX + trimHandleInset - handleHitWidth / 2,
-              top: 0,
-              width: handleHitWidth,
-              bottom: 0,
-              child: TipAnchor(
-                tipId: TipId.editorTrimHandles,
-                child: _PillEdgeHandle(
-                  alignment: Alignment.center,
-                  showHandle: _hovered,
-                  verticalPadding: 10,
-                  onDragStart: _beginTrimStartDrag,
-                  onDragUpdate: _onTrimStartDrag,
-                  onDragEnd: _endTrimStartDrag,
-                  onTap: widget.onTap,
-                ),
-              ),
-            ),
-            Positioned(
-              left: endX - trimHandleInset - handleHitWidth / 2,
-              top: 0,
-              width: handleHitWidth,
-              bottom: 0,
-              child: _PillEdgeHandle(
-                alignment: Alignment.center,
-                showHandle: _hovered,
-                verticalPadding: 10,
-                onDragStart: _beginTrimEndDrag,
-                onDragUpdate: _onTrimEndDrag,
-                onDragEnd: _endTrimEndDrag,
-                onTap: widget.onTap,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ClipLanePainter extends CustomPainter {
-  _ClipLanePainter({
-    required this.duration,
-    required this.speedLabel,
-    required this.isSelected,
-  });
-
-  final Duration duration;
-  final String speedLabel;
-  final bool isSelected;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(8));
-
-    // Track background underneath, in case clip width != lane width.
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(8)),
-      Paint()..color = trackBg,
-    );
-
-    // Clip pill with subtle vertical gradient to match the reference.
-    final gradient = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [clipFillTop, clipFill],
-    );
-    canvas.drawRRect(
-      rrect,
-      Paint()..shader = gradient.createShader(rect),
-    );
-    // When selected, paint a brighter accent border so the user can
-    // see at a glance that the inspector's clip-context belongs to
-    // this bar.
-    canvas.drawRRect(
-      rrect,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = isSelected ? 2 : 1
-        ..color =
-            isSelected ? const Color(0xFF8B7DFF) : clipStroke,
-    );
-
-    // Centered "Clip" + duration / speed subtitle.
-    final main = TextPainter(
-      text: const TextSpan(
-        text: 'Clip',
-        style: TextStyle(
-          color: Color(0xFFFFFFFF),
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final sub = TextPainter(
-      text: TextSpan(
-        text: '${_formatHumanDuration(duration)}  ·  $speedLabel',
-        style: const TextStyle(
-          color: Color(0xCCFFFFFF),
-          fontSize: 11,
-          fontFeatures: [FontFeature.tabularFigures()],
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final totalH = main.height + sub.height + 1;
-    final cy = size.height / 2 - totalH / 2;
-    main.paint(canvas, Offset(size.width / 2 - main.width / 2, cy));
-    sub.paint(canvas,
-        Offset(size.width / 2 - sub.width / 2, cy + main.height + 1));
-  }
-
-  static String _formatHumanDuration(Duration d) {
-    final ms = d.inMilliseconds;
-    if (ms < 1000) return '${ms}ms';
-    final secs = ms / 1000;
-    if (secs < 60) {
-      return secs == secs.roundToDouble()
-          ? '${secs.toInt()}s'
-          : '${secs.toStringAsFixed(1)}s';
-    }
-    final m = d.inMinutes;
-    final s = d.inSeconds - m * 60;
-    return '${m}m ${s}s';
-  }
-
-  @override
-  bool shouldRepaint(_ClipLanePainter old) =>
-      old.duration != duration ||
-      old.speedLabel != speedLabel ||
-      old.isSelected != isSelected;
 }
 
 // ─────────────────────────────── Zoom lane ──────────────────────────────
@@ -1386,24 +1090,20 @@ class _PillEdgeHandle extends StatefulWidget {
     required this.onDragUpdate,
     required this.onDragEnd,
     required this.onTap,
-    this.verticalPadding = 8,
   });
 
   /// `centerLeft` for the left edge, `centerRight` for the right,
-  /// `center` for a freestanding handle (e.g. the clip bar's trim points).
+  /// `center` for a freestanding handle.
   final Alignment alignment;
-  /// Whether the parent (e.g. the zoom pill or clip bar) is currently
-  /// hovered. When false the bar is fully transparent so it doesn't
-  /// clutter the timeline; the MouseRegion still hit-tests so the cursor
-  /// flips to resizeLeftRight the moment the user enters the zone.
+  /// Whether the parent (e.g. the zoom pill) is currently hovered.
+  /// When false the bar is fully transparent so it doesn't clutter
+  /// the timeline; the MouseRegion still hit-tests so the cursor flips
+  /// to resizeLeftRight the moment the user enters the zone.
   final bool showHandle;
   final VoidCallback onDragStart;
   final ValueChanged<double> onDragUpdate;
   final VoidCallback onDragEnd;
   final VoidCallback onTap;
-  /// Top/bottom inset so the bar is visually shorter than the lane.
-  /// Clip-bar trim handles use a larger value than zoom-pill edges.
-  final double verticalPadding;
 
   @override
   State<_PillEdgeHandle> createState() => _PillEdgeHandleState();
@@ -1438,9 +1138,9 @@ class _PillEdgeHandleState extends State<_PillEdgeHandle> {
           widget.onDragEnd();
         },
         child: Padding(
-          padding: EdgeInsets.symmetric(
+          padding: const EdgeInsets.symmetric(
             horizontal: 6,
-            vertical: widget.verticalPadding,
+            vertical: 8,
           ),
           child: Align(
             alignment: widget.alignment,

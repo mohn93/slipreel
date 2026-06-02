@@ -121,10 +121,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   bool _isExporting = false;
   // Owns the trim selection and soft-enforces it during playback.
   // Wired in [_initializeVideo] once the controller is initialised.
+  // B-era whole-clip trim — per-slice trim handles in the multi-slice
+  // ClipLane (Task 9) now drive the engine via setSliceTrim*, but this
+  // controller still enforces playback-boundary behaviour until those
+  // paths converge.
   late final TrimController _trim;
-  // Read-only alias kept so the existing read sites (export pipeline
-  // args, EditorTimeline.trimSelection) keep working unchanged.
-  TrimSelection? get _trimSelection => _trim.selection;
   // State-shaped undo/redo for everything the editor notifier owns
   // (cursor visuals, animation configs, motion blur, zoom regions,
   // etc.). Wired in [_initializeVideo] after the project state loads
@@ -138,6 +139,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // exclusive with [_selectedZoomIndex]: selecting one clears the
   // other. Drives the inspector's context-mode display.
   bool _isClipSelected = false;
+  // Which slice (if any) the user has tapped in the multi-slice clip
+  // lane. Mutually exclusive with [_selectedZoomIndex] and
+  // [_isClipSelected]. Task 12 consumes this in the inspector; for
+  // Task 9 we only need the state to set/clear on tap.
+  int? _selectedSliceIndex;
 
   // Session-only preview-playback-speed multiplier (1×/2×/4×/8×).
   // Picked from the dropdown next to the timeline-zoom slider in the
@@ -1471,14 +1477,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     if (i != null) _isClipSelected = false;
                   });
                 },
-                clipSelected: _isClipSelected,
-                onClipSelected: (selected) {
-                  if (selected) _zoomPreviewOverride.value = null;
-                  setState(() {
-                    _isClipSelected = selected;
-                    if (selected) _selectedZoomIndex = null;
-                  });
-                },
                 onZoomChanged: (i, next) {
                   _zoomPreviewOverride.value = null;
                   _projectController.updateZoomAt(i, next);
@@ -1496,10 +1494,29 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   });
                 },
                 onZoomAdded: _addZoomAt,
-                trimSelection: _trimSelection,
-                onTrimChanged: (next) {
-                  setState(() => _trim.selection = next);
+                clips: ref
+                    .watch(editorProjectControllerProvider)
+                    .timeline
+                    .clips,
+                selectedSliceIndex: _selectedSliceIndex,
+                onSliceSelected: (idx) {
+                  setState(() {
+                    _selectedSliceIndex = idx;
+                    if (idx != null) {
+                      _selectedZoomIndex = null;
+                      _isClipSelected = false;
+                    }
+                  });
                 },
+                onSliceTrimStartChanged: (idx, v) => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .setSliceTrimStart(idx, v),
+                onSliceTrimEndChanged: (idx, v) => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .setSliceTrimEnd(idx, v),
+                // cursorXListenable left null — EditorTimeline supplies a
+                // no-op notifier. Task 10 will pipe the real cut-overlay
+                // cursor x in here so SliceBars get magnetic pull.
               );
             },
           ),
