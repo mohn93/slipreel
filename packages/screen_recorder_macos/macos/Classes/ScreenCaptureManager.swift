@@ -152,7 +152,14 @@ class ScreenCaptureManager: NSObject {
     let config = SCStreamConfiguration()
     config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
     config.pixelFormat = kCVPixelFormatType_32BGRA
-    config.scalesToFit = false
+    // SCStream source coords are in display points, but config.width/height
+    // are in pixels. On a Retina display, scalesToFit=false maps 1 source
+    // point → 1 dest pixel, so the content ends up rendered in only the
+    // top-left quadrant of the framebuffer (1699×923 of content baked into
+    // a 3398×1846 buffer, the rest black). scalesToFit=true scales the
+    // source area to fill the configured pixel buffer — for the matching
+    // aspect we use here, that's identity (no letterbox).
+    config.scalesToFit = true
     config.showsCursor = showCursor
     config.queueDepth = 5
 
@@ -174,12 +181,6 @@ class ScreenCaptureManager: NSObject {
       )
       config.width = region.widthPx
       config.height = region.heightPx
-      // On Retina, sourceRect is in points (e.g. 400×300pt) but
-      // config.width/height are in pixels (e.g. 800×600). Without
-      // scalesToFit, SCStream maps 1 source point → 1 dest pixel and
-      // leaves the right/bottom half of the framebuffer black. Enable
-      // scaling so the source area fills the configured pixel buffer.
-      config.scalesToFit = true
     } else if isWindow {
       guard let windowID = UInt32(sourceId),
             let window = content.windows.first(where: { $0.windowID == windowID }) else {
