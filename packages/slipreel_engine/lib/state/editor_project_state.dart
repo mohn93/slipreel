@@ -6,7 +6,6 @@ import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
-import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
 
@@ -36,11 +35,7 @@ class EditorProjectState {
     required this.cursorDelay,
     required this.windowFrame,
     this.cursorPostProcess = CursorPostProcess.none,
-    this.playbackSpeed = 1.0,
-    this.fadeIn = Duration.zero,
-    this.fadeOut = Duration.zero,
     this.outputAspect = OutputAspect.auto,
-    this.audioMix = const AudioMix(),
     this.timelineScale = 1.0,
     this.pendingScaleAnchor,
   });
@@ -119,28 +114,10 @@ class EditorProjectState {
   /// section. Defaults to [CursorPostProcess.none] — all filters off.
   final CursorPostProcess cursorPostProcess;
 
-  /// Playback speed multiplier for the clip (1.0 = native). Edited
-  /// from the Clip context inspector. The MP4 export pipeline applies
-  /// this (setpts on video, atempo on audio); GIF speed is being wired
-  /// separately. Round-tripped through persistence.
-  final double playbackSpeed;
-
-  /// Fade-in duration applied at the start of the clip. The MP4 export
-  /// pipeline applies this (fade on video, afade on audio); GIF fades
-  /// are being wired separately. See [playbackSpeed].
-  final Duration fadeIn;
-
-  /// Fade-out duration applied at the end of the clip. See [fadeIn].
-  final Duration fadeOut;
-
   /// Output canvas aspect ratio. Drives canvas dimensions for both the
   /// editor preview and the export pipeline via `OutputCanvasResolver`.
   /// Defaults to [OutputAspect.auto] — match the source video aspect.
   final OutputAspect outputAspect;
-
-  /// Per-track recording-audio volume/mute, applied as an ffmpeg downmix at
-  /// export. Preview is unaffected (export-only mixing).
-  final AudioMix audioMix;
 
   /// Horizontal timeline zoom. 1.0 = fit-to-width (default; visually
   /// identical to pre-feature behavior). Up to 8.0 = 8× wider content.
@@ -161,7 +138,7 @@ class EditorProjectState {
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 6;
+  static const int currentSchemaVersion = 7;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -185,11 +162,7 @@ class EditorProjectState {
     Duration? cursorDelay,
     CursorPostProcess? cursorPostProcess,
     WindowFrame? windowFrame,
-    double? playbackSpeed,
-    Duration? fadeIn,
-    Duration? fadeOut,
     OutputAspect? outputAspect,
-    AudioMix? audioMix,
     double? timelineScale,
     Duration? pendingScaleAnchor,
     bool clearPendingScaleAnchor = false,
@@ -233,11 +206,7 @@ class EditorProjectState {
       cursorDelay: cursorDelay ?? this.cursorDelay,
       cursorPostProcess: cursorPostProcess ?? this.cursorPostProcess,
       windowFrame: windowFrame ?? this.windowFrame,
-      playbackSpeed: playbackSpeed ?? this.playbackSpeed,
-      fadeIn: fadeIn ?? this.fadeIn,
-      fadeOut: fadeOut ?? this.fadeOut,
       outputAspect: outputAspect ?? this.outputAspect,
-      audioMix: audioMix ?? this.audioMix,
       timelineScale: timelineScale ?? this.timelineScale,
       pendingScaleAnchor: clearPendingScaleAnchor
           ? null
@@ -263,16 +232,15 @@ class EditorProjectState {
     'cursorDelayMicros': cursorDelay.inMicroseconds,
     'windowFrame': windowFrame.toJson(),
     'cursorPostProcess': cursorPostProcess.toJson(),
-    'playbackSpeed': playbackSpeed,
-    'fadeInMicros': fadeIn.inMicroseconds,
-    'fadeOutMicros': fadeOut.inMicroseconds,
     'outputAspect': outputAspect.name,
-    'audioMix': audioMix.toJson(),
     'timelineScale': timelineScale,
     // pendingScaleAnchor is transient; not serialized.
   };
 
-  factory EditorProjectState.fromJson(Map<String, dynamic> rawJson) {
+  factory EditorProjectState.fromJson(
+    Map<String, dynamic> rawJson, {
+    required Duration videoDuration,
+  }) {
     final version = rawJson['schemaVersion'];
     if (version is int && version > currentSchemaVersion) {
       throw FormatException(
@@ -285,7 +253,7 @@ class EditorProjectState {
     // field readers below only ever see the current shape. A v2 JSON
     // (flat zoomRegions list) is reshaped into a v3 JSON (timeline
     // container) by the v2→v3 step before we look up `timeline`.
-    final json = migrateEditorProjectJson(rawJson);
+    final json = migrateEditorProjectJson(rawJson, videoDuration: videoDuration);
 
     final timelineJson = json['timeline'];
     final timeline = timelineJson is Map<String, dynamic>
@@ -356,21 +324,10 @@ class EditorProjectState {
               json['cursorPostProcess'] as Map<String, dynamic>,
             )
           : CursorPostProcess.none,
-      playbackSpeed:
-          (json['playbackSpeed'] as num?)?.toDouble() ?? defaults.playbackSpeed,
-      fadeIn: json['fadeInMicros'] is num
-          ? Duration(microseconds: (json['fadeInMicros'] as num).round())
-          : defaults.fadeIn,
-      fadeOut: json['fadeOutMicros'] is num
-          ? Duration(microseconds: (json['fadeOutMicros'] as num).round())
-          : defaults.fadeOut,
       outputAspect: (json['outputAspect'] is String) &&
               OutputAspect.values.any((v) => v.name == json['outputAspect'])
           ? OutputAspect.values.byName(json['outputAspect'] as String)
           : defaults.outputAspect,
-      audioMix: json['audioMix'] is Map<String, dynamic>
-          ? AudioMix.fromJson(json['audioMix'] as Map<String, dynamic>)
-          : defaults.audioMix,
       timelineScale: _readTimelineScale(json['timelineScale']),
       // pendingScaleAnchor is transient; always null after load.
     );
@@ -418,11 +375,7 @@ class EditorProjectState {
         other.cursorDelay == cursorDelay &&
         other.cursorPostProcess == cursorPostProcess &&
         other.windowFrame == windowFrame &&
-        other.playbackSpeed == playbackSpeed &&
-        other.fadeIn == fadeIn &&
-        other.fadeOut == fadeOut &&
         other.outputAspect == outputAspect &&
-        other.audioMix == audioMix &&
         other.timelineScale == timelineScale;
     // pendingScaleAnchor intentionally excluded.
   }
@@ -445,11 +398,7 @@ class EditorProjectState {
         cursorDelay,
         cursorPostProcess,
         windowFrame,
-        playbackSpeed,
-        fadeIn,
-        fadeOut,
         outputAspect,
-        audioMix,
         timelineScale,
         // pendingScaleAnchor intentionally excluded.
       ]);
@@ -479,23 +428,23 @@ class EditorProjectState {
 
 /// Ordered list of vN → vN+1 migration functions. Index `i` migrates
 /// from schemaVersion `i` to `i + 1`.
-final List<Map<String, dynamic> Function(Map<String, dynamic>)>
+final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
     _schemaMigrations = [
   // v0 → v1: no-op. v0 is hypothetical (pre-public builds); v1
   // recordings exist in the wild, so the chain starts at v1.
-  (json) => json,
+  (json, _) => json,
   // v1 → v2: insert the schemaVersion field. v1 sidecars predate
   // the version marker and assume the current build can identify
   // them by its absence. Any additional v1→v2 shape changes go here
   // too — today there are none, but the comment block above explains
   // how to grow this.
-  (json) => {...json, 'schemaVersion': 2},
+  (json, _) => {...json, 'schemaVersion': 2},
   // v2 → v3: move the flat `zoomRegions` list onto a single zoom
   // track inside a `timeline` container — scaffolding for captions,
   // audio, and multi-clip support that all land on the same root
   // object. The transform is lossless for v2 projects: the active
   // (only) zoom track wraps the previous list.
-  (json) {
+  (json, _) {
     final next = {...json, 'schemaVersion': 3};
     final regions = next.remove('zoomRegions');
     next['timeline'] = {
@@ -508,13 +457,46 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>)>
   // v3 → v4: add the per-track `audioMix` block. Additive — fromJson fills the
   // unity default when the key is absent, so the migration only bumps the
   // version marker so the chain reaches v4.
-  (json) => {...json, 'schemaVersion': 4},
+  (json, _) => {...json, 'schemaVersion': 4},
   // v4 → v5: add the per-project outputAspect (no value transform —
   // fromJson fills the auto default when the key is absent).
-  (json) => {...json, 'schemaVersion': 5},
+  (json, _) => {...json, 'schemaVersion': 5},
   // v5 → v6: add the per-project timelineScale (no value transform —
   // fromJson fills 1.0 when the key is absent).
-  (json) => {...json, 'schemaVersion': 6},
+  (json, _) => {...json, 'schemaVersion': 6},
+  // v6 → v7: synthesize a single clip from existing globals. The clip
+  // covers the whole video; its fields take the values from the
+  // top-level globals where present, or ClipSlice defaults where not.
+  // Globals are MOVED into the clip and removed from the top-level v7
+  // JSON — EditorProjectState no longer reads them.
+  (json, videoDuration) {
+    final next = Map<String, dynamic>.from(json);
+    final speed = (next.remove('playbackSpeed') as num?)?.toDouble() ?? 1.0;
+    final fadeInMicros = (next.remove('fadeInMicros') as num?)?.toInt() ?? 0;
+    final fadeOutMicros = (next.remove('fadeOutMicros') as num?)?.toInt() ?? 0;
+    final audio = next.remove('audioMix') as Map<String, dynamic>?;
+    final clip = <String, dynamic>{
+      'startMicros': 0,
+      'endMicros': videoDuration.inMicroseconds,
+      'playbackSpeed': speed,
+      'fadeInMicros': fadeInMicros,
+      'fadeOutMicros': fadeOutMicros,
+      'micGainPercent': (audio?['micGainPercent'] as num?)?.toInt() ?? 100,
+      'micMuted': (audio?['micMuted'] as bool?) ?? false,
+      'systemGainPercent':
+          (audio?['systemGainPercent'] as num?)?.toInt() ?? 100,
+      'systemMuted': (audio?['systemMuted'] as bool?) ?? false,
+      'hideCursor': false,
+      'disableSmoothMouse': false,
+    };
+    final timeline = (next['timeline'] as Map<String, dynamic>?) ?? const {};
+    next['timeline'] = {
+      ...timeline,
+      'clips': [clip],
+    };
+    next['schemaVersion'] = 7;
+    return next;
+  },
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its
@@ -524,7 +506,10 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>)>
 ///
 /// A JSON without a `schemaVersion` field is treated as v1 — the
 /// pre-versioned shape — since v0 was hypothetical and never shipped.
-Map<String, dynamic> migrateEditorProjectJson(Map<String, dynamic> json) {
+Map<String, dynamic> migrateEditorProjectJson(
+  Map<String, dynamic> json, {
+  required Duration videoDuration,
+}) {
   final rawVersion = json['schemaVersion'];
   var version = (rawVersion is int && rawVersion >= 0) ? rawVersion : 1;
   var current = json;
@@ -536,7 +521,7 @@ Map<String, dynamic> migrateEditorProjectJson(Map<String, dynamic> json) {
         'step or update currentSchemaVersion.',
       );
     }
-    current = _schemaMigrations[version](current);
+    current = _schemaMigrations[version](current, videoDuration);
     version++;
   }
   return current;

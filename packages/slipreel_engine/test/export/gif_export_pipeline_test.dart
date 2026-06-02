@@ -10,7 +10,9 @@ import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
+import 'package:slipreel_engine/timeline/timeline.dart';
 
 ExportSettings _gifSettings({
   ExportResolution resolution = ExportResolution.r720p,
@@ -313,9 +315,17 @@ void main() {
           sourceMetadata: _metadata(),
           cursorRecording: CursorRecording(),
           projectState: _bareState().copyWith(
-            playbackSpeed: 2.0,
-            fadeIn: const Duration(milliseconds: 200),
-            fadeOut: const Duration(milliseconds: 200),
+            timeline: Timeline(
+              clips: [
+                ClipSlice(
+                  start: Duration.zero,
+                  end: const Duration(seconds: 60),
+                  playbackSpeed: 2.0,
+                  fadeIn: const Duration(milliseconds: 200),
+                  fadeOut: const Duration(milliseconds: 200),
+                ),
+              ],
+            ),
           ),
           settings: _gifSettings(),
         );

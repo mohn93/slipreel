@@ -10,6 +10,8 @@ import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
 import '../models/trim_selection.dart';
 import '../rendering/output_canvas_resolver.dart';
+import '../state/audio_mix.dart';
+import '../state/clip_slice.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
@@ -141,13 +143,24 @@ class ExportPipeline {
       cfrFps: pipelineFps,
       trim: trim,
     );
-    final audioMixPlan =
-        buildAudioMixArgs(probed.audioStreams, projectState.audioMix);
+    // Slice-editor model: playback speed, fades, and the audio mix all live on
+    // the timeline's first (and currently only) clip slice. Pipelines remain
+    // single-slice for now; iterating multiple clips happens in a later phase.
+    final clip0 = _firstClipOrEmpty(projectState);
+    final audioMixPlan = buildAudioMixArgs(
+      probed.audioStreams,
+      AudioMix(
+        micGainPercent: clip0.micGainPercent,
+        micMuted: clip0.micMuted,
+        systemGainPercent: clip0.systemGainPercent,
+        systemMuted: clip0.systemMuted,
+      ),
+    );
     // Output duration after trim + speed, used to position the fade-out.
     final inputDurationSec = trim != null
         ? trim!.duration.inMicroseconds / 1000000
         : (probed.durationSec ?? 0);
-    final outputDurationSec = inputDurationSec / projectState.playbackSpeed;
+    final outputDurationSec = inputDurationSec / clip0.playbackSpeed;
     final encoder = FfmpegEncoder(
       outputPath: outputPath,
       width: outWidth,
@@ -157,9 +170,9 @@ class ExportPipeline {
       audioSourcePath: sourcePath,
       audioMixPlan: audioMixPlan,
       trim: trim,
-      playbackSpeed: projectState.playbackSpeed,
-      fadeIn: projectState.fadeIn,
-      fadeOut: projectState.fadeOut,
+      playbackSpeed: clip0.playbackSpeed,
+      fadeIn: clip0.fadeIn,
+      fadeOut: clip0.fadeOut,
       outputDuration: outputDurationSec > 0
           ? Duration(microseconds: (outputDurationSec * 1000000).round())
           : null,
@@ -332,4 +345,15 @@ class ExportPipeline {
       return 0;
     }
   }
+}
+
+/// Returns the first slice in [state.timeline.clips], or a zero-length default
+/// when the timeline is empty. Centralises the "single-slice bridge" the
+/// export pipelines use to read playback/fade/audio fields off the timeline.
+ClipSlice _firstClipOrEmpty(EditorProjectState state) {
+  final clips = state.timeline.clips;
+  if (clips.isEmpty) {
+    return ClipSlice(start: Duration.zero, end: Duration.zero);
+  }
+  return clips.first;
 }

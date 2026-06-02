@@ -3,7 +3,7 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
-import 'package:screen_recorder/ui/widgets/inspector/contexts/clip_context_inspector.dart';
+import 'package:screen_recorder/ui/widgets/inspector/contexts/slice_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
@@ -184,8 +184,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
   }
 
   Widget _clipContext() {
-    return ClipContextInspector(
-      clipDuration: widget.clipDuration,
+    return SliceEditor(
+      sliceIndex: 0,
       onClose: () => widget.onSelectionCleared?.call(),
     );
   }

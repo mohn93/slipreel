@@ -7,6 +7,7 @@ import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
@@ -89,25 +90,6 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   void setOutputAspect(OutputAspect value) =>
       state = state.copyWith(outputAspect: value);
 
-  void setPlaybackSpeed(double value) =>
-      state = state.copyWith(playbackSpeed: value);
-
-  void setFadeIn(Duration value) => state = state.copyWith(fadeIn: value);
-
-  void setFadeOut(Duration value) => state = state.copyWith(fadeOut: value);
-
-  void setMicGain(int percent) => state = state.copyWith(
-      audioMix: state.audioMix.copyWith(micGainPercent: percent));
-
-  void setMicMuted(bool value) => state = state.copyWith(
-      audioMix: state.audioMix.copyWith(micMuted: value));
-
-  void setSystemGain(int percent) => state = state.copyWith(
-      audioMix: state.audioMix.copyWith(systemGainPercent: percent));
-
-  void setSystemMuted(bool value) => state = state.copyWith(
-      audioMix: state.audioMix.copyWith(systemMuted: value));
-
   /// Set the timeline horizontal scale. Clamped to [1.0, 8.0]. The
   /// optional [anchorTime] is a one-shot hint stored on the next
   /// state's [EditorProjectState.pendingScaleAnchor] for the timeline
@@ -185,6 +167,103 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     if (index < 0 || index >= regions.length) return;
     final next = List<ZoomRegion>.from(regions)..removeAt(index);
     state = state.copyWith(timeline: _timelineWithActiveRegions(next));
+  }
+
+  // ---- slice mutators ---------------------------------------------------
+
+  ClipSlice? _slice(int sliceIndex) {
+    final clips = state.timeline.clips;
+    if (sliceIndex < 0 || sliceIndex >= clips.length) return null;
+    return clips[sliceIndex];
+  }
+
+  void _replaceSlice(int sliceIndex, ClipSlice next) {
+    final clips = state.timeline.clips;
+    if (sliceIndex < 0 || sliceIndex >= clips.length) return;
+    final updated = List<ClipSlice>.from(clips);
+    updated[sliceIndex] = next;
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(clips: updated),
+    );
+  }
+
+  void setSliceSpeed(int sliceIndex, double speed) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    if (speed.isNaN || !speed.isFinite) return;
+    final clamped = speed.clamp(0.25, 4.0);
+    if (clamped == s.playbackSpeed) return;
+    _replaceSlice(sliceIndex, s.copyWith(playbackSpeed: clamped));
+  }
+
+  void setSliceFadeIn(int sliceIndex, Duration value) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    final clamped = value < Duration.zero ? Duration.zero : value;
+    if (clamped == s.fadeIn) return;
+    _replaceSlice(sliceIndex, s.copyWith(fadeIn: clamped));
+  }
+
+  void setSliceFadeOut(int sliceIndex, Duration value) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    final clamped = value < Duration.zero ? Duration.zero : value;
+    if (clamped == s.fadeOut) return;
+    _replaceSlice(sliceIndex, s.copyWith(fadeOut: clamped));
+  }
+
+  void setSliceMicGain(int sliceIndex, int percent) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    final clamped = percent < 0 ? 0 : (percent > 200 ? 200 : percent);
+    if (clamped == s.micGainPercent) return;
+    _replaceSlice(sliceIndex, s.copyWith(micGainPercent: clamped));
+  }
+
+  void setSliceMicMuted(int sliceIndex, bool muted) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    if (muted == s.micMuted) return;
+    _replaceSlice(sliceIndex, s.copyWith(micMuted: muted));
+  }
+
+  void setSliceSystemGain(int sliceIndex, int percent) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    final clamped = percent < 0 ? 0 : (percent > 200 ? 200 : percent);
+    if (clamped == s.systemGainPercent) return;
+    _replaceSlice(sliceIndex, s.copyWith(systemGainPercent: clamped));
+  }
+
+  void setSliceSystemMuted(int sliceIndex, bool muted) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    if (muted == s.systemMuted) return;
+    _replaceSlice(sliceIndex, s.copyWith(systemMuted: muted));
+  }
+
+  void setSliceHideCursor(int sliceIndex, bool value) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    if (value == s.hideCursor) return;
+    _replaceSlice(sliceIndex, s.copyWith(hideCursor: value));
+  }
+
+  void setSliceDisableSmoothMouse(int sliceIndex, bool value) {
+    final s = _slice(sliceIndex);
+    if (s == null) return;
+    if (value == s.disableSmoothMouse) return;
+    _replaceSlice(sliceIndex, s.copyWith(disableSmoothMouse: value));
+  }
+
+  void removeSlice(int sliceIndex) {
+    final clips = state.timeline.clips;
+    if (clips.length <= 1) return;
+    if (sliceIndex < 0 || sliceIndex >= clips.length) return;
+    final updated = List<ClipSlice>.from(clips)..removeAt(sliceIndex);
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(clips: updated),
+    );
   }
 }
 

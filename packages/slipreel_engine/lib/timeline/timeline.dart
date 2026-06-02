@@ -1,4 +1,5 @@
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 
 /// One lane of [ZoomRegion]s on the [Timeline].
 ///
@@ -48,15 +49,19 @@ class ZoomTrack {
 /// migration chain will fill them in (with empty defaults) when the
 /// fields land.
 class Timeline {
-  const Timeline({this.zoomTracks = const <ZoomTrack>[]});
+  const Timeline({
+    this.zoomTracks = const <ZoomTrack>[],
+    this.clips = const <ClipSlice>[],
+  });
 
-  /// Sensible blank slate: one empty zoom track, matching today's
-  /// single-track editor.
+  /// Sensible blank slate: one empty zoom track, no clips (the
+  /// controller seeds a single slice once it knows the video duration).
   factory Timeline.defaults() => const Timeline(
         zoomTracks: [ZoomTrack()],
       );
 
   final List<ZoomTrack> zoomTracks;
+  final List<ClipSlice> clips;
 
   /// Convenience read accessor for code that hasn't yet been updated
   /// to pick a specific zoom track. Returns the regions on the first
@@ -65,23 +70,64 @@ class Timeline {
   List<ZoomRegion> get activeZoomRegions =>
       zoomTracks.isEmpty ? const <ZoomRegion>[] : zoomTracks.first.regions;
 
-  Timeline copyWith({List<ZoomTrack>? zoomTracks}) =>
-      Timeline(zoomTracks: zoomTracks ?? this.zoomTracks);
+  Timeline copyWith({
+    List<ZoomTrack>? zoomTracks,
+    List<ClipSlice>? clips,
+  }) =>
+      Timeline(
+        zoomTracks: zoomTracks ?? this.zoomTracks,
+        clips: clips ?? this.clips,
+      );
 
   Map<String, dynamic> toJson() => {
         'zoomTracks': zoomTracks.map((t) => t.toJson()).toList(),
+        'clips': clips.map((c) => c.toJson()).toList(),
       };
 
   factory Timeline.fromJson(Map<String, dynamic> json) {
-    final raw = json['zoomTracks'];
+    final rawTracks = json['zoomTracks'];
     final tracks = <ZoomTrack>[];
-    if (raw is List) {
-      for (final t in raw) {
+    if (rawTracks is List) {
+      for (final t in rawTracks) {
         if (t is Map<String, dynamic>) {
           tracks.add(ZoomTrack.fromJson(t));
         }
       }
     }
-    return Timeline(zoomTracks: List.unmodifiable(tracks));
+    final rawClips = json['clips'];
+    final clips = <ClipSlice>[];
+    if (rawClips is List) {
+      for (final c in rawClips) {
+        if (c is Map<String, dynamic>) {
+          clips.add(ClipSlice.fromJson(c));
+        }
+      }
+    }
+    return Timeline(
+      zoomTracks: List.unmodifiable(tracks),
+      clips: List.unmodifiable(clips),
+    );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Timeline &&
+          _listEq(other.zoomTracks, zoomTracks) &&
+          _listEq(other.clips, clips);
+
+  @override
+  int get hashCode => Object.hash(
+        Object.hashAll(zoomTracks),
+        Object.hashAll(clips),
+      );
+}
+
+bool _listEq<T>(List<T> a, List<T> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }

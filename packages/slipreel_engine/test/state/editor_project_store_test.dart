@@ -64,7 +64,7 @@ void main() {
       );
 
       final json = state.toJson();
-      final restored = EditorProjectState.fromJson(json);
+      final restored = EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60));
 
       expect(restored.zoomRegions, state.zoomRegions);
       expect(restored.cursorSize, 1.75);
@@ -87,7 +87,7 @@ void main() {
       // continue to load — the new field reads as the default 50 ms.
       final json = EditorProjectState.defaults().toJson();
       json.remove('cursorDelayMicros');
-      final restored = EditorProjectState.fromJson(json);
+      final restored = EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60));
       expect(restored.cursorDelay, EditorProjectState.defaults().cursorDelay);
     });
 
@@ -101,7 +101,7 @@ void main() {
       json['cursorMovementBlur'] = 1.95;
       json['screenMovementBlur'] = 1.5;
       json['screenZoomBlur'] = 2.0;
-      final restored = EditorProjectState.fromJson(json);
+      final restored = EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60));
       expect(restored.motionBlur, closeTo(0.5, 1e-9));
       expect(restored.cursorMovementBlur, closeTo(1.0, 1e-9));
       expect(restored.screenMovementBlur, closeTo(1.0, 1e-9));
@@ -114,7 +114,7 @@ void main() {
       json['schemaVersion'] = EditorProjectState.currentSchemaVersion + 1;
 
       expect(
-        () => EditorProjectState.fromJson(json),
+        () => EditorProjectState.fromJson(json, videoDuration: const Duration(seconds: 60)),
         throwsA(isA<FormatException>()),
       );
     });
@@ -123,7 +123,8 @@ void main() {
   group('EditorProjectStore', () {
     test('load returns defaults when the sidecar is missing', () async {
       final store = EditorProjectStore(videoPath: videoPath);
-      final state = await store.load();
+      final state =
+          await store.load(videoDuration: const Duration(seconds: 30));
       expect(state.zoomRegions, isEmpty);
       expect(state.cursorSize, 2.0);
       expect(state.cursorStyle, CursorStyle.modernDark);
@@ -136,7 +137,8 @@ void main() {
       await store.save(state);
       expect(File(store.sidecarPath).existsSync(), isTrue);
 
-      final restored = await store.load();
+      final restored =
+          await store.load(videoDuration: const Duration(seconds: 30));
       expect(restored.zoomRegions.length, 1);
       expect(restored.zoomRegions.first.zoomLevel, 3.0);
       expect(restored.cursorSize, 2.0);
@@ -150,7 +152,8 @@ void main() {
         EditorProjectStore(videoPath: videoPath).sidecarPath,
       ).writeAsStringSync('not json {{{');
       final store = EditorProjectStore(videoPath: videoPath);
-      final state = await store.load();
+      final state =
+          await store.load(videoDuration: const Duration(seconds: 30));
       expect(state.zoomRegions, isEmpty);
     });
 
@@ -169,11 +172,54 @@ void main() {
       }
       await Future.wait(futures);
 
-      final loaded = await store.load();
+      final loaded =
+          await store.load(videoDuration: const Duration(seconds: 30));
       expect(loaded.cursorSize, closeTo(1.0 + 9 * 0.1, 1e-9));
     });
   });
+
+  group('EditorProjectStore.load with videoDuration', () {
+    late Directory tmp2;
+    setUp(() async {
+      tmp2 = await Directory.systemTemp.createTemp('store_test_');
+    });
+    tearDown(() async {
+      if (await tmp2.exists()) await tmp2.delete(recursive: true);
+    });
+
+    test('seeds a single slice covering the duration when sidecar is missing',
+        () async {
+      final store = EditorProjectStore(videoPath: '${tmp2.path}/no_file.mov');
+      final state = await store.load(
+        videoDuration: const Duration(seconds: 30),
+      );
+      expect(state.timeline.clips, hasLength(1));
+      expect(state.timeline.clips.first.start, Duration.zero);
+      expect(state.timeline.clips.first.end, const Duration(seconds: 30));
+    });
+
+    test('migrates an existing v6 sidecar through to v7', () async {
+      final path = '${tmp2.path}/clip.mov';
+      await File('$path.editor.json').writeAsString('{'
+          '"schemaVersion": 6,'
+          '"playbackSpeed": 1.5,'
+          '"audioMix": {"micGainPercent": 120, "micMuted": true}'
+          '}');
+      final store = EditorProjectStore(videoPath: path);
+      final state = await store.load(
+        videoDuration: const Duration(seconds: 20),
+      );
+      expect(state.timeline.clips, hasLength(1));
+      final clip = state.timeline.clips.first;
+      expect(clip.start, Duration.zero);
+      expect(clip.end, const Duration(seconds: 20));
+      expect(clip.playbackSpeed, 1.5);
+      expect(clip.micGainPercent, 120);
+      expect(clip.micMuted, isTrue);
+    });
+  });
 }
+
 
 extension on EditorProjectState {
   EditorProjectState copyAsZoomedExample() => copyWith(
