@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 
@@ -23,27 +24,40 @@ class EditorProjectStore {
 
   String get sidecarPath => '$videoPath.editor.json';
 
-  Future<EditorProjectState> load() async {
+  Future<EditorProjectState> load({required Duration videoDuration}) async {
     final f = File(sidecarPath);
     if (!await f.exists()) {
-      return EditorProjectState.defaults();
+      return _seedSingleSlice(EditorProjectState.defaults(), videoDuration);
     }
     try {
       final text = await f.readAsString();
       if (text.trim().isEmpty) {
-        return EditorProjectState.defaults();
+        return _seedSingleSlice(EditorProjectState.defaults(), videoDuration);
       }
       final json = jsonDecode(text) as Map<String, dynamic>;
-      // TODO(slice-editor T5): replumb actual videoDuration through load().
-      return EditorProjectState.fromJson(json, videoDuration: Duration.zero);
+      return EditorProjectState.fromJson(json, videoDuration: videoDuration);
     } catch (e, stack) {
       AppLogger.ui.w(
         'EditorProjectStore: failed to load $sidecarPath, using defaults',
         error: e,
         stackTrace: stack,
       );
-      return EditorProjectState.defaults();
+      return _seedSingleSlice(EditorProjectState.defaults(), videoDuration);
     }
+  }
+
+  EditorProjectState _seedSingleSlice(
+    EditorProjectState state,
+    Duration videoDuration,
+  ) {
+    if (state.timeline.clips.isNotEmpty) return state;
+    return state.copyWith(
+      timeline: state.timeline.copyWith(
+        clips: [
+          ClipSlice(start: Duration.zero, end: videoDuration),
+        ],
+      ),
+    );
   }
 
   Future<void> _writeQueue = Future.value();

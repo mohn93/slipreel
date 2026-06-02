@@ -158,13 +158,15 @@ class RecordingThumbnailService {
       throw StateError('thumbnail decode failed for ${entry.videoPath}');
     }
 
-    // 2) Load sidecars.
-    final projectState =
-        await EditorProjectStore(videoPath: entry.videoPath).load();
+    // 2) Load sidecars. Meta loads first so its duration can seed the
+    // project store's single ClipSlice (a thumbnail never re-times,
+    // but the loader still wants a real duration).
+    final meta = await RecordingMetadata.loadForVideo(entry.videoPath);
+    final projectState = await EditorProjectStore(videoPath: entry.videoPath)
+        .load(videoDuration: meta.duration ?? Duration.zero);
     final cursor = await CursorRecording.loadFromFile(
             '${entry.videoPath}.cursor.json')
         .catchError((_) => CursorRecording());
-    final meta = await RecordingMetadata.loadForVideo(entry.videoPath);
 
     // 3) Compose one styled frame → RGBA at compositor.totalSize.
     final compositor = FrameCompositor(
