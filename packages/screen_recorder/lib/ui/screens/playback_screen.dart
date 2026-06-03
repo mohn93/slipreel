@@ -241,6 +241,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   bool _playheadFlashOn = false;
   Timer? _flashTimer;
 
+  /// Edited-time of the most recent snap target — drives [SnapFlashOverlay].
+  /// Cleared by [_snapFlashTimer] after the fade completes.
+  Duration? _snapFlashTarget;
+  Timer? _snapFlashTimer;
+
   // Session-only preview-playback-speed multiplier (1×/2×/4×/8×).
   // Picked from the dropdown next to the timeline-zoom slider in the
   // transport bar. Multiplies on top of the per-clip [playbackSpeed]
@@ -340,6 +345,37 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       if (!mounted) return;
       setState(() => _playheadFlashOn = false);
     });
+  }
+
+  void _flashSnap(Duration target) {
+    if (!mounted) return;
+    setState(() => _snapFlashTarget = target);
+    _snapFlashTimer?.cancel();
+    _snapFlashTimer = Timer(const Duration(milliseconds: 240), () {
+      if (!mounted) return;
+      setState(() => _snapFlashTarget = null);
+    });
+  }
+
+  /// Returns a sorted ascending list of edited-time snap candidates:
+  /// cursor click events plus zoom-region start/end edges. Computed on
+  /// demand per cut request — typical projects have a few hundred
+  /// candidates and the cost is sub-millisecond.
+  List<Duration> _buildSnapCandidates(List<ClipSlice> clips) {
+    final candidates = <Duration>[];
+    for (final t in _cursorRecording.eventIndex.clickTimes) {
+      candidates.add(sourceToEdited(clips, t));
+    }
+    final regions = ref
+        .read(editorProjectControllerProvider)
+        .timeline
+        .activeZoomRegions;
+    for (final r in regions) {
+      candidates.add(sourceToEdited(clips, r.startTime));
+      candidates.add(sourceToEdited(clips, r.endTime));
+    }
+    candidates.sort();
+    return candidates;
   }
 
   /// Compute the inspector's current timeline-selection input from
@@ -639,6 +675,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
     _flashTimer?.cancel();
+    _snapFlashTimer?.cancel();
     _zoomPreviewOverride.dispose();
     // Flush any pending debounced save before tearing down so the
     // user doesn't lose the last change they made before navigating
