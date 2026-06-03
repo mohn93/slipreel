@@ -6,8 +6,8 @@ void main() {
   group('ClipSlice', () {
     test('constructor clamps gain to 0..200', () {
       final s = ClipSlice(
-        start: Duration.zero,
-        end: const Duration(seconds: 10),
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 10),
         micGainPercent: -50,
         systemGainPercent: 300,
       );
@@ -15,18 +15,18 @@ void main() {
       expect(s.systemGainPercent, 200);
     });
 
-    test('length returns end - start', () {
+    test('effectiveLength returns trimEnd - trimStart', () {
       final s = ClipSlice(
-        start: const Duration(seconds: 2),
-        end: const Duration(seconds: 7),
+        cutStart: const Duration(seconds: 2),
+        cutEnd: const Duration(seconds: 7),
       );
-      expect(s.length, const Duration(seconds: 5));
+      expect(s.effectiveLength, const Duration(seconds: 5));
     });
 
     test('copyWith preserves unchanged fields', () {
       final s = ClipSlice(
-        start: Duration.zero,
-        end: const Duration(seconds: 10),
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 10),
         playbackSpeed: 1.5,
         hideCursor: true,
       );
@@ -39,12 +39,12 @@ void main() {
 
     test('== is value-based; equal slices are equal', () {
       final a = ClipSlice(
-        start: Duration.zero,
-        end: const Duration(seconds: 10),
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 10),
       );
       final b = ClipSlice(
-        start: Duration.zero,
-        end: const Duration(seconds: 10),
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 10),
       );
       expect(a == b, isTrue);
       expect(a.hashCode == b.hashCode, isTrue);
@@ -52,8 +52,8 @@ void main() {
 
     test('== false when any field differs', () {
       final a = ClipSlice(
-        start: Duration.zero,
-        end: const Duration(seconds: 10),
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 10),
       );
       final b = a.copyWith(playbackSpeed: 2.0);
       expect(a == b, isFalse);
@@ -61,8 +61,8 @@ void main() {
 
     test('toJson then fromJson round-trips all fields', () {
       final s = ClipSlice(
-        start: const Duration(seconds: 1, milliseconds: 500),
-        end: const Duration(seconds: 9, milliseconds: 250),
+        cutStart: const Duration(seconds: 1, milliseconds: 500),
+        cutEnd: const Duration(seconds: 9, milliseconds: 250),
         playbackSpeed: 1.75,
         fadeIn: const Duration(milliseconds: 500),
         fadeOut: const Duration(milliseconds: 250),
@@ -79,8 +79,8 @@ void main() {
 
     test('fromJson defaults missing optional keys', () {
       final s = ClipSlice.fromJson({
-        'startMicros': 0,
-        'endMicros': 10_000_000,
+        'cutStartMicros': 0,
+        'cutEndMicros': 10_000_000,
       });
       expect(s.playbackSpeed, 1.0);
       expect(s.fadeIn, Duration.zero);
@@ -103,8 +103,8 @@ void main() {
     test('fromJson tolerates non-numeric optional fields by using defaults',
         () {
       final s = ClipSlice.fromJson({
-        'startMicros': 0,
-        'endMicros': 10_000_000,
+        'cutStartMicros': 0,
+        'cutEndMicros': 10_000_000,
         'playbackSpeed': 'fast',     // wrong type
         'micMuted': 'yes',           // wrong type
         'micGainPercent': null,      // wrong type
@@ -116,8 +116,8 @@ void main() {
 
     test('copyWith re-applies the gain clamp', () {
       final s = ClipSlice(
-        start: Duration.zero,
-        end: const Duration(seconds: 10),
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 10),
       );
       final next = s.copyWith(micGainPercent: 999, systemGainPercent: -5);
       expect(next.micGainPercent, 200);
@@ -134,23 +134,23 @@ void main() {
     test('copyWith replaces clips', () {
       final t = Timeline.defaults();
       final clips = [
-        ClipSlice(start: Duration.zero, end: const Duration(seconds: 10)),
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 10)),
       ];
       final next = t.copyWith(clips: clips);
       expect(next.clips, hasLength(1));
-      expect(next.clips.first.length, const Duration(seconds: 10));
+      expect(next.clips.first.effectiveLength, const Duration(seconds: 10));
     });
 
     test('toJson + fromJson round-trip preserves clips', () {
       final clips = [
         ClipSlice(
-          start: Duration.zero,
-          end: const Duration(seconds: 5),
+          cutStart: Duration.zero,
+          cutEnd: const Duration(seconds: 5),
           playbackSpeed: 1.5,
         ),
         ClipSlice(
-          start: const Duration(seconds: 5),
-          end: const Duration(seconds: 10),
+          cutStart: const Duration(seconds: 5),
+          cutEnd: const Duration(seconds: 10),
           micMuted: true,
         ),
       ];
@@ -169,10 +169,10 @@ void main() {
   group('clipSliceAt', () {
     test('returns the slice containing the position', () {
       final clips = [
-        ClipSlice(start: Duration.zero, end: const Duration(seconds: 5)),
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 5)),
         ClipSlice(
-          start: const Duration(seconds: 5),
-          end: const Duration(seconds: 10),
+          cutStart: const Duration(seconds: 5),
+          cutEnd: const Duration(seconds: 10),
         ),
       ];
       expect(
@@ -186,10 +186,10 @@ void main() {
     });
     test('returns the last slice when position is past the end', () {
       final clips = [
-        ClipSlice(start: Duration.zero, end: const Duration(seconds: 5)),
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 5)),
         ClipSlice(
-          start: const Duration(seconds: 5),
-          end: const Duration(seconds: 10),
+          cutStart: const Duration(seconds: 5),
+          cutEnd: const Duration(seconds: 10),
         ),
       ];
       expect(

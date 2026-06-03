@@ -138,7 +138,7 @@ class EditorProjectState {
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 7;
+  static const int currentSchemaVersion = 8;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -176,12 +176,19 @@ class EditorProjectState {
       nextTimeline = timeline;
     } else if (zoomRegions != null) {
       final tracks = this.timeline.zoomTracks;
+      // Preserve existing clips — the zoom convenience override must not
+      // wipe the slice list (B+C: a fresh Timeline constructor defaults
+      // clips to const [], which would erase the seeded single slice).
+      final existingClips = this.timeline.clips;
       if (tracks.isEmpty) {
-        nextTimeline = Timeline(zoomTracks: [ZoomTrack(regions: zoomRegions)]);
+        nextTimeline = Timeline(
+          zoomTracks: [ZoomTrack(regions: zoomRegions)],
+          clips: existingClips,
+        );
       } else {
         final updated = List<ZoomTrack>.from(tracks);
         updated[0] = tracks[0].copyWith(regions: zoomRegions);
-        nextTimeline = Timeline(zoomTracks: updated);
+        nextTimeline = Timeline(zoomTracks: updated, clips: existingClips);
       }
     } else {
       nextTimeline = this.timeline;
@@ -476,8 +483,8 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
     final fadeOutMicros = (next.remove('fadeOutMicros') as num?)?.toInt() ?? 0;
     final audio = next.remove('audioMix') as Map<String, dynamic>?;
     final clip = <String, dynamic>{
-      'startMicros': 0,
-      'endMicros': videoDuration.inMicroseconds,
+      'cutStartMicros': 0,
+      'cutEndMicros': videoDuration.inMicroseconds,
       'playbackSpeed': speed,
       'fadeInMicros': fadeInMicros,
       'fadeOutMicros': fadeOutMicros,
@@ -495,6 +502,36 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
       'clips': [clip],
     };
     next['schemaVersion'] = 7;
+    return next;
+  },
+  // v7 → v8: split each clip's source-time `start`/`end` into
+  // immutable cut bounds AND mutable trim bounds. Pre-cut-tool
+  // recordings have no trimming, so trim equals cut on load.
+  (json, _) {
+    final next = Map<String, dynamic>.from(json);
+    final timeline = next['timeline'] as Map<String, dynamic>?;
+    if (timeline != null) {
+      final rawClips = timeline['clips'];
+      if (rawClips is List) {
+        final updated = <Map<String, dynamic>>[];
+        for (final c in rawClips) {
+          if (c is! Map<String, dynamic>) continue;
+          final clip = Map<String, dynamic>.from(c);
+          final s = clip.remove('startMicros');
+          final e = clip.remove('endMicros');
+          if (s is num && e is num) {
+            clip['cutStartMicros'] = s.toInt();
+            clip['cutEndMicros'] = e.toInt();
+            clip['trimStartMicros'] = s.toInt();
+            clip['trimEndMicros'] = e.toInt();
+          }
+          updated.add(clip);
+        }
+        timeline['clips'] = updated;
+        next['timeline'] = timeline;
+      }
+    }
+    next['schemaVersion'] = 8;
     return next;
   },
 ];

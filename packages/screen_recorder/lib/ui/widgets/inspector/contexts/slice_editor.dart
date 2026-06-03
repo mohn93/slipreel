@@ -12,10 +12,15 @@ class SliceEditor extends ConsumerWidget {
     super.key,
     required this.sliceIndex,
     required this.onClose,
+    this.onRemove,
   });
 
   final int sliceIndex;
   final VoidCallback onClose;
+  /// Fires with [sliceIndex] BEFORE the controller removes the slice.
+  /// Used by the parent to migrate its selection index — without it
+  /// the parent's `_selectedSliceIndex` would point at a stale slot.
+  final ValueChanged<int>? onRemove;
 
   static const _speedPresets = <double>[0.5, 1.0, 1.5, 2.0];
 
@@ -39,7 +44,9 @@ class SliceEditor extends ConsumerWidget {
           // Bounds only — speed is shown via the chip + slider rows
           // below. Keeping a single source of truth here prevents the
           // header from echoing the same value three times.
-          subtitle: '${_fmt(clip.start)} – ${_fmt(clip.end)}',
+          subtitle: clip.trimmedDuration == Duration.zero
+              ? '${_fmt(clip.trimStart)} – ${_fmt(clip.trimEnd)}'
+              : '${_fmt(clip.trimStart)} – ${_fmt(clip.trimEnd)}  ·  trimmed ${_trimmedSecondsLabel(clip.trimmedDuration)}s',
           onClose: onClose,
         ),
         const SizedBox(height: 8),
@@ -154,6 +161,9 @@ class SliceEditor extends ConsumerWidget {
         if (canRemove) ...[
           const SizedBox(height: 12),
           _RemoveSliceButton(onTap: () {
+            // Fire onRemove BEFORE removing so the parent can migrate
+            // its selection index against the pre-removal indices.
+            onRemove?.call(sliceIndex);
             notifier.removeSlice(sliceIndex);
             onClose();
           }),
@@ -166,6 +176,15 @@ class SliceEditor extends ConsumerWidget {
     final m = d.inMinutes;
     final s = (d.inSeconds % 60).toString().padLeft(2, '0');
     return '$m:$s';
+  }
+
+  /// "3" for an even-second trim, "3.4" for a fractional one.
+  /// Caller appends the unit ("s") — keeping it out of here so we can
+  /// reuse the format somewhere else later.
+  static String _trimmedSecondsLabel(Duration trimmed) {
+    final ms = trimmed.inMilliseconds;
+    if (ms % 1000 == 0) return '${ms ~/ 1000}';
+    return (ms / 1000).toStringAsFixed(1);
   }
 
   static String _speedLabel(double s) {

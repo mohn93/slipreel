@@ -8,14 +8,11 @@ import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
-import '../models/trim_selection.dart';
 import '../rendering/output_canvas_resolver.dart';
-import '../state/audio_mix.dart';
 import '../state/clip_slice.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
-import 'audio_mix_args.dart';
 import 'bounded_async_queue.dart';
 import 'export_cancellation.dart';
 import 'export_compositor.dart';
@@ -23,14 +20,21 @@ import 'ffmpeg_decoder.dart';
 import 'ffmpeg_encoder.dart';
 import 'ffmpeg_probe.dart';
 import 'frame_compositor.dart';
+import 'n_slice_filter_graph.dart';
 
 /// Orchestrates: decode source MP4 → composite (wallpaper + frame +
 /// video + cursor + zoom) via [FrameCompositor] → encode HW.
 ///
 /// The compositor renders at the framed `totalSize` (videoSize +
 /// effective padding) so the export matches the editor preview pixel
-/// for pixel; ffmpeg's `-vf scale=...,pad=...` then fits/letterboxes
-/// that into the user-chosen output [ExportSettings].
+/// for pixel; ffmpeg's filter_complex then handles per-slice trim,
+/// speed, fades, audio mix, and scale/pad-to-output-resolution.
+///
+/// N-slice model: per-slice `trim=trimStart:trimEnd`, `setpts`, fades, and
+/// audio chains are emitted by [buildExportFilterGraph] and fed to the
+/// encoder's `-filter_complex`. Single-slice and empty-timeline projects
+/// both go through this path (N=1 produces `concat=n=1`, empty timelines
+/// synthesize a full-source slice).
 class ExportPipeline {
   final String sourcePath;
   final String outputPath;
@@ -38,16 +42,14 @@ class ExportPipeline {
   final CursorRecording cursorRecording;
 
   /// The full editor project — wallpaper, frame chrome, zoom regions,
-  /// animation configs, and cursor visuals. Loaded from the
+  /// animation configs, cursor visuals, and the timeline's slice list
+  /// (per-slice trim/speed/fade/audio). Loaded from the
   /// `<videoPath>.editor.json` sidecar by the caller.
   final EditorProjectState projectState;
 
   /// Export settings: resolution, compression, frame rate, and destination.
   /// Must have [ExportSettings.format] == [ExportFormat.mp4].
   final ExportSettings settings;
-
-  /// When set, only the slice [trim.start, trim.end] is exported.
-  final TrimSelection? trim;
 
   // Cache for a single ffprobe result per pipeline instance.
   FfmpegProbeResult? _probeCache;
@@ -59,7 +61,6 @@ class ExportPipeline {
     required this.cursorRecording,
     required this.projectState,
     required this.settings,
-    this.trim,
   }) {
     if (settings.format != ExportFormat.mp4) {
       throw ArgumentError.value(
@@ -141,43 +142,48 @@ class ExportPipeline {
       width: srcWidth,
       height: srcHeight,
       cfrFps: pipelineFps,
-      trim: trim,
     );
-    // Slice-editor model: playback speed, fades, and the audio mix all live on
-    // the timeline's first (and currently only) clip slice. Pipelines remain
-    // single-slice for now; iterating multiple clips happens in a later phase.
-    final clip0 = _firstClipOrEmpty(projectState);
-    final audioMixPlan = buildAudioMixArgs(
-      probed.audioStreams,
-      AudioMix(
-        micGainPercent: clip0.micGainPercent,
-        micMuted: clip0.micMuted,
-        systemGainPercent: clip0.systemGainPercent,
-        systemMuted: clip0.systemMuted,
-      ),
+
+    // Resolve the slice list for the filter graph. An empty timeline (no
+    // saved editor project, B-era recordings) gets a synthetic full-source
+    // slice so the N-slice filter graph degenerates to a clean
+    // concat=n=1 + scale/pad chain.
+    final sourceDuration = probed.durationSec != null
+        ? Duration(microseconds: (probed.durationSec! * 1000000).round())
+        : Duration.zero;
+    final slicedState = _ensureSlices(projectState, sourceDuration);
+
+    // Build the per-slice ffmpeg filter graph. Per-slice trim/setpts/fade/
+    // atempo/concat/amix all live in this string; the encoder just routes
+    // the composed-frames stdin + audio-source-file pair through it.
+    final base = buildExportFilterGraph(
+      state: slicedState,
+      audioStreams: probed.audioStreams,
     );
-    // Output duration after trim + speed, used to position the fade-out.
-    final inputDurationSec = trim != null
-        ? trim!.duration.inMicroseconds / 1000000
-        : (probed.durationSec ?? 0);
-    final outputDurationSec = inputDurationSec / clip0.playbackSpeed;
+    final filterComplex = _composeWithScalePad(
+      base.filterComplex,
+      videoLabel: base.videoMapLabel ?? '[outv]',
+      outWidth: outWidth,
+      outHeight: outHeight,
+    );
+    final videoMapLabel = '[outv_scaled]';
+    final audioMapLabel = base.audioMapLabel;
+
+    // Output duration: sum over slices of effectiveLength / playbackSpeed.
+    final outputDurationSec = _slicedOutputSeconds(slicedState.timeline.clips);
+
     final encoder = FfmpegEncoder(
       outputPath: outputPath,
       width: outWidth,
       height: outHeight,
       fps: outFps,
       bitrateKbps: bitrateKbps,
-      audioSourcePath: sourcePath,
-      audioMixPlan: audioMixPlan,
-      trim: trim,
-      playbackSpeed: clip0.playbackSpeed,
-      fadeIn: clip0.fadeIn,
-      fadeOut: clip0.fadeOut,
-      outputDuration: outputDurationSec > 0
-          ? Duration(microseconds: (outputDurationSec * 1000000).round())
-          : null,
-      // The encoder receives composed frames at totalSize (the framed
-      // output), not the source video resolution.
+      audioSourcePath: audioMapLabel != null ? sourcePath : null,
+      filterComplex: filterComplex,
+      videoOutLabel: videoMapLabel,
+      audioOutLabel: audioMapLabel,
+      // Composited frames arrive at totalSize; the filter graph handles
+      // the trim/concat/fade then post-processes to outWidth × outHeight.
       sourceWidth: compositor.totalSize.width.toInt(),
       sourceHeight: compositor.totalSize.height.toInt(),
       sourceFps: pipelineFps,
@@ -207,9 +213,6 @@ class ExportPipeline {
     // to a wrong percentage. (Final so Dart can promote across the
     // encode-stage closure that reads it.)
     final int? expectedFrames = () {
-      if (trim != null) {
-        return (trim!.duration.inMicroseconds / 1000000 * pipelineFps).round();
-      }
       final dur = probed.durationSec;
       if (dur != null && dur > 0) {
         return (dur * pipelineFps).round();
@@ -233,7 +236,15 @@ class ExportPipeline {
     final decodeFuture = () async {
       try {
         await for (final raw in decoder.frames()) {
-          await decodedQueue.add(raw);
+          if (decodedQueue.isClosed) break;
+          try {
+            await decodedQueue.add(raw);
+          } on StateError {
+            // Encode stage closed the queue early (e.g., ffmpeg's filter
+            // trim was satisfied so it stopped consuming stdin). Cooperative
+            // exit — not a pipeline failure.
+            break;
+          }
         }
       } finally {
         decodedQueue.close();
@@ -246,23 +257,28 @@ class ExportPipeline {
         while (true) {
           final raw = await decodedQueue.take();
           if (raw == null) break;
+          if (composedQueue.isClosed) break;
           // The decoder is configured with `-vf fps=pipelineFps`, so
           // frames arrive at strictly constant cadence regardless of
           // whether the source is VFR. Per-index timing is therefore
           // accurate against the cursor recording's wall clock.
+          //
+          // Frames arrive at source-time (the decoder no longer
+          // trims) — cursor / zoom sampling is direct.
           final tsMicros = (1000000 * index) ~/ pipelineFps;
-          // Decoded frames start at trim.start (the decoder reset PTS to 0),
-          // but cursor/zoom timestamps are relative to the full recording —
-          // so sample the scene at trim.start + elapsed.
-          final scenePosition =
-              (trim?.start ?? Duration.zero) + Duration(microseconds: tsMicros);
+          final scenePosition = Duration(microseconds: tsMicros);
           compositeSw.start();
           final composited = await compositor.compose(
             bgra: raw,
             position: scenePosition,
           );
           compositeSw.stop();
-          await composedQueue.add(composited);
+          try {
+            await composedQueue.add(composited);
+          } on StateError {
+            // Same cooperative-exit case as decode (see above).
+            break;
+          }
           index++;
         }
       } finally {
@@ -274,7 +290,25 @@ class ExportPipeline {
       while (true) {
         final composed = await composedQueue.take();
         if (composed == null) break;
-        await encoder.writeFrame(composed);
+        final stillOpen = await encoder.writeFrame(composed);
+        if (!stillOpen) {
+          // ffmpeg closed stdin early — typically because the filter graph's
+          // trim window is satisfied and ffmpeg has all frames it needs.
+          // Drop any remaining frames; tear down the upstream stages.
+          //
+          // Correctness here relies on FfmpegDecoder treating `kill()`
+          // followed by SIGKILL-exit as a clean stream termination (the
+          // `frames()` stream ends cleanly rather than raising). The
+          // aggressive-trim regression test in
+          // export_pipeline_trim_test.dart pins that contract; if a
+          // future decoder refactor makes SIGKILL surface as an exception
+          // here, the test will fail and the cooperative teardown will
+          // need an explicit catch.
+          decoder.kill();
+          decodedQueue.close();
+          composedQueue.close();
+          break;
+        }
         totalFrames++;
         if (onProgress != null &&
             expectedFrames != null &&
@@ -315,11 +349,30 @@ class ExportPipeline {
     }
     await compositor.dispose();
 
+    // Cancellation can fire AFTER the stages all unblock cleanly (kill +
+    // queue close drain everyone without an error). Detect that here so
+    // encoder.finish() doesn't trip the "ffmpeg exited -9" path and
+    // surface the right ExportCancelledException to the caller.
+    if (cancelToken?.isCancelled ?? false) {
+      try {
+        await encoder.finish();
+      } catch (_) {
+        // Expected: the encoder was killed; finish() throws.
+      }
+      try {
+        final out = File(outputPath);
+        if (await out.exists()) await out.delete();
+      } catch (_) {}
+      throw const ExportCancelledException();
+    }
+
     await encoder.finish();
     wallSw.stop();
 
     final wallSec = wallSw.elapsedMilliseconds / 1000.0;
-    final inputDuration = totalFrames > 0 ? totalFrames / pipelineFps : 0.0;
+    final inputDuration = outputDurationSec > 0
+        ? outputDurationSec
+        : (totalFrames > 0 ? totalFrames / pipelineFps : 0.0);
     final outputBytes = await _fileLength(outputPath);
 
     final summary = ExportPerfSummary(
@@ -347,13 +400,51 @@ class ExportPipeline {
   }
 }
 
-/// Returns the first slice in [state.timeline.clips], or a zero-length default
-/// when the timeline is empty. Centralises the "single-slice bridge" the
-/// export pipelines use to read playback/fade/audio fields off the timeline.
-ClipSlice _firstClipOrEmpty(EditorProjectState state) {
-  final clips = state.timeline.clips;
-  if (clips.isEmpty) {
-    return ClipSlice(start: Duration.zero, end: Duration.zero);
+/// Ensures [state.timeline.clips] is non-empty. B-era recordings (no saved
+/// editor project) have an empty slice list — synthesize a full-source slice
+/// so the N-slice filter graph degenerates cleanly to N=1.
+EditorProjectState _ensureSlices(
+  EditorProjectState state,
+  Duration sourceDuration,
+) {
+  if (state.timeline.clips.isNotEmpty) return state;
+  // Use sourceDuration as the cut span; if sourceDuration is zero (probe
+  // failed to report) fall back to 1ms so ClipSlice's clamps don't throw.
+  final span = sourceDuration > Duration.zero
+      ? sourceDuration
+      : const Duration(milliseconds: 1);
+  return state.copyWith(
+    timeline: state.timeline.copyWith(
+      clips: [
+        ClipSlice(cutStart: Duration.zero, cutEnd: span),
+      ],
+    ),
+  );
+}
+
+/// Sum of slice output durations: `Σ effectiveLength / playbackSpeed`.
+double _slicedOutputSeconds(List<ClipSlice> clips) {
+  var acc = 0.0;
+  for (final c in clips) {
+    if (c.playbackSpeed <= 0) continue;
+    acc += (c.effectiveLength.inMicroseconds / 1000000) / c.playbackSpeed;
   }
-  return clips.first;
+  return acc;
+}
+
+/// Wraps the N-slice graph's `[outv]` in a final scale/pad stage so the
+/// composed/concatted video lands at the export resolution. Returns a single
+/// filter_complex string that produces `[outv_scaled]` (and the original
+/// `[outa]` if present, untouched).
+String _composeWithScalePad(
+  String base, {
+  required String videoLabel,
+  required int outWidth,
+  required int outHeight,
+}) {
+  final scalePad = '${videoLabel}scale=$outWidth:$outHeight:'
+      'force_original_aspect_ratio=decrease,'
+      'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black,'
+      'setsar=1[outv_scaled]';
+  return '$base;$scalePad';
 }

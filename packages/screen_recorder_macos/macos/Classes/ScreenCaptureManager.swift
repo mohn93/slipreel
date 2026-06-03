@@ -152,7 +152,6 @@ class ScreenCaptureManager: NSObject {
     let config = SCStreamConfiguration()
     config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
     config.pixelFormat = kCVPixelFormatType_32BGRA
-    config.scalesToFit = false
     config.showsCursor = showCursor
     config.queueDepth = 5
 
@@ -162,15 +161,20 @@ class ScreenCaptureManager: NSObject {
         throw ScreenCaptureError.invalidSourceId
       }
       contentFilter = SCContentFilter(display: display, excludingWindows: [])
-      // sourceRect uses display points (logical coords); RegionSelection stores
-      // pixels, so divide by the display's scale factor. config.width/height
-      // stay in pixels — they govern the output framebuffer dimensions.
-      let scale = CGFloat(display.width) / CGFloat(display.frame.width)
+      // Resolve the backing scale via NSScreen (matching display.id) instead
+      // of `display.width / display.frame.width` — the latter has returned
+      // wrong values on some macOS versions (SCDisplay.frame coming back as
+      // pixels rather than points), which made sourceRect (documented as
+      // points) end up as a 1:1 pixel rect that SCStream apparently ignored.
+      let screen = NSScreen.screens.first(where: {
+        ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == region.displayId
+      })
+      let backing = screen?.backingScaleFactor ?? 2.0
       config.sourceRect = CGRect(
-        x: CGFloat(region.x) / scale,
-        y: CGFloat(region.y) / scale,
-        width: CGFloat(region.widthPx) / scale,
-        height: CGFloat(region.heightPx) / scale
+        x: CGFloat(region.x) / backing,
+        y: CGFloat(region.y) / backing,
+        width: CGFloat(region.widthPx) / backing,
+        height: CGFloat(region.heightPx) / backing
       )
       config.width = region.widthPx
       config.height = region.heightPx
@@ -200,6 +204,21 @@ class ScreenCaptureManager: NSObject {
       config.width = display.width
       config.height = display.height
     }
+
+    // SCStream source coords are in display points, but config.width/height
+    // are in pixels. On a Retina display the implicit mapping is 1 source
+    // point → 1 dest pixel, so the content ends up rendered in only the
+    // top-left quadrant of the framebuffer (rest black). scalesToFit=true
+    // scales the source area to fill the configured pixel buffer. We also
+    // set destinationRect explicitly so the source fills the full buffer
+    // even on macOS versions where the default destinationRect isn't the
+    // whole buffer when sourceRect is set.
+    //
+    // IMPORTANT: assign these AFTER sourceRect/width/height. On some macOS
+    // versions, setting sourceRect appears to reset scalesToFit when it's
+    // assigned earlier in the same block.
+    config.scalesToFit = true
+    config.destinationRect = CGRect(x: 0, y: 0, width: config.width, height: config.height)
 
     streamConfiguration = config
 

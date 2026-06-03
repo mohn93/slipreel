@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_history_controller.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
@@ -94,6 +95,94 @@ double effectivePreviewRate(double clipSpeed, double previewSpeed) =>
 bool shouldReapplyOnResume({required bool prev, required bool next}) =>
     next && !prev;
 
+/// Pure helper extracted from _PlaybackScreenState's Cmd+K handler so
+/// the keybind logic can be unit-tested without a video controller.
+/// Returns true on successful split, false otherwise.
+@visibleForTesting
+bool handleCutKeybind({
+  required EditorProjectController controller,
+  required Duration currentEditedTime,
+  required List<ClipSlice> clips,
+}) =>
+    controller.splitAtPlayhead(currentEditedTime, clips);
+
+/// Computes the new selected-slice index after [removed] is dropped
+/// from clips. Pure for unit testing.
+///   - selected == removed → null (the selected slice is gone)
+///   - selected > removed → selected - 1 (everything right shifts left)
+///   - selected < removed → unchanged
+///   - selected == null → null
+@visibleForTesting
+int? decrementSelectionOnRemoval({
+  required int? selected,
+  required int removed,
+}) {
+  if (selected == null) return null;
+  if (selected == removed) return null;
+  if (selected > removed) return selected - 1;
+  return selected;
+}
+
+/// Pure helper: returns the index of the slice whose `[trimStart,
+/// trimEnd)` range contains [sourcePosition]. Returns -1 when [clips]
+/// is empty, or when the position falls outside every slice (e.g. in
+/// a gap between slices or past the final trimEnd — a transient state
+/// during a seek or after walking off the end).
+@visibleForTesting
+int activeSliceIndex(List<ClipSlice> clips, Duration sourcePosition) {
+  for (var i = 0; i < clips.length; i++) {
+    final s = clips[i];
+    if (sourcePosition >= s.trimStart && sourcePosition < s.trimEnd) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/// Pure helper: returns the [ClipSlice.playbackSpeed] of the slice
+/// containing [sourcePosition]. Falls back to 1.0 on empty input, and
+/// to the nearest slice's speed (via [clipSliceAt]) when the position
+/// sits outside every trimmed range — so resume-at-end and seek-to-zero
+/// produce a sensible rate.
+@visibleForTesting
+double effectiveClipSpeedAt(
+  List<ClipSlice> clips,
+  Duration sourcePosition,
+) {
+  if (clips.isEmpty) return 1.0;
+  final idx = activeSliceIndex(clips, sourcePosition);
+  if (idx != -1) return clips[idx].playbackSpeed;
+  return clipSliceAt(clips, sourcePosition).playbackSpeed;
+}
+
+/// Returns the source-time position the video controller should seek
+/// to when its position-tick reaches [sourcePosition]; null when the
+/// current position is already inside a slice's playable trim range.
+///
+/// When the helper returns the final slice's trimEnd, the caller
+/// should ALSO pause the controller — we've walked off the end of
+/// the edited timeline.
+@visibleForTesting
+Duration? shouldSeekOnTick(List<ClipSlice> clips, Duration sourcePosition) {
+  if (clips.isEmpty) return null;
+  // Already inside a slice's trim range? No seek needed.
+  for (final c in clips) {
+    if (sourcePosition >= c.trimStart && sourcePosition < c.trimEnd) {
+      return null;
+    }
+  }
+  final next = nextPlayPosition(clips, sourcePosition);
+  if (next != null) return next;
+  return clips.last.trimEnd;
+}
+
+/// Source-time position to seek to when the user scrubs to
+/// [editedTime] on the timeline. Thin wrapper over editedToSource so
+/// the playback-screen call site documents intent.
+@visibleForTesting
+Duration seekFromEditedTime(List<ClipSlice> clips, Duration editedTime) =>
+    editedToSource(clips, editedTime);
+
 class PlaybackScreen extends ConsumerStatefulWidget {
   final String videoPath;
 
@@ -121,10 +210,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   bool _isExporting = false;
   // Owns the trim selection and soft-enforces it during playback.
   // Wired in [_initializeVideo] once the controller is initialised.
+  // B-era whole-clip trim — per-slice trim handles in the multi-slice
+  // ClipLane (Task 9) now drive the engine via setSliceTrim*, but this
+  // controller still enforces playback-boundary behaviour until those
+  // paths converge.
   late final TrimController _trim;
-  // Read-only alias kept so the existing read sites (export pipeline
-  // args, EditorTimeline.trimSelection) keep working unchanged.
-  TrimSelection? get _trimSelection => _trim.selection;
   // State-shaped undo/redo for everything the editor notifier owns
   // (cursor visuals, animation configs, motion blur, zoom regions,
   // etc.). Wired in [_initializeVideo] after the project state loads
@@ -134,10 +224,21 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   EditorHistoryController? _history;
   int? _selectedZoomIndex;
   final _zoomPreviewOverride = ZoomPreviewOverride();
-  // Whether the main clip bar is currently selected. Mutually
-  // exclusive with [_selectedZoomIndex]: selecting one clears the
-  // other. Drives the inspector's context-mode display.
-  bool _isClipSelected = false;
+  // Which slice (if any) the user has tapped in the multi-slice clip
+  // lane. Mutually exclusive with [_selectedZoomIndex]: selecting one
+  // clears the other. Drives the inspector's context-mode display.
+  int? _selectedSliceIndex;
+
+  // True while the scissors toolbar button is engaged. The timeline
+  // mounts a CutOverlay above its clip lane, and any tap on the lane
+  // commits a cut at that edited-time x. Esc / a successful cut /
+  // re-pressing the button all flip this back to false.
+  bool _cutModeActive = false;
+
+  // 120ms accent flash on the playhead pill after a rejected Cmd+K
+  // cut. Driven by [_flashPlayhead], cancelled in [dispose].
+  bool _playheadFlashOn = false;
+  Timer? _flashTimer;
 
   // Session-only preview-playback-speed multiplier (1×/2×/4×/8×).
   // Picked from the dropdown next to the timeline-zoom slider in the
@@ -201,25 +302,66 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   void initState() {
     super.initState();
     _initializeVideo();
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  /// Global Cmd+K → split at the current playhead's edited time.
+  /// Success: clear slice selection. Failure: flash the playhead pill.
+  bool _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    final isCmdK = event.logicalKey == LogicalKeyboardKey.keyK &&
+        HardwareKeyboard.instance.isMetaPressed;
+    if (!isCmdK) return false;
+    // Need an initialised controller to read the playhead. Bail
+    // quietly so the keypress falls through to system handling.
+    if (!_isInitialized) return false;
+    final clips = ref.read(editorProjectControllerProvider).timeline.clips;
+    final sourcePos = _controller.value.position;
+    final editedPos = sourceToEdited(clips, sourcePos);
+    final ok = handleCutKeybind(
+      controller: ref.read(editorProjectControllerProvider.notifier),
+      currentEditedTime: editedPos,
+      clips: clips,
+    );
+    if (ok) {
+      setState(() => _selectedSliceIndex = null);
+    } else {
+      _flashPlayhead();
+    }
+    return true;
+  }
+
+  void _flashPlayhead() {
+    if (!mounted) return;
+    setState(() => _playheadFlashOn = true);
+    _flashTimer?.cancel();
+    _flashTimer = Timer(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      setState(() => _playheadFlashOn = false);
+    });
   }
 
   /// Compute the inspector's current timeline-selection input from
-  /// the screen's selection state. Zoom selection wins if both are
+  /// the screen's selection state. Slice selection wins if both are
   /// somehow set (only one can be set under normal flow because the
-  /// tap handlers clear the other).
+  /// tap handlers clear the other) — exposing the slice context is
+  /// the more recoverable state in an undo-replay edge case.
   TimelineSelection? _currentSelection() {
+    if (_selectedSliceIndex != null) {
+      return SliceSelected(_selectedSliceIndex!);
+    }
     if (_selectedZoomIndex != null) {
       return ZoomSelected(_selectedZoomIndex!);
     }
-    if (_isClipSelected) return const ClipSelected();
     return null;
   }
 
   /// Pushes the current effective preview playback rate
   /// (`clipSpeed × _previewPlaybackSpeed`) onto the video controller.
-  /// Called whenever either input changes (slice 0's [ClipSlice.playbackSpeed]
-  /// via a `ref.listen` in build, or the preview dropdown via
-  /// [TimelineScaleSlider]).
+  /// Called whenever either input changes (the active slice's
+  /// [ClipSlice.playbackSpeed] via the clips-list `ref.listen` in
+  /// build / the boundary-crossing [_onSpeedTick] listener, or the
+  /// preview dropdown via [TimelineScaleSlider]).
   void _applyEffectivePlaybackSpeed(double clipSpeed) {
     if (!_isInitialized) return;
     _lastClipSpeedApplied = clipSpeed;
@@ -228,6 +370,55 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // non-negative value; guard against degenerate inputs.
     if (effective <= 0) return;
     _controller.setPlaybackSpeed(effective);
+  }
+
+  /// Per-instance shim around the top-level [effectiveClipSpeedAt]
+  /// helper: reads the live [clips] from the project controller and
+  /// delegates. The pure helper is what tests assert against; this
+  /// method just plumbs the live state into it.
+  double _effectiveClipSpeedAt(Duration sourcePos) => effectiveClipSpeedAt(
+        ref.read(editorProjectControllerProvider).timeline.clips,
+        sourcePos,
+      );
+
+  // Index of the slice currently under the playhead. -1 means no
+  // slice contains the position (transient — happens mid-seek across
+  // a removed region). Diffed in [_onSpeedTick] so we re-apply the
+  // rate exactly once per boundary crossing, not every frame.
+  int _currentSliceIndex = -1;
+
+  /// Per-frame boundary-crossing detector. Drives the active slice's
+  /// [ClipSlice.playbackSpeed] onto the player whenever the playhead
+  /// crosses into a new slice — during continuous playback, after a
+  /// committed seek, or after [_onSkipTick]'s gap jump.
+  ///
+  /// Registered on [_smoothPlayhead] (not [_controller]) because the
+  /// controller only reports position updates every ~250 ms — reacting
+  /// to those leaves up to 250 ms of wrong-rate playback inside the
+  /// new slice (the user-visible "slip"). The smoothed playhead ticks
+  /// every frame (~16 ms) and extrapolates slightly ahead of the
+  /// last-reported controller position, so we typically catch the
+  /// crossing one frame BEFORE AVPlayer decodes past the seam —
+  /// giving the platform-channel `setPlaybackSpeed` round-trip time
+  /// to land right at the boundary.
+  ///
+  /// Without this the controller would keep slice 0's rate forever;
+  /// the export pipeline honours per-slice speed (`n_slice_filter_graph`
+  /// emits `setpts`/`atempo` per slice) so the preview would silently
+  /// lie about the export.
+  void _onSpeedTick() {
+    if (!_isInitialized) return;
+    final clips =
+        ref.read(editorProjectControllerProvider).timeline.clips;
+    if (clips.isEmpty) return;
+    final pos =
+        _smoothPlayhead?.position ?? _controller.value.position;
+    final idx = activeSliceIndex(clips, pos);
+    if (idx == -1) return; // mid-seek through a gap — wait for landing
+    if (idx != _currentSliceIndex) {
+      _currentSliceIndex = idx;
+      _applyEffectivePlaybackSpeed(clips[idx].playbackSpeed);
+    }
   }
 
   // Tracks the previous `isPlaying` value so [_onPlayStateTick] can
@@ -239,7 +430,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     if (!_isInitialized) return;
     final isPlaying = _controller.value.isPlaying;
     if (shouldReapplyOnResume(prev: _prevIsPlaying, next: isPlaying)) {
-      _applyEffectivePlaybackSpeed(_lastClipSpeedApplied);
+      // Re-evaluate from the current position, not the cached value:
+      // if the user paused inside slice[1] and resumes, the cache
+      // holds slice 0's rate and would resume at the wrong speed.
+      _applyEffectivePlaybackSpeed(
+        _effectiveClipSpeedAt(_controller.value.position),
+      );
     }
     _prevIsPlaying = isPlaying;
   }
@@ -317,20 +513,26 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           videoDuration: _controller.value.duration,
         );
       });
-      // Seed the preview-rate cache from the restored project so
-      // the first dropdown-driven multiply uses the correct base.
-      // _previewPlaybackSpeed stays at 1.0 (session default). Slice 0
-      // is the single source of truth for per-clip playback speed
-      // until the editor follows the playhead across multiple slices.
-      _applyEffectivePlaybackSpeed(restored.timeline.clips.isEmpty
-          ? 1.0
-          : restored.timeline.clips.first.playbackSpeed);
+      // Seed the preview-rate cache from the slice the playhead is
+      // currently inside (typically slice 0 at position zero, but
+      // computing it this way keeps the seed correct if anything
+      // ever lands us elsewhere on init).
+      _applyEffectivePlaybackSpeed(
+        _effectiveClipSpeedAt(_controller.value.position),
+      );
       // Re-apply the effective rate every time playback resumes:
       // AVPlayer (video_player on macOS) resets `rate` to 1.0 on
       // every `play()` call, so without this listener the dropdown
       // value would silently drop back to 1× after pause/resume.
       _prevIsPlaying = _controller.value.isPlaying;
       _controller.addListener(_onPlayStateTick);
+      // Re-apply per-slice rate at every slice boundary crossing
+      // (continuous play AND post-seek), so the player honours each
+      // slice's [ClipSlice.playbackSpeed] — matching what the export
+      // pipeline produces. Registered on the SMOOTHED playhead (not
+      // _controller) so the boundary detection runs per-frame instead
+      // of per-controller-tick (~250ms) — see [_onSpeedTick].
+      _smoothPlayhead!.addListener(_onSpeedTick);
       // Wire state-shaped undo/redo. Starts AFTER `replace(saved)` so
       // the initial history floor is the on-disk snapshot, not the
       // defaults — Cmd-Z from a fresh-loaded recording does nothing
@@ -346,6 +548,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // _isInitialized + _trim.selection are set so the listener never
       // sees a half-initialized state.
       _controller.addListener(_onTrimTick);
+      // Skip removed regions during playback. Wired alongside the
+      // soft-trim tick so the two enforce-on-tick paths stay together.
+      _controller.addListener(_onSkipTick);
       // Seed the hover anchor from the freshly-initialised controller
       // so hover-end-before-any-other-action restores to a meaningful
       // value rather than Duration.zero (which would jump to start).
@@ -384,6 +589,40 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _trim.enforce(isPlaying: v.isPlaying, position: v.position);
   }
 
+  // Tracks the last position we asked the controller to skip to so we
+  // don't fire another seek before the previous one has landed. Without
+  // this guard a slow seek would let position-ticks keep emitting the
+  // stale "still in removed region" position, and we'd queue duplicate
+  // seekTo calls every frame.
+  Duration? _lastSkipTarget;
+
+  /// Position-tick listener that skips removed regions. When playback
+  /// walks off a slice's trimEnd, seeks to the next slice's trimStart;
+  /// when it lands inside a removed region (e.g. from a manual seek),
+  /// seeks forward to the closest playable position; when it's past the
+  /// final trimEnd, parks at the final trimEnd and pauses.
+  void _onSkipTick() {
+    if (!_isInitialized) return;
+    final v = _controller.value;
+    final clips = ref.read(editorProjectControllerProvider).timeline.clips;
+    final target = shouldSeekOnTick(clips, v.position);
+    if (target == null) {
+      _lastSkipTarget = null;
+      return;
+    }
+    // Already issued this exact seek — wait for the controller to land
+    // before issuing another. Without the guard we'd hammer seekTo on
+    // every frame while the in-flight seek is still pending.
+    if (_lastSkipTarget == target) return;
+    _lastSkipTarget = target;
+    if (clips.isNotEmpty &&
+        target == clips.last.trimEnd &&
+        v.position >= target) {
+      _controller.pause();
+    }
+    _controller.seekTo(target);
+  }
+
   /// Schedule a debounced save so a slider drag doesn't hammer the
   /// disk on every tick. Wired automatically: a `ref.listen` in
   /// build() calls this on every notifier publish.
@@ -397,6 +636,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    _flashTimer?.cancel();
     _zoomPreviewOverride.dispose();
     // Flush any pending debounced save before tearing down so the
     // user doesn't lose the last change they made before navigating
@@ -406,8 +647,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     if (_isInitialized) {
       _projectStore.save(_project);
       _controller.removeListener(_onTrimTick);
+      _controller.removeListener(_onSkipTick);
       _controller.removeListener(_onHoverTrack);
       _controller.removeListener(_onPlayStateTick);
+      _smoothPlayhead?.removeListener(_onSpeedTick);
     }
     _smoothPlayhead?.dispose();
     _controller.dispose();
@@ -486,7 +729,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     setState(() {
       // Auto-select the new zoom so the inspector opens on it.
       _selectedZoomIndex = _project.zoomRegions.length - 1;
-      _isClipSelected = false;
+      _selectedSliceIndex = null;
     });
     _controller.seekTo(start);
   }
@@ -724,7 +967,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   cursorRecording: cursorRec,
                   projectState: _project,
                   settings: settings,
-                  trim: _trimSelection,
                 ).run(onProgress: onProgress, cancelToken: cancelToken)
               : ExportPipeline(
                   sourcePath: widget.videoPath,
@@ -733,8 +975,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   cursorRecording: cursorRec,
                   projectState: _project,
                   settings: settings,
-                  trim: _trimSelection,
                 ).run(onProgress: onProgress, cancelToken: cancelToken);
+          // N-slice export for both formats: per-slice trim/speed/fade come
+          // from state.timeline.clips. The B-era top-level TrimSelection is
+          // no longer plumbed into either pipeline.
         },
       );
 
@@ -855,17 +1099,22 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       editorProjectControllerProvider,
       (_, __) => _persistProject(),
     );
-    // When the per-clip playback speed changes (edited via the
-    // ClipContextInspector or the slice editor), re-apply the product
-    // onto the preview player. Slice 0 carries the speed today; preview
-    // rate = sliceSpeed × _previewPlaybackSpeed.
-    ref.listen<double>(
-      editorProjectControllerProvider.select(
-        (s) => s.timeline.clips.isEmpty
-            ? 1.0
-            : s.timeline.clips.first.playbackSpeed,
-      ),
-      (_, next) => _applyEffectivePlaybackSpeed(next),
+    // When the clip list changes (any slice's speed edited, slices
+    // added/removed, trims changed), re-evaluate the player rate
+    // against the slice the playhead is currently inside. Force the
+    // slice-index cache to -1 so [_onSpeedTick] re-applies on the very
+    // next tick even when the active slice's INDEX is unchanged but
+    // its speed was edited in place. Preview rate = sliceSpeed ×
+    // _previewPlaybackSpeed.
+    ref.listen<List<ClipSlice>>(
+      editorProjectControllerProvider.select((s) => s.timeline.clips),
+      (_, __) {
+        if (!_isInitialized) return;
+        _currentSliceIndex = -1;
+        _applyEffectivePlaybackSpeed(
+          _effectiveClipSpeedAt(_controller.value.position),
+        );
+      },
     );
     return Focus(
       autofocus: true,
@@ -1129,7 +1378,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                             _zoomPreviewOverride.value = null;
                             setState(() {
                               _selectedZoomIndex = null;
-                              _isClipSelected = false;
+                              _selectedSliceIndex = null;
+                            });
+                          },
+                          onSliceRemoved: (removed) {
+                            setState(() {
+                              _selectedSliceIndex =
+                                  decrementSelectionOnRemoval(
+                                selected: _selectedSliceIndex,
+                                removed: removed,
+                              );
                             });
                           },
                           videoSize: _videoSize(),
@@ -1367,15 +1625,33 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: TimelineScaleSlider(
-                playheadPosition: pos,
-                previewPlaybackSpeed: _previewPlaybackSpeed,
-                onPreviewSpeedChanged: (s) {
-                  setState(() {
-                    _previewPlaybackSpeed = s;
-                  });
-                  _applyEffectivePlaybackSpeed(_lastClipSpeedApplied);
-                },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Tooltip(
+                    message: 'Cut tool (Esc to exit)',
+                    child: IconButton(
+                      icon: const Icon(Icons.content_cut, size: 18),
+                      isSelected: _cutModeActive,
+                      color: _cutModeActive
+                          ? const Color(0xFF6C63FF)
+                          : Colors.white70,
+                      onPressed: () => setState(
+                          () => _cutModeActive = !_cutModeActive),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TimelineScaleSlider(
+                    playheadPosition: pos,
+                    previewPlaybackSpeed: _previewPlaybackSpeed,
+                    onPreviewSpeedChanged: (s) {
+                      setState(() {
+                        _previewPlaybackSpeed = s;
+                      });
+                      _applyEffectivePlaybackSpeed(_lastClipSpeedApplied);
+                    },
+                  ),
+                ],
               ),
             ),
           ],
@@ -1417,9 +1693,23 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               final displayedPos = _hover.isHovering
                   ? _hover.intendedPosition
                   : (_smoothPlayhead?.position ?? _controller.value.position);
+              // The timeline's x-axis is edited time: ruler width =
+              // total edited duration, playhead = source mapped to
+              // edited, scrub callbacks deliver edited and we convert
+              // back to source before seeking the controller.
+              final clipsForTimeline = ref
+                  .watch(editorProjectControllerProvider)
+                  .timeline
+                  .clips;
+              final editedDuration = clipsForTimeline.isEmpty
+                  ? _controller.value.duration
+                  : totalEditedDuration(clipsForTimeline);
+              final editedPos = clipsForTimeline.isEmpty
+                  ? displayedPos
+                  : sourceToEdited(clipsForTimeline, displayedPos);
               return EditorTimeline(
-                duration: _controller.value.duration,
-                position: displayedPos,
+                duration: editedDuration,
+                position: editedPos,
                 isPlaying: _controller.value.isPlaying,
                 timelineScale:
                     ref.watch(editorProjectControllerProvider).timelineScale,
@@ -1432,27 +1722,34 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onPinchScale: (newScale, anchor) => ref
                     .read(editorProjectControllerProvider.notifier)
                     .setTimelineScale(newScale, anchorTime: anchor),
-                onSeek: (next) {
-                  // Committed seek: clear hover state and adopt the
-                  // click target as the new intended position, then
-                  // seek. The listener also picks this up after the
-                  // seek lands, but we set it explicitly to avoid even
-                  // a one-frame gap where the anchor is still the old
-                  // pre-hover value.
-                  setState(() => _hover.seek(next));
-                  _checkZoomMarkerClick(next);
+                onSeek: (editedNext) {
+                  // EditorTimeline emits edited-time positions; convert
+                  // to source before feeding the controller-bound hover
+                  // chain so the controller seeks to the correct frame.
+                  final clips = ref
+                      .read(editorProjectControllerProvider)
+                      .timeline
+                      .clips;
+                  final sourceNext = clips.isEmpty
+                      ? editedNext
+                      : seekFromEditedTime(clips, editedNext);
+                  setState(() => _hover.seek(sourceNext));
+                  _checkZoomMarkerClick(sourceNext);
                 },
-                onHoverSeek: (next) {
+                onHoverSeek: (editedNext) {
                   // Mark hover active so the listener stops updating
                   // the anchor. The anchor we'll restore to on
                   // hover-end is whatever the listener last wrote — i.e.
-                  // the user's actual stopped position (the live
-                  // playback position if they were playing, or the
-                  // paused position otherwise). Crucially we do NOT
-                  // sample `_controller.value.position` here, which
-                  // could still be the previous hover's preview target
-                  // if its restore-seek hadn't applied yet.
-                  setState(() => _hover.hoverSeek(next));
+                  // the user's actual stopped position. Convert edited
+                  // → source so the controller seeks the right frame.
+                  final clips = ref
+                      .read(editorProjectControllerProvider)
+                      .timeline
+                      .clips;
+                  final sourceNext = clips.isEmpty
+                      ? editedNext
+                      : seekFromEditedTime(clips, editedNext);
+                  setState(() => _hover.hoverSeek(sourceNext));
                 },
                 onHoverEnd: () {
                   setState(() => _hover.hoverEnd());
@@ -1465,17 +1762,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   }
                   setState(() {
                     _selectedZoomIndex = i;
-                    // Zoom and clip selections are mutually exclusive
-                    // — selecting a zoom clears any clip selection.
-                    if (i != null) _isClipSelected = false;
-                  });
-                },
-                clipSelected: _isClipSelected,
-                onClipSelected: (selected) {
-                  if (selected) _zoomPreviewOverride.value = null;
-                  setState(() {
-                    _isClipSelected = selected;
-                    if (selected) _selectedZoomIndex = null;
+                    // Zoom and slice selections are mutually exclusive
+                    // — selecting a zoom clears any slice selection.
+                    if (i != null) _selectedSliceIndex = null;
                   });
                 },
                 onZoomChanged: (i, next) {
@@ -1495,10 +1784,32 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   });
                 },
                 onZoomAdded: _addZoomAt,
-                trimSelection: _trimSelection,
-                onTrimChanged: (next) {
-                  setState(() => _trim.selection = next);
+                clips: ref
+                    .watch(editorProjectControllerProvider)
+                    .timeline
+                    .clips,
+                selectedSliceIndex: _selectedSliceIndex,
+                onSliceSelected: (idx) {
+                  setState(() {
+                    _selectedSliceIndex = idx;
+                    if (idx != null) {
+                      _selectedZoomIndex = null;
+                    }
+                  });
                 },
+                onSliceTrimStartChanged: (idx, v) => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .setSliceTrimStart(idx, v),
+                onSliceTrimEndChanged: (idx, v) => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .setSliceTrimEnd(idx, v),
+                cutModeActive: _cutModeActive,
+                onCutModeChanged: (v) =>
+                    setState(() => _cutModeActive = v),
+                playheadFlashOn: _playheadFlashOn,
+                // cursorXListenable stays unset — when cut mode is on,
+                // EditorTimeline pipes its own overlay's cursor in. Off
+                // mode falls back to a no-op notifier.
               );
             },
           ),

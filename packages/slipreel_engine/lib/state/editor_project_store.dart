@@ -54,7 +54,7 @@ class EditorProjectStore {
     return state.copyWith(
       timeline: state.timeline.copyWith(
         clips: [
-          ClipSlice(start: Duration.zero, end: videoDuration),
+          ClipSlice(cutStart: Duration.zero, cutEnd: videoDuration),
         ],
       ),
     );

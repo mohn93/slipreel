@@ -20,6 +20,7 @@ class SmoothPlayheadController extends ChangeNotifier {
     _baseTimestamp = DateTime.now();
     _smoothed = _basePosition;
     _wasPlaying = videoController.value.isPlaying;
+    _lastPlaybackSpeed = videoController.value.playbackSpeed;
     _ticker = vsync.createTicker(_onTick);
     videoController.addListener(_onVideoUpdate);
     _syncTickerToPlayState();
@@ -31,6 +32,10 @@ class SmoothPlayheadController extends ChangeNotifier {
   late Duration _basePosition;
   late DateTime _baseTimestamp;
   late bool _wasPlaying;
+  // Last observed VideoPlayerController.playbackSpeed. Rebasing on
+  // change is what keeps the extrapolation continuous at slice
+  // boundaries — see [_onVideoUpdate].
+  late double _lastPlaybackSpeed;
   Duration _smoothed = Duration.zero;
 
   /// Forward drift this large means video_player jumped ahead of our
@@ -53,9 +58,53 @@ class SmoothPlayheadController extends ChangeNotifier {
   /// The interpolated playhead position; safe to read every build.
   Duration get position => _smoothed;
 
+  /// Current base position used by the extrapolator. Exposed for unit
+  /// tests asserting the rebase-on-speed-change contract.
+  @visibleForTesting
+  Duration get basePosition => _basePosition;
+
+  /// Last observed `value.playbackSpeed`. Exposed for unit tests.
+  @visibleForTesting
+  double get lastPlaybackSpeed => _lastPlaybackSpeed;
+
+  /// Pure helper documenting the rebase-on-speed-change contract: when
+  /// `value.playbackSpeed` flips, the new base is the CURRENT smoothed
+  /// position — NOT `value.position`. The controller reports position
+  /// with up to one tick (~125–250 ms) of latency, so rebasing to
+  /// `value.position` snaps the playhead backward by that latency. Using
+  /// the smoothed value keeps the slope changing without a discontinuity.
+  @visibleForTesting
+  static Duration rebaseBaseOnSpeedChange({
+    required Duration currentSmoothed,
+  }) =>
+      currentSmoothed;
+
   void _onVideoUpdate() {
     final v = videoController.value;
     final isPlaying = v.isPlaying;
+
+    // Rebase on every playbackSpeed change. video_player's setPlaybackSpeed
+    // flips `value.playbackSpeed` synchronously, but _basePosition /
+    // _baseTimestamp are stale, so without this the next extrapolation
+    // tick's slope changes while the base is unchanged — producing a
+    // visible discontinuity ("jump then slow back") at slice boundaries
+    // when adjacent slices have different speeds.
+    //
+    // Use [_smoothed] (the current extrapolated value) as the new base,
+    // NOT `v.position`. The controller reports position with up to
+    // ~250 ms of latency, so `v.position` at this instant is the
+    // playback head's position one tick ago — rebasing to it would
+    // snap the playhead BACKWARD by that latency, producing the new
+    // jitter pattern. The smoothed value is, by construction, our best
+    // estimate of "now", so using it changes the slope without changing
+    // the y-intercept. Native AVPlayer's rate-change latency (~1 frame)
+    // produces only a small forward drift, well under the
+    // [_forwardSeekThreshold] — so no forward re-snap follows either.
+    if (v.playbackSpeed != _lastPlaybackSpeed) {
+      _basePosition = _smoothed;
+      _baseTimestamp = DateTime.now();
+      _lastPlaybackSpeed = v.playbackSpeed;
+    }
 
     if (isPlaying != _wasPlaying) {
       final pos = isPlaying

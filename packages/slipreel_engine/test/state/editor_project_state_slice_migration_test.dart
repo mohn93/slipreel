@@ -4,8 +4,12 @@ import 'package:slipreel_engine/state/editor_project_state.dart';
 
 void main() {
   group('EditorProjectState schema v6 -> v7 migration', () {
-    test('currentSchemaVersion is 7', () {
-      expect(EditorProjectState.currentSchemaVersion, 7);
+    test('currentSchemaVersion is at least 7', () {
+      // The v6 → v7 step added the clip slice; later bumps (e.g. v7 → v8
+      // splitting cut/trim bounds) still run after it, so this only
+      // pins the floor — exact value is owned by the latest migration's
+      // own test.
+      expect(EditorProjectState.currentSchemaVersion >= 7, isTrue);
     });
 
     test('migrates v6 globals into a single clip covering the whole video', () {
@@ -30,7 +34,10 @@ void main() {
         v6,
         videoDuration: const Duration(seconds: 12, milliseconds: 340),
       );
-      expect(v7['schemaVersion'], 7);
+      // migrateEditorProjectJson walks all the way to currentSchemaVersion,
+      // so we don't pin a literal here — the clip shape below is what
+      // this test really cares about.
+      expect(v7['schemaVersion'], EditorProjectState.currentSchemaVersion);
       final timeline = v7['timeline'] as Map<String, dynamic>;
       final clips = timeline['clips'] as List;
       expect(clips, hasLength(1));
