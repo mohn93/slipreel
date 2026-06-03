@@ -1,4 +1,3 @@
-import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/snap/snap_resolver.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/timeline/edited_time.dart';
@@ -20,35 +19,10 @@ class CutDecision {
 ///
 /// When [snapEnabled] is false or [overrideSnap] is true, returns the raw
 /// playhead with no snap. Otherwise builds snap candidates from the
-/// cursor's click events plus the supplied [zoomEdgesSource] edges (both
-/// mapped from source-time to edited-time via [sourceToEdited]), sorts
-/// them, and queries [resolveSnap].
+/// supplied source-time [clickTimesSource] plus [zoomEdgesSource] edges
+/// (both mapped to edited-time via [sourceToEdited]), sorts them, and
+/// queries [resolveSnap].
 CutDecision decideCut({
-  required Duration playheadEdited,
-  required List<ClipSlice> clips,
-  required CursorRecording cursor,
-  required Iterable<Duration> zoomEdgesSource,
-  required bool snapEnabled,
-  required bool overrideSnap,
-}) {
-  if (!snapEnabled || overrideSnap) {
-    return CutDecision(time: playheadEdited, snapTarget: null);
-  }
-  final candidates = <Duration>[
-    for (final t in cursor.eventIndex.clickTimes) sourceToEdited(clips, t),
-    for (final e in zoomEdgesSource) sourceToEdited(clips, e),
-  ]..sort();
-  final result = resolveSnap(
-    requestedTime: playheadEdited,
-    candidates: candidates,
-  );
-  return CutDecision(time: result.time, snapTarget: result.snappedFrom);
-}
-
-/// Same as [decideCut], but takes pre-extracted source-time click
-/// timestamps (used by callers that pass them via a widget prop rather
-/// than holding a [CursorRecording] reference directly).
-CutDecision decideCutFromSourceClicks({
   required Duration playheadEdited,
   required List<ClipSlice> clips,
   required List<Duration> clickTimesSource,

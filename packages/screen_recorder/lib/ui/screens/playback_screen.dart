@@ -337,7 +337,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final decision = decideCut(
       playheadEdited: editedPos,
       clips: clips,
-      cursor: _cursorRecording,
+      clickTimesSource: _cursorRecording.eventIndex.clickTimes,
       zoomEdgesSource: zoomEdges,
       snapEnabled: snapEnabled,
       overrideSnap: overrideSnap,

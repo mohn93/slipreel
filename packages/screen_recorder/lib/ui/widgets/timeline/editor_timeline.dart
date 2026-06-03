@@ -404,7 +404,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline> {
           .timeline
           .activeZoomRegions) ...[r.startTime, r.endTime],
     ];
-    final decision = decideCutFromSourceClicks(
+    final decision = decideCut(
       playheadEdited: editedTime,
       clips: clips,
       clickTimesSource: widget.cursorClickTimes,

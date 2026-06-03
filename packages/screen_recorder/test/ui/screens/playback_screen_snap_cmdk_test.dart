@@ -1,6 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 
 import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
@@ -11,20 +9,6 @@ void main() {
         cutEnd: Duration(milliseconds: endMs),
       );
 
-  CursorRecording cursorWithClickAtMs(int ms) {
-    final rec = CursorRecording();
-    rec.addPosition(const CursorPosition(
-      timestampMicros: 0, x: 0, y: 0, isClicked: false,
-    ));
-    rec.addPosition(CursorPosition(
-      timestampMicros: ms * 1000,
-      x: 0,
-      y: 0,
-      isClicked: true,
-    ));
-    return rec;
-  }
-
   group('decideCut', () {
     final clips = [slice(0, 10000)];
 
@@ -32,7 +16,7 @@ void main() {
       final d = decideCut(
         playheadEdited: const Duration(milliseconds: 5050),
         clips: clips,
-        cursor: cursorWithClickAtMs(5000),
+        clickTimesSource: const [Duration(milliseconds: 5000)],
         zoomEdgesSource: const [],
         snapEnabled: true,
         overrideSnap: false,
@@ -45,7 +29,7 @@ void main() {
       final d = decideCut(
         playheadEdited: const Duration(milliseconds: 5200),
         clips: clips,
-        cursor: cursorWithClickAtMs(5000),
+        clickTimesSource: const [Duration(milliseconds: 5000)],
         zoomEdgesSource: const [],
         snapEnabled: true,
         overrideSnap: false,
@@ -58,7 +42,7 @@ void main() {
       final d = decideCut(
         playheadEdited: const Duration(milliseconds: 5050),
         clips: clips,
-        cursor: cursorWithClickAtMs(5000),
+        clickTimesSource: const [Duration(milliseconds: 5000)],
         zoomEdgesSource: const [],
         snapEnabled: false,
         overrideSnap: false,
@@ -71,7 +55,7 @@ void main() {
       final d = decideCut(
         playheadEdited: const Duration(milliseconds: 5050),
         clips: clips,
-        cursor: cursorWithClickAtMs(5000),
+        clickTimesSource: const [Duration(milliseconds: 5000)],
         zoomEdgesSource: const [],
         snapEnabled: true,
         overrideSnap: true,
@@ -84,7 +68,7 @@ void main() {
       final d = decideCut(
         playheadEdited: const Duration(milliseconds: 5050),
         clips: clips,
-        cursor: cursorWithClickAtMs(5000),
+        clickTimesSource: const [Duration(milliseconds: 5000)],
         zoomEdgesSource: const [Duration(milliseconds: 5040)],
         snapEnabled: true,
         overrideSnap: false,
@@ -94,10 +78,10 @@ void main() {
     });
 
     test('source-time candidate is mapped through edited-time', () {
-      // Two slices: first plays at 2x, so the second slice's edited
-      // start is at edited 500ms (1000ms source / 2.0). A click at
-      // source time 1100ms (i.e., 100ms into the second slice at 1.0x)
-      // maps to edited time 600ms.
+      // Two slices: first plays at 2x. A click at source 1100ms
+      // (i.e., 100ms into the second slice at 1.0x) maps to edited
+      // 600ms (first slice's edited length is 1000/2.0 = 500ms,
+      // then +100ms inside the second slice).
       final clipsWithSpeed = [
         ClipSlice(
           cutStart: Duration.zero,
@@ -112,50 +96,15 @@ void main() {
       final d = decideCut(
         playheadEdited: const Duration(milliseconds: 580),
         clips: clipsWithSpeed,
-        cursor: cursorWithClickAtMs(1100),
+        clickTimesSource: const [Duration(milliseconds: 1100)],
         zoomEdgesSource: const [],
         snapEnabled: true,
         overrideSnap: false,
       );
-      // Click at source 1100ms == edited 600ms.
-      // Playhead at edited 580ms is 20ms away, well inside the 150ms radius.
+      // Click at source 1100ms == edited 600ms; playhead at edited
+      // 580ms is 20ms away, well inside the 150ms radius.
       expect(d.time, const Duration(milliseconds: 600));
       expect(d.snapTarget, const Duration(milliseconds: 600));
-    });
-  });
-
-  group('decideCutFromSourceClicks', () {
-    final clips = [
-      ClipSlice(
-        cutStart: Duration.zero,
-        cutEnd: const Duration(milliseconds: 10000),
-      ),
-    ];
-
-    test('snap on, within radius -> snaps', () {
-      final d = decideCutFromSourceClicks(
-        playheadEdited: const Duration(milliseconds: 5050),
-        clips: clips,
-        clickTimesSource: const [Duration(milliseconds: 5000)],
-        zoomEdgesSource: const [],
-        snapEnabled: true,
-        overrideSnap: false,
-      );
-      expect(d.time, const Duration(milliseconds: 5000));
-      expect(d.snapTarget, const Duration(milliseconds: 5000));
-    });
-
-    test('override -> no snap', () {
-      final d = decideCutFromSourceClicks(
-        playheadEdited: const Duration(milliseconds: 5050),
-        clips: clips,
-        clickTimesSource: const [Duration(milliseconds: 5000)],
-        zoomEdgesSource: const [],
-        snapEnabled: true,
-        overrideSnap: true,
-      );
-      expect(d.time, const Duration(milliseconds: 5050));
-      expect(d.snapTarget, isNull);
     });
   });
 }
