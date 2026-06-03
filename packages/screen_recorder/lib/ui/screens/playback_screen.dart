@@ -55,6 +55,8 @@ import '../theme/app_palette_context.dart';
 import 'playback/hover_scrub_controller.dart';
 import 'playback/trim_controller.dart';
 import 'playback/export_controller.dart';
+import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
+import 'package:screen_recorder/state/snap_preference_controller.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 
@@ -324,14 +326,51 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final clips = ref.read(editorProjectControllerProvider).timeline.clips;
     final sourcePos = _controller.value.position;
     final editedPos = sourceToEdited(clips, sourcePos);
+    final snapEnabled = ref.read(snapPreferenceProvider);
+    final overrideSnap = HardwareKeyboard.instance.isAltPressed;
+    final zoomEdges = <Duration>[
+      for (final r in ref
+          .read(editorProjectControllerProvider)
+          .timeline
+          .activeZoomRegions) ...[r.startTime, r.endTime],
+    ];
+    final cutTime = decideCutTime(
+      playheadEdited: editedPos,
+      clips: clips,
+      cursor: _cursorRecording,
+      zoomEdgesSource: zoomEdges,
+      snapEnabled: snapEnabled,
+      overrideSnap: overrideSnap,
+    );
+    final snappedTo = decideSnapTarget(
+      playheadEdited: editedPos,
+      clips: clips,
+      cursor: _cursorRecording,
+      zoomEdgesSource: zoomEdges,
+      snapEnabled: snapEnabled,
+      overrideSnap: overrideSnap,
+    );
     final ok = handleCutKeybind(
       controller: ref.read(editorProjectControllerProvider.notifier),
-      currentEditedTime: editedPos,
+      currentEditedTime: cutTime,
       clips: clips,
     );
     if (ok) {
       setState(() => _selectedSliceIndex = null);
+      if (snappedTo != null) _flashSnap(snappedTo);
     } else {
+      // If snap pushed us into the min-slice guard zone, retry at raw position.
+      if (snappedTo != null) {
+        final fallback = handleCutKeybind(
+          controller: ref.read(editorProjectControllerProvider.notifier),
+          currentEditedTime: editedPos,
+          clips: clips,
+        );
+        if (fallback) {
+          setState(() => _selectedSliceIndex = null);
+          return true;
+        }
+      }
       _flashPlayhead();
     }
     return true;
