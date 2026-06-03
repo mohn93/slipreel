@@ -1655,10 +1655,23 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     return AnimatedBuilder(
       animation: Listenable.merge([_controller, _smoothPlayhead]),
       builder: (context, _) {
-        final pos = _hover.isHovering
+        final sourcePos = _hover.isHovering
             ? _hover.intendedPosition
             : (_smoothPlayhead?.position ?? _controller.value.position);
-        final dur = _controller.value.duration;
+        // Transport readout shows edited time so the numbers track the
+        // timeline x-axis: per-slice playbackSpeed compresses/expands the
+        // contribution to total, and the current-time ticks at the rate
+        // the user sees the playhead move.
+        final clips = ref
+            .watch(editorProjectControllerProvider)
+            .timeline
+            .clips;
+        final pos = clips.isEmpty
+            ? sourcePos
+            : sourceToEdited(clips, sourcePos);
+        final dur = clips.isEmpty
+            ? _controller.value.duration
+            : totalEditedDuration(clips);
         final isPlaying = _controller.value.isPlaying;
         // Stack lets the play-controls Row stay perfectly centered
         // while the zoom slider + preview-speed dropdown right-aligns
