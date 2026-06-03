@@ -429,27 +429,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     });
   }
 
-  /// Returns a sorted ascending list of edited-time snap candidates:
-  /// cursor click events plus zoom-region start/end edges. Computed on
-  /// demand per cut request — typical projects have a few hundred
-  /// candidates and the cost is sub-millisecond.
-  List<Duration> _buildSnapCandidates(List<ClipSlice> clips) {
-    final candidates = <Duration>[];
-    for (final t in _cursorRecording.eventIndex.clickTimes) {
-      candidates.add(sourceToEdited(clips, t));
-    }
-    final regions = ref
-        .read(editorProjectControllerProvider)
-        .timeline
-        .activeZoomRegions;
-    for (final r in regions) {
-      candidates.add(sourceToEdited(clips, r.startTime));
-      candidates.add(sourceToEdited(clips, r.endTime));
-    }
-    candidates.sort();
-    return candidates;
-  }
-
   /// Compute the inspector's current timeline-selection input from
   /// the screen's selection state. Slice selection wins if both are
   /// somehow set (only one can be set under normal flow because the

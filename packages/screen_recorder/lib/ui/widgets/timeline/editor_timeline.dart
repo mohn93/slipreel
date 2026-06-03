@@ -419,14 +419,29 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline> {
       snapEnabled: snapEnabled,
       overrideSnap: overrideSnap,
     );
-    final ok = ref
-        .read(editorProjectControllerProvider.notifier)
-        .splitAtPlayhead(decision.time, clips);
-    if (ok && decision.snapTarget != null) {
-      widget.onSnapped?.call(decision.snapTarget!);
+    final controller =
+        ref.read(editorProjectControllerProvider.notifier);
+    final snappedOk = controller.splitAtPlayhead(decision.time, clips);
+    if (snappedOk) {
+      if (decision.snapTarget != null) {
+        widget.onSnapped?.call(decision.snapTarget!);
+      }
+      widget.onSliceSelected?.call(null);
+      return true;
     }
-    if (ok) widget.onSliceSelected?.call(null);
-    return ok;
+    if (decision.snapTarget != null) {
+      // Snap pushed us into the min-slice guard zone — retry at the
+      // raw tap position so the user's gesture still produces a cut
+      // when it would have otherwise succeeded. No snap flash on this
+      // path because we did NOT land on the snap target. Mirrors the
+      // Cmd+K fallback in PlaybackScreen._onKey.
+      final rawOk = controller.splitAtPlayhead(editedTime, clips);
+      if (rawOk) {
+        widget.onSliceSelected?.call(null);
+        return true;
+      }
+    }
+    return false;
   }
 
   @override

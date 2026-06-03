@@ -43,8 +43,10 @@ class _SnapFlashPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (x.isNaN || x.isInfinite) return;
-    // Vertical glow: 4px-wide rect with a soft horizontal gradient at
-    // 60% alpha, centered on `x`.
+    // Vertical glow: a 4px-wide rect centered on `x`, drawn at 60%
+    // alpha with a soft blur mask so the edges feather. Shown for
+    // ~240ms then cleared by the owning screen (no built-in fade —
+    // the appearance is on/off).
     final rect = Rect.fromLTWH(x - 2, 0, 4, size.height);
     final paint = Paint()
       ..color = color.withValues(alpha: 0.6)
