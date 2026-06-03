@@ -33,6 +33,7 @@ import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
 import 'package:screen_recorder/state/zoom_preview_override.dart';
 import 'package:screen_recorder/ui/widgets/canvas_toolbar/aspect_ratio_picker.dart';
 import 'package:screen_recorder/ui/widgets/canvas_toolbar/canvas_toolbar.dart';
+import 'package:screen_recorder/ui/widgets/canvas_toolbar/snap_toggle_pill.dart';
 import 'package:screen_recorder/ui/widgets/canvas_toolbar/timeline_scale_slider.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/export_dialog.dart';
@@ -1651,6 +1652,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       _applyEffectivePlaybackSpeed(_lastClipSpeedApplied);
                     },
                   ),
+                  const SizedBox(width: 8),
+                  const SnapTogglePill(),
                 ],
               ),
             ),
