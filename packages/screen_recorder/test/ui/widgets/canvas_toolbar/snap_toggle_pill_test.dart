@@ -1,4 +1,3 @@
-// packages/screen_recorder/test/ui/widgets/canvas_toolbar/snap_toggle_pill_test.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:screen_recorder/state/snap_preference_controller.dart';
 import 'package:screen_recorder/state/snap_preference_store.dart';
+import 'package:screen_recorder/ui/theme/app_palette.dart';
 import 'package:screen_recorder/ui/widgets/canvas_toolbar/snap_toggle_pill.dart';
 
 void main() {
@@ -20,8 +20,9 @@ void main() {
           (ref) => SnapPreferenceController(store: store, initial: initial),
         ),
       ],
-      child: const MaterialApp(
-        home: Scaffold(body: Center(child: SnapTogglePill())),
+      child: MaterialApp(
+        theme: ThemeData(extensions: const [AppPalette.midnight]),
+        home: const Scaffold(body: Center(child: SnapTogglePill())),
       ),
     );
   }
