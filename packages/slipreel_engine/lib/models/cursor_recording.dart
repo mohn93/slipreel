@@ -249,4 +249,11 @@ class CursorEventIndex {
     }
     return lo;
   }
+
+  /// All click (press rising edge) timestamps from the recording,
+  /// in source-time, sorted ascending. Returned list is unmodifiable.
+  /// Cheap to call repeatedly — wraps the underlying cache.
+  List<Duration> get clickTimes => List<Duration>.unmodifiable(
+        _clickMicros.map((m) => Duration(microseconds: m)),
+      );
 }
