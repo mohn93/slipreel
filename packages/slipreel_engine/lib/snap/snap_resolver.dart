@@ -1,5 +1,3 @@
-// packages/slipreel_engine/lib/snap/snap_resolver.dart
-
 /// Outcome of [resolveSnap].
 class SnapResult {
   const SnapResult(this.time, this.snappedFrom);
@@ -8,10 +6,8 @@ class SnapResult {
   /// (no snap) or a candidate from the input list (snapped).
   final Duration time;
 
-  /// The candidate the cut snapped to, or null if no snap occurred.
-  /// When equal to [time] AND non-null, the snap landed exactly on
-  /// the candidate (informational; the UI uses this for the flash
-  /// regardless of whether the candidate equals the request).
+  /// Non-null iff a snap occurred. When non-null, equals [time] (the
+  /// chosen candidate). The UI keys the snap-flash off this field.
   final Duration? snappedFrom;
 }
 
