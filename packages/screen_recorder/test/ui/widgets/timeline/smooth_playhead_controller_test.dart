@@ -2,6 +2,48 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 
 void main() {
+  group('SmoothPlayheadController.rebaseBaseOnSpeedChange', () {
+    // The boundary-jump audit (2026-06-03) tracked a visible "jump
+    // then slow back" at slice seams to a stale `_basePosition` not
+    // being rebased when `value.playbackSpeed` changed. A naive fix
+    // rebased to `videoController.value.position` — but that lags by
+    // up to one tick (~125–250ms), so the playhead snapped BACKWARD
+    // by that much at the seam (a new jitter pattern). The contract
+    // is: on rate change, rebase the extrapolator's anchor to the
+    // current SMOOTHED position so only the slope changes, not the
+    // y-intercept.
+    test('returns the smoothed value as the new base (not v.position)', () {
+      const smoothed = Duration(milliseconds: 5234);
+      expect(
+        SmoothPlayheadController.rebaseBaseOnSpeedChange(
+          currentSmoothed: smoothed,
+        ),
+        smoothed,
+      );
+    });
+
+    test('identity at zero (initial state)', () {
+      expect(
+        SmoothPlayheadController.rebaseBaseOnSpeedChange(
+          currentSmoothed: Duration.zero,
+        ),
+        Duration.zero,
+      );
+    });
+
+    test('preserves sub-millisecond precision', () {
+      // Smoothed extrapolation uses microsecond-accurate math; rebasing
+      // must not silently quantise to milliseconds.
+      const smoothed = Duration(microseconds: 5234567);
+      expect(
+        SmoothPlayheadController.rebaseBaseOnSpeedChange(
+          currentSmoothed: smoothed,
+        ),
+        smoothed,
+      );
+    });
+  });
+
   group('SmoothPlayheadController.resolvePausedPosition', () {
     const duration = Duration(seconds: 10);
 
