@@ -1,33 +1,29 @@
-// packages/screen_recorder/lib/ui/screens/playback/cut_decision.dart
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/snap/snap_resolver.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/timeline/edited_time.dart';
 
-/// Returns the edited-time at which a Cmd+K cut should land, applying
-/// snap when enabled and not overridden.
-Duration decideCutTime({
-  required Duration playheadEdited,
-  required List<ClipSlice> clips,
-  required CursorRecording cursor,
-  required Iterable<Duration> zoomEdgesSource,
-  required bool snapEnabled,
-  required bool overrideSnap,
-}) {
-  if (!snapEnabled || overrideSnap) return playheadEdited;
-  final candidates = <Duration>[
-    for (final t in cursor.eventIndex.clickTimes) sourceToEdited(clips, t),
-    for (final e in zoomEdgesSource) sourceToEdited(clips, e),
-  ]..sort();
-  return resolveSnap(
-    requestedTime: playheadEdited,
-    candidates: candidates,
-  ).time;
+/// The post-snap cut decision for a Cmd+K or scissors-mode tap.
+class CutDecision {
+  const CutDecision({required this.time, required this.snapTarget});
+
+  /// The edited-time at which the cut should land — either the raw
+  /// playhead or a snapped candidate.
+  final Duration time;
+
+  /// The candidate that was snapped to (and that the UI flashes), or
+  /// null if no snap occurred.
+  final Duration? snapTarget;
 }
 
-/// Returns the snap target (for [SnapFlashOverlay]) corresponding to the
-/// decision above, or null if the cut did NOT snap.
-Duration? decideSnapTarget({
+/// Computes the cut-time + snap-flash target for a cut at [playheadEdited].
+///
+/// When [snapEnabled] is false or [overrideSnap] is true, returns the raw
+/// playhead with no snap. Otherwise builds snap candidates from the
+/// cursor's click events plus the supplied [zoomEdgesSource] edges (both
+/// mapped from source-time to edited-time via [sourceToEdited]), sorts
+/// them, and queries [resolveSnap].
+CutDecision decideCut({
   required Duration playheadEdited,
   required List<ClipSlice> clips,
   required CursorRecording cursor,
@@ -35,13 +31,16 @@ Duration? decideSnapTarget({
   required bool snapEnabled,
   required bool overrideSnap,
 }) {
-  if (!snapEnabled || overrideSnap) return null;
+  if (!snapEnabled || overrideSnap) {
+    return CutDecision(time: playheadEdited, snapTarget: null);
+  }
   final candidates = <Duration>[
     for (final t in cursor.eventIndex.clickTimes) sourceToEdited(clips, t),
     for (final e in zoomEdgesSource) sourceToEdited(clips, e),
   ]..sort();
-  return resolveSnap(
+  final result = resolveSnap(
     requestedTime: playheadEdited,
     candidates: candidates,
-  ).snappedFrom;
+  );
+  return CutDecision(time: result.time, snapTarget: result.snappedFrom);
 }

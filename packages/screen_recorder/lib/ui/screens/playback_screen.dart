@@ -334,7 +334,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           .timeline
           .activeZoomRegions) ...[r.startTime, r.endTime],
     ];
-    final cutTime = decideCutTime(
+    final decision = decideCut(
       playheadEdited: editedPos,
       clips: clips,
       cursor: _cursorRecording,
@@ -342,14 +342,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       snapEnabled: snapEnabled,
       overrideSnap: overrideSnap,
     );
-    final snappedTo = decideSnapTarget(
-      playheadEdited: editedPos,
-      clips: clips,
-      cursor: _cursorRecording,
-      zoomEdgesSource: zoomEdges,
-      snapEnabled: snapEnabled,
-      overrideSnap: overrideSnap,
-    );
+    final cutTime = decision.time;
+    final snappedTo = decision.snapTarget;
     final ok = handleCutKeybind(
       controller: ref.read(editorProjectControllerProvider.notifier),
       currentEditedTime: cutTime,
