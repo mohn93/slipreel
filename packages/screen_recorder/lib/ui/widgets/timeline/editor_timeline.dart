@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:screen_recorder/state/snap_preference_controller.dart';
+import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -11,6 +13,7 @@ import 'package:screen_recorder/ui/widgets/timeline/clip_lane.dart';
 import 'package:screen_recorder/ui/widgets/timeline/cut_overlay.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_constants.dart';
 import 'package:screen_recorder/ui/widgets/timeline/time_ruler.dart';
+import 'package:screen_recorder/ui/widgets/timeline/snap_flash_overlay.dart';
 
 /// Computes the hover-scrub progress fraction (0..1 of total content)
 /// from the raw inputs that [_updateHover] has available.
@@ -84,6 +87,9 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.pendingScaleAnchor,
     this.onAnchorConsumed,
     this.onPinchScale,
+    this.cursorClickTimes = const <Duration>[],
+    this.onSnapped,
+    this.snapFlashTarget,
   });
 
   final Duration duration;
@@ -165,6 +171,19 @@ class EditorTimeline extends ConsumerStatefulWidget {
   /// `EditorProjectController.setTimelineScale(newScale, anchorTime:
   /// anchorTime)`. Single-finger drags are filtered out.
   final void Function(double scale, Duration anchorTime)? onPinchScale;
+
+  /// Source-time click timestamps for the active recording. Used as snap
+  /// candidates when the user commits a scissors-mode cut. Sorted ascending.
+  final List<Duration> cursorClickTimes;
+
+  /// Fires with the edited-time snap target when a scissors-mode cut
+  /// snapped to a candidate. The parent uses this to drive the snap flash.
+  final ValueChanged<Duration>? onSnapped;
+
+  /// Edited-time of the most recent snap target — drives [SnapFlashOverlay].
+  /// Null when no recent snap has occurred or the fade has completed.
+  /// The parent screen owns the lifecycle; the timeline only renders.
+  final Duration? snapFlashTarget;
 
   @override
   ConsumerState<EditorTimeline> createState() => _EditorTimelineState();
@@ -380,12 +399,49 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline> {
   /// to split. Returns false when the split was rejected (e.g. too
   /// close to a cut boundary) so the caller can leave cut mode active
   /// for another attempt.
-  bool _attemptSplit(Duration editedTime) {
-    final ok = ref
-        .read(editorProjectControllerProvider.notifier)
-        .splitAtPlayhead(editedTime, widget.clips);
-    if (ok) widget.onSliceSelected?.call(null);
-    return ok;
+  ///
+  /// Applies snap when the global toggle is on and [overrideSnap] is
+  /// false; mirrors the Cmd+K path in PlaybackScreen.
+  bool _attemptSplit(Duration editedTime, {required bool overrideSnap}) {
+    final clips = widget.clips;
+    final snapEnabled = ref.read(snapPreferenceProvider);
+    final zoomEdges = <Duration>[
+      for (final r in ref
+          .read(editorProjectControllerProvider)
+          .timeline
+          .activeZoomRegions) ...[r.startTime, r.endTime],
+    ];
+    final decision = decideCut(
+      playheadEdited: editedTime,
+      clips: clips,
+      clickTimesSource: widget.cursorClickTimes,
+      zoomEdgesSource: zoomEdges,
+      snapEnabled: snapEnabled,
+      overrideSnap: overrideSnap,
+    );
+    final controller =
+        ref.read(editorProjectControllerProvider.notifier);
+    final snappedOk = controller.splitAtPlayhead(decision.time, clips);
+    if (snappedOk) {
+      if (decision.snapTarget != null) {
+        widget.onSnapped?.call(decision.snapTarget!);
+      }
+      widget.onSliceSelected?.call(null);
+      return true;
+    }
+    if (decision.snapTarget != null) {
+      // Snap pushed us into the min-slice guard zone — retry at the
+      // raw tap position so the user's gesture still produces a cut
+      // when it would have otherwise succeeded. No snap flash on this
+      // path because we did NOT land on the snap target. Mirrors the
+      // Cmd+K fallback in PlaybackScreen._onKey.
+      final rawOk = controller.splitAtPlayhead(editedTime, clips);
+      if (rawOk) {
+        widget.onSliceSelected?.call(null);
+        return true;
+      }
+    }
+    return false;
   }
 
   @override
@@ -500,8 +556,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline> {
                                     pixelsPerSecond: pps,
                                     totalEditedDuration: widget.duration,
                                     cursorX: _cutCursorX,
-                                    onCommitCut: (editedTime) {
-                                      final ok = _attemptSplit(editedTime);
+                                    onCommitCut: (editedTime, {required bool overrideSnap}) {
+                                      final ok = _attemptSplit(editedTime, overrideSnap: overrideSnap);
                                       if (ok) {
                                         widget.onCutModeChanged?.call(false);
                                       }
@@ -548,6 +604,16 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline> {
                               widget.isPlaying ? null : _hoverProgress,
                           rulerHeight: rulerHeight,
                           flashOn: widget.playheadFlashOn,
+                        ),
+                      ),
+                    ),
+                    IgnorePointer(
+                      child: SizedBox(
+                        width: cw,
+                        height: totalHeight,
+                        child: SnapFlashOverlay(
+                          target: widget.snapFlashTarget,
+                          editedTimeToPx: (d) => timeToX(d, pps),
                         ),
                       ),
                     ),

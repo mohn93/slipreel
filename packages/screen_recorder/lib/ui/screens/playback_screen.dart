@@ -33,6 +33,7 @@ import 'package:screen_recorder/ui/widgets/zoom/playback_canvas.dart';
 import 'package:screen_recorder/state/zoom_preview_override.dart';
 import 'package:screen_recorder/ui/widgets/canvas_toolbar/aspect_ratio_picker.dart';
 import 'package:screen_recorder/ui/widgets/canvas_toolbar/canvas_toolbar.dart';
+import 'package:screen_recorder/ui/widgets/canvas_toolbar/snap_toggle_pill.dart';
 import 'package:screen_recorder/ui/widgets/canvas_toolbar/timeline_scale_slider.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/export_dialog.dart';
@@ -54,6 +55,10 @@ import '../theme/app_palette_context.dart';
 import 'playback/hover_scrub_controller.dart';
 import 'playback/trim_controller.dart';
 import 'playback/export_controller.dart';
+import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
+import 'package:screen_recorder/ui/screens/playback/slice_nav_decision.dart';
+import 'package:screen_recorder/state/snap_preference_controller.dart';
+import 'package:slipreel_engine/timeline/slice_navigation.dart' show NavDirection;
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 
@@ -240,6 +245,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   bool _playheadFlashOn = false;
   Timer? _flashTimer;
 
+  /// Edited-time of the most recent snap target — drives [SnapFlashOverlay].
+  /// Cleared by [_snapFlashTimer] after the fade completes.
+  Duration? _snapFlashTarget;
+  Timer? _snapFlashTimer;
+
   // Session-only preview-playback-speed multiplier (1×/2×/4×/8×).
   // Picked from the dropdown next to the timeline-zoom slider in the
   // transport bar. Multiplies on top of the per-clip [playbackSpeed]
@@ -306,29 +316,101 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   }
 
   /// Global Cmd+K → split at the current playhead's edited time.
-  /// Success: clear slice selection. Failure: flash the playhead pill.
+  /// Option+] / Option+[ → navigate to next / previous slice.
+  /// Success (Cmd+K): clear slice selection. Failure: flash the playhead pill.
   bool _onKey(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     final isCmdK = event.logicalKey == LogicalKeyboardKey.keyK &&
         HardwareKeyboard.instance.isMetaPressed;
-    if (!isCmdK) return false;
-    // Need an initialised controller to read the playhead. Bail
-    // quietly so the keypress falls through to system handling.
-    if (!_isInitialized) return false;
-    final clips = ref.read(editorProjectControllerProvider).timeline.clips;
-    final sourcePos = _controller.value.position;
-    final editedPos = sourceToEdited(clips, sourcePos);
-    final ok = handleCutKeybind(
-      controller: ref.read(editorProjectControllerProvider.notifier),
-      currentEditedTime: editedPos,
-      clips: clips,
-    );
-    if (ok) {
-      setState(() => _selectedSliceIndex = null);
-    } else {
-      _flashPlayhead();
+    if (isCmdK) {
+      // Need an initialised controller to read the playhead. Bail
+      // quietly so the keypress falls through to system handling.
+      if (!_isInitialized) return false;
+      final clips = ref.read(editorProjectControllerProvider).timeline.clips;
+      final sourcePos = _controller.value.position;
+      final editedPos = sourceToEdited(clips, sourcePos);
+      final snapEnabled = ref.read(snapPreferenceProvider);
+      final overrideSnap = HardwareKeyboard.instance.isAltPressed;
+      final zoomEdges = <Duration>[
+        for (final r in ref
+            .read(editorProjectControllerProvider)
+            .timeline
+            .activeZoomRegions) ...[r.startTime, r.endTime],
+      ];
+      final decision = decideCut(
+        playheadEdited: editedPos,
+        clips: clips,
+        clickTimesSource: _cursorRecording.eventIndex.clickTimes,
+        zoomEdgesSource: zoomEdges,
+        snapEnabled: snapEnabled,
+        overrideSnap: overrideSnap,
+      );
+      final cutTime = decision.time;
+      final snappedTo = decision.snapTarget;
+      final ok = handleCutKeybind(
+        controller: ref.read(editorProjectControllerProvider.notifier),
+        currentEditedTime: cutTime,
+        clips: clips,
+      );
+      if (ok) {
+        setState(() => _selectedSliceIndex = null);
+        if (snappedTo != null) _flashSnap(snappedTo);
+      } else {
+        // If snap pushed us into the min-slice guard zone, retry at raw position.
+        if (snappedTo != null) {
+          final fallback = handleCutKeybind(
+            controller: ref.read(editorProjectControllerProvider.notifier),
+            currentEditedTime: editedPos,
+            clips: clips,
+          );
+          if (fallback) {
+            setState(() => _selectedSliceIndex = null);
+            return true;
+          }
+        }
+        _flashPlayhead();
+      }
+      return true;
     }
-    return true;
+
+    final isOptBracket = HardwareKeyboard.instance.isAltPressed &&
+        (event.logicalKey == LogicalKeyboardKey.bracketRight ||
+         event.logicalKey == LogicalKeyboardKey.bracketLeft);
+    if (isOptBracket) {
+      if (!_isInitialized) return false;
+      if (_focusedWidgetIsEditable()) return false;
+      final clips = ref.read(editorProjectControllerProvider).timeline.clips;
+      final dir = event.logicalKey == LogicalKeyboardKey.bracketRight
+          ? NavDirection.next
+          : NavDirection.previous;
+      final decision = decideSliceNav(
+        currentIndex: _selectedSliceIndex,
+        clips: clips,
+        direction: dir,
+      );
+      if (decision == null) return true;
+      if (decision.isBoundaryNoOp) {
+        _flashPlayhead();
+        return true;
+      }
+      setState(() {
+        _selectedSliceIndex = decision.nextIndex;
+        _selectedZoomIndex = null;
+      });
+      // `decision.seekTo` is in edited-time; the player works in
+      // source-time. Convert before seeking or the playhead lands at
+      // a source position that may map to a completely different
+      // slice in edited-time.
+      _controller.seekTo(editedToSource(clips, decision.seekTo));
+      return true;
+    }
+
+    return false;
+  }
+
+  bool _focusedWidgetIsEditable() {
+    final focused = FocusManager.instance.primaryFocus?.context?.widget;
+    return focused is EditableText;
   }
 
   void _flashPlayhead() {
@@ -338,6 +420,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _flashTimer = Timer(const Duration(milliseconds: 120), () {
       if (!mounted) return;
       setState(() => _playheadFlashOn = false);
+    });
+  }
+
+  void _flashSnap(Duration target) {
+    if (!mounted) return;
+    setState(() => _snapFlashTarget = target);
+    _snapFlashTimer?.cancel();
+    _snapFlashTimer = Timer(const Duration(milliseconds: 240), () {
+      if (!mounted) return;
+      setState(() => _snapFlashTarget = null);
     });
   }
 
@@ -638,6 +730,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
     _flashTimer?.cancel();
+    _snapFlashTimer?.cancel();
     _zoomPreviewOverride.dispose();
     // Flush any pending debounced save before tearing down so the
     // user doesn't lose the last change they made before navigating
@@ -1562,10 +1655,23 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     return AnimatedBuilder(
       animation: Listenable.merge([_controller, _smoothPlayhead]),
       builder: (context, _) {
-        final pos = _hover.isHovering
+        final sourcePos = _hover.isHovering
             ? _hover.intendedPosition
             : (_smoothPlayhead?.position ?? _controller.value.position);
-        final dur = _controller.value.duration;
+        // Transport readout shows edited time so the numbers track the
+        // timeline x-axis: per-slice playbackSpeed compresses/expands the
+        // contribution to total, and the current-time ticks at the rate
+        // the user sees the playhead move.
+        final clips = ref
+            .watch(editorProjectControllerProvider)
+            .timeline
+            .clips;
+        final pos = clips.isEmpty
+            ? sourcePos
+            : sourceToEdited(clips, sourcePos);
+        final dur = clips.isEmpty
+            ? _controller.value.duration
+            : totalEditedDuration(clips);
         final isPlaying = _controller.value.isPlaying;
         // Stack lets the play-controls Row stay perfectly centered
         // while the zoom slider + preview-speed dropdown right-aligns
@@ -1651,6 +1757,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       _applyEffectivePlaybackSpeed(_lastClipSpeedApplied);
                     },
                   ),
+                  const SizedBox(width: 8),
+                  const SnapTogglePill(),
                 ],
               ),
             ),
@@ -1807,6 +1915,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onCutModeChanged: (v) =>
                     setState(() => _cutModeActive = v),
                 playheadFlashOn: _playheadFlashOn,
+                cursorClickTimes: _cursorRecording.eventIndex.clickTimes,
+                onSnapped: _flashSnap,
+                snapFlashTarget: _snapFlashTarget,
                 // cursorXListenable stays unset — when cut mode is on,
                 // EditorTimeline pipes its own overlay's cursor in. Off
                 // mode falls back to a no-op notifier.
