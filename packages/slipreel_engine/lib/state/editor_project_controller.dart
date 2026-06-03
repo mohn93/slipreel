@@ -139,12 +139,19 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   Timeline _timelineWithActiveRegions(List<ZoomRegion> regions) {
     final immutable = List<ZoomRegion>.unmodifiable(regions);
     final tracks = state.timeline.zoomTracks;
+    // Preserve existing clips — Timeline's constructor defaults clips to
+    // const [], so omitting this here wipes the slice list whenever the
+    // user adds/edits/removes a zoom region (clip lane goes blank).
+    final clips = state.timeline.clips;
     if (tracks.isEmpty) {
-      return Timeline(zoomTracks: [ZoomTrack(regions: immutable)]);
+      return Timeline(
+        zoomTracks: [ZoomTrack(regions: immutable)],
+        clips: clips,
+      );
     }
     final updated = List<ZoomTrack>.from(tracks);
     updated[0] = tracks[0].copyWith(regions: immutable);
-    return Timeline(zoomTracks: updated);
+    return Timeline(zoomTracks: updated, clips: clips);
   }
 
   void replaceZoomRegions(List<ZoomRegion> regions) =>
