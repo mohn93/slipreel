@@ -30,6 +30,8 @@ import 'state/recording_settings_store.dart';
 import 'state/sleep_observer.dart';
 import 'state/app_palette_controller.dart';
 import 'state/app_palette_store.dart';
+import 'state/snap_preference_store.dart';
+import 'state/snap_preference_controller.dart';
 import 'state/window_mode_controller.dart';
 import 'ui/app_alerts/alert_stack_overlay.dart';
 import 'ui/app_alerts/app_alerts.dart';
@@ -144,6 +146,9 @@ Future<void> main() async {
   final paletteStore = await AppPaletteStore.resolveDefault();
   final initialPalette = (await paletteStore.load()) ?? PaletteId.midnight;
 
+  final snapPreferenceStore = await SnapPreferenceStore.resolveDefault();
+  final snapEnabledInitial = snapPreferenceStore.load();
+
   if (kDebugMode || kProfileMode) {
     _registerSlipreelDebugExtensions(tipsController: tipsController);
   }
@@ -175,6 +180,12 @@ Future<void> main() async {
         (ref) => AppPaletteController(
           store: paletteStore,
           initial: initialPalette,
+        ),
+      ),
+      snapPreferenceProvider.overrideWith(
+        (ref) => SnapPreferenceController(
+          store: snapPreferenceStore,
+          initial: snapEnabledInitial,
         ),
       ),
     ],
