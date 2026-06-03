@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -118,12 +120,12 @@ class _SliceBarState extends State<SliceBar> {
                 border: Border.all(color: clipStroke),
               ),
             ),
-            // Tick marks every 0.5s of SOURCE time. The slice is rendered
-            // in edited time (compressed by speed), so 0.5s of source
-            // becomes 0.5/speed of edited width — at 2x speed the ticks
-            // sit half as far apart, giving a "this slice plays fast"
-            // visual rhythm. Source 0.5s also matches a natural cue —
-            // tick density corresponds to recording-time half-seconds.
+            // Tick rhythm scales inversely with playbackSpeed: faster
+            // slice → denser ticks, slower slice → sparser. The step is
+            // measured in edited pixels so the rhythm is visible even
+            // when the slice fills the viewport on its own (a pure
+            // source-time mapping would let the timeline pps grow to
+            // compensate, neutralising the speed effect).
             if (_widthPx >= 48)
               Positioned(
                 left: 0,
@@ -134,8 +136,7 @@ class _SliceBarState extends State<SliceBar> {
                   child: CustomPaint(
                     painter: _SliceTickPainter(
                       widthPx: _widthPx,
-                      sourceSeconds:
-                          widget.slice.effectiveLength.inMilliseconds / 1000.0,
+                      playbackSpeed: widget.slice.playbackSpeed,
                     ),
                   ),
                 ),
@@ -245,61 +246,73 @@ class _ChevronNotch extends StatelessWidget {
   }
 }
 
-/// Paints faint vertical tick marks every 0.5s of SOURCE time inside
-/// the slice body. The slice is rendered in edited time (compressed by
-/// playbackSpeed), so denser source content packs ticks closer together
-/// — a "this slice plays fast" visual rhythm. Doubles the interval
-/// (1s, 2s, ...) when ticks would land closer than 8px to avoid moiré.
+/// Paints faint vertical tick marks inside the slice body. The step is
+/// `_baseStepPx / playbackSpeed` (in edited pixels), so a 4× slice
+/// shows ticks 4× closer than a 1× slice. The step is clamped to a
+/// minimum so very fast slices don't degenerate into a solid bar.
 class _SliceTickPainter extends CustomPainter {
   const _SliceTickPainter({
     required this.widthPx,
-    required this.sourceSeconds,
+    required this.playbackSpeed,
   });
 
   final double widthPx;
-  final double sourceSeconds;
+  final double playbackSpeed;
 
-  static const double _intervalSec = 0.5;
-  static const double _minSpacingPx = 8.0;
+  // Roughly a half-second visual rhythm at 1× and default timeline zoom.
+  // Picked by eye, not derived — the request is a felt rhythm, not a
+  // time-accurate ruler (the actual time ruler lives above the lane).
+  static const double _baseStepPx = 32.0;
+  static const double _minStepPx = 4.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (sourceSeconds <= 0 || widthPx <= 0) return;
-    final pxPerSourceSec = widthPx / sourceSeconds;
-    var step = _intervalSec;
-    while (step * pxPerSourceSec < _minSpacingPx) {
-      step *= 2;
-      if (step > sourceSeconds) return;
-    }
-    final paint = Paint()
-      ..color = clipStroke.withValues(alpha: 0.32)
-      ..strokeWidth = 1;
+    if (widthPx <= 0) return;
+    final speed = playbackSpeed > 0 ? playbackSpeed : 1.0;
+    var stepPx = _baseStepPx / speed;
+    if (stepPx < _minStepPx) stepPx = _minStepPx;
+    // Snap to an integer pixel count and advance by that exact integer
+    // per tick. Per-tick rounding alternates N/N+1 spacings when stepPx
+    // lands near a half-integer, which reads as "some bunched, some
+    // spread" even though the underlying math is uniform.
+    final stepPxInt = stepPx.round();
+    if (stepPxInt <= 0) return;
     const inset = 4.0;
+    final top = inset;
+    final bottom = size.height - inset;
+    // Vertical gradient on each tick: prominent at the top (~55% alpha),
+    // fading to nearly invisible at the bottom. Same shader is reused
+    // for every tick — strokes the column at x using the gradient's y
+    // values, so each line gets the top→bottom fade locally.
+    final gradient = ui.Gradient.linear(
+      Offset(0, top),
+      Offset(0, bottom),
+      [
+        clipStroke.withValues(alpha: 0.55),
+        clipStroke.withValues(alpha: 0.06),
+      ],
+    );
+    final paint = Paint()
+      ..shader = gradient
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
     // Skip ticks near the right edge so they don't visually merge with
     // the seam between slices (which already paints a strong vertical
     // line at that x).
     const edgeSuppressionPx = 6.0;
     final lastDrawX = widthPx - edgeSuppressionPx;
-    var t = step;
-    while (t < sourceSeconds) {
-      // Snap to integer pixels so adjacent ticks don't smear across
-      // half-columns at different sub-pixel offsets — that's what made
-      // some look "close" and others "far" even though the math was
-      // uniform.
-      final x = (t * pxPerSourceSec).roundToDouble() + 0.5;
-      if (x > lastDrawX) break;
+    for (var x = stepPxInt; x < lastDrawX; x += stepPxInt) {
       canvas.drawLine(
-        Offset(x, inset),
-        Offset(x, size.height - inset),
+        Offset(x + 0.5, top),
+        Offset(x + 0.5, bottom),
         paint,
       );
-      t += step;
     }
   }
 
   @override
   bool shouldRepaint(_SliceTickPainter old) =>
-      old.widthPx != widthPx || old.sourceSeconds != sourceSeconds;
+      old.widthPx != widthPx || old.playbackSpeed != playbackSpeed;
 }
 
 /// Centered "Clip / Ns · 1x" badge inside the slice body. [wide] toggles
