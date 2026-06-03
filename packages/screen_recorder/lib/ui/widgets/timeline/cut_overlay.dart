@@ -20,7 +20,7 @@ class CutOverlay extends StatefulWidget {
   final double pixelsPerSecond;
   final Duration totalEditedDuration;
   final ValueNotifier<double?> cursorX;
-  final ValueChanged<Duration> onCommitCut;
+  final void Function(Duration editedTime, {required bool overrideSnap}) onCommitCut;
   final VoidCallback onExitMode;
 
   @override
@@ -73,7 +73,10 @@ class _CutOverlayState extends State<CutOverlay> {
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTapDown: (d) {
-            widget.onCommitCut(_editedTimeAt(d.localPosition.dx));
+            widget.onCommitCut(
+              _editedTimeAt(d.localPosition.dx),
+              overrideSnap: HardwareKeyboard.instance.isAltPressed,
+            );
           },
           child: ValueListenableBuilder<double?>(
             valueListenable: widget.cursorX,

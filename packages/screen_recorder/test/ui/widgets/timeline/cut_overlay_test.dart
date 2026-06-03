@@ -18,7 +18,7 @@ void main() {
         pixelsPerSecond: 50,
         totalEditedDuration: const Duration(seconds: 16),
         cursorX: cursorX,
-        onCommitCut: (_) {},
+        onCommitCut: (_, {required bool overrideSnap}) {},
         onExitMode: () {},
       )));
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
@@ -34,7 +34,7 @@ void main() {
         pixelsPerSecond: 50,
         totalEditedDuration: const Duration(seconds: 16),
         cursorX: ValueNotifier<double?>(null),
-        onCommitCut: (d) => committed = d,
+        onCommitCut: (d, {required bool overrideSnap}) => committed = d,
         onExitMode: () {},
       )));
       await tester.tapAt(const Offset(200, 30));
@@ -47,7 +47,7 @@ void main() {
         pixelsPerSecond: 50,
         totalEditedDuration: const Duration(seconds: 16),
         cursorX: ValueNotifier<double?>(null),
-        onCommitCut: (_) {},
+        onCommitCut: (_, {required bool overrideSnap}) {},
         onExitMode: () => exited = true,
       )));
       final focusNode = tester.firstWidget<Focus>(find.byType(Focus)).focusNode!;
@@ -64,7 +64,7 @@ void main() {
         pixelsPerSecond: 50,
         totalEditedDuration: const Duration(seconds: 16),
         cursorX: cursorX,
-        onCommitCut: (_) {},
+        onCommitCut: (_, {required bool overrideSnap}) {},
         onExitMode: () {},
       )));
       cursorX.value = 200;

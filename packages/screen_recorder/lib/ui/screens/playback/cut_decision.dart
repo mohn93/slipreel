@@ -44,3 +44,28 @@ CutDecision decideCut({
   );
   return CutDecision(time: result.time, snapTarget: result.snappedFrom);
 }
+
+/// Same as [decideCut], but takes pre-extracted source-time click
+/// timestamps (used by callers that pass them via a widget prop rather
+/// than holding a [CursorRecording] reference directly).
+CutDecision decideCutFromSourceClicks({
+  required Duration playheadEdited,
+  required List<ClipSlice> clips,
+  required List<Duration> clickTimesSource,
+  required Iterable<Duration> zoomEdgesSource,
+  required bool snapEnabled,
+  required bool overrideSnap,
+}) {
+  if (!snapEnabled || overrideSnap) {
+    return CutDecision(time: playheadEdited, snapTarget: null);
+  }
+  final candidates = <Duration>[
+    for (final t in clickTimesSource) sourceToEdited(clips, t),
+    for (final e in zoomEdgesSource) sourceToEdited(clips, e),
+  ]..sort();
+  final result = resolveSnap(
+    requestedTime: playheadEdited,
+    candidates: candidates,
+  );
+  return CutDecision(time: result.time, snapTarget: result.snappedFrom);
+}

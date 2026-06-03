@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:screen_recorder/state/snap_preference_controller.dart';
+import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -84,6 +86,8 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.pendingScaleAnchor,
     this.onAnchorConsumed,
     this.onPinchScale,
+    this.cursorClickTimes = const <Duration>[],
+    this.onSnapped,
   });
 
   final Duration duration;
@@ -165,6 +169,14 @@ class EditorTimeline extends ConsumerStatefulWidget {
   /// `EditorProjectController.setTimelineScale(newScale, anchorTime:
   /// anchorTime)`. Single-finger drags are filtered out.
   final void Function(double scale, Duration anchorTime)? onPinchScale;
+
+  /// Source-time click timestamps for the active recording. Used as snap
+  /// candidates when the user commits a scissors-mode cut. Sorted ascending.
+  final List<Duration> cursorClickTimes;
+
+  /// Fires with the edited-time snap target when a scissors-mode cut
+  /// snapped to a candidate. The parent uses this to drive the snap flash.
+  final ValueChanged<Duration>? onSnapped;
 
   @override
   ConsumerState<EditorTimeline> createState() => _EditorTimelineState();
@@ -380,10 +392,32 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline> {
   /// to split. Returns false when the split was rejected (e.g. too
   /// close to a cut boundary) so the caller can leave cut mode active
   /// for another attempt.
-  bool _attemptSplit(Duration editedTime) {
+  ///
+  /// Applies snap when the global toggle is on and [overrideSnap] is
+  /// false; mirrors the Cmd+K path in PlaybackScreen.
+  bool _attemptSplit(Duration editedTime, {required bool overrideSnap}) {
+    final clips = widget.clips;
+    final snapEnabled = ref.read(snapPreferenceProvider);
+    final zoomEdges = <Duration>[
+      for (final r in ref
+          .read(editorProjectControllerProvider)
+          .timeline
+          .activeZoomRegions) ...[r.startTime, r.endTime],
+    ];
+    final decision = decideCutFromSourceClicks(
+      playheadEdited: editedTime,
+      clips: clips,
+      clickTimesSource: widget.cursorClickTimes,
+      zoomEdgesSource: zoomEdges,
+      snapEnabled: snapEnabled,
+      overrideSnap: overrideSnap,
+    );
     final ok = ref
         .read(editorProjectControllerProvider.notifier)
-        .splitAtPlayhead(editedTime, widget.clips);
+        .splitAtPlayhead(decision.time, clips);
+    if (ok && decision.snapTarget != null) {
+      widget.onSnapped?.call(decision.snapTarget!);
+    }
     if (ok) widget.onSliceSelected?.call(null);
     return ok;
   }
@@ -500,8 +534,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline> {
                                     pixelsPerSecond: pps,
                                     totalEditedDuration: widget.duration,
                                     cursorX: _cutCursorX,
-                                    onCommitCut: (editedTime) {
-                                      final ok = _attemptSplit(editedTime);
+                                    onCommitCut: (editedTime, {required bool overrideSnap}) {
+                                      final ok = _attemptSplit(editedTime, overrideSnap: overrideSnap);
                                       if (ok) {
                                         widget.onCutModeChanged?.call(false);
                                       }

@@ -123,4 +123,39 @@ void main() {
       expect(d.snapTarget, const Duration(milliseconds: 600));
     });
   });
+
+  group('decideCutFromSourceClicks', () {
+    final clips = [
+      ClipSlice(
+        cutStart: Duration.zero,
+        cutEnd: const Duration(milliseconds: 10000),
+      ),
+    ];
+
+    test('snap on, within radius -> snaps', () {
+      final d = decideCutFromSourceClicks(
+        playheadEdited: const Duration(milliseconds: 5050),
+        clips: clips,
+        clickTimesSource: const [Duration(milliseconds: 5000)],
+        zoomEdgesSource: const [],
+        snapEnabled: true,
+        overrideSnap: false,
+      );
+      expect(d.time, const Duration(milliseconds: 5000));
+      expect(d.snapTarget, const Duration(milliseconds: 5000));
+    });
+
+    test('override -> no snap', () {
+      final d = decideCutFromSourceClicks(
+        playheadEdited: const Duration(milliseconds: 5050),
+        clips: clips,
+        clickTimesSource: const [Duration(milliseconds: 5000)],
+        zoomEdgesSource: const [],
+        snapEnabled: true,
+        overrideSnap: true,
+      );
+      expect(d.time, const Duration(milliseconds: 5050));
+      expect(d.snapTarget, isNull);
+    });
+  });
 }
