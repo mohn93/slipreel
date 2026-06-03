@@ -123,6 +123,38 @@ int? decrementSelectionOnRemoval({
   return selected;
 }
 
+/// Pure helper: returns the index of the slice whose `[trimStart,
+/// trimEnd)` range contains [sourcePosition]. Returns -1 when [clips]
+/// is empty, or when the position falls outside every slice (e.g. in
+/// a gap between slices or past the final trimEnd — a transient state
+/// during a seek or after walking off the end).
+@visibleForTesting
+int activeSliceIndex(List<ClipSlice> clips, Duration sourcePosition) {
+  for (var i = 0; i < clips.length; i++) {
+    final s = clips[i];
+    if (sourcePosition >= s.trimStart && sourcePosition < s.trimEnd) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/// Pure helper: returns the [ClipSlice.playbackSpeed] of the slice
+/// containing [sourcePosition]. Falls back to 1.0 on empty input, and
+/// to the nearest slice's speed (via [clipSliceAt]) when the position
+/// sits outside every trimmed range — so resume-at-end and seek-to-zero
+/// produce a sensible rate.
+@visibleForTesting
+double effectiveClipSpeedAt(
+  List<ClipSlice> clips,
+  Duration sourcePosition,
+) {
+  if (clips.isEmpty) return 1.0;
+  final idx = activeSliceIndex(clips, sourcePosition);
+  if (idx != -1) return clips[idx].playbackSpeed;
+  return clipSliceAt(clips, sourcePosition).playbackSpeed;
+}
+
 /// Returns the source-time position the video controller should seek
 /// to when its position-tick reaches [sourcePosition]; null when the
 /// current position is already inside a slice's playable trim range.
@@ -326,9 +358,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
   /// Pushes the current effective preview playback rate
   /// (`clipSpeed × _previewPlaybackSpeed`) onto the video controller.
-  /// Called whenever either input changes (slice 0's [ClipSlice.playbackSpeed]
-  /// via a `ref.listen` in build, or the preview dropdown via
-  /// [TimelineScaleSlider]).
+  /// Called whenever either input changes (the active slice's
+  /// [ClipSlice.playbackSpeed] via the clips-list `ref.listen` in
+  /// build / the boundary-crossing [_onSpeedTick] listener, or the
+  /// preview dropdown via [TimelineScaleSlider]).
   void _applyEffectivePlaybackSpeed(double clipSpeed) {
     if (!_isInitialized) return;
     _lastClipSpeedApplied = clipSpeed;
@@ -337,6 +370,55 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // non-negative value; guard against degenerate inputs.
     if (effective <= 0) return;
     _controller.setPlaybackSpeed(effective);
+  }
+
+  /// Per-instance shim around the top-level [effectiveClipSpeedAt]
+  /// helper: reads the live [clips] from the project controller and
+  /// delegates. The pure helper is what tests assert against; this
+  /// method just plumbs the live state into it.
+  double _effectiveClipSpeedAt(Duration sourcePos) => effectiveClipSpeedAt(
+        ref.read(editorProjectControllerProvider).timeline.clips,
+        sourcePos,
+      );
+
+  // Index of the slice currently under the playhead. -1 means no
+  // slice contains the position (transient — happens mid-seek across
+  // a removed region). Diffed in [_onSpeedTick] so we re-apply the
+  // rate exactly once per boundary crossing, not every frame.
+  int _currentSliceIndex = -1;
+
+  /// Per-frame boundary-crossing detector. Drives the active slice's
+  /// [ClipSlice.playbackSpeed] onto the player whenever the playhead
+  /// crosses into a new slice — during continuous playback, after a
+  /// committed seek, or after [_onSkipTick]'s gap jump.
+  ///
+  /// Registered on [_smoothPlayhead] (not [_controller]) because the
+  /// controller only reports position updates every ~250 ms — reacting
+  /// to those leaves up to 250 ms of wrong-rate playback inside the
+  /// new slice (the user-visible "slip"). The smoothed playhead ticks
+  /// every frame (~16 ms) and extrapolates slightly ahead of the
+  /// last-reported controller position, so we typically catch the
+  /// crossing one frame BEFORE AVPlayer decodes past the seam —
+  /// giving the platform-channel `setPlaybackSpeed` round-trip time
+  /// to land right at the boundary.
+  ///
+  /// Without this the controller would keep slice 0's rate forever;
+  /// the export pipeline honours per-slice speed (`n_slice_filter_graph`
+  /// emits `setpts`/`atempo` per slice) so the preview would silently
+  /// lie about the export.
+  void _onSpeedTick() {
+    if (!_isInitialized) return;
+    final clips =
+        ref.read(editorProjectControllerProvider).timeline.clips;
+    if (clips.isEmpty) return;
+    final pos =
+        _smoothPlayhead?.position ?? _controller.value.position;
+    final idx = activeSliceIndex(clips, pos);
+    if (idx == -1) return; // mid-seek through a gap — wait for landing
+    if (idx != _currentSliceIndex) {
+      _currentSliceIndex = idx;
+      _applyEffectivePlaybackSpeed(clips[idx].playbackSpeed);
+    }
   }
 
   // Tracks the previous `isPlaying` value so [_onPlayStateTick] can
@@ -348,7 +430,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     if (!_isInitialized) return;
     final isPlaying = _controller.value.isPlaying;
     if (shouldReapplyOnResume(prev: _prevIsPlaying, next: isPlaying)) {
-      _applyEffectivePlaybackSpeed(_lastClipSpeedApplied);
+      // Re-evaluate from the current position, not the cached value:
+      // if the user paused inside slice[1] and resumes, the cache
+      // holds slice 0's rate and would resume at the wrong speed.
+      _applyEffectivePlaybackSpeed(
+        _effectiveClipSpeedAt(_controller.value.position),
+      );
     }
     _prevIsPlaying = isPlaying;
   }
@@ -426,20 +513,26 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           videoDuration: _controller.value.duration,
         );
       });
-      // Seed the preview-rate cache from the restored project so
-      // the first dropdown-driven multiply uses the correct base.
-      // _previewPlaybackSpeed stays at 1.0 (session default). Slice 0
-      // is the single source of truth for per-clip playback speed
-      // until the editor follows the playhead across multiple slices.
-      _applyEffectivePlaybackSpeed(restored.timeline.clips.isEmpty
-          ? 1.0
-          : restored.timeline.clips.first.playbackSpeed);
+      // Seed the preview-rate cache from the slice the playhead is
+      // currently inside (typically slice 0 at position zero, but
+      // computing it this way keeps the seed correct if anything
+      // ever lands us elsewhere on init).
+      _applyEffectivePlaybackSpeed(
+        _effectiveClipSpeedAt(_controller.value.position),
+      );
       // Re-apply the effective rate every time playback resumes:
       // AVPlayer (video_player on macOS) resets `rate` to 1.0 on
       // every `play()` call, so without this listener the dropdown
       // value would silently drop back to 1× after pause/resume.
       _prevIsPlaying = _controller.value.isPlaying;
       _controller.addListener(_onPlayStateTick);
+      // Re-apply per-slice rate at every slice boundary crossing
+      // (continuous play AND post-seek), so the player honours each
+      // slice's [ClipSlice.playbackSpeed] — matching what the export
+      // pipeline produces. Registered on the SMOOTHED playhead (not
+      // _controller) so the boundary detection runs per-frame instead
+      // of per-controller-tick (~250ms) — see [_onSpeedTick].
+      _smoothPlayhead!.addListener(_onSpeedTick);
       // Wire state-shaped undo/redo. Starts AFTER `replace(saved)` so
       // the initial history floor is the on-disk snapshot, not the
       // defaults — Cmd-Z from a fresh-loaded recording does nothing
@@ -557,6 +650,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       _controller.removeListener(_onSkipTick);
       _controller.removeListener(_onHoverTrack);
       _controller.removeListener(_onPlayStateTick);
+      _smoothPlayhead?.removeListener(_onSpeedTick);
     }
     _smoothPlayhead?.dispose();
     _controller.dispose();
@@ -1005,17 +1099,22 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       editorProjectControllerProvider,
       (_, __) => _persistProject(),
     );
-    // When the per-clip playback speed changes (edited via the
-    // ClipContextInspector or the slice editor), re-apply the product
-    // onto the preview player. Slice 0 carries the speed today; preview
-    // rate = sliceSpeed × _previewPlaybackSpeed.
-    ref.listen<double>(
-      editorProjectControllerProvider.select(
-        (s) => s.timeline.clips.isEmpty
-            ? 1.0
-            : s.timeline.clips.first.playbackSpeed,
-      ),
-      (_, next) => _applyEffectivePlaybackSpeed(next),
+    // When the clip list changes (any slice's speed edited, slices
+    // added/removed, trims changed), re-evaluate the player rate
+    // against the slice the playhead is currently inside. Force the
+    // slice-index cache to -1 so [_onSpeedTick] re-applies on the very
+    // next tick even when the active slice's INDEX is unchanged but
+    // its speed was edited in place. Preview rate = sliceSpeed ×
+    // _previewPlaybackSpeed.
+    ref.listen<List<ClipSlice>>(
+      editorProjectControllerProvider.select((s) => s.timeline.clips),
+      (_, __) {
+        if (!_isInitialized) return;
+        _currentSliceIndex = -1;
+        _applyEffectivePlaybackSpeed(
+          _effectiveClipSpeedAt(_controller.value.position),
+        );
+      },
     );
     return Focus(
       autofocus: true,
