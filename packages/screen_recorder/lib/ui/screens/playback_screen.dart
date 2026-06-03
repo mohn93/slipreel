@@ -56,7 +56,9 @@ import 'playback/hover_scrub_controller.dart';
 import 'playback/trim_controller.dart';
 import 'playback/export_controller.dart';
 import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
+import 'package:screen_recorder/ui/screens/playback/slice_nav_decision.dart';
 import 'package:screen_recorder/state/snap_preference_controller.dart';
+import 'package:slipreel_engine/timeline/slice_navigation.dart' show NavDirection;
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 
@@ -314,60 +316,97 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   }
 
   /// Global Cmd+K → split at the current playhead's edited time.
-  /// Success: clear slice selection. Failure: flash the playhead pill.
+  /// Option+] / Option+[ → navigate to next / previous slice.
+  /// Success (Cmd+K): clear slice selection. Failure: flash the playhead pill.
   bool _onKey(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     final isCmdK = event.logicalKey == LogicalKeyboardKey.keyK &&
         HardwareKeyboard.instance.isMetaPressed;
-    if (!isCmdK) return false;
-    // Need an initialised controller to read the playhead. Bail
-    // quietly so the keypress falls through to system handling.
-    if (!_isInitialized) return false;
-    final clips = ref.read(editorProjectControllerProvider).timeline.clips;
-    final sourcePos = _controller.value.position;
-    final editedPos = sourceToEdited(clips, sourcePos);
-    final snapEnabled = ref.read(snapPreferenceProvider);
-    final overrideSnap = HardwareKeyboard.instance.isAltPressed;
-    final zoomEdges = <Duration>[
-      for (final r in ref
-          .read(editorProjectControllerProvider)
-          .timeline
-          .activeZoomRegions) ...[r.startTime, r.endTime],
-    ];
-    final decision = decideCut(
-      playheadEdited: editedPos,
-      clips: clips,
-      clickTimesSource: _cursorRecording.eventIndex.clickTimes,
-      zoomEdgesSource: zoomEdges,
-      snapEnabled: snapEnabled,
-      overrideSnap: overrideSnap,
-    );
-    final cutTime = decision.time;
-    final snappedTo = decision.snapTarget;
-    final ok = handleCutKeybind(
-      controller: ref.read(editorProjectControllerProvider.notifier),
-      currentEditedTime: cutTime,
-      clips: clips,
-    );
-    if (ok) {
-      setState(() => _selectedSliceIndex = null);
-      if (snappedTo != null) _flashSnap(snappedTo);
-    } else {
-      // If snap pushed us into the min-slice guard zone, retry at raw position.
-      if (snappedTo != null) {
-        final fallback = handleCutKeybind(
-          controller: ref.read(editorProjectControllerProvider.notifier),
-          currentEditedTime: editedPos,
-          clips: clips,
-        );
-        if (fallback) {
-          setState(() => _selectedSliceIndex = null);
-          return true;
+    if (isCmdK) {
+      // Need an initialised controller to read the playhead. Bail
+      // quietly so the keypress falls through to system handling.
+      if (!_isInitialized) return false;
+      final clips = ref.read(editorProjectControllerProvider).timeline.clips;
+      final sourcePos = _controller.value.position;
+      final editedPos = sourceToEdited(clips, sourcePos);
+      final snapEnabled = ref.read(snapPreferenceProvider);
+      final overrideSnap = HardwareKeyboard.instance.isAltPressed;
+      final zoomEdges = <Duration>[
+        for (final r in ref
+            .read(editorProjectControllerProvider)
+            .timeline
+            .activeZoomRegions) ...[r.startTime, r.endTime],
+      ];
+      final decision = decideCut(
+        playheadEdited: editedPos,
+        clips: clips,
+        clickTimesSource: _cursorRecording.eventIndex.clickTimes,
+        zoomEdgesSource: zoomEdges,
+        snapEnabled: snapEnabled,
+        overrideSnap: overrideSnap,
+      );
+      final cutTime = decision.time;
+      final snappedTo = decision.snapTarget;
+      final ok = handleCutKeybind(
+        controller: ref.read(editorProjectControllerProvider.notifier),
+        currentEditedTime: cutTime,
+        clips: clips,
+      );
+      if (ok) {
+        setState(() => _selectedSliceIndex = null);
+        if (snappedTo != null) _flashSnap(snappedTo);
+      } else {
+        // If snap pushed us into the min-slice guard zone, retry at raw position.
+        if (snappedTo != null) {
+          final fallback = handleCutKeybind(
+            controller: ref.read(editorProjectControllerProvider.notifier),
+            currentEditedTime: editedPos,
+            clips: clips,
+          );
+          if (fallback) {
+            setState(() => _selectedSliceIndex = null);
+            return true;
+          }
         }
+        _flashPlayhead();
       }
-      _flashPlayhead();
+      return true;
     }
-    return true;
+
+    final isOptBracket = HardwareKeyboard.instance.isAltPressed &&
+        (event.logicalKey == LogicalKeyboardKey.bracketRight ||
+         event.logicalKey == LogicalKeyboardKey.bracketLeft);
+    if (isOptBracket) {
+      if (!_isInitialized) return false;
+      if (_focusedWidgetIsEditable()) return false;
+      final clips = ref.read(editorProjectControllerProvider).timeline.clips;
+      final dir = event.logicalKey == LogicalKeyboardKey.bracketRight
+          ? NavDirection.next
+          : NavDirection.previous;
+      final decision = decideSliceNav(
+        currentIndex: _selectedSliceIndex,
+        clips: clips,
+        direction: dir,
+      );
+      if (decision == null) return true;
+      if (decision.isBoundaryNoOp) {
+        _flashPlayhead();
+        return true;
+      }
+      setState(() {
+        _selectedSliceIndex = decision.nextIndex;
+        _selectedZoomIndex = null;
+      });
+      _controller.seekTo(decision.seekTo);
+      return true;
+    }
+
+    return false;
+  }
+
+  bool _focusedWidgetIsEditable() {
+    final focused = FocusManager.instance.primaryFocus?.context?.widget;
+    return focused is EditableText;
   }
 
   void _flashPlayhead() {
