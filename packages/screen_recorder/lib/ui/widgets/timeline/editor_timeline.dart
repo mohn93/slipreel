@@ -13,6 +13,7 @@ import 'package:screen_recorder/ui/widgets/timeline/clip_lane.dart';
 import 'package:screen_recorder/ui/widgets/timeline/cut_overlay.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_constants.dart';
 import 'package:screen_recorder/ui/widgets/timeline/time_ruler.dart';
+import 'package:screen_recorder/ui/widgets/timeline/snap_flash_overlay.dart';
 
 /// Computes the hover-scrub progress fraction (0..1 of total content)
 /// from the raw inputs that [_updateHover] has available.
@@ -88,6 +89,7 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.onPinchScale,
     this.cursorClickTimes = const <Duration>[],
     this.onSnapped,
+    this.snapFlashTarget,
   });
 
   final Duration duration;
@@ -177,6 +179,11 @@ class EditorTimeline extends ConsumerStatefulWidget {
   /// Fires with the edited-time snap target when a scissors-mode cut
   /// snapped to a candidate. The parent uses this to drive the snap flash.
   final ValueChanged<Duration>? onSnapped;
+
+  /// Edited-time of the most recent snap target — drives [SnapFlashOverlay].
+  /// Null when no recent snap has occurred or the fade has completed.
+  /// The parent screen owns the lifecycle; the timeline only renders.
+  final Duration? snapFlashTarget;
 
   @override
   ConsumerState<EditorTimeline> createState() => _EditorTimelineState();
@@ -582,6 +589,16 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline> {
                               widget.isPlaying ? null : _hoverProgress,
                           rulerHeight: rulerHeight,
                           flashOn: widget.playheadFlashOn,
+                        ),
+                      ),
+                    ),
+                    IgnorePointer(
+                      child: SizedBox(
+                        width: cw,
+                        height: totalHeight,
+                        child: SnapFlashOverlay(
+                          target: widget.snapFlashTarget,
+                          editedTimeToPx: (d) => timeToX(d, pps),
                         ),
                       ),
                     ),

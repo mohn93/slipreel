@@ -1882,6 +1882,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 playheadFlashOn: _playheadFlashOn,
                 cursorClickTimes: _cursorRecording.eventIndex.clickTimes,
                 onSnapped: _flashSnap,
+                snapFlashTarget: _snapFlashTarget,
                 // cursorXListenable stays unset — when cut mode is on,
                 // EditorTimeline pipes its own overlay's cursor in. Off
                 // mode falls back to a no-op notifier.
