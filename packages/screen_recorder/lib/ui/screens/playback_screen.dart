@@ -397,7 +397,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         _selectedSliceIndex = decision.nextIndex;
         _selectedZoomIndex = null;
       });
-      _controller.seekTo(decision.seekTo);
+      // `decision.seekTo` is in edited-time; the player works in
+      // source-time. Convert before seeking or the playhead lands at
+      // a source position that may map to a completely different
+      // slice in edited-time.
+      _controller.seekTo(editedToSource(clips, decision.seekTo));
       return true;
     }
 
