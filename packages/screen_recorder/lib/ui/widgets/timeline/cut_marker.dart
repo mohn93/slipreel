@@ -73,30 +73,34 @@ class CutMarker extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_showLabel)
-            Padding(
-              key: const ValueKey('cut-marker-label'),
-              padding: const EdgeInsets.only(right: 4),
-              child: Text(
-                _formatLabel(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  height: 1.0,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_showLabel)
+              Padding(
+                key: const ValueKey('cut-marker-label'),
+                padding: const EdgeInsets.only(right: 4),
+                child: Text(
+                  _formatLabel(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    height: 1.0,
+                  ),
                 ),
               ),
+            const Icon(
+              Icons.content_cut,
+              key: ValueKey('cut-marker-scissors'),
+              color: Colors.white,
+              size: 12,
             ),
-          const Icon(
-            Icons.content_cut,
-            key: ValueKey('cut-marker-scissors'),
-            color: Colors.white,
-            size: 12,
-          ),
-        ],
+          ],
+        ),
       ),
     );
 
@@ -127,11 +131,9 @@ class CutMarker extends StatelessWidget {
             key: const ValueKey('cut-marker-hit'),
             behavior: HitTestBehavior.opaque,
             onTap: onTap,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                minWidth: kHitWidth,
-                minHeight: kHitHeight,
-              ),
+            child: SizedBox(
+              width: kHitWidth,
+              height: kHitHeight,
               child: Center(child: pin),
             ),
           ),

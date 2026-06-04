@@ -56,6 +56,36 @@ void main() {
       expect(tapped, 1);
     });
 
+    testWidgets('renders without overflow inside a tight Positioned at kHitWidth',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 800,
+            height: 200,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 60,
+                  width: CutMarker.kHitWidth,
+                  height: CutMarker.kHitHeight,
+                  child: CutMarker(
+                    hiddenSeconds: const Duration(milliseconds: 12400),
+                    onTap: () {},
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('12.4s'), findsOneWidget);
+    });
+
     testWidgets('dragFade collapses the marker opacity',
         (tester) async {
       await tester.pumpWidget(_harness(
