@@ -331,6 +331,32 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     _replaceSlice(sliceIndex, s.copyWith(trimEnd: clamped));
   }
 
+  /// First-click action for a cut marker: resets the inner trims of
+  /// both slices adjacent to the seam at [seamIndex] back to their cut
+  /// bounds. Atomic — one state mutation, one undo step.
+  ///
+  /// Idempotent: if both inner trims are already at their cut bounds,
+  /// the state reference is left unchanged.
+  void clearSeamTrims(int seamIndex) {
+    final clips = state.timeline.clips;
+    if (seamIndex < 0 || seamIndex >= clips.length - 1) return;
+    final left = clips[seamIndex];
+    final right = clips[seamIndex + 1];
+    final newLeft = left.trimEnd == left.cutEnd
+        ? left
+        : left.copyWith(trimEnd: left.cutEnd);
+    final newRight = right.trimStart == right.cutStart
+        ? right
+        : right.copyWith(trimStart: right.cutStart);
+    if (identical(newLeft, left) && identical(newRight, right)) return;
+    final updated = List<ClipSlice>.from(clips)
+      ..[seamIndex] = newLeft
+      ..[seamIndex + 1] = newRight;
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(clips: updated),
+    );
+  }
+
   void removeSlice(int sliceIndex) {
     final clips = state.timeline.clips;
     if (clips.length <= 1) return;
