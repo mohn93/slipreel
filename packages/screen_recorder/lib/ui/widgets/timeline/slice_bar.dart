@@ -125,12 +125,27 @@ class _SliceBarState extends State<SliceBar>
   static const Duration _expandDuration = Duration(milliseconds: 220);
   static const double _liftScale = 0.04;
 
-  // Inset for the dim trim bands. Sized to the body's selected-state
-  // border (2px) so the white border isn't darkened by the overlay.
-  // Outer corner radius is the body's 8px outer radius minus the inset
-  // — matches the body's inner border curve at the rounded corners.
-  static const double _kDimInset = 2.0;
-  static const double _kDimOuterRadius = 6.0;
+  // The dim trim bands render as SIBLINGS of the bright body, painted
+  // BEHIND it in z-order and extended by [_kDimCornerRadius] past the
+  // body's rounded edge so the body cleanly covers the dim's straight
+  // inner edge. The dim shows through wherever the body's rounded
+  // corner cuts away — visually the two read as one connected slice,
+  // with the bright body's curve as the seam rather than a hard line.
+  // Each dim band carries 8 px rounded corners on its OUTER edge (the
+  // trimmed-away extreme), matching the body's own corner radius.
+  static const double _kDimCornerRadius = 8.0;
+  // Minimum width before a dim band renders. Sub-pixel widths just
+  // shimmer at the start/end of the bloom; filtering them out is
+  // visually quieter than animating in from 0px.
+  static const double _kDimBandMinPx = 1.0;
+
+  // Subtle amber glow bar painted at the dim/bright divider — a thin
+  // vertical line with a soft halo, vertically inset so it doesn't
+  // clash with the rounded corners. Communicates "this is the trim
+  // boundary you're dragging" without competing with the chevron or
+  // the selection ring.
+  static const double _kTrimDividerWidth = 2.0;
+  static const double _kTrimDividerInset = 4.0;
 
   // Tick rhythm thresholds: ticks render once the body is at least
   // 48px wide; label slides in at 80px, caption at 140px.
@@ -315,13 +330,22 @@ class _SliceBarState extends State<SliceBar>
                   // dropping the in-flight pointer — which is what made
                   // onHorizontalDragEnd silently fail to fire.
                   children: [
-                    _buildBody(
-                        isSel: isSel,
-                        bandLeft: bandLeft,
-                        totalWidth: totalWidth),
-                    if (bandLeft > _kDimInset) _buildLeftDimBand(bandLeft, t),
-                    if (bandRight > _kDimInset)
+                    // Dim bands paint FIRST (behind the body) and
+                    // extend past the body's rounded edge so the body
+                    // cleanly covers the band's straight inner side.
+                    // Where the body's rounded corner cuts away, the
+                    // dim shows through — the visible seam is the
+                    // body's curve, not a hard line between them.
+                    if (bandLeft > _kDimBandMinPx)
+                      _buildLeftDimBand(bandLeft, t),
+                    if (bandRight > _kDimBandMinPx)
                       _buildRightDimBand(bandRight, t),
+                    _buildBody(isSel: isSel),
+                    // Glow lines at the dim/bright seam — gated on the
+                    // same band visibility so they only appear when a
+                    // trimmed side has a non-trivial band to divide.
+                    if (bandLeft > _kDimBandMinPx) _buildLeftTrimDivider(t),
+                    if (bandRight > _kDimBandMinPx) _buildRightTrimDivider(t),
                     if (widget.glowLeft) _buildNeighborHaloLeft(),
                     if (widget.glowRight) _buildNeighborHaloRight(),
                     if (_widthPx >= _kTicksMinBodyPx) _buildTicks(),
@@ -361,19 +385,19 @@ class _SliceBarState extends State<SliceBar>
   // `slice-bar-{left,right}-chevron`; the other keys are essential for
   // Stack child-identity stability across the bloom transitions.
 
-  /// Expanded body. In normal mode it's exactly the active region
-  /// (_widthPx); during a trim drag it widens to the full cutSpan, with
-  /// the dim bands drawn on top of the outer thirds.
-  Widget _buildBody({
-    required bool isSel,
-    required double bandLeft,
-    required double totalWidth,
-  }) {
+  /// Bright "lit" active region. Always sits at `[0, _widthPx]` with
+  /// rounded 8 px corners on all four sides so the lit body itself
+  /// carries the curve — during a trim drag the dim bands grow next
+  /// to it as separate siblings, NOT as an overlay covering its
+  /// rounded corners. That way the visible bright-vs-dim seam is
+  /// shaped by the body's own rounded edge rather than by the dim
+  /// overlay's cut-out.
+  Widget _buildBody({required bool isSel}) {
     return Positioned(
       key: const ValueKey('slice-bar-body-pos'),
-      left: -bandLeft,
+      left: 0,
       top: 0,
-      width: totalWidth,
+      width: _widthPx,
       height: laneHeight,
       child: Container(
         key: const ValueKey('slice-bar-body'),
@@ -399,28 +423,44 @@ class _SliceBarState extends State<SliceBar>
     );
   }
 
-  /// Dim band over the left-trimmed source. Sits on top of the body so
-  /// it darkens the body color in that range. Border radius rounded only
-  /// on the OUTER side so the band visually continues into the active
-  /// region. Inset by [_kDimInset] on every body-edge side so the
-  /// selected ring's border stays visible — the overlay would otherwise
-  /// darken the white border too. The inner (active-side) edge has no
-  /// inset because that boundary is inside the body and has no border
-  /// there.
+  /// Dim band over the left-trimmed source. Sits NEXT TO the bright
+  /// body (not on top of it) — same lit-from-above gradient as the
+  /// body, darkened in HSL space so it reads as a "ghost" of the
+  /// active region rather than a neutral grey overlay. Outer corners
+  /// rounded to match the body's 8 px radius; inner edge sits straight
+  /// against the body's rounded left curve, so the visible seam is
+  /// shaped by the body's rounded edge.
   Widget _buildLeftDimBand(double bandLeft, double t) {
+    // Extend past the body's left edge by _kDimCornerRadius so the
+    // body's rounded top-left + bottom-left corners cover the band's
+    // straight inner edge cleanly — without the extension the body's
+    // curved cutout would expose the slice's track-bg backdrop and
+    // the band would visually disconnect from the body.
     return Positioned(
       key: const ValueKey('slice-bar-dim-left'),
-      left: -bandLeft + _kDimInset,
-      top: _kDimInset,
-      bottom: _kDimInset,
-      width: bandLeft - _kDimInset,
+      left: -bandLeft,
+      top: 0,
+      bottom: 0,
+      width: bandLeft + _kDimCornerRadius,
       child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.5 * t),
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(_kDimOuterRadius),
-              bottomLeft: Radius.circular(_kDimOuterRadius),
+        child: Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: Container(
+            decoration: BoxDecoration(
+              // Same 3-stop "lit from above" gradient as the bright
+              // body, just shifted down in lightness so the band reads
+              // as a ghost of the active region in the same colour
+              // family rather than a neutral grey.
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: _dimGradientColors(clipFill),
+                stops: const [0.0, 0.55, 1.0],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(_kDimCornerRadius),
+                bottomLeft: Radius.circular(_kDimCornerRadius),
+              ),
             ),
           ),
         ),
@@ -431,20 +471,90 @@ class _SliceBarState extends State<SliceBar>
   Widget _buildRightDimBand(double bandRight, double t) {
     return Positioned(
       key: const ValueKey('slice-bar-dim-right'),
-      left: _widthPx,
-      top: _kDimInset,
-      bottom: _kDimInset,
-      width: bandRight - _kDimInset,
+      left: _widthPx - _kDimCornerRadius,
+      top: 0,
+      bottom: 0,
+      width: bandRight + _kDimCornerRadius,
       child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.5 * t),
-            borderRadius: const BorderRadius.only(
-              topRight: Radius.circular(_kDimOuterRadius),
-              bottomRight: Radius.circular(_kDimOuterRadius),
+        child: Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: _dimGradientColors(clipFill),
+                stops: const [0.0, 0.55, 1.0],
+              ),
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(_kDimCornerRadius),
+                bottomRight: Radius.circular(_kDimCornerRadius),
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Thin amber glow line at the trim divider — the seam between the
+  /// dim band and the bright active region. Vertically inset from the
+  /// body's rounded corners so it doesn't visually clash with them.
+  /// Opacity scales with the expand animation `t` so it fades in with
+  /// the bloom and out when the drag ends.
+  Widget _buildLeftTrimDivider(double t) {
+    return Positioned(
+      key: const ValueKey('slice-bar-trim-divider-left'),
+      left: -_kTrimDividerWidth / 2,
+      top: _kTrimDividerInset,
+      bottom: _kTrimDividerInset,
+      width: _kTrimDividerWidth,
+      child: IgnorePointer(
+        child: Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: _trimDividerFill(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRightTrimDivider(double t) {
+    return Positioned(
+      key: const ValueKey('slice-bar-trim-divider-right'),
+      left: _widthPx - _kTrimDividerWidth / 2,
+      top: _kTrimDividerInset,
+      bottom: _kTrimDividerInset,
+      width: _kTrimDividerWidth,
+      child: IgnorePointer(
+        child: Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: _trimDividerFill(),
+        ),
+      ),
+    );
+  }
+
+  Widget _trimDividerFill() {
+    return Container(
+      decoration: BoxDecoration(
+        // Vertical fade so the line doesn't terminate abruptly into
+        // the rounded body corners — alpha is highest in the middle.
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            clipFillTop.withValues(alpha: 0.0),
+            clipFillTop.withValues(alpha: 0.55),
+            clipFillTop.withValues(alpha: 0.0),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(_kTrimDividerWidth / 2),
+        boxShadow: [
+          BoxShadow(
+            color: clipFillTop.withValues(alpha: 0.35),
+            blurRadius: 4,
+          ),
+        ],
       ),
     );
   }
@@ -752,6 +862,22 @@ List<Color> _bodyGradientColors(Color base) {
   final top = hsl.withLightness((hsl.lightness + 0.05).clamp(0.0, 1.0)).toColor();
   final bottom = hsl.withLightness((hsl.lightness - 0.08).clamp(0.0, 1.0)).toColor();
   return [top, base, bottom];
+}
+
+/// Three-stop vertical gradient for the trim "dim" sibling bands —
+/// same lit-from-above structure as the body but knocked down 42
+/// lightness points in HSL space so the band reads as a darker ghost
+/// of the active region in the same colour family rather than a
+/// neutral grey block.
+List<Color> _dimGradientColors(Color base) {
+  final hsl = HSLColor.fromColor(base).withLightness(
+    (HSLColor.fromColor(base).lightness - 0.42).clamp(0.05, 1.0),
+  );
+  final top = hsl.withLightness((hsl.lightness + 0.04).clamp(0.0, 1.0)).toColor();
+  final mid = hsl.toColor();
+  final bottom =
+      hsl.withLightness((hsl.lightness - 0.06).clamp(0.0, 1.0)).toColor();
+  return [top, mid, bottom];
 }
 
 class _ChevronNotch extends StatelessWidget {
