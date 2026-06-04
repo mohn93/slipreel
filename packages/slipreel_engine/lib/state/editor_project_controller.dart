@@ -348,7 +348,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final newRight = right.trimStart == right.cutStart
         ? right
         : right.copyWith(trimStart: right.cutStart);
-    if (identical(newLeft, left) && identical(newRight, right)) return;
+    if (newLeft == left && newRight == right) return;
     final updated = List<ClipSlice>.from(clips)
       ..[seamIndex] = newLeft
       ..[seamIndex + 1] = newRight;
