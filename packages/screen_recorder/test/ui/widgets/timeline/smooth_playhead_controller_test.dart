@@ -114,4 +114,130 @@ void main() {
       );
     });
   });
+
+  group('SmoothPlayheadController.snapForwardWouldAdvance', () {
+    // The snapForward contract: a snap only advances when the target
+    // is STRICTLY GREATER than the current smoothed value. Equality
+    // and backward targets are no-ops. This is what makes it safe to
+    // call from the per-frame skip listener — duplicate fires with
+    // the same target (or stale targets behind us after the seek
+    // landed) don't reset the extrapolator's anchor or re-trigger
+    // backward-drift suppression.
+    test('advances when target is strictly greater', () {
+      expect(
+        SmoothPlayheadController.snapForwardWouldAdvance(
+          target: const Duration(seconds: 12),
+          currentSmoothed: const Duration(seconds: 8),
+        ),
+        isTrue,
+      );
+    });
+
+    test('no-op when target equals current smoothed', () {
+      // Already there; advancing again would reset the suppress
+      // threshold and re-enable backward-drift ignoring needlessly.
+      expect(
+        SmoothPlayheadController.snapForwardWouldAdvance(
+          target: const Duration(seconds: 12),
+          currentSmoothed: const Duration(seconds: 12),
+        ),
+        isFalse,
+      );
+    });
+
+    test('no-op when target is behind current smoothed', () {
+      // snapForward intentionally never moves the playhead backward.
+      // A stale skip-listener fire after the seek has already landed
+      // and smoothed has rebased past the target must not undo that
+      // progress.
+      expect(
+        SmoothPlayheadController.snapForwardWouldAdvance(
+          target: const Duration(seconds: 8),
+          currentSmoothed: const Duration(seconds: 12),
+        ),
+        isFalse,
+      );
+    });
+
+    test('preserves sub-millisecond precision in the comparison', () {
+      // The snap target is the next slice's trimStart, stored in
+      // microseconds. A 1µs difference must still register as advance.
+      expect(
+        SmoothPlayheadController.snapForwardWouldAdvance(
+          target: const Duration(microseconds: 8_000_001),
+          currentSmoothed: const Duration(microseconds: 8_000_000),
+        ),
+        isTrue,
+      );
+    });
+
+    test('zero target is a no-op against any non-negative smoothed', () {
+      // Defensive: callers shouldn't snap to zero, but if they do
+      // the controller must not silently rewind to the start.
+      expect(
+        SmoothPlayheadController.snapForwardWouldAdvance(
+          target: Duration.zero,
+          currentSmoothed: const Duration(seconds: 5),
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('SmoothPlayheadController.shouldClearBackwardDriftSuppression', () {
+    // After snapForward, the suppress threshold is the seek target.
+    // The player's reported v.position lags the seek by 50–200 ms;
+    // while reports are still BELOW the threshold the seek hasn't
+    // landed yet and treating them as drift would snap the smoothed
+    // value backward into the trim gap. Suppression must clear the
+    // INSTANT v.position catches up — keeping it on for one extra
+    // frame would freeze the extrapolator at the snap target until
+    // the next controller tick.
+    const suppressBelow = Duration(seconds: 12);
+
+    test('holds while v.position is below the threshold', () {
+      expect(
+        SmoothPlayheadController.shouldClearBackwardDriftSuppression(
+          vPosition: const Duration(milliseconds: 8500),
+          suppressBelow: suppressBelow,
+        ),
+        isFalse,
+      );
+    });
+
+    test('clears at the exact threshold (seek just landed)', () {
+      // Boundary: the seek's first valid v.position report can equal
+      // the target exactly. Suppression must clear on equality so
+      // drift handling resumes immediately and rebases the extrapolator.
+      expect(
+        SmoothPlayheadController.shouldClearBackwardDriftSuppression(
+          vPosition: suppressBelow,
+          suppressBelow: suppressBelow,
+        ),
+        isTrue,
+      );
+    });
+
+    test('clears when v.position has moved past the threshold', () {
+      expect(
+        SmoothPlayheadController.shouldClearBackwardDriftSuppression(
+          vPosition: const Duration(milliseconds: 12_050),
+          suppressBelow: suppressBelow,
+        ),
+        isTrue,
+      );
+    });
+
+    test('holds at one microsecond below the threshold', () {
+      // Boundary check on the strict-inequality side — keeps the
+      // contract symmetric with the equality-clears case above.
+      expect(
+        SmoothPlayheadController.shouldClearBackwardDriftSuppression(
+          vPosition: suppressBelow - const Duration(microseconds: 1),
+          suppressBelow: suppressBelow,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

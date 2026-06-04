@@ -25,7 +25,6 @@ void main() {
         isSelected: false,
         pixelsPerSecond: 50,
         editedStart: Duration.zero,
-        cursorXListenable: ValueNotifier<double?>(null),
         onSelectionToggle: (i) => toggled = i,
         onTrimStartChanged: (_) {},
         onTrimEndChanged: (_) {},
@@ -41,7 +40,6 @@ void main() {
         isSelected: true,
         pixelsPerSecond: 50,
         editedStart: Duration.zero,
-        cursorXListenable: ValueNotifier<double?>(null),
         onSelectionToggle: (_) {},
         onTrimStartChanged: (_) {},
         onTrimEndChanged: (_) {},
@@ -50,7 +48,11 @@ void main() {
         find.byKey(const ValueKey('slice-bar-body')),
       );
       final deco = box.decoration as BoxDecoration;
-      expect(deco.color, equals(clipFillTop));
+      // Body now paints a 3-stop vertical gradient (top-highlight,
+      // base, bottom-shadow). The middle stop is the base body
+      // colour — selected slices use clipFillTop there.
+      final gradient = deco.gradient as LinearGradient;
+      expect(gradient.colors[1], equals(clipFillTop));
     });
   });
 
@@ -63,7 +65,6 @@ void main() {
         isSelected: false,
         pixelsPerSecond: 50,
         editedStart: Duration.zero,
-        cursorXListenable: ValueNotifier<double?>(null),
         onSelectionToggle: (_) {},
         onTrimStartChanged: (_) {},
         onTrimEndChanged: (v) => lastTrimEnd = v,
@@ -83,7 +84,6 @@ void main() {
         isSelected: false,
         pixelsPerSecond: 50,
         editedStart: Duration.zero,
-        cursorXListenable: ValueNotifier<double?>(null),
         onSelectionToggle: (_) {},
         onTrimStartChanged: (v) => lastTrimStart = v,
         onTrimEndChanged: (_) {},
@@ -102,7 +102,6 @@ void main() {
         isSelected: false,
         pixelsPerSecond: 50,
         editedStart: Duration.zero,
-        cursorXListenable: ValueNotifier<double?>(null),
         onSelectionToggle: (_) {},
         onTrimStartChanged: (_) {},
         onTrimEndChanged: (_) {},
@@ -118,7 +117,6 @@ void main() {
         isSelected: false,
         pixelsPerSecond: 50,
         editedStart: Duration.zero,
-        cursorXListenable: ValueNotifier<double?>(null),
         onSelectionToggle: (_) {},
         onTrimStartChanged: (_) {},
         onTrimEndChanged: (_) {},
@@ -134,39 +132,12 @@ void main() {
         isSelected: false,
         pixelsPerSecond: 50,
         editedStart: Duration.zero,
-        cursorXListenable: ValueNotifier<double?>(null),
         onSelectionToggle: (_) {},
         onTrimStartChanged: (_) {},
         onTrimEndChanged: (_) {},
       )));
       expect(find.byKey(const ValueKey('slice-bar-left-chevron')), findsNothing);
       expect(find.byKey(const ValueKey('slice-bar-right-chevron')), findsNothing);
-    });
-  });
-
-  group('SliceBar magnetic pull math', () {
-    test('cursor null -> no pull', () {
-      expect(computeMagneticPull(cursorX: null, sliceCenterX: 100), 0);
-    });
-
-    test('cursor far away (>80px) -> no pull', () {
-      expect(computeMagneticPull(cursorX: 250, sliceCenterX: 100), 0);
-    });
-
-    test('cursor at slice center -> no pull (sign 0)', () {
-      expect(computeMagneticPull(cursorX: 100, sliceCenterX: 100), 0);
-    });
-
-    test('cursor 40px to the right -> positive pull', () {
-      final p = computeMagneticPull(cursorX: 140, sliceCenterX: 100);
-      expect(p, greaterThan(0));
-      expect(p, lessThanOrEqualTo(6));
-    });
-
-    test('cursor 40px to the left -> negative pull', () {
-      final p = computeMagneticPull(cursorX: 60, sliceCenterX: 100);
-      expect(p, lessThan(0));
-      expect(p, greaterThanOrEqualTo(-6));
     });
   });
 }

@@ -640,9 +640,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // _isInitialized + _trim.selection are set so the listener never
       // sees a half-initialized state.
       _controller.addListener(_onTrimTick);
-      // Skip removed regions during playback. Wired alongside the
-      // soft-trim tick so the two enforce-on-tick paths stay together.
+      // Skip removed regions during playback. Wired to BOTH the
+      // controller (for paused-state manual seeks landing in a gap)
+      // AND the smoothed playhead (for per-frame crossing detection
+      // during playback — the controller's native tick is ~250 ms,
+      // smoothed is per-vsync at ~16 ms). The [_lastSkipTarget] guard
+      // inside [_onSkipTick] keeps duplicate fires idempotent.
       _controller.addListener(_onSkipTick);
+      _smoothPlayhead!.addListener(_onSkipTick);
       // Seed the hover anchor from the freshly-initialised controller
       // so hover-end-before-any-other-action restores to a meaningful
       // value rather than Duration.zero (which would jump to start).
@@ -688,16 +693,33 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // seekTo calls every frame.
   Duration? _lastSkipTarget;
 
+
   /// Position-tick listener that skips removed regions. When playback
   /// walks off a slice's trimEnd, seeks to the next slice's trimStart;
   /// when it lands inside a removed region (e.g. from a manual seek),
   /// seeks forward to the closest playable position; when it's past the
   /// final trimEnd, parks at the final trimEnd and pauses.
+  ///
+  /// Reads the SMOOTHED playhead position (when available) rather than
+  /// the raw [_controller] position. video_player's native position
+  /// tick fires every ~250 ms, which is enough time for playback to
+  /// walk a long way into a trimmed source range before we detect the
+  /// crossing — the visible playhead freezes at the seam for that
+  /// duration because [sourceToEdited] collapses all source positions
+  /// inside a trim gap to a single edited point. The smoothed value
+  /// extrapolates forward at vsync (~16 ms) from the last reported
+  /// position, so we detect the crossing within a single frame and
+  /// issue the corrective seek immediately. This listener is wired to
+  /// both [_controller] (catches paused-state manual seeks landing in
+  /// a gap) and [_smoothPlayhead] (catches per-frame playing-state
+  /// crossings); the [_lastSkipTarget] guard keeps duplicate fires
+  /// cheap and idempotent.
   void _onSkipTick() {
     if (!_isInitialized) return;
     final v = _controller.value;
     final clips = ref.read(editorProjectControllerProvider).timeline.clips;
-    final target = shouldSeekOnTick(clips, v.position);
+    final sourcePos = _smoothPlayhead?.position ?? v.position;
+    final target = shouldSeekOnTick(clips, sourcePos);
     if (target == null) {
       _lastSkipTarget = null;
       return;
@@ -709,10 +731,21 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _lastSkipTarget = target;
     if (clips.isNotEmpty &&
         target == clips.last.trimEnd &&
-        v.position >= target) {
+        sourcePos >= target) {
       _controller.pause();
     }
     _controller.seekTo(target);
+    // The native seek takes 50–200 ms to land while the target frame
+    // decodes. Without telling the smoothed playhead, its extrapolator
+    // would keep walking forward off the in-gap base position during
+    // that window, and the displayed playhead — fed through
+    // [sourceToEdited], which collapses every gap source position to
+    // the seam — would freeze at the boundary until v.position caught
+    // up. Snapping the smoothed value to the seek target now makes the
+    // UI playhead immediately reflect the post-seek position, and the
+    // controller's suppress-backward-drift guard keeps it there until
+    // v.position lands.
+    _smoothPlayhead?.snapForward(target);
   }
 
   /// Schedule a debounced save so a slider drag doesn't hammer the
@@ -744,6 +777,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       _controller.removeListener(_onHoverTrack);
       _controller.removeListener(_onPlayStateTick);
       _smoothPlayhead?.removeListener(_onSpeedTick);
+      _smoothPlayhead?.removeListener(_onSkipTick);
     }
     _smoothPlayhead?.dispose();
     _controller.dispose();

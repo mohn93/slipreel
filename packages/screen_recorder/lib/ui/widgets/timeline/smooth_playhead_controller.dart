@@ -38,6 +38,16 @@ class SmoothPlayheadController extends ChangeNotifier {
   late double _lastPlaybackSpeed;
   Duration _smoothed = Duration.zero;
 
+  // Set by [snapForward] when the application logic seeks the player
+  // past a trim gap. While non-null, [_onVideoUpdate] ignores reports
+  // of `v.position` below this threshold — the player's reported
+  // position lags the seek by 50–200 ms while the target frame decodes,
+  // and treating those stale reports as backward drift would undo the
+  // forward snap and produce a back-and-forth oscillation at the seam.
+  // Cleared when `v.position` finally catches up to or past the
+  // threshold (the seek landed) — see [_onVideoUpdate].
+  Duration? _suppressBackwardDriftBelow;
+
   /// Forward drift this large means video_player jumped ahead of our
   /// extrapolation — almost certainly a forward seek; re-base immediately.
   static const _forwardSeekThreshold = Duration(milliseconds: 250);
@@ -78,6 +88,61 @@ class SmoothPlayheadController extends ChangeNotifier {
     required Duration currentSmoothed,
   }) =>
       currentSmoothed;
+
+  /// Pure helper documenting the [snapForward] no-op contract: a snap
+  /// only advances state when the requested target is strictly greater
+  /// than the current smoothed value. Equality is a no-op (we're
+  /// already there) and a backward target is a no-op (we don't undo
+  /// progress through a snap call). The caller doesn't need to gate on
+  /// this — calling snapForward with an at-or-before target is safe.
+  @visibleForTesting
+  static bool snapForwardWouldAdvance({
+    required Duration target,
+    required Duration currentSmoothed,
+  }) =>
+      target > currentSmoothed;
+
+  /// Pure helper documenting the suppress-backward-drift contract:
+  /// after [snapForward] sets `suppressBelow`, the player's reported
+  /// `v.position` lags the seek by 50–200 ms while the target frame
+  /// decodes. Reports BELOW the threshold are stale (the in-flight
+  /// seek hasn't landed yet) and must be ignored so they don't snap
+  /// the smoothed value backward into the trim gap, producing a
+  /// visible oscillation at the seam. The suppression clears the
+  /// instant `v.position` catches up to or exceeds the threshold.
+  @visibleForTesting
+  static bool shouldClearBackwardDriftSuppression({
+    required Duration vPosition,
+    required Duration suppressBelow,
+  }) =>
+      vPosition >= suppressBelow;
+
+  /// Called when application logic seeks the player past a stretch of
+  /// source time that should not be played through (e.g. a trim gap
+  /// between two slices' playable ranges). Sets the smoothed position
+  /// to [target] immediately and suppresses [v.position] reports below
+  /// [target] from triggering backward drift correction until the seek
+  /// actually lands. Without this, the smoothed value would walk
+  /// forward off the gap-position base while the player's seek decodes,
+  /// then snap back to v.position the instant a stale gap-position
+  /// update arrives — producing a visible oscillation at the seam.
+  ///
+  /// Idempotent if [target] is equal to or below the current smoothed
+  /// position (no-op) — the caller doesn't need to gate on "did we
+  /// already snap to this target".
+  void snapForward(Duration target) {
+    if (!snapForwardWouldAdvance(
+      target: target,
+      currentSmoothed: _smoothed,
+    )) {
+      return;
+    }
+    _basePosition = target;
+    _baseTimestamp = DateTime.now();
+    _suppressBackwardDriftBelow = target;
+    _smoothed = target;
+    notifyListeners();
+  }
 
   void _onVideoUpdate() {
     final v = videoController.value;
@@ -122,6 +187,21 @@ class SmoothPlayheadController extends ChangeNotifier {
     }
 
     if (isPlaying) {
+      // After [snapForward], the player's reported position lags the
+      // seek by 50–200 ms while the target frame decodes. Treating
+      // those stale "still in the gap" reports as backward drift would
+      // undo the forward snap, so we ignore drift until v.position
+      // catches up to the snap target.
+      if (_suppressBackwardDriftBelow != null) {
+        if (shouldClearBackwardDriftSuppression(
+          vPosition: v.position,
+          suppressBelow: _suppressBackwardDriftBelow!,
+        )) {
+          _suppressBackwardDriftBelow = null;
+        } else {
+          return;
+        }
+      }
       final expected = _basePosition +
           _scale(DateTime.now().difference(_baseTimestamp), v.playbackSpeed);
       final drift = v.position - expected;

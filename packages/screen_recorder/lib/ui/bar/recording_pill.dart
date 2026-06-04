@@ -24,12 +24,19 @@ class RecordingPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPaused = status == RecordingStatus.paused;
+    // Native pill window is 156×48; the content (dot + "m:ss" text +
+    // two 30px buttons + gaps) already runs ~137px, leaving ~19px for
+    // padding. With a 14px symmetric padding the row overflowed (yellow
+    // stripe) as soon as the timer crossed 9:59. Padding is squeezed to
+    // 6px and the inter-element gaps trimmed so the row still fits when
+    // the timer reaches three-digit minutes ("120:34") without growing
+    // the window.
     return Container(
       width: double.infinity,
       height: double.infinity,
       alignment: Alignment.center,
       color: const Color(0xFF2C2C30),
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -41,7 +48,7 @@ class RecordingPill extends StatelessWidget {
               shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Text(
             formatElapsed(elapsed),
             style: const TextStyle(
@@ -50,14 +57,14 @@ class RecordingPill extends StatelessWidget {
               fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           _PillButton(
             key: Key(isPaused ? 'pill-resume' : 'pill-pause'),
             onTap: onPauseOrResume,
             color: const Color(0xFF3F3F46),
             icon: isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
           _PillButton(
             key: const Key('pill-stop'),
             onTap: onStop,

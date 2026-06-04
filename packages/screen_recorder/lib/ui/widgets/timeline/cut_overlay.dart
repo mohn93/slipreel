@@ -4,9 +4,10 @@ import 'package:flutter/services.dart';
 const Color _accent = Color(0xFF6C63FF);
 
 /// Overlay rendered above the clip lane while cut mode is active.
-/// Updates [cursorX] on mouse move (used by SliceBar's magnetic pull),
-/// paints a 1px dashed accent vertical line + a small scissors glyph
-/// at the cursor, commits the cut on tap, and exits on Esc.
+/// Updates [cursorX] on mouse move (used by the parent timeline to
+/// paint the dashed indicator and route cut commits). Paints a 1px
+/// dashed accent vertical line + a small scissors glyph at the cursor,
+/// commits the cut on tap, exits on Esc.
 class CutOverlay extends StatefulWidget {
   const CutOverlay({
     super.key,
