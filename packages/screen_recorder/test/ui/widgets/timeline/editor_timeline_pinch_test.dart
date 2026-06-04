@@ -37,7 +37,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: Duration.zero,
+        position: ValueNotifier<Duration>(Duration.zero),
         onSeek: (_) {},
         timelineScale: 1.0,
         onPinchScale: (s, a) {
@@ -76,7 +76,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: Duration.zero,
+        position: ValueNotifier<Duration>(Duration.zero),
         onSeek: (_) {},
         timelineScale: 1.0,
         onPinchScale: (_, __) => fires++,

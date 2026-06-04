@@ -42,7 +42,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: const Duration(seconds: 5),
+        position: ValueNotifier<Duration>(const Duration(seconds: 5)),
         onSeek: (_) {},
         timelineScale: 1.0,
         onAnchorConsumed: () => consumed++,
@@ -58,7 +58,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: const Duration(seconds: 5),
+        position: ValueNotifier<Duration>(const Duration(seconds: 5)),
         onSeek: (_) {},
         timelineScale: 2.0,
         pendingScaleAnchor: const Duration(seconds: 5),
@@ -78,7 +78,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: const Duration(seconds: 5),
+        position: ValueNotifier<Duration>(const Duration(seconds: 5)),
         onSeek: (_) {},
         timelineScale: 1.0,
       ),
@@ -93,7 +93,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: const Duration(seconds: 5),
+        position: ValueNotifier<Duration>(const Duration(seconds: 5)),
         onSeek: (_) {},
         timelineScale: 2.0,
         pendingScaleAnchor: const Duration(seconds: 7),
@@ -111,7 +111,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: const Duration(seconds: 1),
+        position: ValueNotifier<Duration>(const Duration(seconds: 1)),
         onSeek: (_) {},
         timelineScale: 1.0,
       ),
@@ -125,7 +125,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: const Duration(seconds: 1),
+        position: ValueNotifier<Duration>(const Duration(seconds: 1)),
         onSeek: (_) {},
         timelineScale: 2.0,
         pendingScaleAnchor: Duration.zero,

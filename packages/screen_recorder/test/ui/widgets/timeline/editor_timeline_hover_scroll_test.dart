@@ -41,7 +41,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: Duration.zero,
+        position: ValueNotifier<Duration>(Duration.zero),
         onSeek: seekedTimes.add,
         onHoverSeek: hoverSeekedTimes.add,
         timelineScale: 2.0,

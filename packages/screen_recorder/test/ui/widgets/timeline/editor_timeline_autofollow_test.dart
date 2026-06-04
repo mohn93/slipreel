@@ -42,7 +42,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: Duration.zero,
+        position: ValueNotifier<Duration>(Duration.zero),
         onSeek: (_) {},
         timelineScale: 4.0,
         isPlaying: true,
@@ -56,7 +56,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: const Duration(seconds: 2),
+        position: ValueNotifier<Duration>(const Duration(seconds: 2)),
         onSeek: (_) {},
         timelineScale: 4.0,
         isPlaying: true,
@@ -71,7 +71,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: const Duration(milliseconds: 2500),
+        position: ValueNotifier<Duration>(const Duration(milliseconds: 2500)),
         onSeek: (_) {},
         timelineScale: 4.0,
         isPlaying: true,
@@ -87,7 +87,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: Duration.zero,
+        position: ValueNotifier<Duration>(Duration.zero),
         onSeek: (_) {},
         timelineScale: 4.0,
         isPlaying: false,
@@ -99,7 +99,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: const Duration(seconds: 8), // way past 80%
+        position: ValueNotifier<Duration>(const Duration(seconds: 8)), // way past 80%
         onSeek: (_) {},
         timelineScale: 4.0,
         isPlaying: false,
@@ -115,7 +115,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: Duration.zero,
+        position: ValueNotifier<Duration>(Duration.zero),
         onSeek: (_) {},
         timelineScale: 1.0,
         isPlaying: true,
@@ -127,7 +127,7 @@ void main() {
     await tester.pumpWidget(_host(
       EditorTimeline(
         duration: const Duration(seconds: 10),
-        position: const Duration(seconds: 9),
+        position: ValueNotifier<Duration>(const Duration(seconds: 9)),
         onSeek: (_) {},
         timelineScale: 1.0,
         isPlaying: true,

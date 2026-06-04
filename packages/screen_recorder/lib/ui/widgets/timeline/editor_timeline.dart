@@ -100,7 +100,14 @@ class EditorTimeline extends ConsumerStatefulWidget {
   });
 
   final Duration duration;
-  final Duration position;
+
+  /// Playhead position as a listenable so per-vsync updates can drive
+  /// only the playhead subtree (via `ValueListenableBuilder` inside
+  /// `build`) without rebuilding the whole timeline widget tree on
+  /// every tick. The parent updates `.value` from its smoothed
+  /// extrapolator; the value is in edited-time units to match
+  /// [duration].
+  final ValueListenable<Duration> position;
   final ValueChanged<Duration> onSeek;
   final List<ZoomRegion> zoomRegions;
   final int? selectedZoomIndex;
@@ -272,7 +279,21 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     super.initState();
     _scrollController.addListener(_onScroll);
     _cutCursorY.addListener(_onCutCursorYChanged);
+    widget.position.addListener(_onPositionTick);
     if (widget.cutModeActive) _laneFloat.repeat();
+  }
+
+  /// Auto-follow used to live in `didUpdateWidget` because position was
+  /// a build-time prop and every parent rebuild fed a fresh value.
+  /// Now position is a Listenable, so we drive auto-follow from its
+  /// own notifications and the parent doesn't have to rebuild this
+  /// widget per vsync.
+  void _onPositionTick() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _maybeAutoFollow(widget.position.value);
+    });
   }
 
   void _onCutCursorYChanged() {
@@ -398,13 +419,14 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
       });
     }
 
-    if (widget.position != old.position) {
-      // Defer to post-frame so the new scale (if it changed in the same
-      // build) has been applied first.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _maybeAutoFollow(widget.position);
-      });
+    if (!identical(widget.position, old.position)) {
+      // Caller swapped the listenable instance (rare in production but
+      // common in widget tests that pump a fresh widget with each
+      // position). Re-subscribe AND fire one auto-follow check against
+      // the new value so behaviour matches a value-change notification.
+      old.position.removeListener(_onPositionTick);
+      widget.position.addListener(_onPositionTick);
+      _onPositionTick();
     }
   }
 
@@ -443,7 +465,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   void _applyScale(double oldScale, double newScale, Duration? anchor) {
     final viewport = _lastViewportWidth;
     if (viewport <= 0 || widget.duration.inMilliseconds == 0) return;
-    final anchorTime = anchor ?? widget.position;
+    final anchorTime = anchor ?? widget.position.value;
 
     final oldPps = pixelsPerSecond(viewport, widget.duration, oldScale);
     final newPps = pixelsPerSecond(viewport, widget.duration, newScale);
@@ -479,6 +501,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _cutCursorY.removeListener(_onCutCursorYChanged);
+    widget.position.removeListener(_onPositionTick);
     _laneFloat.dispose();
     _lanePin.dispose();
     _nullCursor.dispose();
@@ -746,19 +769,30 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                         curve: Curves.easeOut,
                         opacity: _trimDragging ? 0.0 : 1.0,
                         child: RepaintBoundary(
-                          child: CustomPaint(
-                            size: Size(cw, totalHeight),
-                            painter: PlayheadPainter(
-                              progress: widget.duration.inMicroseconds == 0
-                                  ? 0
-                                  : (widget.position.inMicroseconds /
-                                          widget.duration.inMicroseconds)
-                                      .clamp(0.0, 1.0),
-                              hoverProgress:
-                                  widget.isPlaying ? null : _hoverProgress,
-                              rulerHeight: rulerHeight,
-                              flashOn: widget.playheadFlashOn,
-                            ),
+                          // Per-vsync ticks land here and only here:
+                          // ValueListenableBuilder rebuilds the
+                          // CustomPaint, the RepaintBoundary keeps the
+                          // playhead on its own layer, and PlayheadPainter
+                          // already shouldRepaints on progress change.
+                          child: ValueListenableBuilder<Duration>(
+                            valueListenable: widget.position,
+                            builder: (context, position, _) {
+                              return CustomPaint(
+                                size: Size(cw, totalHeight),
+                                painter: PlayheadPainter(
+                                  progress: widget.duration.inMicroseconds == 0
+                                      ? 0
+                                      : (position.inMicroseconds /
+                                              widget.duration.inMicroseconds)
+                                          .clamp(0.0, 1.0),
+                                  hoverProgress: widget.isPlaying
+                                      ? null
+                                      : _hoverProgress,
+                                  rulerHeight: rulerHeight,
+                                  flashOn: widget.playheadFlashOn,
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ),

@@ -201,6 +201,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     with TickerProviderStateMixin {
   late VideoPlayerController _controller;
   SmoothPlayheadController? _smoothPlayhead;
+  // Single source of truth for the EDITED-time playhead position fed
+  // into [EditorTimeline]. Updated by listeners on [_smoothPlayhead]
+  // (per vsync while playing), [_controller] (per ~250 ms tick while
+  // paused / on seeks), and from each hover-state handler. The timeline
+  // subscribes via `ValueListenableBuilder` so per-vsync ticks land on
+  // just the playhead subtree instead of rebuilding the whole tree.
+  final ValueNotifier<Duration> _playheadEditedPos =
+      ValueNotifier<Duration>(Duration.zero);
   bool _isInitialized = false;
   String? _error;
   // Path of the last successfully exported file — used to wire the
@@ -548,6 +556,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         videoController: _controller,
         vsync: this,
       );
+      // Per-vsync (while playing) and per-controller-tick (paused/seek)
+      // updates of the edited-time playhead notifier. Either listener
+      // calling _refreshPlayheadEditedPos is cheap and idempotent — the
+      // `!=` guard inside it filters no-op writes.
+      _smoothPlayhead!.addListener(_refreshPlayheadEditedPos);
+      _controller.addListener(_refreshPlayheadEditedPos);
 
       // Restore the user's saved edits for this recording, if any.
       // Loaded *before* we mark _isInitialized so the very first
@@ -776,9 +790,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       _controller.removeListener(_onSkipTick);
       _controller.removeListener(_onHoverTrack);
       _controller.removeListener(_onPlayStateTick);
+      _controller.removeListener(_refreshPlayheadEditedPos);
       _smoothPlayhead?.removeListener(_onSpeedTick);
       _smoothPlayhead?.removeListener(_onSkipTick);
+      _smoothPlayhead?.removeListener(_refreshPlayheadEditedPos);
     }
+    _playheadEditedPos.dispose();
     _smoothPlayhead?.dispose();
     _controller.dispose();
     _history?.dispose();
@@ -788,6 +805,26 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
   void _handleUndo() => _history?.undo();
   void _handleRedo() => _history?.redo();
+
+  /// Recomputes the EDITED-time playhead position and pushes it into
+  /// [_playheadEditedPos]. Source position resolution mirrors what the
+  /// old AnimatedBuilder body did inline: hover-anchor wins when the
+  /// user is scrubbing; otherwise the smoothed playhead, falling back
+  /// to the raw controller position.
+  void _refreshPlayheadEditedPos() {
+    if (!mounted || !_isInitialized) return;
+    final clips =
+        ref.read(editorProjectControllerProvider).timeline.clips;
+    final sourcePos = _hover.isHovering
+        ? _hover.intendedPosition
+        : (_smoothPlayhead?.position ?? _controller.value.position);
+    final next = clips.isEmpty
+        ? sourcePos
+        : sourceToEdited(clips, sourcePos);
+    if (_playheadEditedPos.value != next) {
+      _playheadEditedPos.value = next;
+    }
+  }
 
   void _setSelectedZoomIndex(int? next) {
     if (next != _selectedZoomIndex) {
@@ -1188,10 +1225,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // _trackIntendedPosition).
   void _onHoverTrack() => _hover.track(_controller.value.position);
 
-  void _seekToStart() => setState(() => _hover.seekToStart());
+  void _seekToStart() {
+    setState(() => _hover.seekToStart());
+    _refreshPlayheadEditedPos();
+  }
 
-  void _seekToEnd() =>
-      setState(() => _hover.seekToEnd(_controller.value.duration));
+  void _seekToEnd() {
+    setState(() => _hover.seekToEnd(_controller.value.duration));
+    _refreshPlayheadEditedPos();
+  }
 
   /// `m:ss.hh` — used in the transport bar where the playhead's
   /// hundredths matter (frame-accurate scrubbing feedback).
@@ -1241,6 +1283,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         _applyEffectivePlaybackSpeed(
           _effectiveClipSpeedAt(_controller.value.position),
         );
+        // Trims / splits / merges change the source→edited mapping; the
+        // smooth-playhead listener won't refresh while paused, so push
+        // an explicit update here.
+        _refreshPlayheadEditedPos();
       },
     );
     return Focus(
@@ -1827,20 +1873,22 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           const SizedBox(height: 12),
 
           // Stacked timeline (time ruler + clip lane + zoom lane).
+          //
+          // `animation: _controller` (was `Listenable.merge([_controller,
+          // _smoothPlayhead])`) — _smoothPlayhead used to drive this
+          // builder per vsync, rebuilding the entire timeline subtree
+          // at 60 Hz. Position now flows into EditorTimeline through
+          // [_playheadEditedPos] via ValueListenableBuilder, so this
+          // builder only needs to fire on controller events
+          // (play/pause/duration/seek, ~4 Hz steady-state).
           AnimatedBuilder(
-            animation: Listenable.merge([_controller, _smoothPlayhead]),
+            animation: _controller,
             builder: (context, _) {
-              // The colored playhead and time labels stay parked at
-              // the hover anchor (which is frozen while hovering)
-              // even though the controller is being seeked to preview
-              // the hover frame.
-              final displayedPos = _hover.isHovering
-                  ? _hover.intendedPosition
-                  : (_smoothPlayhead?.position ?? _controller.value.position);
               // The timeline's x-axis is edited time: ruler width =
-              // total edited duration, playhead = source mapped to
-              // edited, scrub callbacks deliver edited and we convert
-              // back to source before seeking the controller.
+              // total edited duration, scrub callbacks deliver edited
+              // and we convert back to source before seeking the
+              // controller. The playhead position itself rides the
+              // [_playheadEditedPos] notifier, not this builder.
               final clipsForTimeline = ref
                   .watch(editorProjectControllerProvider)
                   .timeline
@@ -1848,12 +1896,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               final editedDuration = clipsForTimeline.isEmpty
                   ? _controller.value.duration
                   : totalEditedDuration(clipsForTimeline);
-              final editedPos = clipsForTimeline.isEmpty
-                  ? displayedPos
-                  : sourceToEdited(clipsForTimeline, displayedPos);
               return EditorTimeline(
                 duration: editedDuration,
-                position: editedPos,
+                position: _playheadEditedPos,
                 isPlaying: _controller.value.isPlaying,
                 timelineScale:
                     ref.watch(editorProjectControllerProvider).timelineScale,
@@ -1888,6 +1933,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     _selectedSliceIndex = null;
                     _selectedZoomIndex = null;
                   });
+                  _refreshPlayheadEditedPos();
                   _checkZoomMarkerClick(sourceNext);
                 },
                 onHoverSeek: (editedNext) {
@@ -1904,9 +1950,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       ? editedNext
                       : seekFromEditedTime(clips, editedNext);
                   setState(() => _hover.hoverSeek(sourceNext));
+                  _refreshPlayheadEditedPos();
                 },
                 onHoverEnd: () {
                   setState(() => _hover.hoverEnd());
+                  _refreshPlayheadEditedPos();
                 },
                 zoomRegions: _project.zoomRegions,
                 selectedZoomIndex: _selectedZoomIndex,

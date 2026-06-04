@@ -11,7 +11,8 @@ import 'package:video_player/video_player.dart';
 /// while playing, snapping back to the controller's actual position when
 /// paused, when a seek is detected (drift > threshold), or on each native
 /// position update while paused.
-class SmoothPlayheadController extends ChangeNotifier {
+class SmoothPlayheadController extends ChangeNotifier
+    implements ValueListenable<Duration> {
   SmoothPlayheadController({
     required this.videoController,
     required TickerProvider vsync,
@@ -67,6 +68,12 @@ class SmoothPlayheadController extends ChangeNotifier {
 
   /// The interpolated playhead position; safe to read every build.
   Duration get position => _smoothed;
+
+  /// `ValueListenable<Duration>` plumbing: lets callers thread this
+  /// controller directly into `ValueListenableBuilder` so only the
+  /// playhead subtree rebuilds per vsync. Aliases [position].
+  @override
+  Duration get value => _smoothed;
 
   /// Current base position used by the extrapolator. Exposed for unit
   /// tests asserting the rebase-on-speed-change contract.
