@@ -20,8 +20,6 @@ class SliceBar extends StatefulWidget {
     required this.onTrimStartChanged,
     required this.onTrimEndChanged,
     this.onTrimDragChanged,
-    this.glowLeft = false,
-    this.glowRight = false,
   });
 
   final ClipSlice slice;
@@ -32,13 +30,6 @@ class SliceBar extends StatefulWidget {
   final ValueChanged<int> onSelectionToggle;
   final ValueChanged<Duration> onTrimStartChanged;
   final ValueChanged<Duration> onTrimEndChanged;
-  // When true this slice is the right-neighbour of the currently
-  // selected slice and should paint an amber halo bleeding inward
-  // from its LEFT edge. Likewise glowRight for the left-neighbour.
-  // ClipLane sets these so the selected slice's selection halo
-  // visually spills into its immediate neighbours.
-  final bool glowLeft;
-  final bool glowRight;
   // Fires true/false at the start/end of either trim handle's drag.
   // Lets the parent ClipLane reorder this slice to the top of the
   // Stack and dim its siblings for the duration of the drag, so the
@@ -102,11 +93,6 @@ class _SliceBarState extends State<SliceBar>
   // technically non-overlapping). Below the floor we suppress them.
   static const double _kHandleMinBodyPx = 32.0;
   static const Duration _kHoverFade = Duration(milliseconds: 150);
-
-  // Neighbour halo: amber gradient bleeding from the seam inward to
-  // ~60px. Long enough to feel "natural", short enough not to swallow
-  // a narrow neighbour entirely.
-  static const double _kNeighborGlowPx = 60.0;
 
   // Slice label / inner caption transition timing — gentle fade+slide
   // when the slice width crosses the visibility thresholds during a
@@ -255,6 +241,7 @@ class _SliceBarState extends State<SliceBar>
     _trimStartAnchor = widget.slice.trimStart;
     _dragStartGlobalX = d.globalPosition.dx;
     _setDragging(true);
+    _ensureSelected();
   }
 
   void _onLeftDragUpdate(DragUpdateDetails d) {
@@ -273,6 +260,17 @@ class _SliceBarState extends State<SliceBar>
     _trimEndAnchor = widget.slice.trimEnd;
     _dragStartGlobalX = d.globalPosition.dx;
     _setDragging(true);
+    _ensureSelected();
+  }
+
+  // Fired at every trim-drag-start. Selects the slice when it isn't
+  // already — dragging a slice should treat that gesture as a
+  // selection commit so the inspector swaps to the slice editor
+  // without the user having to tap-first-then-drag.
+  void _ensureSelected() {
+    if (!widget.isSelected) {
+      widget.onSelectionToggle(widget.sliceIndex);
+    }
   }
 
   void _onRightDragUpdate(DragUpdateDetails d) {
@@ -363,8 +361,6 @@ class _SliceBarState extends State<SliceBar>
                     // trimmed side has a non-trivial band to divide.
                     if (bandLeft > _kDimBandMinPx) _buildLeftTrimDivider(t),
                     if (bandRight > _kDimBandMinPx) _buildRightTrimDivider(t),
-                    if (widget.glowLeft) _buildNeighborHaloLeft(),
-                    if (widget.glowRight) _buildNeighborHaloRight(),
                     if (_widthPx >= _kTicksMinBodyPx) _buildTicks(),
                     _buildLabel(),
                     if (widget.slice.isLeftTrimmed && t < 1.0)
@@ -648,65 +644,6 @@ class _SliceBarState extends State<SliceBar>
             blurRadius: 4,
           ),
         ],
-      ),
-    );
-  }
-
-  /// Amber gradient bleeding inward from the seam between this slice
-  /// and the currently selected slice. ~60px wide, clipped to the body's
-  /// rounded outer corners on that side.
-  Widget _buildNeighborHaloLeft() {
-    return Positioned(
-      key: const ValueKey('slice-bar-neighbor-glow-left'),
-      left: 0,
-      top: 0,
-      width: _kNeighborGlowPx,
-      height: laneHeight,
-      child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(8),
-              bottomLeft: Radius.circular(8),
-            ),
-            gradient: LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [
-                clipFillTop.withValues(alpha: 0.55),
-                clipFillTop.withValues(alpha: 0.0),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNeighborHaloRight() {
-    return Positioned(
-      key: const ValueKey('slice-bar-neighbor-glow-right'),
-      right: 0,
-      top: 0,
-      width: _kNeighborGlowPx,
-      height: laneHeight,
-      child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: const BorderRadius.only(
-              topRight: Radius.circular(8),
-              bottomRight: Radius.circular(8),
-            ),
-            gradient: LinearGradient(
-              begin: Alignment.centerRight,
-              end: Alignment.centerLeft,
-              colors: [
-                clipFillTop.withValues(alpha: 0.55),
-                clipFillTop.withValues(alpha: 0.0),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

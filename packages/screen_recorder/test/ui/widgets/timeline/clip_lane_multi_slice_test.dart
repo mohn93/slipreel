@@ -86,7 +86,16 @@ void main() {
       expect(selected, null);
     });
 
-    testWidgets('seam painted between adjacent slices', (tester) async {
+    testWidgets('adjacent slices both mount with body keys (no seam painter)',
+        (tester) async {
+      // The seam painter was removed once we confirmed it was hiding
+      // the bodies' rounded corner curves at the corner zones; the
+      // slices now butt directly against each other and the slight
+      // colour shift between them is enough separation. This test
+      // pins that both bodies are present — which previously
+      // implicitly held via "seam between adjacent slices" — so any
+      // future regression that drops a slice (e.g. a key collision in
+      // the Stack) trips here.
       await tester.pumpWidget(_harness(ClipLane(
         clips: [_slice(cs: 0, ce: 5), _slice(cs: 5, ce: 10)],
         selectedSliceIndex: null,
@@ -95,7 +104,7 @@ void main() {
         onSliceTrimStartChanged: (_, __) {},
         onSliceTrimEndChanged: (_, __) {},
       )));
-      expect(find.byKey(const ValueKey('clip-lane-seams')), findsOneWidget);
+      expect(find.byKey(const ValueKey('slice-bar-body')), findsNWidgets(2));
     });
   });
 }

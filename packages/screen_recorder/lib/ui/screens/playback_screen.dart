@@ -1877,7 +1877,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   final sourceNext = clips.isEmpty
                       ? editedNext
                       : seekFromEditedTime(clips, editedNext);
-                  setState(() => _hover.seek(sourceNext));
+                  setState(() {
+                    _hover.seek(sourceNext);
+                    // A committed seek (tap on the ruler or the empty
+                    // zoom lane area) is a "click anywhere in the
+                    // timeline" — deselect both slice and zoom so the
+                    // inspector returns to its default state. A tap
+                    // ON a slice is routed through onSliceSelected
+                    // directly and never gets here.
+                    _selectedSliceIndex = null;
+                    _selectedZoomIndex = null;
+                  });
                   _checkZoomMarkerClick(sourceNext);
                 },
                 onHoverSeek: (editedNext) {
