@@ -11,6 +11,8 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:screen_recorder/ui/widgets/timeline/clip_lane.dart';
+import 'package:screen_recorder/ui/widgets/timeline/cut_marker.dart';
+import 'package:screen_recorder/ui/widgets/timeline/cut_marker_strip.dart';
 import 'package:screen_recorder/ui/widgets/timeline/cut_overlay.dart';
 import 'package:screen_recorder/ui/widgets/timeline/playhead_painter.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_constants.dart';
@@ -79,6 +81,8 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.cursorXListenable,
     this.onSliceTrimStartChanged,
     this.onSliceTrimEndChanged,
+    this.onClearSeamTrims,
+    this.onMergeSeam,
     this.cutModeActive = false,
     this.onCutModeChanged,
     this.playheadFlashOn = false,
@@ -129,6 +133,15 @@ class EditorTimeline extends ConsumerStatefulWidget {
   /// `EditorProjectController.setSliceTrimStart/setSliceTrimEnd`.
   final void Function(int sliceIndex, Duration trimStart)? onSliceTrimStartChanged;
   final void Function(int sliceIndex, Duration trimEnd)? onSliceTrimEndChanged;
+
+  /// Fired by [CutMarkerStrip] when the user taps a seam that has
+  /// trimmed-away content — clears both trim handles so the full source
+  /// footage is restored at that seam.
+  final ValueChanged<int>? onClearSeamTrims;
+
+  /// Fired by [CutMarkerStrip] when the user taps a clean seam (no hidden
+  /// content) — merges the two adjacent slices into one.
+  final ValueChanged<int>? onMergeSeam;
 
   /// True while the scissors tool is engaged. When on, the timeline
   /// renders a [CutOverlay] above the clip lane and routes its
@@ -335,7 +348,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
       return;
     }
     const proximity = 40.0;
-    final laneTop = rulerHeight + laneSpacing;
+    final laneTop = rulerHeight + laneSpacing + CutMarker.kHitHeight;
     final laneBottom = laneTop + laneHeight;
     final y = localYInTimeline;
     if (y >= laneTop - proximity && y <= laneBottom + proximity) {
@@ -540,6 +553,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
         final zoomLaneHeight = laneHeight + zoomBadgeAreaHeight;
         final totalHeight = rulerHeight +
             laneSpacing +
+            CutMarker.kHitHeight +
             laneHeight +
             laneSpacing +
             zoomLaneHeight;
@@ -612,6 +626,18 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                           ),
                         ),
                         const SizedBox(height: laneSpacing),
+                        SizedBox(
+                          height: CutMarker.kHitHeight,
+                          child: CutMarkerStrip(
+                            clips: widget.clips,
+                            pixelsPerSecond: pps,
+                            onClearSeamTrims: (i) =>
+                                widget.onClearSeamTrims?.call(i),
+                            onMergeSeam: (i) =>
+                                widget.onMergeSeam?.call(i),
+                            dragging: _trimDragging,
+                          ),
+                        ),
                         SizedBox(
                           height: laneHeight,
                           child: Stack(
