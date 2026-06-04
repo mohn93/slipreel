@@ -138,6 +138,14 @@ class _SliceBarState extends State<SliceBar>
   // shimmer at the start/end of the bloom; filtering them out is
   // visually quieter than animating in from 0px.
   static const double _kDimBandMinPx = 1.0;
+  // Small white scissors icon centered in each dim band — same
+  // metaphor as the cut tool elsewhere in the canvas, signalling
+  // "this side is trimmed and will not play". Only shown when the
+  // visible band is wider than the icon plus a comfort margin;
+  // crosses the threshold smoothly via [AnimatedOpacity].
+  static const double _kDimScissorsSize = 14.0;
+  static const double _kDimScissorsMinBandPx = 24.0;
+  static const Duration _kDimScissorsFitFade = Duration(milliseconds: 150);
 
   // Subtle amber glow bar painted at the dim/bright divider — a thin
   // vertical line with a soft halo, vertically inset so it doesn't
@@ -340,6 +348,15 @@ class _SliceBarState extends State<SliceBar>
                       _buildLeftDimBand(bandLeft, t),
                     if (bandRight > _kDimBandMinPx)
                       _buildRightDimBand(bandRight, t),
+                    // Scissors glyph centered in each band. Always
+                    // mounted while the band is visible; the AnimatedOpacity
+                    // inside fades the icon out smoothly when the band
+                    // shrinks below the fit threshold mid-drag (no
+                    // hard-cut between visible and hidden).
+                    if (bandLeft > _kDimBandMinPx)
+                      _buildLeftDimScissors(bandLeft, t),
+                    if (bandRight > _kDimBandMinPx)
+                      _buildRightDimScissors(bandRight, t),
                     _buildBody(isSel: isSel),
                     // Glow lines at the dim/bright seam — gated on the
                     // same band visibility so they only appear when a
@@ -445,23 +462,12 @@ class _SliceBarState extends State<SliceBar>
       child: IgnorePointer(
         child: Opacity(
           opacity: t.clamp(0.0, 1.0),
-          child: Container(
-            decoration: BoxDecoration(
-              // Same 3-stop "lit from above" gradient as the bright
-              // body, just shifted down in lightness so the band reads
-              // as a ghost of the active region in the same colour
-              // family rather than a neutral grey.
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: _dimGradientColors(clipFill),
-                stops: const [0.0, 0.55, 1.0],
-              ),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(_kDimCornerRadius),
-                bottomLeft: Radius.circular(_kDimCornerRadius),
-              ),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(_kDimCornerRadius),
+              bottomLeft: Radius.circular(_kDimCornerRadius),
             ),
+            child: _dimBandSurface(slopeLeft: true),
           ),
         ),
       ),
@@ -478,21 +484,108 @@ class _SliceBarState extends State<SliceBar>
       child: IgnorePointer(
         child: Opacity(
           opacity: t.clamp(0.0, 1.0),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: _dimGradientColors(clipFill),
-                stops: const [0.0, 0.55, 1.0],
-              ),
-              borderRadius: const BorderRadius.only(
-                topRight: Radius.circular(_kDimCornerRadius),
-                bottomRight: Radius.circular(_kDimCornerRadius),
-              ),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(_kDimCornerRadius),
+              bottomRight: Radius.circular(_kDimCornerRadius),
+            ),
+            child: _dimBandSurface(slopeLeft: false),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Surface of a dim band: 3-stop lit-from-above gradient (same as
+  /// the body, dropped 42 lightness points in HSL) with a faint
+  /// diagonal hatch overlay reinforcing "this side is removed". The
+  /// hatch slope mirrors per side so the two bands lean toward each
+  /// other across the bright body, reading as a single trim shape
+  /// rather than two unrelated textures.
+  Widget _dimBandSurface({required bool slopeLeft}) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: _dimGradientColors(clipFill),
+              stops: const [0.0, 0.55, 1.0],
             ),
           ),
         ),
+        CustomPaint(
+          painter: _DimHatchPainter(slopeLeft: slopeLeft),
+        ),
+      ],
+    );
+  }
+
+  /// Scissors glyph centered in a dim band's VISIBLE region (the
+  /// portion that isn't tucked behind the bright body). Signals
+  /// "this side is trimmed and will not play". Same metaphor as the
+  /// cut tool elsewhere in the canvas. Opacity scales with the expand
+  /// animation `t` so it fades in with the bloom; gated above by
+  /// [_kDimScissorsMinBandPx] so narrow bands skip the icon rather
+  /// than squashing it.
+  Widget _buildLeftDimScissors(double bandLeft, double t) {
+    // Visible band spans x = [-bandLeft, 0]; centre is at -bandLeft/2.
+    // AnimatedOpacity drives the fade when the band crosses the fit
+    // threshold mid-drag — the icon doesn't hard-cut, it dissolves.
+    // The outer Opacity wires the icon's overall visibility to the
+    // bloom animation `t` so it appears with the bands themselves.
+    final fits = bandLeft > _kDimScissorsMinBandPx;
+    return Positioned(
+      key: const ValueKey('slice-bar-dim-scissors-left'),
+      left: -bandLeft,
+      top: 0,
+      bottom: 0,
+      width: bandLeft,
+      child: IgnorePointer(
+        child: Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: AnimatedOpacity(
+            duration: _kDimScissorsFitFade,
+            curve: Curves.easeOut,
+            opacity: fits ? 1.0 : 0.0,
+            child: _dimScissorsIcon(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRightDimScissors(double bandRight, double t) {
+    // Visible band spans x = [_widthPx, _widthPx + bandRight].
+    final fits = bandRight > _kDimScissorsMinBandPx;
+    return Positioned(
+      key: const ValueKey('slice-bar-dim-scissors-right'),
+      left: _widthPx,
+      top: 0,
+      bottom: 0,
+      width: bandRight,
+      child: IgnorePointer(
+        child: Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: AnimatedOpacity(
+            duration: _kDimScissorsFitFade,
+            curve: Curves.easeOut,
+            opacity: fits ? 1.0 : 0.0,
+            child: _dimScissorsIcon(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dimScissorsIcon() {
+    return const Center(
+      child: Icon(
+        Icons.content_cut,
+        size: _kDimScissorsSize,
+        color: Color(0xB3FFFFFF), // white @ 70% alpha
       ),
     );
   }
@@ -962,6 +1055,52 @@ class _SliceTickPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SliceTickPainter old) =>
       old.widthPx != widthPx || old.playbackSpeed != playbackSpeed;
+}
+
+/// Faint 45° diagonal hatch overlay painted across a dim trim band.
+/// Communicates "this content is removed" at any width — reinforces
+/// the scissors glyph when the band is wide enough to show it, and
+/// carries the meaning alone on narrow bands where the icon faded out.
+///
+/// [slopeLeft] mirrors the line direction so left and right bands
+/// lean toward each other across the bright body, reading as a single
+/// trim shape rather than two unrelated textures.
+class _DimHatchPainter extends CustomPainter {
+  const _DimHatchPainter({required this.slopeLeft});
+
+  final bool slopeLeft;
+
+  // Spacing + stroke chosen by eye: dense enough to read as texture,
+  // sparse enough that the underlying gradient still does the heavy
+  // lifting for the "dim" cue. Alpha tuned so the hatch is visible on
+  // hover but never competes with the scissors glyph.
+  static const double _step = 6.0;
+  static const double _stroke = 1.0;
+  static const Color _color = Color(0x1AFFFFFF); // white @ ~10% alpha
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final paint = Paint()
+      ..color = _color
+      ..strokeWidth = _stroke
+      ..strokeCap = StrokeCap.square;
+    // Each line is a 45° diagonal sweeping the full hatch height.
+    // We start at (offset, 0) and end at (offset ± height, height).
+    // Sliding `offset` from -height to +width sweeps the whole rect.
+    final h = size.height;
+    final dirX = slopeLeft ? -1.0 : 1.0;
+    for (var offset = -h; offset < size.width + h; offset += _step) {
+      canvas.drawLine(
+        Offset(offset, 0),
+        Offset(offset + dirX * h, h),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DimHatchPainter old) => old.slopeLeft != slopeLeft;
 }
 
 /// Centered "Clip / Ns · 1x" badge inside the slice body. [wide] toggles
