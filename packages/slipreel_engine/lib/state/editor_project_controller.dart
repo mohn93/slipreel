@@ -357,6 +357,41 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     );
   }
 
+  /// Second-click action for a cut marker: fuses the two slices
+  /// adjacent to the seam at [seamIndex] into a single slice covering
+  /// the full source range from `left.cutStart` to `right.cutEnd`. The
+  /// outer trim bounds (left.trimStart, right.trimEnd) are preserved
+  /// where possible — `ClipSlice`'s constructor clamps them into the
+  /// new cut span if a non-adjacent source boundary pulls them out of
+  /// range. Atomic — one state mutation, one undo step.
+  void mergeSeam(int seamIndex) {
+    final clips = state.timeline.clips;
+    if (seamIndex < 0 || seamIndex >= clips.length - 1) return;
+    final left = clips[seamIndex];
+    final right = clips[seamIndex + 1];
+    final merged = ClipSlice(
+      cutStart: left.cutStart,
+      cutEnd: right.cutEnd,
+      trimStart: left.trimStart,
+      trimEnd: right.trimEnd,
+      playbackSpeed: left.playbackSpeed,
+      fadeIn: left.fadeIn,
+      fadeOut: right.fadeOut,
+      micGainPercent: left.micGainPercent,
+      micMuted: left.micMuted,
+      systemGainPercent: left.systemGainPercent,
+      systemMuted: left.systemMuted,
+      hideCursor: left.hideCursor,
+      disableSmoothMouse: left.disableSmoothMouse,
+    );
+    final updated = List<ClipSlice>.from(clips)
+      ..[seamIndex] = merged
+      ..removeAt(seamIndex + 1);
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(clips: updated),
+    );
+  }
+
   void removeSlice(int sliceIndex) {
     final clips = state.timeline.clips;
     if (clips.length <= 1) return;
