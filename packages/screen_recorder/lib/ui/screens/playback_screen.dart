@@ -1957,6 +1957,31 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onSliceTrimEndChanged: (idx, v) => ref
                     .read(editorProjectControllerProvider.notifier)
                     .setSliceTrimEnd(idx, v),
+                onClearSeamTrims: (seamIndex) => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .clearSeamTrims(seamIndex),
+                onMergeSeam: (seamIndex) {
+                  // Adjust selection BEFORE merging, while indices still
+                  // reflect the pre-merge clip list:
+                  //  - selection == seamIndex + 1 -> moves to seamIndex
+                  //    (the merged slice keeps the left index).
+                  //  - selection > seamIndex + 1 -> shifts left by 1.
+                  //  - selection == seamIndex -> unchanged.
+                  //  - selection < seamIndex or null -> unchanged.
+                  setState(() {
+                    final sel = _selectedSliceIndex;
+                    if (sel != null) {
+                      if (sel == seamIndex + 1) {
+                        _selectedSliceIndex = seamIndex;
+                      } else if (sel > seamIndex + 1) {
+                        _selectedSliceIndex = sel - 1;
+                      }
+                    }
+                  });
+                  ref
+                      .read(editorProjectControllerProvider.notifier)
+                      .mergeSeam(seamIndex);
+                },
                 cutModeActive: _cutModeActive,
                 onCutModeChanged: (v) =>
                     setState(() => _cutModeActive = v),
