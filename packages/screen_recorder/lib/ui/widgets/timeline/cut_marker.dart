@@ -41,7 +41,12 @@ class CutMarker extends StatelessWidget {
 
   static const Color _fill = clipFill;
   static const Color _border = Color(0xFFFFFFFF);
-  static const Color _shadow = Color(0x66000000);
+  // Two-layer shadow: a wide soft halo + a tight contact shadow. Together
+  // they keep each pin visually separable when two pins overlap on short
+  // slices — the halo reads as "this pin sits above the other one" and
+  // the contact shadow keeps the lower pin from looking glued to the lane.
+  static const Color _shadowSoft = Color(0x55000000);
+  static const Color _shadowContact = Color(0x88000000);
   static const Duration _fadeDuration = Duration(milliseconds: 180);
 
   bool get _showLabel => hiddenSeconds > Duration.zero;
@@ -67,9 +72,15 @@ class CutMarker extends StatelessWidget {
         border: Border.all(color: _border, width: 1),
         boxShadow: const [
           BoxShadow(
-            color: _shadow,
-            blurRadius: 4,
-            offset: Offset(0, 2),
+            color: _shadowSoft,
+            blurRadius: 10,
+            spreadRadius: 1,
+            offset: Offset(0, 4),
+          ),
+          BoxShadow(
+            color: _shadowContact,
+            blurRadius: 3,
+            offset: Offset(0, 1),
           ),
         ],
       ),
@@ -156,6 +167,15 @@ class _PinTipPainter extends CustomPainter {
       ..lineTo(size.width, 0)
       ..lineTo(size.width / 2, size.height)
       ..close();
+    // Shadow under the tip, offset down a bit so it reads as continuous
+    // with the body's drop shadow. Drawn first, behind the fill.
+    final shadowPath = path.shift(const Offset(0, 2));
+    canvas.drawPath(
+      shadowPath,
+      Paint()
+        ..color = const Color(0x66000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
+    );
     canvas.drawPath(path, Paint()..color = fill);
     canvas.drawPath(
       path,
