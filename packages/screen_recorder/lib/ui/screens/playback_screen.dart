@@ -1252,13 +1252,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         }
 
         final isMac = Platform.isMacOS;
+        // The MODIFIER state (is Cmd / Ctrl currently held?), not the
+        // identity of the key that fired this event. Cmd+Z fires a
+        // `keyZ` event with Cmd held — the previous check compared the
+        // event's logicalKey to meta/control which is only ever true
+        // when the modifier itself is what was just pressed, so every
+        // Cmd-prefixed shortcut below was silently ignored.
         final cmdOrCtrl = isMac
-            ? event.logicalKey == LogicalKeyboardKey.meta ||
-                  event.logicalKey == LogicalKeyboardKey.metaLeft ||
-                  event.logicalKey == LogicalKeyboardKey.metaRight
-            : event.logicalKey == LogicalKeyboardKey.control ||
-                  event.logicalKey == LogicalKeyboardKey.controlLeft ||
-                  event.logicalKey == LogicalKeyboardKey.controlRight;
+            ? HardwareKeyboard.instance.isMetaPressed
+            : HardwareKeyboard.instance.isControlPressed;
 
         // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
         if (cmdOrCtrl &&
