@@ -25,6 +25,8 @@ void main() {
         onSliceSelected: (_) {},
         onSliceTrimStartChanged: (_, __) {},
         onSliceTrimEndChanged: (_, __) {},
+        onClearSeamTrims: (_) {},
+        onMergeSeam: (_) {},
       )));
       expect(find.byType(SliceBar), findsNWidgets(3));
     });
@@ -37,6 +39,8 @@ void main() {
         onSliceSelected: (_) {},
         onSliceTrimStartChanged: (_, __) {},
         onSliceTrimEndChanged: (_, __) {},
+        onClearSeamTrims: (_) {},
+        onMergeSeam: (_) {},
       )));
       final bars = tester.widgetList<SliceBar>(find.byType(SliceBar)).toList();
       expect(bars.length, 2);
@@ -52,6 +56,8 @@ void main() {
         onSliceSelected: (_) {},
         onSliceTrimStartChanged: (_, __) {},
         onSliceTrimEndChanged: (_, __) {},
+        onClearSeamTrims: (_) {},
+        onMergeSeam: (_) {},
       )));
       final bars = tester.widgetList<SliceBar>(find.byType(SliceBar)).toList();
       expect(bars[0].isSelected, false);
@@ -67,6 +73,8 @@ void main() {
         onSliceSelected: (i) => selected = i,
         onSliceTrimStartChanged: (_, __) {},
         onSliceTrimEndChanged: (_, __) {},
+        onClearSeamTrims: (_) {},
+        onMergeSeam: (_) {},
       )));
       await tester.tap(find.byKey(const ValueKey('slice-bar-body')).first);
       expect(selected, 0);
@@ -81,6 +89,8 @@ void main() {
         onSliceSelected: (i) => selected = i,
         onSliceTrimStartChanged: (_, __) {},
         onSliceTrimEndChanged: (_, __) {},
+        onClearSeamTrims: (_) {},
+        onMergeSeam: (_) {},
       )));
       await tester.tap(find.byKey(const ValueKey('slice-bar-body')));
       expect(selected, null);
@@ -103,6 +113,8 @@ void main() {
         onSliceSelected: (_) {},
         onSliceTrimStartChanged: (_, __) {},
         onSliceTrimEndChanged: (_, __) {},
+        onClearSeamTrims: (_) {},
+        onMergeSeam: (_) {},
       )));
       expect(find.byKey(const ValueKey('slice-bar-body')), findsNWidgets(2));
     });

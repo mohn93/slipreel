@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
+import 'package:slipreel_engine/state/seam_metrics.dart';
+import 'package:screen_recorder/ui/widgets/timeline/cut_marker.dart';
 import 'package:screen_recorder/ui/widgets/timeline/slice_bar.dart';
 
 /// Multi-slice clip lane. Lays slices end-to-end in EDITED time (so
@@ -20,6 +22,8 @@ class ClipLane extends StatefulWidget {
     required this.onSliceSelected,
     required this.onSliceTrimStartChanged,
     required this.onSliceTrimEndChanged,
+    required this.onClearSeamTrims,
+    required this.onMergeSeam,
     this.onTrimDragChanged,
   });
 
@@ -29,6 +33,8 @@ class ClipLane extends StatefulWidget {
   final ValueChanged<int?> onSliceSelected;
   final void Function(int sliceIndex, Duration trimStart) onSliceTrimStartChanged;
   final void Function(int sliceIndex, Duration trimEnd) onSliceTrimEndChanged;
+  final ValueChanged<int> onClearSeamTrims;
+  final ValueChanged<int> onMergeSeam;
   // Fires true the moment ANY slice's trim handle starts being
   // dragged, and false once it ends/cancels. Lets the parent fade
   // out distractions (playhead, hover indicator) while a trim drag
@@ -105,6 +111,12 @@ class _ClipLaneState extends State<ClipLane> {
         // ring renders above the next slice's body.
         for (final i in topIndices)
           _buildSlice(i, editedStarts[i], opacity: 1.0),
+        // Pass 3: cut markers per seam. Marker i sits above the seam
+        // between clips[i] and clips[i+1]. Hidden-seconds drives the
+        // compact-vs-labeled visual; tap routes through to
+        // clearSeamTrims (label > 0) or mergeSeam (== 0).
+        for (var i = 0; i < widget.clips.length - 1; i++)
+          _buildCutMarker(i, editedStarts),
       ],
     );
   }
@@ -144,6 +156,31 @@ class _ClipLaneState extends State<ClipLane> {
             }
           },
         ),
+      ),
+    );
+  }
+
+  Widget _buildCutMarker(int seamIndex, List<Duration> editedStarts) {
+    final seamX = editedStarts[seamIndex + 1].inMilliseconds /
+        1000.0 *
+        widget.pixelsPerSecond;
+    final hidden = hiddenSecondsAtSeam(widget.clips, seamIndex);
+    return Positioned(
+      key: ValueKey('clip-lane-cut-marker-$seamIndex'),
+      left: seamX - CutMarker.kHitWidth / 2,
+      top: CutMarker.kPositionedTop,
+      width: CutMarker.kHitWidth,
+      height: CutMarker.kHitHeight,
+      child: CutMarker(
+        hiddenSeconds: hidden,
+        dragFade: _draggingIndex != null,
+        onTap: () {
+          if (hidden > Duration.zero) {
+            widget.onClearSeamTrims(seamIndex);
+          } else {
+            widget.onMergeSeam(seamIndex);
+          }
+        },
       ),
     );
   }
