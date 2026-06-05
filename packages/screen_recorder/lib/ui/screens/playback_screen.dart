@@ -2008,6 +2008,22 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onClearSeamTrims: (seamIndex) => ref
                     .read(editorProjectControllerProvider.notifier)
                     .clearSeamTrims(seamIndex),
+                onClearStartTrim: () {
+                  final ctl = ref
+                      .read(editorProjectControllerProvider.notifier);
+                  final clips =
+                      ref.read(editorProjectControllerProvider).timeline.clips;
+                  if (clips.isEmpty) return;
+                  ctl.setSliceTrimStart(0, clips.first.cutStart);
+                },
+                onClearEndTrim: () {
+                  final ctl = ref
+                      .read(editorProjectControllerProvider.notifier);
+                  final clips =
+                      ref.read(editorProjectControllerProvider).timeline.clips;
+                  if (clips.isEmpty) return;
+                  ctl.setSliceTrimEnd(clips.length - 1, clips.last.cutEnd);
+                },
                 onMergeSeam: (seamIndex) {
                   // Adjust selection BEFORE merging, while indices still
                   // reflect the pre-merge clip list:

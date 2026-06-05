@@ -1,9 +1,25 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_constants.dart';
+
+/// Which handle of a slice is being dragged. Bubbled out of
+/// [SliceBar.onTrimDragChanged] so the parent timeline can react
+/// asymmetrically (e.g. expand only the LEFT edge pad when the very
+/// first slice's LEFT handle is the one being trimmed).
+enum TrimSide { left, right }
+
+/// Payload for [SliceBar.onTrimDragChanged]. A non-null instance
+/// signals "drag started"; null signals "drag ended/cancelled". The
+/// sliceIndex is the lane-level index passed into [SliceBar].
+class TrimDragInfo {
+  const TrimDragInfo({required this.sliceIndex, required this.side});
+  final int sliceIndex;
+  final TrimSide side;
+}
 
 /// One slice's rendering on the clip lane. Handles its own trim drags,
 /// selection toggle, chevron-notch visibility on trimmed sides, and
@@ -30,12 +46,14 @@ class SliceBar extends StatefulWidget {
   final ValueChanged<int> onSelectionToggle;
   final ValueChanged<Duration> onTrimStartChanged;
   final ValueChanged<Duration> onTrimEndChanged;
-  // Fires true/false at the start/end of either trim handle's drag.
-  // Lets the parent ClipLane reorder this slice to the top of the
-  // Stack and dim its siblings for the duration of the drag, so the
-  // expanded "show me the trim regions" bloom isn't occluded by
-  // adjacent slices.
-  final ValueChanged<bool>? onTrimDragChanged;
+  // Fires at the start (non-null payload) and end (null) of either
+  // trim handle's drag. Lets the parent ClipLane reorder this slice
+  // to the top of the Stack and dim its siblings for the duration of
+  // the drag, AND lets the timeline above react asymmetrically to
+  // edge-handle drags — only the first slice's LEFT handle (or the
+  // last slice's RIGHT handle) can push the dim band off the viewport
+  // edge, so only those drags need the timeline-edge pad to expand.
+  final ValueChanged<TrimDragInfo?>? onTrimDragChanged;
 
   @override
   State<SliceBar> createState() => _SliceBarState();
@@ -51,6 +69,13 @@ class _SliceBarState extends State<SliceBar>
   Duration? _trimStartAnchor;
   Duration? _trimEndAnchor;
   double? _dragStartGlobalX;
+  // Which handle is currently driving the bloom — gates which dim
+  // band renders. Set when a drag starts, intentionally NOT cleared
+  // on drag end: the bloom reverses to t=0 over [_expandDuration],
+  // and the band stays gated to the just-dragged side while it fades
+  // out. The next drag overwrites it. nullable so the very first
+  // build (before any drag has fired) renders neither band.
+  TrimSide? _draggingSide;
 
   // Continuous gentle pulse on the selected-slice's offset stroke
   // ring. Slow + narrow-alpha-range so the ring feels alive but not
@@ -132,6 +157,21 @@ class _SliceBarState extends State<SliceBar>
   static const double _kDimScissorsSize = 14.0;
   static const double _kDimScissorsMinBandPx = 24.0;
   static const Duration _kDimScissorsFitFade = Duration(milliseconds: 150);
+  // 2 px gap between adjacent slice bodies so seams read as discrete
+  // shapes instead of one continuous strip. Applied as a right-side
+  // shrink on the body only — trim handles and dim bands still
+  // measure from the true `_widthPx` seam position so gestures stay
+  // pixel-accurate. The last slice's invisible trailing gap is benign.
+  static const double _kInterSliceGap = 2.0;
+  // Cap on how far a dim band visually extends past the body. Heavy
+  // trims used to push the band's far edge off the viewport (and
+  // sometimes past the screen edge). The cap keeps the scissors +
+  // seconds label readable however far the user trims; the numeric
+  // label inside the band still reflects the full trim amount.
+  static const double _kDimMaxPx = 200.0;
+  // Band-width threshold above which the seconds label renders next
+  // to the scissors icon ("✂ 12.4s"). Below it, just the icon shows.
+  static const double _kDimLabelMinBandPx = 52.0;
 
   // Subtle amber glow bar painted at the dim/bright divider — a thin
   // vertical line with a soft halo, vertically inset so it doesn't
@@ -174,13 +214,55 @@ class _SliceBarState extends State<SliceBar>
     }
   }
 
-  void _setDragging(bool dragging) {
+  /// Scrolls the parent timeline so the cursor — the trim handle being
+  /// dragged — never sits flush against the viewport edge. The cursor
+  /// has [_kEdgeMargin] px of breathing room from each side; when the
+  /// user pushes past that, we jumpTo by exactly enough to put it
+  /// back. Net effect: the body + dim band slide with the mouse,
+  /// giving the dim space to keep growing instead of clipping off-
+  /// screen. Caller is the trim drag-update handler so the scroll
+  /// follows the gesture in real time.
+  static const double _kEdgeMargin = 64.0;
+  void _followCursorAtViewportEdge(double cursorGlobalX) {
+    final scrollable = Scrollable.maybeOf(context);
+    if (scrollable == null) return;
+    final position = scrollable.position;
+    if (position.maxScrollExtent <= position.minScrollExtent) return;
+    final scrollableBox =
+        scrollable.context.findRenderObject() as RenderBox?;
+    if (scrollableBox == null) return;
+    final viewportLeftGlobal =
+        scrollableBox.localToGlobal(Offset.zero).dx;
+    final viewportRightGlobal =
+        viewportLeftGlobal + scrollableBox.size.width;
+    double? deltaPx;
+    if (cursorGlobalX < viewportLeftGlobal + _kEdgeMargin) {
+      deltaPx = cursorGlobalX - (viewportLeftGlobal + _kEdgeMargin);
+    } else if (cursorGlobalX > viewportRightGlobal - _kEdgeMargin) {
+      deltaPx = cursorGlobalX - (viewportRightGlobal - _kEdgeMargin);
+    }
+    if (deltaPx == null) return;
+    final target = (position.pixels + deltaPx).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if ((target - position.pixels).abs() > 0.5) {
+      position.jumpTo(target);
+    }
+  }
+
+  void _setDragging(bool dragging, {TrimSide? side}) {
     if (dragging) {
+      assert(side != null, '_setDragging(true) requires side');
+      _draggingSide = side;
       _expand.forward();
+      widget.onTrimDragChanged?.call(
+        TrimDragInfo(sliceIndex: widget.sliceIndex, side: side!),
+      );
     } else {
       _expand.reverse();
+      widget.onTrimDragChanged?.call(null);
     }
-    widget.onTrimDragChanged?.call(dragging);
   }
 
   // True iff _expand is parked above 0 without animating — i.e., the
@@ -191,7 +273,7 @@ class _SliceBarState extends State<SliceBar>
   void _maybeRecoverFromStuckDrag() {
     if (!_expandIsStuck) return;
     _expand.value = 0;
-    widget.onTrimDragChanged?.call(false);
+    widget.onTrimDragChanged?.call(null);
   }
 
   void _ensureGlowRunning() {
@@ -240,7 +322,7 @@ class _SliceBarState extends State<SliceBar>
   void _onLeftDragStart(DragStartDetails d) {
     _trimStartAnchor = widget.slice.trimStart;
     _dragStartGlobalX = d.globalPosition.dx;
-    _setDragging(true);
+    _setDragging(true, side: TrimSide.left);
     _ensureSelected();
   }
 
@@ -251,15 +333,18 @@ class _SliceBarState extends State<SliceBar>
     final deltaSec = (d.globalPosition.dx - startX) * _sourceSecondsPerPixel;
     final next = anchor + Duration(microseconds: (deltaSec * 1e6).round());
     widget.onTrimStartChanged(next);
+    _followCursorAtViewportEdge(d.globalPosition.dx);
   }
 
   void _onLeftDragEnd(DragEndDetails _) => _setDragging(false);
   void _onLeftDragCancel() => _setDragging(false);
+  // _setDragging(false) doesn't need the `side` arg — only "is dragging"
+  // is meaningful at the end edge.
 
   void _onRightDragStart(DragStartDetails d) {
     _trimEndAnchor = widget.slice.trimEnd;
     _dragStartGlobalX = d.globalPosition.dx;
-    _setDragging(true);
+    _setDragging(true, side: TrimSide.right);
     _ensureSelected();
   }
 
@@ -280,6 +365,7 @@ class _SliceBarState extends State<SliceBar>
     final deltaSec = (d.globalPosition.dx - startX) * _sourceSecondsPerPixel;
     final next = anchor + Duration(microseconds: (deltaSec * 1e6).round());
     widget.onTrimEndChanged(next);
+    _followCursorAtViewportEdge(d.globalPosition.dx);
   }
 
   void _onRightDragEnd(DragEndDetails _) => _setDragging(false);
@@ -295,9 +381,28 @@ class _SliceBarState extends State<SliceBar>
       builder: (context, _) {
         final t = _expandT.value;
         final glowT = _glow?.value ?? 0.0;
-        final bandLeft = t * _leftFullGhostPx;
-        final bandRight = t * _rightFullGhostPx;
-        final totalWidth = bandLeft + _widthPx + bandRight;
+        // Bands are capped at [_kDimMaxPx] so the scissors + label
+        // inside them stay readable regardless of how much the user
+        // trims. The parent timeline expands its own edge pad to fit
+        // the capped band plus a small margin so the band never
+        // overflows the viewport edge. Only the side currently being
+        // dragged shows a band — _draggingSide lingers across the
+        // [_expand] reverse so the just-dragged side fades out
+        // smoothly.
+        final side = _draggingSide;
+        final bandLeft = side == TrimSide.left
+            ? math.min(t * _leftFullGhostPx, _kDimMaxPx)
+            : 0.0;
+        final bandRight = side == TrimSide.right
+            ? math.min(t * _rightFullGhostPx, _kDimMaxPx)
+            : 0.0;
+        // totalWidth tracks the SELECTION RING's footprint — body + dim
+        // bands. Shrink the body term by the same inter-slice gap so
+        // the ring hugs the visible body's right edge rather than
+        // floating into the gap.
+        final bodyWidthForRing =
+            math.max(0.0, _widthPx - _kInterSliceGap);
+        final totalWidth = bandLeft + bodyWidthForRing + bandRight;
         final isSel = widget.isSelected;
         // Slight uniform scale-up while selected so the lifted slice
         // looks bigger than its dimmed siblings. Anchored centre so
@@ -406,11 +511,12 @@ class _SliceBarState extends State<SliceBar>
   /// shaped by the body's own rounded edge rather than by the dim
   /// overlay's cut-out.
   Widget _buildBody({required bool isSel}) {
+    final bodyWidth = math.max(0.0, _widthPx - _kInterSliceGap);
     return Positioned(
       key: const ValueKey('slice-bar-body-pos'),
       left: 0,
       top: 0,
-      width: _widthPx,
+      width: bodyWidth,
       height: laneHeight,
       child: Container(
         key: const ValueKey('slice-bar-body'),
@@ -528,11 +634,12 @@ class _SliceBarState extends State<SliceBar>
   /// than squashing it.
   Widget _buildLeftDimScissors(double bandLeft, double t) {
     // Visible band spans x = [-bandLeft, 0]; centre is at -bandLeft/2.
-    // AnimatedOpacity drives the fade when the band crosses the fit
-    // threshold mid-drag — the icon doesn't hard-cut, it dissolves.
-    // The outer Opacity wires the icon's overall visibility to the
-    // bloom animation `t` so it appears with the bands themselves.
+    // The outer Opacity wires visibility to the bloom animation `t`
+    // so the content appears with the bands themselves.
+    // AnimatedSwitcher fades + slides the icon out (down) when the
+    // band crosses the fit threshold mid-drag.
     final fits = bandLeft > _kDimScissorsMinBandPx;
+    final trimmedSource = widget.slice.trimStart - widget.slice.cutStart;
     return Positioned(
       key: const ValueKey('slice-bar-dim-scissors-left'),
       left: -bandLeft,
@@ -542,11 +649,14 @@ class _SliceBarState extends State<SliceBar>
       child: IgnorePointer(
         child: Opacity(
           opacity: t.clamp(0.0, 1.0),
-          child: AnimatedOpacity(
-            duration: _kDimScissorsFitFade,
-            curve: Curves.easeOut,
-            opacity: fits ? 1.0 : 0.0,
-            child: _dimScissorsIcon(),
+          child: _fitFadeSwitcher(
+            fits: fits,
+            keyOn: 'dim-scissors-left-fits',
+            keyOff: 'dim-scissors-left-hidden',
+            content: _dimScissorsContent(
+              bandWidth: bandLeft,
+              trimmedSource: trimmedSource,
+            ),
           ),
         ),
       ),
@@ -556,6 +666,7 @@ class _SliceBarState extends State<SliceBar>
   Widget _buildRightDimScissors(double bandRight, double t) {
     // Visible band spans x = [_widthPx, _widthPx + bandRight].
     final fits = bandRight > _kDimScissorsMinBandPx;
+    final trimmedSource = widget.slice.cutEnd - widget.slice.trimEnd;
     return Positioned(
       key: const ValueKey('slice-bar-dim-scissors-right'),
       left: _widthPx,
@@ -565,25 +676,116 @@ class _SliceBarState extends State<SliceBar>
       child: IgnorePointer(
         child: Opacity(
           opacity: t.clamp(0.0, 1.0),
-          child: AnimatedOpacity(
-            duration: _kDimScissorsFitFade,
-            curve: Curves.easeOut,
-            opacity: fits ? 1.0 : 0.0,
-            child: _dimScissorsIcon(),
+          child: _fitFadeSwitcher(
+            fits: fits,
+            keyOn: 'dim-scissors-right-fits',
+            keyOff: 'dim-scissors-right-hidden',
+            content: _dimScissorsContent(
+              bandWidth: bandRight,
+              trimmedSource: trimmedSource,
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _dimScissorsIcon() {
-    return const Center(
-      child: Icon(
-        Icons.content_cut,
-        size: _kDimScissorsSize,
-        color: Color(0xB3FFFFFF), // white @ 70% alpha
+  /// Cross-fade + slide-up/down between the dim scissors content and
+  /// nothing, used when the band crosses the fit threshold mid-drag.
+  /// Both children carry distinct keys so AnimatedSwitcher detects
+  /// the change. The slide direction (down on appear, down on
+  /// disappear) makes the icon look like it drops in from below the
+  /// band's bottom edge.
+  Widget _fitFadeSwitcher({
+    required bool fits,
+    required String keyOn,
+    required String keyOff,
+    required Widget content,
+  }) {
+    return AnimatedSwitcher(
+      duration: _kDimScissorsFitFade,
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, anim) => FadeTransition(
+        opacity: anim,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.4),
+            end: Offset.zero,
+          ).animate(anim),
+          child: child,
+        ),
+      ),
+      child: fits
+          ? KeyedSubtree(key: ValueKey(keyOn), child: content)
+          : SizedBox.shrink(key: ValueKey(keyOff)),
+    );
+  }
+
+  /// Centered scissors icon, plus a "X.Xs" amount-trimmed label when
+  /// the band is wide enough to fit both. Below [_kDimLabelMinBandPx]
+  /// the label drops out so the icon doesn't get crushed against text.
+  /// Source-time seconds — what the user is removing from the original
+  /// footage, not edited-time width.
+  Widget _dimScissorsContent({
+    required double bandWidth,
+    required Duration trimmedSource,
+  }) {
+    final showLabel = bandWidth >= _kDimLabelMinBandPx &&
+        trimmedSource > Duration.zero;
+    // The label's slot collapses its width per frame (via
+    // Align(widthFactor:)) so the icon to its left shifts into its
+    // new centred position IN SYNC with the label's fade-and-slide
+    // out — instead of waiting for the fade to finish and then
+    // snapping over.
+    //
+    // FittedBox(scaleDown) catches the case where the band shrinks
+    // faster than the label-collapse animation can react during a
+    // fast drag — the row stays a hair wider than the band for a
+    // few frames, and without FittedBox the RenderFlex would log
+    // "overflowed on the right". scaleDown only kicks in when the
+    // intrinsic exceeds the band, so steady-state visuals are
+    // unaffected.
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.content_cut,
+              size: _kDimScissorsSize,
+              color: Color(0xB3FFFFFF), // white @ 70% alpha
+            ),
+            _DimCollapsingLabel(
+              show: showLabel,
+              duration: _kDimScissorsFitFade,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(width: 4),
+                  Text(
+                    _formatTrimmedSeconds(trimmedSource),
+                    style: const TextStyle(
+                      color: Color(0xB3FFFFFF),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      height: 1.0,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  String _formatTrimmedSeconds(Duration d) {
+    final s = d.inMilliseconds / 1000.0;
+    return '${s.toStringAsFixed(1)}s';
   }
 
   /// Thin amber glow line at the trim divider — the seam between the
@@ -742,7 +944,12 @@ class _SliceBarState extends State<SliceBar>
   Widget _buildRightChevron(double t) {
     return Positioned(
       key: const ValueKey('slice-bar-right-chevron'),
-      right: 0,
+      // Inset by [_kInterSliceGap] so the chevron sits at the body's
+      // RIGHT EDGE — not at the SliceBar's right edge, which is one
+      // gap further out and would float the chevron over the empty
+      // seam space between adjacent slices. Matches the left
+      // chevron's `left: 0` (body's left edge) on the other side.
+      right: _kInterSliceGap,
       top: 0,
       bottom: 0,
       child: Opacity(
@@ -1133,6 +1340,49 @@ class _SliceLabel extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Slot for the dim band's seconds label that tweens its WIDTH per
+/// frame as [show] toggles. The slot's effective width is the child's
+/// intrinsic width × value, so the icon next to it shifts smoothly
+/// instead of waiting for a fade transition to complete and then
+/// snapping into place. Also fades the child + slides it down so it
+/// doesn't just blink in/out.
+class _DimCollapsingLabel extends StatelessWidget {
+  const _DimCollapsingLabel({
+    required this.show,
+    required this.duration,
+    required this.child,
+  });
+
+  final bool show;
+  final Duration duration;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: show ? 1.0 : 0.0, end: show ? 1.0 : 0.0),
+      duration: duration,
+      curve: Curves.easeOut,
+      builder: (context, value, c) {
+        return ClipRect(
+          child: Align(
+            widthFactor: value,
+            alignment: AlignmentDirectional.centerStart,
+            child: Opacity(
+              opacity: value,
+              child: Transform.translate(
+                offset: Offset(0, (1 - value) * 4),
+                child: c,
+              ),
+            ),
+          ),
+        );
+      },
+      child: child,
     );
   }
 }

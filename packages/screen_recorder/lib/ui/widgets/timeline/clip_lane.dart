@@ -29,11 +29,13 @@ class ClipLane extends StatefulWidget {
   final ValueChanged<int?> onSliceSelected;
   final void Function(int sliceIndex, Duration trimStart) onSliceTrimStartChanged;
   final void Function(int sliceIndex, Duration trimEnd) onSliceTrimEndChanged;
-  // Fires true the moment ANY slice's trim handle starts being
-  // dragged, and false once it ends/cancels. Lets the parent fade
-  // out distractions (playhead, hover indicator) while a trim drag
-  // is in flight, then fade them back in.
-  final ValueChanged<bool>? onTrimDragChanged;
+  // Fires with a non-null payload the moment ANY slice's trim handle
+  // starts being dragged, and null once it ends/cancels. Lets the
+  // parent fade distractions (playhead, hover indicator) while a
+  // trim drag is in flight AND react asymmetrically to edge-handle
+  // drags (only first/left and last/right can push dim past the
+  // viewport edge).
+  final ValueChanged<TrimDragInfo?>? onTrimDragChanged;
 
   @override
   State<ClipLane> createState() => _ClipLaneState();
@@ -132,16 +134,20 @@ class _ClipLaneState extends State<ClipLane> {
           },
           onTrimStartChanged: (v) => widget.onSliceTrimStartChanged(i, v),
           onTrimEndChanged: (v) => widget.onSliceTrimEndChanged(i, v),
-          onTrimDragChanged: (active) {
-            final next = active ? i : (_draggingIndex == i ? null : _draggingIndex);
+          onTrimDragChanged: (info) {
+            final nowActive = info != null;
+            final next = nowActive
+                ? i
+                : (_draggingIndex == i ? null : _draggingIndex);
             if (next != _draggingIndex) {
-              final wasActive = _draggingIndex != null;
-              final nowActive = next != null;
               setState(() => _draggingIndex = next);
-              if (wasActive != nowActive) {
-                widget.onTrimDragChanged?.call(nowActive);
-              }
             }
+            // Always forward the latest edge — the parent timeline
+            // wants the precise (slice, side) tuple so it can decide
+            // whether to expand its edge pad. Forwarding null on end
+            // covers the case where the drag started on a different
+            // slice from the one being tracked here.
+            widget.onTrimDragChanged?.call(info);
           },
         ),
       ),

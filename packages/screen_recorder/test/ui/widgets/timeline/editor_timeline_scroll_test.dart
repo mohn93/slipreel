@@ -48,7 +48,13 @@ void main() {
     expect(scrollFinder, findsOneWidget);
 
     final scroll = tester.widget<SingleChildScrollView>(scrollFinder);
-    expect(scroll.physics, isA<NeverScrollableScrollPhysics>());
+    // Edge-pad now breathes 0→200 during trim drags, so the scroll
+    // physics is always Clamping (NeverScrollable would block the
+    // pad-driven jumpTo lockstep). The behavioral contract — drag at
+    // scale=1 doesn't shift content — is covered by the drag test
+    // below: maxScrollExtent is 0 at idle (pad=0, content=viewport),
+    // so Clamping has nowhere to scroll.
+    expect(scroll.physics, isA<ClampingScrollPhysics>());
 
     // The DIRECT child of the SingleChildScrollView is our content
     // SizedBox(width: contentWidth, ...). Targeting `.first` (instead of

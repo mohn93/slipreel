@@ -48,6 +48,10 @@ class CutMarker extends StatelessWidget {
   static const Color _shadowSoft = Color(0x55000000);
   static const Color _shadowContact = Color(0x88000000);
   static const Duration _fadeDuration = Duration(milliseconds: 180);
+  // Duration for the pill body's size / label transitions. Slightly
+  // longer than the drag-fade so the size change feels deliberate
+  // (the eye follows it) rather than blink-and-miss.
+  static const Duration _sizeDuration = Duration(milliseconds: 220);
 
   bool get _showLabel => hiddenSeconds > Duration.zero;
 
@@ -61,9 +65,51 @@ class CutMarker extends StatelessWidget {
     return 'Remove cut';
   }
 
+  /// Wraps [child] in a tween-driven slot whose width factor goes
+  /// 0↔1 in lockstep with [show]. Per frame the slot reports its
+  /// current width to the parent Row, so the icon next to it slides
+  /// into place IMMEDIATELY as the label shrinks — instead of
+  /// waiting for a fade transition to complete and then snapping.
+  /// Also fades + slides the child down as it collapses.
+  static Widget _collapsingLabel({
+    required bool show,
+    required Duration duration,
+    required Widget child,
+  }) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: show ? 1.0 : 0.0, end: show ? 1.0 : 0.0),
+      duration: duration,
+      curve: Curves.easeOut,
+      builder: (context, value, c) {
+        return ClipRect(
+          child: Align(
+            widthFactor: value,
+            alignment: AlignmentDirectional.centerStart,
+            child: Opacity(
+              opacity: value,
+              child: Transform.translate(
+                offset: Offset(0, (1 - value) * 4),
+                child: c,
+              ),
+            ),
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final body = Container(
+    // AnimatedContainer eases the body's padding (8 vs 4 px) when
+    // the label toggles on/off. AnimatedSize wraps the Row so its
+    // intrinsic width animates smoothly as the label appears /
+    // disappears — the icon stays put while the pill breathes
+    // around it. AnimatedSwitcher with fade+slide handles the label
+    // itself so it doesn't pop in or out.
+    final body = AnimatedContainer(
+      duration: _sizeDuration,
+      curve: Curves.easeOut,
       height: kBodyHeight,
       padding: EdgeInsets.symmetric(horizontal: _showLabel ? 8 : 4),
       decoration: BoxDecoration(
@@ -84,15 +130,22 @@ class CutMarker extends StatelessWidget {
           ),
         ],
       ),
+      // FittedBox(scaleDown) lets narrow hit slots gracefully scale
+      // the label-and-icon row down if needed. The label collapses
+      // its OWN width via Align(widthFactor:) tweened in real time
+      // — so the icon to its right tracks the squeeze frame-by-frame
+      // and slides into its centred resting position alongside the
+      // fade+slide-down of the label.
       child: FittedBox(
         fit: BoxFit.scaleDown,
         alignment: Alignment.center,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (_showLabel)
-              Padding(
-                key: const ValueKey('cut-marker-label'),
+            _collapsingLabel(
+              show: _showLabel,
+              duration: _sizeDuration,
+              child: Padding(
                 padding: const EdgeInsets.only(right: 4),
                 child: Text(
                   _formatLabel(),
@@ -104,6 +157,7 @@ class CutMarker extends StatelessWidget {
                   ),
                 ),
               ),
+            ),
             const Icon(
               Icons.content_cut,
               key: ValueKey('cut-marker-scissors'),
@@ -115,19 +169,9 @@ class CutMarker extends StatelessWidget {
       ),
     );
 
-    final pin = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        body,
-        SizedBox(
-          height: kTipHeight,
-          width: 8,
-          child: CustomPaint(
-            painter: const _PinTipPainter(fill: _fill, border: _border),
-          ),
-        ),
-      ],
-    );
+    // Tail (pointer) is intentionally removed for now — the body
+    // alone reads cleanly as a marker.
+    final pin = body;
 
     return AnimatedOpacity(
       key: const ValueKey('cut-marker-fade'),
@@ -136,12 +180,22 @@ class CutMarker extends StatelessWidget {
       opacity: dragFade ? 0.2 : 1.0,
       child: Tooltip(
         message: _tooltipText(),
+        // Tooltip sits ABOVE the pin — below would overlap the clip
+        // lane and get hidden under slice bars on dense seams.
+        preferBelow: false,
+        // After the tap the tooltip used to linger because pointer
+        // didn't "leave" (mouse stays parked on the marker that just
+        // mutated). Snap it shut on the action so it never overlaps
+        // the user's next move.
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           child: GestureDetector(
             key: const ValueKey('cut-marker-hit'),
             behavior: HitTestBehavior.opaque,
-            onTap: onTap,
+            onTap: () {
+              Tooltip.dismissAllToolTips();
+              onTap();
+            },
             child: SizedBox(
               width: kHitWidth,
               height: kHitHeight,
@@ -154,39 +208,3 @@ class CutMarker extends StatelessWidget {
   }
 }
 
-class _PinTipPainter extends CustomPainter {
-  const _PinTipPainter({required this.fill, required this.border});
-
-  final Color fill;
-  final Color border;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width, 0)
-      ..lineTo(size.width / 2, size.height)
-      ..close();
-    // Shadow under the tip, offset down a bit so it reads as continuous
-    // with the body's drop shadow. Drawn first, behind the fill.
-    final shadowPath = path.shift(const Offset(0, 2));
-    canvas.drawPath(
-      shadowPath,
-      Paint()
-        ..color = const Color(0x66000000)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
-    );
-    canvas.drawPath(path, Paint()..color = fill);
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = border
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _PinTipPainter old) =>
-      old.fill != fill || old.border != border;
-}

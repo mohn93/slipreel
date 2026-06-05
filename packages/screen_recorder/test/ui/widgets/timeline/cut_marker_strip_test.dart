@@ -30,6 +30,8 @@ void main() {
         pixelsPerSecond: 50,
         onClearSeamTrims: (_) {},
         onMergeSeam: (_) {},
+        onClearStartTrim: () {},
+        onClearEndTrim: () {},
       )));
       expect(find.byType(CutMarker), findsNWidgets(2));
     });
@@ -40,6 +42,8 @@ void main() {
         pixelsPerSecond: 50,
         onClearSeamTrims: (_) {},
         onMergeSeam: (_) {},
+        onClearStartTrim: () {},
+        onClearEndTrim: () {},
       )));
       expect(find.byType(CutMarker), findsNothing);
     });
@@ -54,6 +58,8 @@ void main() {
         pixelsPerSecond: 50,
         onClearSeamTrims: (_) {},
         onMergeSeam: (_) {},
+        onClearStartTrim: () {},
+        onClearEndTrim: () {},
       )));
       expect(find.text('1.0s'), findsOneWidget);
     });
@@ -68,6 +74,8 @@ void main() {
         pixelsPerSecond: 50,
         onClearSeamTrims: (_) {},
         onMergeSeam: (_) {},
+        onClearStartTrim: () {},
+        onClearEndTrim: () {},
       )));
       expect(find.text('1.0s'), findsNothing);
       expect(find.byType(CutMarker), findsOneWidget);
@@ -85,6 +93,8 @@ void main() {
         pixelsPerSecond: 50,
         onClearSeamTrims: (i) => clearedSeam = i,
         onMergeSeam: (i) => mergedSeam = i,
+        onClearStartTrim: () {},
+        onClearEndTrim: () {},
       )));
       await tester.tap(find.byType(CutMarker));
       expect(clearedSeam, 0);
@@ -103,10 +113,123 @@ void main() {
         pixelsPerSecond: 50,
         onClearSeamTrims: (i) => clearedSeam = i,
         onMergeSeam: (i) => mergedSeam = i,
+        onClearStartTrim: () {},
+        onClearEndTrim: () {},
       )));
       await tester.tap(find.byType(CutMarker));
       expect(clearedSeam, null);
       expect(mergedSeam, 0);
+    });
+
+    testWidgets(
+        'gap-only seam (post-deletion, no trim) routes first tap to merge',
+        (tester) async {
+      int? clearedSeam;
+      int? mergedSeam;
+      await tester.pumpWidget(_harness(CutMarkerStrip(
+        // cs:0-3 then cs:5-10 → 2s source gap, but BOTH slices have
+        // trim bounds equal to cut bounds (no actual trim). First click
+        // must merge directly — clearing the (already-zero) trim would
+        // be a no-op and strand the user.
+        clips: [
+          _slice(cs: 0, ce: 3),
+          _slice(cs: 5, ce: 10),
+        ],
+        pixelsPerSecond: 50,
+        onClearSeamTrims: (i) => clearedSeam = i,
+        onMergeSeam: (i) => mergedSeam = i,
+        onClearStartTrim: () {},
+        onClearEndTrim: () {},
+      )));
+      await tester.tap(find.byType(CutMarker));
+      expect(clearedSeam, null);
+      expect(mergedSeam, 0);
+    });
+
+    testWidgets(
+        'edge marker at left appears when first slice has start-trim',
+        (tester) async {
+      var startCleared = 0;
+      await tester.pumpWidget(_harness(CutMarkerStrip(
+        // clip 0 has 1s of start-trim (cutStart=0, trimStart=1).
+        clips: [
+          _slice(cs: 0, ce: 5, ts: 1),
+          _slice(cs: 5, ce: 10),
+        ],
+        pixelsPerSecond: 50,
+        onClearSeamTrims: (_) {},
+        onMergeSeam: (_) {},
+        onClearStartTrim: () => startCleared++,
+        onClearEndTrim: () {},
+      )));
+      // One seam marker + one start edge marker.
+      expect(find.byType(CutMarker), findsNWidgets(2));
+      await tester.tap(find.byKey(const ValueKey('cut-marker-strip-start')));
+      expect(startCleared, 1);
+    });
+
+    testWidgets(
+        'edge marker at right appears when last slice has end-trim',
+        (tester) async {
+      var endCleared = 0;
+      await tester.pumpWidget(_harness(CutMarkerStrip(
+        // last clip has 1s of end-trim (cutEnd=10, trimEnd=9).
+        clips: [
+          _slice(cs: 0, ce: 5),
+          _slice(cs: 5, ce: 10, te: 9),
+        ],
+        pixelsPerSecond: 50,
+        onClearSeamTrims: (_) {},
+        onMergeSeam: (_) {},
+        onClearStartTrim: () {},
+        onClearEndTrim: () => endCleared++,
+      )));
+      expect(find.byType(CutMarker), findsNWidgets(2));
+      await tester.tap(find.byKey(const ValueKey('cut-marker-strip-end')));
+      expect(endCleared, 1);
+    });
+
+    testWidgets(
+        'no edge markers when outer trims are zero',
+        (tester) async {
+      await tester.pumpWidget(_harness(CutMarkerStrip(
+        clips: [
+          _slice(cs: 0, ce: 5),
+          _slice(cs: 5, ce: 10),
+        ],
+        pixelsPerSecond: 50,
+        onClearSeamTrims: (_) {},
+        onMergeSeam: (_) {},
+        onClearStartTrim: () {},
+        onClearEndTrim: () {},
+      )));
+      // Only the single seam marker between the two clips — no edges.
+      expect(find.byType(CutMarker), findsOneWidget);
+      expect(find.byKey(const ValueKey('cut-marker-strip-start')),
+          findsNothing);
+      expect(find.byKey(const ValueKey('cut-marker-strip-end')),
+          findsNothing);
+    });
+
+    testWidgets(
+        'single-clip timeline can still show edge markers',
+        (tester) async {
+      var startCleared = 0;
+      var endCleared = 0;
+      await tester.pumpWidget(_harness(CutMarkerStrip(
+        // Only one clip, trimmed on both outer edges.
+        clips: [_slice(cs: 0, ce: 10, ts: 1, te: 9)],
+        pixelsPerSecond: 50,
+        onClearSeamTrims: (_) {},
+        onMergeSeam: (_) {},
+        onClearStartTrim: () => startCleared++,
+        onClearEndTrim: () => endCleared++,
+      )));
+      expect(find.byType(CutMarker), findsNWidgets(2));
+      await tester.tap(find.byKey(const ValueKey('cut-marker-strip-start')));
+      await tester.tap(find.byKey(const ValueKey('cut-marker-strip-end')));
+      expect(startCleared, 1);
+      expect(endCleared, 1);
     });
 
     testWidgets('dragging=true fades markers', (tester) async {
@@ -118,6 +241,8 @@ void main() {
         pixelsPerSecond: 50,
         onClearSeamTrims: (_) {},
         onMergeSeam: (_) {},
+        onClearStartTrim: () {},
+        onClearEndTrim: () {},
         dragging: true,
       )));
       await tester.pumpAndSettle();
