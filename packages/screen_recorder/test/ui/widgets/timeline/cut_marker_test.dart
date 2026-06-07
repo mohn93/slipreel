@@ -62,7 +62,7 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             width: 800,
-            height: 200,
+            height: 220,
             child: Stack(
               clipBehavior: Clip.none,
               children: [

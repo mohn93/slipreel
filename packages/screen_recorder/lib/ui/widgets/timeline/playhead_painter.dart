@@ -37,19 +37,37 @@ class PlayheadPainter extends CustomPainter {
     // the cursor is hovering the timeline and playback is paused.
     if (hoverProgress != null) {
       final hx = size.width * hoverProgress!;
+      final px = size.width * progress;
+
+      // How far the hover is from the playhead in pixels. Within
+      // [_kHoverProximityPx] the ring slides down so its top never
+      // collides with the playhead knob.
+      const ringRadius = _knobRadius - 0.5;
+      const _kHoverProximityPx = 24.0;
+      final dist = (hx - px).abs().clamp(0.0, _kHoverProximityPx);
+      final t = 1.0 - dist / _kHoverProximityPx; // 0 = far, 1 = same spot
+      // Smooth-step so the ring eases in and out, not linear.
+      final smooth = t * t * (3.0 - 2.0 * t);
+      // Target y when fully overlapping: ring top == knob bottom.
+      //   ring top = centerY - ringRadius == _knobRadius * 2
+      //   → centerY = _knobRadius * 2 + ringRadius
+      //   → shift = _knobRadius + ringRadius
+      const shiftTarget = _knobRadius + ringRadius;
+      final ringCenterY = _knobRadius + smooth * shiftTarget;
+      // Line starts just below the ring so it reads as attached to it.
+      final hoverLineTop = ringCenterY + ringRadius;
+
       final hoverPaint = Paint()
         ..color = const Color(0x99FFFFFF)
         ..strokeWidth = 1;
       canvas.drawLine(
-        Offset(hx, rulerHeight - 2),
+        Offset(hx, hoverLineTop),
         Offset(hx, size.height),
         hoverPaint,
       );
-      // Small ring at the top so the ghost reads as an indicator,
-      // not a stray line.
       canvas.drawCircle(
-        Offset(hx, rulerHeight - 6),
-        4,
+        Offset(hx, ringCenterY),
+        ringRadius,
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.2

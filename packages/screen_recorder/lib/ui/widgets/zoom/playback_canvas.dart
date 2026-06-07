@@ -1007,13 +1007,16 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       );
     }
 
-    ZoomRegion? active;
-    for (final region in widget.zoomRegions) {
-      if (region.isActive(t)) {
-        active = region;
-        break;
-      }
-    }
+    // Closed-interval lookup ([start, end]) — matches the visible camera
+    // (`ZoomTransformer.getTransform` → `activeAt`) and the export pipeline
+    // (`FrameCompositor._sceneSampleAt`). The previous half-open
+    // `region.isActive(t)` loop excluded `t == endTime`, so `current` at
+    // a region's end snapped to identity while `prev = sampleAt(t − exposure)`
+    // stayed inside the ramp — producing a HUGE artificial smear whenever
+    // the playhead parked at a region's endTime (most visibly at video end,
+    // where auto-zoom regions are clamped to videoDuration and the playhead
+    // pins there indefinitely).
+    final active = ZoomRegion.activeAt(t, widget.zoomRegions);
     if (active == null) {
       return SceneCameraSample(
         position: t,

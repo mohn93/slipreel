@@ -58,18 +58,25 @@ void main() {
       expect(exited, true);
     });
 
-    testWidgets('renders a dashed vertical indicator when cursor x is set', (tester) async {
-      final cursorX = ValueNotifier<double?>(null);
+    testWidgets('renders a dashed vertical indicator when the cursor hovers',
+        (tester) async {
       await tester.pumpWidget(_harness(CutOverlay(
         pixelsPerSecond: 50,
         totalEditedDuration: const Duration(seconds: 16),
-        cursorX: cursorX,
+        cursorX: ValueNotifier<double?>(null),
         onCommitCut: (_, {required bool overrideSnap}) {},
         onExitMode: () {},
       )));
-      cursorX.value = 200;
+      // Indicator is now driven by an internal Offset notifier (we
+      // need the Y too for the painted scissors), so it only appears
+      // after a real pointer hover — direct cursorX assignment is no
+      // longer enough.
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer(location: const Offset(200, 30));
       await tester.pump();
-      expect(find.byKey(const ValueKey('cut-overlay-dashed-indicator')), findsOneWidget);
+      expect(find.byKey(const ValueKey('cut-overlay-dashed-indicator')),
+          findsOneWidget);
     });
   });
 }

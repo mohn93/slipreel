@@ -1,9 +1,25 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/timeline/edited_time.dart';
 
 import 'package:screen_recorder/ui/widgets/timeline/timeline_constants.dart';
+
+/// Pointer kinds that count as a real "grab and drag" gesture on the
+/// zoom pill and its edge handles. Mouse, touch, stylus — i.e. things
+/// where the user explicitly initiated a press before moving. Trackpad
+/// pan is EXCLUDED on purpose: a two-finger scroll over the pill
+/// should propagate to the timeline's SingleChildScrollView and pan
+/// the view, not slide the pill around. (The drag recognizers used to
+/// accept trackpad pan-zoom by default, which is what made the pill
+/// "jump out from under" any attempt to scroll.)
+const Set<PointerDeviceKind> _kPillDragDevices = {
+  PointerDeviceKind.mouse,
+  PointerDeviceKind.touch,
+  PointerDeviceKind.stylus,
+  PointerDeviceKind.invertedStylus,
+};
 
 /// The bottom lane in the editor timeline: hosts zoom regions as draggable
 /// pills, a hover-driven "click to add" ghost in the empty area, and routes
@@ -26,6 +42,8 @@ class ZoomLane extends StatefulWidget {
     this.onZoomSelected,
     this.onZoomDeleted,
     this.onZoomAdded,
+    this.trimDragging = false,
+    this.animateLayout = true,
   });
 
   final Duration duration;
@@ -44,6 +62,18 @@ class ZoomLane extends StatefulWidget {
   final ValueChanged<int?>? onZoomSelected;
   final ValueChanged<int>? onZoomDeleted;
   final void Function(Duration start, Duration end)? onZoomAdded;
+
+  /// True while ANY slice's trim handle is being dragged anywhere in
+  /// the timeline. Drives the zoom-pill position tween's duration —
+  /// snap to 0 during a drag so the pill tracks the live (possibly
+  /// rapidly shifting) layout in real time, then animate the
+  /// post-drag settle with the rest of the timeline.
+  final bool trimDragging;
+
+  /// Whether zoom-pill position/width changes should ease to their new
+  /// geometry. Pinch zoom disables this so pills stay pinned to the
+  /// same source-time anchor instead of chasing a 220 ms tween.
+  final bool animateLayout;
 
   @override
   State<ZoomLane> createState() => _ZoomLaneState();
@@ -70,12 +100,13 @@ class _ZoomLaneState extends State<ZoomLane> {
   Duration _editedToSource(Duration t) =>
       widget.clips.isEmpty ? t : editedToSource(widget.clips, t);
 
-  ({Duration start, Duration end})? _ghostRange() {
-    final hoverX = _hoverX;
-    if (hoverX == null || widget.duration <= Duration.zero) return null;
+  ({Duration start, Duration end})? _ghostRange() => _ghostRangeForX(_hoverX);
+
+  ({Duration start, Duration end})? _ghostRangeForX(double? x) {
+    if (x == null || widget.duration <= Duration.zero) return null;
 
     final pps = widget.pixelsPerSecond;
-    final hoverTime = xToTime(hoverX.clamp(0.0, widget.contentWidth), pps);
+    final hoverTime = xToTime(x.clamp(0.0, widget.contentWidth), pps);
 
     // If the cursor is over an existing zoom, the ghost is hidden —
     // that pill catches its own clicks anyway.
@@ -144,7 +175,8 @@ class _ZoomLaneState extends State<ZoomLane> {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapDown: (d) {
-                final g = _ghostRange();
+                final x = d.localPosition.dx.clamp(0.0, widget.contentWidth);
+                final g = _ghostRangeForX(x);
                 if (g != null && widget.onZoomAdded != null) {
                   // _ghostRange returns edited bounds; the caller wants
                   // source-time so it can store the zoom in source time.
@@ -155,12 +187,23 @@ class _ZoomLaneState extends State<ZoomLane> {
                   return;
                 }
                 widget.onZoomSelected?.call(null);
-                final x = d.localPosition.dx.clamp(0.0, widget.contentWidth);
-                widget.onSeek(xToTime(x, widget.pixelsPerSecond));
               },
               child: const SizedBox.expand(),
             ),
           ),
+          // Empty-state hint — only when there are no zoom regions
+          // yet. Stays IgnorePointer so the underlying empty-area
+          // GestureDetector still routes clicks/drags to the
+          // add-zoom path. Reacts to lane hover via the shared
+          // [_hoverX] state — no second MouseRegion needed.
+          if (widget.zoomRegions.isEmpty)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: _EmptyZoomLaneHint(hovered: _hoverX != null),
+                ),
+              ),
+            ),
           if (ghost != null)
             _ZoomGhost(
               start: ghost.start,
@@ -182,6 +225,8 @@ class _ZoomLaneState extends State<ZoomLane> {
               onSelected: widget.onZoomSelected,
               onDeleted: widget.onZoomDeleted,
               onSeek: widget.onSeek,
+              trimDragging: widget.trimDragging,
+              animateLayout: widget.animateLayout,
             ),
         ],
       ),
@@ -241,11 +286,7 @@ class _ZoomGhost extends StatelessWidget {
           ),
           alignment: Alignment.center,
           child: showAddIcon
-              ? const Icon(
-                  Icons.add,
-                  size: 18,
-                  color: Colors.white,
-                )
+              ? const Icon(Icons.add, size: 18, color: Colors.white)
               : null,
         ),
       ),
@@ -270,6 +311,8 @@ class _ZoomPill extends StatefulWidget {
     this.onChanged,
     this.onSelected,
     this.onDeleted,
+    this.trimDragging = false,
+    this.animateLayout = true,
   });
 
   final int index;
@@ -284,6 +327,8 @@ class _ZoomPill extends StatefulWidget {
   final void Function(int, ZoomRegion)? onChanged;
   final ValueChanged<int?>? onSelected;
   final ValueChanged<int>? onDeleted;
+  final bool trimDragging;
+  final bool animateLayout;
 
   @override
   State<_ZoomPill> createState() => _ZoomPillState();
@@ -293,22 +338,18 @@ class _ZoomPillState extends State<_ZoomPill> {
   _ZoomDragMode _mode = _ZoomDragMode.none;
   late Duration _dragStartTime;
   late Duration _dragEndTime;
+  // Enter/exit at drag start. The proportional-scaling rule reads
+  // these (not widget.zoom.*) every update so the ramps stay locked
+  // to their drag-start fraction-of-pill-width across the whole
+  // gesture, even though onChanged pushes new enter/exit each tick.
+  late Duration _dragStartEnter;
+  late Duration _dragStartExit;
   // Cumulative dx since the drag began. We anchor the math to drag-start
   // values, not the (constantly-changing) widget.zoom, so we must track
   // the running delta ourselves — onHorizontalDragUpdate.delta.dx is
   // per-frame, not cumulative.
   double _dxAccum = 0;
   bool _hovered = false;
-
-  // Divider drags need their own anchor + accumulator. Reading
-  // widget.zoom.enterDuration each tick loses deltas when several drag
-  // updates fire inside a single frame (the parent's setState batches
-  // until the next rebuild) — same trap the pill body's accumulator
-  // already avoids.
-  Duration? _enterAnchor;
-  double _enterAccum = 0;
-  Duration? _exitAnchor;
-  double _exitAccum = 0;
 
   // Zooms are stored in SOURCE time but the timeline x-axis is edited
   // time (compressed by slice playback speed + collapsed across trimmed
@@ -324,17 +365,16 @@ class _ZoomPillState extends State<_ZoomPill> {
   double get _endX =>
       timeToX(_sourceToEdited(widget.zoom.endTime), widget.pixelsPerSecond);
 
-  Duration get _minStart =>
-      widget.neighbors.prevEnd ?? Duration.zero;
-  Duration get _maxEnd =>
-      widget.neighbors.nextStart ?? widget.duration;
-  Duration get _minDuration =>
-      const Duration(milliseconds: minZoomDurationMs);
+  Duration get _minStart => widget.neighbors.prevEnd ?? Duration.zero;
+  Duration get _maxEnd => widget.neighbors.nextStart ?? widget.duration;
+  Duration get _minDuration => const Duration(milliseconds: minZoomDurationMs);
 
   void _beginMode(_ZoomDragMode mode) {
     _dxAccum = 0;
     _dragStartTime = widget.zoom.startTime;
     _dragEndTime = widget.zoom.endTime;
+    _dragStartEnter = widget.zoom.enterDuration;
+    _dragStartExit = widget.zoom.exitDuration;
     _mode = mode;
     widget.onSelected?.call(widget.index);
   }
@@ -402,19 +442,40 @@ class _ZoomPillState extends State<_ZoomPill> {
     var nextEnd = _editedToSource(editedNextEnd);
 
     final newDuration = nextEnd - nextStart;
-    // Scale the enter / exit ramps if the new region is shorter than
-    // the sum of their stored durations — otherwise the dividers visually
-    // cross and the model stores impossible state. We scale proportionally
-    // so the enter:exit ratio is preserved.
-    Duration newEnter = widget.zoom.enterDuration;
-    Duration newExit = widget.zoom.exitDuration;
+    // Enter and exit ramps now scale PROPORTIONALLY with the pill's
+    // width. Stretching the pill stretches the ramps; shrinking it
+    // shrinks them. The fraction-of-duration each ramp occupies is
+    // locked at drag start — anchoring on `_dragStartEnter` /
+    // `_dragStartExit` (NOT widget.zoom.*, which mutates every tick)
+    // keeps the ratio stable across a continuous drag.
+    //
+    // Body-mode drags (translate, newDuration == dragStartDuration)
+    // collapse to ratio=1 and the ramps pass through unchanged.
+    final dragStartDuration = _dragEndTime - _dragStartTime;
+    Duration newEnter;
+    Duration newExit;
+    if (dragStartDuration > Duration.zero) {
+      final ratio =
+          newDuration.inMicroseconds / dragStartDuration.inMicroseconds;
+      newEnter = Duration(
+        microseconds: (_dragStartEnter.inMicroseconds * ratio).round(),
+      );
+      newExit = Duration(
+        microseconds: (_dragStartExit.inMicroseconds * ratio).round(),
+      );
+    } else {
+      newEnter = _dragStartEnter;
+      newExit = _dragStartExit;
+    }
+    // Defensive clamp: if enter + exit > newDuration after rounding,
+    // proportionally compress so the model never stores impossible
+    // ramps (it always was an invariant, even with scaling).
     final ramps = newEnter + newExit;
     if (ramps > newDuration && ramps > Duration.zero) {
-      final factor =
-          newDuration.inMicroseconds / ramps.inMicroseconds;
-      final scaledEnterUs =
-          (newEnter.inMicroseconds * factor).round();
-      newEnter = Duration(microseconds: scaledEnterUs);
+      final factor = newDuration.inMicroseconds / ramps.inMicroseconds;
+      newEnter = Duration(
+        microseconds: (newEnter.inMicroseconds * factor).round(),
+      );
       newExit = newDuration - newEnter;
     }
 
@@ -432,8 +493,10 @@ class _ZoomPillState extends State<_ZoomPill> {
   @override
   Widget build(BuildContext context) {
     final left = _startX;
-    final pillWidth =
-        (_endX - _startX).clamp(handleHitWidth * 2, double.infinity);
+    final pillWidth = (_endX - _startX).clamp(
+      handleHitWidth * 2,
+      double.infinity,
+    );
     final pillBodyHeight = laneHeight - zoomPillInset * 2;
     final fillTop = widget.isSelected ? zoomFillSelected : zoomFillTop;
     final fill = widget.isSelected ? zoomFillSelected : zoomFill;
@@ -449,7 +512,20 @@ class _ZoomPillState extends State<_ZoomPill> {
     // outer MouseRegion only tracks `_hovered` for show-on-hover affordances
     // (edge handles, ramp dividers, badge). Cursor is set per-zone by the
     // inner MouseRegions: grab on the body, resizeLeftRight on the edges.
-    return Positioned(
+    //
+    // Tween left/width over 220 ms easeOutCubic so the pill follows
+    // SliceBar's body width animation in lockstep during non-drag
+    // layout shifts (cut-marker tap restore, mergeSeam, setSliceSpeed).
+    // During a live trim drag or pinch zoom the underlying layout
+    // changes every frame; snap with Duration.zero so the pill stays
+    // glued to its source-time anchor in real time rather than
+    // dragging behind. Pill state (drag mode, hover) is unaffected —
+    // AnimatedPositioned only animates the outer Stack-slot geometry.
+    return AnimatedPositioned(
+      duration: widget.trimDragging || !widget.animateLayout
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
       left: left,
       top: zoomPillInset,
       width: pillWidth,
@@ -470,20 +546,37 @@ class _ZoomPillState extends State<_ZoomPill> {
                 cursor: _mode == _ZoomDragMode.body
                     ? SystemMouseCursors.grabbing
                     : SystemMouseCursors.grab,
-                child: GestureDetector(
+                // RawGestureDetector (not GestureDetector) so we can
+                // restrict the horizontal-drag recognizer to mouse /
+                // touch / stylus — trackpad pan flows through to the
+                // timeline scroll view instead of dragging the pill.
+                child: RawGestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTapDown: (d) {
-                    // Select-only; don't seek the playhead. The user
-                    // wants to inspect/edit the region's properties
-                    // from wherever they are in the clip, not jump to
-                    // its start.
-                    widget.onSelected?.call(widget.index);
+                  gestures: <Type, GestureRecognizerFactory>{
+                    TapGestureRecognizer:
+                        GestureRecognizerFactoryWithHandlers<
+                          TapGestureRecognizer
+                        >(() => TapGestureRecognizer(), (instance) {
+                          instance.onTapDown = (_) =>
+                              widget.onSelected?.call(widget.index);
+                        }),
+                    HorizontalDragGestureRecognizer:
+                        GestureRecognizerFactoryWithHandlers<
+                          HorizontalDragGestureRecognizer
+                        >(
+                          () => HorizontalDragGestureRecognizer(
+                            supportedDevices: _kPillDragDevices,
+                          ),
+                          (instance) {
+                            instance
+                              ..onStart = ((_) =>
+                                  _beginMode(_ZoomDragMode.body))
+                              ..onUpdate = ((d) => _update(d.delta.dx))
+                              ..onEnd = ((_) => _endDrag())
+                              ..onCancel = _endDrag;
+                          },
+                        ),
                   },
-                  onHorizontalDragStart: (_) =>
-                      _beginMode(_ZoomDragMode.body),
-                  onHorizontalDragUpdate: (d) => _update(d.delta.dx),
-                  onHorizontalDragEnd: (_) => _endDrag(),
-                  onHorizontalDragCancel: _endDrag,
                   child: CustomPaint(
                     painter: _ZoomPillPainter(
                       fillTop: fillTop,
@@ -492,7 +585,6 @@ class _ZoomPillState extends State<_ZoomPill> {
                       zoomLevel: widget.zoom.zoomLevel,
                       enterPx: enterPx,
                       exitPx: exitPx,
-                      showInternalGuides: _hovered,
                       isSelected: widget.isSelected,
                     ),
                   ),
@@ -530,39 +622,16 @@ class _ZoomPillState extends State<_ZoomPill> {
                 onTap: () => widget.onSelected?.call(widget.index),
               ),
             ),
-            if (_hovered && pillWidth > handleHitWidth * 4) ...[
-              _RampDivider(
-                centerX: enterPx,
-                top: zoomBadgeAreaHeight,
-                height: pillBodyHeight,
-                onDragStart: _beginEnterDrag,
-                onDelta: _onEnterDividerDrag,
-                onDragEnd: _endEnterDrag,
-                tooltip: 'Enter ${widget.zoom.enterDuration.inMilliseconds}ms',
-              ),
-              _RampDivider(
-                centerX: exitPx,
-                top: zoomBadgeAreaHeight,
-                height: pillBodyHeight,
-                onDragStart: _beginExitDrag,
-                onDelta: _onExitDividerDrag,
-                onDragEnd: _endExitDrag,
-                tooltip: 'Exit ${widget.zoom.exitDuration.inMilliseconds}ms',
-              ),
-            ],
-            if (_hovered)
-              Positioned(
-                left: pillWidth / 2 - 38,
-                top: 0,
-                child: _ZoomLevelBadge(
-                  level: widget.zoom.zoomLevel,
-                  onIncrement: () => _stepZoomLevel(0.1),
-                  onDecrement: () => _stepZoomLevel(-0.1),
-                ),
-              ),
+            // Delete affordance sits at the pill's top-right corner,
+            // poking out by 6 px so it stays clickable without
+            // overlapping the pill's body or the +/− label inside it.
+            // (The floating zoom-level +/− badge that used to live
+            // above the pill is gone — the level is now shown inline
+            // by [_ZoomPillPainter]; see the spec change in this
+            // commit.)
             if (_hovered && widget.onDeleted != null)
               Positioned(
-                top: zoomBadgeAreaHeight - 6,
+                top: -6,
                 right: -6,
                 child: _ZoomDeleteButton(
                   onPressed: () => widget.onDeleted!(widget.index),
@@ -573,81 +642,12 @@ class _ZoomPillState extends State<_ZoomPill> {
       ),
     );
   }
-
-  void _beginEnterDrag() {
-    _enterAnchor = widget.zoom.enterDuration;
-    _enterAccum = 0;
-  }
-
-  void _onEnterDividerDrag(double dx) {
-    if (widget.onChanged == null || _enterAnchor == null) return;
-    _enterAccum += dx;
-    final usPerPx =
-        widget.duration.inMicroseconds / widget.contentWidth;
-    final deltaUs = (_enterAccum * usPerPx).round();
-    final maxEnterUs = widget.zoom.duration.inMicroseconds -
-        widget.zoom.exitDuration.inMicroseconds;
-    final newEnterUs = (_enterAnchor!.inMicroseconds + deltaUs)
-        .clamp(0, maxEnterUs);
-    widget.onChanged!(
-      widget.index,
-      widget.zoom.copyWith(
-        enterDuration: Duration(microseconds: newEnterUs),
-      ),
-    );
-  }
-
-  void _endEnterDrag() {
-    _enterAnchor = null;
-    _enterAccum = 0;
-  }
-
-  void _beginExitDrag() {
-    _exitAnchor = widget.zoom.exitDuration;
-    _exitAccum = 0;
-  }
-
-  void _onExitDividerDrag(double dx) {
-    if (widget.onChanged == null || _exitAnchor == null) return;
-    _exitAccum += dx;
-    final usPerPx =
-        widget.duration.inMicroseconds / widget.contentWidth;
-    // Dragging the exit divider rightward shortens the exit ramp.
-    final deltaUs = (-_exitAccum * usPerPx).round();
-    final maxExitUs = widget.zoom.duration.inMicroseconds -
-        widget.zoom.enterDuration.inMicroseconds;
-    final newExitUs =
-        (_exitAnchor!.inMicroseconds + deltaUs).clamp(0, maxExitUs);
-    widget.onChanged!(
-      widget.index,
-      widget.zoom.copyWith(
-        exitDuration: Duration(microseconds: newExitUs),
-      ),
-    );
-  }
-
-  void _endExitDrag() {
-    _exitAnchor = null;
-    _exitAccum = 0;
-  }
-
-  void _stepZoomLevel(double delta) {
-    if (widget.onChanged == null) return;
-    final next = (widget.zoom.zoomLevel + delta).clamp(1.0, 5.0);
-    final rounded = (next * 10).round() / 10.0;
-    widget.onChanged!(
-      widget.index,
-      widget.zoom.copyWith(zoomLevel: rounded),
-    );
-  }
-
 }
 
 /// Resize handle anchored to one edge of a zoom pill (or any draggable
 /// timeline bar). The hit zone is fixed-width but the visible bar lives
 /// inside it via [Align] + [Padding] — invisible until the parent reports
 /// `showHandle: true`, then fades in dim and brightens on direct hover.
-/// Mirrors [_RampDivider]'s visual language for consistency.
 class _PillEdgeHandle extends StatefulWidget {
   const _PillEdgeHandle({
     required this.alignment,
@@ -661,6 +661,7 @@ class _PillEdgeHandle extends StatefulWidget {
   /// `centerLeft` for the left edge, `centerRight` for the right,
   /// `center` for a freestanding handle.
   final Alignment alignment;
+
   /// Whether the parent (e.g. the zoom pill) is currently hovered.
   /// When false the bar is fully transparent so it doesn't clutter
   /// the timeline; the MouseRegion still hit-tests so the cursor flips
@@ -687,27 +688,46 @@ class _PillEdgeHandleState extends State<_PillEdgeHandle> {
       cursor: SystemMouseCursors.resizeLeftRight,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
+      // RawGestureDetector so the resize drag ignores trackpad pan —
+      // a two-finger scroll over a handle pans the timeline rather
+      // than secretly resizing the pill.
+      child: RawGestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => widget.onTap(),
-        onHorizontalDragStart: (_) {
-          setState(() => _dragging = true);
-          widget.onDragStart();
-        },
-        onHorizontalDragUpdate: (d) => widget.onDragUpdate(d.delta.dx),
-        onHorizontalDragEnd: (_) {
-          setState(() => _dragging = false);
-          widget.onDragEnd();
-        },
-        onHorizontalDragCancel: () {
-          setState(() => _dragging = false);
-          widget.onDragEnd();
+        gestures: <Type, GestureRecognizerFactory>{
+          TapGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+                () => TapGestureRecognizer(),
+                (instance) {
+                  instance.onTapDown = (_) => widget.onTap();
+                },
+              ),
+          HorizontalDragGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                HorizontalDragGestureRecognizer
+              >(
+                () => HorizontalDragGestureRecognizer(
+                  supportedDevices: _kPillDragDevices,
+                ),
+                (instance) {
+                  instance
+                    ..onStart = ((_) {
+                      setState(() => _dragging = true);
+                      widget.onDragStart();
+                    })
+                    ..onUpdate = ((d) => widget.onDragUpdate(d.delta.dx))
+                    ..onEnd = ((_) {
+                      setState(() => _dragging = false);
+                      widget.onDragEnd();
+                    })
+                    ..onCancel = (() {
+                      setState(() => _dragging = false);
+                      widget.onDragEnd();
+                    });
+                },
+              ),
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 6,
-            vertical: 8,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           child: Align(
             alignment: widget.alignment,
             child: AnimatedContainer(
@@ -717,8 +737,8 @@ class _PillEdgeHandleState extends State<_PillEdgeHandle> {
                 color: !visible
                     ? Colors.transparent
                     : (emphasized
-                        ? Colors.white
-                        : Colors.white.withValues(alpha: 0.30)),
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.30)),
                 borderRadius: BorderRadius.circular(4),
                 boxShadow: emphasized && visible
                     ? const [
@@ -737,202 +757,6 @@ class _PillEdgeHandleState extends State<_PillEdgeHandle> {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Vertical drag-handle inside a zoom pill marking the boundary between
-/// ramp and hold (enter or exit). Subtle when not directly hovered;
-/// expands into a clear grip when the cursor is over it.
-class _RampDivider extends StatefulWidget {
-  const _RampDivider({
-    required this.centerX,
-    required this.top,
-    required this.height,
-    required this.onDragStart,
-    required this.onDelta,
-    required this.onDragEnd,
-    required this.tooltip,
-  });
-
-  final double centerX;
-  final double top;
-  final double height;
-  final VoidCallback onDragStart;
-  final ValueChanged<double> onDelta;
-  final VoidCallback onDragEnd;
-  final String tooltip;
-
-  @override
-  State<_RampDivider> createState() => _RampDividerState();
-}
-
-class _RampDividerState extends State<_RampDivider> {
-  bool _hover = false;
-  bool _dragging = false;
-  static const double _hitWidth = 14;
-  static const double _verticalPadding = 6;
-
-  @override
-  Widget build(BuildContext context) {
-    final emphasized = _hover || _dragging;
-
-    return Positioned(
-      left: widget.centerX - _hitWidth / 2,
-      top: widget.top,
-      width: _hitWidth,
-      height: widget.height,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeLeftRight,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: Tooltip(
-          message: widget.tooltip,
-          waitDuration: const Duration(milliseconds: 350),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragStart: (_) {
-              setState(() => _dragging = true);
-              widget.onDragStart();
-            },
-            onHorizontalDragUpdate: (d) => widget.onDelta(d.delta.dx),
-            onHorizontalDragEnd: (_) {
-              setState(() => _dragging = false);
-              widget.onDragEnd();
-            },
-            onHorizontalDragCancel: () {
-              setState(() => _dragging = false);
-              widget.onDragEnd();
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: _verticalPadding),
-              child: Center(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 120),
-                  width: emphasized ? 4 : 3,
-                  decoration: BoxDecoration(
-                    color: emphasized
-                        ? Colors.white
-                        : Colors.white.withValues(alpha: 0.30),
-                    borderRadius: BorderRadius.circular(4),
-                    boxShadow: emphasized
-                        ? const [
-                            BoxShadow(
-                              color: Color(0xCC000000),
-                              blurRadius: 6,
-                              offset: Offset(0, 1),
-                            ),
-                            BoxShadow(
-                              color: Color(0x806C63FF),
-                              blurRadius: 8,
-                              spreadRadius: 0.5,
-                            ),
-                          ]
-                        : null,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Floating zoom-level pill above the zoom region, with chevron buttons
-/// to step the zoom level by 0.1× when hovered. Each chevron has its
-/// own hover state so it visibly highlights when targetable.
-class _ZoomLevelBadge extends StatelessWidget {
-  const _ZoomLevelBadge({
-    required this.level,
-    required this.onIncrement,
-    required this.onDecrement,
-  });
-
-  final double level;
-  final VoidCallback onIncrement;
-  final VoidCallback onDecrement;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1F1F2E),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white24, width: 1),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x66000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ChevronButton(icon: Icons.remove, onPressed: onDecrement),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            // Animate the displayed value so a 1.6× → 1.7× change eases
-            // through 1.61, 1.62, … instead of snapping.
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(end: level),
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              builder: (context, value, _) => Text(
-                '${value.toStringAsFixed(1)}×',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontFeatures: [FontFeature.tabularFigures()],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-          _ChevronButton(icon: Icons.add, onPressed: onIncrement),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChevronButton extends StatefulWidget {
-  const _ChevronButton({required this.icon, required this.onPressed});
-
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  State<_ChevronButton> createState() => _ChevronButtonState();
-}
-
-class _ChevronButtonState extends State<_ChevronButton> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          width: 18,
-          height: 18,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: _hover ? Colors.white24 : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Icon(widget.icon, size: 13, color: Colors.white),
         ),
       ),
     );
@@ -982,7 +806,6 @@ class _ZoomPillPainter extends CustomPainter {
     required this.zoomLevel,
     required this.enterPx,
     required this.exitPx,
-    required this.showInternalGuides,
     required this.isSelected,
   });
 
@@ -992,7 +815,6 @@ class _ZoomPillPainter extends CustomPainter {
   final double zoomLevel;
   final double enterPx;
   final double exitPx;
-  final bool showInternalGuides;
   final bool isSelected;
 
   @override
@@ -1021,17 +843,18 @@ class _ZoomPillPainter extends CustomPainter {
           ..shader = LinearGradient(
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
-            colors: [
-              holdColor.withValues(alpha: 0.45),
-              holdColor,
-            ],
+            colors: [holdColor.withValues(alpha: 0.45), holdColor],
           ).createShader(enterRect),
       );
     }
     // Hold: the bright, saturated middle.
     if (clampedExit > clampedEnter) {
       final holdRect = Rect.fromLTWH(
-        clampedEnter, 0, clampedExit - clampedEnter, size.height);
+        clampedEnter,
+        0,
+        clampedExit - clampedEnter,
+        size.height,
+      );
       canvas.drawRect(
         holdRect,
         Paint()
@@ -1045,17 +868,18 @@ class _ZoomPillPainter extends CustomPainter {
     // Exit ramp: mirror of enter — solid to faded on the right edge.
     if (clampedExit < size.width) {
       final exitRect = Rect.fromLTWH(
-        clampedExit, 0, size.width - clampedExit, size.height);
+        clampedExit,
+        0,
+        size.width - clampedExit,
+        size.height,
+      );
       canvas.drawRect(
         exitRect,
         Paint()
           ..shader = LinearGradient(
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
-            colors: [
-              holdColor,
-              holdColor.withValues(alpha: 0.45),
-            ],
+            colors: [holdColor, holdColor.withValues(alpha: 0.45)],
           ).createShader(exitRect),
       );
     }
@@ -1071,21 +895,11 @@ class _ZoomPillPainter extends CustomPainter {
         ..color = stroke,
     );
 
-    // Faint enter/exit ramp dividers, only while the pill is hovered.
-    // The actual draggable handles are interactive Positioned widgets above
-    // this layer; this just hints at where they live.
-    if (showInternalGuides) {
-      final guidePaint = Paint()..color = const Color(0x55FFFFFF);
-      for (final cx in [enterPx, exitPx]) {
-        if (cx > 6 && cx < size.width - 6) {
-          canvas.drawLine(
-            Offset(cx, size.height * 0.16),
-            Offset(cx, size.height * 0.84),
-            guidePaint..strokeWidth = 1,
-          );
-        }
-      }
-    }
+    // (Ramp divider draggable handles + their faint hover guides
+    // were removed — enter/exit now scale proportionally with the
+    // pill width, edited via the debug-only side-pane sliders. The
+    // gradient banding inside the pill is enough to convey the ramp
+    // shape; explicit dividers added clutter without an action.)
 
     // Title + subtitle (only when the pill is wide enough to fit it).
     if (size.width < 60) return;
@@ -1103,7 +917,8 @@ class _ZoomPillPainter extends CustomPainter {
     )..layout(maxWidth: size.width - 16);
     final sub = TextPainter(
       text: TextSpan(
-        text: '${zoomLevel.toStringAsFixed(zoomLevel == zoomLevel.roundToDouble() ? 0 : 1)}×  ·  Auto',
+        text:
+            '${zoomLevel.toStringAsFixed(zoomLevel == zoomLevel.roundToDouble() ? 0 : 1)}×  ·  Auto',
         style: const TextStyle(
           color: Color(0xCCFFFFFF),
           fontSize: 10,
@@ -1115,8 +930,10 @@ class _ZoomPillPainter extends CustomPainter {
     final totalH = main.height + sub.height + 1;
     final cy = size.height / 2 - totalH / 2;
     main.paint(canvas, Offset(size.width / 2 - main.width / 2, cy));
-    sub.paint(canvas,
-        Offset(size.width / 2 - sub.width / 2, cy + main.height + 1));
+    sub.paint(
+      canvas,
+      Offset(size.width / 2 - sub.width / 2, cy + main.height + 1),
+    );
   }
 
   @override
@@ -1127,6 +944,80 @@ class _ZoomPillPainter extends CustomPainter {
       old.zoomLevel != zoomLevel ||
       old.enterPx != enterPx ||
       old.exitPx != exitPx ||
-      old.showInternalGuides != showInternalGuides ||
       old.isSelected != isSelected;
+}
+
+/// Empty-state hint shown in the zoom lane until the project has its
+/// first zoom region. Animates a soft tint + border lift when the
+/// cursor enters the lane so it feels alive rather than static
+/// chrome. `hovered` is driven by the parent's shared hover state so
+/// the hint never needs its own MouseRegion (which would have to
+/// fight the lane's existing add-on-click GestureDetector).
+class _EmptyZoomLaneHint extends StatelessWidget {
+  const _EmptyZoomLaneHint({required this.hovered});
+
+  final bool hovered;
+
+  static const Duration _anim = Duration(milliseconds: 220);
+  static const Curve _curve = Curves.easeOutCubic;
+
+  @override
+  Widget build(BuildContext context) {
+    final restColor = const Color(0xFFFFFFFF).withValues(alpha: 0.03);
+    final hoverColor = const Color(0xFF7C6BFF).withValues(alpha: 0.08);
+    final restBorder = const Color(0xFFFFFFFF).withValues(alpha: 0.08);
+    final hoverBorder = const Color(0xFF7C6BFF).withValues(alpha: 0.45);
+    final restText = const Color(0xFFAAAAB5).withValues(alpha: 0.65);
+    final hoverText = const Color(0xFFE6E1FF);
+
+    return AnimatedContainer(
+      duration: _anim,
+      curve: _curve,
+      padding: EdgeInsets.symmetric(
+        horizontal: hovered ? 14 : 12,
+        vertical: hovered ? 7 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: hovered ? hoverColor : restColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: hovered ? hoverBorder : restBorder, width: 1),
+        boxShadow: hovered
+            ? const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ]
+            : const [],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedScale(
+            scale: hovered ? 1.0 : 0.85,
+            duration: _anim,
+            curve: _curve,
+            child: Icon(
+              Icons.zoom_in_rounded,
+              size: 14,
+              color: hovered ? hoverText : restText,
+            ),
+          ),
+          const SizedBox(width: 6),
+          AnimatedDefaultTextStyle(
+            duration: _anim,
+            curve: _curve,
+            style: TextStyle(
+              color: hovered ? hoverText : restText,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.1,
+            ),
+            child: const Text('Click or drag to add zoom'),
+          ),
+        ],
+      ),
+    );
+  }
 }

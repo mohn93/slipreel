@@ -21,13 +21,15 @@ class ClipLane extends StatefulWidget {
     required this.onSliceTrimStartChanged,
     required this.onSliceTrimEndChanged,
     this.onTrimDragChanged,
+    this.animateLayout = true,
   });
 
   final List<ClipSlice> clips;
   final int? selectedSliceIndex;
   final double pixelsPerSecond;
   final ValueChanged<int?> onSliceSelected;
-  final void Function(int sliceIndex, Duration trimStart) onSliceTrimStartChanged;
+  final void Function(int sliceIndex, Duration trimStart)
+  onSliceTrimStartChanged;
   final void Function(int sliceIndex, Duration trimEnd) onSliceTrimEndChanged;
   // Fires with a non-null payload the moment ANY slice's trim handle
   // starts being dragged, and null once it ends/cancels. Lets the
@@ -36,6 +38,11 @@ class ClipLane extends StatefulWidget {
   // drags (only first/left and last/right can push dim past the
   // viewport edge).
   final ValueChanged<TrimDragInfo?>? onTrimDragChanged;
+
+  /// Whether slice position/width changes should ease to their new
+  /// geometry. Pinch zoom disables this so the content under the
+  /// cursor stays pinned instead of chasing a 220 ms tween.
+  final bool animateLayout;
 
   @override
   State<ClipLane> createState() => _ClipLaneState();
@@ -113,8 +120,25 @@ class _ClipLaneState extends State<ClipLane> {
 
   Widget _buildSlice(int i, Duration editedStart, {required double opacity}) {
     final left = editedStart.inMilliseconds / 1000.0 * widget.pixelsPerSecond;
-    return Positioned(
+    // Tween the slice's content-x in lockstep with SliceBar's body
+    // width tween (220 ms easeOutCubic, see SliceBar._maybeAnimateWidth)
+    // so adjacent slices stay flush during non-drag edit shifts —
+    // cut-marker tap restore, mergeSeam, setSliceSpeed. During pinch
+    // zoom this is disabled; otherwise the scroll anchor is correct
+    // but the body itself visually eases away from the cursor.
+    //
+    // During a live drag (_draggingIndex != null) we snap with
+    // Duration.zero so slice i+1's left tracks slice i's already-
+    // snapped body right edge in real time and the seam doesn't tear
+    // apart under the cursor.
+    final dragInFlight = _draggingIndex != null;
+    final animateGeometry = widget.animateLayout && !dragInFlight;
+    return AnimatedPositioned(
       key: ValueKey('clip-lane-slice-$i'),
+      duration: animateGeometry
+          ? const Duration(milliseconds: 220)
+          : Duration.zero,
+      curve: Curves.easeOutCubic,
       left: left,
       top: 0,
       bottom: 0,
@@ -128,9 +152,11 @@ class _ClipLaneState extends State<ClipLane> {
           isSelected: widget.selectedSliceIndex == i,
           pixelsPerSecond: widget.pixelsPerSecond,
           editedStart: editedStart,
+          animateLayout: widget.animateLayout,
           onSelectionToggle: (idx) {
             widget.onSliceSelected(
-                widget.selectedSliceIndex == idx ? null : idx);
+              widget.selectedSliceIndex == idx ? null : idx,
+            );
           },
           onTrimStartChanged: (v) => widget.onSliceTrimStartChanged(i, v),
           onTrimEndChanged: (v) => widget.onSliceTrimEndChanged(i, v),

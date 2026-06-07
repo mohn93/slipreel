@@ -24,7 +24,7 @@ Widget _host(Widget child, TipsController tips, {double width = 600}) =>
           useMaterial3: true,
         ),
         home: Scaffold(
-          body: SizedBox(width: width, height: 200, child: child),
+          body: SizedBox(width: width, height: 220, child: child),
         ),
       ),
     );

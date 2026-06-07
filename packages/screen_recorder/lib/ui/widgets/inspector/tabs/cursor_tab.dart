@@ -8,6 +8,7 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
+import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 
 /// Cursor tab — size, style, behavior toggles, click-effect section.
 ///
@@ -263,12 +264,17 @@ class _CursorTabState extends ConsumerState<CursorTab> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              Icon(
-                _advancedExpanded
+              SpringyIconButton(
+                icon: _advancedExpanded
                     ? Icons.keyboard_arrow_up
                     : Icons.keyboard_arrow_down,
-                color: Colors.white70,
-                size: 20,
+                tooltip: _advancedExpanded ? 'Collapse' : 'Expand',
+                isActive: false,
+                onTap: () =>
+                    setState(() => _advancedExpanded = !_advancedExpanded),
+                size: 28,
+                iconSize: 20,
+                tooltipPlacement: SpringyTooltipPlacement.bottom,
               ),
             ],
           ),
@@ -536,10 +542,11 @@ class _MotionPresetPicker extends StatelessWidget {
           runSpacing: 8,
           children: [
             for (final p in MotionTuningPreset.values)
-              _PresetChip(
+              InspectorChip(
                 label: p.label,
-                isSelected: active == p,
+                selected: active == p,
                 onTap: () => onPick(p),
+                dense: true,
               ),
           ],
         ),
@@ -548,43 +555,3 @@ class _MotionPresetPicker extends StatelessWidget {
   }
 }
 
-class _PresetChip extends StatelessWidget {
-  const _PresetChip({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? kInspectorAccent.withValues(alpha: 0.15)
-              : kInspectorPanel,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected
-                ? kInspectorAccent.withValues(alpha: 0.5)
-                : kInspectorBorder,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? kInspectorAccent : Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}

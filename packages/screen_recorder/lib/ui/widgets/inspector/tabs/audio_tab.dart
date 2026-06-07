@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/export/audio_streams.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/state/recording_audio_streams_provider.dart';
+import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
+import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 
 /// Audio tab — background-music presets and "add custom" button.
 ///
@@ -48,7 +50,12 @@ class _AudioTabState extends State<AudioTab> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (final p in _presets) _presetChip(p),
+            for (final p in _presets)
+              InspectorChip(
+                label: p,
+                selected: _selected == p,
+                onTap: () => setState(() => _selected = p),
+              ),
           ],
         ),
         const InspectorSectionDivider(),
@@ -57,39 +64,12 @@ class _AudioTabState extends State<AudioTab> {
     );
   }
 
-  Widget _presetChip(String label) {
-    final isSelected = _selected == label;
-    return InkWell(
-      onTap: () => setState(() => _selected = label),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: kInspectorPanel,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? kInspectorAccent : kInspectorBorder,
-          ),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _addButton() {
-    return InkWell(
+    return SpringHoverButton(
       onTap: () {
         // Stub — wire up file-picker + mixing pipeline later.
       },
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: 12,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -198,15 +178,16 @@ class _VolumeRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: Icon(
-                  muted ? Icons.volume_off : Icons.volume_up,
-                  size: 18,
-                  color: muted ? kInspectorMuted : Colors.white,
-                ),
-                onPressed: onMuteToggle,
+              SpringyIconButton(
+                icon: muted ? Icons.volume_off : Icons.volume_up,
+                tooltip: muted ? 'Unmute' : 'Mute',
+                isActive: false,
+                onTap: onMuteToggle,
+                size: 32,
+                iconSize: 18,
+                tooltipPlacement: SpringyTooltipPlacement.bottom,
               ),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(label,
                     style: const TextStyle(color: Colors.white, fontSize: 13)),

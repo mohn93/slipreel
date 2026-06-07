@@ -8,6 +8,7 @@ import 'package:screen_recorder/ui/screens/motion_blur_playground_screen.dart';
 import 'package:screen_recorder/ui/screens/playback_screen.dart';
 import 'package:screen_recorder/ui/screens/recents/recording_card.dart';
 import 'package:screen_recorder/ui/screens/recents/recording_thumbnail_service.dart';
+import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 import '../theme/app_palette_context.dart';
 
 /// Lists previously recorded videos so the user can re-open or remove
@@ -108,10 +109,17 @@ class _RecentsScreenState extends State<RecentsScreen> {
           child: Container(height: 1, color: context.palette.dividerSubtle),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
-            onPressed: _refresh,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: SpringyIconButton(
+              icon: Icons.refresh,
+              tooltip: 'Refresh',
+              isActive: false,
+              size: 36,
+              iconSize: 20,
+              tooltipPlacement: SpringyTooltipPlacement.bottom,
+              onTap: _refresh,
+            ),
           ),
         ],
       ),

@@ -144,7 +144,7 @@ void main() {
         ),
       ),
     ));
-    await tester.tap(find.byTooltip('Close slice editor'));
+    await tester.tap(find.byIcon(Icons.close));
     await tester.pumpAndSettle();
     expect(closed, isTrue);
     expect(

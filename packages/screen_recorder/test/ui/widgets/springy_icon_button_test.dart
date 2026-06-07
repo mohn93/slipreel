@@ -72,7 +72,7 @@ void main() {
     // accentMuted = Color(0x2E7C6CFF): r=0x7C, g=0x6C, b=0xFF, alpha ~0.18 (46/255).
     final accentMuted = AppPalette.midnight.accentMuted;
     final found = tester
-        .widgetList<AnimatedContainer>(find.byType(AnimatedContainer))
+        .widgetList<Container>(find.byType(Container))
         .any((c) {
       final d = c.decoration;
       if (d is! BoxDecoration || d.color == null) return false;
@@ -94,7 +94,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
     final found = tester
-        .widgetList<AnimatedContainer>(find.byType(AnimatedContainer))
+        .widgetList<Container>(find.byType(Container))
         .any((c) {
       final d = c.decoration;
       return d is BoxDecoration && d.color == Colors.transparent;
@@ -102,7 +102,7 @@ void main() {
     expect(found, isTrue);
   });
 
-  testWidgets('hover triggers a scale > 1.0', (tester) async {
+  testWidgets('hover reveals the spring pill', (tester) async {
     await tester.pumpWidget(_host(SpringyIconButton(
       icon: Icons.mouse,
       tooltip: 'Cursor',
@@ -119,10 +119,14 @@ void main() {
     await gesture.moveTo(tester.getCenter(find.byType(SpringyIconButton)));
     await tester.pumpAndSettle();
 
-    // The spring overshoots ~10% above target; assert strictly > 1.0.
-    final transform =
-        tester.widget<Transform>(find.byType(Transform).first).transform;
-    expect(transform.entry(0, 0), greaterThan(1.0));
+    // SpringHoverButton wraps the pill in an Opacity whose value rises
+    // 0→1 on hover. After pumpAndSettle the reveal spring has landed
+    // at 1.0 — find any Opacity widget at >0.5 to confirm the pill
+    // materialized.
+    final revealed = tester
+        .widgetList<Opacity>(find.byType(Opacity))
+        .any((o) => o.opacity > 0.5);
+    expect(revealed, isTrue);
   });
 
   testWidgets('disabled icon color is dimmer than enabled', (tester) async {
@@ -153,58 +157,14 @@ void main() {
     expect(taps, 0);
   });
 
-  testWidgets('disabled hover background is dimmer than enabled hover',
-      (tester) async {
-    // Pump an enabled button first, capture its hover bg alpha.
-    await tester.pumpWidget(_host(SpringyIconButton(
-      icon: Icons.mouse,
-      tooltip: 'Cursor',
-      isActive: false,
-      onTap: () {},
-    )));
-    await tester.pumpAndSettle();
-
-    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    addTearDown(gesture.removePointer);
-    await gesture.addPointer(location: Offset.zero);
-    await tester.pump();
-    await gesture.moveTo(tester.getCenter(find.byType(SpringyIconButton)));
-    await tester.pumpAndSettle();
-
-    double bgAlpha(WidgetTester t) {
-      for (final c
-          in t.widgetList<AnimatedContainer>(find.byType(AnimatedContainer))) {
-        final d = c.decoration;
-        if (d is BoxDecoration &&
-            d.color != null &&
-            d.color != Colors.transparent) {
-          return d.color!.a;
-        }
-      }
-      return 0.0;
-    }
-
-    final enabledHoverAlpha = bgAlpha(tester);
-    expect(enabledHoverAlpha, greaterThan(0.0));
-
-    // Now pump a disabled button and hover it.
-    await tester.pumpWidget(_host(SpringyIconButton(
-      icon: Icons.mouse,
-      tooltip: 'Cursor — coming soon',
-      isActive: false,
-      isEnabled: false,
-      onTap: () {},
-    )));
-    await tester.pumpAndSettle();
-    await gesture.moveTo(const Offset(2000, 2000));
-    await tester.pumpAndSettle();
-    await gesture.moveTo(tester.getCenter(find.byType(SpringyIconButton)));
-    await tester.pumpAndSettle();
-
-    final disabledHoverAlpha = bgAlpha(tester);
-    expect(disabledHoverAlpha, greaterThan(0.0));
-    expect(disabledHoverAlpha, lessThan(enabledHoverAlpha));
-  });
+  // NOTE: Removed `disabled hover background is dimmer than enabled
+  // hover` — that assertion was tied to the old AnimatedContainer-
+  // tinted background which the refactored button no longer uses.
+  // The hover affordance now comes from SpringHoverButton's pill,
+  // which renders the same regardless of [isEnabled]; the disabled
+  // state is communicated by the icon's reduced alpha (covered by
+  // `disabled icon color is dimmer than enabled`) and by the null
+  // tap callback (covered by `disabled tap does NOT fire onTap`).
 
   testWidgets('hover exit returns scale to 1.0', (tester) async {
     await tester.pumpWidget(_host(SpringyIconButton(

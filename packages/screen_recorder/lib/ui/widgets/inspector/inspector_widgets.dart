@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../bar/spring_hover_button.dart';
 import '../../theme/app_palette_context.dart';
+import '../springy_icon_button.dart';
 
 /// Shared visual building blocks for the inspector tabs. Kept in one
 /// place so every tab has the same chip / slider / toggle styling.
@@ -49,6 +51,97 @@ class InspectorSectionDivider extends StatelessWidget {
   }
 }
 
+/// Selectable pill chip — text + optional leading icon. Wraps
+/// [SpringHoverButton] so hover gives the magnetic lean / 3D tilt /
+/// press-shrink the rest of the editor uses.
+///
+/// Two visual variants:
+///   - default: 16×10 padding, 12px radius, border-flip selected
+///     style (matches wallpaper-category / audio-preset / slice-speed
+///     chips).
+///   - `dense: true`: 12×8 padding, 8px radius, 12pt text, *filled*
+///     selected style (tinted body + tinted border + accent text). Used
+///     by the cursor-tab preset strip where chips need to feel less
+///     heavy than the wallpaper-grade pills above.
+///
+/// Picked up by [InspectorChipGroup] and any per-tab Wrap of pills, so
+/// the four near-identical InkWell variants that used to live in
+/// audio/cursor/slice all consolidate here.
+class InspectorChip extends StatelessWidget {
+  const InspectorChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+    this.dense = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final double radius = dense ? 8 : 12;
+    final EdgeInsets padding = dense
+        ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+        : const EdgeInsets.symmetric(horizontal: 16, vertical: 10);
+    final double fontSize = dense ? 12 : 13;
+    final FontWeight fontWeight =
+        dense ? FontWeight.w600 : FontWeight.w500;
+
+    final Color bg;
+    final Color borderColor;
+    final Color textColor;
+    if (selected && dense) {
+      bg = kInspectorAccent.withValues(alpha: 0.15);
+      borderColor = kInspectorAccent.withValues(alpha: 0.5);
+      textColor = kInspectorAccent;
+    } else if (selected) {
+      bg = kInspectorPanel;
+      borderColor = kInspectorAccent;
+      textColor = Colors.white;
+    } else {
+      bg = kInspectorPanel;
+      borderColor = kInspectorBorder;
+      textColor = Colors.white;
+    }
+
+    return SpringHoverButton(
+      onTap: onTap,
+      borderRadius: radius,
+      child: Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: borderColor, width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, color: textColor, size: 16),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: textColor,
+                fontSize: fontSize,
+                fontWeight: fontWeight,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Horizontal scrolling row of pill chips. One can be selected.
 class InspectorChipGroup<T> extends StatelessWidget {
   const InspectorChipGroup({
@@ -73,48 +166,15 @@ class InspectorChipGroup<T> extends StatelessWidget {
       child: Row(
         children: [
           for (final item in items) ...[
-            _chip(item),
+            InspectorChip(
+              label: labelOf(item),
+              icon: iconOf?.call(item),
+              selected: item == selected,
+              onTap: () => onSelected(item),
+            ),
             const SizedBox(width: 8),
           ],
         ],
-      ),
-    );
-  }
-
-  Widget _chip(T item) {
-    final isSelected = item == selected;
-    final icon = iconOf?.call(item);
-    return InkWell(
-      onTap: () => onSelected(item),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: kInspectorPanel,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? kInspectorAccent : kInspectorBorder,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, color: Colors.white, size: 16),
-              const SizedBox(width: 6),
-            ],
-            Text(
-              labelOf(item),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -155,15 +215,19 @@ class InspectorOptionRow<T> extends StatelessWidget {
   Widget _tile(T item) {
     final isSelected = item == selected;
     final label = labelOf(item);
-    return InkWell(
-      onTap: () => onSelected(item),
-      borderRadius: BorderRadius.circular(12),
-      child: SizedBox(
-        width: tileSize,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
+    // SpringHoverButton wraps just the tile body (not the caption) so
+    // the springy lean/tilt feels like it belongs to the icon square,
+    // not to the unrelated text below it.
+    return SizedBox(
+      width: tileSize,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SpringHoverButton(
+            onTap: () => onSelected(item),
+            borderRadius: 12,
+            child: Container(
+              width: tileSize,
               height: tileSize,
               decoration: BoxDecoration(
                 color: kInspectorPanel,
@@ -177,19 +241,19 @@ class InspectorOptionRow<T> extends StatelessWidget {
               alignment: Alignment.center,
               child: iconOf(item),
             ),
-            if (label != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
+          ),
+          if (label != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -283,9 +347,9 @@ class _ResetButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
-    return InkWell(
+    return SpringHoverButton(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: 8,
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -409,13 +473,18 @@ class InspectorCollapsible extends StatefulWidget {
 class _InspectorCollapsibleState extends State<InspectorCollapsible> {
   late bool _expanded = widget.initiallyExpanded;
 
+  void _toggle() => setState(() => _expanded = !_expanded);
+
   @override
   Widget build(BuildContext context) {
+    // Outer InkWell keeps the whole row tappable; SpringyIconButton's
+    // own opaque GestureDetector absorbs taps that land on the chevron
+    // so toggling fires exactly once either way.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
+          onTap: _toggle,
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -431,22 +500,16 @@ class _InspectorCollapsibleState extends State<InspectorCollapsible> {
                     ),
                   ),
                 ),
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: kInspectorPanel,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: kInspectorBorder),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    _expanded
-                        ? Icons.keyboard_arrow_up
-                        : Icons.keyboard_arrow_down,
-                    color: Colors.white70,
-                    size: 18,
-                  ),
+                SpringyIconButton(
+                  icon: _expanded
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                  tooltip: _expanded ? 'Collapse' : 'Expand',
+                  isActive: false,
+                  onTap: _toggle,
+                  size: 28,
+                  iconSize: 18,
+                  tooltipPlacement: SpringyTooltipPlacement.bottom,
                 ),
               ],
             ),

@@ -5,6 +5,7 @@ import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
+import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_graph_painter.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
@@ -350,18 +351,23 @@ class _AnimationOptionTileState<T> extends State<_AnimationOptionTile<T>>
   @override
   Widget build(BuildContext context) {
     final isSelected = widget.value == widget.selected;
+    // Outer MouseRegion controls the demo-track repeat animation; the
+    // inner SpringHoverButton owns the springy lean + tilt + press. They
+    // coexist — each gets its own onEnter/onExit independently — and we
+    // only spring-wrap the body square, not the caption below it.
     return MouseRegion(
       onEnter: (_) => _onHover(true),
       onExit: (_) => _onHover(false),
-      child: InkWell(
-        onTap: () => widget.onSelected(widget.value),
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          width: widget.size,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
+      child: SizedBox(
+        width: widget.size,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SpringHoverButton(
+              onTap: () => widget.onSelected(widget.value),
+              borderRadius: 12,
+              child: Container(
+                width: widget.size,
                 height: widget.size,
                 decoration: BoxDecoration(
                   color: kInspectorPanel,
@@ -376,17 +382,17 @@ class _AnimationOptionTileState<T> extends State<_AnimationOptionTile<T>>
                     ? _DemoTrack(controller: _ctrl, curve: widget.previewCurve)
                     : Icon(widget.icon, color: Colors.white, size: 22),
               ),
-              const SizedBox(height: 6),
-              Text(
-                widget.label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              widget.label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -411,15 +417,16 @@ class _CustomTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: SizedBox(
-        width: size,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
+    return SizedBox(
+      width: size,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SpringHoverButton(
+            onTap: onTap,
+            borderRadius: 12,
+            child: Container(
+              width: size,
               height: size,
               decoration: BoxDecoration(
                 color: kInspectorPanel,
@@ -437,17 +444,17 @@ class _CustomTile extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 6),
-            const Text(
-              'Custom',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Custom',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

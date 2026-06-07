@@ -36,6 +36,7 @@ class SliceBar extends StatefulWidget {
     required this.onTrimStartChanged,
     required this.onTrimEndChanged,
     this.onTrimDragChanged,
+    this.animateLayout = true,
   });
 
   final ClipSlice slice;
@@ -54,13 +55,13 @@ class SliceBar extends StatefulWidget {
   // last slice's RIGHT handle) can push the dim band off the viewport
   // edge, so only those drags need the timeline-edge pad to expand.
   final ValueChanged<TrimDragInfo?>? onTrimDragChanged;
+  final bool animateLayout;
 
   @override
   State<SliceBar> createState() => _SliceBarState();
 }
 
-class _SliceBarState extends State<SliceBar>
-    with TickerProviderStateMixin {
+class _SliceBarState extends State<SliceBar> with TickerProviderStateMixin {
   // Anchors capture both the trim Duration AND the gesture's starting
   // global x at drag-start. Computing each update against the start
   // position (rather than accumulating frame-by-frame deltas) avoids
@@ -136,6 +137,22 @@ class _SliceBarState extends State<SliceBar>
   static const Duration _expandDuration = Duration(milliseconds: 220);
   static const double _liftScale = 0.04;
 
+  // Width-change animation. Without this the slice's body snaps to its
+  // new edited-length width whenever a non-drag source mutates the
+  // clip — restoring a trim (cut-marker tap), merging two slices, or
+  // a parent-driven scale/duration change. We lerp the RENDERED width
+  // from its current value to the new target over [_widthAnimDuration]
+  // so the user sees a smooth grow/shrink instead of a discontinuous
+  // jump.
+  //
+  // During a TRIM DRAG we bypass the animation and snap, because the
+  // body must track the cursor in real time — interpolation there
+  // would feel like the body is dragging behind the user.
+  late final AnimationController _widthCtl;
+  late Animation<double> _widthAnim;
+  late double _renderWidthPx;
+  static const Duration _widthAnimDuration = Duration(milliseconds: 220);
+
   // The dim trim bands render as SIBLINGS of the bright body, painted
   // BEHIND it in z-order and extended by [_kDimCornerRadius] past the
   // body's rounded edge so the body cleanly covers the dim's straight
@@ -196,6 +213,10 @@ class _SliceBarState extends State<SliceBar>
       value: 0.0,
     );
     _expandT = CurvedAnimation(parent: _expand, curve: Curves.easeOutCubic);
+    _renderWidthPx = _targetWidthPx;
+    _widthCtl = AnimationController(vsync: this, duration: _widthAnimDuration)
+      ..addListener(_onWidthTick);
+    _widthAnim = AlwaysStoppedAnimation<double>(_renderWidthPx);
     if (widget.isSelected) _ensureGlowRunning();
   }
 
@@ -212,6 +233,40 @@ class _SliceBarState extends State<SliceBar>
       // selection moves elsewhere we force a clean reset.
       _maybeRecoverFromStuckDrag();
     }
+    _maybeAnimateWidth();
+  }
+
+  /// Called whenever a fresh build reports a new [_targetWidthPx]. Two
+  /// modes:
+  ///   - trim drag / pinch zoom in flight: the body MUST track the
+  ///     cursor frame by frame, so we snap [_renderWidthPx] to target
+  ///     and kill any in-flight tween.
+  ///   - any other source of change (cut-marker tap restoring a trim,
+  ///     mergeSeam, parent scale, pps drift from a duration change):
+  ///     tween from the current rendered width to the new target so
+  ///     the slice grows / shrinks smoothly instead of jumping.
+  void _maybeAnimateWidth() {
+    final target = _targetWidthPx;
+    if ((target - _renderWidthPx).abs() < 0.5) return;
+    if (_dragInFlight || !widget.animateLayout) {
+      _widthCtl.stop();
+      _renderWidthPx = target;
+      return;
+    }
+    _widthAnim = Tween<double>(
+      begin: _renderWidthPx,
+      end: target,
+    ).animate(CurvedAnimation(parent: _widthCtl, curve: Curves.easeOutCubic));
+    _widthCtl
+      ..reset()
+      ..forward();
+  }
+
+  void _onWidthTick() {
+    if (!mounted) return;
+    final v = _widthAnim.value;
+    if ((v - _renderWidthPx).abs() < 0.1) return;
+    setState(() => _renderWidthPx = v);
   }
 
   /// Scrolls the parent timeline so the cursor — the trim handle being
@@ -228,13 +283,10 @@ class _SliceBarState extends State<SliceBar>
     if (scrollable == null) return;
     final position = scrollable.position;
     if (position.maxScrollExtent <= position.minScrollExtent) return;
-    final scrollableBox =
-        scrollable.context.findRenderObject() as RenderBox?;
+    final scrollableBox = scrollable.context.findRenderObject() as RenderBox?;
     if (scrollableBox == null) return;
-    final viewportLeftGlobal =
-        scrollableBox.localToGlobal(Offset.zero).dx;
-    final viewportRightGlobal =
-        viewportLeftGlobal + scrollableBox.size.width;
+    final viewportLeftGlobal = scrollableBox.localToGlobal(Offset.zero).dx;
+    final viewportRightGlobal = viewportLeftGlobal + scrollableBox.size.width;
     double? deltaPx;
     if (cursorGlobalX < viewportLeftGlobal + _kEdgeMargin) {
       deltaPx = cursorGlobalX - (viewportLeftGlobal + _kEdgeMargin);
@@ -251,15 +303,23 @@ class _SliceBarState extends State<SliceBar>
     }
   }
 
+  // Distinct from [_draggingSide], which lingers across the
+  // [_expand] reverse so the just-dragged band fades smoothly. This
+  // flag is true ONLY while the gesture is in flight, so
+  // [_maybeAnimateWidth] can snap during a drag and animate
+  // afterwards.
+  bool _dragInFlight = false;
   void _setDragging(bool dragging, {TrimSide? side}) {
     if (dragging) {
       assert(side != null, '_setDragging(true) requires side');
+      _dragInFlight = true;
       _draggingSide = side;
       _expand.forward();
       widget.onTrimDragChanged?.call(
         TrimDragInfo(sliceIndex: widget.sliceIndex, side: side!),
       );
     } else {
+      _dragInFlight = false;
       _expand.reverse();
       widget.onTrimDragChanged?.call(null);
     }
@@ -273,6 +333,7 @@ class _SliceBarState extends State<SliceBar>
   void _maybeRecoverFromStuckDrag() {
     if (!_expandIsStuck) return;
     _expand.value = 0;
+    _dragInFlight = false;
     widget.onTrimDragChanged?.call(null);
   }
 
@@ -287,6 +348,7 @@ class _SliceBarState extends State<SliceBar>
   void dispose() {
     _glow?.dispose();
     _expand.dispose();
+    _widthCtl.dispose();
     super.dispose();
   }
 
@@ -300,8 +362,9 @@ class _SliceBarState extends State<SliceBar>
       _ghostPxFor(widget.slice.cutEnd - widget.slice.trimEnd);
   double _ghostPxFor(Duration sourceDelta) {
     if (sourceDelta <= Duration.zero) return 0;
-    final speed =
-        widget.slice.playbackSpeed > 0 ? widget.slice.playbackSpeed : 1.0;
+    final speed = widget.slice.playbackSpeed > 0
+        ? widget.slice.playbackSpeed
+        : 1.0;
     return sourceDelta.inMilliseconds / 1000.0 / speed * widget.pixelsPerSecond;
   }
 
@@ -310,12 +373,21 @@ class _SliceBarState extends State<SliceBar>
   // trim bounds live in SOURCE time, so converting a pixel delta back to
   // a trim delta multiplies by playbackSpeed (1 edited-second of drag =
   // `speed` source-seconds of trim movement at the slice's speed).
-  double get _widthPx =>
-      widget.slice.editedLength.inMilliseconds / 1000.0 * widget.pixelsPerSecond;
+  //
+  // Target = the literal current edited length × pps. Render = the
+  // animated value used by all visual children; they lerp toward target
+  // over [_widthAnimDuration] except during a trim drag (see
+  // [_maybeAnimateWidth]).
+  double get _targetWidthPx =>
+      widget.slice.editedLength.inMilliseconds /
+      1000.0 *
+      widget.pixelsPerSecond;
+  double get _widthPx => _renderWidthPx;
   double get _sourceSecondsPerPixel {
     if (widget.pixelsPerSecond <= 0) return 0;
-    final speed =
-        widget.slice.playbackSpeed > 0 ? widget.slice.playbackSpeed : 1.0;
+    final speed = widget.slice.playbackSpeed > 0
+        ? widget.slice.playbackSpeed
+        : 1.0;
     return speed / widget.pixelsPerSecond;
   }
 
@@ -400,8 +472,7 @@ class _SliceBarState extends State<SliceBar>
         // bands. Shrink the body term by the same inter-slice gap so
         // the ring hugs the visible body's right edge rather than
         // floating into the gap.
-        final bodyWidthForRing =
-            math.max(0.0, _widthPx - _kInterSliceGap);
+        final bodyWidthForRing = math.max(0.0, _widthPx - _kInterSliceGap);
         final totalWidth = bandLeft + bodyWidthForRing + bandRight;
         final isSel = widget.isSelected;
         // Slight uniform scale-up while selected so the lifted slice
@@ -618,9 +689,7 @@ class _SliceBarState extends State<SliceBar>
             ),
           ),
         ),
-        CustomPaint(
-          painter: _DimHatchPainter(slopeLeft: slopeLeft),
-        ),
+        CustomPaint(painter: _DimHatchPainter(slopeLeft: slopeLeft)),
       ],
     );
   }
@@ -731,8 +800,8 @@ class _SliceBarState extends State<SliceBar>
     required double bandWidth,
     required Duration trimmedSource,
   }) {
-    final showLabel = bandWidth >= _kDimLabelMinBandPx &&
-        trimmedSource > Duration.zero;
+    final showLabel =
+        bandWidth >= _kDimLabelMinBandPx && trimmedSource > Duration.zero;
     // The label's slot collapses its width per frame (via
     // Align(widthFactor:)) so the icon to its left shifts into its
     // new centred position IN SYNC with the label's fade-and-slide
@@ -801,10 +870,7 @@ class _SliceBarState extends State<SliceBar>
       bottom: _kTrimDividerInset,
       width: _kTrimDividerWidth,
       child: IgnorePointer(
-        child: Opacity(
-          opacity: t.clamp(0.0, 1.0),
-          child: _trimDividerFill(),
-        ),
+        child: Opacity(opacity: t.clamp(0.0, 1.0), child: _trimDividerFill()),
       ),
     );
   }
@@ -817,10 +883,7 @@ class _SliceBarState extends State<SliceBar>
       bottom: _kTrimDividerInset,
       width: _kTrimDividerWidth,
       child: IgnorePointer(
-        child: Opacity(
-          opacity: t.clamp(0.0, 1.0),
-          child: _trimDividerFill(),
-        ),
+        child: Opacity(opacity: t.clamp(0.0, 1.0), child: _trimDividerFill()),
       ),
     );
   }
@@ -841,19 +904,18 @@ class _SliceBarState extends State<SliceBar>
         ),
         borderRadius: BorderRadius.circular(_kTrimDividerWidth / 2),
         boxShadow: [
-          BoxShadow(
-            color: clipFillTop.withValues(alpha: 0.35),
-            blurRadius: 4,
-          ),
+          BoxShadow(color: clipFillTop.withValues(alpha: 0.35), blurRadius: 4),
         ],
       ),
     );
   }
 
-  /// Tick rhythm scales inversely with playbackSpeed: faster slice →
-  /// denser ticks, slower slice → sparser. Gated above by the
-  /// [_kTicksMinBodyPx] threshold.
+  /// Ticks are ruler-aligned (same minor-step grid as TimeRulerPainter)
+  /// and speed-scaled: faster slice → denser, slower → sparser.
+  /// Gated by [_kTicksMinBodyPx].
   Widget _buildTicks() {
+    final editedStartPx =
+        widget.editedStart.inMilliseconds / 1000.0 * widget.pixelsPerSecond;
     return Positioned(
       key: const ValueKey('slice-bar-ticks'),
       left: 0,
@@ -864,6 +926,8 @@ class _SliceBarState extends State<SliceBar>
         child: CustomPaint(
           painter: _SliceTickPainter(
             widthPx: _widthPx,
+            pixelsPerSecond: widget.pixelsPerSecond,
+            editedStartPx: editedStartPx,
             playbackSpeed: widget.slice.playbackSpeed,
           ),
         ),
@@ -914,9 +978,7 @@ class _SliceBarState extends State<SliceBar>
                         playbackSpeed: widget.slice.playbackSpeed,
                         wide: _widthPx >= _kCaptionMinBodyPx,
                       )
-                    : const SizedBox.shrink(
-                        key: ValueKey('label-hidden'),
-                      ),
+                    : const SizedBox.shrink(key: ValueKey('label-hidden')),
               ),
             ),
           ),
@@ -1025,9 +1087,7 @@ class _SliceBarState extends State<SliceBar>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(_kRingRadius),
             border: Border.all(
-              color: clipFillTop.withValues(
-                alpha: 0.65 + 0.30 * glowT,
-              ),
+              color: clipFillTop.withValues(alpha: 0.65 + 0.30 * glowT),
               width: _kRingStroke,
             ),
           ),
@@ -1089,15 +1149,18 @@ class _SliceBarState extends State<SliceBar>
   }
 }
 
-
 /// Three-stop vertical gradient derived from a single body colour:
 /// +5% lightness at the top edge, base in the middle, -8% lightness at
 /// the bottom edge. Reads as a soft "lit from above" highlight without
 /// pulling the colour off-hue.
 List<Color> _bodyGradientColors(Color base) {
   final hsl = HSLColor.fromColor(base);
-  final top = hsl.withLightness((hsl.lightness + 0.05).clamp(0.0, 1.0)).toColor();
-  final bottom = hsl.withLightness((hsl.lightness - 0.08).clamp(0.0, 1.0)).toColor();
+  final top = hsl
+      .withLightness((hsl.lightness + 0.05).clamp(0.0, 1.0))
+      .toColor();
+  final bottom = hsl
+      .withLightness((hsl.lightness - 0.08).clamp(0.0, 1.0))
+      .toColor();
   return [top, base, bottom];
 }
 
@@ -1107,13 +1170,16 @@ List<Color> _bodyGradientColors(Color base) {
 /// of the active region in the same colour family rather than a
 /// neutral grey block.
 List<Color> _dimGradientColors(Color base) {
-  final hsl = HSLColor.fromColor(base).withLightness(
-    (HSLColor.fromColor(base).lightness - 0.42).clamp(0.05, 1.0),
-  );
-  final top = hsl.withLightness((hsl.lightness + 0.04).clamp(0.0, 1.0)).toColor();
+  final hsl = HSLColor.fromColor(
+    base,
+  ).withLightness((HSLColor.fromColor(base).lightness - 0.42).clamp(0.05, 1.0));
+  final top = hsl
+      .withLightness((hsl.lightness + 0.04).clamp(0.0, 1.0))
+      .toColor();
   final mid = hsl.toColor();
-  final bottom =
-      hsl.withLightness((hsl.lightness - 0.06).clamp(0.0, 1.0)).toColor();
+  final bottom = hsl
+      .withLightness((hsl.lightness - 0.06).clamp(0.0, 1.0))
+      .toColor();
   return [top, mid, bottom];
 }
 
@@ -1132,73 +1198,120 @@ class _ChevronNotch extends StatelessWidget {
   }
 }
 
-/// Paints faint vertical tick marks inside the slice body. The step is
-/// `_baseStepPx / playbackSpeed` (in edited pixels), so a 4× slice
-/// shows ticks 4× closer than a 1× slice. The step is clamped to a
-/// minimum so very fast slices don't degenerate into a solid bar.
+/// Paints faint vertical tick marks inside the slice body, aligned to
+/// the time ruler's minor-dot grid. At 1× speed, each tick falls on a
+/// ruler minor dot. Faster slices subdivide the interval (denser ticks),
+/// slower slices expand it (sparser ticks). If the speed-scaled step
+/// would be too tight to read, it is coarsened until it clears the
+/// minimum spacing threshold.
 class _SliceTickPainter extends CustomPainter {
   const _SliceTickPainter({
     required this.widthPx,
+    required this.pixelsPerSecond,
+    required this.editedStartPx,
     required this.playbackSpeed,
   });
 
   final double widthPx;
+  final double pixelsPerSecond;
+  // Content-space x of this slice's left (edited-time) edge. Used to
+  // align ticks to the ruler's time grid rather than the slice's own
+  // left edge, so ticks at 1× coincide with ruler dots regardless of
+  // where in the timeline the slice starts.
+  final double editedStartPx;
   final double playbackSpeed;
 
-  // Roughly a half-second visual rhythm at 1× and default timeline zoom.
-  // Picked by eye, not derived — the request is a felt rhythm, not a
-  // time-accurate ruler (the actual time ruler lives above the lane).
-  static const double _baseStepPx = 32.0;
-  static const double _minStepPx = 4.0;
+  // Match TimeRulerPainter's tuning constants exactly so the grids share
+  // the same step sizes at every zoom level.
+  static const double _targetMajorPx = 90.0;
+  static const int _minorDivisions = 5;
+  static const double _minTickSpacingPx = 6.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (widthPx <= 0) return;
+    if (widthPx <= 0 || pixelsPerSecond <= 0) return;
     final speed = playbackSpeed > 0 ? playbackSpeed : 1.0;
-    var stepPx = _baseStepPx / speed;
-    if (stepPx < _minStepPx) stepPx = _minStepPx;
-    // Snap to an integer pixel count and advance by that exact integer
-    // per tick. Per-tick rounding alternates N/N+1 spacings when stepPx
-    // lands near a half-integer, which reads as "some bunched, some
-    // spread" even though the underlying math is uniform.
-    final stepPxInt = stepPx.round();
-    if (stepPxInt <= 0) return;
+
+    // Derive the ruler's minor step in edited pixels.
+    final majorStep = math.max(
+      1.0,
+      _niceStep(_targetMajorPx / pixelsPerSecond),
+    );
+    final minorStepSec = majorStep / _minorDivisions;
+    // Scale by playbackSpeed: a 2× slice compresses 2 source-seconds
+    // into 1 edited second, so ticks appear 2× closer in edited space.
+    var tickStepSec = minorStepSec / speed;
+    var tickStepPx = tickStepSec * pixelsPerSecond;
+
+    // Coarsen until ticks are wide enough to read as distinct lines.
+    // Step through the same 1-2-5 family so the coarsening snaps to
+    // the next level the ruler would use, not an arbitrary multiple.
+    if (tickStepPx < _minTickSpacingPx) {
+      // Multiply up through minor→major→2×major→5×major… until readable.
+      for (final factor in [
+        _minorDivisions,
+        _minorDivisions * 2,
+        _minorDivisions * 5,
+        _minorDivisions * 10,
+      ]) {
+        tickStepSec = (minorStepSec / speed) * factor;
+        tickStepPx = tickStepSec * pixelsPerSecond;
+        if (tickStepPx >= _minTickSpacingPx) break;
+      }
+    }
+    if (tickStepPx <= 0) return;
+
+    // First tick in content space that is at or after this slice's left
+    // edge, snapped to the ruler-aligned grid (origin = time 0).
+    final firstTickContentX =
+        (editedStartPx / tickStepPx).ceil() * tickStepPx;
+    var localX = firstTickContentX - editedStartPx;
+
     const inset = 4.0;
     final top = inset;
     final bottom = size.height - inset;
-    // Vertical gradient on each tick: prominent at the top (~55% alpha),
-    // fading to nearly invisible at the bottom. Same shader is reused
-    // for every tick — strokes the column at x using the gradient's y
-    // values, so each line gets the top→bottom fade locally.
-    final gradient = ui.Gradient.linear(
-      Offset(0, top),
-      Offset(0, bottom),
-      [
-        clipStroke.withValues(alpha: 0.55),
-        clipStroke.withValues(alpha: 0.06),
-      ],
-    );
+    final gradient = ui.Gradient.linear(Offset(0, top), Offset(0, bottom), [
+      clipStroke.withValues(alpha: 0.55),
+      clipStroke.withValues(alpha: 0.06),
+    ]);
     final paint = Paint()
       ..shader = gradient
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
-    // Skip ticks near the right edge so they don't visually merge with
-    // the seam between slices (which already paints a strong vertical
-    // line at that x).
+
+    // Suppress ticks within 6 px of either edge so they don't merge
+    // with the slice body's left/right visual boundary.
     const edgeSuppressionPx = 6.0;
-    final lastDrawX = widthPx - edgeSuppressionPx;
-    for (var x = stepPxInt; x < lastDrawX; x += stepPxInt) {
-      canvas.drawLine(
-        Offset(x + 0.5, top),
-        Offset(x + 0.5, bottom),
-        paint,
-      );
+    while (localX < widthPx - edgeSuppressionPx) {
+      if (localX > edgeSuppressionPx) {
+        canvas.drawLine(
+          Offset(localX + 0.5, top),
+          Offset(localX + 0.5, bottom),
+          paint,
+        );
+      }
+      localX += tickStepPx;
     }
+  }
+
+  // Same 1-2-5 nice-number algorithm as TimeRulerPainter._niceStep.
+  static double _niceStep(double rough) {
+    if (rough <= 0) return 1;
+    final exp = (math.log(rough) / math.ln10).floor();
+    final magnitude = math.pow(10.0, exp).toDouble();
+    final normalized = rough / magnitude;
+    if (normalized <= 1) return magnitude;
+    if (normalized <= 2) return 2 * magnitude;
+    if (normalized <= 5) return 5 * magnitude;
+    return 10 * magnitude;
   }
 
   @override
   bool shouldRepaint(_SliceTickPainter old) =>
-      old.widthPx != widthPx || old.playbackSpeed != playbackSpeed;
+      old.widthPx != widthPx ||
+      old.pixelsPerSecond != pixelsPerSecond ||
+      old.editedStartPx != editedStartPx ||
+      old.playbackSpeed != playbackSpeed;
 }
 
 /// Faint 45° diagonal hatch overlay painted across a dim trim band.
@@ -1235,11 +1348,7 @@ class _DimHatchPainter extends CustomPainter {
     final h = size.height;
     final dirX = slopeLeft ? -1.0 : 1.0;
     for (var offset = -h; offset < size.width + h; offset += _step) {
-      canvas.drawLine(
-        Offset(offset, 0),
-        Offset(offset + dirX * h, h),
-        paint,
-      );
+      canvas.drawLine(Offset(offset, 0), Offset(offset + dirX * h, h), paint);
     }
   }
 
@@ -1319,9 +1428,7 @@ class _SliceLabel extends StatelessWidget {
                         const SizedBox(height: 1),
                       ],
                     )
-                  : const SizedBox.shrink(
-                      key: ValueKey('caption-hidden'),
-                    ),
+                  : const SizedBox.shrink(key: ValueKey('caption-hidden')),
             ),
           ),
           Row(

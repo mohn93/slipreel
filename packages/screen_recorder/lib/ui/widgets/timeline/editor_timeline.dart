@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder/state/snap_preference_controller.dart';
 import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
@@ -11,7 +14,8 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:screen_recorder/ui/widgets/timeline/clip_lane.dart';
-import 'package:screen_recorder/ui/widgets/timeline/slice_bar.dart' show TrimDragInfo, TrimSide;
+import 'package:screen_recorder/ui/widgets/timeline/slice_bar.dart'
+    show TrimDragInfo, TrimSide;
 import 'package:screen_recorder/ui/widgets/timeline/cut_marker.dart';
 import 'package:screen_recorder/ui/widgets/timeline/cut_marker_strip.dart';
 import 'package:screen_recorder/ui/widgets/timeline/cut_overlay.dart';
@@ -26,7 +30,7 @@ import 'package:screen_recorder/ui/widgets/timeline/zoom_lane.dart';
 ///
 ///   viewportX   — cursor x relative to the viewport (MouseRegion local.dx)
 ///   scrollOffset — current [ScrollController.offset]
-///   viewportWidth — LayoutBuilder width passed to _updateHover
+///   viewportWidth — effective content viewport (_timeAxisViewport(width)), NOT the raw LayoutBuilder width
 ///   scale       — widget.timelineScale
 double _progressFromHover(
   double viewportX,
@@ -64,9 +68,39 @@ double progressFromHoverForTest(
   double viewportWidth,
   double scale, {
   double padPx = 0.0,
-}) =>
-    _progressFromHover(viewportX, scrollOffset, viewportWidth, scale,
-        padPx: padPx);
+}) => _progressFromHover(
+  viewportX,
+  scrollOffset,
+  viewportWidth,
+  scale,
+  padPx: padPx,
+);
+
+/// Scroll behavior that opts the timeline's `SingleChildScrollView` out
+/// of receiving trackpad gestures. With the default behavior, the
+/// Scrollable's `HorizontalDragGestureRecognizer` competes for every
+/// trackpad pan-zoom event against our top-level `ScaleGestureRecognizer`.
+/// Even when our recognizer wins the arena for the scale portion, the
+/// PAN portion of a two-finger pinch frequently leaks through to the
+/// Scrollable and translates the offset — the user sees the content
+/// drift while it zooms.
+///
+/// By excluding trackpad from `dragDevices`, the Scrollable simply
+/// refuses to handle PointerPanZoom events. Every trackpad gesture
+/// (pinch AND two-finger pan) is routed to our top-level handler,
+/// which interprets scale changes as zoom and focal-point motion as
+/// scroll. Mouse and stylus drags still go straight to the Scrollable;
+/// touch is left to the top-level scale recognizer so two-finger pinch
+/// cannot be stolen by the inner horizontal drag recognizer.
+class _NoTrackpadScrollBehavior extends MaterialScrollBehavior {
+  const _NoTrackpadScrollBehavior();
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.invertedStylus,
+  };
+}
 
 /// Stacked editor timeline: time ruler on top, clip lane in the middle,
 /// optional zoom lane on the bottom. A single playhead line runs across all
@@ -125,6 +159,7 @@ class EditorTimeline extends ConsumerStatefulWidget {
   final void Function(int index, ZoomRegion next)? onZoomChanged;
   final ValueChanged<int?>? onZoomSelected;
   final ValueChanged<int>? onZoomDeleted;
+
   /// Click-to-add: fires with `(start, end)` for the ghost the user
   /// just committed by tapping in the empty area of the zoom lane.
   final void Function(Duration start, Duration end)? onZoomAdded;
@@ -149,7 +184,8 @@ class EditorTimeline extends ConsumerStatefulWidget {
 
   /// Per-slice trim-handle drag callbacks. Routed by the parent to
   /// `EditorProjectController.setSliceTrimStart/setSliceTrimEnd`.
-  final void Function(int sliceIndex, Duration trimStart)? onSliceTrimStartChanged;
+  final void Function(int sliceIndex, Duration trimStart)?
+  onSliceTrimStartChanged;
   final void Function(int sliceIndex, Duration trimEnd)? onSliceTrimEndChanged;
 
   /// Fired by [CutMarkerStrip] when the user taps a seam that has
@@ -269,6 +305,63 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   // Captured at onScaleStart so each ongoing pinch computes
   // (start * d.scale) rather than compounding across frames.
   double? _pinchStartScale;
+  // Anchor TIME for the pinch — kept stable so finger micro-jitter
+  // doesn't feed back as scroll-offset wobble. Recomputing it from
+  // `d.localFocalPoint` every update makes each frame's anchor land
+  // a few µs earlier or later in source time, _applyScale snaps to
+  // the new anchor, repeat — the user sees the content shimmer
+  // instead of zooming smoothly around a fixed point.
+  //
+  // Initialized at gesture-start. Re-derived ONCE, at the first
+  // pinch frame this gesture, if (and only if) panning happened
+  // before pinch — otherwise the locked-at-start time would be far
+  // off-screen by the time the user finally pinches, and pinning to
+  // it would visibly snap the content. See [_pinchHasScaled].
+  Duration? _pinchAnchorTime;
+  // The pivot's on-screen x. Trackpad pan/zoom reports a focal point
+  // that includes the pan component, so this is updated on every pinch
+  // frame while [_pinchAnchorTime] stays locked. _applyScale keeps that
+  // source-time pinned to the live focal x as the smoothed scale ramps,
+  // so the content follows the user's fingers without feeding focal
+  // jitter back into the semantic time anchor.
+  double? _pinchAnchorViewportX;
+  // Sticky "this gesture has been a pinch" flag. Flips true the
+  // first frame |d.scale - 1| crosses threshold, stays until
+  // onScaleEnd. Used to (a) suppress the pan path on noisy sub-eps
+  // frames mid-pinch (without this, scale streams that briefly dip
+  // back below threshold cause a one-frame scroll twitch) and
+  // (b) trigger the one-shot re-derivation of [_pinchAnchorTime]
+  // described above.
+  bool _pinchHasScaled = false;
+  // VSYNC-driven pinch-scale smoothing.
+  //
+  // Trackpad scale events do NOT arrive 1:1 with frames — some frames
+  // get two events, some get none. Smoothing at event time and painting
+  // at vsync therefore resamples the motion unevenly, producing a
+  // regular every-other-frame velocity alternation (measured ~2× swing)
+  // that reads as shimmer. The fix: input events only record the latest
+  // raw target ([_rawTargetScale]); a Ticker advances the applied scale
+  // ([_renderScale]) toward it exactly once per frame via a time-based
+  // EMA. Render cadence is now independent of event cadence.
+  Ticker? _pinchTicker;
+  double? _rawTargetScale;
+  double _renderScale = 1.0;
+  Duration _lastPinchElapsed = Duration.zero;
+  // True when the current two-finger gesture stayed in pan mode. We
+  // use it at onScaleEnd to hand the release velocity to Flutter's
+  // bouncing scroll physics, giving trackpad pans iOS-style momentum
+  // without letting pinch frames leak sideways.
+  bool _trackpadPanActive = false;
+  double _trackpadPanVelocityX = 0.0;
+  Duration? _lastTrackpadPanTime;
+  int? _tapSeekPointer;
+  Offset? _tapSeekDownLocal;
+  bool _tapSeekMoved = false;
+  bool _tapSeekBlocked = false;
+  // True between onScaleEnd and the ticker settling onto the final
+  // target. Keeps the ticker applying (so the scale lands exactly on
+  // the user's intended zoom) until converged, then stops.
+  bool _pinchReleasing = false;
   // Last global pointer position seen by onHover. Used to distinguish
   // a real cursor move from a hover event synthesized when the scrolled
   // content shifts under a stationary cursor (two-finger trackpad
@@ -293,6 +386,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   // fade on the playhead + hover-cursor overlay so they don't fight
   // the bloom/dim-bands visual while the user is trimming.
   bool _trimDragging = false;
+
   /// Full payload of the active trim drag (slice index + side), so
   /// the CutMarkerStrip can keep the corresponding marker at full
   /// opacity while the others fade. Mirrors [_trimDragging] but with
@@ -300,6 +394,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   /// active marker.
   TrimDragInfo? _activeTrimDrag;
   static const Duration _kTrimFadeDuration = Duration(milliseconds: 180);
+  static const double _kTapSeekSlop = 8.0;
   // Edge pad model — drives the breathing room at the timeline's
   // start/end during edge-handle trim drags so the dim band stays
   // in view instead of overflowing the viewport edge.
@@ -344,6 +439,10 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   // with a visible margin from the viewport edge, not flush against
   // it. Pad fullness = bandTarget + buffer.
   static const double _kEdgePadBuffer = 20.0;
+  // Always-visible breathing room at the start/end of the timeline.
+  // This is part of the scrollable canvas, not padding around the
+  // ScrollView, so the viewport clips one coherent scroll surface.
+  static const double _kScrollEdgeInset = 20.0;
   late final AnimationController _padCtlLeft = AnimationController(
     vsync: this,
     duration: _kPadAnimDuration,
@@ -386,6 +485,23 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
       _padCtlLeft.value * (_bandLeftTargetPx + _kEdgePadBuffer);
   double get _rightPadPx =>
       _padCtlRight.value * (_bandRightTargetPx + _kEdgePadBuffer);
+  double get _scrollLeftInset => _kScrollEdgeInset + _leftPadPx;
+  double get _scrollRightInset => _kScrollEdgeInset + _rightPadPx;
+  double _timeAxisViewport(double viewport) =>
+      math.max(0.0, viewport - 2 * _kScrollEdgeInset);
+  double _timeAxisPps(double viewport, Duration duration, double scale) =>
+      pixelsPerSecond(_timeAxisViewport(viewport), duration, scale);
+  double _timeAxisContentWidth(double viewport, double scale) =>
+      contentWidth(_timeAxisViewport(viewport), scale);
+  double _scrollableWidth(double viewport, double scale) =>
+      _timeAxisContentWidth(viewport, scale) +
+      _scrollLeftInset +
+      _scrollRightInset;
+  double _maxScrollOffset(double viewport, double scale) =>
+      (_scrollableWidth(viewport, scale) - viewport).clamp(
+        0.0,
+        double.infinity,
+      );
 
   /// First slice's outer (left-side) trim in edited pixels — same
   /// formula SliceBar uses internally for its left dim band, capped
@@ -429,8 +545,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   }
 
   void _onPadCtlRightStatus(AnimationStatus s) {
-    if (s == AnimationStatus.dismissed &&
-        _activeEdgeSide == TrimSide.right) {
+    if (s == AnimationStatus.dismissed && _activeEdgeSide == TrimSide.right) {
       _activeEdgeSide = null;
       _scrollOffsetAtDragStart = null;
       _scrollOffsetAtDragEnd = null;
@@ -439,8 +554,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   }
 
   void _onPadCtlLeftStatus(AnimationStatus s) {
-    if (s == AnimationStatus.dismissed &&
-        _activeEdgeSide == TrimSide.left) {
+    if (s == AnimationStatus.dismissed && _activeEdgeSide == TrimSide.left) {
       _activeEdgeSide = null;
       _scrollOffsetAtDragStart = null;
       _scrollOffsetAtDragEnd = null;
@@ -453,8 +567,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   double _computeBodyRightContentX() {
     final viewport = _lastViewportWidth;
     if (viewport <= 0 || widget.duration.inMilliseconds == 0) return 0.0;
-    final pps = pixelsPerSecond(
-        viewport, widget.duration, widget.timelineScale);
+    final pps = _timeAxisPps(viewport, widget.duration, widget.timelineScale);
     var total = 0.0;
     for (final c in widget.clips) {
       total += c.editedLength.inMilliseconds / 1000.0 * pps;
@@ -487,11 +600,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     if (viewport <= 0) return;
     final bodyRightNow = _computeBodyRightContentX();
     final deltaBody = bodyRightNow - bodyRightStart;
-    final target =
-        start + _kEdgePadBuffer + _bandRightTargetPx + deltaBody;
-    final cw = contentWidth(viewport, widget.timelineScale);
-    final maxOff = (cw + _leftPadPx + _rightPadPx - viewport)
-        .clamp(0.0, double.infinity);
+    final target = start + _kEdgePadBuffer + _bandRightTargetPx + deltaBody;
+    final maxOff = _maxScrollOffset(viewport, widget.timelineScale);
     final clamped = target.clamp(0.0, maxOff);
     if ((_scrollController.offset - clamped).abs() < 0.5) return;
     _programmaticScrollInProgress = true;
@@ -540,9 +650,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     // clamped to 0 and the auto-scroll never moves.
     final viewport = _lastViewportWidth;
     if (viewport <= 0) return;
-    final cw = contentWidth(viewport, widget.timelineScale);
-    final maxOff = (cw + _leftPadPx + _rightPadPx - viewport)
-        .clamp(0.0, double.infinity);
+    final maxOff = _maxScrollOffset(viewport, widget.timelineScale);
     final clamped = target.clamp(0.0, maxOff);
     if ((_scrollController.offset - clamped).abs() < 0.5) return;
     _programmaticScrollInProgress = true;
@@ -571,8 +679,9 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
       // start value. Without this, lerping starts wherever pad's
       // current view of "end" is — and that view is based on the
       // frozen target captured at drag start, not the actual end.
-      _scrollOffsetAtDragEnd =
-          _scrollController.hasClients ? _scrollController.offset : null;
+      _scrollOffsetAtDragEnd = _scrollController.hasClients
+          ? _scrollController.offset
+          : null;
       _padCtlLeft.reverse();
       _padCtlRight.reverse();
       // NOTE: do NOT null _activeEdgeSide here — the unbloom needs
@@ -581,14 +690,14 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
       return;
     }
     final lastIndex = widget.clips.length - 1;
-    final isLeftEdgeDrag =
-        info.sliceIndex == 0 && info.side == TrimSide.left;
+    final isLeftEdgeDrag = info.sliceIndex == 0 && info.side == TrimSide.left;
     final isRightEdgeDrag =
         info.sliceIndex == lastIndex && info.side == TrimSide.right;
     // Snapshot the scroll position at the moment the drag starts —
     // the unbloom will lerp scrollOffset back to this on release.
-    _scrollOffsetAtDragStart =
-        _scrollController.hasClients ? _scrollController.offset : 0.0;
+    _scrollOffsetAtDragStart = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
     _scrollOffsetAtDragEnd = null;
     if (isLeftEdgeDrag) {
       _activeEdgeSide = TrimSide.left;
@@ -642,6 +751,125 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     }
   }
 
+  void _stopScrollActivity() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position is ScrollPositionWithSingleContext) {
+      position.goIdle();
+    }
+  }
+
+  void _applyTrackpadPan(double focalDeltaX) {
+    if (focalDeltaX == 0 || !_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final scrollDelta = position.physics.applyPhysicsToUserOffset(
+      position,
+      focalDeltaX,
+    );
+    // Keep the pan under the user's fingers, including iOS-style
+    // out-of-range resistance, but don't start a settle animation on
+    // every event. Release-time goBallistic owns the bounce/momentum.
+    // ignore: deprecated_member_use
+    position.jumpToWithoutSettling(position.pixels - scrollDelta);
+  }
+
+  void _recordTrackpadPanVelocity(double focalDeltaX, Duration? timestamp) {
+    final previous = _lastTrackpadPanTime;
+    _lastTrackpadPanTime = timestamp;
+    if (timestamp == null || previous == null) return;
+    final dtSeconds = (timestamp - previous).inMicroseconds / 1000000.0;
+    if (dtSeconds <= 0) return;
+    final instant = -focalDeltaX / dtSeconds;
+    _trackpadPanVelocityX = _trackpadPanVelocityX == 0
+        ? instant
+        : _trackpadPanVelocityX + (instant - _trackpadPanVelocityX) * 0.45;
+  }
+
+  void _startTrackpadPanMomentum(Velocity velocity) {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position is ScrollPositionWithSingleContext) {
+      // Gesture velocity is finger/focal velocity. Scroll position
+      // velocity is the inverse: fingers moving left increase offset.
+      final gestureVelocityX = -velocity.pixelsPerSecond.dx;
+      final releaseVelocityX =
+          gestureVelocityX.abs() >= _trackpadPanVelocityX.abs()
+          ? gestureVelocityX
+          : _trackpadPanVelocityX;
+      position.goBallistic(releaseVelocityX);
+    }
+  }
+
+  void _resetTapSeekTracking() {
+    _tapSeekPointer = null;
+    _tapSeekDownLocal = null;
+    _tapSeekMoved = false;
+    _tapSeekBlocked = false;
+  }
+
+  bool _isPrimaryTapSeekPointer(PointerDownEvent event) {
+    if (event.kind == PointerDeviceKind.mouse) {
+      return event.buttons == 0 || (event.buttons & kPrimaryMouseButton) != 0;
+    }
+    return true;
+  }
+
+  void _onTapSeekPointerDown(PointerDownEvent event) {
+    if (!_isPrimaryTapSeekPointer(event)) return;
+    if (_tapSeekPointer != null) {
+      _tapSeekBlocked = true;
+      return;
+    }
+    _tapSeekPointer = event.pointer;
+    _tapSeekDownLocal = event.localPosition;
+    _tapSeekMoved = false;
+    _tapSeekBlocked = false;
+  }
+
+  void _onTapSeekPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _tapSeekPointer) return;
+    final down = _tapSeekDownLocal;
+    if (down == null) return;
+    if ((event.localPosition - down).distance > _kTapSeekSlop) {
+      _tapSeekMoved = true;
+    }
+  }
+
+  void _onTapSeekPointerUp(PointerUpEvent event) {
+    if (event.pointer != _tapSeekPointer) return;
+    final shouldSeek =
+        !_tapSeekBlocked &&
+        !_tapSeekMoved &&
+        !_pinchHasScaled &&
+        !_trackpadPanActive &&
+        !_trimDragging &&
+        event.localPosition.dy >= rulerHeight;
+    final x = event.localPosition.dx;
+    _resetTapSeekTracking();
+    if (shouldSeek) _seekFromTimelineViewportX(x);
+  }
+
+  void _onTapSeekPointerCancel(PointerCancelEvent event) {
+    if (event.pointer == _tapSeekPointer) _resetTapSeekTracking();
+  }
+
+  void _seekFromTimelineViewportX(double viewportX) {
+    final viewport = _lastViewportWidth;
+    if (viewport <= 0 || widget.duration.inMilliseconds == 0) return;
+    final offset = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
+    final contentWidthPx = _timeAxisContentWidth(
+      viewport,
+      widget.timelineScale,
+    );
+    final contentX = (viewportX + offset - _scrollLeftInset)
+        .clamp(0.0, contentWidthPx)
+        .toDouble();
+    final pps = _timeAxisPps(viewport, widget.duration, widget.timelineScale);
+    widget.onSeek(xToTime(contentX, pps));
+  }
+
   void _updateHover(Offset local, double width, {Offset? global}) {
     if (widget.isPlaying || width <= 0) return;
     // Compute progress as a fraction of CONTENT width, not viewport
@@ -653,9 +881,9 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     final progress = _progressFromHover(
       local.dx,
       scrollOffset,
-      width,
+      _timeAxisViewport(width),
       widget.timelineScale,
-      padPx: _leftPadPx,
+      padPx: _scrollLeftInset,
     );
     if (_hoverProgress != progress) {
       setState(() => _hoverProgress = progress);
@@ -665,7 +893,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     // even though the cursor's global position is unchanged. Treat that
     // as a scroll (not a scrub) — only call onHoverSeek when the global
     // pointer position actually moved.
-    final didPointerMove = global == null ||
+    final didPointerMove =
+        global == null ||
         _lastHoverGlobal == null ||
         global != _lastHoverGlobal;
     _lastHoverGlobal = global;
@@ -698,7 +927,11 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
       return;
     }
     const proximity = 40.0;
-    final laneTop = rulerHeight + laneSpacing + CutMarker.kHitHeight;
+    // Match the build's `rulerToLaneGap` (intentionally tighter than
+    // `laneSpacing`) so the cut-mode proximity zone aligns with the
+    // visible lane top.
+    const rulerToLaneGap = 0.0;
+    final laneTop = rulerHeight + rulerToLaneGap + CutMarker.kHitHeight;
     final laneBottom = laneTop + laneHeight;
     final y = localYInTimeline;
     if (y >= laneTop - proximity && y <= laneBottom + proximity) {
@@ -738,14 +971,28 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     final scaleChanged = widget.timelineScale != old.timelineScale;
     final anchorPresent = widget.pendingScaleAnchor != null;
     if (scaleChanged || anchorPresent) {
-      // Defer to post-frame so LayoutBuilder has run and the
-      // SingleChildScrollView's content has been measured with the new
-      // width before we jumpTo.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _applyScale(old.timelineScale, widget.timelineScale,
-            widget.pendingScaleAnchor);
-      });
+      // Apply the new scroll offset SYNCHRONOUSLY so the next paint
+      // sees the new scale AND the new offset together. Previously this
+      // was deferred to a post-frame callback ("so LayoutBuilder has
+      // run before we jumpTo"), but that defer caused a 1-frame anchor
+      // desync at every slider tick / pinch update: frame N+1 painted
+      // with the new pps but the OLD scroll offset, then the post-frame
+      // callback corrected it on frame N+2 — visible as a continuous
+      // back-and-forth jitter during a drag.
+      //
+      // The defer is unnecessary: jumpTo just sets position.pixels (no
+      // bounds clamp at call time — clamping happens in the next
+      // layout's applyContentDimensions). And [_applyScale] already
+      // pre-clamps via contentWidth(viewport, newScale), which is a
+      // pure function — it doesn't need the new layout to have run.
+      // [_lastViewportWidth] is captured in the previous build's
+      // LayoutBuilder and is stable across consecutive rebuilds of
+      // the same widget.
+      _applyScale(
+        old.timelineScale,
+        widget.timelineScale,
+        widget.pendingScaleAnchor,
+      );
     }
 
     if (!identical(widget.position, old.position)) {
@@ -780,27 +1027,20 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     final viewport = _lastViewportWidth;
     if (viewport <= 0 || widget.duration.inMilliseconds == 0) return;
 
-    final pps = pixelsPerSecond(viewport, widget.duration, widget.timelineScale);
+    final pps = _timeAxisPps(viewport, widget.duration, widget.timelineScale);
     final playheadContentX = timeToX(playhead, pps);
     final offset = _scrollController.hasClients
         ? _scrollController.offset
         : 0.0;
-    // Timeline content sits at SCH-x = _leftPadPx, so the playhead's
-    // viewport-x must include the live left pad. The right pad only
-    // affects maxOffset (it extends the scrollable on the right
-    // edge), not the playhead-to-viewport math.
-    final leftPad = _leftPadPx;
-    final rightPad = _rightPadPx;
+    // Timeline content sits inside the scrollable canvas at
+    // _scrollLeftInset, so playhead viewport-x must include it. The
+    // right inset only affects maxOffset.
+    final leftPad = _scrollLeftInset;
     final playheadViewportX = playheadContentX + leftPad - offset;
 
     if (playheadViewportX > 0.8 * viewport || playheadViewportX < 0) {
       final targetOffset = playheadContentX + leftPad - 0.2 * viewport;
-      // Total scrollable width: content + left pad + right pad.
-      final maxOffset = (contentWidth(viewport, widget.timelineScale) +
-              leftPad +
-              rightPad -
-              viewport)
-          .clamp(0.0, double.infinity);
+      final maxOffset = _maxScrollOffset(viewport, widget.timelineScale);
       if (_scrollController.hasClients) {
         _programmaticScrollInProgress = true;
         try {
@@ -812,30 +1052,86 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     }
   }
 
+  /// VSYNC tick driving pinch-scale smoothing. Advances [_renderScale]
+  /// toward [_rawTargetScale] by a time-based EMA (coefficient derived
+  /// from the real frame interval so it's frame-rate independent), then
+  /// applies it via [onPinchScale] — at most once per frame. Skips the
+  /// apply on steady holds (nothing changing) and stops once a release
+  /// has settled onto the target.
+  void _onPinchTick(Duration elapsed) {
+    final dt = elapsed - _lastPinchElapsed;
+    _lastPinchElapsed = elapsed;
+    // Clamp dt so a stalled frame (GC pause, window drag) can't make
+    // α≈1 and snap the scale in a single jump.
+    final dtMs = (dt.inMicroseconds / 1000.0).clamp(1.0, 100.0);
+    const tauMs = 55.0;
+    final target = _rawTargetScale ?? _renderScale;
+    final alpha = 1.0 - math.exp(-dtMs / tauMs);
+    final newRender = (_renderScale + (target - _renderScale) * alpha).clamp(
+      1.0,
+      8.0,
+    );
+    final delta = (newRender - _renderScale).abs();
+    _renderScale = newRender;
+
+    final settled = delta < 0.0005 && (target - _renderScale).abs() < 0.0005;
+    if (_pinchReleasing && settled) {
+      _finishPinch();
+      return;
+    }
+    // Steady hold (fingers still, not releasing): nothing to apply.
+    if (!_pinchReleasing && settled) return;
+
+    final anchor = _pinchAnchorTime ?? widget.position.value;
+    widget.onPinchScale?.call(_renderScale, anchor);
+  }
+
+  /// Tear down all pinch state and stop the ticker. Called when a
+  /// release has settled, or immediately for a gesture that never
+  /// became a pinch.
+  void _finishPinch() {
+    _pinchTicker?.stop();
+    _pinchReleasing = false;
+    _pinchStartScale = null;
+    _pinchAnchorTime = null;
+    _pinchAnchorViewportX = null;
+    _pinchHasScaled = false;
+    _trackpadPanActive = false;
+    _trackpadPanVelocityX = 0.0;
+    _lastTrackpadPanTime = null;
+    _rawTargetScale = null;
+  }
+
   void _applyScale(double oldScale, double newScale, Duration? anchor) {
     final viewport = _lastViewportWidth;
     if (viewport <= 0 || widget.duration.inMilliseconds == 0) return;
     final anchorTime = anchor ?? widget.position.value;
 
-    final oldPps = pixelsPerSecond(viewport, widget.duration, oldScale);
-    final newPps = pixelsPerSecond(viewport, widget.duration, newScale);
-    final oldOffset =
-        _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final oldPps = _timeAxisPps(viewport, widget.duration, oldScale);
+    final newPps = _timeAxisPps(viewport, widget.duration, newScale);
+    final oldOffset = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
 
-    // The live pad cancels in the anchor-preserve math: it appears as
-    // a constant offset in BOTH anchorViewportX and newOffset, so the
-    // delta (newOffset - oldOffset = newAnchorContentX -
-    // oldAnchorContentX) is unchanged. The clamp bound DOES need the
-    // padded scrollable extent though.
-    final anchorViewportX = timeToX(anchorTime, oldPps) - oldOffset;
+    // During an active pinch, override `anchorViewportX` with the
+    // CURRENT focal-x (updated by onScaleUpdate every frame). The
+    // default derivation includes the timeline's inner scroll inset
+    // so it maps from content-x to actual viewport-x. Using the
+    // gesture-tracking x keeps the anchor TIME
+    // under the user's fingers as they naturally shift during the
+    // pinch — a previous version of this code locked anchorVx at
+    // gesture-start, which corrected the content back toward the
+    // start point and felt like the timeline fighting the user.
+    final contentLeft = _scrollLeftInset;
+    final pinchVx = _pinchAnchorViewportX;
+    final inPinch = pinchVx != null && anchor == _pinchAnchorTime;
+    final anchorViewportX = inPinch
+        ? pinchVx
+        : contentLeft + timeToX(anchorTime, oldPps) - oldOffset;
     final newAnchorContentX = timeToX(anchorTime, newPps);
-    final newOffset = newAnchorContentX - anchorViewportX;
+    final newOffset = contentLeft + newAnchorContentX - anchorViewportX;
 
-    final maxOffset = (contentWidth(viewport, newScale) +
-            _leftPadPx +
-            _rightPadPx -
-            viewport)
-        .clamp(0.0, double.infinity);
+    final maxOffset = _maxScrollOffset(viewport, newScale);
     final clamped = newOffset.clamp(0.0, maxOffset);
 
     if (_scrollController.hasClients) {
@@ -843,14 +1139,30 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
       // mistake an anchor-preserve jump for a user-initiated scroll.
       _programmaticScrollInProgress = true;
       try {
-        _scrollController.jumpTo(clamped);
+        // `jumpTo` immediately starts a ballistic settle against the
+        // *current* scroll extents. During a scale rebuild those extents
+        // can still be from the old content width, so the settle briefly
+        // fights the freshly computed anchor offset and the slices drift
+        // until layout catches up. We already clamp against the new
+        // mathematically-known extent above, so skip that settle here.
+        // ignore: deprecated_member_use
+        _scrollController.position.jumpToWithoutSettling(clamped);
       } finally {
         _programmaticScrollInProgress = false;
       }
     }
 
     if (anchor != null) {
-      widget.onAnchorConsumed?.call();
+      // Defer the anchor-clear to a microtask. The scroll jumpTo above
+      // runs sync (required for smooth scaling — see the comment in
+      // didUpdateWidget), but [onAnchorConsumed] flips a Riverpod
+      // provider, which throws "Tried to modify a provider while the
+      // widget tree was building" if invoked during didUpdateWidget.
+      // The microtask runs after the current build pass settles, so
+      // by then the tree-locked guard is released.
+      scheduleMicrotask(() {
+        if (mounted) widget.onAnchorConsumed?.call();
+      });
     }
   }
 
@@ -867,6 +1179,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     _padCtlRight.dispose();
     _laneFloat.dispose();
     _lanePin.dispose();
+    _pinchTicker?.dispose();
     _nullCursor.dispose();
     _cutCursorX.dispose();
     _cutCursorY.dispose();
@@ -884,10 +1197,11 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     final clips = widget.clips;
     final snapEnabled = ref.read(snapPreferenceProvider);
     final zoomEdges = <Duration>[
-      for (final r in ref
-          .read(editorProjectControllerProvider)
-          .timeline
-          .activeZoomRegions) ...[r.startTime, r.endTime],
+      for (final r
+          in ref
+              .read(editorProjectControllerProvider)
+              .timeline
+              .activeZoomRegions) ...[r.startTime, r.endTime],
     ];
     final decision = decideCut(
       playheadEdited: editedTime,
@@ -897,8 +1211,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
       snapEnabled: snapEnabled,
       overrideSnap: overrideSnap,
     );
-    final controller =
-        ref.read(editorProjectControllerProvider.notifier);
+    final controller = ref.read(editorProjectControllerProvider.notifier);
     final snappedOk = controller.splitAtPlayhead(decision.time, clips);
     if (snappedOk) {
       if (decision.snapTarget != null) {
@@ -931,9 +1244,9 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
         // width so G3's anchor-preserve math can read it without an
         // extra LayoutBuilder round-trip.
         _lastViewportWidth = width;
-        final pps = pixelsPerSecond(
-            width, widget.duration, widget.timelineScale);
-        final cw = contentWidth(width, widget.timelineScale);
+        final pps = _timeAxisPps(width, widget.duration, widget.timelineScale);
+        final cw = _timeAxisContentWidth(width, widget.timelineScale);
+        final animateTimelineLayout = !_pinchHasScaled && !_pinchReleasing;
         // Refresh the band-target snapshots so the live edge pad
         // (= bloomCtl.value * target) tracks the user's ongoing trim.
         // The first/last slice's outer trim in source-time gets
@@ -945,8 +1258,13 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
         // Zoom lane is always rendered, even when empty, so users can
         // hover/click an empty patch to add a new zoom.
         final zoomLaneHeight = laneHeight + zoomBadgeAreaHeight;
-        final totalHeight = rulerHeight +
-            laneSpacing +
+        // The ruler-to-cut-marker gap is tighter than `laneSpacing`
+        // (see the inline comment in the build tree below) so the
+        // dot row hugs the clip lane.
+        const rulerToLaneGap = 0.0;
+        final totalHeight =
+            rulerHeight +
+            rulerToLaneGap +
             CutMarker.kHitHeight +
             laneHeight +
             laneSpacing +
@@ -955,249 +1273,440 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
         return SizedBox(
           height: totalHeight,
           width: width,
-          child: GestureDetector(
-            // Trackpad pinch → zoom the timeline anchored at the cursor.
-            // `translucent` so single-finger taps/drags still reach the
-            // lane gesture detectors underneath; we only consume events
-            // once a true two-finger pinch is recognized.
+          child: Listener(
             behavior: HitTestBehavior.translucent,
-            onScaleStart: (_) => _pinchStartScale = widget.timelineScale,
-            onScaleUpdate: (d) {
-              // Filter out single-finger drags: pointerCount < 2 OR
-              // scale == 1 (one-finger pan reports scale == 1.0). Those
-              // belong to the SingleChildScrollView / lane handlers.
-              if (d.pointerCount < 2 || d.scale == 1.0) return;
-              final start = _pinchStartScale ?? widget.timelineScale;
-              final next = (start * d.scale).clamp(1.0, 8.0);
+            onPointerDown: _onTapSeekPointerDown,
+            onPointerMove: _onTapSeekPointerMove,
+            onPointerUp: _onTapSeekPointerUp,
+            onPointerCancel: _onTapSeekPointerCancel,
+            child: GestureDetector(
+              // Trackpad pinch → zoom the timeline anchored at the cursor.
+              // `translucent` so single-finger taps/drags still reach the
+              // lane gesture detectors underneath; we only consume events
+              // once a true two-finger pinch is recognized.
+              behavior: HitTestBehavior.translucent,
+              onScaleStart: (d) {
+                _stopScrollActivity();
+                _trackpadPanActive = false;
+                _trackpadPanVelocityX = 0.0;
+                _lastTrackpadPanTime = null;
+                _pinchStartScale = widget.timelineScale;
+                _pinchHasScaled = false;
+                _pinchReleasing = false;
+                // Seed the smoothing state to the current scale. The
+                // ticker (started on the first real pinch frame) advances
+                // _renderScale toward _rawTargetScale from here.
+                _renderScale = widget.timelineScale;
+                _rawTargetScale = widget.timelineScale;
+                // Seed the anchor-x to the gesture-start focal. It is
+                // updated on pinch frames; the semantic anchor time stays
+                // fixed.
+                _pinchAnchorViewportX = d.localFocalPoint.dx;
+                final viewport = _lastViewportWidth;
+                if (viewport <= 0) {
+                  _pinchAnchorTime = widget.position.value;
+                  return;
+                }
+                final offset = _scrollController.hasClients
+                    ? _scrollController.offset
+                    : 0.0;
+                final pps = _timeAxisPps(
+                  viewport,
+                  widget.duration,
+                  widget.timelineScale,
+                );
+                final contentWidthPx = _timeAxisContentWidth(
+                  viewport,
+                  widget.timelineScale,
+                );
+                final anchorContentX =
+                    (d.localFocalPoint.dx + offset - _scrollLeftInset)
+                        .clamp(0.0, contentWidthPx)
+                        .toDouble();
+                _pinchAnchorTime = xToTime(anchorContentX, pps);
+              },
+              onScaleUpdate: (d) {
+                // One-finger drags belong to the lane handlers; let
+                // them through.
+                if (d.pointerCount < 2) return;
 
-              final viewport = _lastViewportWidth;
-              if (viewport <= 0) return;
-              final offset = _scrollController.hasClients
-                  ? _scrollController.offset
-                  : 0.0;
-              final pps = pixelsPerSecond(
-                  viewport, widget.duration, widget.timelineScale);
-              final anchorContentX = d.localFocalPoint.dx + offset;
-              final anchorTime = xToTime(anchorContentX, pps);
-              widget.onPinchScale?.call(next, anchorTime);
-            },
-            onScaleEnd: (_) => _pinchStartScale = null,
-            child: MouseRegion(
-            // Hover-to-scrub when paused. The MouseRegion sits above the
-            // gesture detectors but doesn't consume events — onHover is
-            // hover-only, onTap/onPan still flow through to the lanes
-            // below.
-            opaque: false,
-            onHover: (e) {
-              _updateHover(e.localPosition, width, global: e.position);
-              _updateCutProximity(e.localPosition.dy);
-            },
-            onExit: (_) {
-              _clearHover();
-              _cutCursorY.value = null;
-            },
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              scrollDirection: Axis.horizontal,
-              // Even at 1× zoom the timeline now has 2×_kEdgePadPx of
-              // empty room past the content, so scroll is always
-              // possible (no NeverScrollableScrollPhysics path).
-              physics: const ClampingScrollPhysics(),
-              // Scoped rebuild: only the Padding wrapper recomputes
-              // per tick; the SizedBox + Stack + all lanes are passed
-              // as `child` and reused across the animation. Without
-              // this, every vsync of _padCtl would rebuild ClipLane
-              // (one SliceBar per clip) + ZoomLane + TimeRuler — the
-              // animation drops frames on busier projects.
-              child: AnimatedBuilder(
-                animation: Listenable.merge([_padCtlLeft, _padCtlRight]),
-                builder: (context, child) => Padding(
-                  padding: EdgeInsets.fromLTRB(
-                      _leftPadPx, 0, _rightPadPx, 0),
-                  child: child,
-                ),
-                child: SizedBox(
-                  width: cw,
-                  height: totalHeight,
-                  child: Stack(
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          height: rulerHeight,
-                          child: TimeRuler(
-                            duration: widget.duration,
-                            pixelsPerSecond: pps,
-                            contentWidth: cw,
-                            onSeek: widget.onSeek,
-                          ),
-                        ),
-                        const SizedBox(height: laneSpacing),
-                        SizedBox(
-                          height: CutMarker.kHitHeight,
-                          child: CutMarkerStrip(
-                            clips: widget.clips,
-                            pixelsPerSecond: pps,
-                            onClearSeamTrims: (i) =>
-                                widget.onClearSeamTrims?.call(i),
-                            onMergeSeam: (i) =>
-                                widget.onMergeSeam?.call(i),
-                            onClearStartTrim: () =>
-                                widget.onClearStartTrim?.call(),
-                            onClearEndTrim: () =>
-                                widget.onClearEndTrim?.call(),
-                            dragging: _trimDragging,
-                            activeDrag: _activeTrimDrag,
-                          ),
-                        ),
-                        SizedBox(
-                          height: laneHeight,
+                // Trackpad gestures arrive here with TWO components in
+                // every update: a scale factor (pinch) AND a focal-point
+                // delta (pan). We classify each frame as one or the
+                // other, with a STICKY pinch mode:
+                //
+                //   * Pinch (|d.scale − 1| > ε): apply scale, anchored
+                //     to the CURRENT focal-x so the time under the
+                //     fingers stays under the fingers as they drift.
+                //     Anchor TIME is still locked (no feedback loop).
+                //
+                //   * Pan (d.scale ≈ 1, AND we haven't entered pinch
+                //     mode this gesture): scroll the timeline by the
+                //     focal-delta. [_NoTrackpadScrollBehavior] has
+                //     unhooked the Scrollable from trackpad events, so
+                //     if we don't scroll here, nothing else will.
+                //
+                // Once any frame this gesture has been a pinch,
+                // [_pinchHasScaled] suppresses the pan path for the
+                // rest of the gesture. Without that flag, noisy scale
+                // streams (1.003 → 1.001 → 1.004 → …) would briefly
+                // dip into "pan" each time scale crossed back under
+                // threshold, and the timeline would visibly twitch
+                // sideways mid-pinch.
+                const scaleEps = 0.002;
+                final isPinch = (d.scale - 1.0).abs() > scaleEps;
+                if (isPinch) {
+                  _trackpadPanActive = false;
+                  final start = _pinchStartScale ?? widget.timelineScale;
+                  final rawNext = (start * d.scale).clamp(1.0, 8.0);
+                  // Record the latest raw target. The actual scale is
+                  // applied by [_onPinchTick] at vsync, NOT here — input
+                  // events and frames don't align 1:1, so applying at
+                  // event time resamples the motion unevenly (measured as
+                  // a regular every-other-frame velocity alternation).
+                  _rawTargetScale = rawNext;
+                  final focalX = d.localFocalPoint.dx;
+                  _pinchAnchorViewportX = focalX;
+                  final firstPinchFrame = !_pinchHasScaled;
+                  if (firstPinchFrame) {
+                    // First pinch frame this gesture: lock the semantic
+                    // anchor time to the focal where the pinch actually
+                    // began. Later frames may move the viewport pivot x
+                    // with the user's fingers, but this time anchor stays
+                    // fixed so centroid drift cannot become time drift.
+                    _pinchHasScaled = true;
+                    final viewport = _lastViewportWidth;
+                    if (viewport > 0) {
+                      final offset = _scrollController.hasClients
+                          ? _scrollController.offset
+                          : 0.0;
+                      final pps = _timeAxisPps(
+                        viewport,
+                        widget.duration,
+                        widget.timelineScale,
+                      );
+                      final contentWidthPx = _timeAxisContentWidth(
+                        viewport,
+                        widget.timelineScale,
+                      );
+                      final anchorContentX =
+                          (focalX + offset - _scrollLeftInset)
+                              .clamp(0.0, contentWidthPx)
+                              .toDouble();
+                      _pinchAnchorTime = xToTime(anchorContentX, pps);
+                    }
+                    // Start the vsync ticker that drives smoothing. Reset
+                    // the elapsed baseline so the first tick's dt is sane.
+                    _lastPinchElapsed = Duration.zero;
+                    _pinchTicker ??= createTicker(_onPinchTick);
+                    if (_pinchTicker!.isActive) _pinchTicker!.stop();
+                    _pinchTicker!.start();
+                  }
+                  // NOTE: no onPinchScale call here — _onPinchTick owns
+                  // application so render cadence stays vsync-locked. The
+                  // pivot x and raw target are sampled from input; the
+                  // actual scale/scroll application stays vsync-locked.
+                } else if (!_pinchHasScaled) {
+                  // Pure two-finger pan, gesture hasn't become a pinch
+                  // yet → scroll the timeline.
+                  final dx = d.focalPointDelta.dx;
+                  if (dx != 0) {
+                    _trackpadPanActive = true;
+                    _recordTrackpadPanVelocity(dx, d.sourceTimeStamp);
+                    _applyTrackpadPan(dx);
+                  }
+                }
+                // Sub-eps frames once we're in pinch mode: do nothing.
+                // The next supra-eps pinch frame resumes scale updates.
+              },
+              onScaleEnd: (d) {
+                // If a pinch happened, let the ticker keep running and
+                // settle _renderScale onto the final target (a smooth
+                // landing, not a snap), then tear down in _finishPinch.
+                // For a gesture that never became a pinch (pure pan /
+                // tap), there's no ticker to settle — clean up now.
+                if (_pinchHasScaled &&
+                    _pinchTicker != null &&
+                    _pinchTicker!.isActive) {
+                  _pinchReleasing = true;
+                } else {
+                  if (_trackpadPanActive) {
+                    _startTrackpadPanMomentum(d.velocity);
+                  }
+                  _finishPinch();
+                }
+              },
+              child: MouseRegion(
+                // Hover-to-scrub when paused. The MouseRegion sits above the
+                // gesture detectors but doesn't consume events — onHover is
+                // hover-only, onTap/onPan still flow through to the lanes
+                // below.
+                opaque: false,
+                onHover: (e) {
+                  _updateHover(e.localPosition, width, global: e.position);
+                  _updateCutProximity(e.localPosition.dy);
+                },
+                onExit: (_) {
+                  _clearHover();
+                  _cutCursorY.value = null;
+                },
+                child: ScrollConfiguration(
+                  // See [_NoTrackpadScrollBehavior] — the Scrollable does
+                  // not see trackpad events. Our top-level scale handler
+                  // owns them.
+                  behavior: const _NoTrackpadScrollBehavior(),
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    scrollDirection: Axis.horizontal,
+                    // The scroll canvas owns the edge insets, so the
+                    // viewport clips one coherent scroll surface rather
+                    // than content wrapped in outside padding.
+                    physics: const BouncingScrollPhysics(
+                      decelerationRate: ScrollDecelerationRate.fast,
+                      parent: RangeMaintainingScrollPhysics(),
+                    ),
+                    // Scoped rebuild: only the scroll canvas width/content
+                    // offset recompute per tick; the inner content Stack
+                    // and all lanes are passed as `child` and reused
+                    // across the animation. Without this, every vsync of
+                    // _padCtl would rebuild ClipLane (one SliceBar per
+                    // clip) + ZoomLane + TimeRuler.
+                    child: AnimatedBuilder(
+                      animation: Listenable.merge([_padCtlLeft, _padCtlRight]),
+                      builder: (context, child) {
+                        final leftInset = _scrollLeftInset;
+                        return SizedBox(
+                          width: cw + leftInset + _scrollRightInset,
+                          height: totalHeight,
                           child: Stack(
-                            // Clip.none so the selected slice's outer
-                            // glow can extend vertically past the lane.
                             clipBehavior: Clip.none,
                             children: [
-                              // Clip-lane hover effect:
-                              //   - Cut mode on, cursor NOT near lane:
-                              //     slices float ±2px sin (1800ms).
-                              //   - Cut mode on, cursor near or over
-                              //     lane: slow lean into pinned dy
-                              //     (~700ms ease) — float mixes out.
-                              //   - Cut mode off: dy = 0.
-                              AnimatedBuilder(
-                                animation: Listenable.merge(
-                                    [_laneFloat, _lanePin]),
-                                builder: (context, child) {
-                                  final floatDy = math.sin(
-                                          _laneFloat.value * 2 * math.pi) *
-                                      2.0;
-                                  final pinT = Curves.easeOutCubic
-                                      .transform(_lanePin.value);
-                                  final dy = floatDy * (1 - pinT)
-                                      + _kPinDy * pinT;
-                                  return Transform.translate(
-                                    offset: Offset(0, dy),
-                                    child: child,
-                                  );
-                                },
-                                child: ClipLane(
-                                  clips: widget.clips,
-                                  selectedSliceIndex:
-                                      widget.selectedSliceIndex,
-                                  pixelsPerSecond: pps,
-                                  onSliceSelected: (i) =>
-                                      widget.onSliceSelected?.call(i),
-                                  onSliceTrimStartChanged: (i, v) =>
-                                      widget.onSliceTrimStartChanged
-                                          ?.call(i, v),
-                                  onSliceTrimEndChanged: (i, v) =>
-                                      widget.onSliceTrimEndChanged
-                                          ?.call(i, v),
-                                  onTrimDragChanged: _setTrimDragging,
-                                ),
+                              Positioned(
+                                left: leftInset,
+                                top: 0,
+                                width: cw,
+                                height: totalHeight,
+                                child: child!,
                               ),
-                              if (widget.cutModeActive)
-                                Positioned.fill(
-                                  child: CutOverlay(
-                                    pixelsPerSecond: pps,
-                                    totalEditedDuration: widget.duration,
-                                    cursorX: _cutCursorX,
-                                    onCommitCut: (editedTime, {required bool overrideSnap}) {
-                                      final ok = _attemptSplit(editedTime, overrideSnap: overrideSnap);
-                                      if (ok) {
-                                        widget.onCutModeChanged?.call(false);
-                                      }
-                                    },
-                                    onExitMode: () =>
-                                        widget.onCutModeChanged?.call(false),
-                                  ),
-                                ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: laneSpacing),
-                        TipAnchor(
-                          tipId: TipId.editorZoomKeyframe,
-                          child: SizedBox(
-                            height: zoomLaneHeight,
-                            child: ZoomLane(
-                              duration: widget.duration,
-                              pixelsPerSecond: pps,
-                              contentWidth: cw,
-                              zoomRegions: widget.zoomRegions,
-                              clips: widget.clips,
-                              selectedIndex: widget.selectedZoomIndex,
-                              onZoomChanged: widget.onZoomChanged,
-                              onZoomSelected: widget.onZoomSelected,
-                              onZoomDeleted: widget.onZoomDeleted,
-                              onZoomAdded: widget.onZoomAdded,
-                              onSeek: widget.onSeek,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    IgnorePointer(
-                      // Fades the playhead AND hover indicator out as
-                      // a trim drag starts — both are painted by the
-                      // same PlayheadPainter, so a single AnimatedOpacity
-                      // covers them. Restored on drag end/cancel. The
-                      // RepaintBoundary isolates per-frame `progress`
-                      // updates so the playhead's own layer is the only
-                      // thing that repaints — otherwise the AnimatedOpacity
-                      // subtree above it would invalidate at content-width
-                      // scope and we'd see micro-stutters when the playhead
-                      // crosses slice seams.
-                      child: AnimatedOpacity(
-                        duration: _kTrimFadeDuration,
-                        curve: Curves.easeOut,
-                        opacity: _trimDragging ? 0.0 : 1.0,
-                        child: RepaintBoundary(
-                          // Per-vsync ticks land here and only here:
-                          // ValueListenableBuilder rebuilds the
-                          // CustomPaint, the RepaintBoundary keeps the
-                          // playhead on its own layer, and PlayheadPainter
-                          // already shouldRepaints on progress change.
-                          child: ValueListenableBuilder<Duration>(
-                            valueListenable: widget.position,
-                            builder: (context, position, _) {
-                              return CustomPaint(
-                                size: Size(cw, totalHeight),
-                                painter: PlayheadPainter(
-                                  progress: widget.duration.inMicroseconds == 0
-                                      ? 0
-                                      : (position.inMicroseconds /
-                                              widget.duration.inMicroseconds)
-                                          .clamp(0.0, 1.0),
-                                  hoverProgress: widget.isPlaying
-                                      ? null
-                                      : _hoverProgress,
-                                  rulerHeight: rulerHeight,
-                                  flashOn: widget.playheadFlashOn,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                    IgnorePointer(
+                        );
+                      },
                       child: SizedBox(
                         width: cw,
                         height: totalHeight,
-                        child: SnapFlashOverlay(
-                          target: widget.snapFlashTarget,
-                          editedTimeToPx: (d) => timeToX(d, pps),
+                        child: Stack(
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                SizedBox(
+                                  height: rulerHeight,
+                                  child: TimeRuler(
+                                    duration: widget.duration,
+                                    pixelsPerSecond: pps,
+                                    contentWidth: cw,
+                                    onSeek: widget.onSeek,
+                                  ),
+                                ),
+                                // No gap between ruler and cut-marker strip —
+                                // the ruler's dot row sits flush with the
+                                // marker strip so labels read as "above THIS
+                                // lane" rather than floating in their own
+                                // strip. The bulk of the visual gap to the
+                                // clip lane comes from CutMarker.kHitHeight,
+                                // which is needed for marker pins.
+                                SizedBox(
+                                  height: CutMarker.kHitHeight,
+                                  child: CutMarkerStrip(
+                                    clips: widget.clips,
+                                    pixelsPerSecond: pps,
+                                    onClearSeamTrims: (i) =>
+                                        widget.onClearSeamTrims?.call(i),
+                                    onMergeSeam: (i) =>
+                                        widget.onMergeSeam?.call(i),
+                                    onClearStartTrim: () =>
+                                        widget.onClearStartTrim?.call(),
+                                    onClearEndTrim: () =>
+                                        widget.onClearEndTrim?.call(),
+                                    dragging: _trimDragging,
+                                    activeDrag: _activeTrimDrag,
+                                    animateLayout: animateTimelineLayout,
+                                  ),
+                                ),
+                                SizedBox(
+                                  height: laneHeight,
+                                  child: Stack(
+                                    // Clip.none so the selected slice's outer
+                                    // glow can extend vertically past the lane.
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      // Clip-lane hover effect:
+                                      //   - Cut mode on, cursor NOT near lane:
+                                      //     slices float ±2px sin (1800ms).
+                                      //   - Cut mode on, cursor near or over
+                                      //     lane: slow lean into pinned dy
+                                      //     (~700ms ease) — float mixes out.
+                                      //   - Cut mode off: dy = 0.
+                                      AnimatedBuilder(
+                                        animation: Listenable.merge([
+                                          _laneFloat,
+                                          _lanePin,
+                                        ]),
+                                        builder: (context, child) {
+                                          final floatDy =
+                                              math.sin(
+                                                _laneFloat.value * 2 * math.pi,
+                                              ) *
+                                              2.0;
+                                          final pinT = Curves.easeOutCubic
+                                              .transform(_lanePin.value);
+                                          final dy =
+                                              floatDy * (1 - pinT) +
+                                              _kPinDy * pinT;
+                                          return Transform.translate(
+                                            offset: Offset(0, dy),
+                                            child: child,
+                                          );
+                                        },
+                                        child: ClipLane(
+                                          clips: widget.clips,
+                                          selectedSliceIndex:
+                                              widget.selectedSliceIndex,
+                                          pixelsPerSecond: pps,
+                                          onSliceSelected: (i) =>
+                                              widget.onSliceSelected?.call(i),
+                                          onSliceTrimStartChanged: (i, v) =>
+                                              widget.onSliceTrimStartChanged
+                                                  ?.call(i, v),
+                                          onSliceTrimEndChanged: (i, v) =>
+                                              widget.onSliceTrimEndChanged
+                                                  ?.call(i, v),
+                                          onTrimDragChanged: _setTrimDragging,
+                                          animateLayout: animateTimelineLayout,
+                                        ),
+                                      ),
+                                      if (widget.cutModeActive)
+                                        Positioned.fill(
+                                          child: CutOverlay(
+                                            pixelsPerSecond: pps,
+                                            totalEditedDuration:
+                                                widget.duration,
+                                            cursorX: _cutCursorX,
+                                            // The scissors tool is sticky — a single
+                                            // tap commits one cut and the overlay
+                                            // stays armed so the user can keep
+                                            // slicing without re-engaging the
+                                            // toolbar. Esc (or toggling the toolbar
+                                            // button again) exits.
+                                            onCommitCut:
+                                                (
+                                                  editedTime, {
+                                                  required bool overrideSnap,
+                                                }) {
+                                                  _attemptSplit(
+                                                    editedTime,
+                                                    overrideSnap: overrideSnap,
+                                                  );
+                                                },
+                                            onExitMode: () => widget
+                                                .onCutModeChanged
+                                                ?.call(false),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: laneSpacing),
+                                TipAnchor(
+                                  tipId: TipId.editorZoomKeyframe,
+                                  child: SizedBox(
+                                    height: zoomLaneHeight,
+                                    child: ZoomLane(
+                                      duration: widget.duration,
+                                      pixelsPerSecond: pps,
+                                      contentWidth: cw,
+                                      zoomRegions: widget.zoomRegions,
+                                      clips: widget.clips,
+                                      selectedIndex: widget.selectedZoomIndex,
+                                      onZoomChanged: widget.onZoomChanged,
+                                      onZoomSelected: widget.onZoomSelected,
+                                      onZoomDeleted: widget.onZoomDeleted,
+                                      onZoomAdded: widget.onZoomAdded,
+                                      onSeek: widget.onSeek,
+                                      trimDragging: _trimDragging,
+                                      animateLayout: animateTimelineLayout,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            IgnorePointer(
+                              // Fades the playhead AND hover indicator out as
+                              // a trim drag starts — both are painted by the
+                              // same PlayheadPainter, so a single AnimatedOpacity
+                              // covers them. Restored on drag end/cancel. The
+                              // RepaintBoundary isolates per-frame `progress`
+                              // updates so the playhead's own layer is the only
+                              // thing that repaints — otherwise the AnimatedOpacity
+                              // subtree above it would invalidate at content-width
+                              // scope and we'd see micro-stutters when the playhead
+                              // crosses slice seams.
+                              child: AnimatedOpacity(
+                                duration: _kTrimFadeDuration,
+                                curve: Curves.easeOut,
+                                opacity: _trimDragging ? 0.0 : 1.0,
+                                child: RepaintBoundary(
+                                  // Per-vsync ticks land here and only here:
+                                  // ValueListenableBuilder rebuilds the
+                                  // CustomPaint, the RepaintBoundary keeps the
+                                  // playhead on its own layer, and PlayheadPainter
+                                  // already shouldRepaints on progress change.
+                                  child: ValueListenableBuilder<Duration>(
+                                    valueListenable: widget.position,
+                                    builder: (context, position, _) {
+                                      return CustomPaint(
+                                        size: Size(cw, totalHeight),
+                                        painter: PlayheadPainter(
+                                          progress:
+                                              widget.duration.inMicroseconds ==
+                                                  0
+                                              ? 0
+                                              : (position.inMicroseconds /
+                                                        widget
+                                                            .duration
+                                                            .inMicroseconds)
+                                                    .clamp(0.0, 1.0),
+                                          hoverProgress: widget.isPlaying
+                                              ? null
+                                              : _hoverProgress,
+                                          rulerHeight: rulerHeight,
+                                          flashOn: widget.playheadFlashOn,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                            IgnorePointer(
+                              child: SizedBox(
+                                width: cw,
+                                height: totalHeight,
+                                child: SnapFlashOverlay(
+                                  target: widget.snapFlashTarget,
+                                  editedTimeToPx: (d) => timeToX(d, pps),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
-              ),
             ),
-          ),
           ),
         );
       },

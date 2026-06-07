@@ -29,21 +29,26 @@ class CutMarkerStrip extends StatelessWidget {
     required this.onClearEndTrim,
     this.dragging = false,
     this.activeDrag,
+    this.animateLayout = true,
   });
 
   final List<ClipSlice> clips;
   final double pixelsPerSecond;
   final ValueChanged<int> onClearSeamTrims;
   final ValueChanged<int> onMergeSeam;
+
   /// Tap on the LEFT edge marker — restore the first slice's outer
   /// start-trim back to its cut bound. Only fires when the marker is
   /// visible (i.e. that trim is > 0).
   final VoidCallback onClearStartTrim;
+
   /// Tap on the RIGHT edge marker — restore the last slice's outer
   /// end-trim back to its cut bound. Only fires when the marker is
   /// visible (i.e. that trim is > 0).
   final VoidCallback onClearEndTrim;
+  final bool animateLayout;
   final bool dragging;
+
   /// Which (slice, side) is currently being trimmed. The marker that
   /// corresponds to this edge stays at full opacity while the others
   /// fade — the user is acting on it, so it shouldn't fade away with
@@ -61,8 +66,7 @@ class CutMarkerStrip extends StatelessWidget {
       editedStarts.add(acc);
       acc += c.editedLength;
     }
-    final totalEditedX =
-        acc.inMilliseconds / 1000.0 * pixelsPerSecond;
+    final totalEditedX = acc.inMilliseconds / 1000.0 * pixelsPerSecond;
     final startTrim = clips.first.trimStart - clips.first.cutStart;
     final endTrim = clips.last.cutEnd - clips.last.trimEnd;
 
@@ -74,27 +78,30 @@ class CutMarkerStrip extends StatelessWidget {
     // body was pushed.
     final items = <_MarkerItem>[];
     if (startTrim > Duration.zero) {
-      items.add(_MarkerItem(
-        keyId: 'cut-marker-strip-start',
-        anchorX: 0.0,
-        hidden: startTrim,
-        kind: _MarkerKind.startEdge,
-        onTap: onClearStartTrim,
-      ));
+      items.add(
+        _MarkerItem(
+          keyId: 'cut-marker-strip-start',
+          anchorX: 0.0,
+          hidden: startTrim,
+          kind: _MarkerKind.startEdge,
+          onTap: onClearStartTrim,
+        ),
+      );
     }
     if (endTrim > Duration.zero) {
-      items.add(_MarkerItem(
-        keyId: 'cut-marker-strip-end',
-        anchorX: totalEditedX,
-        hidden: endTrim,
-        kind: _MarkerKind.endEdge,
-        onTap: onClearEndTrim,
-      ));
+      items.add(
+        _MarkerItem(
+          keyId: 'cut-marker-strip-end',
+          anchorX: totalEditedX,
+          hidden: endTrim,
+          kind: _MarkerKind.endEdge,
+          onTap: onClearEndTrim,
+        ),
+      );
     }
     for (var i = 0; i < clips.length - 1; i++) {
-      final seamX = editedStarts[i + 1].inMilliseconds /
-          1000.0 *
-          pixelsPerSecond;
+      final seamX =
+          editedStarts[i + 1].inMilliseconds / 1000.0 * pixelsPerSecond;
       // Routing is trim-driven (NOT total hidden including source
       // gap). A gap-only seam — created by deleting a slice between
       // two cuts — has no trim to restore, so the first click goes
@@ -102,20 +109,32 @@ class CutMarkerStrip extends StatelessWidget {
       // "Restore X.Xs" only when first click would actually restore
       // something.
       final trimmed = trimmedSecondsAtSeam(clips, i);
-      items.add(_MarkerItem(
-        keyId: 'cut-marker-strip-$i',
-        anchorX: seamX,
-        hidden: trimmed,
-        kind: _MarkerKind.seam,
-        seamIndex: i,
-        onTap: () {
-          if (trimmed > Duration.zero) {
-            onClearSeamTrims(i);
-          } else {
-            onMergeSeam(i);
-          }
-        },
-      ));
+      // Key the seam by the LEFT slice's source-time `cutEnd` — an
+      // immutable property of that cut. A previous version keyed by
+      // seam index (`cut-marker-strip-$i`), which shifts when a new
+      // cut is inserted: e.g., a cut inside slice 0 makes seam-0 point
+      // at a different physical location post-cut, so AnimatedPositioned
+      // would visibly slide the OLD seam marker over to the new cut
+      // point while a brand-new marker just popped in at the old spot.
+      // Reading the strip identity from the source cut keeps existing
+      // markers anchored and lets new ones spawn (via the in-CutMarker
+      // slide-up + fade) at the cut location.
+      items.add(
+        _MarkerItem(
+          keyId: _seamKey(i),
+          anchorX: seamX,
+          hidden: trimmed,
+          kind: _MarkerKind.seam,
+          seamIndex: i,
+          onTap: () {
+            if (trimmed > Duration.zero) {
+              onClearSeamTrims(i);
+            } else {
+              onMergeSeam(i);
+            }
+          },
+        ),
+      );
     }
     items.sort((a, b) => a.anchorX.compareTo(b.anchorX));
 
@@ -177,12 +196,10 @@ class CutMarkerStrip extends StatelessWidget {
           anchorSum += items[k].anchorX;
         }
         final desiredCentre = anchorSum / size;
-        final actualCentre =
-            (lefts[i] + lefts[j] + CutMarker.kHitWidth) / 2;
+        final actualCentre = (lefts[i] + lefts[j] + CutMarker.kHitWidth) / 2;
         var delta = desiredCentre - actualCentre;
         if (delta != 0) {
-          final leftBound =
-              i > 0 ? lefts[i - 1] + CutMarker.kHitWidth : 0.0;
+          final leftBound = i > 0 ? lefts[i - 1] + CutMarker.kHitWidth : 0.0;
           final rightBound = j < items.length - 1
               ? lefts[j + 1] - CutMarker.kHitWidth
               : totalEditedX - CutMarker.kHitWidth;
@@ -199,29 +216,47 @@ class CutMarkerStrip extends StatelessWidget {
 
     final activeKey = _activeMarkerKey();
     final positioned = <Widget>[];
+    // Match SliceBar's body width-tween so seam / edge markers stay
+    // attached to the slice they belong to when the clip data mutates
+    // outside a drag/pinch (cut-marker tap restore, mergeSeam,
+    // setSliceSpeed). Same 220 ms easeOutCubic the body uses → both
+    // lerp from OLD-layout to NEW-layout in lockstep, so the pin's tip
+    // and the slice's right edge trace identical paths.
+    //
+    // During a live trim drag or pinch zoom, the slice geometry snaps;
+    // using Duration.zero across the whole strip keeps markers pinned
+    // to their seams and avoids a lagging trail. We keep
+    // AnimatedPositioned uniformly (NOT a conditional
+    // Positioned/AnimatedPositioned swap) so each marker's State /
+    // ticker survives the transition.
+    const animDuration = Duration(milliseconds: 220);
+    final markerDuration = dragging || !animateLayout
+        ? Duration.zero
+        : animDuration;
     for (var i = 0; i < items.length; i++) {
       final item = items[i];
       final isActive = activeKey != null && item.keyId == activeKey;
-      positioned.add(Positioned(
-        key: ValueKey(item.keyId),
-        left: lefts[i],
-        top: 0,
-        width: CutMarker.kHitWidth,
-        height: CutMarker.kHitHeight,
-        child: CutMarker(
-          hiddenSeconds: item.hidden,
-          dragFade: dragging && !isActive,
-          onTap: item.onTap,
+      positioned.add(
+        AnimatedPositioned(
+          key: ValueKey(item.keyId),
+          duration: markerDuration,
+          curve: Curves.easeOutCubic,
+          left: lefts[i],
+          top: 0,
+          width: CutMarker.kHitWidth,
+          height: CutMarker.kHitHeight,
+          child: CutMarker(
+            hiddenSeconds: item.hidden,
+            dragFade: dragging && !isActive,
+            onTap: item.onTap,
+          ),
         ),
-      ));
+      );
     }
 
     return SizedBox(
       height: CutMarker.kHitHeight,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: positioned,
-      ),
+      child: Stack(clipBehavior: Clip.none, children: positioned),
     );
   }
 
@@ -237,14 +272,20 @@ class CutMarkerStrip extends StatelessWidget {
       // Left handle: trim sits on the seam between (i-1, i), or on
       // the START edge for slice 0.
       if (i == 0) return 'cut-marker-strip-start';
-      return 'cut-marker-strip-${i - 1}';
+      return _seamKey(i - 1);
     } else {
       // Right handle: trim sits on the seam between (i, i+1), or on
       // the END edge for the last slice.
       if (i == clips.length - 1) return 'cut-marker-strip-end';
-      return 'cut-marker-strip-$i';
+      return _seamKey(i);
     }
   }
+
+  /// Stable identity for the seam between `clips[seamIndex]` and
+  /// `clips[seamIndex+1]`. Keyed by the LEFT slice's source-time
+  /// `cutEnd`, which is immutable for an existing cut.
+  String _seamKey(int seamIndex) =>
+      'cut-marker-strip-seam-${clips[seamIndex].cutEnd.inMicroseconds}';
 }
 
 enum _MarkerKind { startEdge, endEdge, seam }

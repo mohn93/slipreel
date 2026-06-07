@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
+import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Background tab — wallpaper picker, blur, padding, corners, inset.
@@ -168,12 +169,12 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
   }
 
   Widget _randomButton(String category) {
-    return InkWell(
+    return SpringHoverButton(
       onTap: () => _updateWallpaper(
         category: category,
         index: Random().nextInt(kWallpapersPerCategory),
       ),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: 12,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -239,9 +240,9 @@ class _WallpaperThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return SpringHoverButton(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: 8,
       child: Container(
         decoration: decoration.copyWith(
           borderRadius: BorderRadius.circular(8),

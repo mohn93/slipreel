@@ -21,7 +21,7 @@ const Color playheadBottom = Color(0xFF3D26AA);
 const Duration kGhostZoomSpan = Duration(seconds: 2);
 const Duration kGhostMinSpan = Duration(milliseconds: 250);
 
-const double rulerHeight = 26;
+const double rulerHeight = 20;
 const double laneHeight = 46;
 const double laneSpacing = 6;
 const double handleHitWidth = 16;
@@ -29,7 +29,12 @@ const double zoomPillInset = 2;
 const int minZoomDurationMs = 250;
 const int minTrimDurationMs = 250;
 const double trimHandleInset = 6;
-const double zoomBadgeAreaHeight = 32;
+/// Reserved padding above each zoom pill for ancillary chrome. Used to
+/// host the floating +/− zoom-level badge; that's gone now, so this is
+/// 0 — the pill takes the full lane height. Kept named (not deleted)
+/// so call sites can document intent; if you bring back a hover-only
+/// affordance above the pill, bump this back up.
+const double zoomBadgeAreaHeight = 0;
 
 double pixelsPerSecond(double viewportWidth, Duration total, double scale) {
   if (total.inMilliseconds == 0) return 0.0;

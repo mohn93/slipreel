@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
+import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 
 /// Inspector context shown when a clip slice is selected. Edits one
 /// slice's playback, audio, fade, and cursor settings. Initially the
@@ -62,9 +63,9 @@ class SliceEditor extends ConsumerWidget {
                   runSpacing: 8,
                   children: [
                     for (final s in _speedPresets)
-                      _SpeedChip(
+                      InspectorChip(
                         label: '${_speedLabel(s)}x',
-                        isSelected: (clip.playbackSpeed - s).abs() < 0.001,
+                        selected: (clip.playbackSpeed - s).abs() < 0.001,
                         onTap: () => notifier.setSliceSpeed(sliceIndex, s),
                       ),
                   ],
@@ -262,61 +263,16 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        Tooltip(
-          message: 'Close slice editor',
-          child: InkWell(
-            onTap: onClose,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: kInspectorPanel,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: kInspectorBorder),
-              ),
-              child: const Icon(Icons.close, color: Colors.white70, size: 16),
-            ),
-          ),
+        SpringyIconButton(
+          icon: Icons.close,
+          tooltip: 'Close slice editor',
+          isActive: false,
+          onTap: onClose,
+          size: 32,
+          iconSize: 16,
+          tooltipPlacement: SpringyTooltipPlacement.bottom,
         ),
       ],
-    );
-  }
-}
-
-class _SpeedChip extends StatelessWidget {
-  const _SpeedChip({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: kInspectorPanel,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? kInspectorAccent : kInspectorBorder,
-          ),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
     );
   }
 }

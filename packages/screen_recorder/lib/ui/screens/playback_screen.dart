@@ -61,6 +61,9 @@ import 'package:screen_recorder/state/snap_preference_controller.dart';
 import 'package:slipreel_engine/timeline/slice_navigation.dart' show NavDirection;
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
+import 'package:screen_recorder/ui/widgets/command_palette/command_palette.dart';
 
 /// Debug hook: the active [PlaybackScreen] publishes its video
 /// controller here (in debug/profile builds) so VM-service extensions
@@ -297,6 +300,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // Dev HUD: when on, draws a marker at the recorded cursor's video-pixel
   // position so we can visually confirm the zoom focal is tracking it.
   bool _showZoomDebug = false;
+
+  // Top-bar "View" menu toggles. _showSidebar gates the right-hand
+  // InspectorPanel + its divider; _showTimeline gates the entire
+  // transport + editor timeline block below the canvas. Both default
+  // to on (the standard editor layout). Local to this screen — the
+  // user expects the toggle to persist within a session but reset
+  // each time they open a recording.
+  bool _showSidebar = true;
+  bool _showTimeline = true;
   // Backing store for the HUD's text readout. PlaybackCanvas publishes
   // a fresh snapshot into this each frame; the screen-level
   // `ValueListenableBuilder` reads it and renders the panel OUTSIDE
@@ -805,6 +817,488 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
   void _handleUndo() => _history?.undo();
   void _handleRedo() => _history?.redo();
+
+  /// Splits the source video's filename into ("name", ".ext") so the
+  /// top bar can dim the extension. Returns ("", "") if the path has
+  /// no recognizable basename.
+  (String, String) _projectTitleParts() {
+    final p = widget.videoPath;
+    if (p.isEmpty) return ('', '');
+    final lastSlash = p.lastIndexOf('/');
+    final base = lastSlash >= 0 ? p.substring(lastSlash + 1) : p;
+    final lastDot = base.lastIndexOf('.');
+    if (lastDot <= 0) return (base, '');
+    return (base.substring(0, lastDot), base.substring(lastDot));
+  }
+
+  // Reserved on the LEFT edge of the title bar so the native macOS
+  // Left pad for the leading icon group. The macOS window keeps its
+  // own title bar above the AppBar (traffic lights live there, not in
+  // our toolbar), so we only need a small flush-left gutter.
+  static const double _kTrafficLightInset = 12;
+  static const double _kTopBarIconSize = 36;
+  static const double _kTopBarGlyphSize = 18;
+
+  /// Drop-down anchored to the eye icon in the top bar. Mirrors the
+  /// screenstudio "View" menu — two toggles (sidebar / timeline) and
+  /// a placeholder "Enter preview mode" action. Positioned at the
+  /// button's bottom-left with a small gap so it visually hangs off
+  /// the icon.
+  Future<void> _showViewMenu(BuildContext anchorContext) async {
+    final box = anchorContext.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final overlay =
+        Overlay.of(anchorContext).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final btnTL = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final btnBR = box.localToGlobal(
+        box.size.bottomRight(Offset.zero),
+        ancestor: overlay);
+    const verticalGap = 6.0;
+    final position = RelativeRect.fromLTRB(
+      btnTL.dx,
+      btnBR.dy + verticalGap,
+      overlay.size.width - btnBR.dx,
+      overlay.size.height - btnBR.dy - verticalGap,
+    );
+
+    final palette = anchorContext.palette;
+    final textPrimary = palette.textPrimary;
+    final textDim = palette.textSecondary;
+
+    Widget row({
+      required bool checked,
+      required IconData glyph,
+      required String label,
+      String? shortcut,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              child: checked
+                  ? Icon(Icons.check, size: 14, color: textPrimary)
+                  : null,
+            ),
+            const SizedBox(width: 6),
+            Icon(glyph, size: 15, color: textPrimary),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: textPrimary,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            if (shortcut != null) ...[
+              const SizedBox(width: 32),
+              const Spacer(),
+              Text(
+                shortcut,
+                style: TextStyle(
+                  color: textDim,
+                  fontSize: 12,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    final result = await showMenu<_ViewMenuAction>(
+      context: anchorContext,
+      position: position,
+      color: palette.surfaceCard,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: palette.dividerSubtle),
+      ),
+      items: [
+        PopupMenuItem<_ViewMenuAction>(
+          value: _ViewMenuAction.sidebar,
+          height: 34,
+          child: row(
+            checked: _showSidebar,
+            glyph: LucideIcons.panelRight,
+            label: 'Show editor sidebar',
+          ),
+        ),
+        PopupMenuItem<_ViewMenuAction>(
+          value: _ViewMenuAction.timeline,
+          height: 34,
+          child: row(
+            checked: _showTimeline,
+            glyph: LucideIcons.panelBottom,
+            label: 'Show editor timeline',
+          ),
+        ),
+        const PopupMenuDivider(height: 8),
+        PopupMenuItem<_ViewMenuAction>(
+          value: _ViewMenuAction.preview,
+          height: 34,
+          child: row(
+            checked: false,
+            glyph: LucideIcons.monitor,
+            label: 'Enter preview mode',
+            shortcut: '⇧⌘↩',
+          ),
+        ),
+      ],
+    );
+
+    if (!mounted || result == null) return;
+    switch (result) {
+      case _ViewMenuAction.sidebar:
+        setState(() => _showSidebar = !_showSidebar);
+        break;
+      case _ViewMenuAction.timeline:
+        setState(() => _showTimeline = !_showTimeline);
+        break;
+      case _ViewMenuAction.preview:
+        // TODO: wire preview mode (full-screen play, chrome dimmed).
+        break;
+    }
+  }
+
+  /// Opens the command palette (the ⌘ icon in the top bar). Groups
+  /// are assembled per-invocation from the live project state so
+  /// entries like "Restore default zoom ranges" can stay disabled
+  /// when there's nothing to restore from.
+  Future<void> _showCommandPalette() async {
+    final controller =
+        ref.read(editorProjectControllerProvider.notifier);
+    final hasZooms = ref
+        .read(editorProjectControllerProvider)
+        .zoomRegions
+        .isNotEmpty;
+    final hasCursorClicks = _cursorRecording.positions.any((p) => p.isClicked);
+    final hasMetadata = _metadata != null;
+
+    final groups = <CommandPaletteGroup>[
+      CommandPaletteGroup(
+        title: 'Zoom',
+        entries: [
+          CommandPaletteEntry(
+            label: 'Disable all zoom ranges',
+            icon: LucideIcons.ban,
+            // No backing flag for "off-but-kept" zooms yet — surface
+            // the row so the chrome reads complete, but mark it
+            // disabled until the underlying state lands.
+            enabled: false,
+            action: () {},
+          ),
+          CommandPaletteEntry(
+            label: 'Remove all zoom ranges',
+            icon: LucideIcons.trash2,
+            enabled: hasZooms,
+            action: () {
+              controller.replaceZoomRegions(const []);
+              _setSelectedZoomIndex(null);
+              AppAlerts.success('All zoom ranges removed');
+            },
+          ),
+          CommandPaletteEntry(
+            label: 'Restore default zoom ranges',
+            icon: LucideIcons.rotateCw,
+            enabled: hasCursorClicks && hasMetadata,
+            action: () {
+              final detected = const AutoZoomDetector().detect(
+                cursor: _cursorRecording,
+                videoSize: Size(
+                  _metadata!.widthPx.toDouble(),
+                  _metadata!.heightPx.toDouble(),
+                ),
+                videoDuration: _controller.value.duration,
+              );
+              controller.replaceZoomRegions(detected);
+              _setSelectedZoomIndex(null);
+              AppAlerts.success(
+                'Restored ${detected.length} zoom range${detected.length == 1 ? '' : 's'} from cursor activity',
+              );
+            },
+          ),
+          CommandPaletteEntry(
+            label: 'Remove all layouts',
+            icon: LucideIcons.trash2,
+            // "Layouts" isn't a first-class concept in the editor yet
+            // — leave as a placeholder until we know what should map
+            // here (output canvas? per-slice layouts? frame
+            // templates?).
+            enabled: false,
+            action: () {},
+          ),
+        ],
+      ),
+      CommandPaletteGroup(
+        title: 'Export',
+        entries: [
+          CommandPaletteEntry(
+            label: 'Export…',
+            icon: LucideIcons.upload,
+            enabled: !_isExporting,
+            action: _export,
+          ),
+        ],
+      ),
+    ];
+
+    await showCommandPalette(context, groups: groups);
+  }
+
+  /// Trash icon in the top bar. Shows a destructive confirmation
+  /// dialog; on confirm, deletes the source video and ALL of its
+  /// sidecar files (metadata, cursor recording, editor project
+  /// state) before popping back to the recording screen.
+  ///
+  /// Deletion is best-effort: each sidecar's deletion is wrapped so a
+  /// missing or already-cleaned file doesn't block the rest. The
+  /// canonical video file is reported back to the user — if it fails,
+  /// we leave the playback screen open with an error and DON'T pop,
+  /// so the user can retry from the same context.
+  Future<void> _deleteRecording() async {
+    final palette = context.palette;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: palette.surfaceCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: palette.dividerStrong),
+        ),
+        title: Text(
+          'Delete this recording?',
+          style: TextStyle(color: palette.textPrimary),
+        ),
+        content: Text(
+          'The video file and its editor project (zooms, trims, cursor '
+          'data, metadata) will be permanently removed. This can\'t be '
+          'undone.',
+          style: TextStyle(color: palette.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel',
+                style: TextStyle(color: palette.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 10,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // Pause the player so we're not holding the video file open
+    // while we try to unlink it (macOS tolerates open-file delete,
+    // but the sidecar writes from EditorProjectStore could race
+    // against our cleanup).
+    try {
+      await _controller.pause();
+    } catch (_) {}
+
+    final sidecars = <String>[
+      '${widget.videoPath}.meta.json',
+      '${widget.videoPath}.cursor.json',
+      '${widget.videoPath}.editor.json',
+      '${widget.videoPath}.editor.json.tmp',
+    ];
+    for (final path in sidecars) {
+      try {
+        final f = File(path);
+        if (await f.exists()) await f.delete();
+      } catch (e) {
+        // Best-effort: missing-file is fine, anything else we just
+        // surface via debug log and continue with the next sidecar.
+        debugPrint('Failed to delete sidecar $path: $e');
+      }
+    }
+
+    String? deleteError;
+    try {
+      final video = File(widget.videoPath);
+      if (await video.exists()) await video.delete();
+    } catch (e) {
+      deleteError = e.toString();
+    }
+
+    if (!mounted) return;
+    if (deleteError != null) {
+      AppAlerts.error('Couldn\'t delete the recording: $deleteError');
+      return;
+    }
+    Navigator.of(context).pop();
+    AppAlerts.success('Recording deleted');
+  }
+
+  /// Three-zone top bar modeled after the screenstudio chrome:
+  ///   LEFT  — traffic-light spacer · folder (record-another) · trash
+  ///   CENTER — recording filename, with .ext rendered dim
+  ///   RIGHT  — ⌘ palette · undo · redo · divider · presets · eye ·
+  ///            gauge · Export CTA
+  ///
+  /// Icons whose target action isn't yet wired (cmd, trash, presets,
+  /// eye, gauge) are intentionally [SpringyIconButton] with
+  /// `isEnabled: false` so the chrome reads complete but every
+  /// affordance is honest about being a stub. Undo/redo bind to the
+  /// editor history controller's canUndo / canRedo.
+  PreferredSizeWidget _buildTopBar(BuildContext context) {
+    final palette = context.palette;
+    final (titleName, titleExt) = _projectTitleParts();
+    final canUndo = _history?.canUndo ?? false;
+    final canRedo = _history?.canRedo ?? false;
+    final dim = palette.textSecondary;
+
+    Widget icon(IconData glyph, String tip, VoidCallback onTap,
+            {bool enabled = true}) =>
+        SpringyIconButton(
+          icon: glyph,
+          tooltip: tip,
+          isActive: false,
+          isEnabled: enabled,
+          onTap: onTap,
+          size: _kTopBarIconSize,
+          iconSize: _kTopBarGlyphSize,
+          // Tooltips drop UNDER each top-bar chip so they don't
+          // collide with the (left-popping) side-rail tooltips or
+          // with the title row above.
+          tooltipPlacement: SpringyTooltipPlacement.bottom,
+        );
+
+    return AppBar(
+      backgroundColor: palette.surfaceElevated,
+      elevation: 0,
+      toolbarHeight: 56,
+      titleSpacing: 0,
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(height: 1, color: palette.dividerSubtle),
+      ),
+      leadingWidth: _kTrafficLightInset + _kTopBarIconSize * 2 + 16,
+      leading: Padding(
+        padding: EdgeInsets.only(left: _kTrafficLightInset, right: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            icon(LucideIcons.folderOpen, 'Record another',
+                () => Navigator.of(context).pop()),
+            const SizedBox(width: 4),
+            icon(LucideIcons.trash2, 'Delete recording',
+                _deleteRecording),
+          ],
+        ),
+      ),
+      centerTitle: true,
+      title: titleName.isEmpty
+          ? null
+          : RichText(
+              overflow: TextOverflow.ellipsis,
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: titleName,
+                    style: TextStyle(
+                      color: palette.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (titleExt.isNotEmpty)
+                    TextSpan(
+                      text: titleExt,
+                      style: TextStyle(
+                        color: dim,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+      actions: [
+        icon(LucideIcons.command, 'Commands', _showCommandPalette),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Container(
+              width: 1, height: 22, color: palette.dividerSubtle),
+        ),
+        icon(LucideIcons.undo2, 'Undo (Cmd+Z)', _handleUndo,
+            enabled: canUndo),
+        icon(LucideIcons.redo2, 'Redo (Cmd+Shift+Z)', _handleRedo,
+            enabled: canRedo),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Container(
+              width: 1, height: 22, color: palette.dividerSubtle),
+        ),
+        // Eye → "View" menu. Builder captures its own context so the
+        // showMenu anchor math points at the eye's render box, not the
+        // top-bar parent.
+        Builder(
+          builder: (ctx) => icon(
+            LucideIcons.eye,
+            'View options',
+            () => _showViewMenu(ctx),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: TipAnchor(
+            tipId: TipId.editorExport,
+            child: ElevatedButton.icon(
+              onPressed: _isExporting ? null : _export,
+              icon: _isExporting
+                  ? const CtaSpinner(size: 16)
+                  : const Icon(LucideIcons.upload, size: 16),
+              label: Text(
+                _isExporting ? 'Exporting…' : 'Export',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: palette.accent,
+                foregroundColor: Colors.white,
+                // Keep the button looking active (not greyed out) while
+                // in the loading state — the spinner already says
+                // "busy", the disabled colour would just wash out the
+                // CTA.
+                disabledBackgroundColor: palette.accent,
+                disabledForegroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   /// Recomputes the EDITED-time playhead position and pushes it into
   /// [_playheadEditedPos]. Source position resolution mirrors what the
@@ -1367,89 +1861,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           ),
           child: Scaffold(
             backgroundColor: context.palette.appBackground,
-            appBar: AppBar(
-              title: const Text('Playback'),
-              backgroundColor: context.palette.surfaceElevated,
-              elevation: 0,
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(1),
-                child: Container(height: 1, color: context.palette.dividerSubtle),
-              ),
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              actions: [
-                // Secondary action — ghost style so the eye lands on the
-                // CTA next to it. Returns to the recording screen for a
-                // fresh take.
-                TextButton.icon(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(
-                    Icons.fiber_manual_record,
-                    size: 16,
-                    color: Colors.white70,
-                  ),
-                  label: const Text(
-                    'Record another',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // Primary CTA — filled indigo, matches the brand accent
-                // used for selected zoom regions / active toggles. The
-                // leading icon swaps for a rotating arc while an export
-                // is in flight, and the button is disabled to block
-                // re-entry (the _isExporting guard in _export covers it
-                // anyway, but the visual cue matters).
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: TipAnchor(
-                    tipId: TipId.editorExport,
-                    child: ElevatedButton.icon(
-                      onPressed: _isExporting ? null : _export,
-                      icon: _isExporting
-                          ? const CtaSpinner(size: 16)
-                          : const Icon(Icons.file_download_outlined, size: 18),
-                      label: Text(
-                        _isExporting ? 'Exporting…' : 'Export',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: context.palette.accent,
-                        foregroundColor: Colors.white,
-                        // Keep the button looking active (not greyed out)
-                        // while in the loading state — the spinner already
-                        // says "busy", the disabled colour would just
-                        // wash out the CTA.
-                        disabledBackgroundColor: context.palette.accent,
-                        disabledForegroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            appBar: _buildTopBar(context),
             body: Column(
               children: [
                 // Preview backdrop on the left, inspector panel on the right.
@@ -1528,12 +1940,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           ],
                         ),
                       ),
-                      if (_isInitialized)
+                      if (_isInitialized && _showSidebar)
                         VerticalDivider(
                             width: 1,
                             thickness: 1,
                             color: context.palette.dividerSubtle),
-                      if (_isInitialized)
+                      if (_isInitialized && _showSidebar)
                         InspectorPanel(
                           selection: _currentSelection(),
                           zoomRegions: project.zoomRegions,
@@ -1854,9 +2266,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     if (_error != null || !_isInitialized) {
       return const SizedBox.shrink();
     }
+    // Top-bar "View" menu toggle. Collapses the whole transport +
+    // timeline block; the canvas above naturally expands to fill the
+    // freed vertical space.
+    if (!_showTimeline) {
+      return const SizedBox.shrink();
+    }
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(vertical: 24),
       decoration: BoxDecoration(
         color: context.palette.surfaceCard,
         boxShadow: const [
@@ -1869,7 +2287,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       ),
       child: Column(
         children: [
-          _buildTransportBar(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: _buildTransportBar(),
+          ),
           const SizedBox(height: 12),
 
           // Stacked timeline (time ruler + clip lane + zoom lane).
@@ -2117,3 +2538,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     );
   }
 }
+
+/// Actions emitted by the top-bar "View" drop-down. Two toggles
+/// (sidebar / timeline visibility) and an action placeholder for the
+/// future preview mode.
+enum _ViewMenuAction { sidebar, timeline, preview }

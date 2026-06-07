@@ -1,10 +1,13 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
+import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 import 'package:screen_recorder/ui/widgets/inspector/zoom_placement_picker.dart';
+import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 
 /// Properties view shown when a zoom pill is selected on the timeline.
 ///
@@ -196,40 +199,50 @@ class ZoomContextInspector extends StatelessWidget {
                       const Duration(milliseconds: 700),
                 ),
               ],
-              const InspectorSectionDivider(),
-              InspectorSlider(
-                label: 'Enter duration',
-                subtitle:
-                    '${zoom.enterDuration.inMilliseconds} ms ramp-in',
-                value:
-                    zoom.enterDuration.inMilliseconds.toDouble(),
-                min: 0,
-                max: 1500,
-                onChanged: (v) => onChanged(zoom.copyWith(
-                    enterDuration:
-                        Duration(milliseconds: v.toInt()))),
-                onReset: () => onChanged(zoom.copyWith(
-                    enterDuration: const Duration(milliseconds: 500))),
-                canReset:
-                    zoom.enterDuration != const Duration(milliseconds: 500),
-              ),
-              const SizedBox(height: 24),
-              InspectorSlider(
-                label: 'Exit duration',
-                subtitle:
-                    '${zoom.exitDuration.inMilliseconds} ms ramp-out',
-                value:
-                    zoom.exitDuration.inMilliseconds.toDouble(),
-                min: 0,
-                max: 1500,
-                onChanged: (v) => onChanged(zoom.copyWith(
-                    exitDuration:
-                        Duration(milliseconds: v.toInt()))),
-                onReset: () => onChanged(zoom.copyWith(
-                    exitDuration: const Duration(milliseconds: 500))),
-                canReset:
-                    zoom.exitDuration != const Duration(milliseconds: 500),
-              ),
+              // Enter / Exit ramp tuning is a developer-only knob now:
+              // the on-pill divider handles are gone, ramps scale
+              // proportionally with the pill's width, and stored
+              // values are only ever overridden manually when tuning
+              // the animation feel. Production users never see these
+              // sliders. The whole block (including its surrounding
+              // dividers) is stripped at release-build tree-shake via
+              // `kDebugMode`.
+              if (kDebugMode) ...[
+                const InspectorSectionDivider(),
+                InspectorSlider(
+                  label: 'Enter duration (debug)',
+                  subtitle:
+                      '${zoom.enterDuration.inMilliseconds} ms ramp-in',
+                  value:
+                      zoom.enterDuration.inMilliseconds.toDouble(),
+                  min: 0,
+                  max: 1500,
+                  onChanged: (v) => onChanged(zoom.copyWith(
+                      enterDuration:
+                          Duration(milliseconds: v.toInt()))),
+                  onReset: () => onChanged(zoom.copyWith(
+                      enterDuration: const Duration(milliseconds: 500))),
+                  canReset:
+                      zoom.enterDuration != const Duration(milliseconds: 500),
+                ),
+                const SizedBox(height: 24),
+                InspectorSlider(
+                  label: 'Exit duration (debug)',
+                  subtitle:
+                      '${zoom.exitDuration.inMilliseconds} ms ramp-out',
+                  value:
+                      zoom.exitDuration.inMilliseconds.toDouble(),
+                  min: 0,
+                  max: 1500,
+                  onChanged: (v) => onChanged(zoom.copyWith(
+                      exitDuration:
+                          Duration(milliseconds: v.toInt()))),
+                  onReset: () => onChanged(zoom.copyWith(
+                      exitDuration: const Duration(milliseconds: 500))),
+                  canReset:
+                      zoom.exitDuration != const Duration(milliseconds: 500),
+                ),
+              ],
               const InspectorSectionDivider(),
               InspectorToggle(
                 label: 'Animation override',
@@ -329,20 +342,14 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        InkWell(
+        SpringyIconButton(
+          icon: Icons.close,
+          tooltip: 'Close zoom inspector',
+          isActive: false,
           onTap: onClose,
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: kInspectorPanel,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: kInspectorBorder),
-            ),
-            child: const Icon(Icons.close,
-                color: Colors.white70, size: 16),
-          ),
+          size: 32,
+          iconSize: 16,
+          tooltipPlacement: SpringyTooltipPlacement.bottom,
         ),
       ],
     );
@@ -358,76 +365,34 @@ class _FollowModeSegmented extends StatelessWidget {
   final FollowMode mode;
   final ValueChanged<FollowMode> onChanged;
 
+  static const List<(FollowMode, String, IconData)> _options = [
+    (FollowMode.bounded, 'Bounded', Icons.crop_free),
+    (FollowMode.centered, 'Centered', Icons.center_focus_strong),
+    (FollowMode.predictive, 'Predictive', Icons.auto_awesome),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return Row(
+    // Matches the cursor / audio / slice preset rows — a Wrap of
+    // [InspectorChip]s in `dense` mode. The earlier custom card-tile
+    // layout (Expanded + per-tile vertical column) was inconsistent
+    // with the rest of the inspector AND the SpringHoverButton's
+    // magnetic lean leaked sideways out of the narrow Expanded
+    // slots, leaving a ghost-card silhouette in the gap between
+    // tiles on hover.
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        Expanded(
-          child: _segment(
-            label: 'Bounded',
-            icon: Icons.crop_free,
-            isSelected: mode == FollowMode.bounded,
-            onTap: () => onChanged(FollowMode.bounded),
+        for (final (m, label, icon) in _options)
+          InspectorChip(
+            label: label,
+            icon: icon,
+            selected: mode == m,
+            onTap: () => onChanged(m),
+            dense: true,
           ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _segment(
-            label: 'Centered',
-            icon: Icons.center_focus_strong,
-            isSelected: mode == FollowMode.centered,
-            onTap: () => onChanged(FollowMode.centered),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _segment(
-            label: 'Predictive',
-            icon: Icons.auto_awesome,
-            isSelected: mode == FollowMode.predictive,
-            onTap: () => onChanged(FollowMode.predictive),
-          ),
-        ),
       ],
-    );
-  }
-
-  Widget _segment({
-    required String label,
-    required IconData icon,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: kInspectorPanel,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? kInspectorAccent : kInspectorBorder,
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                size: 18,
-                color: isSelected ? kInspectorAccent : Colors.white70),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -438,9 +403,9 @@ class _DeleteButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return SpringHoverButton(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: 10,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 14),

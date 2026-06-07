@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
+import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import '../../theme/app_palette_context.dart';
 import 'recording_thumbnail_service.dart';
 
@@ -164,15 +165,25 @@ class _RemoveButton extends StatelessWidget {
   final VoidCallback onRemove;
 
   @override
-  Widget build(BuildContext context) => Material(
-        color: Colors.black54,
-        shape: const CircleBorder(),
-        child: IconButton(
-          icon: const Icon(Icons.close, size: 16, color: Colors.white),
-          tooltip: 'Remove from history',
-          constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-          padding: EdgeInsets.zero,
-          onPressed: onRemove,
+  Widget build(BuildContext context) => Tooltip(
+        message: 'Remove from history',
+        // SpringHoverButton handles the magnetic lean / press-shrink;
+        // we keep the dark-translucent circle around the close icon
+        // because the destructive affordance reads better on top of
+        // a thumbnail than the spring's reveal pill alone would.
+        child: SpringHoverButton(
+          onTap: onRemove,
+          borderRadius: 14,
+          child: Container(
+            width: 28,
+            height: 28,
+            decoration: const BoxDecoration(
+              color: Colors.black54,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.close, size: 16, color: Colors.white),
+          ),
         ),
       );
 }
