@@ -272,6 +272,21 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           result(granted ? "granted" : "denied")
         }
       }
+    case "getCameraPermission":
+      let status = AVCaptureDevice.authorizationStatus(for: .video)
+      switch status {
+      case .authorized: result("granted")
+      case .denied:     result("denied")
+      case .notDetermined: result("notDetermined")
+      case .restricted: result("restricted")
+      @unknown default: result("notDetermined")
+      }
+    case "requestCameraPermission":
+      AVCaptureDevice.requestAccess(for: .video) { granted in
+        DispatchQueue.main.async {
+          result(granted ? "granted" : "denied")
+        }
+      }
     default:
       result(FlutterMethodNotImplemented)
     }

@@ -164,6 +164,16 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   Future<PermissionStatus> requestMicrophonePermission() async =>
       PermissionStatus.unsupported;
 
+  /// Typed status query for Camera (macOS AVCaptureDevice .video).
+  Future<PermissionStatus> getCameraPermission() async =>
+      PermissionStatus.unsupported;
+
+  /// Triggers the system camera-permission prompt the first time, otherwise
+  /// returns the current status without re-prompting. No-op on unsupported
+  /// platforms.
+  Future<PermissionStatus> requestCameraPermission() async =>
+      PermissionStatus.unsupported;
+
   /// Fetch every stock cursor image macOS ships, so the renderer can
   /// blit the OS-accurate bitmap instead of hand-coded polygons.
   ///
