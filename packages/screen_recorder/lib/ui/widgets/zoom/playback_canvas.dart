@@ -37,6 +37,10 @@ import 'package:screen_recorder/state/zoom_preview_override.dart';
 import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
 import 'package:slipreel_engine/rendering/keystroke_overlay.dart';
+import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
+import 'package:slipreel_engine/models/camera_region.dart';
+import 'package:slipreel_engine/models/camera_settings.dart';
+import 'package:screen_recorder/ui/widgets/camera/camera_bubble.dart';
 
 /// The composed playback canvas: wallpaper layer, framed video,
 /// cursor overlay, optional debug HUD, all wrapped in a zoom Transform
@@ -60,6 +64,18 @@ import 'package:slipreel_engine/rendering/keystroke_overlay.dart';
 /// jumps (smooth fast pan vs. gate snap/overshoot) that the
 /// scene-blur trace can't see.
 bool cameraFocalTraceEnabled = false;
+
+/// Pure gate used by the canvas (and a unit test) to resolve the camera
+/// placement at a playhead. Returns null when the camera is disabled or the
+/// playhead sits in a gap between regions.
+CameraPlacement? cameraPlacementForTest(
+  Duration position,
+  List<CameraRegion> regions,
+  bool enabled,
+) {
+  if (!enabled) return null;
+  return CameraPlacementResolver.placementAt(position, regions);
+}
 
 class PlaybackCanvas extends ConsumerStatefulWidget {
   const PlaybackCanvas({
@@ -103,6 +119,12 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     required this.outputAspect,
     this.keystrokeRecording,
     this.keystrokeOverlaySettings,
+    this.cameraController,
+    this.cameraSettings,
+    this.cameraRegions = const [],
+    this.cameraOriginalAspect = 1.0,
+    this.selectedCameraIndex,
+    this.onCameraPlacementChanged,
   });
 
   final VideoPlayerController controller;
@@ -255,6 +277,27 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// keystroke badge overlay is rendered on top of the canvas composition.
   final KeystrokeRecording? keystrokeRecording;
   final KeystrokeOverlaySettings? keystrokeOverlaySettings;
+
+  /// Second player for `<recording>.camera.mov`, position-synced upstream by
+  /// the playback screen. Null when the recording has no camera.
+  final VideoPlayerController? cameraController;
+
+  /// Global camera look. Null => no camera overlay.
+  final CameraSettings? cameraSettings;
+
+  /// Camera regions (active track). Drives bubble visibility + placement.
+  final List<CameraRegion> cameraRegions;
+
+  /// Source camera width/height; used when the shape is "original".
+  final double cameraOriginalAspect;
+
+  /// Selected camera region (enables on-canvas drag/resize) or null.
+  final int? selectedCameraIndex;
+
+  /// Called with the edited region's new placement during on-canvas
+  /// drag/resize. Null in pure-playback callers.
+  final void Function(int index, CameraPlacement placement)?
+      onCameraPlacementChanged;
 
   @override
   ConsumerState<PlaybackCanvas> createState() => _PlaybackCanvasState();
@@ -639,6 +682,49 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               );
             }
 
+            // Camera PiP overlay — canvas-fixed (NOT zoomed) and outside the
+            // scene-blur capture, exactly like the keystroke overlay. Drawn
+            // on top of everything. Hidden in gaps / when disabled / when no
+            // camera player is attached.
+            Widget? cameraOverlayWidget;
+            final camSettings = widget.cameraSettings;
+            final camController = widget.cameraController;
+            if (camSettings != null &&
+                camSettings.enabled &&
+                camController != null &&
+                camController.value.isInitialized &&
+                widget.cameraRegions.isNotEmpty) {
+              final placement = CameraPlacementResolver.placementAt(
+                pos,
+                widget.cameraRegions,
+              );
+              if (placement != null) {
+                int? activeIndex;
+                for (var i = 0; i < widget.cameraRegions.length; i++) {
+                  if (widget.cameraRegions[i].isActive(pos)) {
+                    activeIndex = i;
+                    break;
+                  }
+                }
+                final editable = activeIndex != null &&
+                    activeIndex == widget.selectedCameraIndex &&
+                    widget.onCameraPlacementChanged != null;
+                // CameraBubble fills the canvas and positions its own box, so
+                // it drops straight in as a sibling overlay (canvas-fixed).
+                cameraOverlayWidget = CameraBubble(
+                  canvasSize: totalSize,
+                  placement: placement,
+                  settings: camSettings,
+                  originalAspect: widget.cameraOriginalAspect,
+                  selected: editable,
+                  onPlacementChanged: editable
+                      ? (p) => widget.onCameraPlacementChanged!(activeIndex!, p)
+                      : null,
+                  child: VideoPlayer(camController),
+                );
+              }
+            }
+
             // Wallpaper is rendered as a *sticky* layer behind the
             // composition: it never goes through the zoom Transform and
             // never enters the RepaintBoundary captured for scene blur.
@@ -764,6 +850,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 body: composition,
                 cursorOverlay: cursorOverlay,
                 keystrokeOverlayWidget: keystrokeOverlayWidget,
+                cameraOverlayWidget: cameraOverlayWidget,
                 stickyBackground: stickyBackground,
                 position: pos,
                 totalSize: totalSize,
@@ -819,6 +906,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                   // Keystroke overlay is NOT zoomed — it stays anchored
                   // to the canvas-space edges regardless of camera zoom.
                   keystrokeOverlayWidget: keystrokeOverlayWidget,
+                  cameraOverlayWidget: cameraOverlayWidget,
                   stickyBackground: stickyBackground,
                   position: pos,
                   totalSize: totalSize,
@@ -842,6 +930,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     required Widget body,
     Widget? cursorOverlay,
     Widget? keystrokeOverlayWidget,
+    Widget? cameraOverlayWidget,
     Widget? stickyBackground,
     required Duration position,
     required Size totalSize,
@@ -857,6 +946,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         body,
         if (cursorOverlay != null) cursorOverlay,
         if (keystrokeOverlayWidget != null) keystrokeOverlayWidget,
+        if (cameraOverlayWidget != null) cameraOverlayWidget,
       ];
       if (layers.length == 1) return layers.first;
       return Stack(fit: StackFit.expand, children: layers);
@@ -967,6 +1057,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         if (blurOverlay != null) blurOverlay,
         if (cursorOverlay != null) cursorOverlay,
         if (keystrokeOverlayWidget != null) keystrokeOverlayWidget,
+        if (cameraOverlayWidget != null) cameraOverlayWidget,
       ],
     );
   }
