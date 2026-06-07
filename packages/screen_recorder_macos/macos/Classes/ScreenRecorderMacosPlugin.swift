@@ -193,6 +193,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       showMicrophoneMenu(args: call.arguments as? [String: Any], result: result)
     case "showSystemAudioMenu":
       showSystemAudioMenu(args: call.arguments as? [String: Any], result: result)
+    case "showCameraMenu":
+      showCameraMenu(args: call.arguments as? [String: Any], result: result)
     case "startMicMonitor":
       if let args = call.arguments as? [String: Any] {
         micLevelMonitor.start(
@@ -513,6 +515,70 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           result(["cancelled": true, "config": NSNull()]) // no change
         } else {
           reply(["mode": "selectedApps", "bundleIds": chosen])
+        }
+      }
+    }
+  }
+
+  private func showCameraMenu(args: [String: Any]?, result: @escaping FlutterResult) {
+    let curUid = args?["deviceUid"] as? String
+
+    DispatchQueue.main.async {
+      let target = CameraMenuTarget()
+      let menu = NSMenu()
+      let status = AVCaptureDevice.authorizationStatus(for: .video)
+
+      if status == .denied || status == .restricted {
+        let info = NSMenuItem(
+          title: "Camera access denied — enable in System Settings ▸ Privacy",
+          action: nil, keyEquivalent: "")
+        info.isEnabled = false
+        menu.addItem(info)
+        menu.addItem(.separator())
+      }
+
+      for dev in CameraCaptureManager.availableDevices() {
+        let uid = dev["uid"] ?? ""
+        let name = dev["label"] ?? uid
+        let item = NSMenuItem(
+          title: name,
+          action: #selector(CameraMenuTarget.pickDevice(_:)), keyEquivalent: "")
+        item.target = target
+        item.representedObject = ["uid": uid, "label": name]
+        item.state = (uid == curUid) ? .on : .off
+        menu.addItem(item)
+      }
+
+      menu.addItem(.separator())
+      let off = NSMenuItem(title: "Don't record camera",
+        action: #selector(CameraMenuTarget.dontRecord(_:)), keyEquivalent: "")
+      off.target = target
+      off.state = (curUid == nil) ? .on : .off
+      menu.addItem(off)
+
+      menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+
+      func reply(_ config: [String: Any]?) {
+        result(["cancelled": false, "config": (config as Any?) ?? NSNull()])
+      }
+
+      switch target.action {
+      case .none:
+        result(["cancelled": true, "config": NSNull()])
+      case .dontRecord:
+        reply(nil)
+      case .device(let uid, let label):
+        // Ensure permission before committing a newly selected device.
+        if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
+          AVCaptureDevice.requestAccess(for: .video) { granted in
+            DispatchQueue.main.async {
+              granted ? reply(["deviceUid": uid, "deviceLabel": label]) : reply(nil)
+            }
+          }
+        } else if AVCaptureDevice.authorizationStatus(for: .video) == .authorized {
+          reply(["deviceUid": uid, "deviceLabel": label])
+        } else {
+          reply(nil)
         }
       }
     }
@@ -1364,6 +1430,19 @@ private final class MicMenuTarget: NSObject {
   }
   @objc func toggleReduceNoise(_ s: NSMenuItem) { action = .toggleReduceNoise }
   @objc func toggleDisableAgc(_ s: NSMenuItem) { action = .toggleDisableAgc }
+  @objc func dontRecord(_ s: NSMenuItem) { action = .dontRecord }
+}
+
+// MARK: - Camera Menu Target
+
+private final class CameraMenuTarget: NSObject {
+  enum Action { case device(uid: String, label: String), dontRecord }
+  var action: Action?
+  @objc func pickDevice(_ s: NSMenuItem) {
+    if let pair = s.representedObject as? [String: String] {
+      action = .device(uid: pair["uid"] ?? "", label: pair["label"] ?? "")
+    }
+  }
   @objc func dontRecord(_ s: NSMenuItem) { action = .dontRecord }
 }
 
