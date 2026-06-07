@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:slipreel_engine/models/keystroke_group.dart';
 import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
 import 'package:slipreel_engine/rendering/keystroke_overlay.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/timeline/edited_time.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 import 'timeline_constants.dart';
 
@@ -38,11 +40,20 @@ class KeystrokeTimelineLane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final caps = <Widget>[];
+    // Filter to displayable + visible (in source order), then coalesce
+    // rapid repeats of the same shortcut into one keycap with a ×N count so
+    // they don't pile up on top of each other.
+    final shown = <KeystrokeEvent>[];
     for (final e in recording.events) {
       if (!settings.shouldDisplay(e.kind)) continue;
-      final sourceTime = Duration(microseconds: e.timestampMicros);
-      if (!_isVisible(sourceTime)) continue;
+      if (!_isVisible(Duration(microseconds: e.timestampMicros))) continue;
+      shown.add(e);
+    }
+    final groups = coalesceKeystrokes(shown);
+
+    final caps = <Widget>[];
+    for (final g in groups) {
+      final sourceTime = Duration(microseconds: g.firstMicros);
       final editedTime =
           clips.isEmpty ? sourceTime : sourceToEdited(clips, sourceTime);
       final x = timeToX(editedTime, pixelsPerSecond);
@@ -56,7 +67,8 @@ class KeystrokeTimelineLane extends StatelessWidget {
             translation: const Offset(-0.5, 0),
             child: Center(
               child: KeystrokeKeycap(
-                label: e.label,
+                label: g.label,
+                count: g.count,
                 scale: _keycapScale,
                 // Slightly lighter fill + a touch more border opacity than
                 // the overlay so keycaps separate from the dark lane.

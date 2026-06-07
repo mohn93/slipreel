@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:slipreel_engine/models/keystroke_group.dart';
 import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
 
@@ -33,35 +34,58 @@ class KeystrokeOverlay extends StatelessWidget {
   // How much of the tail is a fade-out.
   static const _fadeOutSecs = 0.35;
 
+  // Duration of the shrink→grow "click" pulse applied on each press.
+  static const _pulseSecs = 0.24;
+
+  // Extra lookback beyond the fade window so a repeat burst that started
+  // earlier still coalesces with a stable ×N count.
+  static const _burstLookbackMicros = 6000000;
+
+  // Max recent distinct shortcuts shown when stacking (non-single-box).
+  static const _maxStack = 3;
+
   @override
   Widget build(BuildContext context) {
     final nowMicros = position.inMicroseconds;
     final windowMicros = (settings.fadeSecs * 1e6).round();
-    final startMicros = nowMicros - windowMicros;
+    final startMicros = nowMicros - windowMicros - _burstLookbackMicros;
 
-    final events = keystrokeRecording.eventsInRange(startMicros, nowMicros);
-    if (events.isEmpty) return const SizedBox.shrink();
+    final raw = keystrokeRecording.eventsInRange(startMicros, nowMicros);
+    if (raw.isEmpty) return const SizedBox.shrink();
 
-    // Build badge widgets, newest first (reversed), skipping events the
-    // current filter hides (plain typing, or single keys when not opted in).
+    // Filter to displayable events, then coalesce consecutive repeats of the
+    // same shortcut into one group (so they render as one pulsing box).
+    final filtered =
+        raw.where((e) => settings.shouldDisplay(e.kind)).toList();
+    if (filtered.isEmpty) return const SizedBox.shrink();
+    final groups = coalesceKeystrokes(filtered);
+
+    // Walk newest-first; keep groups whose latest press is still inside the
+    // fade window. One in single-box mode, otherwise a short stack.
     final badges = <Widget>[];
-    for (var i = events.length - 1; i >= 0; i--) {
-      final e = events[i];
-      if (!settings.shouldDisplay(e.kind)) continue;
-      final elapsed = (nowMicros - e.timestampMicros) / 1e6;
+    for (var i = groups.length - 1; i >= 0; i--) {
+      final g = groups[i];
+      final elapsed = (nowMicros - g.lastMicros) / 1e6;
+      if (elapsed * 1e6 > windowMicros) break; // older groups are older still
       final opacity = _opacityFor(elapsed, settings.fadeSecs);
       if (opacity <= 0) continue;
 
       badges.add(
         Opacity(
           opacity: opacity,
-          child: KeystrokeKeycap(
-            label: e.label,
-            scale: settings.labelScale,
+          child: Transform.scale(
+            // Pulse is a pure function of time-since-last-press so the
+            // editor preview and the export render frame-for-frame alike.
+            scale: _pressPulse(elapsed / _pulseSecs),
+            child: KeystrokeKeycap(
+              label: g.label,
+              count: g.count,
+              scale: settings.labelScale,
+            ),
           ),
         ),
       );
-      if (badges.length >= 3) break;
+      if (settings.singleBox || badges.length >= _maxStack) break;
     }
 
     if (badges.isEmpty) return const SizedBox.shrink();
@@ -109,6 +133,19 @@ class KeystrokeOverlay extends StatelessWidget {
     return 0;
   }
 
+  /// Scale multiplier for a press [t] of the way through the pulse window
+  /// (0..1). Quick squash (smaller) then springs back past 1.0 (bigger) and
+  /// settles — reads as a click. Returns 1.0 outside the window.
+  static double _pressPulse(double t) {
+    if (t <= 0 || t >= 1) return 1.0;
+    const shrink = 0.16;
+    if (t < 0.32) {
+      return 1.0 - shrink * Curves.easeOut.transform(t / 0.32);
+    }
+    final u = (t - 0.32) / 0.68;
+    return (1.0 - shrink) + shrink * Curves.easeOutBack.transform(u);
+  }
+
   static Alignment _alignmentFor(KeystrokePosition pos) => switch (pos) {
     KeystrokePosition.centerBottom => Alignment.bottomCenter,
     KeystrokePosition.bottomLeft   => Alignment.bottomLeft,
@@ -139,6 +176,7 @@ class KeystrokeKeycap extends StatelessWidget {
   const KeystrokeKeycap({
     super.key,
     required this.label,
+    this.count = 1,
     this.scale = 1.0,
     this.fill = const Color(0xF014141C),
     this.border = const Color(0xB36A6EA0),
@@ -146,6 +184,9 @@ class KeystrokeKeycap extends StatelessWidget {
   });
 
   final String label;
+
+  /// Number of coalesced repeats. When > 1 a small "×N" multiplier is shown.
+  final int count;
 
   /// Multiplier applied to every metric. 1.0 is the base size.
   final double scale;
@@ -190,8 +231,24 @@ class KeystrokeKeycap extends StatelessWidget {
             ),
           ],
         ),
-        child: Text(
-          label,
+        // Single RichText keeps `textAlign: center` + the ConstrainedBox
+        // minWidth working (so short labels centre in a uniform box) while
+        // letting the ×N multiplier ride along in a smaller, dimmer style.
+        child: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: label),
+              if (count > 1)
+                TextSpan(
+                  text: '  ×$count',
+                  style: TextStyle(
+                    fontSize: _baseFontSize * s * 0.6,
+                    fontWeight: FontWeight.w600,
+                    color: textColor.withValues(alpha: 0.6),
+                  ),
+                ),
+            ],
+          ),
           textAlign: TextAlign.center,
           style: TextStyle(
             color: textColor,

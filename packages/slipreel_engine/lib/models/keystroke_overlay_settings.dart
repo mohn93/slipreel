@@ -24,6 +24,7 @@ class KeystrokeOverlaySettings {
     this.fadeSecs = 2.0,
     this.showSingleKeyShortcuts = false,
     this.showTimeline = true,
+    this.singleBox = false,
   });
 
   /// Smallest / largest / default multiplier for the on-canvas keycaps.
@@ -54,6 +55,12 @@ class KeystrokeOverlaySettings {
   /// an effect while [enabled] is true.
   final bool showTimeline;
 
+  /// When true the overlay shows only the single most recent shortcut; a
+  /// different shortcut replaces it and repeats of the same one pulse the
+  /// existing box. When false a short stack of recent distinct shortcuts is
+  /// shown (repeats still merge into one box).
+  final bool singleBox;
+
   /// Whether an event of the given [kind] should be displayed under the
   /// current settings. Plain typing is always hidden; single keys depend on
   /// [showSingleKeyShortcuts]; real shortcuts always show.
@@ -70,6 +77,7 @@ class KeystrokeOverlaySettings {
     double? fadeSecs,
     bool? showSingleKeyShortcuts,
     bool? showTimeline,
+    bool? singleBox,
   }) => KeystrokeOverlaySettings(
     enabled: enabled ?? this.enabled,
     position: position ?? this.position,
@@ -78,6 +86,7 @@ class KeystrokeOverlaySettings {
     showSingleKeyShortcuts:
         showSingleKeyShortcuts ?? this.showSingleKeyShortcuts,
     showTimeline: showTimeline ?? this.showTimeline,
+    singleBox: singleBox ?? this.singleBox,
   );
 
   Map<String, dynamic> toJson() => {
@@ -87,6 +96,7 @@ class KeystrokeOverlaySettings {
     'fadeSecs': fadeSecs,
     'showSingleKeyShortcuts': showSingleKeyShortcuts,
     'showTimeline': showTimeline,
+    'singleBox': singleBox,
   };
 
   factory KeystrokeOverlaySettings.fromJson(Map<String, dynamic> json) {
@@ -102,6 +112,7 @@ class KeystrokeOverlaySettings {
       showSingleKeyShortcuts:
           json['showSingleKeyShortcuts'] as bool? ?? false,
       showTimeline: json['showTimeline'] as bool? ?? true,
+      singleBox: json['singleBox'] as bool? ?? false,
     );
   }
 
@@ -114,7 +125,8 @@ class KeystrokeOverlaySettings {
           other.labelScale == labelScale &&
           other.fadeSecs == fadeSecs &&
           other.showSingleKeyShortcuts == showSingleKeyShortcuts &&
-          other.showTimeline == showTimeline;
+          other.showTimeline == showTimeline &&
+          other.singleBox == singleBox;
 
   @override
   int get hashCode => Object.hash(
@@ -124,5 +136,6 @@ class KeystrokeOverlaySettings {
     fadeSecs,
     showSingleKeyShortcuts,
     showTimeline,
+    singleBox,
   );
 }

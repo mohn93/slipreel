@@ -80,6 +80,17 @@ class ShortcutsTab extends ConsumerWidget {
                 '(Space, Enter, arrows…) as well.',
           ),
 
+          const SizedBox(height: 20),
+
+          // ── One at a time ──────────────────────────────────────────────
+          InspectorToggle(
+            label: 'Show one at a time',
+            value: settings.singleBox,
+            onChanged: (v) => update(settings.copyWith(singleBox: v)),
+            subtitle: 'Show only the latest shortcut instead of a stack. '
+                'Repeats pulse the box and show a ×N count.',
+          ),
+
           const InspectorSectionDivider(),
 
           // ── Timeline show/hide ─────────────────────────────────────────
