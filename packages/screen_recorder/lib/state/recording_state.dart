@@ -7,6 +7,7 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import 'cursor_checkpointer.dart';
 import 'permissions_controller.dart';
 import 'session_marker.dart';
+import 'package:slipreel_engine/models/camera_sidecar_meta.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
@@ -98,6 +99,7 @@ class RecordingController extends StateNotifier<RecordingState> {
   CursorRecording? _cursorRecording;
   StreamSubscription<KeystrokeEvent>? _keystrokeSubscription;
   KeystrokeRecording? _keystrokeRecording;
+  CameraConfig? _activeCameraConfig;
   Timer? _durationTimer;
   DateTime? _startTime;
 
@@ -124,6 +126,7 @@ class RecordingController extends StateNotifier<RecordingState> {
   Future<void> startRecording({
     MicrophoneConfig? microphone,
     SystemAudioConfig? systemAudio,
+    CameraConfig? camera,
     PermissionsSnapshot? permissions,
     Future<void> Function(PermissionKind kind)? onDenied,
   }) async {
@@ -150,7 +153,16 @@ class RecordingController extends StateNotifier<RecordingState> {
       return;
     }
 
+    if (camera != null &&
+        permissions != null &&
+        permissions.camera != PermissionStatus.granted &&
+        permissions.camera != PermissionStatus.unsupported) {
+      await onDenied?.call(PermissionKind.camera);
+      return;
+    }
+
     try {
+      _activeCameraConfig = camera;
       state = state.copyWith(
         status: RecordingStatus.recording,
         frameCount: 0,
@@ -181,6 +193,7 @@ class RecordingController extends StateNotifier<RecordingState> {
         frameRate: _defaultFps,
         microphone: microphone,
         systemAudio: systemAudio,
+        camera: camera,
         captureCursor: true,
       );
 
@@ -272,6 +285,22 @@ class RecordingController extends StateNotifier<RecordingState> {
             'Keystroke data saved: ${_keystrokeRecording!.count} events');
       }
       _keystrokeRecording = null;
+
+      // Save camera metadata sidecar when the native side recorded a camera.
+      if (result.hasCamera) {
+        final camMeta = CameraSidecarMeta(
+          deviceLabel: _activeCameraConfig?.deviceLabel ?? 'Camera',
+          width: result.cameraWidth,
+          height: result.cameraHeight,
+          frameCount: result.cameraFrameCount,
+          offsetMicros: result.cameraOffsetMicros,
+          selfViewX: result.cameraSelfViewX,
+          selfViewY: result.cameraSelfViewY,
+        );
+        await camMeta.saveForVideo(result.outputPath);
+        AppLogger.recording.i('Camera sidecar saved: ${result.cameraFrameCount} frames');
+      }
+      _activeCameraConfig = null;
 
       // Save recording metadata sidecar.
       // The recorder is configured with showsCursor=false, so the MP4 frames
@@ -409,6 +438,7 @@ class RecordingController extends StateNotifier<RecordingState> {
     _startTime = null;
     _cursorRecording = null;
     _keystrokeRecording = null;
+    _activeCameraConfig = null;
   }
 
   void reset() => state = const RecordingState();

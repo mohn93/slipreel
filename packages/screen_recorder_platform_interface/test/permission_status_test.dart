@@ -20,12 +20,13 @@ void main() {
           PermissionStatus.notDetermined);
     });
 
-    test('PermissionKind has exactly three members', () {
-      expect(PermissionKind.values, hasLength(3));
+    test('PermissionKind has exactly four members', () {
+      expect(PermissionKind.values, hasLength(4));
       expect(PermissionKind.values, containsAll(const [
         PermissionKind.screenRecording,
         PermissionKind.microphone,
         PermissionKind.accessibility,
+        PermissionKind.camera,
       ]));
     });
   });
