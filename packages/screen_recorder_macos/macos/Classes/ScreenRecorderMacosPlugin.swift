@@ -11,6 +11,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var captureManager: ScreenCaptureManager?
   private var audioCaptureManager: AudioCaptureManager?
   private var systemAudioManager: Any?  // SystemAudioCaptureManager (gated to macOS 13+)
+  private var cameraManager: CameraCaptureManager?
   private var cursorStreamHandler: CursorStreamHandler?
   private var cursorTracker: CursorTracker?
   private var keystrokeStreamHandler: KeystrokeStreamHandler?
@@ -76,6 +77,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   /// using liveStartTime instead would shift cursor data ahead of the
   /// video by exactly that delay.
   private var firstVideoFrameAt: Date?
+
+  /// Host-clock seconds of the first screen video sample's PTS, used to align
+  /// the camera track. Set alongside `firstVideoFrameAt`.
+  private var firstVideoFrameHostSeconds: Double?
 
   /// Verbose diagnostic logger for the cursor-coordinate transform
   /// (`makeCursorTransform`) and the partial-teardown path
@@ -731,6 +736,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
               nowWall: Date(),
               hostNowSeconds: CMTimeGetSeconds(hostNow),
               ptsSeconds: CMTimeGetSeconds(pts))
+            self.firstVideoFrameHostSeconds = CMTimeGetSeconds(pts)
           }
           try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
         }
@@ -765,6 +771,18 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           } catch {
             // Degrade gracefully: drop the system track, keep recording.
             NSLog("System audio capture failed to start: \(error)")
+          }
+        }
+
+        if let cam = args["camera"] as? [String: Any],
+           let camUid = cam["deviceUid"] as? String {
+          let manager = CameraCaptureManager()
+          do {
+            try manager.start(deviceUid: camUid, outputPath: outputPath)
+            self.cameraManager = manager
+          } catch {
+            // Degrade gracefully: drop the camera, keep recording screen-only.
+            NSLog("Camera capture failed to start: \(error)")
           }
         }
 
@@ -882,6 +900,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       sysMgr.stop()
     }
     self.systemAudioManager = nil
+    if let cam = cameraManager {
+      cam.stop { _ in }
+      cameraManager = nil
+    }
     if let ct = cursorTracker {
       ct.onCursorUpdate = nil
       if ct.isCurrentlyTracking() { ct.stopTracking() }
@@ -894,6 +916,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       keystrokeTracker = nil
     }
     firstVideoFrameAt = nil
+    firstVideoFrameHostSeconds = nil
     if let enc = liveEncoder {
       enc.finalize()
       liveEncoder = nil
@@ -941,6 +964,11 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           keystrokeTracker = nil
         }
         firstVideoFrameAt = nil
+        // Capture before clearing — the writer.stop completion below (which
+        // computes the camera↔screen offset) runs after this point, so reading
+        // the instance var there would always see nil.
+        let screenFirstHostSeconds = firstVideoFrameHostSeconds
+        firstVideoFrameHostSeconds = nil
 
         liveEncoder?.finalize()
         let droppedFrames = liveEncoder?.droppedFrameCount ?? 0
@@ -955,19 +983,42 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         }
         liveWriter = nil
 
+        let cam = self.cameraManager
+        self.cameraManager = nil
+
         writer.stop { stopResult in
           switch stopResult {
           case .success(let path):
-            let payload: [String: Any] = [
-              "outputPath": path,
-              "droppedFrames": droppedFrames,
-              "cpuPctSamples": stats?.cpuPctSamples ?? [],
-              "memBytesSamples": (stats?.memBytesSamples ?? []).map { Int($0) },
-              "width": self.liveCaptureWidth,
-              "height": self.liveCaptureHeight,
-            ]
-            result(payload)
+            // cam.stop is async (finalizing the .camera.mov); assemble + reply
+            // once it returns (or immediately if there was no camera).
+            let finish: (CameraCaptureManager.StopInfo?) -> Void = { camInfo in
+              var payload: [String: Any] = [
+                "outputPath": path,
+                "droppedFrames": droppedFrames,
+                "cpuPctSamples": stats?.cpuPctSamples ?? [],
+                "memBytesSamples": (stats?.memBytesSamples ?? []).map { Int($0) },
+                "width": self.liveCaptureWidth,
+                "height": self.liveCaptureHeight,
+              ]
+              if let ci = camInfo, ci.frameCount > 0 {
+                let screenHost = screenFirstHostSeconds ?? ci.firstSampleHostSeconds ?? 0
+                let camHost = ci.firstSampleHostSeconds ?? screenHost
+                payload["cameraFrameCount"] = ci.frameCount
+                payload["cameraWidth"] = ci.width
+                payload["cameraHeight"] = ci.height
+                payload["cameraOffsetMicros"] = Int((camHost - screenHost) * 1_000_000)
+                payload["cameraSelfViewX"] = ci.selfViewX
+                payload["cameraSelfViewY"] = ci.selfViewY
+              }
+              result(payload)
+            }
+            if let cam = cam {
+              cam.stop { info in finish(info) }
+            } else {
+              finish(nil)
+            }
           case .failure(let err):
+            cam?.stop { _ in }
             result(FlutterError(code: "LIVE_STOP_FAILED",
                                 message: "Failed to finalize: \(err.localizedDescription)",
                                 details: nil))
@@ -988,6 +1039,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       return
     }
     writer.pause()
+    cameraManager?.pause()
     result(nil)
   }
 
@@ -998,6 +1050,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       return
     }
     writer.resume()
+    cameraManager?.resume()
     result(nil)
   }
 
