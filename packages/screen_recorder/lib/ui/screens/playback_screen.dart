@@ -45,6 +45,8 @@ import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/export/audio_mix_args.dart';
 import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
+import 'package:slipreel_engine/editor/camera_seed.dart';
+import 'package:slipreel_engine/models/camera_sidecar_meta.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/keystroke_group.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
@@ -330,6 +332,18 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     videoPath: widget.videoPath,
   );
   Timer? _saveDebounce;
+
+  /// Camera sidecar metadata (`.camera.json`) for this recording, or null
+  /// when the recording has no camera. Its presence enables the Camera
+  /// inspector tab and the camera lane.
+  CameraSidecarMeta? _cameraMeta;
+
+  /// Absolute path of the `.camera.mov` when a camera sidecar exists and the
+  /// file is present on disk; null otherwise.
+  String? _cameraMoviePath;
+
+  /// Whether this recording has a usable camera sidecar.
+  bool get _hasCamera => _cameraMeta != null && _cameraMoviePath != null;
 
   @override
   void initState() {
@@ -618,6 +632,36 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         AppLogger.ui.w(
           'Auto-zoom detection failed; opening editor with empty zoom lane: $e',
         );
+      }
+      // Camera sidecar: load meta, confirm the movie exists, and seed the
+      // first region from the self-view position if none is saved yet
+      // (mirrors auto-zoom seeding — the seeded region is saved so a later
+      // delete sticks across opens).
+      try {
+        final meta = await CameraSidecarMeta.loadForVideo(widget.videoPath);
+        if (meta != null && meta.frameCount > 0) {
+          final moviePath = CameraSidecarMeta.moviePathForVideo(widget.videoPath);
+          if (await File(moviePath).exists()) {
+            _cameraMeta = meta;
+            _cameraMoviePath = moviePath;
+            if (restored.cameraRegions.isEmpty) {
+              final seed = cameraSeedRegion(
+                videoDuration: _controller.value.duration,
+                selfViewX: meta.selfViewX,
+                selfViewY: meta.selfViewY,
+              );
+              restored = restored.copyWith(cameraRegions: [seed]);
+              await _projectStore.save(restored);
+            }
+          } else {
+            AppLogger.ui.w(
+              'Camera sidecar meta present but .camera.mov missing at '
+              '$moviePath — opening editor without camera.',
+            );
+          }
+        }
+      } catch (e) {
+        AppLogger.ui.w('Camera sidecar load failed; editor opens without camera: $e');
       }
       // Push the loaded state into the Riverpod notifier — single
       // source of truth for everything the inspector edits. The
