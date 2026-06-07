@@ -7,6 +7,7 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import 'package:slipreel_engine/models/window_frame.dart';
 
 import '../../onboarding/tips_controller.dart';
+import '../../state/camera_controller.dart';
 import '../../state/microphone_controller.dart';
 import '../../state/recording_action_router.dart';
 import '../../state/recording_state.dart';
@@ -181,6 +182,8 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         onMicTap: _onMicTap,
         systemAudio: ref.watch(systemAudioControllerProvider),
         onSystemAudioTap: _onSystemAudioTap,
+        camera: ref.watch(cameraControllerProvider),
+        onCameraTap: _onCameraTap,
         contentKey: _barContentKey,
         micLevelStream: ref.watch(microphoneControllerProvider) != null
             ? _micLevelStream
@@ -234,6 +237,14 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         await ScreenRecorderPlatform.instance.showSystemAudioMenu(current);
     if (!mounted || result.cancelled) return;
     ref.read(systemAudioControllerProvider.notifier).set(result.config);
+  }
+
+  Future<void> _onCameraTap() async {
+    final current = ref.read(cameraControllerProvider);
+    final result =
+        await ScreenRecorderPlatform.instance.showCameraMenu(current);
+    if (!mounted || result.cancelled) return;
+    ref.read(cameraControllerProvider.notifier).set(result.config);
   }
 
   Future<void> _onGearTap() async {

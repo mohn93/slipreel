@@ -36,6 +36,8 @@ class RecordingBar extends StatelessWidget {
     required this.onMicTap,
     this.systemAudio,
     required this.onSystemAudioTap,
+    this.camera,
+    required this.onCameraTap,
     this.contentKey,
     this.micLevelStream,
   });
@@ -59,6 +61,12 @@ class RecordingBar extends StatelessWidget {
 
   /// Fired when the system-audio control is tapped (opens the native menu).
   final VoidCallback onSystemAudioTap;
+
+  /// Current camera selection (null = off).
+  final CameraConfig? camera;
+
+  /// Fired when the camera control is tapped (opens the native camera menu).
+  final VoidCallback onCameraTap;
 
   /// Attached to the inner content [Row] so the host can measure its intrinsic
   /// width and resize the (variable-width) bar window to hug the content.
@@ -115,7 +123,7 @@ class RecordingBar extends StatelessWidget {
             ),
             const _Mode(icon: LucideIcons.smartphone, label: 'Device'),
             const _Divider(),
-            const _AvPlaceholder(icon: LucideIcons.videoOff, label: 'No camera'),
+            _CameraControl(camera: camera, onTap: onCameraTap),
             _MicControl(
                 microphone: microphone,
                 onTap: onMicTap,
@@ -178,55 +186,6 @@ class _Mode extends StatelessWidget {
                   softWrap: false,
                   style: TextStyle(fontSize: 10, color: labelColor)),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AvPlaceholder extends StatefulWidget {
-  const _AvPlaceholder({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  State<_AvPlaceholder> createState() => _AvPlaceholderState();
-}
-
-class _AvPlaceholderState extends State<_AvPlaceholder> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return SpringHoverButton(
-      onTap: null,
-      onHoverChanged: (h) => setState(() => _hover = h),
-      child: SizedBox(
-        height: _kBarButtonHeight,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Center(
-            // On hover the icon + label animate from the inactive grey up to
-            // the active bright colour.
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(end: _hover ? 1.0 : 0.0),
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOut,
-              builder: (context, t, _) {
-                final color = Color.lerp(
-                    const Color(0xFF6E6E76), const Color(0xFFE9E9EC), t)!;
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(widget.icon, size: 22, color: color),
-                    const SizedBox(width: 6),
-                    Text(widget.label,
-                        style: TextStyle(fontSize: 12, color: color)),
-                  ],
-                );
-              },
-            ),
           ),
         ),
       ),
@@ -405,6 +364,79 @@ class SystemAudioControlForTest extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       _SystemAudioControl(systemAudio: systemAudio, onTap: onTap);
+}
+
+/// Live camera control: icon + (truncated) device name + chevron, mirroring
+/// [_MicControl]. Greyed when off. Tapping opens the native camera menu.
+class _CameraControl extends StatefulWidget {
+  const _CameraControl({required this.camera, required this.onTap});
+
+  final CameraConfig? camera;
+  final VoidCallback onTap;
+
+  @override
+  State<_CameraControl> createState() => _CameraControlState();
+}
+
+class _CameraControlState extends State<_CameraControl> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = widget.camera != null;
+    final label = on ? widget.camera!.deviceLabel : 'No camera';
+    final active = on || _hover;
+    return SpringHoverButton(
+      key: const Key('bar-camera'),
+      onTap: widget.onTap,
+      onHoverChanged: (h) => setState(() => _hover = h),
+      child: SizedBox(
+        width: _kMicChipWidth,
+        height: _kBarButtonHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(end: active ? 1.0 : 0.0),
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            builder: (context, t, _) {
+              final color = Color.lerp(
+                  const Color(0xFF6E6E76), const Color(0xFFE9E9EC), t)!;
+              return Row(
+                children: [
+                  Icon(on ? LucideIcons.video : LucideIcons.videoOff,
+                      size: 22, color: color),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        textAlign: TextAlign.left,
+                        style: TextStyle(fontSize: 12, color: color)),
+                  ),
+                  const SizedBox(width: 2),
+                  const Icon(LucideIcons.chevronDown,
+                      size: 13, color: Color(0xFF7E7E86)),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Test-only public wrapper around the private [_CameraControl].
+@visibleForTesting
+class CameraControlForTest extends StatelessWidget {
+  const CameraControlForTest({super.key, this.camera, required this.onTap});
+  final CameraConfig? camera;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) =>
+      _CameraControl(camera: camera, onTap: onTap);
 }
 
 class _CircleButton extends StatelessWidget {

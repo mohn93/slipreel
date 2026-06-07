@@ -43,6 +43,7 @@ RecordingBar _bar(
       microphone: mic,
       onMicTap: onMicTap ?? () {},
       onSystemAudioTap: () {},
+      onCameraTap: () {},
       micLevelStream: level,
     );
 
