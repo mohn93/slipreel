@@ -8,7 +8,7 @@ enum InspectorTab {
   camera(icon: Icons.account_box_outlined, label: 'Camera', isEnabled: false),
   captions(icon: Icons.closed_caption_off, label: 'Captions', isEnabled: false),
   audio(icon: Icons.volume_up_outlined, label: 'Audio', isEnabled: true),
-  shortcuts(icon: Icons.keyboard_command_key, label: 'Shortcuts', isEnabled: false),
+  shortcuts(icon: Icons.keyboard_command_key, label: 'Shortcuts', isEnabled: true),
   animation(icon: Icons.timeline, label: 'Animation', isEnabled: true);
 
   const InspectorTab({

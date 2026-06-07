@@ -18,6 +18,9 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   /// Event channel for system sleep/wake events
   static const _sleepChannel = EventChannel(ScreenRecorderChannels.sleep);
 
+  /// Event channel for keystroke events during recording
+  final _keystrokeChannel = const EventChannel(ScreenRecorderChannels.keystrokes);
+
   @override
   Future<List<ScreenInfo>> getAvailableScreens() async {
     final result = await _recordingChannel.invokeMethod<List<dynamic>>(
@@ -139,6 +142,13 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
       }
     }
     return out;
+  }
+
+  @override
+  Stream<KeystrokeEvent> get keystrokeStream {
+    return _keystrokeChannel.receiveBroadcastStream().map((event) {
+      return KeystrokeEvent.fromJson(Map<String, dynamic>.from(event as Map));
+    });
   }
 
   @override

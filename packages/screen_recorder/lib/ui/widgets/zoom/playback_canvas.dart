@@ -34,6 +34,9 @@ import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 import 'package:screen_recorder/state/zoom_preview_override.dart';
+import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
+import 'package:slipreel_engine/models/keystroke_recording.dart';
+import 'package:slipreel_engine/rendering/keystroke_overlay.dart';
 
 /// The composed playback canvas: wallpaper layer, framed video,
 /// cursor overlay, optional debug HUD, all wrapped in a zoom Transform
@@ -98,6 +101,8 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     this.debugSnapshot,
     this.zoomPreviewOverride,
     required this.outputAspect,
+    this.keystrokeRecording,
+    this.keystrokeOverlaySettings,
   });
 
   final VideoPlayerController controller;
@@ -245,6 +250,11 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// on every build so the canvas size and the video inset both reflect
   /// the chosen ratio.
   final OutputAspect outputAspect;
+
+  /// When non-null and [keystrokeOverlaySettings.enabled] is true, a
+  /// keystroke badge overlay is rendered on top of the canvas composition.
+  final KeystrokeRecording? keystrokeRecording;
+  final KeystrokeOverlaySettings? keystrokeOverlaySettings;
 
   @override
   ConsumerState<PlaybackCanvas> createState() => _PlaybackCanvasState();
@@ -612,6 +622,23 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               }
             }
 
+            // Keystroke overlay — rendered on top of cursor, outside the
+            // scene-blur boundary so it is never smeared.
+            Widget? keystrokeOverlayWidget;
+            final ksSettings = widget.keystrokeOverlaySettings;
+            final ksRecording = widget.keystrokeRecording;
+            if (ksSettings != null &&
+                ksSettings.enabled &&
+                ksRecording != null &&
+                ksRecording.count > 0) {
+              keystrokeOverlayWidget = KeystrokeOverlay(
+                position: pos,
+                keystrokeRecording: ksRecording,
+                settings: ksSettings,
+                canvasSize: totalSize,
+              );
+            }
+
             // Wallpaper is rendered as a *sticky* layer behind the
             // composition: it never goes through the zoom Transform and
             // never enters the RepaintBoundary captured for scene blur.
@@ -736,6 +763,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               return _buildSceneMotionBlurPass(
                 body: composition,
                 cursorOverlay: cursorOverlay,
+                keystrokeOverlayWidget: keystrokeOverlayWidget,
                 stickyBackground: stickyBackground,
                 position: pos,
                 totalSize: totalSize,
@@ -788,6 +816,9 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 return _buildSceneMotionBlurPass(
                   body: transformed,
                   cursorOverlay: transformedCursor,
+                  // Keystroke overlay is NOT zoomed — it stays anchored
+                  // to the canvas-space edges regardless of camera zoom.
+                  keystrokeOverlayWidget: keystrokeOverlayWidget,
                   stickyBackground: stickyBackground,
                   position: pos,
                   totalSize: totalSize,
@@ -810,6 +841,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   Widget _buildSceneMotionBlurPass({
     required Widget body,
     Widget? cursorOverlay,
+    Widget? keystrokeOverlayWidget,
     Widget? stickyBackground,
     required Duration position,
     required Size totalSize,
@@ -824,6 +856,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         if (stickyBackground != null) stickyBackground,
         body,
         if (cursorOverlay != null) cursorOverlay,
+        if (keystrokeOverlayWidget != null) keystrokeOverlayWidget,
       ];
       if (layers.length == 1) return layers.first;
       return Stack(fit: StackFit.expand, children: layers);
@@ -933,6 +966,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         RepaintBoundary(key: _sceneBoundaryKey, child: body),
         if (blurOverlay != null) blurOverlay,
         if (cursorOverlay != null) cursorOverlay,
+        if (keystrokeOverlayWidget != null) keystrokeOverlayWidget,
       ],
     );
   }

@@ -42,6 +42,7 @@ class InspectorPanel extends StatefulWidget {
     this.onSelectionCleared,
     this.onSliceRemoved,
     this.canHideCursor = false,
+    this.hasKeystrokeData = false,
     required this.curveLibrary,
     this.videoSize = Size.zero,
     this.onPlacementPreview,
@@ -56,6 +57,10 @@ class InspectorPanel extends StatefulWidget {
   /// disabled. Depends on the cursor recording (a session input), not
   /// on persisted editor state, so it can't come from the notifier.
   final bool canHideCursor;
+
+  /// Whether the recording has any keystroke data captured. When false
+  /// the Shortcuts tab toggle is disabled with an explanation.
+  final bool hasKeystrokeData;
 
   /// Persistence for user-saved curves shown in the curve editor's
   /// Library row. Required so the inspector doesn't conjure its own
@@ -144,7 +149,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.camera => const CameraTab(),
         InspectorTab.captions => const CaptionsTab(),
         InspectorTab.audio => const AudioTab(),
-        InspectorTab.shortcuts => const ShortcutsTab(),
+        InspectorTab.shortcuts =>
+          ShortcutsTab(hasKeystrokeData: widget.hasKeystrokeData),
         InspectorTab.animation => AnimationTab(library: widget.curveLibrary),
       },
     );

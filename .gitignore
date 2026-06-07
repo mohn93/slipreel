@@ -49,3 +49,6 @@ packages/screen_recorder/lib/main_dev.dart
 
 # Superpowers brainstorm session artifacts (mockups, server state)
 .superpowers/
+
+# Local MCP server config (has absolute paths and targets the gitignored dev entry point)
+.mcp.json

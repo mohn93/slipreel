@@ -13,6 +13,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var systemAudioManager: Any?  // SystemAudioCaptureManager (gated to macOS 13+)
   private var cursorStreamHandler: CursorStreamHandler?
   private var cursorTracker: CursorTracker?
+  private var keystrokeStreamHandler: KeystrokeStreamHandler?
+  private var keystrokeTracker: KeystrokeTracker?
   private var micLevelStreamHandler: MicLevelStreamHandler?
   private let micLevelMonitor = MicLevelMonitor()
 
@@ -110,6 +112,14 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     )
     instance.cursorStreamHandler = CursorStreamHandler()
     cursorChannel.setStreamHandler(instance.cursorStreamHandler)
+
+    // Event channel for keystroke capture
+    let keystrokeChannel = FlutterEventChannel(
+      name: "com.slipreel.screen_recorder/keystrokes",
+      binaryMessenger: registrar.messenger
+    )
+    instance.keystrokeStreamHandler = KeystrokeStreamHandler()
+    keystrokeChannel.setStreamHandler(instance.keystrokeStreamHandler)
 
     let micLevelChannel = FlutterEventChannel(
       name: "com.slipreel.screen_recorder/micLevel",
@@ -716,6 +726,18 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           try cursorTracker?.startTracking(frequency: 60)
         }
 
+        // Keystroke tracking (requires Accessibility; silently no-ops if untrusted).
+        if keystrokeTracker == nil { keystrokeTracker = KeystrokeTracker() }
+        keystrokeTracker?.onKeystroke = { [weak self] label in
+          guard let self = self else { return }
+          guard let frameStart = self.firstVideoFrameAt else { return }
+          guard let videoMicros = FirstFrameTiming.videoMicros(
+            now: Date(), since: frameStart) else { return }
+          self.keystrokeStreamHandler?.send(
+            timestampMicros: videoMicros, label: label)
+        }
+        keystrokeTracker?.startTracking()
+
         let sampler = PerfSampler()
         sampler.start()
 
@@ -785,6 +807,11 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       cursorTracker = nil
     }
     cursorTransform = nil
+    if let kt = keystrokeTracker {
+      kt.onKeystroke = nil
+      if kt.isCurrentlyTracking { kt.stopTracking() }
+      keystrokeTracker = nil
+    }
     firstVideoFrameAt = nil
     if let enc = liveEncoder {
       enc.finalize()
@@ -827,6 +854,11 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           cursorTracker = nil
         }
         cursorTransform = nil
+        if let kt = keystrokeTracker {
+          kt.onKeystroke = nil
+          if kt.isCurrentlyTracking { kt.stopTracking() }
+          keystrokeTracker = nil
+        }
         firstVideoFrameAt = nil
 
         liveEncoder?.finalize()
@@ -1396,6 +1428,32 @@ class MicLevelStreamHandler: NSObject, FlutterStreamHandler {
   func send(_ level: Double) {
     guard let sink = eventSink, level.isFinite else { return }
     sink(level)
+  }
+}
+
+// MARK: - Keystroke Stream Handler
+
+class KeystrokeStreamHandler: NSObject, FlutterStreamHandler {
+  private var eventSink: FlutterEventSink?
+
+  func onListen(withArguments _: Any?, eventSink events: @escaping FlutterEventSink)
+      -> FlutterError? {
+    self.eventSink = events
+    return nil
+  }
+
+  func onCancel(withArguments _: Any?) -> FlutterError? {
+    eventSink = nil
+    return nil
+  }
+
+  func send(timestampMicros: Int64, label: String) {
+    guard let sink = eventSink else { return }
+    let payload: [String: Any] = [
+      "timestampMicros": timestampMicros,
+      "label": label,
+    ]
+    DispatchQueue.main.async { sink(payload) }
   }
 }
 

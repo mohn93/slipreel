@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -90,6 +91,9 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
 
   void setOutputAspect(OutputAspect value) =>
       state = state.copyWith(outputAspect: value);
+
+  void setKeystrokeOverlay(KeystrokeOverlaySettings value) =>
+      state = state.copyWith(keystrokeOverlay: value);
 
   /// Set the timeline horizontal scale. Clamped to [1.0, 8.0]. The
   /// optional [anchorTime] is a one-shot hint stored on the next

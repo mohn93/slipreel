@@ -5,6 +5,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'models/audio_data.dart';
 import 'models/audio_device_info.dart';
 import 'models/cursor_position.dart';
+import 'models/keystroke_event.dart';
 import 'models/frame_data.dart';
 import 'models/recording_result.dart';
 import 'models/recording_settings.dart';
@@ -194,6 +195,13 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   /// Stream of cursor positions during recording
   Stream<CursorPosition> get cursorStream {
     throw UnimplementedError('cursorStream has not been implemented.');
+  }
+
+  /// Stream of keystroke events during recording.
+  /// Only emits when the app has Accessibility permission (needed for global
+  /// key monitoring). Silently produces no events when untrusted.
+  Stream<KeystrokeEvent> get keystrokeStream {
+    throw UnimplementedError('keystrokeStream has not been implemented.');
   }
 
   /// Show a full-screen overlay for region selection. Returns the chosen

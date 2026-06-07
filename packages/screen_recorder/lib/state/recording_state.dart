@@ -8,6 +8,7 @@ import 'cursor_checkpointer.dart';
 import 'permissions_controller.dart';
 import 'session_marker.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/models/keystroke_recording.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
@@ -95,6 +96,8 @@ class RecordingController extends StateNotifier<RecordingState> {
   String? _activeNdjsonPath;
   StreamSubscription<CursorPosition>? _cursorSubscription;
   CursorRecording? _cursorRecording;
+  StreamSubscription<KeystrokeEvent>? _keystrokeSubscription;
+  KeystrokeRecording? _keystrokeRecording;
   Timer? _durationTimer;
   DateTime? _startTime;
 
@@ -217,6 +220,13 @@ class RecordingController extends StateNotifier<RecordingState> {
         onError: (e) => AppLogger.recording.w('Cursor stream error', error: e),
       );
 
+      _keystrokeRecording = KeystrokeRecording();
+      _keystrokeSubscription =
+          ScreenRecorderPlatform.instance.keystrokeStream.listen(
+        (e) => _keystrokeRecording?.addEvent(e),
+        onError: (e) => AppLogger.recording.w('Keystroke stream error', error: e),
+      );
+
       _startTime = DateTime.now();
       _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (_startTime != null) {
@@ -242,6 +252,8 @@ class RecordingController extends StateNotifier<RecordingState> {
 
       await _cursorSubscription?.cancel();
       _cursorSubscription = null;
+      await _keystrokeSubscription?.cancel();
+      _keystrokeSubscription = null;
 
       final result = await _videoEncoder.stop();
 
@@ -251,6 +263,15 @@ class RecordingController extends StateNotifier<RecordingState> {
         AppLogger.recording.i('Cursor data saved: ${_cursorRecording!.count} positions');
       }
       _cursorRecording = null;
+
+      // Save keystroke sidecar.
+      if (_keystrokeRecording != null && _keystrokeRecording!.count > 0) {
+        await _keystrokeRecording!
+            .saveToFile('${result.outputPath}.keystrokes.json');
+        AppLogger.recording.i(
+            'Keystroke data saved: ${_keystrokeRecording!.count} events');
+      }
+      _keystrokeRecording = null;
 
       // Save recording metadata sidecar.
       // The recorder is configured with showsCursor=false, so the MP4 frames
@@ -381,10 +402,13 @@ class RecordingController extends StateNotifier<RecordingState> {
     state = state.copyWith(status: RecordingStatus.error, error: message);
     _cursorSubscription?.cancel();
     _cursorSubscription = null;
+    _keystrokeSubscription?.cancel();
+    _keystrokeSubscription = null;
     _durationTimer?.cancel();
     _durationTimer = null;
     _startTime = null;
     _cursorRecording = null;
+    _keystrokeRecording = null;
   }
 
   void reset() => state = const RecordingState();
@@ -392,6 +416,7 @@ class RecordingController extends StateNotifier<RecordingState> {
   @override
   void dispose() {
     _cursorSubscription?.cancel();
+    _keystrokeSubscription?.cancel();
     _durationTimer?.cancel();
     super.dispose();
   }

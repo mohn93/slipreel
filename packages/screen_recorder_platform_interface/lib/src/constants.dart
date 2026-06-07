@@ -20,6 +20,9 @@ class ScreenRecorderChannels {
 
   /// Event channel for system sleep/wake events.
   static const String sleep = 'com.slipreel.screen_recorder/sleep';
+
+  /// Event channel for keystroke events during recording.
+  static const String keystrokes = 'com.slipreel.screen_recorder/keystrokes';
 }
 
 /// Method names for the recording channel

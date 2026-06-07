@@ -46,6 +46,7 @@ import 'package:slipreel_engine/export/audio_mix_args.dart';
 import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/models/keystroke_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 import '../../state/recording_audio_streams_provider.dart';
@@ -285,6 +286,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
   RecordingMetadata? _metadata;
   CursorRecording _cursorRecording = CursorRecording();
+  KeystrokeRecording _keystrokeRecording = KeystrokeRecording();
   // Owns hover-scrub state: the user's intended (anchor) position —
   // the spot we return to when a hover-preview ends — and whether a
   // hover-preview is in progress. The anchor is updated continuously
@@ -563,6 +565,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         );
       } catch (_) {
         _cursorRecording = CursorRecording();
+      }
+      try {
+        _keystrokeRecording = await KeystrokeRecording.loadFromFile(
+          '${widget.videoPath}.keystrokes.json',
+        );
+      } catch (_) {
+        _keystrokeRecording = KeystrokeRecording();
       }
       _smoothPlayhead = SmoothPlayheadController(
         videoController: _controller,
@@ -1952,6 +1961,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           clipDuration: _controller.value.duration,
                           canHideCursor: _metadata?.isPureSource == true &&
                               _cursorRecording.count > 0,
+                          hasKeystrokeData: _keystrokeRecording.count > 0,
                           curveLibrary: _curveLibrary,
                           onZoomChanged: (i, next) {
                             _zoomPreviewOverride.value = null;
@@ -2093,6 +2103,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       isHoverScrubbing: isHoverScrubbing,
       cursorPostProcess: project.cursorPostProcess,
       zoomPreviewOverride: _zoomPreviewOverride,
+      keystrokeRecording: _keystrokeRecording,
+      keystrokeOverlaySettings: project.keystrokeOverlay,
     );
 
     final videoSize = _controller.value.size;

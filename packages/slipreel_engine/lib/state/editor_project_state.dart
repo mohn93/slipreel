@@ -1,3 +1,4 @@
+import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -38,6 +39,7 @@ class EditorProjectState {
     this.outputAspect = OutputAspect.auto,
     this.timelineScale = 1.0,
     this.pendingScaleAnchor,
+    this.keystrokeOverlay = const KeystrokeOverlaySettings(),
   });
 
   /// Sensible blank slate for a freshly-loaded recording with no saved
@@ -136,6 +138,10 @@ class EditorProjectState {
   /// so a project file never reflects a transient UI signal.
   final Duration? pendingScaleAnchor;
 
+  /// Keystroke overlay configuration — whether to show captured keyboard
+  /// events on the canvas during playback and export, and how to style them.
+  final KeystrokeOverlaySettings keystrokeOverlay;
+
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
   static const int currentSchemaVersion = 8;
@@ -166,6 +172,7 @@ class EditorProjectState {
     double? timelineScale,
     Duration? pendingScaleAnchor,
     bool clearPendingScaleAnchor = false,
+    KeystrokeOverlaySettings? keystrokeOverlay,
   }) {
     // `zoomRegions:` is a convenience override that writes through to
     // the active (first) zoom track on the timeline — matches today's
@@ -218,6 +225,7 @@ class EditorProjectState {
       pendingScaleAnchor: clearPendingScaleAnchor
           ? null
           : (pendingScaleAnchor ?? this.pendingScaleAnchor),
+      keystrokeOverlay: keystrokeOverlay ?? this.keystrokeOverlay,
     );
   }
 
@@ -241,6 +249,7 @@ class EditorProjectState {
     'cursorPostProcess': cursorPostProcess.toJson(),
     'outputAspect': outputAspect.name,
     'timelineScale': timelineScale,
+    'keystrokeOverlay': keystrokeOverlay.toJson(),
     // pendingScaleAnchor is transient; not serialized.
   };
 
@@ -336,6 +345,10 @@ class EditorProjectState {
           ? OutputAspect.values.byName(json['outputAspect'] as String)
           : defaults.outputAspect,
       timelineScale: _readTimelineScale(json['timelineScale']),
+      keystrokeOverlay: json['keystrokeOverlay'] is Map<String, dynamic>
+          ? KeystrokeOverlaySettings.fromJson(
+              json['keystrokeOverlay'] as Map<String, dynamic>)
+          : const KeystrokeOverlaySettings(),
       // pendingScaleAnchor is transient; always null after load.
     );
   }
@@ -383,7 +396,8 @@ class EditorProjectState {
         other.cursorPostProcess == cursorPostProcess &&
         other.windowFrame == windowFrame &&
         other.outputAspect == outputAspect &&
-        other.timelineScale == timelineScale;
+        other.timelineScale == timelineScale &&
+        other.keystrokeOverlay == keystrokeOverlay;
     // pendingScaleAnchor intentionally excluded.
   }
 
@@ -407,6 +421,7 @@ class EditorProjectState {
         windowFrame,
         outputAspect,
         timelineScale,
+        keystrokeOverlay,
         // pendingScaleAnchor intentionally excluded.
       ]);
 }
