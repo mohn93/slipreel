@@ -39,6 +39,7 @@ RecordingBar _bar({
   MicrophoneConfig? microphone,
   VoidCallback? onMicTap,
   VoidCallback? onSystemAudioTap,
+  VoidCallback? onCameraTap,
 }) =>
     RecordingBar(
       onPickMode: onPickMode ?? (_) {},
@@ -48,6 +49,7 @@ RecordingBar _bar({
       microphone: microphone,
       onMicTap: onMicTap ?? () {},
       onSystemAudioTap: onSystemAudioTap ?? () {},
+      onCameraTap: onCameraTap ?? () {},
     );
 
 void main() {
@@ -61,7 +63,9 @@ void main() {
     expect(find.text('Device'), findsOneWidget);
   });
 
-  testWidgets('shows the three disabled A/V placeholders', (tester) async {
+  testWidgets(
+      'shows "No camera", "No microphone", and "No system audio" when nothing is configured',
+      (tester) async {
     _wide(tester);
     final tips = await _allSeenController();
     await tester.pumpWidget(_wrap(_bar(), tips));

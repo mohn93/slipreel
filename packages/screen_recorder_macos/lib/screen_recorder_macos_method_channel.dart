@@ -130,6 +130,22 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  Future<PermissionStatus> getCameraPermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.getCameraPermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
+  }
+
+  @override
+  Future<PermissionStatus> requestCameraPermission() async {
+    final wire = await _recordingChannel.invokeMethod<String>(
+      ScreenRecorderMethods.requestCameraPermission,
+    );
+    return PermissionStatusCodec.fromWire(wire);
+  }
+
+  @override
   Future<Map<String, StockCursorImage>> getStockCursorImages() async {
     final raw = await _recordingChannel
         .invokeMapMethod<String, dynamic>(ScreenRecorderMethods.getStockCursorImages);
@@ -304,6 +320,18 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
       return const SystemAudioMenuResult(cancelled: true);
     }
     return SystemAudioMenuResult.fromJson(raw);
+  }
+
+  @override
+  Future<CameraMenuResult> showCameraMenu(CameraConfig? current) async {
+    final raw = await _recordingChannel.invokeMapMethod<String, dynamic>(
+      ScreenRecorderMethods.showCameraMenu,
+      current?.toJson(),
+    );
+    if (raw == null) {
+      return const CameraMenuResult(cancelled: true);
+    }
+    return CameraMenuResult.fromJson(raw);
   }
 
   @override

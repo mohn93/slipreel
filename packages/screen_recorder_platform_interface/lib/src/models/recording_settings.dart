@@ -1,3 +1,4 @@
+import 'camera_config.dart';
 import 'microphone_config.dart';
 import 'system_audio_config.dart';
 
@@ -13,6 +14,9 @@ class RecordingSettings {
   /// The system-audio selection, or null for "don't record system audio".
   final SystemAudioConfig? systemAudio;
 
+  /// The camera to record, or null for "don't record camera".
+  final CameraConfig? camera;
+
   final bool captureCursor;
   final int? maxDurationSeconds;
 
@@ -22,6 +26,7 @@ class RecordingSettings {
     this.frameRate = 30,
     this.microphone,
     this.systemAudio,
+    this.camera,
     this.captureCursor = true,
     this.maxDurationSeconds,
   });
@@ -33,6 +38,7 @@ class RecordingSettings {
       'frameRate': frameRate,
       'microphone': microphone?.toJson(),
       'systemAudio': systemAudio?.toJson(),
+      'camera': camera?.toJson(),
       'captureCursor': captureCursor,
       'maxDurationSeconds': maxDurationSeconds,
     };
@@ -41,6 +47,7 @@ class RecordingSettings {
   factory RecordingSettings.fromJson(Map<String, dynamic> json) {
     final mic = json['microphone'];
     final sys = json['systemAudio'];
+    final cam = json['camera'];
     return RecordingSettings(
       source: RecordingSource.values.firstWhere(
         (e) => e.name == json['source'],
@@ -54,6 +61,9 @@ class RecordingSettings {
       systemAudio: sys == null
           ? null
           : SystemAudioConfig.fromJson(Map<String, dynamic>.from(sys as Map)),
+      camera: cam == null
+          ? null
+          : CameraConfig.fromJson(Map<String, dynamic>.from(cam as Map)),
       captureCursor: json['captureCursor'] as bool? ?? true,
       maxDurationSeconds: json['maxDurationSeconds'] as int?,
     );
@@ -73,6 +83,7 @@ class RecordingSettings {
     int? frameRate,
     Object? microphone = _unset,
     Object? systemAudio = _unset,
+    Object? camera = _unset,
     bool? captureCursor,
     Object? maxDurationSeconds = _unset,
   }) {
@@ -88,6 +99,9 @@ class RecordingSettings {
       systemAudio: identical(systemAudio, _unset)
           ? this.systemAudio
           : systemAudio as SystemAudioConfig?,
+      camera: identical(camera, _unset)
+          ? this.camera
+          : camera as CameraConfig?,
       captureCursor: captureCursor ?? this.captureCursor,
       maxDurationSeconds: identical(maxDurationSeconds, _unset)
           ? this.maxDurationSeconds

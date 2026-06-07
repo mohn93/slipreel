@@ -20,6 +20,15 @@ class PermissionsPage extends ConsumerWidget {
     PermissionKind.accessibility: 'Optional — for richer click tracking.',
   };
 
+  /// Permissions surfaced during first-run onboarding. Camera is intentionally
+  /// excluded — it's optional and requested on demand when the user picks a
+  /// camera device, not a first-run gate.
+  static const _onboardingKinds = [
+    PermissionKind.screenRecording,
+    PermissionKind.microphone,
+    PermissionKind.accessibility,
+  ];
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final snap = ref.watch(permissionsControllerProvider);
@@ -35,7 +44,7 @@ class PermissionsPage extends ConsumerWidget {
               style: Theme.of(context).textTheme.headlineMedium,
               textAlign: TextAlign.center),
           const SizedBox(height: 24),
-          for (final kind in PermissionKind.values)
+          for (final kind in _onboardingKinds)
             _PermissionRow(
               kind: kind,
               label: _labels[kind]!,

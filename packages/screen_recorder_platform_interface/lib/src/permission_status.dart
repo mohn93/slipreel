@@ -1,7 +1,7 @@
 // packages/screen_recorder_platform_interface/lib/src/permission_status.dart
 
-/// The three permission kinds Slipreel cares about today.
-enum PermissionKind { screenRecording, microphone, accessibility }
+/// The permission kinds Slipreel cares about.
+enum PermissionKind { screenRecording, microphone, accessibility, camera }
 
 /// Status of a single permission kind, in a shape that maps cleanly to
 /// macOS's `AVAuthorizationStatus` + ScreenCaptureKit + AX states, and

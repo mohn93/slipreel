@@ -104,6 +104,7 @@ class _FakeRecordingController extends RecordingController {
   Future<void> startRecording({
     MicrophoneConfig? microphone,
     SystemAudioConfig? systemAudio,
+    CameraConfig? camera,
     PermissionsSnapshot? permissions,
     Future<void> Function(PermissionKind kind)? onDenied,
   }) async =>

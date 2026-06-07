@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 import 'countdown_controller.dart';
+import 'camera_controller.dart';
 import 'microphone_controller.dart';
 import 'permissions_controller.dart';
 import 'recording_settings_controller.dart';
@@ -31,19 +32,22 @@ class RecordingActionRouter {
       PermissionsSnapshot? snapshot;
       MicrophoneConfig? micConfig;
       SystemAudioConfig? sysAudioConfig;
+      CameraConfig? cameraConfig;
       try {
         snapshot = _container.read(permissionsControllerProvider);
       } catch (_) {}
       try {
         micConfig = _container.read(microphoneControllerProvider);
         sysAudioConfig = _container.read(systemAudioControllerProvider);
+        cameraConfig = _container.read(cameraControllerProvider);
       } catch (_) {
         // Providers not overridden in test — that's fine; recording can
-        // proceed without mic / system audio configs.
+        // proceed without mic / system audio / camera configs.
       }
       await controller.startRecording(
         microphone: micConfig,
         systemAudio: sysAudioConfig,
+        camera: cameraConfig,
         permissions: snapshot,
         onDenied: (kind) {
           if (!context.mounted) return Future.value();

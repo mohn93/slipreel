@@ -32,5 +32,7 @@
 	<string>NSApplication</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Slipreel needs microphone access to record narration alongside your screen.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Slipreel needs camera access to record your webcam alongside your screen.</string>
 </dict>
 </plist>

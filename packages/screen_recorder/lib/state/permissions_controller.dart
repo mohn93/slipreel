@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 
-/// Immutable snapshot of all three permission states.
+/// Immutable snapshot of all permission states.
 class PermissionsSnapshot {
   const PermissionsSnapshot(this.byKind);
 
@@ -15,11 +15,14 @@ class PermissionsSnapshot {
       byKind[PermissionKind.microphone] ?? PermissionStatus.unsupported;
   PermissionStatus get accessibility =>
       byKind[PermissionKind.accessibility] ?? PermissionStatus.unsupported;
+  PermissionStatus get camera =>
+      byKind[PermissionKind.camera] ?? PermissionStatus.unsupported;
 
   static const PermissionsSnapshot initial = PermissionsSnapshot({
     PermissionKind.screenRecording: PermissionStatus.unsupported,
     PermissionKind.microphone: PermissionStatus.unsupported,
     PermissionKind.accessibility: PermissionStatus.unsupported,
+    PermissionKind.camera: PermissionStatus.unsupported,
   });
 }
 
@@ -36,11 +39,13 @@ class PermissionsController extends StateNotifier<PermissionsSnapshot> {
         _platform.getScreenRecordingPermission(),
         _platform.getMicrophonePermission(),
         _platform.getAccessibilityPermission(),
+        _platform.getCameraPermission(),
       ]);
       state = PermissionsSnapshot({
         PermissionKind.screenRecording: results[0],
         PermissionKind.microphone: results[1],
         PermissionKind.accessibility: results[2],
+        PermissionKind.camera: results[3],
       });
     } catch (e, st) {
       AppLogger.permissions.e('refreshAll failed', error: e, stackTrace: st);
@@ -60,6 +65,8 @@ class PermissionsController extends StateNotifier<PermissionsSnapshot> {
         // user toggles + the app is relaunched OR resumes.
         await _platform.requestAccessibilityPermission();
         result = await _platform.getAccessibilityPermission();
+      case PermissionKind.camera:
+        result = await _platform.requestCameraPermission();
     }
     state = PermissionsSnapshot({
       ...state.byKind,

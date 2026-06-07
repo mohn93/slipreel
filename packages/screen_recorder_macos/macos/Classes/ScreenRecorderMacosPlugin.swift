@@ -11,6 +11,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var captureManager: ScreenCaptureManager?
   private var audioCaptureManager: AudioCaptureManager?
   private var systemAudioManager: Any?  // SystemAudioCaptureManager (gated to macOS 13+)
+  private var cameraManager: CameraCaptureManager?
   private var cursorStreamHandler: CursorStreamHandler?
   private var cursorTracker: CursorTracker?
   private var keystrokeStreamHandler: KeystrokeStreamHandler?
@@ -76,6 +77,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   /// using liveStartTime instead would shift cursor data ahead of the
   /// video by exactly that delay.
   private var firstVideoFrameAt: Date?
+
+  /// Host-clock seconds of the first screen video sample's PTS, used to align
+  /// the camera track. Set alongside `firstVideoFrameAt`.
+  private var firstVideoFrameHostSeconds: Double?
 
   /// Verbose diagnostic logger for the cursor-coordinate transform
   /// (`makeCursorTransform`) and the partial-teardown path
@@ -193,6 +198,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       showMicrophoneMenu(args: call.arguments as? [String: Any], result: result)
     case "showSystemAudioMenu":
       showSystemAudioMenu(args: call.arguments as? [String: Any], result: result)
+    case "showCameraMenu":
+      showCameraMenu(args: call.arguments as? [String: Any], result: result)
     case "startMicMonitor":
       if let args = call.arguments as? [String: Any] {
         micLevelMonitor.start(
@@ -268,6 +275,21 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       result(AXIsProcessTrusted() ? "granted" : "denied")
     case "requestMicrophonePermission":
       AVCaptureDevice.requestAccess(for: .audio) { granted in
+        DispatchQueue.main.async {
+          result(granted ? "granted" : "denied")
+        }
+      }
+    case "getCameraPermission":
+      let status = AVCaptureDevice.authorizationStatus(for: .video)
+      switch status {
+      case .authorized: result("granted")
+      case .denied:     result("denied")
+      case .notDetermined: result("notDetermined")
+      case .restricted: result("restricted")
+      @unknown default: result("notDetermined")
+      }
+    case "requestCameraPermission":
+      AVCaptureDevice.requestAccess(for: .video) { granted in
         DispatchQueue.main.async {
           result(granted ? "granted" : "denied")
         }
@@ -503,6 +525,70 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     }
   }
 
+  private func showCameraMenu(args: [String: Any]?, result: @escaping FlutterResult) {
+    let curUid = args?["deviceUid"] as? String
+
+    DispatchQueue.main.async {
+      let target = CameraMenuTarget()
+      let menu = NSMenu()
+      let status = AVCaptureDevice.authorizationStatus(for: .video)
+
+      if status == .denied || status == .restricted {
+        let info = NSMenuItem(
+          title: "Camera access denied — enable in System Settings ▸ Privacy",
+          action: nil, keyEquivalent: "")
+        info.isEnabled = false
+        menu.addItem(info)
+        menu.addItem(.separator())
+      }
+
+      for dev in CameraCaptureManager.availableDevices() {
+        let uid = dev["uid"] ?? ""
+        let name = dev["label"] ?? uid
+        let item = NSMenuItem(
+          title: name,
+          action: #selector(CameraMenuTarget.pickDevice(_:)), keyEquivalent: "")
+        item.target = target
+        item.representedObject = ["uid": uid, "label": name]
+        item.state = (uid == curUid) ? .on : .off
+        menu.addItem(item)
+      }
+
+      menu.addItem(.separator())
+      let off = NSMenuItem(title: "Don't record camera",
+        action: #selector(CameraMenuTarget.dontRecord(_:)), keyEquivalent: "")
+      off.target = target
+      off.state = (curUid == nil) ? .on : .off
+      menu.addItem(off)
+
+      menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+
+      func reply(_ config: [String: Any]?) {
+        result(["cancelled": false, "config": (config as Any?) ?? NSNull()])
+      }
+
+      switch target.action {
+      case .none:
+        result(["cancelled": true, "config": NSNull()])
+      case .dontRecord:
+        reply(nil)
+      case .device(let uid, let label):
+        // Ensure permission before committing a newly selected device.
+        if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
+          AVCaptureDevice.requestAccess(for: .video) { granted in
+            DispatchQueue.main.async {
+              granted ? reply(["deviceUid": uid, "deviceLabel": label]) : reply(nil)
+            }
+          }
+        } else if AVCaptureDevice.authorizationStatus(for: .video) == .authorized {
+          reply(["deviceUid": uid, "deviceLabel": label])
+        } else {
+          reply(nil)
+        }
+      }
+    }
+  }
+
   // MARK: - Permissions
 
   private func requestPermissions(result: @escaping FlutterResult) {
@@ -650,6 +736,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
               nowWall: Date(),
               hostNowSeconds: CMTimeGetSeconds(hostNow),
               ptsSeconds: CMTimeGetSeconds(pts))
+            self.firstVideoFrameHostSeconds = CMTimeGetSeconds(pts)
           }
           try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
         }
@@ -684,6 +771,18 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           } catch {
             // Degrade gracefully: drop the system track, keep recording.
             NSLog("System audio capture failed to start: \(error)")
+          }
+        }
+
+        if let cam = args["camera"] as? [String: Any],
+           let camUid = cam["deviceUid"] as? String {
+          let manager = CameraCaptureManager()
+          do {
+            try manager.start(deviceUid: camUid, outputPath: outputPath)
+            self.cameraManager = manager
+          } catch {
+            // Degrade gracefully: drop the camera, keep recording screen-only.
+            NSLog("Camera capture failed to start: \(error)")
           }
         }
 
@@ -801,6 +900,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       sysMgr.stop()
     }
     self.systemAudioManager = nil
+    if let cam = cameraManager {
+      cam.stop { _ in }
+      cameraManager = nil
+    }
     if let ct = cursorTracker {
       ct.onCursorUpdate = nil
       if ct.isCurrentlyTracking() { ct.stopTracking() }
@@ -813,6 +916,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       keystrokeTracker = nil
     }
     firstVideoFrameAt = nil
+    firstVideoFrameHostSeconds = nil
     if let enc = liveEncoder {
       enc.finalize()
       liveEncoder = nil
@@ -860,6 +964,11 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           keystrokeTracker = nil
         }
         firstVideoFrameAt = nil
+        // Capture before clearing — the writer.stop completion below (which
+        // computes the camera↔screen offset) runs after this point, so reading
+        // the instance var there would always see nil.
+        let screenFirstHostSeconds = firstVideoFrameHostSeconds
+        firstVideoFrameHostSeconds = nil
 
         liveEncoder?.finalize()
         let droppedFrames = liveEncoder?.droppedFrameCount ?? 0
@@ -874,19 +983,42 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         }
         liveWriter = nil
 
+        let cam = self.cameraManager
+        self.cameraManager = nil
+
         writer.stop { stopResult in
           switch stopResult {
           case .success(let path):
-            let payload: [String: Any] = [
-              "outputPath": path,
-              "droppedFrames": droppedFrames,
-              "cpuPctSamples": stats?.cpuPctSamples ?? [],
-              "memBytesSamples": (stats?.memBytesSamples ?? []).map { Int($0) },
-              "width": self.liveCaptureWidth,
-              "height": self.liveCaptureHeight,
-            ]
-            result(payload)
+            // cam.stop is async (finalizing the .camera.mov); assemble + reply
+            // once it returns (or immediately if there was no camera).
+            let finish: (CameraCaptureManager.StopInfo?) -> Void = { camInfo in
+              var payload: [String: Any] = [
+                "outputPath": path,
+                "droppedFrames": droppedFrames,
+                "cpuPctSamples": stats?.cpuPctSamples ?? [],
+                "memBytesSamples": (stats?.memBytesSamples ?? []).map { Int($0) },
+                "width": self.liveCaptureWidth,
+                "height": self.liveCaptureHeight,
+              ]
+              if let ci = camInfo, ci.frameCount > 0 {
+                let screenHost = screenFirstHostSeconds ?? ci.firstSampleHostSeconds ?? 0
+                let camHost = ci.firstSampleHostSeconds ?? screenHost
+                payload["cameraFrameCount"] = ci.frameCount
+                payload["cameraWidth"] = ci.width
+                payload["cameraHeight"] = ci.height
+                payload["cameraOffsetMicros"] = Int((camHost - screenHost) * 1_000_000)
+                payload["cameraSelfViewX"] = ci.selfViewX
+                payload["cameraSelfViewY"] = ci.selfViewY
+              }
+              result(payload)
+            }
+            if let cam = cam {
+              cam.stop { info in finish(info) }
+            } else {
+              finish(nil)
+            }
           case .failure(let err):
+            cam?.stop { _ in }
             result(FlutterError(code: "LIVE_STOP_FAILED",
                                 message: "Failed to finalize: \(err.localizedDescription)",
                                 details: nil))
@@ -907,6 +1039,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       return
     }
     writer.pause()
+    cameraManager?.pause()
     result(nil)
   }
 
@@ -917,6 +1050,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       return
     }
     writer.resume()
+    cameraManager?.resume()
     result(nil)
   }
 
@@ -1349,6 +1483,19 @@ private final class MicMenuTarget: NSObject {
   }
   @objc func toggleReduceNoise(_ s: NSMenuItem) { action = .toggleReduceNoise }
   @objc func toggleDisableAgc(_ s: NSMenuItem) { action = .toggleDisableAgc }
+  @objc func dontRecord(_ s: NSMenuItem) { action = .dontRecord }
+}
+
+// MARK: - Camera Menu Target
+
+private final class CameraMenuTarget: NSObject {
+  enum Action { case device(uid: String, label: String), dontRecord }
+  var action: Action?
+  @objc func pickDevice(_ s: NSMenuItem) {
+    if let pair = s.representedObject as? [String: String] {
+      action = .device(uid: pair["uid"] ?? "", label: pair["label"] ?? "")
+    }
+  }
   @objc func dontRecord(_ s: NSMenuItem) { action = .dontRecord }
 }
 

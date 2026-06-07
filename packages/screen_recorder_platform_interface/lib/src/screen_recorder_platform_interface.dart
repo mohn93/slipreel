@@ -9,6 +9,7 @@ import 'models/keystroke_event.dart';
 import 'models/frame_data.dart';
 import 'models/recording_result.dart';
 import 'models/recording_settings.dart';
+import 'models/camera_config.dart';
 import 'models/microphone_config.dart';
 import 'models/system_audio_config.dart';
 import 'models/picked_source.dart';
@@ -164,6 +165,16 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   Future<PermissionStatus> requestMicrophonePermission() async =>
       PermissionStatus.unsupported;
 
+  /// Typed status query for Camera (macOS AVCaptureDevice .video).
+  Future<PermissionStatus> getCameraPermission() async =>
+      PermissionStatus.unsupported;
+
+  /// Triggers the system camera-permission prompt the first time, otherwise
+  /// returns the current status without re-prompting. No-op on unsupported
+  /// platforms.
+  Future<PermissionStatus> requestCameraPermission() async =>
+      PermissionStatus.unsupported;
+
   /// Fetch every stock cursor image macOS ships, so the renderer can
   /// blit the OS-accurate bitmap instead of hand-coded polygons.
   ///
@@ -227,6 +238,12 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   /// picker). Returns the chosen selection, or a cancelled result.
   Future<SystemAudioMenuResult> showSystemAudioMenu(SystemAudioConfig? current) {
     throw UnsupportedError('showSystemAudioMenu() is not supported on this platform.');
+  }
+
+  /// Shows the native camera dropdown (NSMenu) seeded with [current].
+  /// Returns the user's choice; see [CameraMenuResult].
+  Future<CameraMenuResult> showCameraMenu(CameraConfig? current) {
+    throw UnsupportedError('showCameraMenu() is not supported on this platform.');
   }
 
   /// Live microphone level (0..1), emitted ~20 Hz while a monitor is running.
