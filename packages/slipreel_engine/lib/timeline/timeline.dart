@@ -1,3 +1,4 @@
+import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 
@@ -32,6 +33,50 @@ class ZoomTrack {
     }
     return ZoomTrack(regions: List.unmodifiable(regions));
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ZoomTrack && _listEq(other.regions, regions);
+
+  @override
+  int get hashCode => Object.hashAll(regions);
+}
+
+/// One lane of [CameraRegion]s on the [Timeline]. Parallels [ZoomTrack];
+/// today the editor renders only the first camera track.
+class CameraTrack {
+  const CameraTrack({this.regions = const <CameraRegion>[]});
+
+  final List<CameraRegion> regions;
+
+  CameraTrack copyWith({List<CameraRegion>? regions}) =>
+      CameraTrack(regions: regions ?? this.regions);
+
+  Map<String, dynamic> toJson() => {
+        'regions': regions.map((r) => r.toJson()).toList(),
+      };
+
+  factory CameraTrack.fromJson(Map<String, dynamic> json) {
+    final raw = json['regions'];
+    final regions = <CameraRegion>[];
+    if (raw is List) {
+      for (final r in raw) {
+        if (r is Map<String, dynamic>) {
+          regions.add(CameraRegion.fromJson(r));
+        }
+      }
+    }
+    return CameraTrack(regions: List.unmodifiable(regions));
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CameraTrack && _listEq(other.regions, regions);
+
+  @override
+  int get hashCode => Object.hashAll(regions);
 }
 
 /// Container for every track on a recording — zoom regions today,
@@ -52,6 +97,7 @@ class Timeline {
   const Timeline({
     this.zoomTracks = const <ZoomTrack>[],
     this.clips = const <ClipSlice>[],
+    this.cameraTracks = const <CameraTrack>[],
   });
 
   /// Sensible blank slate: one empty zoom track, no clips (the
@@ -62,6 +108,7 @@ class Timeline {
 
   final List<ZoomTrack> zoomTracks;
   final List<ClipSlice> clips;
+  final List<CameraTrack> cameraTracks;
 
   /// Convenience read accessor for code that hasn't yet been updated
   /// to pick a specific zoom track. Returns the regions on the first
@@ -70,18 +117,26 @@ class Timeline {
   List<ZoomRegion> get activeZoomRegions =>
       zoomTracks.isEmpty ? const <ZoomRegion>[] : zoomTracks.first.regions;
 
+  /// Regions on the first (active) camera track, or empty when none.
+  /// The editor renders against this today.
+  List<CameraRegion> get activeCameraRegions =>
+      cameraTracks.isEmpty ? const <CameraRegion>[] : cameraTracks.first.regions;
+
   Timeline copyWith({
     List<ZoomTrack>? zoomTracks,
     List<ClipSlice>? clips,
+    List<CameraTrack>? cameraTracks,
   }) =>
       Timeline(
         zoomTracks: zoomTracks ?? this.zoomTracks,
         clips: clips ?? this.clips,
+        cameraTracks: cameraTracks ?? this.cameraTracks,
       );
 
   Map<String, dynamic> toJson() => {
         'zoomTracks': zoomTracks.map((t) => t.toJson()).toList(),
         'clips': clips.map((c) => c.toJson()).toList(),
+        'cameraTracks': cameraTracks.map((t) => t.toJson()).toList(),
       };
 
   factory Timeline.fromJson(Map<String, dynamic> json) {
@@ -103,9 +158,19 @@ class Timeline {
         }
       }
     }
+    final rawCameraTracks = json['cameraTracks'];
+    final cameraTracks = <CameraTrack>[];
+    if (rawCameraTracks is List) {
+      for (final t in rawCameraTracks) {
+        if (t is Map<String, dynamic>) {
+          cameraTracks.add(CameraTrack.fromJson(t));
+        }
+      }
+    }
     return Timeline(
       zoomTracks: List.unmodifiable(tracks),
       clips: List.unmodifiable(clips),
+      cameraTracks: List.unmodifiable(cameraTracks),
     );
   }
 
@@ -114,12 +179,14 @@ class Timeline {
       identical(this, other) ||
       other is Timeline &&
           _listEq(other.zoomTracks, zoomTracks) &&
-          _listEq(other.clips, clips);
+          _listEq(other.clips, clips) &&
+          _listEq(other.cameraTracks, cameraTracks);
 
   @override
   int get hashCode => Object.hash(
         Object.hashAll(zoomTracks),
         Object.hashAll(clips),
+        Object.hashAll(cameraTracks),
       );
 }
 
