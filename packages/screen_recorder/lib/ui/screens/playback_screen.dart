@@ -47,6 +47,7 @@ import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
 import 'package:slipreel_engine/editor/camera_seed.dart';
 import 'package:slipreel_engine/models/camera_sidecar_meta.dart';
+import 'package:screen_recorder/state/camera_playback_sync.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/keystroke_group.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
@@ -341,6 +342,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// Absolute path of the `.camera.mov` when a camera sidecar exists and the
   /// file is present on disk; null otherwise.
   String? _cameraMoviePath;
+
+  /// Second player for the camera sidecar, slaved to [_controller]. Null
+  /// until a camera sidecar is confirmed and initialized.
+  VideoPlayerController? _cameraController;
+
+  /// Selected camera region index, or null. Mutually exclusive with
+  /// [_selectedZoomIndex] / [_selectedSliceIndex].
+  int? _selectedCameraIndex;
 
   /// Whether this recording has a usable camera sidecar.
   bool get _hasCamera => _cameraMeta != null && _cameraMoviePath != null;
@@ -740,6 +749,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // the controller's value listener, not by awaiting this future.
       unawaited(_controller.play());
 
+      // Bring up the camera player (if any) and slave it to the main one.
+      if (_hasCamera) {
+        await _initCameraPlayer();
+      }
+
       // Probe the recording's audio streams so the audio tab knows which
       // per-track controls to show. Non-fatal — failure leaves it empty.
       try {
@@ -753,6 +767,48 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       setState(() {
         _error = 'Failed to load video: $e';
       });
+    }
+  }
+
+  Future<void> _initCameraPlayer() async {
+    final path = _cameraMoviePath;
+    if (path == null) return;
+    try {
+      final cam = VideoPlayerController.file(File(path));
+      await cam.initialize();
+      await cam.setVolume(0); // camera track carries no audio; be safe
+      _cameraController = cam;
+      // Slave play/pause + position to the main controller.
+      _controller.addListener(_syncCameraPlayer);
+      _syncCameraPlayer();
+      if (mounted) setState(() {});
+    } catch (e) {
+      AppLogger.ui.w('Camera player init failed; camera hidden in editor: $e');
+      _cameraController = null;
+    }
+  }
+
+  void _syncCameraPlayer() {
+    final cam = _cameraController;
+    final meta = _cameraMeta;
+    if (cam == null || meta == null || !cam.value.isInitialized) return;
+    // Mirror play/pause.
+    if (_controller.value.isPlaying && !cam.value.isPlaying) {
+      cam.play();
+    } else if (!_controller.value.isPlaying && cam.value.isPlaying) {
+      cam.pause();
+    }
+    // Re-seek on drift.
+    final desired = CameraPlaybackSync.desiredCameraPosition(
+      mainPosition: _controller.value.position,
+      offsetMicros: meta.offsetMicros,
+      cameraDuration: cam.value.duration,
+    );
+    if (CameraPlaybackSync.shouldSeek(
+      current: cam.value.position,
+      desired: desired,
+    )) {
+      cam.seekTo(desired);
     }
   }
 
@@ -863,6 +919,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
     _playheadEditedPos.dispose();
     _smoothPlayhead?.dispose();
+    _controller.removeListener(_syncCameraPlayer);
+    _cameraController?.dispose();
     _controller.dispose();
     _history?.dispose();
     _zoomDebugSnapshot.dispose();
@@ -2175,6 +2233,25 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       zoomPreviewOverride: _zoomPreviewOverride,
       keystrokeRecording: _keystrokeRecording,
       keystrokeOverlaySettings: project.keystrokeOverlay,
+      cameraController: _cameraController,
+      cameraSettings: _hasCamera ? project.cameraSettings : null,
+      cameraRegions: _hasCamera ? project.cameraRegions : const [],
+      cameraOriginalAspect: _cameraMeta == null || _cameraMeta!.height == 0
+          ? 1.0
+          : _cameraMeta!.width / _cameraMeta!.height,
+      selectedCameraIndex: _selectedCameraIndex,
+      onCameraPlacementChanged: (index, placement) {
+        final regions = _project.cameraRegions;
+        if (index < 0 || index >= regions.length) return;
+        _projectController.updateCameraRegionAt(
+          index,
+          regions[index].copyWith(
+            centerX: placement.centerX,
+            centerY: placement.centerY,
+            size: placement.size,
+          ),
+        );
+      },
     );
 
     final videoSize = _controller.value.size;
