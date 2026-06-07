@@ -24,6 +24,10 @@ const Duration kGhostMinSpan = Duration(milliseconds: 250);
 const double rulerHeight = 20;
 const double laneHeight = 46;
 const double laneSpacing = 6;
+/// Height of the optional shortcuts timeline lane (keycap badges laid out
+/// at each captured shortcut's edited-time position). Only present when the
+/// keystroke overlay is enabled with its timeline shown.
+const double keystrokeLaneHeight = 40;
 const double handleHitWidth = 16;
 const double zoomPillInset = 2;
 const int minZoomDurationMs = 250;

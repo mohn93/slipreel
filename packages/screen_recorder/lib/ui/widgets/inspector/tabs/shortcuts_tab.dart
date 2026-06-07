@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
+import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Shortcuts tab — enables and styles the keystroke overlay that shows
-/// captured keyboard events on the canvas during playback and export.
+/// captured keyboard shortcuts on the canvas during playback and export,
+/// and toggles the shortcuts timeline lane in the editor.
 class ShortcutsTab extends ConsumerWidget {
   const ShortcutsTab({super.key, this.hasKeystrokeData = false});
 
@@ -23,81 +25,115 @@ class ShortcutsTab extends ConsumerWidget {
         notifier.setKeystrokeOverlay(next);
 
     return ListView(
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
-        // ── Enable toggle ────────────────────────────────────────────────
+        // ── Section label ────────────────────────────────────────────────
+        const Text(
+          'Shortcuts',
+          style: TextStyle(
+            color: kInspectorMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // ── Show shortcuts toggle ────────────────────────────────────────
         InspectorToggle(
-          label: 'Show overlay',
+          label: 'Show shortcuts',
           value: settings.enabled,
           onChanged: hasKeystrokeData
               ? (v) => update(settings.copyWith(enabled: v))
               : null,
           subtitle: hasKeystrokeData
-              ? 'Display captured keystrokes on the canvas'
-              : 'No keystroke data — record with Accessibility enabled',
+              ? 'Show pressed shortcut labels in the video.'
+              : 'No keystroke data — record with Accessibility enabled.',
         ),
 
         if (settings.enabled) ...[
+          const SizedBox(height: 24),
+
+          // ── Shortcut labels size ───────────────────────────────────────
+          InspectorSlider(
+            label: 'Shortcut labels size',
+            value: settings.labelScale,
+            min: KeystrokeOverlaySettings.minLabelScale,
+            max: KeystrokeOverlaySettings.maxLabelScale,
+            onChanged: (v) => update(settings.copyWith(labelScale: v)),
+            onReset: () => update(settings.copyWith(
+              labelScale: KeystrokeOverlaySettings.defaultLabelScale,
+            )),
+            canReset: settings.labelScale !=
+                KeystrokeOverlaySettings.defaultLabelScale,
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Show single key shortcuts ──────────────────────────────────
+          InspectorToggle(
+            label: 'Show single key shortcuts',
+            value: settings.showSingleKeyShortcuts,
+            onChanged: (v) =>
+                update(settings.copyWith(showSingleKeyShortcuts: v)),
+            subtitle: 'By default, only 2+ keys shortcuts are shown. '
+                'Enable this option to show single key shortcuts '
+                '(Space, Enter, arrows…) as well.',
+          ),
+
           const InspectorSectionDivider(),
 
-          // ── Position ─────────────────────────────────────────────────
-          const InspectorSectionLabel('Position'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: InspectorChipGroup<KeystrokePosition>(
-              items: KeystrokePosition.values,
-              labelOf: (p) => p.label,
-              selected: settings.position,
-              onSelected: (p) => update(settings.copyWith(position: p)),
-            ),
+          // ── Timeline show/hide ─────────────────────────────────────────
+          _TimelineToggleButton(
+            visible: settings.showTimeline,
+            onTap: () =>
+                update(settings.copyWith(showTimeline: !settings.showTimeline)),
           ),
-
-          const SizedBox(height: 20),
-
-          // ── Badge size ───────────────────────────────────────────────
-          const InspectorSectionLabel('Badge size'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: InspectorChipGroup<KeystrokeSize>(
-              items: KeystrokeSize.values,
-              labelOf: (s) => s.label,
-              selected: settings.size,
-              onSelected: (s) => update(settings.copyWith(size: s)),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // ── Fade duration ────────────────────────────────────────────
-          const InspectorSectionLabel('Fade after'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: InspectorChipGroup<double>(
-              items: const [1.0, 2.0, 3.0],
-              labelOf: (s) => '${s.toInt()}s',
-              selected: settings.fadeSecs,
-              onSelected: (s) => update(settings.copyWith(fadeSecs: s)),
-            ),
-          ),
-
-          const SizedBox(height: 20),
         ],
-
-        // ── Info footer ──────────────────────────────────────────────────
-        const InspectorSectionDivider(),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-          child: Text(
-            'Keystroke capture requires Accessibility permission. '
-            'Grant it in System Settings → Privacy & Security → Accessibility.',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.white.withAlpha(102),
-              height: 1.5,
-            ),
-          ),
-        ),
       ],
+    );
+  }
+}
+
+/// Full-width pill button that shows/hides the shortcuts timeline lane.
+class _TimelineToggleButton extends StatelessWidget {
+  const _TimelineToggleButton({required this.visible, required this.onTap});
+
+  final bool visible;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SpringHoverButton(
+      onTap: onTap,
+      borderRadius: 8,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: kInspectorPanel,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: kInspectorBorder),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.keyboard_command_key,
+              size: 16,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              visible ? 'Hide shortcuts timeline' : 'Show shortcuts timeline',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

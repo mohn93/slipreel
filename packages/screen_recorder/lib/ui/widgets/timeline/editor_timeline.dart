@@ -11,6 +11,9 @@ import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
+import 'package:slipreel_engine/models/keystroke_recording.dart';
+import 'keystroke_timeline_lane.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:screen_recorder/ui/widgets/timeline/clip_lane.dart';
@@ -142,6 +145,8 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.cursorClickTimes = const <Duration>[],
     this.onSnapped,
     this.snapFlashTarget,
+    this.keystrokeRecording,
+    this.keystrokeSettings = const KeystrokeOverlaySettings(),
   });
 
   final Duration duration;
@@ -264,6 +269,14 @@ class EditorTimeline extends ConsumerStatefulWidget {
   /// Null when no recent snap has occurred or the fade has completed.
   /// The parent screen owns the lifecycle; the timeline only renders.
   final Duration? snapFlashTarget;
+
+  /// Captured keystrokes for the recording, laid out in the optional
+  /// shortcuts timeline lane. Null when the recording has no keystroke data.
+  final KeystrokeRecording? keystrokeRecording;
+
+  /// Keystroke overlay settings — gate the lane on [enabled] + [showTimeline]
+  /// and reuse the display filter for which events appear.
+  final KeystrokeOverlaySettings keystrokeSettings;
 
   @override
   ConsumerState<EditorTimeline> createState() => _EditorTimelineState();
@@ -1262,13 +1275,21 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
         // (see the inline comment in the build tree below) so the
         // dot row hugs the clip lane.
         const rulerToLaneGap = 0.0;
+        // Shortcuts timeline lane sits below the zoom lane, gated on the
+        // keystroke overlay being enabled with its timeline shown.
+        final showKeystrokeLane = widget.keystrokeSettings.enabled &&
+            widget.keystrokeSettings.showTimeline &&
+            widget.keystrokeRecording != null;
+        final keystrokeLaneExtent =
+            showKeystrokeLane ? laneSpacing + keystrokeLaneHeight : 0.0;
         final totalHeight =
             rulerHeight +
             rulerToLaneGap +
             CutMarker.kHitHeight +
             laneHeight +
             laneSpacing +
-            zoomLaneHeight;
+            zoomLaneHeight +
+            keystrokeLaneExtent;
 
         return SizedBox(
           height: totalHeight,
@@ -1639,6 +1660,19 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                                     ),
                                   ),
                                 ),
+                                if (showKeystrokeLane) ...[
+                                  const SizedBox(height: laneSpacing),
+                                  SizedBox(
+                                    height: keystrokeLaneHeight,
+                                    child: KeystrokeTimelineLane(
+                                      recording: widget.keystrokeRecording!,
+                                      settings: widget.keystrokeSettings,
+                                      clips: widget.clips,
+                                      pixelsPerSecond: pps,
+                                      contentWidth: cw,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                             IgnorePointer(

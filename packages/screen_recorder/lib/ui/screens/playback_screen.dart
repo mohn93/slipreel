@@ -2486,6 +2486,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 cursorClickTimes: _cursorRecording.eventIndex.clickTimes,
                 onSnapped: _flashSnap,
                 snapFlashTarget: _snapFlashTarget,
+                keystrokeRecording: _keystrokeRecording,
+                keystrokeSettings: ref
+                    .watch(editorProjectControllerProvider)
+                    .keystrokeOverlay,
                 // cursorXListenable stays unset — when cut mode is on,
                 // EditorTimeline pipes its own overlay's cursor in. Off
                 // mode falls back to a no-op notifier.

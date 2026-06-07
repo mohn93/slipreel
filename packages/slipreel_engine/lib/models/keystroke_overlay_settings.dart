@@ -1,3 +1,5 @@
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+
 /// Where keystroke badges are anchored on the canvas.
 enum KeystrokePosition {
   centerBottom,
@@ -11,90 +13,95 @@ enum KeystrokePosition {
   };
 }
 
-/// Visual size of keystroke pill badges.
-enum KeystrokeSize {
-  small,
-  medium,
-  large;
-
-  String get label => switch (this) {
-    small => 'S',
-    medium => 'M',
-    large => 'L',
-  };
-
-  double get fontSize => switch (this) {
-    small => 13,
-    medium => 16,
-    large => 20,
-  };
-
-  double get horizontalPadding => switch (this) {
-    small => 10,
-    medium => 14,
-    large => 18,
-  };
-
-  double get verticalPadding => switch (this) {
-    small => 5,
-    medium => 7,
-    large => 10,
-  };
-}
-
 /// Per-project configuration for the keystroke overlay that appears on
-/// the canvas during playback and export.
+/// the canvas during playback and export, plus the shortcuts timeline lane
+/// shown in the editor.
 class KeystrokeOverlaySettings {
   const KeystrokeOverlaySettings({
     this.enabled = false,
     this.position = KeystrokePosition.centerBottom,
-    this.size = KeystrokeSize.medium,
+    this.labelScale = 1.0,
     this.fadeSecs = 2.0,
+    this.showSingleKeyShortcuts = false,
+    this.showTimeline = true,
   });
+
+  /// Smallest / largest / default multiplier for the on-canvas keycaps.
+  static const double minLabelScale = 0.6;
+  static const double maxLabelScale = 2.0;
+  static const double defaultLabelScale = 1.0;
 
   /// Whether to render the overlay at all. Toggled in the Shortcuts tab.
   final bool enabled;
 
-  /// Canvas anchor for the badge stack.
+  /// Canvas anchor for the badge stack. No longer exposed in the UI — kept
+  /// so existing projects keep their alignment and a picker can return later.
   final KeystrokePosition position;
 
-  /// Visual size of individual keystroke pills.
-  final KeystrokeSize size;
+  /// Multiplier on the keycap size drawn over the video (driven by the
+  /// "Shortcut labels size" slider). 1.0 is the default size.
+  final double labelScale;
 
   /// Seconds each keystroke badge stays visible (including fade-out).
   final double fadeSecs;
 
+  /// When true, single navigation/action keys (Space, ↩, arrows, F-keys…)
+  /// are shown in addition to multi-key shortcuts. Plain typing is never
+  /// shown either way.
+  final bool showSingleKeyShortcuts;
+
+  /// Whether the shortcuts timeline lane is shown in the editor. Only has
+  /// an effect while [enabled] is true.
+  final bool showTimeline;
+
+  /// Whether an event of the given [kind] should be displayed under the
+  /// current settings. Plain typing is always hidden; single keys depend on
+  /// [showSingleKeyShortcuts]; real shortcuts always show.
+  bool shouldDisplay(KeystrokeKind kind) => switch (kind) {
+    KeystrokeKind.shortcut => true,
+    KeystrokeKind.singleKey => showSingleKeyShortcuts,
+    KeystrokeKind.typing => false,
+  };
+
   KeystrokeOverlaySettings copyWith({
     bool? enabled,
     KeystrokePosition? position,
-    KeystrokeSize? size,
+    double? labelScale,
     double? fadeSecs,
+    bool? showSingleKeyShortcuts,
+    bool? showTimeline,
   }) => KeystrokeOverlaySettings(
     enabled: enabled ?? this.enabled,
     position: position ?? this.position,
-    size: size ?? this.size,
+    labelScale: labelScale ?? this.labelScale,
     fadeSecs: fadeSecs ?? this.fadeSecs,
+    showSingleKeyShortcuts:
+        showSingleKeyShortcuts ?? this.showSingleKeyShortcuts,
+    showTimeline: showTimeline ?? this.showTimeline,
   );
 
   Map<String, dynamic> toJson() => {
     'enabled': enabled,
     'position': position.name,
-    'size': size.name,
+    'labelScale': labelScale,
     'fadeSecs': fadeSecs,
+    'showSingleKeyShortcuts': showSingleKeyShortcuts,
+    'showTimeline': showTimeline,
   };
 
   factory KeystrokeOverlaySettings.fromJson(Map<String, dynamic> json) {
     final pos = KeystrokePosition.values
         .where((v) => v.name == json['position'])
         .firstOrNull;
-    final sz = KeystrokeSize.values
-        .where((v) => v.name == json['size'])
-        .firstOrNull;
     return KeystrokeOverlaySettings(
       enabled: json['enabled'] as bool? ?? false,
       position: pos ?? KeystrokePosition.centerBottom,
-      size: sz ?? KeystrokeSize.medium,
+      labelScale:
+          (json['labelScale'] as num?)?.toDouble() ?? defaultLabelScale,
       fadeSecs: (json['fadeSecs'] as num?)?.toDouble() ?? 2.0,
+      showSingleKeyShortcuts:
+          json['showSingleKeyShortcuts'] as bool? ?? false,
+      showTimeline: json['showTimeline'] as bool? ?? true,
     );
   }
 
@@ -104,9 +111,18 @@ class KeystrokeOverlaySettings {
       other is KeystrokeOverlaySettings &&
           other.enabled == enabled &&
           other.position == position &&
-          other.size == size &&
-          other.fadeSecs == fadeSecs;
+          other.labelScale == labelScale &&
+          other.fadeSecs == fadeSecs &&
+          other.showSingleKeyShortcuts == showSingleKeyShortcuts &&
+          other.showTimeline == showTimeline;
 
   @override
-  int get hashCode => Object.hash(enabled, position, size, fadeSecs);
+  int get hashCode => Object.hash(
+    enabled,
+    position,
+    labelScale,
+    fadeSecs,
+    showSingleKeyShortcuts,
+    showTimeline,
+  );
 }

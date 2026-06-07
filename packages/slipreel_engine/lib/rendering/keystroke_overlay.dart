@@ -6,9 +6,10 @@ import 'package:slipreel_engine/models/keystroke_recording.dart';
 ///
 /// Placed inside the PlaybackCanvas SizedBox (in canvas-pixel space) so
 /// it is naturally scaled by the outer FittedBox. Reads the
-/// [keystrokeRecording] at the given [position] and renders floating pill
-/// badges for all events in the current fade window. Rebuilt every frame
-/// via the parent's AnimatedBuilder.
+/// [keystrokeRecording] at the given [position] and renders floating keycap
+/// badges for the events in the current fade window that pass the display
+/// filter (real shortcuts always; single nav/action keys when opted in;
+/// plain typing never). Rebuilt every frame via the parent's AnimatedBuilder.
 ///
 /// Uses an IgnorePointer wrapper so hit-testing falls through to the
 /// video player controls below.
@@ -41,10 +42,12 @@ class KeystrokeOverlay extends StatelessWidget {
     final events = keystrokeRecording.eventsInRange(startMicros, nowMicros);
     if (events.isEmpty) return const SizedBox.shrink();
 
-    // Build badge widgets, newest first (reversed).
+    // Build badge widgets, newest first (reversed), skipping events the
+    // current filter hides (plain typing, or single keys when not opted in).
     final badges = <Widget>[];
     for (var i = events.length - 1; i >= 0; i--) {
       final e = events[i];
+      if (!settings.shouldDisplay(e.kind)) continue;
       final elapsed = (nowMicros - e.timestampMicros) / 1e6;
       final opacity = _opacityFor(elapsed, settings.fadeSecs);
       if (opacity <= 0) continue;
@@ -52,9 +55,9 @@ class KeystrokeOverlay extends StatelessWidget {
       badges.add(
         Opacity(
           opacity: opacity,
-          child: _KeystrokeBadge(
+          child: KeystrokeKeycap(
             label: e.label,
-            size: settings.size,
+            scale: settings.labelScale,
           ),
         ),
       );
@@ -84,7 +87,7 @@ class KeystrokeOverlay extends StatelessWidget {
               crossAxisAlignment: _crossAxisFor(settings.position),
               children: badges
                   .map((b) => Padding(
-                        padding: const EdgeInsets.only(top: 6),
+                        padding: const EdgeInsets.only(top: 8),
                         child: b,
                       ))
                   .toList(),
@@ -120,41 +123,83 @@ class KeystrokeOverlay extends StatelessWidget {
       };
 }
 
-class _KeystrokeBadge extends StatelessWidget {
-  const _KeystrokeBadge({required this.label, required this.size});
+/// A single keycap-styled badge for a captured keystroke label.
+///
+/// Shared between the on-canvas [KeystrokeOverlay] and the editor's
+/// shortcuts timeline lane so both look identical. Sizes are uniform for
+/// short labels (single glyphs get a square-ish minimum width) and grow
+/// for wider labels like "Space". Everything scales by [scale].
+///
+/// NOTE: the body must NOT use `Container(alignment:)` — a Container with a
+/// non-null alignment expands to fill its parent's max width, which over the
+/// canvas (bounded width) stretched every keycap into a full-width bar. The
+/// glyph is centred via [Text.textAlign] + the [ConstrainedBox] minWidth
+/// propagating through the padding, so the box stays shrink-wrapped.
+class KeystrokeKeycap extends StatelessWidget {
+  const KeystrokeKeycap({
+    super.key,
+    required this.label,
+    this.scale = 1.0,
+    this.fill = const Color(0xF014141C),
+    this.border = const Color(0xB36A6EA0),
+    this.textColor = Colors.white,
+  });
 
   final String label;
-  final KeystrokeSize size;
+
+  /// Multiplier applied to every metric. 1.0 is the base size.
+  final double scale;
+
+  /// Keycap body fill. Defaults to a near-black cool charcoal for
+  /// over-video use.
+  final Color fill;
+
+  /// Keycap border / rim colour — a soft muted indigo.
+  final Color border;
+
+  /// Label text colour.
+  final Color textColor;
+
+  // Base metrics at scale 1.0.
+  static const double _baseFontSize = 30;
+  static const double _baseHPad = 18;
+  static const double _baseVPad = 14;
+  static const double _baseMinWidth = 76;
+  static const double _baseRadius = 18;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: size.horizontalPadding,
-        vertical: size.verticalPadding,
-      ),
-      decoration: BoxDecoration(
-        color: const Color(0xCC1A1A2E),
-        borderRadius: BorderRadius.circular(99),
-        border: Border.all(
-          color: Colors.white.withAlpha(51),
-          width: 1,
+    final s = scale;
+    return ConstrainedBox(
+      constraints: BoxConstraints(minWidth: _baseMinWidth * s),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: _baseHPad * s,
+          vertical: _baseVPad * s,
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 8,
-            offset: Offset(0, 2),
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(_baseRadius * s),
+          border: Border.all(color: border, width: 2 * s),
+          boxShadow: [
+            // Soft drop shadow for separation from the video / lane.
+            BoxShadow(
+              color: const Color(0x59000000),
+              blurRadius: 12 * s,
+              offset: Offset(0, 4 * s),
+            ),
+          ],
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: textColor,
+            fontSize: _baseFontSize * s,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+            height: 1.0,
           ),
-        ],
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: size.fontSize,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
         ),
       ),
     );
