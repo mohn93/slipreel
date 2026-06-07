@@ -25,6 +25,7 @@ class KeystrokeTimelineLane extends StatelessWidget {
     required this.clips,
     required this.pixelsPerSecond,
     required this.contentWidth,
+    this.onToggle,
   });
 
   final KeystrokeRecording recording;
@@ -33,10 +34,20 @@ class KeystrokeTimelineLane extends StatelessWidget {
   final double pixelsPerSecond;
   final double contentWidth;
 
+  /// Fired when a bar is tapped to enable/disable that shortcut occurrence.
+  final ValueChanged<KeystrokeGroup>? onToggle;
+
   // Timeline keycaps are a fixed, compact size regardless of the on-video
   // "labels size" slider — that slider only governs the overlay so the lane
   // stays tidy at any setting. Tuned to fit [keystrokeLaneHeight].
   static const double _keycapScale = 0.5;
+
+  // Enabled bars get a clear blue rim; disabled bars are dimmed with a faint
+  // grey rim so they read as "off" while staying re-enable-able.
+  static const Color _enabledFill = Color(0xFF22223A);
+  static const Color _enabledBorder = Color(0xFF4F8FF5);
+  static const Color _disabledFill = Color(0xFF191922);
+  static const Color _disabledBorder = Color(0x33FFFFFF);
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +68,7 @@ class KeystrokeTimelineLane extends StatelessWidget {
       final editedTime =
           clips.isEmpty ? sourceTime : sourceToEdited(clips, sourceTime);
       final x = timeToX(editedTime, pixelsPerSecond);
+      final enabled = settings.isKeyEnabled(g.firstMicros);
       caps.add(
         Positioned(
           left: x,
@@ -66,14 +78,22 @@ class KeystrokeTimelineLane extends StatelessWidget {
           child: FractionalTranslation(
             translation: const Offset(-0.5, 0),
             child: Center(
-              child: KeystrokeKeycap(
-                label: g.label,
-                count: g.count,
-                scale: _keycapScale,
-                // Slightly lighter fill + a touch more border opacity than
-                // the overlay so keycaps separate from the dark lane.
-                fill: const Color(0xFF22223A),
-                border: const Color(0xCC6E72A6),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap:
+                    onToggle == null ? null : () => onToggle!.call(g),
+                child: Opacity(
+                  opacity: enabled ? 1.0 : 0.55,
+                  child: KeystrokeKeycap(
+                    label: g.label,
+                    count: g.count,
+                    scale: _keycapScale,
+                    fill: enabled ? _enabledFill : _disabledFill,
+                    border: enabled ? _enabledBorder : _disabledBorder,
+                    textColor:
+                        enabled ? Colors.white : Colors.white60,
+                  ),
+                ),
               ),
             ),
           ),

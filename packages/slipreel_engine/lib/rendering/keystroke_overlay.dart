@@ -53,10 +53,13 @@ class KeystrokeOverlay extends StatelessWidget {
     final raw = keystrokeRecording.eventsInRange(startMicros, nowMicros);
     if (raw.isEmpty) return const SizedBox.shrink();
 
-    // Filter to displayable events, then coalesce consecutive repeats of the
-    // same shortcut into one group (so they render as one pulsing box).
-    final filtered =
-        raw.where((e) => settings.shouldDisplay(e.kind)).toList();
+    // Filter to displayable + user-enabled events, then coalesce consecutive
+    // repeats of the same shortcut into one group (one pulsing box).
+    final filtered = raw
+        .where((e) =>
+            settings.shouldDisplay(e.kind) &&
+            settings.isKeyEnabled(e.timestampMicros))
+        .toList();
     if (filtered.isEmpty) return const SizedBox.shrink();
     final groups = coalesceKeystrokes(filtered);
 

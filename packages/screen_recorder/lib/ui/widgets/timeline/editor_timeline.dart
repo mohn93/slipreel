@@ -11,6 +11,7 @@ import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/models/keystroke_group.dart';
 import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
 import 'keystroke_timeline_lane.dart';
@@ -147,6 +148,7 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.snapFlashTarget,
     this.keystrokeRecording,
     this.keystrokeSettings = const KeystrokeOverlaySettings(),
+    this.onKeystrokeToggle,
   });
 
   final Duration duration;
@@ -278,6 +280,11 @@ class EditorTimeline extends ConsumerStatefulWidget {
   /// and reuse the display filter for which events appear.
   final KeystrokeOverlaySettings keystrokeSettings;
 
+  /// Fired when a shortcuts-lane bar is tapped to toggle that occurrence
+  /// on/off. The parent flips the group's member timestamps in the project's
+  /// disabled set.
+  final ValueChanged<KeystrokeGroup>? onKeystrokeToggle;
+
   @override
   ConsumerState<EditorTimeline> createState() => _EditorTimelineState();
 }
@@ -299,6 +306,32 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     vsync: this,
     duration: const Duration(milliseconds: 700),
   );
+  // Shortcuts-lane reveal: 0 = collapsed, 1 = fully shown. Animates the lane
+  // in/out when "Show shortcuts" / the timeline toggle flips, growing its
+  // height + fading. setState on each tick re-runs the timeline build so the
+  // total height and playhead extent track the animation.
+  late final AnimationController _laneRevealCtl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 260),
+  );
+  late final Animation<double> _laneReveal = CurvedAnimation(
+    parent: _laneRevealCtl,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+
+  bool _keystrokeLaneWanted(EditorTimeline w) =>
+      w.keystrokeSettings.enabled &&
+      w.keystrokeSettings.showTimeline &&
+      w.keystrokeRecording != null;
+
+  void _onLaneRevealTick() {
+    if (mounted) setState(() {});
+  }
+
+  // Top y (timeline-local) of the shortcuts-lane block while it is showing —
+  // taps below this drive bar toggles, not playhead seeks. Null when hidden.
+  double? _keystrokeLaneTopY;
   // Pinned-down resting position when the cursor is near the lane.
   static const double _kPinDy = 3.0;
   double? _hoverProgress;
@@ -555,6 +588,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     _padCtlRight.addStatusListener(_onPadCtlRightStatus);
     _padCtlLeft.addStatusListener(_onPadCtlLeftStatus);
     if (widget.cutModeActive) _laneFloat.repeat();
+    _laneRevealCtl.value = _keystrokeLaneWanted(widget) ? 1.0 : 0.0;
+    _laneRevealCtl.addListener(_onLaneRevealTick);
   }
 
   void _onPadCtlRightStatus(AnimationStatus s) {
@@ -850,12 +885,16 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
 
   void _onTapSeekPointerUp(PointerUpEvent event) {
     if (event.pointer != _tapSeekPointer) return;
+    final laneTop = _keystrokeLaneTopY;
+    final inKeystrokeLane =
+        laneTop != null && event.localPosition.dy >= laneTop;
     final shouldSeek =
         !_tapSeekBlocked &&
         !_tapSeekMoved &&
         !_pinchHasScaled &&
         !_trackpadPanActive &&
         !_trimDragging &&
+        !inKeystrokeLane &&
         event.localPosition.dy >= rulerHeight;
     final x = event.localPosition.dx;
     _resetTapSeekTracking();
@@ -957,6 +996,14 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   @override
   void didUpdateWidget(EditorTimeline old) {
     super.didUpdateWidget(old);
+    final wantLane = _keystrokeLaneWanted(widget);
+    if (wantLane != _keystrokeLaneWanted(old)) {
+      if (wantLane) {
+        _laneRevealCtl.forward();
+      } else {
+        _laneRevealCtl.reverse();
+      }
+    }
     if (widget.cutModeActive != old.cutModeActive) {
       if (widget.cutModeActive) {
         // Pin starts at 0 (free-floating); will animate to +3 if the
@@ -1192,6 +1239,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     _padCtlRight.dispose();
     _laneFloat.dispose();
     _lanePin.dispose();
+    _laneRevealCtl.removeListener(_onLaneRevealTick);
+    _laneRevealCtl.dispose();
     _pinchTicker?.dispose();
     _nullCursor.dispose();
     _cutCursorX.dispose();
@@ -1275,13 +1324,23 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
         // (see the inline comment in the build tree below) so the
         // dot row hugs the clip lane.
         const rulerToLaneGap = 0.0;
-        // Shortcuts timeline lane sits below the zoom lane, gated on the
-        // keystroke overlay being enabled with its timeline shown.
-        final showKeystrokeLane = widget.keystrokeSettings.enabled &&
-            widget.keystrokeSettings.showTimeline &&
-            widget.keystrokeRecording != null;
-        final keystrokeLaneExtent =
-            showKeystrokeLane ? laneSpacing + keystrokeLaneHeight : 0.0;
+        // Shortcuts timeline lane sits below the zoom lane and animates in/out
+        // via _laneReveal (0 = collapsed, 1 = fully shown).
+        final laneT = _laneReveal.value.clamp(0.0, 1.0);
+        final laneBlockHeight = laneSpacing + keystrokeLaneHeight;
+        final keystrokeLaneExtent = laneBlockHeight * laneT;
+        final showKeystrokeLane =
+            laneT > 0.001 && widget.keystrokeRecording != null;
+        // Cache the lane block's top y so tap-seek can ignore taps that land
+        // on a bar (those toggle the bar instead of seeking).
+        _keystrokeLaneTopY = showKeystrokeLane
+            ? rulerHeight +
+                rulerToLaneGap +
+                CutMarker.kHitHeight +
+                laneHeight +
+                laneSpacing +
+                zoomLaneHeight
+            : null;
         final totalHeight =
             rulerHeight +
             rulerToLaneGap +
@@ -1660,19 +1719,39 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                                     ),
                                   ),
                                 ),
-                                if (showKeystrokeLane) ...[
-                                  const SizedBox(height: laneSpacing),
-                                  SizedBox(
-                                    height: keystrokeLaneHeight,
-                                    child: KeystrokeTimelineLane(
-                                      recording: widget.keystrokeRecording!,
-                                      settings: widget.keystrokeSettings,
-                                      clips: widget.clips,
-                                      pixelsPerSecond: pps,
-                                      contentWidth: cw,
+                                if (showKeystrokeLane)
+                                  ClipRect(
+                                    child: Align(
+                                      alignment: Alignment.topCenter,
+                                      heightFactor: laneT,
+                                      child: Opacity(
+                                        opacity: laneT,
+                                        child: SizedBox(
+                                          height: laneBlockHeight,
+                                          child: Column(
+                                            children: [
+                                              const SizedBox(
+                                                  height: laneSpacing),
+                                              SizedBox(
+                                                height: keystrokeLaneHeight,
+                                                child: KeystrokeTimelineLane(
+                                                  recording:
+                                                      widget.keystrokeRecording!,
+                                                  settings:
+                                                      widget.keystrokeSettings,
+                                                  clips: widget.clips,
+                                                  pixelsPerSecond: pps,
+                                                  contentWidth: cw,
+                                                  onToggle:
+                                                      widget.onKeystrokeToggle,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                ],
                               ],
                             ),
                             IgnorePointer(

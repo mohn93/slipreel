@@ -46,6 +46,7 @@ import 'package:slipreel_engine/export/audio_mix_args.dart';
 import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/models/keystroke_group.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
@@ -1421,6 +1422,33 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
   }
 
+  /// Toggles a shortcuts-lane bar on/off. A bar is a coalesced group of one
+  /// or more presses of the same shortcut; flipping it adds/removes ALL its
+  /// member event timestamps in the project's disabled set, so the on-video
+  /// overlay and the export hide or show the whole occurrence. The greyed
+  /// bar stays on the timeline either way.
+  void _toggleKeystrokeGroup(KeystrokeGroup g) {
+    final members = <int>[
+      for (final e in _keystrokeRecording.events)
+        if (e.label == g.label &&
+            e.timestampMicros >= g.firstMicros &&
+            e.timestampMicros <= g.lastMicros)
+          e.timestampMicros,
+    ];
+    if (members.isEmpty) return;
+    final notifier = ref.read(editorProjectControllerProvider.notifier);
+    final settings =
+        ref.read(editorProjectControllerProvider).keystrokeOverlay;
+    final next = Set<int>.from(settings.disabledKeys);
+    // The group's enabled state is keyed on its first press.
+    if (next.contains(g.firstMicros)) {
+      next.removeAll(members);
+    } else {
+      next.addAll(members);
+    }
+    notifier.setKeystrokeOverlay(settings.copyWith(disabledKeys: next));
+  }
+
   void _openFrameSettings() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -2490,6 +2518,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 keystrokeSettings: ref
                     .watch(editorProjectControllerProvider)
                     .keystrokeOverlay,
+                onKeystrokeToggle: _toggleKeystrokeGroup,
                 // cursorXListenable stays unset — when cut mode is on,
                 // EditorTimeline pipes its own overlay's cursor in. Off
                 // mode falls back to a no-op notifier.

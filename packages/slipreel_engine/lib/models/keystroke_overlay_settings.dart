@@ -25,6 +25,7 @@ class KeystrokeOverlaySettings {
     this.showSingleKeyShortcuts = false,
     this.showTimeline = true,
     this.singleBox = false,
+    this.disabledKeys = const <int>{},
   });
 
   /// Smallest / largest / default multiplier for the on-canvas keycaps.
@@ -61,6 +62,16 @@ class KeystrokeOverlaySettings {
   /// shown (repeats still merge into one box).
   final bool singleBox;
 
+  /// Timestamps (microseconds) of individual key events the user has turned
+  /// OFF from the timeline. Disabled events are excluded from the on-video
+  /// overlay and export, but their bar stays on the timeline (greyed) so it
+  /// can be re-enabled. Toggling a coalesced bar flips all its member events.
+  final Set<int> disabledKeys;
+
+  /// Whether the event captured at [timestampMicros] is enabled (shown).
+  bool isKeyEnabled(int timestampMicros) =>
+      !disabledKeys.contains(timestampMicros);
+
   /// Whether an event of the given [kind] should be displayed under the
   /// current settings. Plain typing is always hidden; single keys depend on
   /// [showSingleKeyShortcuts]; real shortcuts always show.
@@ -78,6 +89,7 @@ class KeystrokeOverlaySettings {
     bool? showSingleKeyShortcuts,
     bool? showTimeline,
     bool? singleBox,
+    Set<int>? disabledKeys,
   }) => KeystrokeOverlaySettings(
     enabled: enabled ?? this.enabled,
     position: position ?? this.position,
@@ -87,6 +99,7 @@ class KeystrokeOverlaySettings {
         showSingleKeyShortcuts ?? this.showSingleKeyShortcuts,
     showTimeline: showTimeline ?? this.showTimeline,
     singleBox: singleBox ?? this.singleBox,
+    disabledKeys: disabledKeys ?? this.disabledKeys,
   );
 
   Map<String, dynamic> toJson() => {
@@ -97,6 +110,7 @@ class KeystrokeOverlaySettings {
     'showSingleKeyShortcuts': showSingleKeyShortcuts,
     'showTimeline': showTimeline,
     'singleBox': singleBox,
+    'disabledKeys': disabledKeys.toList(),
   };
 
   factory KeystrokeOverlaySettings.fromJson(Map<String, dynamic> json) {
@@ -113,6 +127,9 @@ class KeystrokeOverlaySettings {
           json['showSingleKeyShortcuts'] as bool? ?? false,
       showTimeline: json['showTimeline'] as bool? ?? true,
       singleBox: json['singleBox'] as bool? ?? false,
+      disabledKeys:
+          (json['disabledKeys'] as List?)?.map((e) => e as int).toSet() ??
+              const <int>{},
     );
   }
 
@@ -126,7 +143,9 @@ class KeystrokeOverlaySettings {
           other.fadeSecs == fadeSecs &&
           other.showSingleKeyShortcuts == showSingleKeyShortcuts &&
           other.showTimeline == showTimeline &&
-          other.singleBox == singleBox;
+          other.singleBox == singleBox &&
+          other.disabledKeys.length == disabledKeys.length &&
+          other.disabledKeys.containsAll(disabledKeys);
 
   @override
   int get hashCode => Object.hash(
@@ -137,5 +156,6 @@ class KeystrokeOverlaySettings {
     showSingleKeyShortcuts,
     showTimeline,
     singleBox,
+    Object.hashAllUnordered(disabledKeys),
   );
 }
