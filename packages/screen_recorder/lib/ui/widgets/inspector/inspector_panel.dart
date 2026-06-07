@@ -43,6 +43,7 @@ class InspectorPanel extends StatefulWidget {
     this.onSliceRemoved,
     this.canHideCursor = false,
     this.hasKeystrokeData = false,
+    this.hasCamera = false,
     required this.curveLibrary,
     this.videoSize = Size.zero,
     this.onPlacementPreview,
@@ -61,6 +62,10 @@ class InspectorPanel extends StatefulWidget {
   /// Whether the recording has any keystroke data captured. When false
   /// the Shortcuts tab toggle is disabled with an explanation.
   final bool hasKeystrokeData;
+
+  /// Whether this recording has a camera sidecar (enables the Camera tab's
+  /// real controls; otherwise the tab shows a placeholder).
+  final bool hasCamera;
 
   /// Persistence for user-saved curves shown in the curve editor's
   /// Library row. Required so the inspector doesn't conjure its own
@@ -146,7 +151,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.background => const BackgroundTab(),
         InspectorTab.cursor =>
             CursorTab(canHideCursor: widget.canHideCursor),
-        InspectorTab.camera => const CameraTab(),
+        InspectorTab.camera => CameraTab(hasCamera: widget.hasCamera),
         InspectorTab.captions => const CaptionsTab(),
         InspectorTab.audio => const AudioTab(),
         InspectorTab.shortcuts =>
