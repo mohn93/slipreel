@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
 import 'package:slipreel_engine/models/camera_settings.dart';
-import 'package:slipreel_engine/models/camera_shape.dart';
 
 /// The camera PiP bubble, laid out in CANVAS coordinate space (the same
 /// `totalSize` space `PlaybackCanvas` composes in). Given a normalized
