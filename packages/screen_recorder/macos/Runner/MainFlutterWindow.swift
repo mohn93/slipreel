@@ -135,6 +135,9 @@ class MainFlutterWindow: NSWindow {
     level = .floating
     isMovableByWindowBackground = true
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    // Clear any editor-mode floor so the small bar/pill can hug their size
+    // (setBarSize resizes via setFrame, which a stale contentMinSize clamps).
+    contentMinSize = NSSize(width: 1, height: 1)
     setContentSize(NSSize(width: width, height: height))
     // Round the bar by masking the content-view layer. Combined with
     // isOpaque=false this clips the corners to the desktop, so the bar reads
@@ -157,6 +160,9 @@ class MainFlutterWindow: NSWindow {
     // Square, unmasked corners for the normal titled panel.
     contentView?.layer?.cornerRadius = 0
     contentView?.layer?.masksToBounds = false
+    // Lock a usable desktop minimum — the editor UI isn't fully fluid, so
+    // block the user from shrinking the window into overflow territory.
+    contentMinSize = NSSize(width: 1000, height: 680)
     setContentSize(NSSize(width: width, height: height))
     center()
     makeKeyAndOrderFront(nil)
