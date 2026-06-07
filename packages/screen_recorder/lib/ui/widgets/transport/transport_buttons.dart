@@ -111,26 +111,26 @@ class _TransportPlayButtonState extends State<TransportPlayButton> {
       verticalOffset: 26,
       child: SpringHoverButton(
         onTap: widget.onPressed,
-        // Half of the 44 px box → the reveal pill renders as a
+        // Half of the 36 px box → the reveal pill renders as a
         // circle, matching the outlined ring.
-        borderRadius: 22,
+        borderRadius: 18,
         onHoverChanged: (h) => setState(() => _hovered = h),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          width: 44,
-          height: 44,
+          width: 36,
+          height: 36,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
               color: _hovered ? Colors.white : Colors.white70,
-              width: 2,
+              width: 1.5,
             ),
           ),
           alignment: Alignment.center,
           child: Icon(
             widget.isPlaying ? Icons.pause : Icons.play_arrow,
             color: Colors.white,
-            size: 22,
+            size: 18,
           ),
         ),
       ),

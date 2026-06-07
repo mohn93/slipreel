@@ -1861,13 +1861,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           return KeyEventResult.ignored;
         }
 
-        // Space: Play/Pause toggle
+        // Space: Play/Pause toggle — route through the same handler the
+        // play/pause button uses so the icon and dependent UI refresh
+        // identically (the old inline play/pause skipped setState).
         if (event.logicalKey == LogicalKeyboardKey.space) {
-          if (_controller.value.isPlaying) {
-            _controller.pause();
-          } else {
-            _controller.play();
-          }
+          _togglePlayPause();
           return KeyEventResult.handled;
         }
 
