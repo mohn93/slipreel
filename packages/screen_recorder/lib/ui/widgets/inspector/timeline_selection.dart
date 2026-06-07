@@ -35,3 +35,18 @@ class ZoomSelected extends TimelineSelection {
   @override
   int get hashCode => index.hashCode;
 }
+
+/// The user clicked a camera pill. [index] points into the active camera
+/// track's regions (so callbacks can mutate the right one).
+class CameraSelected extends TimelineSelection {
+  const CameraSelected(this.index);
+  final int index;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CameraSelected && other.index == index;
+
+  @override
+  int get hashCode => index.hashCode;
+}
