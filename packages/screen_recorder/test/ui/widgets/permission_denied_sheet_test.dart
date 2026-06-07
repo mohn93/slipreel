@@ -92,6 +92,16 @@ void main() {
     );
   });
 
+  testWidgets('Camera: deep-links to Camera pane', (tester) async {
+    await pumpAndShow(tester, PermissionKind.camera);
+    await tester.tap(find.text('Open System Settings'));
+    await tester.pumpAndSettle();
+    expect(
+      fake.lastUrl,
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_Camera',
+    );
+  });
+
   testWidgets(
       'shows inline error and does NOT pop when launchUrl returns false',
       (tester) async {

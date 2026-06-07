@@ -14,12 +14,15 @@ class PermissionDeniedSheet extends StatefulWidget {
         'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
     PermissionKind.accessibility:
         'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+    PermissionKind.camera:
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Camera',
   };
 
   static const _titles = {
     PermissionKind.screenRecording: 'Screen Recording permission required',
     PermissionKind.microphone: 'Microphone permission required',
     PermissionKind.accessibility: 'Accessibility permission required',
+    PermissionKind.camera: 'Camera permission required',
   };
 
   static const _bodies = {
@@ -29,6 +32,8 @@ class PermissionDeniedSheet extends StatefulWidget {
         'Slipreel needs Microphone access in System Settings to record your voice.',
     PermissionKind.accessibility:
         'Slipreel needs Accessibility access in System Settings to track clicks.',
+    PermissionKind.camera:
+        'Slipreel needs Camera access in System Settings to record your webcam.',
   };
 
   static Future<void> show(BuildContext context, PermissionKind kind) {
