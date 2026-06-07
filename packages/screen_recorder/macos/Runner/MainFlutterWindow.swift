@@ -162,7 +162,7 @@ class MainFlutterWindow: NSWindow {
     contentView?.layer?.masksToBounds = false
     // Lock a usable desktop minimum — the editor UI isn't fully fluid, so
     // block the user from shrinking the window into overflow territory.
-    contentMinSize = NSSize(width: 1000, height: 680)
+    contentMinSize = NSSize(width: 1000, height: 780)
     setContentSize(NSSize(width: width, height: height))
     center()
     makeKeyAndOrderFront(nil)
