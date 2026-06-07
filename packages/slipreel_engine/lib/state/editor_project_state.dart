@@ -1,3 +1,5 @@
+import 'package:slipreel_engine/models/camera_region.dart';
+import 'package:slipreel_engine/models/camera_settings.dart';
 import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
@@ -40,6 +42,7 @@ class EditorProjectState {
     this.timelineScale = 1.0,
     this.pendingScaleAnchor,
     this.keystrokeOverlay = const KeystrokeOverlaySettings(),
+    this.cameraSettings = const CameraSettings(),
   });
 
   /// Sensible blank slate for a freshly-loaded recording with no saved
@@ -142,9 +145,19 @@ class EditorProjectState {
   /// events on the canvas during playback and export, and how to style them.
   final KeystrokeOverlaySettings keystrokeOverlay;
 
+  /// Global camera (facecam) look — shape, roundness, mirror, border,
+  /// shadow, opacity, and the master enable. Per-region placement lives
+  /// on `timeline.cameraTracks`.
+  final CameraSettings cameraSettings;
+
+  /// Convenience read accessor for the active (first) camera track's
+  /// regions. Empty when the recording has no camera. Mirrors
+  /// [zoomRegions].
+  List<CameraRegion> get cameraRegions => timeline.activeCameraRegions;
+
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 8;
+  static const int currentSchemaVersion = 9;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -173,30 +186,39 @@ class EditorProjectState {
     Duration? pendingScaleAnchor,
     bool clearPendingScaleAnchor = false,
     KeystrokeOverlaySettings? keystrokeOverlay,
+    List<CameraRegion>? cameraRegions,
+    CameraSettings? cameraSettings,
   }) {
-    // `zoomRegions:` is a convenience override that writes through to
-    // the active (first) zoom track on the timeline — matches today's
-    // single-track inspector. Passing both `timeline:` and
-    // `zoomRegions:` is ambiguous, so prefer the explicit timeline.
+    // `zoomRegions:` and `cameraRegions:` are convenience overrides that
+    // write through to the active (first) track on the timeline.
+    // Passing both `timeline:` and a regions shortcut is ambiguous, so
+    // prefer the explicit timeline.
     final Timeline nextTimeline;
     if (timeline != null) {
       nextTimeline = timeline;
-    } else if (zoomRegions != null) {
-      final tracks = this.timeline.zoomTracks;
-      // Preserve existing clips — the zoom convenience override must not
-      // wipe the slice list (B+C: a fresh Timeline constructor defaults
-      // clips to const [], which would erase the seeded single slice).
-      final existingClips = this.timeline.clips;
-      if (tracks.isEmpty) {
-        nextTimeline = Timeline(
-          zoomTracks: [ZoomTrack(regions: zoomRegions)],
-          clips: existingClips,
-        );
-      } else {
-        final updated = List<ZoomTrack>.from(tracks);
-        updated[0] = tracks[0].copyWith(regions: zoomRegions);
-        nextTimeline = Timeline(zoomTracks: updated, clips: existingClips);
+    } else if (zoomRegions != null || cameraRegions != null) {
+      var t = this.timeline;
+      if (zoomRegions != null) {
+        final tracks = t.zoomTracks;
+        if (tracks.isEmpty) {
+          t = t.copyWith(zoomTracks: [ZoomTrack(regions: zoomRegions)]);
+        } else {
+          final updated = List<ZoomTrack>.from(tracks)
+            ..[0] = tracks[0].copyWith(regions: zoomRegions);
+          t = t.copyWith(zoomTracks: updated);
+        }
       }
+      if (cameraRegions != null) {
+        final tracks = t.cameraTracks;
+        if (tracks.isEmpty) {
+          t = t.copyWith(cameraTracks: [CameraTrack(regions: cameraRegions)]);
+        } else {
+          final updated = List<CameraTrack>.from(tracks)
+            ..[0] = tracks[0].copyWith(regions: cameraRegions);
+          t = t.copyWith(cameraTracks: updated);
+        }
+      }
+      nextTimeline = t;
     } else {
       nextTimeline = this.timeline;
     }
@@ -226,6 +248,7 @@ class EditorProjectState {
           ? null
           : (pendingScaleAnchor ?? this.pendingScaleAnchor),
       keystrokeOverlay: keystrokeOverlay ?? this.keystrokeOverlay,
+      cameraSettings: cameraSettings ?? this.cameraSettings,
     );
   }
 
@@ -250,6 +273,7 @@ class EditorProjectState {
     'outputAspect': outputAspect.name,
     'timelineScale': timelineScale,
     'keystrokeOverlay': keystrokeOverlay.toJson(),
+    'cameraSettings': cameraSettings.toJson(),
     // pendingScaleAnchor is transient; not serialized.
   };
 
@@ -349,6 +373,10 @@ class EditorProjectState {
           ? KeystrokeOverlaySettings.fromJson(
               json['keystrokeOverlay'] as Map<String, dynamic>)
           : const KeystrokeOverlaySettings(),
+      cameraSettings: json['cameraSettings'] is Map<String, dynamic>
+          ? CameraSettings.fromJson(
+              json['cameraSettings'] as Map<String, dynamic>)
+          : const CameraSettings(),
       // pendingScaleAnchor is transient; always null after load.
     );
   }
@@ -397,7 +425,8 @@ class EditorProjectState {
         other.windowFrame == windowFrame &&
         other.outputAspect == outputAspect &&
         other.timelineScale == timelineScale &&
-        other.keystrokeOverlay == keystrokeOverlay;
+        other.keystrokeOverlay == keystrokeOverlay &&
+        other.cameraSettings == cameraSettings;
     // pendingScaleAnchor intentionally excluded.
   }
 
@@ -422,6 +451,7 @@ class EditorProjectState {
         outputAspect,
         timelineScale,
         keystrokeOverlay,
+        cameraSettings,
         // pendingScaleAnchor intentionally excluded.
       ]);
 }
@@ -549,6 +579,11 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
     next['schemaVersion'] = 8;
     return next;
   },
+  // v8 → v9: add the camera layer — top-level `cameraSettings` and
+  // `timeline.cameraTracks`. Additive: fromJson fills CameraSettings
+  // defaults and Timeline.fromJson fills an empty camera-track list when
+  // the keys are absent, so the migration only bumps the version marker.
+  (json, _) => {...json, 'schemaVersion': 9},
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its
