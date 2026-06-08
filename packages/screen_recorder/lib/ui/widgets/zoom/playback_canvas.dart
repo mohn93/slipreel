@@ -125,6 +125,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     this.cameraOriginalAspect = 1.0,
     this.selectedCameraIndex,
     this.onCameraPlacementChanged,
+    this.onCameraSelectRequested,
   });
 
   final VideoPlayerController controller;
@@ -298,6 +299,10 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// drag/resize. Null in pure-playback callers.
   final void Function(int index, CameraPlacement placement)?
       onCameraPlacementChanged;
+
+  /// Called when the user taps a not-yet-selected camera bubble on the canvas,
+  /// to select that region. Null in pure-playback callers.
+  final void Function(int index)? onCameraSelectRequested;
 
   @override
   ConsumerState<PlaybackCanvas> createState() => _PlaybackCanvasState();
@@ -719,6 +724,11 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                   selected: editable,
                   onPlacementChanged: editable
                       ? (p) => widget.onCameraPlacementChanged!(activeIndex!, p)
+                      : null,
+                  onSelectRequested: (!editable &&
+                          activeIndex != null &&
+                          widget.onCameraSelectRequested != null)
+                      ? () => widget.onCameraSelectRequested!(activeIndex!)
                       : null,
                   child: VideoPlayer(camController),
                 );

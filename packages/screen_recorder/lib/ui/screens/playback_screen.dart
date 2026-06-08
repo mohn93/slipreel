@@ -2321,6 +2321,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           ),
         );
       },
+      onCameraSelectRequested: (index) {
+        if (index == _selectedCameraIndex) return;
+        setState(() {
+          _selectedCameraIndex = index;
+          _selectedZoomIndex = null;
+          _selectedSliceIndex = null;
+        });
+      },
     );
 
     final videoSize = _controller.value.size;
