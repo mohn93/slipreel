@@ -17,7 +17,6 @@ class CameraFramePainter {
     required ui.Image image,
     required Rect pixelBox,
     required CameraSettings settings,
-    required double originalAspect,
     required double opacity,
     double reveal = 1.0,
   }) {
@@ -40,8 +39,11 @@ class CameraFramePainter {
       layerPaint.imageFilter =
           ui.ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma);
     }
+    // Bounds must contain the drop shadow (blur 18 + 6px offset ≈ 39px past the
+    // box) and, while hiding, the reveal blur halo (≈ blurSigma*3). 60 clears
+    // the shadow with margin; the reveal term grows it as the bubble blurs out.
     canvas.saveLayer(
-        pixelBox.shift(Offset(0, slideY)).inflate(40 + blurSigma * 3),
+        pixelBox.shift(Offset(0, slideY)).inflate(60 + blurSigma * 3),
         layerPaint);
     canvas.translate(0, slideY);
 
