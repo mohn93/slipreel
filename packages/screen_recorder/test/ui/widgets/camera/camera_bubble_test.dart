@@ -29,6 +29,25 @@ void main() {
     expect(box.height, closeTo(200, 0.5));
   });
 
+  testWidgets(
+      'renders the video child at a real, aspect-correct size '
+      '(regression: a zero-intrinsic Texture in a bare FittedBox collapsed '
+      'to 0x0 → shadow showed but the video did not)', (tester) async {
+    const contentKey = Key('camera-content');
+    await tester.pumpWidget(host(CameraBubble(
+      canvasSize: const Size(800, 450),
+      placement: placement,
+      settings: const CameraSettings(shape: CameraShape.square),
+      originalAspect: 1.6,
+      child: const ColoredBox(key: contentKey, color: Colors.red),
+    )));
+    final size = tester.getSize(find.byKey(contentKey));
+    expect(size.width, greaterThan(0), reason: 'video child must not collapse');
+    expect(size.height, greaterThan(0), reason: 'video child must not collapse');
+    // The child carries the camera aspect so BoxFit.cover fills the bubble.
+    expect(size.width / size.height, closeTo(1.6, 1e-6));
+  });
+
   testWidgets('circle shape clips with ClipOval; rectangular uses ClipRRect',
       (tester) async {
     await tester.pumpWidget(host(CameraBubble(

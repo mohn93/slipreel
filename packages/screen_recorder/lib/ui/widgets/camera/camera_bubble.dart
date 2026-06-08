@@ -140,7 +140,19 @@ class CameraBubble extends StatelessWidget {
   }
 
   Widget _clipped(Widget c) {
-    final fitted = FittedBox(fit: BoxFit.cover, child: c);
+    // A `VideoPlayer` (Texture) has NO intrinsic size; placed directly in a
+    // FittedBox it is measured under unbounded constraints and collapses to
+    // 0x0, so nothing paints (the bubble's shadow/border still render → the
+    // "shadow but no video" symptom). Give the child a concrete,
+    // correctly-proportioned box (width:aspect, height:1) so BoxFit.cover has
+    // a real size to scale to fill the bubble. Only the ratio matters — the
+    // texture is resolution-independent, so the 1px-tall box scales cleanly.
+    final aspect =
+        (originalAspect.isFinite && originalAspect > 0) ? originalAspect : 1.0;
+    final fitted = FittedBox(
+      fit: BoxFit.cover,
+      child: SizedBox(width: aspect, height: 1.0, child: c),
+    );
     if (settings.shape.isRound) {
       return ClipOval(child: fitted);
     }
