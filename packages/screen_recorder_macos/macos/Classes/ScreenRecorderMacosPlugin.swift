@@ -24,6 +24,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private let sleepObserver = SleepObserver()
   private var hotkeyEventSink: FlutterEventSink?
   private var sleepEventSink: FlutterEventSink?
+  private var recordingErrorEventSink: FlutterEventSink?
 
   private lazy var hotkeysStreamHandler: StreamHandler = StreamHandler(
     onListen: { [weak self] sink in
@@ -51,6 +52,14 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     onCancel: { [weak self] in
       self?.sleepEventSink = nil
       self?.sleepObserver.onEvent = nil
+    })
+
+  private lazy var recordingErrorStreamHandler: StreamHandler = StreamHandler(
+    onListen: { [weak self] sink in
+      self?.recordingErrorEventSink = sink
+    },
+    onCancel: { [weak self] in
+      self?.recordingErrorEventSink = nil
     })
 
   // NEW: Live recording state.
@@ -142,8 +151,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     let sleepChannel = FlutterEventChannel(
       name: "com.slipreel.screen_recorder/sleep",
       binaryMessenger: registrar.messenger)
+    let recordingErrorChannel = FlutterEventChannel(
+      name: "com.slipreel.screen_recorder/recordingError",
+      binaryMessenger: registrar.messenger)
     hotkeysChannel.setStreamHandler(instance.hotkeysStreamHandler)
     sleepChannel.setStreamHandler(instance.sleepStreamHandler)
+    recordingErrorChannel.setStreamHandler(instance.recordingErrorStreamHandler)
 
     // Register the app with macOS's Accessibility TCC list at plugin
     // load. Without this an app that has never asked for the permission
@@ -741,6 +754,15 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
         }
 
+        // Surface a mid-capture SCStream failure (display unplugged, window
+        // closed, permission revoked, GPU reset) instead of silently dropping
+        // it. The Dart controller listens on the recordingError channel and
+        // drives teardown — we only report here, so there's a single
+        // stop path and no double-finalize race.
+        captureManager?.onError = { [weak self] error in
+          self?.emitRecordingError(error)
+        }
+
         try await captureManager?.startCapture(
           sourceId: finalSourceId, fps: fps, isWindow: isWindow,
           region: regionSelection)
@@ -867,6 +889,18 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     }
   }
 
+  /// Reports a fatal mid-capture failure to Flutter over the recordingError
+  /// channel. Invoked from the SCStream delegate queue, so it hops to main to
+  /// touch the FlutterEventSink. Teardown is driven by the Dart side
+  /// (stopLiveRecording) to keep a single finalize path with no race.
+  private func emitRecordingError(_ error: Error) {
+    let message = "Screen capture stopped: \(error.localizedDescription)"
+    NSLog("[ScreenRecorderMacosPlugin] recording error — %@", message)
+    DispatchQueue.main.async { [weak self] in
+      self?.recordingErrorEventSink?(["message": message])
+    }
+  }
+
   /// Best-effort teardown of every live-recording subsystem. Called
   /// from the start-path catch to clean up after a partial failure,
   /// so the next Record click sees a clean slate.
@@ -882,6 +916,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       + "cursorTracker=\(cursorTracker != nil)(tracking=\(cursorTracker?.isCurrentlyTracking() ?? false)) "
       + "writer=\(liveWriter != nil) encoder=\(liveEncoder != nil)")
     if let cm = captureManager {
+      cm.onError = nil // don't emit a recordingError for an intentional stop
       try? await cm.stopCapture()
       captureManager = nil
     }
@@ -935,6 +970,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     Task {
       await MainActor.run { RegionRecordingIndicator.shared.hide() }
       do {
+        captureManager?.onError = nil // intentional stop: suppress error emit
         try await captureManager?.stopCapture()
         captureManager = nil
 

@@ -104,6 +104,7 @@ class RecordingController extends StateNotifier<RecordingState> {
   CursorRecording? _cursorRecording;
   StreamSubscription<KeystrokeEvent>? _keystrokeSubscription;
   KeystrokeRecording? _keystrokeRecording;
+  StreamSubscription<String>? _recordingErrorSubscription;
   CameraConfig? _activeCameraConfig;
   Timer? _durationTimer;
   DateTime? _startTime;
@@ -255,6 +256,19 @@ class RecordingController extends StateNotifier<RecordingState> {
         onError: (e) => AppLogger.recording.w('Keystroke stream error', error: e),
       );
 
+      // Native capture can fail mid-recording (display unplugged, permission
+      // revoked, GPU reset). The native side reports it here; we run the same
+      // error path as any other failure so the UI leaves "recording" and
+      // surfaces the problem instead of silently freezing.
+      _recordingErrorSubscription =
+          ScreenRecorderPlatform.instance.recordingErrorStream.listen(
+        (message) {
+          if (state.isRecording) _handleError(message);
+        },
+        onError: (e) =>
+            AppLogger.recording.w('recordingError stream error', error: e),
+      );
+
       _startTime = DateTime.now();
       _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (_startTime != null) {
@@ -282,6 +296,8 @@ class RecordingController extends StateNotifier<RecordingState> {
       _cursorSubscription = null;
       await _keystrokeSubscription?.cancel();
       _keystrokeSubscription = null;
+      await _recordingErrorSubscription?.cancel();
+      _recordingErrorSubscription = null;
 
       final result = await _videoEncoder.stop();
 
@@ -455,6 +471,8 @@ class RecordingController extends StateNotifier<RecordingState> {
     _cursorSubscription = null;
     _keystrokeSubscription?.cancel();
     _keystrokeSubscription = null;
+    _recordingErrorSubscription?.cancel();
+    _recordingErrorSubscription = null;
     _durationTimer?.cancel();
     _durationTimer = null;
     _startTime = null;
@@ -469,6 +487,7 @@ class RecordingController extends StateNotifier<RecordingState> {
   void dispose() {
     _cursorSubscription?.cancel();
     _keystrokeSubscription?.cancel();
+    _recordingErrorSubscription?.cancel();
     _durationTimer?.cancel();
     super.dispose();
   }
