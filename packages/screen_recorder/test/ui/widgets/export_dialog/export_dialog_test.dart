@@ -503,6 +503,71 @@ void main() {
     });
   });
 
+  // ── Regression (M3): GIF → Shareable link must not break the fps picker ─
+  group('GIF -> Shareable link (M3)', () {
+    testWidgets(
+        'switching to Shareable link from GIF forces MP4 (no fps-picker assert)',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      ExportSettings? returned;
+      final widget = MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                key: const ValueKey('open_dialog_btn'),
+                onPressed: () async {
+                  returned = await showDialog<ExportSettings>(
+                    context: context,
+                    builder: (_) => ExportDialog(
+                      // Start in GIF at a GIF-only fps (10 is not in the MP4
+                      // list). Before the fix, switching to Shareable link
+                      // forced fps=60 while leaving format=gif, so the picker
+                      // rendered value=60 against the GIF option list (no 60)
+                      // and tripped FrameRatePicker's assert.
+                      initialSettings: ExportSettings.defaults().copyWith(
+                        format: ExportFormat.gif,
+                        frameRate: 10,
+                      ),
+                      sourceVideoSize: const Size(1920, 1080),
+                      videoDuration: const Duration(seconds: 5),
+                    ),
+                  );
+                },
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(widget);
+      await tester.tap(find.byKey(const ValueKey('open_dialog_btn')));
+      await tester.pumpAndSettle();
+      expect(find.text('10 fps'), findsOneWidget);
+
+      await tester.tap(find.byKey(
+          const ValueKey('seg_btn_ExportDestination.shareableLink')));
+      await tester.pumpAndSettle();
+
+      // No assertion/exception was thrown reaching shareable mode.
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey('shareable_link_footer')),
+          findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('export_primary_btn')));
+      await tester.pumpAndSettle();
+
+      // The lock normalized the invalid GIF+60 combination to MP4/1080p/60.
+      expect(returned, isNotNull);
+      expect(returned!.format, ExportFormat.mp4);
+      expect(returned!.resolution, ExportResolution.r1080p);
+      expect(returned!.frameRate, 60);
+    });
+  });
+
   // ── Test 8: Cancel returns null ────────────────────────────────────────
   group('cancel returns null', () {
     testWidgets('tapping Cancel closes dialog and returns null', (tester) async {
