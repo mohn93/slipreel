@@ -282,7 +282,6 @@ class FrameCompositor {
                   image: img,
                   pixelBox: box,
                   settings: cam,
-                  originalAspect: cameraOriginalAspect,
                   opacity: cam.opacity,
                   reveal: cameraReveal);
             }

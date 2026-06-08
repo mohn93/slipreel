@@ -12,8 +12,7 @@ Future<ui.Image> solidImage(int w, int h, Color c) async {
   return rec.endRecording().toImage(w, h);
 }
 
-Future<ui.Image> render(CameraSettings settings, double originalAspect,
-    {double reveal = 1.0}) async {
+Future<ui.Image> render(CameraSettings settings, {double reveal = 1.0}) async {
   final cam = await solidImage(160, 120, const Color(0xFF3366FF));
   final rec = ui.PictureRecorder();
   final canvas = ui.Canvas(rec);
@@ -24,7 +23,6 @@ Future<ui.Image> render(CameraSettings settings, double originalAspect,
     image: cam,
     pixelBox: const Rect.fromLTWH(90, 50, 120, 100),
     settings: settings,
-    originalAspect: originalAspect,
     opacity: settings.opacity,
     reveal: reveal,
   );
@@ -40,7 +38,6 @@ void main() {
           shadow: true,
           borderWidth: 4,
           borderColor: 0xFFFFFFFF),
-      160 / 120,
     );
     await expectLater(img, matchesGoldenFile('goldens/camera_circle.png'));
   });
@@ -53,7 +50,6 @@ void main() {
           mirror: true,
           shadow: false,
           borderWidth: 0),
-      160 / 120,
     );
     await expectLater(img, matchesGoldenFile('goldens/camera_rrect.png'));
   });
@@ -67,7 +63,6 @@ void main() {
           shadow: true,
           borderWidth: 4,
           borderColor: 0xFFFFFFFF),
-      160 / 120,
       reveal: 0.5,
     );
     await expectLater(img, matchesGoldenFile('goldens/camera_reveal_half.png'));
