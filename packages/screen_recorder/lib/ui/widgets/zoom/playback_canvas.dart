@@ -722,7 +722,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                   settings: camSettings,
                   originalAspect: widget.cameraOriginalAspect,
                   selected: editable,
-                  onPlacementChanged: editable
+                  // The active region's bubble is grab-draggable whether or not
+                  // it's the current selection (a drag selects it).
+                  onPlacementChanged: (activeIndex != null &&
+                          widget.onCameraPlacementChanged != null)
                       ? (p) => widget.onCameraPlacementChanged!(activeIndex!, p)
                       : null,
                   onSelectRequested: (!editable &&

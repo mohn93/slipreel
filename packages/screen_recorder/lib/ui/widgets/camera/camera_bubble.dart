@@ -61,7 +61,6 @@ class CameraBubble extends StatelessWidget {
     return Rect.fromCenter(center: Offset(cx, cy), width: w, height: h);
   }
 
-  bool get _editable => selected && onPlacementChanged != null;
 
   @override
   Widget build(BuildContext context) {
@@ -121,18 +120,23 @@ class CameraBubble extends StatelessWidget {
       child: decorated,
     );
 
-    // When editable the affordance wrapper is inflated by handle/2 on each
-    // side, so shift the Positioned origin back by that amount so the bubble
-    // renders at the same visual position.
-    const handleInset = 8.0; // _withEditAffordances.handle / 2 = 16/2
-    final posLeft = _editable ? box.left - handleInset : box.left;
-    final posTop = _editable ? box.top - handleInset : box.top;
+    // The active region's bubble is grab-and-drag movable even before it's the
+    // selected one — a drag (or tap) selects it. Resize handles, the selection
+    // ring, and the snap guides only appear once selected. The affordance
+    // wrapper keeps a STABLE structure across selection (the move GestureDetector
+    // is always present) so a drag that selects mid-gesture isn't cancelled.
+    final canMove = onPlacementChanged != null;
 
-    if (_editable) {
-      bubble = _withEditAffordances(bubble, box);
+    // The affordance wrapper inflates the hit area by handle/2 per side; shift
+    // the origin back so the bubble stays visually put.
+    const handleInset = 8.0; // _withEditAffordances.handle / 2 = 16/2
+    final posLeft = canMove ? box.left - handleInset : box.left;
+    final posTop = canMove ? box.top - handleInset : box.top;
+
+    if (canMove) {
+      bubble = _withEditAffordances(bubble, box, showHandles: selected);
     } else if (onSelectRequested != null) {
-      // Not the active selection yet — a tap selects it so it can be dragged
-      // straight from the preview.
+      // No move callback (e.g. not the active region) — a tap still selects it.
       bubble = GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onSelectRequested,
@@ -149,8 +153,8 @@ class CameraBubble extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Faint snap-anchor guides while editing, behind the bubble.
-          if (_editable) ..._anchorGuides(),
+          // Faint snap-anchor guides, shown once the bubble is selected.
+          if (canMove && selected) ..._anchorGuides(),
           Positioned(left: posLeft, top: posTop, child: bubble),
         ],
       ),
@@ -218,7 +222,8 @@ class CameraBubble extends StatelessWidget {
     return settings.roundness.clamp(0.0, 1.0) * (shortest / 2);
   }
 
-  Widget _withEditAffordances(Widget bubble, Rect box) {
+  Widget _withEditAffordances(Widget bubble, Rect box,
+      {required bool showHandles}) {
     const handle = 16.0;
     // Handles are centred on the bubble corners. The outer SizedBox is inflated
     // by handle/2 on every side, so each corner sits flush at the outer edges
@@ -269,38 +274,45 @@ class CameraBubble extends StatelessWidget {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // Move handle = the body.
+                  // Move handle = the body. Always present (stable across
+                  // selection). Drag moves; a tap or drag-start also selects so
+                  // the inspector + handles follow.
                   GestureDetector(
                     key: const Key('camera-move-body'),
                     behavior: HitTestBehavior.opaque,
+                    onTap: onSelectRequested,
+                    onPanStart: (_) => onSelectRequested?.call(),
                     onPanUpdate: (d) => _moveBy(d.delta),
                     child: MouseRegion(
                       cursor: SystemMouseCursors.move,
                       child: bubble,
                     ),
                   ),
-                  // A thin selection ring for affordance.
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: settings.shape.isRound
-                              ? BoxShape.circle
-                              : BoxShape.rectangle,
-                          border:
-                              Border.all(color: const Color(0xFF6C63FF), width: 1.5),
+                  // Selection ring — only when selected.
+                  if (showHandles)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            shape: settings.shape.isRound
+                                ? BoxShape.circle
+                                : BoxShape.rectangle,
+                            border: Border.all(
+                                color: const Color(0xFF6C63FF), width: 1.5),
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
-          cornerHandle('tl', Alignment.topLeft),
-          cornerHandle('tr', Alignment.topRight),
-          cornerHandle('bl', Alignment.bottomLeft),
-          cornerHandle('br', Alignment.bottomRight),
+          if (showHandles) ...[
+            cornerHandle('tl', Alignment.topLeft),
+            cornerHandle('tr', Alignment.topRight),
+            cornerHandle('bl', Alignment.bottomLeft),
+            cornerHandle('br', Alignment.bottomRight),
+          ],
         ],
       ),
     );

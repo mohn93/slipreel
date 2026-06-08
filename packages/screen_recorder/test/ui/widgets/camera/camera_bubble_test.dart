@@ -85,6 +85,39 @@ void main() {
     expect(requested, isTrue);
   });
 
+  testWidgets(
+      'an unselected active bubble is grab-draggable and selects on drag-start',
+      (tester) async {
+    var placement = const CameraPlacement(centerX: 0.5, centerY: 0.5, size: 0.25);
+    var selected = false;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 800,
+            height: 450,
+            child: StatefulBuilder(
+              builder: (ctx, setState) => CameraBubble(
+                canvasSize: const Size(800, 450),
+                placement: placement,
+                settings: const CameraSettings(shape: CameraShape.square),
+                selected: false, // NOT the active selection
+                onPlacementChanged: (p) => setState(() => placement = p),
+                onSelectRequested: () => setState(() => selected = true),
+                child: const ColoredBox(color: Colors.red),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.drag(
+        find.byKey(const Key('camera-move-body')), const Offset(120, 0));
+    await tester.pump();
+    expect(selected, isTrue, reason: 'drag-start selects the region');
+    expect(placement.centerX, greaterThan(0.5), reason: 'and the drag moves it');
+  });
+
   testWidgets('shows resize handles only when selected & editable',
       (tester) async {
     await tester.pumpWidget(host(CameraBubble(
