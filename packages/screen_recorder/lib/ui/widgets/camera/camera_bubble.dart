@@ -426,6 +426,7 @@ class AnimatedCameraBubble extends StatefulWidget {
     required this.child,
     this.originalAspect = 1.0,
     this.selected = false,
+    this.animatePosition = false,
     this.onPlacementChanged,
     this.onPlacementCommit,
     this.onSelectRequested,
@@ -438,6 +439,12 @@ class AnimatedCameraBubble extends StatefulWidget {
   final Widget child;
   final double originalAspect;
   final bool selected;
+
+  /// When true, a CHANGE in [placement] springs the bubble to the new spot
+  /// (250ms) instead of jumping — used for the alignment grid. The canvas
+  /// passes false during drag and playback so those track immediately.
+  final bool animatePosition;
+
   final ValueChanged<CameraPlacement>? onPlacementChanged;
   final VoidCallback? onPlacementCommit;
   final VoidCallback? onSelectRequested;
@@ -447,7 +454,7 @@ class AnimatedCameraBubble extends StatefulWidget {
 }
 
 class _AnimatedCameraBubbleState extends State<AnimatedCameraBubble>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 280),
@@ -459,16 +466,46 @@ class _AnimatedCameraBubbleState extends State<AnimatedCameraBubble>
     reverseCurve: Curves.easeInCubic,
   );
 
+  // Springy 250ms glide of the bubble's POSITION when it's set (e.g. the
+  // alignment grid). easeOutBack overshoots slightly then settles → springy.
+  late final AnimationController _move = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+    value: 1.0,
+  );
+  late final CurvedAnimation _moveCurve =
+      CurvedAnimation(parent: _move, curve: Curves.easeOutBack);
+  late CameraPlacement _moveFrom = widget.placement;
+
+  CameraPlacement get _displayedPlacement {
+    if (!_move.isAnimating) return widget.placement;
+    return _lerpPlacement(_moveFrom, widget.placement, _moveCurve.value);
+  }
+
   @override
   void didUpdateWidget(AnimatedCameraBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.visible != oldWidget.visible) {
       widget.visible ? _controller.forward() : _controller.reverse();
     }
+    if (widget.placement != oldWidget.placement) {
+      if (widget.animatePosition && widget.visible) {
+        // Spring from wherever the bubble currently sits (handles interrupting
+        // an in-flight glide) toward the new placement.
+        _moveFrom = _move.isAnimating
+            ? _lerpPlacement(_moveFrom, oldWidget.placement, _moveCurve.value)
+            : oldWidget.placement;
+        _move.forward(from: 0);
+      } else {
+        _move.value = 1.0; // snap (drag / playback track immediately)
+      }
+    }
   }
 
   @override
   void dispose() {
+    _moveCurve.dispose();
+    _move.dispose();
     _reveal.dispose();
     _controller.dispose();
     super.dispose();
@@ -477,14 +514,14 @@ class _AnimatedCameraBubbleState extends State<AnimatedCameraBubble>
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _reveal,
+      animation: Listenable.merge([_reveal, _move]),
       builder: (context, _) {
         final r = _reveal.value;
         if (!widget.visible && r <= 0.001) return const SizedBox.shrink();
         final interactive = widget.visible;
         return CameraBubble(
           canvasSize: widget.canvasSize,
-          placement: widget.placement,
+          placement: _displayedPlacement,
           settings: widget.settings,
           originalAspect: widget.originalAspect,
           selected: interactive && widget.selected,
@@ -498,3 +535,10 @@ class _AnimatedCameraBubbleState extends State<AnimatedCameraBubble>
     );
   }
 }
+
+CameraPlacement _lerpPlacement(CameraPlacement a, CameraPlacement b, double t) =>
+    CameraPlacement(
+      centerX: a.centerX + (b.centerX - a.centerX) * t,
+      centerY: a.centerY + (b.centerY - a.centerY) * t,
+      size: a.size + (b.size - a.size) * t,
+    );

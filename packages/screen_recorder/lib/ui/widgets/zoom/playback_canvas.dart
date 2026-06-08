@@ -762,6 +762,11 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                   settings: camSettings,
                   originalAspect: widget.cameraOriginalAspect,
                   selected: editable,
+                  // Spring to a newly-SET position (alignment grid) but track
+                  // drags and playback glides immediately.
+                  animatePosition: !widget.controller.value.isPlaying &&
+                      !widget.isHoverScrubbing &&
+                      widget.cameraDragOverride?.value == null,
                   onPlacementCommit: (activeIndex != null &&
                           widget.onCameraPlacementCommit != null)
                       ? widget.onCameraPlacementCommit
