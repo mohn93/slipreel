@@ -16,12 +16,12 @@ void main() {
   });
 
   group('clampCameraCenterInView', () {
-    test('keeps the bubble fully on canvas', () {
-      // halfW 0.125, halfH 0.2222 → X∈[0.125,0.875], Y∈[0.2222,0.7778].
+    test('keeps the bubble fully on canvas with edge padding (margin 0.06)', () {
+      // halfW 0.125, halfH 0.2222 → X∈[0.185,0.815], Y∈[0.2822,0.7178].
       final c = clampCameraCenterInView(
           centerX: 0.99, centerY: 0.99, halfW: 0.125, halfH: 0.2222);
-      expect(c.cx, closeTo(0.875, 1e-9));
-      expect(c.cy, closeTo(0.7778, 1e-9));
+      expect(c.cx, closeTo(1 - 0.06 - 0.125, 1e-9)); // 0.815
+      expect(c.cy, closeTo(1 - 0.06 - 0.2222, 1e-9)); // 0.7178
     });
 
     test('centers an oversized bubble', () {
@@ -46,7 +46,7 @@ void main() {
   });
 
   group('snapCameraCenter', () {
-    test('clamps an out-of-view center fully back into view', () {
+    test('clamps an out-of-view center fully back into view (with padding)', () {
       final r = snapCameraCenter(
         centerX: 1.2,
         centerY: 1.2,
@@ -56,22 +56,22 @@ void main() {
         thresholdPx: 0, // disable snapping to isolate the clamp
       );
       expect(r.snapped, isFalse);
-      expect(r.center.dx, closeTo(0.875, 1e-6)); // 1 - halfW
-      expect(r.center.dy, closeTo(0.7778, 1e-3)); // 1 - halfH
+      expect(r.center.dx, closeTo(1 - 0.06 - 0.125, 1e-6)); // 0.815
+      expect(r.center.dy, closeTo(1 - 0.06 - 0.2222, 1e-3)); // 0.7178
     });
 
     test('snaps to the nearest in-view anchor when close', () {
-      // halfH = 0.125*800/450 ≈ 0.2222 → bottom-right anchor ≈ (0.835, 0.7378).
+      // margin 0.06, halfH ≈ 0.2222 → bottom-right anchor ≈ (0.815, 0.7178).
       final r = snapCameraCenter(
-        centerX: 0.83,
-        centerY: 0.74,
+        centerX: 0.81,
+        centerY: 0.72,
         canvasSize: canvas,
         size: 0.25,
         shapeAspect: 1.0,
       );
       expect(r.snapped, isTrue);
-      expect(r.center.dx, closeTo(0.835, 1e-3));
-      expect(r.center.dy, closeTo(0.7378, 1e-3));
+      expect(r.center.dx, closeTo(0.815, 1e-3));
+      expect(r.center.dy, closeTo(1 - 0.06 - 0.2222, 1e-3));
     });
 
     test('does not snap when no anchor is within threshold', () {

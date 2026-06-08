@@ -28,6 +28,7 @@ class CameraBubble extends StatelessWidget {
     this.originalAspect = 1.0,
     this.selected = false,
     this.onPlacementChanged,
+    this.onPlacementCommit,
     this.onSelectRequested,
     this.reveal = 1.0,
   });
@@ -49,8 +50,12 @@ class CameraBubble extends StatelessWidget {
   final bool selected;
 
   /// When non-null and [selected], the bubble is editable; called with the
-  /// new normalized placement during drag/resize.
+  /// new normalized placement during drag/resize (every pointer move).
   final ValueChanged<CameraPlacement>? onPlacementChanged;
+
+  /// Called once when a move/resize drag ENDS — the caller commits the live
+  /// preview to persisted state here (keeping per-move updates cheap).
+  final VoidCallback? onPlacementCommit;
 
   /// When non-null and the bubble is NOT yet the editable selection, tapping
   /// the bubble on the canvas calls this to select it (so the user can grab it
@@ -64,19 +69,21 @@ class CameraBubble extends StatelessWidget {
     final w = placement.size * canvasSize.width;
     final aspect = settings.shape.pixelAspect(originalAspect);
     final h = w / aspect;
-    // Keep the box fully on the canvas — the camera can never go out of view,
-    // regardless of what center was stored (drag, grid, or seed). If it's
-    // larger than the canvas on an axis, center it there.
-    final cx = w <= canvasSize.width
-        ? (placement.centerX * canvasSize.width)
-            .clamp(w / 2, canvasSize.width - w / 2)
+    // Keep the box fully on the canvas with edge padding — the camera can never
+    // go out of view (or sit flush against the frame), regardless of what
+    // center was stored (drag, grid, or seed). If it's larger than the padded
+    // canvas on an axis, center it there.
+    final padX = kCameraEdgeMargin * canvasSize.width;
+    final padY = kCameraEdgeMargin * canvasSize.height;
+    final loX = w / 2 + padX, hiX = canvasSize.width - w / 2 - padX;
+    final loY = h / 2 + padY, hiY = canvasSize.height - h / 2 - padY;
+    final cx = loX <= hiX
+        ? (placement.centerX * canvasSize.width).clamp(loX, hiX).toDouble()
         : canvasSize.width / 2;
-    final cy = h <= canvasSize.height
-        ? (placement.centerY * canvasSize.height)
-            .clamp(h / 2, canvasSize.height - h / 2)
+    final cy = loY <= hiY
+        ? (placement.centerY * canvasSize.height).clamp(loY, hiY).toDouble()
         : canvasSize.height / 2;
-    return Rect.fromCenter(
-        center: Offset(cx.toDouble(), cy.toDouble()), width: w, height: h);
+    return Rect.fromCenter(center: Offset(cx, cy), width: w, height: h);
   }
 
 
@@ -274,6 +281,7 @@ class CameraBubble extends StatelessWidget {
             key: Key('camera-handle-$id'),
             behavior: HitTestBehavior.opaque,
             onPanUpdate: (d) => _resizeBy(d.delta, a),
+            onPanEnd: (_) => onPlacementCommit?.call(),
             child: MouseRegion(
               cursor: SystemMouseCursors.resizeUpLeftDownRight,
               child: Container(
@@ -320,6 +328,7 @@ class CameraBubble extends StatelessWidget {
                     onTap: onSelectRequested,
                     onPanStart: (_) => onSelectRequested?.call(),
                     onPanUpdate: (d) => _moveBy(d.delta),
+                    onPanEnd: (_) => onPlacementCommit?.call(),
                     child: MouseRegion(
                       cursor: SystemMouseCursors.move,
                       child: bubble,
@@ -418,6 +427,7 @@ class AnimatedCameraBubble extends StatefulWidget {
     this.originalAspect = 1.0,
     this.selected = false,
     this.onPlacementChanged,
+    this.onPlacementCommit,
     this.onSelectRequested,
   });
 
@@ -429,6 +439,7 @@ class AnimatedCameraBubble extends StatefulWidget {
   final double originalAspect;
   final bool selected;
   final ValueChanged<CameraPlacement>? onPlacementChanged;
+  final VoidCallback? onPlacementCommit;
   final VoidCallback? onSelectRequested;
 
   @override
@@ -478,6 +489,7 @@ class _AnimatedCameraBubbleState extends State<AnimatedCameraBubble>
           originalAspect: widget.originalAspect,
           selected: interactive && widget.selected,
           onPlacementChanged: interactive ? widget.onPlacementChanged : null,
+          onPlacementCommit: interactive ? widget.onPlacementCommit : null,
           onSelectRequested: interactive ? widget.onSelectRequested : null,
           reveal: r,
           child: widget.child,

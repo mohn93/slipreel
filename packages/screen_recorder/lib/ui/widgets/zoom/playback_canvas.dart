@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -126,6 +127,8 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     this.selectedCameraIndex,
     this.onCameraPlacementChanged,
     this.onCameraSelectRequested,
+    this.onCameraPlacementCommit,
+    this.cameraDragOverride,
   });
 
   final VideoPlayerController controller;
@@ -304,6 +307,18 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// to select that region. Null in pure-playback callers.
   final void Function(int index)? onCameraSelectRequested;
 
+  /// Called once when a camera drag/resize ENDS — the caller commits the live
+  /// [cameraDragOverride] preview to persisted state.
+  final VoidCallback? onCameraPlacementCommit;
+
+  /// Live drag preview: while a camera region is being dragged/resized, the
+  /// playback screen pushes the in-flight `(index, placement)` here instead of
+  /// mutating project state per pointer-move (which would rebuild the whole
+  /// editor). The canvas reads this for the active region's bubble and only
+  /// rebuilds itself when it changes.
+  final ValueListenable<({int index, CameraPlacement placement})?>?
+      cameraDragOverride;
+
   @override
   ConsumerState<PlaybackCanvas> createState() => _PlaybackCanvasState();
 }
@@ -359,6 +374,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     super.initState();
     _loadSceneBlurProgram();
     widget.zoomPreviewOverride?.addListener(_onPreviewChanged);
+    widget.cameraDragOverride?.addListener(_onPreviewChanged);
   }
 
   @override
@@ -367,6 +383,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     if (oldWidget.zoomPreviewOverride != widget.zoomPreviewOverride) {
       oldWidget.zoomPreviewOverride?.removeListener(_onPreviewChanged);
       widget.zoomPreviewOverride?.addListener(_onPreviewChanged);
+    }
+    if (oldWidget.cameraDragOverride != widget.cameraDragOverride) {
+      oldWidget.cameraDragOverride?.removeListener(_onPreviewChanged);
+      widget.cameraDragOverride?.addListener(_onPreviewChanged);
     }
     // The scene-blur signal is now a pure function of (pos, sampleAt),
     // so there is no per-controller state to reset on trajectory
@@ -387,6 +407,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
 
   @override
   void dispose() {
+    widget.cameraDragOverride?.removeListener(_onPreviewChanged);
     widget.zoomPreviewOverride?.removeListener(_onPreviewChanged);
     _disposeCapturedScene();
     super.dispose();
@@ -724,16 +745,27 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 final editable = activeIndex != null &&
                     activeIndex == widget.selectedCameraIndex &&
                     widget.onCameraPlacementChanged != null;
+                // While a drag is in flight, follow the live preview override
+                // for the active region (cheap — no per-move state mutation).
+                final ov = widget.cameraDragOverride?.value;
+                final effectivePlacement =
+                    (ov != null && activeIndex != null && ov.index == activeIndex)
+                        ? ov.placement
+                        : shownPlacement;
                 // AnimatedCameraBubble fills the canvas, positions its own box,
                 // and fades/blurs/slides in and out as the playhead crosses
                 // region edges. Canvas-fixed sibling overlay.
                 cameraOverlayWidget = AnimatedCameraBubble(
                   visible: placement != null,
                   canvasSize: totalSize,
-                  placement: shownPlacement,
+                  placement: effectivePlacement,
                   settings: camSettings,
                   originalAspect: widget.cameraOriginalAspect,
                   selected: editable,
+                  onPlacementCommit: (activeIndex != null &&
+                          widget.onCameraPlacementCommit != null)
+                      ? widget.onCameraPlacementCommit
+                      : null,
                   // The active region's bubble is grab-draggable whether or not
                   // it's the current selection (a drag selects it).
                   onPlacementChanged: (activeIndex != null &&
