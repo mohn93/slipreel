@@ -65,26 +65,13 @@ class CameraBubble extends StatelessWidget {
   static const double _minSize = 0.05;
   static const double _maxSize = 1.2;
 
-  Rect _pixelBox() {
-    final w = placement.size * canvasSize.width;
-    final aspect = settings.shape.pixelAspect(originalAspect);
-    final h = w / aspect;
-    // Keep the box fully on the canvas with edge padding — the camera can never
-    // go out of view (or sit flush against the frame), regardless of what
-    // center was stored (drag, grid, or seed). If it's larger than the padded
-    // canvas on an axis, center it there.
-    final padX = kCameraEdgeMargin * canvasSize.width;
-    final padY = kCameraEdgeMargin * canvasSize.height;
-    final loX = w / 2 + padX, hiX = canvasSize.width - w / 2 - padX;
-    final loY = h / 2 + padY, hiY = canvasSize.height - h / 2 - padY;
-    final cx = loX <= hiX
-        ? (placement.centerX * canvasSize.width).clamp(loX, hiX).toDouble()
-        : canvasSize.width / 2;
-    final cy = loY <= hiY
-        ? (placement.centerY * canvasSize.height).clamp(loY, hiY).toDouble()
-        : canvasSize.height / 2;
-    return Rect.fromCenter(center: Offset(cx, cy), width: w, height: h);
-  }
+  Rect _pixelBox() => cameraPixelBox(
+        centerX: placement.centerX,
+        centerY: placement.centerY,
+        size: placement.size,
+        canvasSize: canvasSize,
+        shapeAspect: settings.shape.pixelAspect(originalAspect),
+      );
 
 
   @override

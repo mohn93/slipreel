@@ -87,4 +87,31 @@ void main() {
       expect(r.center.dy, closeTo(0.4, 1e-9)); // in view, unchanged
     });
   });
+
+  group('cameraPixelBox', () {
+    test('clamps the box inside the edge margin', () {
+      const canvas = Size(1000, 500);
+      // size 0.2 over width 1000 => w=200; square shape => h=200
+      final box = cameraPixelBox(
+        centerX: 1.0, centerY: 1.0, size: 0.2,
+        canvasSize: canvas, shapeAspect: 1.0,
+      );
+      // pad = 0.06*1000=60 (x), 0.06*500=30 (y); hiX = 1000-100-60=840
+      expect(box.width, closeTo(200, 1e-6));
+      expect(box.height, closeTo(200, 1e-6));
+      expect(box.center.dx, closeTo(840, 1e-6)); // clamped to hiX
+      expect(box.center.dy, closeTo(500 - 100 - 30, 1e-6)); // hiY=370
+    });
+
+    test('centers the box when it is larger than the padded canvas', () {
+      const canvas = Size(400, 400);
+      // size 1.0 => w=400 == canvas width; loX(=200+24=224) > hiX(=400-200-24=176)
+      final box = cameraPixelBox(
+        centerX: 0.1, centerY: 0.1, size: 1.0,
+        canvasSize: canvas, shapeAspect: 1.0,
+      );
+      expect(box.center.dx, closeTo(200, 1e-6));
+      expect(box.center.dy, closeTo(200, 1e-6));
+    });
+  });
 }
