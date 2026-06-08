@@ -374,7 +374,9 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     super.initState();
     _loadSceneBlurProgram();
     widget.zoomPreviewOverride?.addListener(_onPreviewChanged);
-    widget.cameraDragOverride?.addListener(_onPreviewChanged);
+    // NOTE: cameraDragOverride is intentionally NOT wired to setState — the
+    // camera overlay subscribes to it via a scoped ValueListenableBuilder so a
+    // drag repaints only the bubble, not the whole canvas.
   }
 
   @override
@@ -383,10 +385,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     if (oldWidget.zoomPreviewOverride != widget.zoomPreviewOverride) {
       oldWidget.zoomPreviewOverride?.removeListener(_onPreviewChanged);
       widget.zoomPreviewOverride?.addListener(_onPreviewChanged);
-    }
-    if (oldWidget.cameraDragOverride != widget.cameraDragOverride) {
-      oldWidget.cameraDragOverride?.removeListener(_onPreviewChanged);
-      widget.cameraDragOverride?.addListener(_onPreviewChanged);
     }
     // The scene-blur signal is now a pure function of (pos, sampleAt),
     // so there is no per-controller state to reset on trajectory
@@ -407,7 +405,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
 
   @override
   void dispose() {
-    widget.cameraDragOverride?.removeListener(_onPreviewChanged);
     widget.zoomPreviewOverride?.removeListener(_onPreviewChanged);
     _disposeCapturedScene();
     super.dispose();
@@ -745,40 +742,60 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 final editable = activeIndex != null &&
                     activeIndex == widget.selectedCameraIndex &&
                     widget.onCameraPlacementChanged != null;
-                // While a drag is in flight, follow the live preview override
-                // for the active region (cheap — no per-move state mutation).
-                final ov = widget.cameraDragOverride?.value;
-                final effectivePlacement =
-                    (ov != null && activeIndex != null && ov.index == activeIndex)
-                        ? ov.placement
-                        : shownPlacement;
+                final isPlaying = widget.controller.value.isPlaying;
+                final camChild = VideoPlayer(camController);
+
+                // Build the bubble for a given live drag override (or none).
                 // AnimatedCameraBubble fills the canvas, positions its own box,
-                // and fades/blurs/slides in and out as the playhead crosses
-                // region edges. Canvas-fixed sibling overlay.
-                cameraOverlayWidget = AnimatedCameraBubble(
-                  visible: placement != null,
-                  canvasSize: totalSize,
-                  placement: effectivePlacement,
-                  settings: camSettings,
-                  originalAspect: widget.cameraOriginalAspect,
-                  selected: editable,
-                  onPlacementCommit: (activeIndex != null &&
-                          widget.onCameraPlacementCommit != null)
-                      ? widget.onCameraPlacementCommit
-                      : null,
-                  // The active region's bubble is grab-draggable whether or not
-                  // it's the current selection (a drag selects it).
-                  onPlacementChanged: (activeIndex != null &&
-                          widget.onCameraPlacementChanged != null)
-                      ? (p) => widget.onCameraPlacementChanged!(activeIndex!, p)
-                      : null,
-                  onSelectRequested: (!editable &&
+                // and fades/blurs/slides in/out across region edges.
+                AnimatedCameraBubble buildBubble(
+                    ({int index, CameraPlacement placement})? ov) {
+                  final effectivePlacement = (ov != null &&
                           activeIndex != null &&
-                          widget.onCameraSelectRequested != null)
-                      ? () => widget.onCameraSelectRequested!(activeIndex!)
-                      : null,
-                  child: VideoPlayer(camController),
-                );
+                          ov.index == activeIndex)
+                      ? ov.placement
+                      : shownPlacement;
+                  return AnimatedCameraBubble(
+                    visible: placement != null,
+                    canvasSize: totalSize,
+                    placement: effectivePlacement,
+                    settings: camSettings,
+                    originalAspect: widget.cameraOriginalAspect,
+                    selected: editable,
+                    // Spring to a newly-SET position (alignment grid); track
+                    // drags and playback glides immediately.
+                    animatePosition:
+                        !isPlaying && !widget.isHoverScrubbing && ov == null,
+                    onPlacementCommit: (activeIndex != null &&
+                            widget.onCameraPlacementCommit != null)
+                        ? widget.onCameraPlacementCommit
+                        : null,
+                    // The active region's bubble is grab-draggable whether or
+                    // not it's the selection (a drag selects it).
+                    onPlacementChanged: (activeIndex != null &&
+                            widget.onCameraPlacementChanged != null)
+                        ? (p) => widget.onCameraPlacementChanged!(activeIndex!, p)
+                        : null,
+                    onSelectRequested: (!editable &&
+                            activeIndex != null &&
+                            widget.onCameraSelectRequested != null)
+                        ? () => widget.onCameraSelectRequested!(activeIndex!)
+                        : null,
+                    child: camChild,
+                  );
+                }
+
+                final override = widget.cameraDragOverride;
+                // Subscribe the bubble DIRECTLY to the drag override so a drag
+                // repaints ONLY the bubble — not the whole canvas composition
+                // (frame painter, wallpaper, cursor) — keeping it buttery.
+                cameraOverlayWidget = override == null
+                    ? buildBubble(null)
+                    : ValueListenableBuilder<
+                        ({int index, CameraPlacement placement})?>(
+                        valueListenable: override,
+                        builder: (context, ov, _) => buildBubble(ov),
+                      );
               }
             }
 
