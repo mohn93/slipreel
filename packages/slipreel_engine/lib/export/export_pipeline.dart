@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' show Size;
 
+import '../models/camera_sidecar_meta.dart';
 import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
 import '../models/export_settings.dart';
@@ -14,6 +15,7 @@ import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
 import 'bounded_async_queue.dart';
+import 'camera_frame_source.dart';
 import 'export_cancellation.dart';
 import 'export_compositor.dart';
 import 'ffmpeg_decoder.dart';
@@ -21,6 +23,17 @@ import 'ffmpeg_encoder.dart';
 import 'ffmpeg_probe.dart';
 import 'frame_compositor.dart';
 import 'n_slice_filter_graph.dart';
+
+/// Whether the export should run the camera-PiP pass: all four conditions must
+/// hold (a `.camera.json` sidecar exists, the project has the camera enabled,
+/// at least one camera region, and the `.camera.mov` file is present).
+bool shouldCompositeCamera({
+  required bool hasSidecar,
+  required bool enabled,
+  required bool hasRegions,
+  required bool movieExists,
+}) =>
+    hasSidecar && enabled && hasRegions && movieExists;
 
 /// Orchestrates: decode source MP4 → composite (wallpaper + frame +
 /// video + cursor + zoom) via [FrameCompositor] → encode HW.
@@ -129,12 +142,57 @@ class ExportPipeline {
     // frames internally to bridge two different rates.
     final pipelineFps = outFps;
 
+    // Camera PiP (Plan 3): composite the webcam sidecar into export frames when
+    // present + enabled. Decode failures degrade gracefully (warning, no abort).
+    final warnings = <String>[];
+    final cameraMeta = await CameraSidecarMeta.loadForVideo(sourcePath);
+    final cameraMoviePath = CameraSidecarMeta.moviePathForVideo(sourcePath);
+    final compositeCamera = shouldCompositeCamera(
+      hasSidecar: cameraMeta != null,
+      enabled: projectState.cameraSettings.enabled,
+      hasRegions: projectState.cameraRegions.isNotEmpty,
+      movieExists: File(cameraMoviePath).existsSync(),
+    );
+    CameraFrameSource? cameraSource;
+    double cameraOriginalAspect = 1.0;
+    int cameraSrcWidth = 0;
+    int cameraSrcHeight = 0;
+    if (compositeCamera) {
+      try {
+        cameraSrcWidth = cameraMeta!.width;
+        cameraSrcHeight = cameraMeta.height;
+        cameraOriginalAspect =
+            cameraSrcHeight == 0 ? 1.0 : cameraSrcWidth / cameraSrcHeight;
+        final camDecoder = FfmpegDecoder(
+          inputPath: cameraMoviePath,
+          width: cameraSrcWidth,
+          height: cameraSrcHeight,
+          cfrFps: pipelineFps,
+        );
+        cameraSource = CameraFrameSource(
+          frames: camDecoder.frames(),
+          fps: pipelineFps,
+          offsetMicros: cameraMeta.offsetMicros,
+        );
+      } catch (e, st) {
+        AppLogger.ffmpeg.w('Camera export decode setup failed: $e',
+            error: e, stackTrace: st);
+        cameraSource = null;
+        warnings.add(
+            'Camera could not be decoded; exported without the camera overlay.');
+      }
+    }
+
     final ExportCompositor compositor = InProcessExportCompositor(FrameCompositor(
       projectState: projectState,
       cursorRecording: cursorRecording,
       metadata: sourceMetadata,
       videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
       fps: pipelineFps,
+      cameraFrameSource: cameraSource,
+      cameraOriginalAspect: cameraOriginalAspect,
+      cameraSrcWidth: cameraSrcWidth,
+      cameraSrcHeight: cameraSrcHeight,
     ));
 
     final decoder = FfmpegDecoder(
@@ -375,6 +433,16 @@ class ExportPipeline {
         : (totalFrames > 0 ? totalFrames / pipelineFps : 0.0);
     final outputBytes = await _fileLength(outputPath);
 
+    // A camera decode error can surface mid-encode (the source disables itself
+    // on the first failed read). Capture it as a warning so the export still
+    // succeeds, just without the overlay.
+    if (cameraSource?.failed == true &&
+        !warnings.contains(
+            'Camera could not be decoded; exported without the camera overlay.')) {
+      warnings.add(
+          'Camera could not be decoded; exported without the camera overlay.');
+    }
+
     final summary = ExportPerfSummary(
       inputDurationSeconds: inputDuration,
       wallTimeSeconds: wallSec,
@@ -386,6 +454,7 @@ class ExportPipeline {
       outputBytes: outputBytes,
       outputCodec: encoder.codecUsed,
       usedHardwareEncoder: encoder.usedHardware,
+      warnings: warnings,
     );
     AppLogger.ffmpeg.i(summary.format());
     return summary;
