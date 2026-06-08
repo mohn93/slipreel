@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart' show CursorBlurMode;
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
+import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
@@ -487,6 +488,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   TimelineSelection? _currentSelection() {
     if (_selectedSliceIndex != null) {
       return SliceSelected(_selectedSliceIndex!);
+    }
+    if (_selectedCameraIndex != null) {
+      return CameraSelected(_selectedCameraIndex!);
     }
     if (_selectedZoomIndex != null) {
       return ZoomSelected(_selectedZoomIndex!);
@@ -1504,6 +1508,29 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _controller.seekTo(start);
   }
 
+  /// Click-to-add a camera region from the lane ghost. Places it at the
+  /// current camera look/default size, centered bottom-right, and selects it.
+  void _addCameraAt(Duration start, Duration end) {
+    if (!_isInitialized || !_hasCamera) return;
+    if (end <= start) return;
+    final existing = _project.cameraRegions;
+    final tmpl = existing.isNotEmpty ? existing.last : null;
+    final region = CameraRegion(
+      startTime: start,
+      duration: end - start,
+      centerX: tmpl?.centerX ?? 0.82,
+      centerY: tmpl?.centerY ?? 0.82,
+      size: tmpl?.size ?? 0.22,
+    );
+    _projectController.addCameraRegion(region);
+    setState(() {
+      _selectedCameraIndex = _project.cameraRegions.length - 1;
+      _selectedZoomIndex = null;
+      _selectedSliceIndex = null;
+    });
+    _controller.seekTo(start);
+  }
+
   void _checkZoomMarkerClick(Duration position) {
     // Find zoom region near clicked position (within 0.5 seconds).
     const tolerance = Duration(milliseconds: 500);
@@ -2104,7 +2131,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                             setState(() {
                               _selectedZoomIndex = null;
                               _selectedSliceIndex = null;
+                              _selectedCameraIndex = null;
                             });
+                          },
+                          hasCamera: _hasCamera,
+                          cameraRegions:
+                              _hasCamera ? project.cameraRegions : const [],
+                          onCameraChanged: (i, next) =>
+                              _projectController.updateCameraRegionAt(i, next),
+                          onCameraDeleted: (index) {
+                            _projectController.removeCameraRegionAt(index);
+                            setState(() => _selectedCameraIndex = null);
                           },
                           onSliceRemoved: (removed) {
                             setState(() {
@@ -2506,12 +2543,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     _hover.seek(sourceNext);
                     // A committed seek (tap on the ruler or the empty
                     // zoom lane area) is a "click anywhere in the
-                    // timeline" — deselect both slice and zoom so the
-                    // inspector returns to its default state. A tap
+                    // timeline" — deselect slice, zoom, and camera so
+                    // the inspector returns to its default state. A tap
                     // ON a slice is routed through onSliceSelected
                     // directly and never gets here.
                     _selectedSliceIndex = null;
                     _selectedZoomIndex = null;
+                    _selectedCameraIndex = null;
                   });
                   _refreshPlayheadEditedPos();
                   _checkZoomMarkerClick(sourceNext);
@@ -2544,9 +2582,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   }
                   setState(() {
                     _selectedZoomIndex = i;
-                    // Zoom and slice selections are mutually exclusive
-                    // — selecting a zoom clears any slice selection.
-                    if (i != null) _selectedSliceIndex = null;
+                    // Zoom, slice, and camera selections are mutually
+                    // exclusive — selecting a zoom clears the others.
+                    if (i != null) {
+                      _selectedSliceIndex = null;
+                      _selectedCameraIndex = null;
+                    }
                   });
                 },
                 onZoomChanged: (i, next) {
@@ -2566,6 +2607,31 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   });
                 },
                 onZoomAdded: _addZoomAt,
+                cameraRegions: _hasCamera ? _project.cameraRegions : const [],
+                selectedCameraIndex: _selectedCameraIndex,
+                onCameraSelected: (i) {
+                  setState(() {
+                    _selectedCameraIndex = i;
+                    if (i != null) {
+                      _selectedZoomIndex = null;
+                      _selectedSliceIndex = null;
+                    }
+                  });
+                },
+                onCameraChanged: (i, next) =>
+                    _projectController.updateCameraRegionAt(i, next),
+                onCameraDeleted: (index) {
+                  _projectController.removeCameraRegionAt(index);
+                  setState(() {
+                    if (_selectedCameraIndex == index) {
+                      _selectedCameraIndex = null;
+                    } else if (_selectedCameraIndex != null &&
+                        _selectedCameraIndex! > index) {
+                      _selectedCameraIndex = _selectedCameraIndex! - 1;
+                    }
+                  });
+                },
+                onCameraAdded: _addCameraAt,
                 clips: ref
                     .watch(editorProjectControllerProvider)
                     .timeline
@@ -2576,6 +2642,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     _selectedSliceIndex = idx;
                     if (idx != null) {
                       _selectedZoomIndex = null;
+                      _selectedCameraIndex = null;
                     }
                   });
                 },
