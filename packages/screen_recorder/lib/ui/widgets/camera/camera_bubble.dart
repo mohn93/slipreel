@@ -116,9 +116,9 @@ class CameraBubble extends StatelessWidget {
     // When editable the affordance wrapper is inflated by handle/2 on each
     // side, so shift the Positioned origin back by that amount so the bubble
     // renders at the same visual position.
-    const _handleInset = 8.0; // _withEditAffordances.handle / 2 = 16/2
-    final posLeft = _editable ? box.left - _handleInset : box.left;
-    final posTop = _editable ? box.top - _handleInset : box.top;
+    const handleInset = 8.0; // _withEditAffordances.handle / 2 = 16/2
+    final posLeft = _editable ? box.left - handleInset : box.left;
+    final posTop = _editable ? box.top - handleInset : box.top;
 
     if (_editable) {
       bubble = _withEditAffordances(bubble, box);
