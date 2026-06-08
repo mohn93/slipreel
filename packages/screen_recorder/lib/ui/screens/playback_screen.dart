@@ -400,7 +400,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         clips: clips,
       );
       if (ok) {
-        setState(() => _selectedSliceIndex = null);
+        setState(() {
+          _selectedSliceIndex = null;
+          _selectedCameraIndex = null;
+        });
         if (snappedTo != null) _flashSnap(snappedTo);
       } else {
         // If snap pushed us into the min-slice guard zone, retry at raw position.
@@ -411,7 +414,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             clips: clips,
           );
           if (fallback) {
-            setState(() => _selectedSliceIndex = null);
+            setState(() {
+              _selectedSliceIndex = null;
+              _selectedCameraIndex = null;
+            });
             return true;
           }
         }
@@ -443,6 +449,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       setState(() {
         _selectedSliceIndex = decision.nextIndex;
         _selectedZoomIndex = null;
+        _selectedCameraIndex = null;
       });
       // `decision.seekTo` is in edited-time; the player works in
       // source-time. Convert before seeking or the playhead lands at
@@ -785,6 +792,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         return;
       }
       await cam.setVolume(0); // camera track carries no audio; be safe
+      if (!mounted) {
+        await cam.dispose();
+        return;
+      }
       _cameraController = cam;
       // Slave play/pause + position to the main controller.
       _controller.addListener(_syncCameraPlayer);
@@ -800,18 +811,35 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final cam = _cameraController;
     final meta = _cameraMeta;
     if (cam == null || meta == null || !cam.value.isInitialized) return;
-    // Mirror play/pause.
-    if (_controller.value.isPlaying && !cam.value.isPlaying) {
-      cam.play();
-    } else if (!_controller.value.isPlaying && cam.value.isPlaying) {
-      cam.pause();
-    }
-    // Re-seek on drift.
+    final camDur = cam.value.duration;
     final desired = CameraPlaybackSync.desiredCameraPosition(
       mainPosition: _controller.value.position,
       offsetMicros: meta.offsetMicros,
-      cameraDuration: cam.value.duration,
+      cameraDuration: camDur,
     );
+    // The camera is "within its own span" only when `desired` isn't pinned to
+    // an edge by the clamp. Outside the span (before the camera starts or
+    // after it ends) we PARK the camera on the clamped frame instead of
+    // playing — calling play() on a completed video_player restarts it from 0,
+    // which otherwise produces a tail-flicker loop.
+    final atEdge = desired <= Duration.zero || desired >= camDur;
+    final shouldPlay = _controller.value.isPlaying && !atEdge;
+
+    // Spec §5: slave the camera's playback RATE to the main player.
+    final mainRate = _controller.value.playbackSpeed;
+    if (cam.value.playbackSpeed != mainRate) {
+      cam.setPlaybackSpeed(mainRate);
+    }
+
+    if (shouldPlay && !cam.value.isPlaying) {
+      cam.play();
+    } else if (!shouldPlay && cam.value.isPlaying) {
+      cam.pause();
+    }
+
+    // Correct drift toward `desired`. At an edge this seeks ONCE to the
+    // clamped frame and then stays (cam.position == desired → no re-seek),
+    // so there's no per-tick thrash.
     if (CameraPlaybackSync.shouldSeek(
       current: cam.value.position,
       desired: desired,
