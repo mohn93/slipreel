@@ -33,6 +33,18 @@ class MotionSpring {
 
   bool get isSnap => stiffness <= 0;
 
+  /// The spring to seed slider edits from. When [isSnap] (the None-preset
+  /// sentinel, stiffness/damping == -1), editing a single knob via [copyWith]
+  /// would leave the other field at -1 — a negative-damping spring that
+  /// diverges, or a stiffness<=0 spring whose damping change the renderer
+  /// silently ignores. Return a valid spring built from the UI [stiffness]/
+  /// [damping] fallbacks so the first drag always yields a real spring.
+  /// A non-snap spring is returned unchanged.
+  MotionSpring forEditing({double stiffness = 180, double damping = 1.0}) =>
+      isSnap
+          ? MotionSpring(stiffness: stiffness, damping: damping, mass: mass)
+          : this;
+
   SpringDescription toDescription() => SpringDescription.withDampingRatio(
         mass: mass,
         stiffness: stiffness,

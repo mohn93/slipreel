@@ -3,6 +3,7 @@ import 'dart:io';
 
 import '../utils/app_logger.dart';
 import 'audio_streams.dart';
+import 'ffmpeg_resolver.dart';
 
 /// The resolved output of a single `ffprobe` run.
 class FfmpegProbeResult {
@@ -69,7 +70,7 @@ Future<FfmpegProbeResult> ffmpegProbe({
   required String path,
   int? metadataFps,
 }) async {
-  final result = await Process.run('ffprobe', [
+  final result = await Process.run(Ffmpeg.resolveProbe(), [
     '-v', 'error',
     '-select_streams', 'v:0',
     '-show_entries',
@@ -153,7 +154,7 @@ Future<FfmpegProbeResult> ffmpegProbe({
 
 Future<List<AudioStreamInfo>> _probeAudioStreams(String path) async {
   try {
-    final result = await Process.run('ffprobe', [
+    final result = await Process.run(Ffmpeg.resolveProbe(), [
       '-v', 'error',
       '-select_streams', 'a',
       '-show_entries', 'stream=index,codec_name,channels,bit_rate',

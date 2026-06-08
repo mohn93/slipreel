@@ -21,6 +21,10 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   /// Event channel for keystroke events during recording
   final _keystrokeChannel = const EventChannel(ScreenRecorderChannels.keystrokes);
 
+  /// Event channel for fatal mid-capture recording errors
+  static const _recordingErrorChannel =
+      EventChannel(ScreenRecorderChannels.recordingError);
+
   @override
   Future<List<ScreenInfo>> getAvailableScreens() async {
     final result = await _recordingChannel.invokeMethod<List<dynamic>>(
@@ -247,6 +251,15 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   @override
   Stream<Map<dynamic, dynamic>> get sleepEvents =>
       _sleepChannel.receiveBroadcastStream().cast<Map<dynamic, dynamic>>();
+
+  @override
+  Stream<String> get recordingErrorStream =>
+      _recordingErrorChannel.receiveBroadcastStream().map((event) {
+        if (event is Map && event['message'] != null) {
+          return event['message'].toString();
+        }
+        return 'Recording stopped unexpectedly.';
+      });
 
   @override
   Future<SourceList> listSources({bool strictFilter = true}) async {

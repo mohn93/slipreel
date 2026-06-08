@@ -23,6 +23,11 @@ class ScreenRecorderChannels {
 
   /// Event channel for keystroke events during recording.
   static const String keystrokes = 'com.slipreel.screen_recorder/keystrokes';
+
+  /// Event channel for fatal recording errors raised mid-capture (e.g. the
+  /// SCStream stops because the display was unplugged or permission revoked).
+  static const String recordingError =
+      'com.slipreel.screen_recorder/recordingError';
 }
 
 /// Method names for the recording channel

@@ -398,9 +398,11 @@ class EditorProjectState {
     for (final v in values) {
       if (v.name == name) return v;
     }
-    throw FormatException(
-      'EditorProjectState: unknown enum value "$name" for ${values.first.runtimeType}',
-    );
+    // Degrade gracefully on a stale/renamed value. Throwing here would
+    // propagate up to EditorProjectStore.load()'s blanket catch, which
+    // discards the ENTIRE saved project (zoom regions, cuts, camera lane)
+    // for defaults — far worse than a single cosmetic field resetting.
+    return fallback;
   }
 
   @override

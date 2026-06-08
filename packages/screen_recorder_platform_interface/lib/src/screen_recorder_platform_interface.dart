@@ -297,4 +297,10 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
 
   /// Sleep events. Each event is a Map: `{"event": "willSleep"|"didWake"}`.
   Stream<Map<dynamic, dynamic>> get sleepEvents => const Stream.empty();
+
+  /// Fatal recording errors raised mid-capture (display unplugged, capture
+  /// permission revoked, GPU reset, …). Each event is a human-readable
+  /// message. The live recording is no longer producing frames when this
+  /// fires; the controller should tear down and surface the failure.
+  Stream<String> get recordingErrorStream => const Stream.empty();
 }

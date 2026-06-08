@@ -83,7 +83,7 @@ class RecoveryService {
     // Probe duration for the .meta.json sidecar.
     double? recoveredDurationSeconds;
     try {
-      final ffprobePath = Ffmpeg.resolve().replaceFirst(RegExp(r'ffmpeg$'), 'ffprobe');
+      final ffprobePath = Ffmpeg.resolveProbe();
       final probe = await runProcess(ffprobePath, [
         '-v', 'error',
         '-show_entries', 'format=duration',

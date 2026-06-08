@@ -141,9 +141,13 @@ class _ExportDialogState extends State<ExportDialog> {
   void _onDestinationChanged(ExportDestination destination) {
     setState(() {
       if (destination == ExportDestination.shareableLink) {
-        // Lock resolution and fps for shareable link.
+        // Shareable links are hosted VIDEO, always 1080p/60. Force MP4 too:
+        // leaving a GIF format here would render the locked 60fps against the
+        // GIF-only option list (which lacks 60), tripping FrameRatePicker's
+        // assert in debug and showing an unselectable picker in release.
         _settings = _settings.copyWith(
           destination: destination,
+          format: ExportFormat.mp4,
           resolution: ExportResolution.r1080p,
           frameRate: 60,
         );

@@ -53,6 +53,7 @@ import 'package:screen_recorder/state/camera_playback_sync.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/keystroke_group.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
+import 'package:slipreel_engine/models/recording_history.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 import '../../state/recording_audio_streams_provider.dart';
@@ -79,6 +80,22 @@ import 'package:screen_recorder/ui/widgets/command_palette/command_palette.dart'
 /// without needing to find and tap the transport buttons. Null when no
 /// editor is open.
 VideoPlayerController? debugPlaybackController;
+
+/// Every sidecar file Slipreel writes alongside `<videoPath>`. Deleting a
+/// recording must unlink all of these or they orphan on disk — notably the
+/// `.camera.mov`, which can be hundreds of MB. The video file itself is
+/// deleted separately (it's the parent, not a sidecar). Kept as a pure
+/// top-level helper so the delete coverage is unit-testable.
+List<String> recordingSidecarPaths(String videoPath) => <String>[
+      '$videoPath.meta.json',
+      '$videoPath.cursor.json',
+      '$videoPath.editor.json',
+      '$videoPath.editor.json.tmp',
+      CameraSidecarMeta.moviePathForVideo(videoPath),
+      '$videoPath.camera.json',
+      '$videoPath.keystrokes.json',
+      '$videoPath.thumb.png',
+    ];
 
 // TODO(slice-editor T10): replace with per-slice reads once the editor
 // follows the active clip. Bridges the removed `state.audioMix` getter to
@@ -703,6 +720,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         seekTo: _controller.seekTo,
       );
 
+      // The init above awaited several slow loads (controller, metadata,
+      // cursor/keystroke, project, camera sidecar). If the screen was popped
+      // meanwhile the State is disposed — bail before setState() or wiring
+      // listeners onto controllers that dispose() has already torn down.
+      if (!mounted) return;
       setState(() {
         _isInitialized = true;
         // Initialize trim selection to full duration
@@ -782,6 +804,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         }
       } catch (_) {/* leave empty */}
     } catch (e) {
+      // A missing/corrupt video hits this path fast — the user may already
+      // have navigated away, so guard against setState-after-dispose.
+      if (!mounted) return;
       setState(() {
         _error = 'Failed to load video: $e';
       });
@@ -1273,12 +1298,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       await _controller.pause();
     } catch (_) {}
 
-    final sidecars = <String>[
-      '${widget.videoPath}.meta.json',
-      '${widget.videoPath}.cursor.json',
-      '${widget.videoPath}.editor.json',
-      '${widget.videoPath}.editor.json.tmp',
-    ];
+    final sidecars = recordingSidecarPaths(widget.videoPath);
     for (final path in sidecars) {
       try {
         final f = File(path);
@@ -1298,11 +1318,21 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       deleteError = e.toString();
     }
 
-    if (!mounted) return;
     if (deleteError != null) {
+      if (!mounted) return;
       AppAlerts.error('Couldn\'t delete the recording: $deleteError');
       return;
     }
+
+    // Drop it from Recents history too, otherwise it lingers as a greyed
+    // "missing file" card despite the "permanently removed" promise.
+    try {
+      await RecordingHistoryStore().removeByPath(widget.videoPath);
+    } catch (e) {
+      debugPrint('Failed to remove recording from history: $e');
+    }
+
+    if (!mounted) return;
     Navigator.of(context).pop();
     AppAlerts.success('Recording deleted');
   }

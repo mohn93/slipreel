@@ -49,6 +49,23 @@ class VideoEncoder {
     return result;
   }
 
+  /// Best-effort teardown for the abandon/error path. Clears [isActive]
+  /// synchronously (so a subsequent [start] can't double-record), then asks
+  /// the native side to stop, swallowing any failure. Unlike [stop] it never
+  /// throws and returns no result — used when a recording is being discarded
+  /// (see RecordingController._handleError) so a failed or partial session
+  /// can't leave the native capture running or contend for the next start.
+  Future<void> forceReset() async {
+    if (!_isActive) return;
+    _isActive = false;
+    try {
+      await ScreenRecorderPlatform.instance.stopLiveRecording();
+    } catch (e, st) {
+      AppLogger.videoEncoder
+          .w('forceReset: stopLiveRecording failed', error: e, stackTrace: st);
+    }
+  }
+
   bool get isActive => _isActive;
   String? get outputPath => _outputPath;
   int get width => _width;

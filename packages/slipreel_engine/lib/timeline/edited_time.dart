@@ -56,6 +56,29 @@ Duration sourceToEdited(List<ClipSlice> clips, Duration sourceTime) {
   return acc;
 }
 
+/// The lower/upper clamp for dragging a region's edge (zoom or camera pill),
+/// expressed in EDITED time so the visual gap to neighbors stays constant.
+///
+/// [prevEndSource]/[nextStartSource] are the adjacent regions' bounds in
+/// SOURCE time and are mapped through [sourceToEdited]. The open-ended
+/// fallbacks — when a region has no neighbor on that side — are the timeline
+/// extremes (`0` and [timelineDuration]) which are ALREADY in edited time and
+/// must NOT be re-mapped. Passing [timelineDuration] through [sourceToEdited]
+/// double-compresses it on sped-up/trimmed clips, capping the region short of
+/// the real timeline end (the M2 bug).
+({Duration min, Duration max}) editedRegionDragBounds({
+  required List<ClipSlice> clips,
+  required Duration? prevEndSource,
+  required Duration? nextStartSource,
+  required Duration timelineDuration,
+}) {
+  Duration toEdited(Duration t) => clips.isEmpty ? t : sourceToEdited(clips, t);
+  return (
+    min: prevEndSource != null ? toEdited(prevEndSource) : Duration.zero,
+    max: nextStartSource != null ? toEdited(nextStartSource) : timelineDuration,
+  );
+}
+
 /// When playback reaches the end of a slice's trim range (or lands in
 /// a removed region during a stray seek), returns the next valid
 /// source-time position to jump to. Returns null when the entire
