@@ -1,4 +1,4 @@
-import 'dart:ui' show Offset, Size;
+import 'dart:ui' show Offset, Rect, Size;
 
 /// Padding (as a fraction of each canvas axis) kept between the camera bubble's
 /// edges and the canvas edges — both as the snap anchor inset AND as the
@@ -125,4 +125,35 @@ CameraSnapResult snapCameraCenter({
   }
   return CameraSnapResult(
       center: Offset(clamped.cx, clamped.cy), snapped: false);
+}
+
+/// The camera bubble's pixel rect on a `canvasSize` canvas, given a normalized
+/// center + width-fraction and the shape's pixel aspect. Clamps the box so its
+/// edges stay [marginX]/[marginY] inset from the canvas edge (default
+/// [kCameraEdgeMargin]); if the box is larger than the padded canvas on an
+/// axis, it is centered on that axis. Single source of truth shared by the
+/// editor preview (CameraBubble) and the export compositor.
+Rect cameraPixelBox({
+  required double centerX,
+  required double centerY,
+  required double size,
+  required Size canvasSize,
+  required double shapeAspect,
+  double marginX = kCameraEdgeMargin,
+  double marginY = kCameraEdgeMargin,
+}) {
+  final w = size * canvasSize.width;
+  final aspect = (shapeAspect.isFinite && shapeAspect > 0) ? shapeAspect : 1.0;
+  final h = w / aspect;
+  final padX = marginX * canvasSize.width;
+  final padY = marginY * canvasSize.height;
+  final loX = w / 2 + padX, hiX = canvasSize.width - w / 2 - padX;
+  final loY = h / 2 + padY, hiY = canvasSize.height - h / 2 - padY;
+  final cx = loX <= hiX
+      ? (centerX * canvasSize.width).clamp(loX, hiX).toDouble()
+      : canvasSize.width / 2;
+  final cy = loY <= hiY
+      ? (centerY * canvasSize.height).clamp(loY, hiY).toDouble()
+      : canvasSize.height / 2;
+  return Rect.fromCenter(center: Offset(cx, cy), width: w, height: h);
 }

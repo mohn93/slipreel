@@ -70,6 +70,10 @@ class ExportPerfSummary {
   final String outputCodec;
   final bool usedHardwareEncoder;
 
+  /// Non-fatal issues encountered during export (e.g. the camera overlay was
+  /// dropped because the sidecar movie failed to decode). Empty on a clean run.
+  final List<String> warnings;
+
   const ExportPerfSummary({
     required this.inputDurationSeconds,
     required this.wallTimeSeconds,
@@ -79,6 +83,7 @@ class ExportPerfSummary {
     required this.outputBytes,
     required this.outputCodec,
     required this.usedHardwareEncoder,
+    this.warnings = const [],
   });
 
   double get realtimeMultiple =>

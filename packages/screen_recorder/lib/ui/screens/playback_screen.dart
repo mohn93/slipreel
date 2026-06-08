@@ -1895,6 +1895,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   )
                 : null,
           );
+          surfaceExportWarnings(summary, (m) => AppAlerts.warning(m));
         case ExportFailure(:final error):
           AppAlerts.error('Export failed: $error');
         case ExportCancelled():

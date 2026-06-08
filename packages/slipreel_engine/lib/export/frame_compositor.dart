@@ -7,13 +7,17 @@ import 'package:flutter/painting.dart';
 import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'package:slipreel_engine/editor/camera_render_resolver.dart';
+import 'package:slipreel_engine/editor/camera_snap.dart';
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
+import 'package:slipreel_engine/export/camera_frame_source.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/camera_frame_painter.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
 import 'package:slipreel_engine/rendering/frame_painter.dart';
@@ -40,6 +44,10 @@ class FrameCompositor {
     required this.metadata,
     required this.videoSize,
     required this.fps,
+    this.cameraFrameSource,
+    this.cameraOriginalAspect = 1.0,
+    this.cameraSrcWidth = 0,
+    this.cameraSrcHeight = 0,
   }) : _framePainter = FramePainter(
          frame: projectState.windowFrame,
          videoSize: videoSize,
@@ -80,6 +88,22 @@ class FrameCompositor {
   /// `outputFps` so the smoother's window is sized against the rate
   /// the consumer (encoder) is actually reading at.
   final int fps;
+
+  /// Time-aligned source of decoded camera (facecam) BGRA frames, or
+  /// null when this recording has no camera sidecar. When non-null and
+  /// [CameraSettings.enabled], the PiP bubble is composited on top of
+  /// the final (non-zoomed) canvas — see [compose].
+  final CameraFrameSource? cameraFrameSource;
+
+  /// The source camera's pixel width/height aspect, forwarded to
+  /// [CameraShape.pixelAspect] / [CameraFramePainter]. Defaults to 1.0
+  /// (square) so a missing sidecar never yields a degenerate box.
+  final double cameraOriginalAspect;
+
+  /// Decoded camera frame dimensions in pixels (the BGRA buffer's
+  /// width/height). 0 disables the camera pass even if a source is set.
+  final int cameraSrcWidth;
+  final int cameraSrcHeight;
 
   /// Output canvas size — the framed totalSize, rounded to even
   /// pixels (yuv420p subsampling requires it).
@@ -219,11 +243,56 @@ class FrameCompositor {
           // streaked by the camera-motion smear.
           final blurredFg = await _applySceneMotionBlur(fgImage, sceneSignal);
           final fgToComposite = blurredFg ?? fgImage;
+          // Resolve + decode the camera PiP frame (async) BEFORE the
+          // synchronous canvas draws below. The camera bubble is
+          // canvas-fixed: it must NOT inherit the zoom transform, so it
+          // is painted on the final, non-transformed composeCanvas on
+          // top of everything else.
+          ui.Image? cameraImage;
+          Rect? cameraBox;
+          double cameraReveal = 1.0;
+          final cam = projectState.cameraSettings;
+          final camSource = cameraFrameSource;
+          if (cam.enabled && camSource != null) {
+            // renderAt (not placementAt) so the bubble fades/blurs/slides in and
+            // out at region edges — the vanish tail keeps drawing the (live)
+            // camera at the last placement for 280ms after a region ends.
+            final render = CameraRenderResolver.renderAt(
+                position, projectState.cameraRegions);
+            if (render != null) {
+              final bgra = await camSource.frameAt(position);
+              if (bgra != null && cameraSrcWidth > 0 && cameraSrcHeight > 0) {
+                cameraImage =
+                    await _bgraToImage(bgra, cameraSrcWidth, cameraSrcHeight);
+                cameraReveal = render.reveal;
+                cameraBox = cameraPixelBox(
+                  centerX: render.placement.centerX,
+                  centerY: render.placement.centerY,
+                  size: render.placement.size,
+                  canvasSize: totalSize,
+                  shapeAspect: cam.shape.pixelAspect(cameraOriginalAspect),
+                );
+              }
+            }
+          }
+          void paintCamera(ui.Canvas c) {
+            final img = cameraImage, box = cameraBox;
+            if (img != null && box != null) {
+              CameraFramePainter.paint(c,
+                  image: img,
+                  pixelBox: box,
+                  settings: cam,
+                  originalAspect: cameraOriginalAspect,
+                  opacity: cam.opacity,
+                  reveal: cameraReveal);
+            }
+          }
+
           try {
             final wallpaperImage = await _ensureWallpaperImage();
-            // No wallpaper: foreground IS the final image. Skip the
-            // composite step.
-            if (wallpaperImage == null) {
+            // No wallpaper AND no camera: foreground IS the final image.
+            // Skip the composite step.
+            if (wallpaperImage == null && cameraImage == null) {
               final byteData = await fgToComposite.toByteData(
                 format: ui.ImageByteFormat.rawRgba,
               );
@@ -232,16 +301,21 @@ class FrameCompositor {
               }
               return Uint8List.fromList(byteData.buffer.asUint8List());
             }
-            // Composite: sticky wallpaper underneath, (possibly blurred)
-            // foreground on top. The foreground's transparent padding
-            // region reveals the wallpaper around the framed video.
+            // Composite: sticky wallpaper (if any) underneath, (possibly
+            // blurred) foreground on top, then the canvas-fixed camera
+            // bubble above everything. The foreground's transparent
+            // padding region reveals the wallpaper around the framed
+            // video.
             final composeRecorder = ui.PictureRecorder();
             final composeCanvas = ui.Canvas(
               composeRecorder,
               Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
             );
-            composeCanvas.drawImage(wallpaperImage, Offset.zero, Paint());
+            if (wallpaperImage != null) {
+              composeCanvas.drawImage(wallpaperImage, Offset.zero, Paint());
+            }
             composeCanvas.drawImage(fgToComposite, Offset.zero, Paint());
+            paintCamera(composeCanvas);
             final composePicture = composeRecorder.endRecording();
             try {
               final finalImage = await composePicture.toImage(
@@ -265,6 +339,7 @@ class FrameCompositor {
               composePicture.dispose();
             }
           } finally {
+            cameraImage?.dispose();
             if (blurredFg != null) blurredFg.dispose();
           }
         } finally {
