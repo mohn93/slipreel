@@ -238,6 +238,39 @@ void main() {
       expect(restored.zoomRegions.first.zoomLevel, 1.4);
     });
 
+    test(
+        'unknown cursorStyle/cursorClickEffect falls back without nuking the project (m15)',
+        () {
+      // A stale/renamed cosmetic enum value used to throw a FormatException,
+      // which EditorProjectStore.load() caught by discarding the ENTIRE saved
+      // project (zoom regions, cuts, camera lane, …) for defaults. The unknown
+      // value must degrade only its own field.
+      final original = EditorProjectState.defaults().copyWith(zoomRegions: [
+        ZoomRegion(
+          rect: const Rect.fromLTWH(0.1, 0.1, 0.5, 0.5),
+          startTime: const Duration(milliseconds: 250),
+          duration: const Duration(seconds: 3),
+          zoomLevel: 1.4,
+        ),
+      ]);
+      final json = original.toJson();
+      json['cursorStyle'] = 'a_style_removed_in_a_later_build';
+      json['cursorClickEffect'] = 'a_click_effect_that_no_longer_exists';
+
+      final restored = EditorProjectState.fromJson(
+        json,
+        videoDuration: const Duration(seconds: 60),
+      );
+
+      // The rest of the project survives intact…
+      expect(restored.zoomRegions, hasLength(1));
+      expect(restored.zoomRegions.first.zoomLevel, 1.4);
+      // …and the unrecognized enums fall back to defaults.
+      expect(restored.cursorStyle, EditorProjectState.defaults().cursorStyle);
+      expect(restored.cursorClickEffect,
+          EditorProjectState.defaults().cursorClickEffect);
+    });
+
     test('animation configs swap atomically as a single unit', () {
       // CursorAnimationConfig has nested spring state — copyWith must
       // accept the new instance whole, not try to merge fields.
