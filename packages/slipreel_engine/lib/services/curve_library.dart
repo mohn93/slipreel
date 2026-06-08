@@ -61,31 +61,91 @@ class FileCurveLibrary implements CurveLibrary {
     return _resolvedPath!;
   }
 
+  static const int _schemaVersion = 1;
+
   @override
-  Future<List<NamedCurve>> list() async {
+  Future<List<NamedCurve>> list() async => (await _load()).curves;
+
+  /// Loads the library, distinguishing a clean parse (possibly with some
+  /// individually-skipped malformed records) from a whole-file failure. A
+  /// `fileCorrupt` result means the on-disk bytes could not be read at all —
+  /// callers MUST NOT overwrite the file without backing it up first, or a
+  /// single unreadable file silently erases every saved curve.
+  Future<({List<NamedCurve> curves, bool fileCorrupt})> _load() async {
     final f = File(await _path());
-    if (!await f.exists()) return const [];
+    if (!await f.exists()) {
+      return (curves: const <NamedCurve>[], fileCorrupt: false);
+    }
+    Map<String, dynamic> json;
     try {
-      final raw = await f.readAsString();
-      final json = jsonDecode(raw) as Map<String, dynamic>;
-      final entries = (json['curves'] as List<dynamic>? ?? const []);
-      return entries
-          .whereType<Map<String, dynamic>>()
-          .map((e) => NamedCurve(
-                id: e['id'] as String,
-                name: e['name'] as String,
-                curve: CubicBezierCurve(
-                  x1: (e['x1'] as num).toDouble(),
-                  y1: (e['y1'] as num).toDouble(),
-                  x2: (e['x2'] as num).toDouble(),
-                  y2: (e['y2'] as num).toDouble(),
-                ),
-              ))
-          .toList(growable: false);
+      json = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
     } catch (e, st) {
-      AppLogger.ui.w('curves.json corrupt — returning empty list',
+      AppLogger.ui.w('curves.json unreadable — preserving file, treating empty',
           error: e, stackTrace: st);
-      return const [];
+      return (curves: const <NamedCurve>[], fileCorrupt: true);
+    }
+    final version = json['version'];
+    if (version is int && version > _schemaVersion) {
+      // A newer build wrote this. Don't parse-and-rewrite it as v1 — that
+      // would drop fields we don't understand. Treat as corrupt so mutations
+      // back it up rather than clobber it.
+      AppLogger.ui.w('curves.json version $version newer than $_schemaVersion '
+          '— preserving file');
+      return (curves: const <NamedCurve>[], fileCorrupt: true);
+    }
+    final entries = (json['curves'] as List<dynamic>? ?? const []);
+    final out = <NamedCurve>[];
+    for (final e in entries) {
+      final parsed = _tryParseEntry(e);
+      if (parsed != null) {
+        out.add(parsed);
+      } else {
+        // Drop a single bad record rather than discarding the whole library.
+        AppLogger.ui.w('Skipping malformed curve entry: $e');
+      }
+    }
+    return (curves: out, fileCorrupt: false);
+  }
+
+  static NamedCurve? _tryParseEntry(dynamic e) {
+    if (e is! Map) return null;
+    final id = e['id'];
+    final name = e['name'];
+    final x1 = e['x1'], y1 = e['y1'], x2 = e['x2'], y2 = e['y2'];
+    if (id is! String ||
+        name is! String ||
+        x1 is! num ||
+        y1 is! num ||
+        x2 is! num ||
+        y2 is! num) {
+      return null;
+    }
+    return NamedCurve(
+      id: id,
+      name: name,
+      curve: CubicBezierCurve(
+        x1: x1.toDouble(),
+        y1: y1.toDouble(),
+        x2: x2.toDouble(),
+        y2: y2.toDouble(),
+      ),
+    );
+  }
+
+  /// Copies an unreadable curves.json to `curves.json.bak` before a mutation
+  /// overwrites it, so a corrupt or newer-version file is recoverable rather
+  /// than silently lost.
+  Future<void> _backupCorruptFile() async {
+    try {
+      final path = await _path();
+      final f = File(path);
+      if (await f.exists()) {
+        await f.copy('$path.bak');
+        AppLogger.ui.w('Backed up unreadable curves.json to $path.bak');
+      }
+    } catch (e, st) {
+      AppLogger.ui.w('Failed to back up corrupt curves.json',
+          error: e, stackTrace: st);
     }
   }
 
@@ -95,11 +155,11 @@ class FileCurveLibrary implements CurveLibrary {
     required CubicBezierCurve curve,
   }) {
     return _enqueue(() async {
-      final entries = [...await list()];
+      final loaded = await _load();
+      if (loaded.fileCorrupt) await _backupCorruptFile();
       final id = _newId();
       final entry = NamedCurve(id: id, name: name, curve: curve);
-      entries.add(entry);
-      await _write(entries);
+      await _write([...loaded.curves, entry]);
       return entry;
     });
   }
@@ -107,8 +167,10 @@ class FileCurveLibrary implements CurveLibrary {
   @override
   Future<void> delete(String id) {
     return _enqueue(() async {
-      final entries = await list();
-      final next = entries.where((e) => e.id != id).toList(growable: false);
+      final loaded = await _load();
+      if (loaded.fileCorrupt) await _backupCorruptFile();
+      final next =
+          loaded.curves.where((e) => e.id != id).toList(growable: false);
       await _write(next);
     });
   }
@@ -117,7 +179,7 @@ class FileCurveLibrary implements CurveLibrary {
     final path = await _path();
     final tmp = File('$path.tmp');
     final json = {
-      'version': 1,
+      'version': _schemaVersion,
       'curves': entries
           .map((e) => {
                 'id': e.id,

@@ -94,6 +94,55 @@ void main() {
       expect(json['version'], 1);
     });
 
+    test('a single malformed entry is skipped, not the whole file (m16)',
+        () async {
+      final f = File('${tempDir.path}/curves.json');
+      await f.writeAsString(jsonEncode({
+        'version': 1,
+        'curves': [
+          {'id': 'good', 'name': 'keep', 'x1': 0.1, 'y1': 0.2, 'x2': 0.3, 'y2': 0.4},
+          {'id': 'bad', 'name': 'broken', 'x1': 'not-a-number'},
+        ],
+      }));
+      final list = await lib.list();
+      expect(list, hasLength(1));
+      expect(list.single.id, 'good');
+    });
+
+    test('saving alongside a malformed entry preserves the good entries (m16)',
+        () async {
+      final f = File('${tempDir.path}/curves.json');
+      await f.writeAsString(jsonEncode({
+        'version': 1,
+        'curves': [
+          {'id': 'good', 'name': 'keep', 'x1': 0.1, 'y1': 0.2, 'x2': 0.3, 'y2': 0.4},
+          {'id': 'bad', 'name': 'broken'},
+        ],
+      }));
+      const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
+      await lib.save(name: 'new', curve: c);
+
+      final list = await lib.list();
+      // The good original survives AND the new one is added — the bug wiped
+      // everything except 'new'.
+      expect(list, hasLength(2));
+      expect(list.map((e) => e.id), contains('good'));
+      expect(list.map((e) => e.name), contains('new'));
+    });
+
+    test('saving over a wholly-unreadable file backs it up, not erases it (m16)',
+        () async {
+      final f = File('${tempDir.path}/curves.json');
+      await f.writeAsString('not json{{');
+      const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
+      await lib.save(name: 'new', curve: c);
+
+      // The unreadable original is preserved as a .bak so it's recoverable.
+      final bak = File('${tempDir.path}/curves.json.bak');
+      expect(await bak.exists(), isTrue);
+      expect(await bak.readAsString(), 'not json{{');
+    });
+
     test('concurrent saves do not lose entries', () async {
       const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
       // Kick off many saves without awaiting between them. Without the
