@@ -70,6 +70,34 @@ void main() {
     expect(op.opacity, 0.5);
   });
 
+  testWidgets(
+      'AnimatedCameraBubble shows when visible and collapses after hiding',
+      (tester) async {
+    Widget host(bool visible) => MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 800,
+                height: 450,
+                child: AnimatedCameraBubble(
+                  visible: visible,
+                  canvasSize: const Size(800, 450),
+                  placement: placement,
+                  settings: const CameraSettings(),
+                  child: const ColoredBox(color: Colors.red),
+                ),
+              ),
+            ),
+          ),
+        );
+    await tester.pumpWidget(host(true));
+    expect(find.byType(CameraBubble), findsOneWidget);
+    // Hide → after the vanish animation settles it collapses to nothing.
+    await tester.pumpWidget(host(false));
+    await tester.pumpAndSettle();
+    expect(find.byType(CameraBubble), findsNothing);
+  });
+
   testWidgets('tapping a non-selected bubble requests selection',
       (tester) async {
     var requested = false;

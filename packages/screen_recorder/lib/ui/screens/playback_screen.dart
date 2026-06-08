@@ -2169,6 +2169,22 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           hasCamera: _hasCamera,
                           cameraRegions:
                               _hasCamera ? project.cameraRegions : const [],
+                          cameraCanvasAspect: () {
+                            final vs = _videoSize();
+                            if (vs.isEmpty) return 16 / 9;
+                            final cs = OutputCanvasResolver.resolve(
+                              videoSize: vs,
+                              padding: project.windowFrame.padding,
+                              aspect: project.outputAspect,
+                            ).canvasSize;
+                            return cs.height == 0
+                                ? 16 / 9
+                                : cs.width / cs.height;
+                          }(),
+                          cameraOriginalAspect: _cameraMeta == null ||
+                                  _cameraMeta!.height == 0
+                              ? 1.0
+                              : _cameraMeta!.width / _cameraMeta!.height,
                           onCameraChanged: (i, next) =>
                               _projectController.updateCameraRegionAt(i, next),
                           onCameraDeleted: (index) {

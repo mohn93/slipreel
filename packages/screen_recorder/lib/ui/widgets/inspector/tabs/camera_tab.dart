@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:slipreel_engine/editor/camera_snap.dart';
 import 'package:slipreel_engine/models/camera_settings.dart';
 import 'package:slipreel_engine/models/camera_shape.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
@@ -10,11 +11,21 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 /// notifier. Shows a disabled placeholder when the recording has no camera
 /// sidecar.
 class CameraTab extends ConsumerWidget {
-  const CameraTab({super.key, this.hasCamera = false});
+  const CameraTab({
+    super.key,
+    this.hasCamera = false,
+    this.canvasAspect = 16 / 9,
+    this.originalAspect = 1.0,
+  });
 
   /// Whether this recording has a `.camera.mov` sidecar. When false the tab
   /// is informational only.
   final bool hasCamera;
+
+  /// Output-canvas aspect (w/h) and camera source aspect, used to keep the
+  /// Position grid's anchors fully in view.
+  final double canvasAspect;
+  final double originalAspect;
 
   static const _shapes = <(CameraShape, String)>[
     (CameraShape.circle, 'Circle'),
@@ -48,6 +59,13 @@ class CameraTab extends ConsumerWidget {
     final current = regions.isEmpty
         ? null
         : Offset(regions.first.centerX, regions.first.centerY);
+    // Edge-aware anchor centers (so a click never pushes the bubble off-canvas).
+    final ext = cameraHalfExtents(
+      size: regions.isEmpty ? 0.22 : regions.first.size,
+      shapeAspect: settings.shape.pixelAspect(originalAspect),
+      canvasAspect: canvasAspect,
+    );
+    final anchors = cameraSnapAnchors(halfW: ext.halfW, halfH: ext.halfH);
 
     return ListView(
       padding: const EdgeInsets.only(right: 12),
@@ -68,6 +86,7 @@ class CameraTab extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         _PositionGrid(
+          anchors: anchors,
           current: current,
           onPick: regions.isEmpty
               ? null
@@ -214,27 +233,30 @@ class _BorderColorRow extends StatelessWidget {
 /// camera's normalized center) highlights the matching cell. Disabled when
 /// [onPick] is null (no camera region yet).
 class _PositionGrid extends StatelessWidget {
-  const _PositionGrid({required this.current, required this.onPick});
+  const _PositionGrid({
+    required this.anchors,
+    required this.current,
+    required this.onPick,
+  });
 
+  /// The 9 edge-aware anchor CENTERS, row-major (top→bottom, left→right). Cell
+  /// `row*3+col` places the camera at `anchors[row*3+col]`.
+  final List<Offset> anchors;
   final Offset? current;
   final void Function(double cx, double cy)? onPick;
 
-  // Row-major: top row, middle row, bottom row (5% inset corners/edges).
-  static const _anchors = <Offset>[
-    Offset(0.05, 0.05), Offset(0.5, 0.05), Offset(0.95, 0.05),
-    Offset(0.05, 0.5), Offset(0.5, 0.5), Offset(0.95, 0.5),
-    Offset(0.05, 0.95), Offset(0.5, 0.95), Offset(0.95, 0.95),
-  ];
-
   bool _isCurrent(Offset a) {
     final c = current;
-    return c != null && (c.dx - a.dx).abs() < 0.02 && (c.dy - a.dy).abs() < 0.02;
+    return c != null &&
+        (c.dx - a.dx).abs() < 0.02 &&
+        (c.dy - a.dy).abs() < 0.02;
   }
 
   @override
   Widget build(BuildContext context) {
     const cell = 46.0;
-    Widget buildCell(Offset a) {
+    Widget buildCell(int col, int row) {
+      final a = anchors[row * 3 + col];
       final active = _isCurrent(a);
       return GestureDetector(
         onTap: onPick == null ? null : () => onPick!(a.dx, a.dy),
@@ -251,10 +273,10 @@ class _PositionGrid extends StatelessWidget {
               width: active ? 2 : 1,
             ),
           ),
-          // A dot positioned within the cell to mirror the anchor location, so
-          // the grid reads as a position picker.
+          // A dot at the cell's SLOT (corner/edge/center) so the grid reads as
+          // a position picker, independent of the inset anchor value.
           child: Align(
-            alignment: Alignment(a.dx * 2 - 1, a.dy * 2 - 1),
+            alignment: Alignment((col - 1).toDouble(), (row - 1).toDouble()),
             child: Padding(
               padding: const EdgeInsets.all(7),
               child: Container(
@@ -282,7 +304,7 @@ class _PositionGrid extends StatelessWidget {
               child: Row(
                 children: [
                   for (var col = 0; col < 3; col++) ...[
-                    buildCell(_anchors[row * 3 + col]),
+                    buildCell(col, row),
                     if (col < 2) const SizedBox(width: 8),
                   ],
                 ],
