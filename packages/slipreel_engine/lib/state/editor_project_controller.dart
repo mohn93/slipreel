@@ -142,22 +142,22 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   /// Returns the next timeline with [regions] installed on the active
   /// (first) zoom track. Creates a single track if the timeline is
   /// empty so first-write isn't a special case at the call site.
+  ///
+  /// Uses [Timeline.copyWith] so that ALL other timeline fields
+  /// (clips, cameraTracks, …) are preserved — the raw [Timeline]
+  /// constructor defaults those to `const []`, which silently wiped
+  /// the camera lane on every zoom mutation before this fix.
   Timeline _timelineWithActiveRegions(List<ZoomRegion> regions) {
     final immutable = List<ZoomRegion>.unmodifiable(regions);
     final tracks = state.timeline.zoomTracks;
-    // Preserve existing clips — Timeline's constructor defaults clips to
-    // const [], so omitting this here wipes the slice list whenever the
-    // user adds/edits/removes a zoom region (clip lane goes blank).
-    final clips = state.timeline.clips;
     if (tracks.isEmpty) {
-      return Timeline(
+      return state.timeline.copyWith(
         zoomTracks: [ZoomTrack(regions: immutable)],
-        clips: clips,
       );
     }
-    final updated = List<ZoomTrack>.from(tracks);
-    updated[0] = tracks[0].copyWith(regions: immutable);
-    return Timeline(zoomTracks: updated, clips: clips);
+    final updated = List<ZoomTrack>.from(tracks)
+      ..[0] = tracks[0].copyWith(regions: immutable);
+    return state.timeline.copyWith(zoomTracks: updated);
   }
 
   void replaceZoomRegions(List<ZoomRegion> regions) =>

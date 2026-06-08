@@ -1,7 +1,10 @@
+import 'dart:ui' show Rect;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/camera_settings.dart';
 import 'package:slipreel_engine/models/camera_shape.dart';
+import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 
 void main() {
@@ -41,6 +44,36 @@ void main() {
       c.updateCameraRegionAt(5, region(cx: 0.1)); // ignored
       c.removeCameraRegionAt(-1); // ignored
       expect(c.current.cameraRegions, hasLength(1));
+    });
+
+    test('zoom mutators preserve existing camera regions (and vice versa)', () {
+      final c = EditorProjectController();
+      c.addCameraRegion(region()); // camera lane now has 1 region
+      // A zoom edit must NOT wipe the camera lane.
+      c.addZoom(ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 1),
+        zoomLevel: 2.0,
+      ));
+      expect(c.current.cameraRegions, hasLength(1),
+          reason: 'addZoom must preserve camera regions');
+      c.updateZoomAt(0, c.current.zoomRegions.first);
+      expect(c.current.cameraRegions, hasLength(1),
+          reason: 'updateZoomAt must preserve camera regions');
+      c.removeZoomAt(0);
+      expect(c.current.cameraRegions, hasLength(1),
+          reason: 'removeZoomAt must preserve camera regions');
+      // Symmetric: a camera edit must preserve the zoom region too.
+      c.addZoom(ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 1),
+        zoomLevel: 2.0,
+      ));
+      c.addCameraRegion(region(cx: 0.3));
+      expect(c.current.zoomRegions, hasLength(1),
+          reason: 'addCameraRegion must preserve zoom regions');
     });
   });
 }
