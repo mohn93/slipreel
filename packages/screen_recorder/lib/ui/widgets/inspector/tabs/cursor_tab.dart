@@ -351,6 +351,11 @@ class _CursorTabState extends ConsumerState<CursorTab> {
   List<Widget> _motionSpringSliders(MotionSpring s) {
     final stiffness = s.isSnap ? 180.0 : s.stiffness;
     final damping = s.isSnap ? 1.0 : s.damping;
+    // Seed every edit from a VALID spring. In the None/snap preset `s` is the
+    // sentinel (-1,-1); building edits straight off it would leave the other
+    // knob at -1 (a divergent negative-damping spring, or a silently-ignored
+    // damping change). forEditing swaps in the displayed fallbacks.
+    final base = s.forEditing(stiffness: stiffness, damping: damping);
     return [
       InspectorSlider(
         label: 'Motion stiffness',
@@ -358,8 +363,8 @@ class _CursorTabState extends ConsumerState<CursorTab> {
         value: stiffness,
         min: 50,
         max: 1500,
-        onChanged: (v) => _setMotionSpring(s.copyWith(stiffness: v)),
-        onReset: () => _setMotionSpring(s.copyWith(stiffness: 180)),
+        onChanged: (v) => _setMotionSpring(base.copyWith(stiffness: v)),
+        onReset: () => _setMotionSpring(base.copyWith(stiffness: 180)),
         canReset: stiffness != 180,
       ),
       const SizedBox(height: 20),
@@ -369,8 +374,8 @@ class _CursorTabState extends ConsumerState<CursorTab> {
         value: damping,
         min: 0.3,
         max: 1.4,
-        onChanged: (v) => _setMotionSpring(s.copyWith(damping: v)),
-        onReset: () => _setMotionSpring(s.copyWith(damping: 1.0)),
+        onChanged: (v) => _setMotionSpring(base.copyWith(damping: v)),
+        onReset: () => _setMotionSpring(base.copyWith(damping: 1.0)),
         canReset: damping != 1.0,
       ),
     ];
