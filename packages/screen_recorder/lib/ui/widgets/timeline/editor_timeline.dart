@@ -28,6 +28,8 @@ import 'package:screen_recorder/ui/widgets/timeline/timeline_constants.dart';
 import 'package:screen_recorder/ui/widgets/timeline/time_ruler.dart';
 import 'package:screen_recorder/ui/widgets/timeline/snap_flash_overlay.dart';
 import 'package:screen_recorder/ui/widgets/timeline/zoom_lane.dart';
+import 'package:screen_recorder/ui/widgets/timeline/camera_lane.dart';
+import 'package:slipreel_engine/models/camera_region.dart';
 
 /// Computes the hover-scrub progress fraction (0..1 of total content)
 /// from the raw inputs that [_updateHover] has available.
@@ -149,6 +151,12 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.keystrokeRecording,
     this.keystrokeSettings = const KeystrokeOverlaySettings(),
     this.onKeystrokeToggle,
+    this.cameraRegions = const [],
+    this.selectedCameraIndex,
+    this.onCameraChanged,
+    this.onCameraSelected,
+    this.onCameraDeleted,
+    this.onCameraAdded,
   });
 
   final Duration duration;
@@ -284,6 +292,13 @@ class EditorTimeline extends ConsumerStatefulWidget {
   /// on/off. The parent flips the group's member timestamps in the project's
   /// disabled set.
   final ValueChanged<KeystrokeGroup>? onKeystrokeToggle;
+
+  final List<CameraRegion> cameraRegions;
+  final int? selectedCameraIndex;
+  final void Function(int, CameraRegion)? onCameraChanged;
+  final ValueChanged<int?>? onCameraSelected;
+  final ValueChanged<int>? onCameraDeleted;
+  final void Function(Duration start, Duration end)? onCameraAdded;
 
   @override
   ConsumerState<EditorTimeline> createState() => _EditorTimelineState();
@@ -1348,6 +1363,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
             laneHeight +
             laneSpacing +
             zoomLaneHeight +
+            laneSpacing +
+            zoomLaneHeight +
             keystrokeLaneExtent;
 
         return SizedBox(
@@ -1717,6 +1734,25 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                                       trimDragging: _trimDragging,
                                       animateLayout: animateTimelineLayout,
                                     ),
+                                  ),
+                                ),
+                                const SizedBox(height: laneSpacing),
+                                SizedBox(
+                                  height: zoomLaneHeight,
+                                  child: CameraLane(
+                                    duration: widget.duration,
+                                    pixelsPerSecond: pps,
+                                    contentWidth: cw,
+                                    cameraRegions: widget.cameraRegions,
+                                    clips: widget.clips,
+                                    selectedIndex: widget.selectedCameraIndex,
+                                    onCameraChanged: widget.onCameraChanged,
+                                    onCameraSelected: widget.onCameraSelected,
+                                    onCameraDeleted: widget.onCameraDeleted,
+                                    onCameraAdded: widget.onCameraAdded,
+                                    onSeek: widget.onSeek,
+                                    trimDragging: _trimDragging,
+                                    animateLayout: animateTimelineLayout,
                                   ),
                                 ),
                                 if (showKeystrokeLane)
