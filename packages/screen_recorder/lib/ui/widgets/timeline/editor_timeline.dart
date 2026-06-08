@@ -157,6 +157,7 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.onCameraSelected,
     this.onCameraDeleted,
     this.onCameraAdded,
+    this.showCameraLane = false,
   });
 
   final Duration duration;
@@ -299,6 +300,11 @@ class EditorTimeline extends ConsumerStatefulWidget {
   final ValueChanged<int?>? onCameraSelected;
   final ValueChanged<int>? onCameraDeleted;
   final void Function(Duration start, Duration end)? onCameraAdded;
+
+  /// When true, renders the camera lane below the zoom lane.
+  /// Gate this on the recording having a valid camera sidecar so
+  /// screen-only recordings don't get a dead empty lane.
+  final bool showCameraLane;
 
   @override
   ConsumerState<EditorTimeline> createState() => _EditorTimelineState();
@@ -1346,6 +1352,9 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
         final keystrokeLaneExtent = laneBlockHeight * laneT;
         final showKeystrokeLane =
             laneT > 0.001 && widget.keystrokeRecording != null;
+        final cameraLaneExtent = widget.showCameraLane
+            ? (laneSpacing + zoomLaneHeight)
+            : 0.0;
         // Cache the lane block's top y so tap-seek can ignore taps that land
         // on a bar (those toggle the bar instead of seeking).
         _keystrokeLaneTopY = showKeystrokeLane
@@ -1354,7 +1363,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                 CutMarker.kHitHeight +
                 laneHeight +
                 laneSpacing +
-                zoomLaneHeight
+                zoomLaneHeight +
+                cameraLaneExtent
             : null;
         final totalHeight =
             rulerHeight +
@@ -1363,8 +1373,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
             laneHeight +
             laneSpacing +
             zoomLaneHeight +
-            laneSpacing +
-            zoomLaneHeight +
+            cameraLaneExtent +
             keystrokeLaneExtent;
 
         return SizedBox(
@@ -1736,25 +1745,27 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: laneSpacing),
-                                SizedBox(
-                                  height: zoomLaneHeight,
-                                  child: CameraLane(
-                                    duration: widget.duration,
-                                    pixelsPerSecond: pps,
-                                    contentWidth: cw,
-                                    cameraRegions: widget.cameraRegions,
-                                    clips: widget.clips,
-                                    selectedIndex: widget.selectedCameraIndex,
-                                    onCameraChanged: widget.onCameraChanged,
-                                    onCameraSelected: widget.onCameraSelected,
-                                    onCameraDeleted: widget.onCameraDeleted,
-                                    onCameraAdded: widget.onCameraAdded,
-                                    onSeek: widget.onSeek,
-                                    trimDragging: _trimDragging,
-                                    animateLayout: animateTimelineLayout,
+                                if (widget.showCameraLane) ...[
+                                  const SizedBox(height: laneSpacing),
+                                  SizedBox(
+                                    height: zoomLaneHeight,
+                                    child: CameraLane(
+                                      duration: widget.duration,
+                                      pixelsPerSecond: pps,
+                                      contentWidth: cw,
+                                      cameraRegions: widget.cameraRegions,
+                                      clips: widget.clips,
+                                      selectedIndex: widget.selectedCameraIndex,
+                                      onCameraChanged: widget.onCameraChanged,
+                                      onCameraSelected: widget.onCameraSelected,
+                                      onCameraDeleted: widget.onCameraDeleted,
+                                      onCameraAdded: widget.onCameraAdded,
+                                      onSeek: widget.onSeek,
+                                      trimDragging: _trimDragging,
+                                      animateLayout: animateTimelineLayout,
+                                    ),
                                   ),
-                                ),
+                                ],
                                 if (showKeystrokeLane)
                                   ClipRect(
                                     child: Align(

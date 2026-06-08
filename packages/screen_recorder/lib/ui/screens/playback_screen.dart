@@ -780,6 +780,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     try {
       final cam = VideoPlayerController.file(File(path));
       await cam.initialize();
+      if (!mounted) {
+        await cam.dispose();
+        return;
+      }
       await cam.setVolume(0); // camera track carries no audio; be safe
       _cameraController = cam;
       // Slave play/pause + position to the main controller.
@@ -2632,6 +2636,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   });
                 },
                 onCameraAdded: _addCameraAt,
+                showCameraLane: _hasCamera,
                 clips: ref
                     .watch(editorProjectControllerProvider)
                     .timeline
