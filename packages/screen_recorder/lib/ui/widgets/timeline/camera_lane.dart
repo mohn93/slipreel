@@ -316,8 +316,6 @@ class _CameraPillState extends State<_CameraPill> {
   double get _endX =>
       timeToX(_sourceToEdited(widget.region.endTime), widget.pixelsPerSecond);
 
-  Duration get _minStart => widget.neighbors.prevEnd ?? Duration.zero;
-  Duration get _maxEnd => widget.neighbors.nextStart ?? widget.duration;
   Duration get _minDuration =>
       const Duration(milliseconds: minCameraDurationMs);
 
@@ -347,8 +345,16 @@ class _CameraPillState extends State<_CameraPill> {
     // Operate in edited space for clamping, then map back to source.
     final editedDragStart = _sourceToEdited(_dragStartTime);
     final editedDragEnd = _sourceToEdited(_dragEndTime);
-    final editedMinStart = _sourceToEdited(_minStart);
-    final editedMaxEnd = _sourceToEdited(_maxEnd);
+    // Neighbor bounds are source time (mapped); open-ended fallbacks are the
+    // timeline extremes, already edited time and NOT re-mapped (M2).
+    final bounds = editedRegionDragBounds(
+      clips: widget.clips,
+      prevEndSource: widget.neighbors.prevEnd,
+      nextStartSource: widget.neighbors.nextStart,
+      timelineDuration: widget.duration,
+    );
+    final editedMinStart = bounds.min;
+    final editedMaxEnd = bounds.max;
 
     var editedNextStart = editedDragStart;
     var editedNextEnd = editedDragEnd;
