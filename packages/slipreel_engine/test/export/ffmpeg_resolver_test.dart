@@ -66,4 +66,41 @@ void main() {
       expect(calls, callsAfterFirst, reason: 'second resolve must use cache');
     });
   });
+
+  group('resolveProbe', () {
+    test('derives the sibling ffprobe from the resolved ffmpeg path', () {
+      final r = FfmpegResolver(
+        fileExists: (p) => p == '/opt/homebrew/bin/ffmpeg',
+        pathEnv: '',
+      );
+      expect(r.resolveProbe(), '/opt/homebrew/bin/ffprobe');
+    });
+
+    test('derives ffprobe from a bundled ffmpeg path', () {
+      final r = FfmpegResolver(
+        bundledPath: '/app/bundled/ffmpeg',
+        fileExists: (p) => p == '/app/bundled/ffmpeg',
+        pathEnv: '',
+      );
+      expect(r.resolveProbe(), '/app/bundled/ffprobe');
+    });
+
+    test('preserves a .exe suffix when deriving ffprobe', () {
+      final r = FfmpegResolver(
+        bundledPath: r'C:\app\ffmpeg.exe',
+        fileExists: (p) => p == r'C:\app\ffmpeg.exe',
+        pathEnv: '',
+      );
+      expect(r.resolveProbe(), r'C:\app\ffprobe.exe');
+    });
+
+    test('Ffmpeg.resolveProbe delegates to the active resolver', () {
+      Ffmpeg.resolver = FfmpegResolver(
+        fileExists: (p) => p == '/usr/local/bin/ffmpeg',
+        pathEnv: '',
+      );
+      addTearDown(Ffmpeg.resetForTesting);
+      expect(Ffmpeg.resolveProbe(), '/usr/local/bin/ffprobe');
+    });
+  });
 }

@@ -67,6 +67,18 @@ class FfmpegResolver {
     throw FfmpegNotFoundException(searched);
   }
 
+  /// Returns the absolute path to `ffprobe`, derived as the sibling of the
+  /// resolved ffmpeg binary (same install root, with the trailing `ffmpeg`
+  /// swapped for `ffprobe`, preserving any `.exe` suffix).
+  ///
+  /// A packaged/sandboxed macOS app has a minimal `PATH`, so invoking a bare
+  /// `ffprobe` fails even when ffmpeg resolves from a well-known location.
+  /// Probing must therefore go through here, never `Process.run('ffprobe')`.
+  String resolveProbe() => resolve().replaceFirstMapped(
+        RegExp(r'ffmpeg(\.exe)?$'),
+        (m) => 'ffprobe${m[1] ?? ''}',
+      );
+
   Iterable<String> _pathCandidates() sync* {
     if (_pathEnv.isEmpty) return;
     final sep = Platform.isWindows ? ';' : ':';
@@ -95,6 +107,10 @@ class Ffmpeg {
 
   /// Absolute path to ffmpeg. Throws [FfmpegNotFoundException] if missing.
   static String resolve() => resolver.resolve();
+
+  /// Absolute path to ffprobe (sibling of [resolve]). Throws
+  /// [FfmpegNotFoundException] if ffmpeg itself cannot be located.
+  static String resolveProbe() => resolver.resolveProbe();
 
   @visibleForTesting
   static void resetForTesting() => resolver = FfmpegResolver();
