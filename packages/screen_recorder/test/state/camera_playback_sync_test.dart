@@ -53,5 +53,29 @@ void main() {
         isTrue,
       );
     });
+
+    test('shouldSeek is false at exactly the threshold (strict >)', () {
+      expect(
+        CameraPlaybackSync.shouldSeek(
+          current: const Duration(seconds: 2),
+          desired: const Duration(milliseconds: 2050),
+          threshold: const Duration(milliseconds: 50),
+        ),
+        isFalse, // drift == 50ms, not > 50ms
+      );
+    });
+
+    test('desiredCameraPosition handles a negative offset '
+        '(camera started after the screen)', () {
+      // offset -200ms => camera_time = main + 200ms.
+      expect(
+        CameraPlaybackSync.desiredCameraPosition(
+          mainPosition: const Duration(seconds: 2),
+          offsetMicros: -200000,
+          cameraDuration: const Duration(seconds: 10),
+        ),
+        const Duration(milliseconds: 2200),
+      );
+    });
   });
 }

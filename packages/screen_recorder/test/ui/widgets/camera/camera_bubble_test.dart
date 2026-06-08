@@ -63,4 +63,70 @@ void main() {
     )));
     expect(find.byKey(const Key('camera-handle-br')), findsOneWidget);
   });
+
+  testWidgets('dragging the body reports an increased centerX (move)',
+      (tester) async {
+    var placement =
+        const CameraPlacement(centerX: 0.5, centerY: 0.5, size: 0.25);
+    await tester.pumpWidget(
+      StatefulBuilder(
+        builder: (ctx, setState) => MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 800,
+                height: 450,
+                child: CameraBubble(
+                  canvasSize: const Size(800, 450),
+                  placement: placement,
+                  settings: const CameraSettings(),
+                  selected: true,
+                  onPlacementChanged: (p) => setState(() => placement = p),
+                  child: const ColoredBox(color: Colors.red),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.drag(
+        find.byKey(const Key('camera-move-body')), const Offset(80, 0));
+    await tester.pump();
+    expect(placement.centerX, greaterThan(0.5)); // moved right
+    expect(placement.centerY, closeTo(0.5, 1e-6)); // not vertically
+    expect(placement.size, 0.25); // unchanged by a move
+  });
+
+  testWidgets('dragging the bottom-right handle outward grows size',
+      (tester) async {
+    var placement =
+        const CameraPlacement(centerX: 0.5, centerY: 0.5, size: 0.25);
+    await tester.pumpWidget(
+      StatefulBuilder(
+        builder: (ctx, setState) => MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 800,
+                height: 450,
+                child: CameraBubble(
+                  canvasSize: const Size(800, 450),
+                  placement: placement,
+                  settings: const CameraSettings(),
+                  selected: true,
+                  onPlacementChanged: (p) => setState(() => placement = p),
+                  child: const ColoredBox(color: Colors.red),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.drag(
+        find.byKey(const Key('camera-handle-br')), const Offset(40, 40));
+    await tester.pump();
+    expect(placement.size, greaterThan(0.25)); // bottom-right outward = grow
+  });
 }

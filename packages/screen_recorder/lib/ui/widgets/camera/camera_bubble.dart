@@ -113,6 +113,13 @@ class CameraBubble extends StatelessWidget {
       child: decorated,
     );
 
+    // When editable the affordance wrapper is inflated by handle/2 on each
+    // side, so shift the Positioned origin back by that amount so the bubble
+    // renders at the same visual position.
+    const _handleInset = 8.0; // _withEditAffordances.handle / 2 = 16/2
+    final posLeft = _editable ? box.left - _handleInset : box.left;
+    final posTop = _editable ? box.top - _handleInset : box.top;
+
     if (_editable) {
       bubble = _withEditAffordances(bubble, box);
     }
@@ -126,7 +133,7 @@ class CameraBubble extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned(left: box.left, top: box.top, child: bubble),
+          Positioned(left: posLeft, top: posTop, child: bubble),
         ],
       ),
     );
@@ -159,11 +166,14 @@ class CameraBubble extends StatelessWidget {
 
   Widget _withEditAffordances(Widget bubble, Rect box) {
     const handle = 16.0;
+    // Handles are centred on the bubble corners. The outer SizedBox is inflated
+    // by handle/2 on every side, so each corner sits flush at the outer edges
+    // (offset 0 from each side = handle/2 pixels around the bubble corner).
     Widget cornerHandle(String id, Alignment a) => Positioned(
-          left: a.x < 0 ? -handle / 2 : null,
-          right: a.x > 0 ? -handle / 2 : null,
-          top: a.y < 0 ? -handle / 2 : null,
-          bottom: a.y > 0 ? -handle / 2 : null,
+          left: a.x < 0 ? 0 : null,
+          right: a.x > 0 ? 0 : null,
+          top: a.y < 0 ? 0 : null,
+          bottom: a.y > 0 ? 0 : null,
           child: GestureDetector(
             key: Key('camera-handle-$id'),
             behavior: HitTestBehavior.opaque,
@@ -183,30 +193,53 @@ class CameraBubble extends StatelessWidget {
           ),
         );
 
+    // Inflate the hit-testable area by handle/2 on each side so that corner
+    // handles (which hang half-outside the bubble box) are reachable by pointer
+    // events. The inner content is offset back by the same amount so it renders
+    // at the correct visual position.
+    const inset = handle / 2;
     return SizedBox(
-      width: box.width,
-      height: box.height,
+      width: box.width + handle,
+      height: box.height + handle,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Move handle = the body.
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanUpdate: (d) => _moveBy(d.delta),
-            child: MouseRegion(
-              cursor: SystemMouseCursors.move,
-              child: bubble,
-            ),
-          ),
-          // A thin selection ring for affordance.
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape:
-                      settings.shape.isRound ? BoxShape.circle : BoxShape.rectangle,
-                  border: Border.all(color: const Color(0xFF6C63FF), width: 1.5),
-                ),
+          // Offset the bubble content back to its visual position within the
+          // inflated SizedBox.
+          Positioned(
+            left: inset,
+            top: inset,
+            child: SizedBox(
+              width: box.width,
+              height: box.height,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Move handle = the body.
+                  GestureDetector(
+                    key: const Key('camera-move-body'),
+                    behavior: HitTestBehavior.opaque,
+                    onPanUpdate: (d) => _moveBy(d.delta),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.move,
+                      child: bubble,
+                    ),
+                  ),
+                  // A thin selection ring for affordance.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: settings.shape.isRound
+                              ? BoxShape.circle
+                              : BoxShape.rectangle,
+                          border:
+                              Border.all(color: const Color(0xFF6C63FF), width: 1.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
