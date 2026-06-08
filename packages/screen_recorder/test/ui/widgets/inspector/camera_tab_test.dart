@@ -31,12 +31,13 @@ void main() {
     final c = EditorProjectController();
     await tester.pumpWidget(host(c));
     expect(c.current.cameraSettings.mirror, isTrue);
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(const Key('camera-mirror-toggle')),
-        matching: find.byType(Switch),
-      ),
-    );
+    // The Position grid sits above Mirror in a lazy ListView; scroll it into
+    // view (building it) before tapping.
+    final mirror = find.byKey(const Key('camera-mirror-toggle'));
+    await tester.scrollUntilVisible(mirror, 80,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: mirror, matching: find.byType(Switch)));
     await tester.pump();
     expect(c.current.cameraSettings.mirror, isFalse);
   });

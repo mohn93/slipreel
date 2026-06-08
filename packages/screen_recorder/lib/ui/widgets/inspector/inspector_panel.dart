@@ -51,6 +51,8 @@ class InspectorPanel extends StatefulWidget {
     this.onPlacementPreview,
     this.onPlacementCommit,
     this.cameraRegions = const [],
+    this.cameraCanvasAspect = 16 / 9,
+    this.cameraOriginalAspect = 1.0,
     this.onCameraChanged,
     this.onCameraDeleted,
   });
@@ -116,6 +118,11 @@ class InspectorPanel extends StatefulWidget {
   /// Camera regions, indexed by [CameraSelected.index].
   final List<CameraRegion> cameraRegions;
 
+  /// Output-canvas aspect (w/h) and the camera source aspect — used by the
+  /// Camera tab's Position grid to keep its anchors fully in view.
+  final double cameraCanvasAspect;
+  final double cameraOriginalAspect;
+
   /// Mutate a camera region (size, etc.).
   final void Function(int index, CameraRegion next)? onCameraChanged;
 
@@ -165,7 +172,11 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.background => const BackgroundTab(),
         InspectorTab.cursor =>
             CursorTab(canHideCursor: widget.canHideCursor),
-        InspectorTab.camera => CameraTab(hasCamera: widget.hasCamera),
+        InspectorTab.camera => CameraTab(
+            hasCamera: widget.hasCamera,
+            canvasAspect: widget.cameraCanvasAspect,
+            originalAspect: widget.cameraOriginalAspect,
+          ),
         InspectorTab.captions => const CaptionsTab(),
         InspectorTab.audio => const AudioTab(),
         InspectorTab.shortcuts =>

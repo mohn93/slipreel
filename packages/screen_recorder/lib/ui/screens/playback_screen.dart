@@ -46,6 +46,7 @@ import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/export/audio_mix_args.dart';
 import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
+import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
 import 'package:slipreel_engine/editor/camera_seed.dart';
 import 'package:slipreel_engine/models/camera_sidecar_meta.dart';
 import 'package:screen_recorder/state/camera_playback_sync.dart';
@@ -246,6 +247,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   EditorHistoryController? _history;
   int? _selectedZoomIndex;
   final _zoomPreviewOverride = ZoomPreviewOverride();
+  // Live camera drag/resize preview: the in-flight placement is pushed here per
+  // pointer-move (cheap — only the canvas rebuilds) and committed to project
+  // state once on drag end, so dragging the bubble doesn't rebuild the whole
+  // editor on every frame.
+  final ValueNotifier<({int index, CameraPlacement placement})?>
+      _cameraDragOverride = ValueNotifier(null);
   // Which slice (if any) the user has tapped in the multi-slice clip
   // lane. Mutually exclusive with [_selectedZoomIndex]: selecting one
   // clears the other. Drives the inspector's context-mode display.
@@ -937,6 +944,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _flashTimer?.cancel();
     _snapFlashTimer?.cancel();
     _zoomPreviewOverride.dispose();
+    _cameraDragOverride.dispose();
     // Flush any pending debounced save before tearing down so the
     // user doesn't lose the last change they made before navigating
     // away. Fire-and-forget — atomic write + the store's mutation
@@ -2169,6 +2177,22 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           hasCamera: _hasCamera,
                           cameraRegions:
                               _hasCamera ? project.cameraRegions : const [],
+                          cameraCanvasAspect: () {
+                            final vs = _videoSize();
+                            if (vs.isEmpty) return 16 / 9;
+                            final cs = OutputCanvasResolver.resolve(
+                              videoSize: vs,
+                              padding: project.windowFrame.padding,
+                              aspect: project.outputAspect,
+                            ).canvasSize;
+                            return cs.height == 0
+                                ? 16 / 9
+                                : cs.width / cs.height;
+                          }(),
+                          cameraOriginalAspect: _cameraMeta == null ||
+                                  _cameraMeta!.height == 0
+                              ? 1.0
+                              : _cameraMeta!.width / _cameraMeta!.height,
                           onCameraChanged: (i, next) =>
                               _projectController.updateCameraRegionAt(i, next),
                           onCameraDeleted: (index) {
@@ -2309,15 +2333,25 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           ? 1.0
           : _cameraMeta!.width / _cameraMeta!.height,
       selectedCameraIndex: _selectedCameraIndex,
+      cameraDragOverride: _cameraDragOverride,
+      // Per pointer-move: push the live placement to the override only (the
+      // canvas rebuilds, the rest of the editor doesn't).
       onCameraPlacementChanged: (index, placement) {
+        _cameraDragOverride.value = (index: index, placement: placement);
+      },
+      // On drag end: commit the previewed placement to project state once.
+      onCameraPlacementCommit: () {
+        final o = _cameraDragOverride.value;
+        _cameraDragOverride.value = null;
+        if (o == null) return;
         final regions = _project.cameraRegions;
-        if (index < 0 || index >= regions.length) return;
+        if (o.index < 0 || o.index >= regions.length) return;
         _projectController.updateCameraRegionAt(
-          index,
-          regions[index].copyWith(
-            centerX: placement.centerX,
-            centerY: placement.centerY,
-            size: placement.size,
+          o.index,
+          regions[o.index].copyWith(
+            centerX: o.placement.centerX,
+            centerY: o.placement.centerY,
+            size: o.placement.size,
           ),
         );
       },

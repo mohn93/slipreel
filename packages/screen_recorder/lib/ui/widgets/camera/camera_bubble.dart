@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -26,8 +28,15 @@ class CameraBubble extends StatelessWidget {
     this.originalAspect = 1.0,
     this.selected = false,
     this.onPlacementChanged,
+    this.onPlacementCommit,
     this.onSelectRequested,
+    this.reveal = 1.0,
   });
+
+  /// Reveal progress 0..1 for the vanish/appear animation: 1 = fully shown,
+  /// 0 = hidden (faded out, blurred, and slid down). Driven by
+  /// [AnimatedCameraBubble].
+  final double reveal;
 
   /// The canvas (`totalSize`) this bubble is positioned within.
   final Size canvasSize;
@@ -41,8 +50,12 @@ class CameraBubble extends StatelessWidget {
   final bool selected;
 
   /// When non-null and [selected], the bubble is editable; called with the
-  /// new normalized placement during drag/resize.
+  /// new normalized placement during drag/resize (every pointer move).
   final ValueChanged<CameraPlacement>? onPlacementChanged;
+
+  /// Called once when a move/resize drag ENDS — the caller commits the live
+  /// preview to persisted state here (keeping per-move updates cheap).
+  final VoidCallback? onPlacementCommit;
 
   /// When non-null and the bubble is NOT yet the editable selection, tapping
   /// the bubble on the canvas calls this to select it (so the user can grab it
@@ -53,15 +66,26 @@ class CameraBubble extends StatelessWidget {
   static const double _maxSize = 1.2;
 
   Rect _pixelBox() {
-    final w = (placement.size * canvasSize.width);
+    final w = placement.size * canvasSize.width;
     final aspect = settings.shape.pixelAspect(originalAspect);
     final h = w / aspect;
-    final cx = placement.centerX * canvasSize.width;
-    final cy = placement.centerY * canvasSize.height;
+    // Keep the box fully on the canvas with edge padding — the camera can never
+    // go out of view (or sit flush against the frame), regardless of what
+    // center was stored (drag, grid, or seed). If it's larger than the padded
+    // canvas on an axis, center it there.
+    final padX = kCameraEdgeMargin * canvasSize.width;
+    final padY = kCameraEdgeMargin * canvasSize.height;
+    final loX = w / 2 + padX, hiX = canvasSize.width - w / 2 - padX;
+    final loY = h / 2 + padY, hiY = canvasSize.height - h / 2 - padY;
+    final cx = loX <= hiX
+        ? (placement.centerX * canvasSize.width).clamp(loX, hiX).toDouble()
+        : canvasSize.width / 2;
+    final cy = loY <= hiY
+        ? (placement.centerY * canvasSize.height).clamp(loY, hiY).toDouble()
+        : canvasSize.height / 2;
     return Rect.fromCenter(center: Offset(cx, cy), width: w, height: h);
   }
 
-  bool get _editable => selected && onPlacementChanged != null;
 
   @override
   Widget build(BuildContext context) {
@@ -117,28 +141,45 @@ class CameraBubble extends StatelessWidget {
 
     Widget bubble = Opacity(
       key: const Key('camera-bubble-opacity'),
-      opacity: settings.opacity.clamp(0.0, 1.0),
+      opacity: (settings.opacity * reveal).clamp(0.0, 1.0),
       child: decorated,
     );
 
-    // When editable the affordance wrapper is inflated by handle/2 on each
-    // side, so shift the Positioned origin back by that amount so the bubble
-    // renders at the same visual position.
-    const handleInset = 8.0; // _withEditAffordances.handle / 2 = 16/2
-    final posLeft = _editable ? box.left - handleInset : box.left;
-    final posTop = _editable ? box.top - handleInset : box.top;
+    // The active region's bubble is grab-and-drag movable even before it's the
+    // selected one — a drag (or tap) selects it. Resize handles, the selection
+    // ring, and the snap guides only appear once selected. The affordance
+    // wrapper keeps a STABLE structure across selection (the move GestureDetector
+    // is always present) so a drag that selects mid-gesture isn't cancelled.
+    final canMove = onPlacementChanged != null;
 
-    if (_editable) {
-      bubble = _withEditAffordances(bubble, box);
+    // The affordance wrapper inflates the hit area by handle/2 per side; shift
+    // the origin back so the bubble stays visually put.
+    const handleInset = 8.0; // _withEditAffordances.handle / 2 = 16/2
+    final posLeft = canMove ? box.left - handleInset : box.left;
+    final posTop = canMove ? box.top - handleInset : box.top;
+
+    if (canMove) {
+      bubble = _withEditAffordances(bubble, box, showHandles: selected);
     } else if (onSelectRequested != null) {
-      // Not the active selection yet — a tap selects it so it can be dragged
-      // straight from the preview.
+      // No move callback (e.g. not the active region) — a tap still selects it.
       bubble = GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onSelectRequested,
         child: MouseRegion(cursor: SystemMouseCursors.click, child: bubble),
       );
     }
+
+    // Vanish/appear animation: blur out + slide down as it fades. Skip the
+    // (cost-y) blur layer once essentially revealed.
+    final hidden = (1.0 - reveal).clamp(0.0, 1.0);
+    if (hidden > 0.01) {
+      bubble = ImageFiltered(
+        imageFilter:
+            ImageFilter.blur(sigmaX: hidden * 12, sigmaY: hidden * 12),
+        child: bubble,
+      );
+    }
+    final slideY = hidden * 20.0; // slides up into place / down on vanish
 
     // Self-contained: the bubble fills the canvas and positions its box in an
     // internal Stack, so it can be dropped straight into PlaybackCanvas (or a
@@ -149,9 +190,9 @@ class CameraBubble extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Faint snap-anchor guides while editing, behind the bubble.
-          if (_editable) ..._anchorGuides(),
-          Positioned(left: posLeft, top: posTop, child: bubble),
+          // Faint snap-anchor guides, shown once the bubble is selected.
+          if (canMove && selected) ..._anchorGuides(),
+          Positioned(left: posLeft, top: posTop + slideY, child: bubble),
         ],
       ),
     );
@@ -161,8 +202,15 @@ class CameraBubble extends StatelessWidget {
   /// bubble is being edited so the user can see where it will snap.
   List<Widget> _anchorGuides() {
     const dot = 10.0;
+    final ca =
+        canvasSize.height == 0 ? 1.0 : canvasSize.width / canvasSize.height;
+    final ext = cameraHalfExtents(
+      size: placement.size,
+      shapeAspect: settings.shape.pixelAspect(originalAspect),
+      canvasAspect: ca,
+    );
     return [
-      for (final a in cameraSnapAnchors())
+      for (final a in cameraSnapAnchors(halfW: ext.halfW, halfH: ext.halfH))
         Positioned(
           left: a.dx * canvasSize.width - dot / 2,
           top: a.dy * canvasSize.height - dot / 2,
@@ -218,7 +266,8 @@ class CameraBubble extends StatelessWidget {
     return settings.roundness.clamp(0.0, 1.0) * (shortest / 2);
   }
 
-  Widget _withEditAffordances(Widget bubble, Rect box) {
+  Widget _withEditAffordances(Widget bubble, Rect box,
+      {required bool showHandles}) {
     const handle = 16.0;
     // Handles are centred on the bubble corners. The outer SizedBox is inflated
     // by handle/2 on every side, so each corner sits flush at the outer edges
@@ -232,6 +281,7 @@ class CameraBubble extends StatelessWidget {
             key: Key('camera-handle-$id'),
             behavior: HitTestBehavior.opaque,
             onPanUpdate: (d) => _resizeBy(d.delta, a),
+            onPanEnd: (_) => onPlacementCommit?.call(),
             child: MouseRegion(
               cursor: SystemMouseCursors.resizeUpLeftDownRight,
               child: Container(
@@ -269,38 +319,46 @@ class CameraBubble extends StatelessWidget {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // Move handle = the body.
+                  // Move handle = the body. Always present (stable across
+                  // selection). Drag moves; a tap or drag-start also selects so
+                  // the inspector + handles follow.
                   GestureDetector(
                     key: const Key('camera-move-body'),
                     behavior: HitTestBehavior.opaque,
+                    onTap: onSelectRequested,
+                    onPanStart: (_) => onSelectRequested?.call(),
                     onPanUpdate: (d) => _moveBy(d.delta),
+                    onPanEnd: (_) => onPlacementCommit?.call(),
                     child: MouseRegion(
                       cursor: SystemMouseCursors.move,
                       child: bubble,
                     ),
                   ),
-                  // A thin selection ring for affordance.
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: settings.shape.isRound
-                              ? BoxShape.circle
-                              : BoxShape.rectangle,
-                          border:
-                              Border.all(color: const Color(0xFF6C63FF), width: 1.5),
+                  // Selection ring — only when selected.
+                  if (showHandles)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            shape: settings.shape.isRound
+                                ? BoxShape.circle
+                                : BoxShape.rectangle,
+                            border: Border.all(
+                                color: const Color(0xFF6C63FF), width: 1.5),
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
-          cornerHandle('tl', Alignment.topLeft),
-          cornerHandle('tr', Alignment.topRight),
-          cornerHandle('bl', Alignment.bottomLeft),
-          cornerHandle('br', Alignment.bottomRight),
+          if (showHandles) ...[
+            cornerHandle('tl', Alignment.topLeft),
+            cornerHandle('tr', Alignment.topRight),
+            cornerHandle('bl', Alignment.bottomLeft),
+            cornerHandle('br', Alignment.bottomRight),
+          ],
         ],
       ),
     );
@@ -309,14 +367,28 @@ class CameraBubble extends StatelessWidget {
   void _moveBy(Offset deltaPx) {
     final cb = onPlacementChanged;
     if (cb == null) return;
-    final dx = deltaPx.dx / canvasSize.width;
-    final dy = deltaPx.dy / canvasSize.height;
-    var nx = (placement.centerX + dx).clamp(0.0, 1.0);
-    var ny = (placement.centerY + dy).clamp(0.0, 1.0);
-    // Snap to the standard anchor grid unless Option/Alt is held (free move).
-    if (!HardwareKeyboard.instance.isAltPressed) {
-      final snap =
-          snapCameraCenter(centerX: nx, centerY: ny, canvasSize: canvasSize);
+    final rawX = placement.centerX + deltaPx.dx / canvasSize.width;
+    final rawY = placement.centerY + deltaPx.dy / canvasSize.height;
+    final shapeAspect = settings.shape.pixelAspect(originalAspect);
+    final double nx, ny;
+    if (HardwareKeyboard.instance.isAltPressed) {
+      // Free move — no anchor snap, but still kept fully in view.
+      final ca =
+          canvasSize.height == 0 ? 1.0 : canvasSize.width / canvasSize.height;
+      final ext = cameraHalfExtents(
+          size: placement.size, shapeAspect: shapeAspect, canvasAspect: ca);
+      final c = clampCameraCenterInView(
+          centerX: rawX, centerY: rawY, halfW: ext.halfW, halfH: ext.halfH);
+      nx = c.cx;
+      ny = c.cy;
+    } else {
+      final snap = snapCameraCenter(
+        centerX: rawX,
+        centerY: rawY,
+        canvasSize: canvasSize,
+        size: placement.size,
+        shapeAspect: shapeAspect,
+      );
       nx = snap.center.dx;
       ny = snap.center.dy;
     }
@@ -336,5 +408,93 @@ class CameraBubble extends StatelessWidget {
       centerY: placement.centerY,
       size: (placement.size + dSize).clamp(_minSize, _maxSize),
     ));
+  }
+}
+
+/// Wraps [CameraBubble] with a vanish/appear animation driven by [visible]:
+/// the bubble fades, blurs, and slides as the camera enters or leaves an active
+/// region. It stays mounted through the exit animation, then collapses to
+/// nothing. While appearing or vanishing the bubble is non-interactive — only a
+/// settled, visible bubble can be grabbed/dragged.
+class AnimatedCameraBubble extends StatefulWidget {
+  const AnimatedCameraBubble({
+    super.key,
+    required this.visible,
+    required this.canvasSize,
+    required this.placement,
+    required this.settings,
+    required this.child,
+    this.originalAspect = 1.0,
+    this.selected = false,
+    this.onPlacementChanged,
+    this.onPlacementCommit,
+    this.onSelectRequested,
+  });
+
+  final bool visible;
+  final Size canvasSize;
+  final CameraPlacement placement;
+  final CameraSettings settings;
+  final Widget child;
+  final double originalAspect;
+  final bool selected;
+  final ValueChanged<CameraPlacement>? onPlacementChanged;
+  final VoidCallback? onPlacementCommit;
+  final VoidCallback? onSelectRequested;
+
+  @override
+  State<AnimatedCameraBubble> createState() => _AnimatedCameraBubbleState();
+}
+
+class _AnimatedCameraBubbleState extends State<AnimatedCameraBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+    value: widget.visible ? 1.0 : 0.0,
+  );
+  late final CurvedAnimation _reveal = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+
+  @override
+  void didUpdateWidget(AnimatedCameraBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visible != oldWidget.visible) {
+      widget.visible ? _controller.forward() : _controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _reveal.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _reveal,
+      builder: (context, _) {
+        final r = _reveal.value;
+        if (!widget.visible && r <= 0.001) return const SizedBox.shrink();
+        final interactive = widget.visible;
+        return CameraBubble(
+          canvasSize: widget.canvasSize,
+          placement: widget.placement,
+          settings: widget.settings,
+          originalAspect: widget.originalAspect,
+          selected: interactive && widget.selected,
+          onPlacementChanged: interactive ? widget.onPlacementChanged : null,
+          onPlacementCommit: interactive ? widget.onPlacementCommit : null,
+          onSelectRequested: interactive ? widget.onSelectRequested : null,
+          reveal: r,
+          child: widget.child,
+        );
+      },
+    );
   }
 }
