@@ -31,7 +31,7 @@ void main() {
     final c = EditorProjectController();
     await tester.pumpWidget(host(c));
     expect(c.current.cameraSettings.mirror, isTrue);
-    // The Position grid sits above Mirror in a lazy ListView; scroll it into
+    // Mirror sits below the Shape section in a lazy ListView; scroll it into
     // view (building it) before tapping.
     final mirror = find.byKey(const Key('camera-mirror-toggle'));
     await tester.scrollUntilVisible(mirror, 80,

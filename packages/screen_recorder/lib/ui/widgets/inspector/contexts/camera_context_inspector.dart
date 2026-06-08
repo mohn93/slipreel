@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:slipreel_engine/editor/camera_snap.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
+import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 
-/// Properties view shown when a camera region (pill) is selected. Look
-/// controls (shape/roundness/mirror/border/shadow/opacity) live in the
-/// global Camera tab; this context edits the per-region geometry (size) and
-/// hosts delete. Position is edited by dragging the bubble on the canvas.
-class CameraContextInspector extends StatelessWidget {
+/// Properties view shown when a camera region (pill) is selected. Look controls
+/// (shape/roundness/mirror/border/shadow/opacity) are global and live in the
+/// Camera tab; GEOMETRY is per-region and lives here: a position grid (the same
+/// 9 anchors the on-canvas drag snaps to), a size slider, and delete. Each
+/// camera segment owns its own placement, so positioning is always scoped to
+/// the selected region — never one value shared across segments.
+class CameraContextInspector extends ConsumerWidget {
   const CameraContextInspector({
     super.key,
     required this.region,
@@ -17,6 +22,8 @@ class CameraContextInspector extends StatelessWidget {
     required this.onChanged,
     required this.onDelete,
     required this.onClose,
+    this.canvasAspect = 16 / 9,
+    this.originalAspect = 1.0,
   });
 
   final CameraRegion region;
@@ -25,8 +32,26 @@ class CameraContextInspector extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onClose;
 
+  /// Output-canvas aspect (w/h) and camera source aspect — used with the global
+  /// shape to keep the position grid's anchors fully in view.
+  final double canvasAspect;
+  final double originalAspect;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The bubble's rendered aspect (hence its in-view anchor insets) depends on
+    // the global shape, so watch it and recompute when it changes.
+    final shape = ref.watch(
+      editorProjectControllerProvider.select((s) => s.cameraSettings.shape),
+    );
+    final ext = cameraHalfExtents(
+      size: region.size,
+      shapeAspect: shape.pixelAspect(originalAspect),
+      canvasAspect: canvasAspect,
+    );
+    final anchors = cameraSnapAnchors(halfW: ext.halfW, halfH: ext.halfH);
+    final current = Offset(region.centerX, region.centerY);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -40,12 +65,21 @@ class CameraContextInspector extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.only(right: 12),
             children: [
+              const InspectorSectionLabel('Position'),
               const Text(
-                'Drag the bubble on the preview to reposition it. Resize with '
-                'the corner handles, or use the slider below.',
+                "Click a spot to place this segment's camera, or drag the "
+                'bubble on the preview (hold ⌥ Option for free placement). '
+                'Resize with the corner handles or the slider below.',
                 style: TextStyle(color: kInspectorMuted, fontSize: 12),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              _PositionGrid(
+                anchors: anchors,
+                current: current,
+                onPick: (cx, cy) =>
+                    onChanged(region.copyWith(centerX: cx, centerY: cy)),
+              ),
+              const InspectorSectionDivider(),
               InspectorSlider(
                 label: 'Size',
                 subtitle: '${(region.size * 100).round()}% of canvas width',
@@ -164,6 +198,91 @@ class _DeleteButton extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A 3×3 grid of the 9 standard PiP anchors. Clicking a cell places the selected
+/// region's camera at that spot (same anchors the on-canvas drag snaps to).
+/// [current] (the region's normalized center) highlights the matching cell.
+class _PositionGrid extends StatelessWidget {
+  const _PositionGrid({
+    required this.anchors,
+    required this.current,
+    required this.onPick,
+  });
+
+  /// The 9 edge-aware anchor CENTERS, row-major (top→bottom, left→right). Cell
+  /// `row*3+col` places the camera at `anchors[row*3+col]`.
+  final List<Offset> anchors;
+  final Offset? current;
+  final void Function(double cx, double cy) onPick;
+
+  bool _isCurrent(Offset a) {
+    final c = current;
+    return c != null &&
+        (c.dx - a.dx).abs() < 0.02 &&
+        (c.dy - a.dy).abs() < 0.02;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const cell = 46.0;
+    Widget buildCell(int col, int row) {
+      final a = anchors[row * 3 + col];
+      final active = _isCurrent(a);
+      return GestureDetector(
+        key: Key('camera-pos-$row-$col'),
+        onTap: () => onPick(a.dx, a.dy),
+        child: Container(
+          width: cell,
+          height: cell,
+          decoration: BoxDecoration(
+            color: active
+                ? kInspectorAccent.withValues(alpha: 0.15)
+                : kInspectorPanel,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: active ? kInspectorAccent : kInspectorBorder,
+              width: active ? 2 : 1,
+            ),
+          ),
+          // A dot at the cell's SLOT (corner/edge/center) so the grid reads as
+          // a position picker, independent of the inset anchor value.
+          child: Align(
+            alignment: Alignment((col - 1).toDouble(), (row - 1).toDouble()),
+            child: Padding(
+              padding: const EdgeInsets.all(7),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: active ? kInspectorAccent : const Color(0xFF6E6E80),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var row = 0; row < 3; row++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                for (var col = 0; col < 3; col++) ...[
+                  buildCell(col, row),
+                  if (col < 2) const SizedBox(width: 8),
+                ],
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

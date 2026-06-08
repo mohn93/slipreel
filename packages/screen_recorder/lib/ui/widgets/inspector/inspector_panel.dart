@@ -172,11 +172,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.background => const BackgroundTab(),
         InspectorTab.cursor =>
             CursorTab(canHideCursor: widget.canHideCursor),
-        InspectorTab.camera => CameraTab(
-            hasCamera: widget.hasCamera,
-            canvasAspect: widget.cameraCanvasAspect,
-            originalAspect: widget.cameraOriginalAspect,
-          ),
+        InspectorTab.camera => CameraTab(hasCamera: widget.hasCamera),
         InspectorTab.captions => const CaptionsTab(),
         InspectorTab.audio => const AudioTab(),
         InspectorTab.shortcuts =>
@@ -245,6 +241,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
     return CameraContextInspector(
       region: region,
       regionNumber: index + 1,
+      canvasAspect: widget.cameraCanvasAspect,
+      originalAspect: widget.cameraOriginalAspect,
       onChanged: (next) => widget.onCameraChanged?.call(index, next),
       onDelete: () => widget.onCameraDeleted?.call(index),
       onClose: () => widget.onSelectionCleared?.call(),
