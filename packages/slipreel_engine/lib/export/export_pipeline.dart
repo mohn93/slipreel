@@ -35,6 +35,12 @@ bool shouldCompositeCamera({
 }) =>
     hasSidecar && enabled && hasRegions && movieExists;
 
+/// User-facing warning when the camera couldn't be decoded and the export
+/// finished screen-only. Single source of truth (set at decode-setup failure
+/// and again if the source disables itself mid-encode).
+const String _kCameraDecodeWarning =
+    'Camera could not be decoded; exported without the camera overlay.';
+
 /// Orchestrates: decode source MP4 → composite (wallpaper + frame +
 /// video + cursor + zoom) via [FrameCompositor] → encode HW.
 ///
@@ -173,13 +179,15 @@ class ExportPipeline {
           frames: camDecoder.frames(),
           fps: pipelineFps,
           offsetMicros: cameraMeta.offsetMicros,
+          // Reap the camera ffmpeg subprocess on teardown — cancelling the
+          // stream iterator alone leaves it blocked on a full stdout pipe.
+          onDispose: camDecoder.kill,
         );
       } catch (e, st) {
         AppLogger.ffmpeg.w('Camera export decode setup failed: $e',
             error: e, stackTrace: st);
         cameraSource = null;
-        warnings.add(
-            'Camera could not be decoded; exported without the camera overlay.');
+        warnings.add(_kCameraDecodeWarning);
       }
     }
 
@@ -255,6 +263,7 @@ class ExportPipeline {
     cancelToken?.whenCancelled.then((_) {
       decoder.kill();
       encoder.kill();
+      unawaited(cameraSource?.dispose() ?? Future.value());
       decodedQueue.close();
       composedQueue.close();
     });
@@ -393,6 +402,7 @@ class ExportPipeline {
         stageFutures.map((f) => f.then<void>((_) {}, onError: (_) {})),
       );
       await compositor.dispose();
+      await cameraSource?.dispose();
       // The encoder was killed mid-write, so any output on disk is a
       // truncated fragment — delete it so a cancelled/failed export isn't
       // mistaken for a real MP4.
@@ -406,6 +416,7 @@ class ExportPipeline {
       rethrow;
     }
     await compositor.dispose();
+    await cameraSource?.dispose();
 
     // Cancellation can fire AFTER the stages all unblock cleanly (kill +
     // queue close drain everyone without an error). Detect that here so
@@ -436,11 +447,8 @@ class ExportPipeline {
     // A camera decode error can surface mid-encode (the source disables itself
     // on the first failed read). Capture it as a warning so the export still
     // succeeds, just without the overlay.
-    if (cameraSource?.failed == true &&
-        !warnings.contains(
-            'Camera could not be decoded; exported without the camera overlay.')) {
-      warnings.add(
-          'Camera could not be decoded; exported without the camera overlay.');
+    if (cameraSource?.failed == true && !warnings.contains(_kCameraDecodeWarning)) {
+      warnings.add(_kCameraDecodeWarning);
     }
 
     final summary = ExportPerfSummary(

@@ -49,4 +49,19 @@ void main() {
     expect(await src.frameAt(const Duration(milliseconds: 0)), frame(2));
     await src.dispose();
   });
+
+  test('dispose() invokes the onDispose teardown hook (reaps the decoder)',
+      () async {
+    var reaped = false;
+    final src = CameraFrameSource(
+      frames: streamOf([0, 1]),
+      fps: 10,
+      offsetMicros: 0,
+      onDispose: () => reaped = true,
+    );
+    await src.frameAt(const Duration(milliseconds: 100));
+    expect(reaped, isFalse);
+    await src.dispose();
+    expect(reaped, isTrue);
+  });
 }

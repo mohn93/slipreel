@@ -14,12 +14,20 @@ class CameraFrameSource {
     required Stream<Uint8List> frames,
     required this.fps,
     required int offsetMicros,
+    void Function()? onDispose,
   })  : _it = StreamIterator(frames),
-        _offsetFrames = (offsetMicros * fps / 1e6).round();
+        _offsetFrames = (offsetMicros * fps / 1e6).round(),
+        _onDispose = onDispose;
 
   final int fps;
   final int _offsetFrames;
   final StreamIterator<Uint8List> _it;
+
+  /// Teardown hook for the underlying decoder. Cancelling the stream iterator
+  /// stops consuming, but the ffmpeg subprocess keeps running (blocked on a
+  /// full stdout pipe) until it's killed — so production passes the decoder's
+  /// `kill` here to reap it. Null in tests with a synthetic stream.
+  final void Function()? _onDispose;
 
   int _consumed = -1; // index of the frame currently in _current
   Uint8List? _current;
@@ -52,5 +60,10 @@ class CameraFrameSource {
     return _current;
   }
 
-  Future<void> dispose() => _it.cancel();
+  /// Stops consuming and reaps the underlying decoder. Idempotent-safe to call
+  /// on any export exit path (success, error, cancel).
+  Future<void> dispose() async {
+    await _it.cancel();
+    _onDispose?.call();
+  }
 }
