@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
+import 'package:screen_recorder/ui/widgets/inspector/contexts/camera_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/slice_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_tab.dart';
@@ -43,10 +45,14 @@ class InspectorPanel extends StatefulWidget {
     this.onSliceRemoved,
     this.canHideCursor = false,
     this.hasKeystrokeData = false,
+    this.hasCamera = false,
     required this.curveLibrary,
     this.videoSize = Size.zero,
     this.onPlacementPreview,
     this.onPlacementCommit,
+    this.cameraRegions = const [],
+    this.onCameraChanged,
+    this.onCameraDeleted,
   });
 
   final double width;
@@ -61,6 +67,10 @@ class InspectorPanel extends StatefulWidget {
   /// Whether the recording has any keystroke data captured. When false
   /// the Shortcuts tab toggle is disabled with an explanation.
   final bool hasKeystrokeData;
+
+  /// Whether this recording has a camera sidecar (enables the Camera tab's
+  /// real controls; otherwise the tab shows a placeholder).
+  final bool hasCamera;
 
   /// Persistence for user-saved curves shown in the curve editor's
   /// Library row. Required so the inspector doesn't conjure its own
@@ -102,6 +112,15 @@ class InspectorPanel extends StatefulWidget {
 
   /// Placement commit callback for the zoom context.
   final ValueChanged<Rect>? onPlacementCommit;
+
+  /// Camera regions, indexed by [CameraSelected.index].
+  final List<CameraRegion> cameraRegions;
+
+  /// Mutate a camera region (size, etc.).
+  final void Function(int index, CameraRegion next)? onCameraChanged;
+
+  /// Delete a camera region.
+  final void Function(int index)? onCameraDeleted;
 
   @override
   State<InspectorPanel> createState() => _InspectorPanelState();
@@ -146,7 +165,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.background => const BackgroundTab(),
         InspectorTab.cursor =>
             CursorTab(canHideCursor: widget.canHideCursor),
-        InspectorTab.camera => const CameraTab(),
+        InspectorTab.camera => CameraTab(hasCamera: widget.hasCamera),
         InspectorTab.captions => const CaptionsTab(),
         InspectorTab.audio => const AudioTab(),
         InspectorTab.shortcuts =>
@@ -162,6 +181,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
       child: switch (selection) {
         SliceSelected(:final index) => _sliceContext(index),
         ZoomSelected(:final index) => _zoomContext(index),
+        CameraSelected(:final index) => _cameraContext(index),
       },
     );
   }
@@ -200,6 +220,23 @@ class _InspectorPanelState extends State<InspectorPanel> {
       sliceIndex: index,
       onClose: () => widget.onSelectionCleared?.call(),
       onRemove: widget.onSliceRemoved,
+    );
+  }
+
+  Widget _cameraContext(int index) {
+    if (index < 0 || index >= widget.cameraRegions.length) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => widget.onSelectionCleared?.call(),
+      );
+      return const SizedBox.shrink();
+    }
+    final region = widget.cameraRegions[index];
+    return CameraContextInspector(
+      region: region,
+      regionNumber: index + 1,
+      onChanged: (next) => widget.onCameraChanged?.call(index, next),
+      onDelete: () => widget.onCameraDeleted?.call(index),
+      onClose: () => widget.onSelectionCleared?.call(),
     );
   }
 }

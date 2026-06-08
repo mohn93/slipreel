@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
+import 'package:slipreel_engine/models/camera_region.dart';
+import 'package:slipreel_engine/models/camera_settings.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
@@ -140,22 +142,22 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   /// Returns the next timeline with [regions] installed on the active
   /// (first) zoom track. Creates a single track if the timeline is
   /// empty so first-write isn't a special case at the call site.
+  ///
+  /// Uses [Timeline.copyWith] so that ALL other timeline fields
+  /// (clips, cameraTracks, …) are preserved — the raw [Timeline]
+  /// constructor defaults those to `const []`, which silently wiped
+  /// the camera lane on every zoom mutation before this fix.
   Timeline _timelineWithActiveRegions(List<ZoomRegion> regions) {
     final immutable = List<ZoomRegion>.unmodifiable(regions);
     final tracks = state.timeline.zoomTracks;
-    // Preserve existing clips — Timeline's constructor defaults clips to
-    // const [], so omitting this here wipes the slice list whenever the
-    // user adds/edits/removes a zoom region (clip lane goes blank).
-    final clips = state.timeline.clips;
     if (tracks.isEmpty) {
-      return Timeline(
+      return state.timeline.copyWith(
         zoomTracks: [ZoomTrack(regions: immutable)],
-        clips: clips,
       );
     }
-    final updated = List<ZoomTrack>.from(tracks);
-    updated[0] = tracks[0].copyWith(regions: immutable);
-    return Timeline(zoomTracks: updated, clips: clips);
+    final updated = List<ZoomTrack>.from(tracks)
+      ..[0] = tracks[0].copyWith(regions: immutable);
+    return state.timeline.copyWith(zoomTracks: updated);
   }
 
   void replaceZoomRegions(List<ZoomRegion> regions) =>
@@ -179,6 +181,56 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     if (index < 0 || index >= regions.length) return;
     final next = List<ZoomRegion>.from(regions)..removeAt(index);
     state = state.copyWith(timeline: _timelineWithActiveRegions(next));
+  }
+
+  // ---- camera region list + settings ------------------------------------
+  //
+  // Mirrors the zoom-region mutators: operate on the active (first) camera
+  // track, creating it on first write so call sites aren't special-cased.
+
+  void setCameraSettings(CameraSettings settings) {
+    if (settings == state.cameraSettings) return;
+    state = state.copyWith(cameraSettings: settings);
+  }
+
+  List<CameraRegion> _activeCameraRegions() {
+    final tracks = state.timeline.cameraTracks;
+    return tracks.isEmpty ? const <CameraRegion>[] : tracks.first.regions;
+  }
+
+  Timeline _timelineWithActiveCameraRegions(List<CameraRegion> regions) {
+    final immutable = List<CameraRegion>.unmodifiable(regions);
+    final tracks = state.timeline.cameraTracks;
+    if (tracks.isEmpty) {
+      return state.timeline.copyWith(
+        cameraTracks: [CameraTrack(regions: immutable)],
+      );
+    }
+    final updated = List<CameraTrack>.from(tracks)
+      ..[0] = tracks[0].copyWith(regions: immutable);
+    return state.timeline.copyWith(cameraTracks: updated);
+  }
+
+  void replaceCameraRegions(List<CameraRegion> regions) => state =
+      state.copyWith(timeline: _timelineWithActiveCameraRegions(regions));
+
+  void addCameraRegion(CameraRegion region) {
+    final next = List<CameraRegion>.from(_activeCameraRegions())..add(region);
+    state = state.copyWith(timeline: _timelineWithActiveCameraRegions(next));
+  }
+
+  void updateCameraRegionAt(int index, CameraRegion region) {
+    final regions = _activeCameraRegions();
+    if (index < 0 || index >= regions.length) return;
+    final next = List<CameraRegion>.from(regions)..[index] = region;
+    state = state.copyWith(timeline: _timelineWithActiveCameraRegions(next));
+  }
+
+  void removeCameraRegionAt(int index) {
+    final regions = _activeCameraRegions();
+    if (index < 0 || index >= regions.length) return;
+    final next = List<CameraRegion>.from(regions)..removeAt(index);
+    state = state.copyWith(timeline: _timelineWithActiveCameraRegions(next));
   }
 
   // ---- slice mutators ---------------------------------------------------

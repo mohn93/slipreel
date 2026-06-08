@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart' show CursorBlurMode;
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
+import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
@@ -45,6 +46,9 @@ import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/export/audio_mix_args.dart';
 import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
+import 'package:slipreel_engine/editor/camera_seed.dart';
+import 'package:slipreel_engine/models/camera_sidecar_meta.dart';
+import 'package:screen_recorder/state/camera_playback_sync.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/keystroke_group.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
@@ -331,6 +335,26 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   );
   Timer? _saveDebounce;
 
+  /// Camera sidecar metadata (`.camera.json`) for this recording, or null
+  /// when the recording has no camera. Its presence enables the Camera
+  /// inspector tab and the camera lane.
+  CameraSidecarMeta? _cameraMeta;
+
+  /// Absolute path of the `.camera.mov` when a camera sidecar exists and the
+  /// file is present on disk; null otherwise.
+  String? _cameraMoviePath;
+
+  /// Second player for the camera sidecar, slaved to [_controller]. Null
+  /// until a camera sidecar is confirmed and initialized.
+  VideoPlayerController? _cameraController;
+
+  /// Selected camera region index, or null. Mutually exclusive with
+  /// [_selectedZoomIndex] / [_selectedSliceIndex].
+  int? _selectedCameraIndex;
+
+  /// Whether this recording has a usable camera sidecar.
+  bool get _hasCamera => _cameraMeta != null && _cameraMoviePath != null;
+
   @override
   void initState() {
     super.initState();
@@ -376,7 +400,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         clips: clips,
       );
       if (ok) {
-        setState(() => _selectedSliceIndex = null);
+        setState(() {
+          _selectedSliceIndex = null;
+          _selectedCameraIndex = null;
+        });
         if (snappedTo != null) _flashSnap(snappedTo);
       } else {
         // If snap pushed us into the min-slice guard zone, retry at raw position.
@@ -387,7 +414,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             clips: clips,
           );
           if (fallback) {
-            setState(() => _selectedSliceIndex = null);
+            setState(() {
+              _selectedSliceIndex = null;
+              _selectedCameraIndex = null;
+            });
             return true;
           }
         }
@@ -419,6 +449,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       setState(() {
         _selectedSliceIndex = decision.nextIndex;
         _selectedZoomIndex = null;
+        _selectedCameraIndex = null;
       });
       // `decision.seekTo` is in edited-time; the player works in
       // source-time. Convert before seeking or the playhead lands at
@@ -464,6 +495,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   TimelineSelection? _currentSelection() {
     if (_selectedSliceIndex != null) {
       return SliceSelected(_selectedSliceIndex!);
+    }
+    if (_selectedCameraIndex != null) {
+      return CameraSelected(_selectedCameraIndex!);
     }
     if (_selectedZoomIndex != null) {
       return ZoomSelected(_selectedZoomIndex!);
@@ -619,6 +653,36 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           'Auto-zoom detection failed; opening editor with empty zoom lane: $e',
         );
       }
+      // Camera sidecar: load meta, confirm the movie exists, and seed the
+      // first region from the self-view position if none is saved yet
+      // (mirrors auto-zoom seeding — the seeded region is saved so a later
+      // delete sticks across opens).
+      try {
+        final meta = await CameraSidecarMeta.loadForVideo(widget.videoPath);
+        if (meta != null && meta.frameCount > 0) {
+          final moviePath = CameraSidecarMeta.moviePathForVideo(widget.videoPath);
+          if (await File(moviePath).exists()) {
+            _cameraMeta = meta;
+            _cameraMoviePath = moviePath;
+            if (restored.cameraRegions.isEmpty) {
+              final seed = cameraSeedRegion(
+                videoDuration: _controller.value.duration,
+                selfViewX: meta.selfViewX,
+                selfViewY: meta.selfViewY,
+              );
+              restored = restored.copyWith(cameraRegions: [seed]);
+              await _projectStore.save(restored);
+            }
+          } else {
+            AppLogger.ui.w(
+              'Camera sidecar meta present but .camera.mov missing at '
+              '$moviePath — opening editor without camera.',
+            );
+          }
+        }
+      } catch (e) {
+        AppLogger.ui.w('Camera sidecar load failed; editor opens without camera: $e');
+      }
       // Push the loaded state into the Riverpod notifier — single
       // source of truth for everything the inspector edits. The
       // ref.listen wired up in build() will route subsequent changes
@@ -696,6 +760,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // the controller's value listener, not by awaiting this future.
       unawaited(_controller.play());
 
+      // Bring up the camera player (if any) and slave it to the main one.
+      if (_hasCamera) {
+        await _initCameraPlayer();
+      }
+
       // Probe the recording's audio streams so the audio tab knows which
       // per-track controls to show. Non-fatal — failure leaves it empty.
       try {
@@ -709,6 +778,73 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       setState(() {
         _error = 'Failed to load video: $e';
       });
+    }
+  }
+
+  Future<void> _initCameraPlayer() async {
+    final path = _cameraMoviePath;
+    if (path == null) return;
+    try {
+      final cam = VideoPlayerController.file(File(path));
+      await cam.initialize();
+      if (!mounted) {
+        await cam.dispose();
+        return;
+      }
+      await cam.setVolume(0); // camera track carries no audio; be safe
+      if (!mounted) {
+        await cam.dispose();
+        return;
+      }
+      _cameraController = cam;
+      // Slave play/pause + position to the main controller.
+      _controller.addListener(_syncCameraPlayer);
+      _syncCameraPlayer();
+      if (mounted) setState(() {});
+    } catch (e) {
+      AppLogger.ui.w('Camera player init failed; camera hidden in editor: $e');
+      _cameraController = null;
+    }
+  }
+
+  void _syncCameraPlayer() {
+    final cam = _cameraController;
+    final meta = _cameraMeta;
+    if (cam == null || meta == null || !cam.value.isInitialized) return;
+    final camDur = cam.value.duration;
+    final desired = CameraPlaybackSync.desiredCameraPosition(
+      mainPosition: _controller.value.position,
+      offsetMicros: meta.offsetMicros,
+      cameraDuration: camDur,
+    );
+    // The camera is "within its own span" only when `desired` isn't pinned to
+    // an edge by the clamp. Outside the span (before the camera starts or
+    // after it ends) we PARK the camera on the clamped frame instead of
+    // playing — calling play() on a completed video_player restarts it from 0,
+    // which otherwise produces a tail-flicker loop.
+    final atEdge = desired <= Duration.zero || desired >= camDur;
+    final shouldPlay = _controller.value.isPlaying && !atEdge;
+
+    // Spec §5: slave the camera's playback RATE to the main player.
+    final mainRate = _controller.value.playbackSpeed;
+    if (cam.value.playbackSpeed != mainRate) {
+      cam.setPlaybackSpeed(mainRate);
+    }
+
+    if (shouldPlay && !cam.value.isPlaying) {
+      cam.play();
+    } else if (!shouldPlay && cam.value.isPlaying) {
+      cam.pause();
+    }
+
+    // Correct drift toward `desired`. At an edge this seeks ONCE to the
+    // clamped frame and then stays (cam.position == desired → no re-seek),
+    // so there's no per-tick thrash.
+    if (CameraPlaybackSync.shouldSeek(
+      current: cam.value.position,
+      desired: desired,
+    )) {
+      cam.seekTo(desired);
     }
   }
 
@@ -819,6 +955,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
     _playheadEditedPos.dispose();
     _smoothPlayhead?.dispose();
+    _controller.removeListener(_syncCameraPlayer);
+    _cameraController?.dispose();
     _controller.dispose();
     _history?.dispose();
     _zoomDebugSnapshot.dispose();
@@ -1397,6 +1535,29 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     setState(() {
       // Auto-select the new zoom so the inspector opens on it.
       _selectedZoomIndex = _project.zoomRegions.length - 1;
+      _selectedSliceIndex = null;
+    });
+    _controller.seekTo(start);
+  }
+
+  /// Click-to-add a camera region from the lane ghost. Places it at the
+  /// current camera look/default size, centered bottom-right, and selects it.
+  void _addCameraAt(Duration start, Duration end) {
+    if (!_isInitialized || !_hasCamera) return;
+    if (end <= start) return;
+    final existing = _project.cameraRegions;
+    final tmpl = existing.isNotEmpty ? existing.last : null;
+    final region = CameraRegion(
+      startTime: start,
+      duration: end - start,
+      centerX: tmpl?.centerX ?? 0.82,
+      centerY: tmpl?.centerY ?? 0.82,
+      size: tmpl?.size ?? 0.22,
+    );
+    _projectController.addCameraRegion(region);
+    setState(() {
+      _selectedCameraIndex = _project.cameraRegions.length - 1;
+      _selectedZoomIndex = null;
       _selectedSliceIndex = null;
     });
     _controller.seekTo(start);
@@ -2002,7 +2163,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                             setState(() {
                               _selectedZoomIndex = null;
                               _selectedSliceIndex = null;
+                              _selectedCameraIndex = null;
                             });
+                          },
+                          hasCamera: _hasCamera,
+                          cameraRegions:
+                              _hasCamera ? project.cameraRegions : const [],
+                          onCameraChanged: (i, next) =>
+                              _projectController.updateCameraRegionAt(i, next),
+                          onCameraDeleted: (index) {
+                            _projectController.removeCameraRegionAt(index);
+                            setState(() => _selectedCameraIndex = null);
                           },
                           onSliceRemoved: (removed) {
                             setState(() {
@@ -2131,6 +2302,25 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       zoomPreviewOverride: _zoomPreviewOverride,
       keystrokeRecording: _keystrokeRecording,
       keystrokeOverlaySettings: project.keystrokeOverlay,
+      cameraController: _cameraController,
+      cameraSettings: _hasCamera ? project.cameraSettings : null,
+      cameraRegions: _hasCamera ? project.cameraRegions : const [],
+      cameraOriginalAspect: _cameraMeta == null || _cameraMeta!.height == 0
+          ? 1.0
+          : _cameraMeta!.width / _cameraMeta!.height,
+      selectedCameraIndex: _selectedCameraIndex,
+      onCameraPlacementChanged: (index, placement) {
+        final regions = _project.cameraRegions;
+        if (index < 0 || index >= regions.length) return;
+        _projectController.updateCameraRegionAt(
+          index,
+          regions[index].copyWith(
+            centerX: placement.centerX,
+            centerY: placement.centerY,
+            size: placement.size,
+          ),
+        );
+      },
     );
 
     final videoSize = _controller.value.size;
@@ -2385,12 +2575,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     _hover.seek(sourceNext);
                     // A committed seek (tap on the ruler or the empty
                     // zoom lane area) is a "click anywhere in the
-                    // timeline" — deselect both slice and zoom so the
-                    // inspector returns to its default state. A tap
+                    // timeline" — deselect slice, zoom, and camera so
+                    // the inspector returns to its default state. A tap
                     // ON a slice is routed through onSliceSelected
                     // directly and never gets here.
                     _selectedSliceIndex = null;
                     _selectedZoomIndex = null;
+                    _selectedCameraIndex = null;
                   });
                   _refreshPlayheadEditedPos();
                   _checkZoomMarkerClick(sourceNext);
@@ -2423,9 +2614,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   }
                   setState(() {
                     _selectedZoomIndex = i;
-                    // Zoom and slice selections are mutually exclusive
-                    // — selecting a zoom clears any slice selection.
-                    if (i != null) _selectedSliceIndex = null;
+                    // Zoom, slice, and camera selections are mutually
+                    // exclusive — selecting a zoom clears the others.
+                    if (i != null) {
+                      _selectedSliceIndex = null;
+                      _selectedCameraIndex = null;
+                    }
                   });
                 },
                 onZoomChanged: (i, next) {
@@ -2445,6 +2639,32 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   });
                 },
                 onZoomAdded: _addZoomAt,
+                cameraRegions: _hasCamera ? _project.cameraRegions : const [],
+                selectedCameraIndex: _selectedCameraIndex,
+                onCameraSelected: (i) {
+                  setState(() {
+                    _selectedCameraIndex = i;
+                    if (i != null) {
+                      _selectedZoomIndex = null;
+                      _selectedSliceIndex = null;
+                    }
+                  });
+                },
+                onCameraChanged: (i, next) =>
+                    _projectController.updateCameraRegionAt(i, next),
+                onCameraDeleted: (index) {
+                  _projectController.removeCameraRegionAt(index);
+                  setState(() {
+                    if (_selectedCameraIndex == index) {
+                      _selectedCameraIndex = null;
+                    } else if (_selectedCameraIndex != null &&
+                        _selectedCameraIndex! > index) {
+                      _selectedCameraIndex = _selectedCameraIndex! - 1;
+                    }
+                  });
+                },
+                onCameraAdded: _addCameraAt,
+                showCameraLane: _hasCamera,
                 clips: ref
                     .watch(editorProjectControllerProvider)
                     .timeline
@@ -2455,6 +2675,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     _selectedSliceIndex = idx;
                     if (idx != null) {
                       _selectedZoomIndex = null;
+                      _selectedCameraIndex = null;
                     }
                   });
                 },

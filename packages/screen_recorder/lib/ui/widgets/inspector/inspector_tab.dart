@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 enum InspectorTab {
   background(icon: Icons.crop_free, label: 'Background', isEnabled: true),
   cursor(icon: Icons.mouse, label: 'Cursor', isEnabled: true),
-  camera(icon: Icons.account_box_outlined, label: 'Camera', isEnabled: false),
+  camera(icon: Icons.account_box_outlined, label: 'Camera', isEnabled: true),
   captions(icon: Icons.closed_caption_off, label: 'Captions', isEnabled: false),
   audio(icon: Icons.volume_up_outlined, label: 'Audio', isEnabled: true),
   shortcuts(icon: Icons.keyboard_command_key, label: 'Shortcuts', isEnabled: true),
