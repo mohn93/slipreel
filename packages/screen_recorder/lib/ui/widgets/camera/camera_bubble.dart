@@ -321,18 +321,18 @@ class CameraBubble extends StatelessWidget {
                 children: [
                   // Move handle = the body. Always present (stable across
                   // selection). Drag moves; a tap or drag-start also selects so
-                  // the inspector + handles follow.
-                  GestureDetector(
-                    key: const Key('camera-move-body'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onSelectRequested,
-                    onPanStart: (_) => onSelectRequested?.call(),
-                    onPanUpdate: (d) => _moveBy(d.delta),
-                    onPanEnd: (_) => onPlacementCommit?.call(),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.move,
-                      child: bubble,
-                    ),
+                  // the inspector + handles follow. Stateful so the drag
+                  // accumulates against a synchronous local base instead of the
+                  // async placement (see _CameraMoveBody).
+                  _CameraMoveBody(
+                    placement: placement,
+                    canvasSize: canvasSize,
+                    settings: settings,
+                    originalAspect: originalAspect,
+                    onPlacementChanged: onPlacementChanged,
+                    onPlacementCommit: onPlacementCommit,
+                    onSelectRequested: onSelectRequested,
+                    child: bubble,
                   ),
                   // Selection ring — only when selected.
                   if (showHandles)
@@ -364,37 +364,6 @@ class CameraBubble extends StatelessWidget {
     );
   }
 
-  void _moveBy(Offset deltaPx) {
-    final cb = onPlacementChanged;
-    if (cb == null) return;
-    final rawX = placement.centerX + deltaPx.dx / canvasSize.width;
-    final rawY = placement.centerY + deltaPx.dy / canvasSize.height;
-    final shapeAspect = settings.shape.pixelAspect(originalAspect);
-    final double nx, ny;
-    if (HardwareKeyboard.instance.isAltPressed) {
-      // Free move — no anchor snap, but still kept fully in view.
-      final ca =
-          canvasSize.height == 0 ? 1.0 : canvasSize.width / canvasSize.height;
-      final ext = cameraHalfExtents(
-          size: placement.size, shapeAspect: shapeAspect, canvasAspect: ca);
-      final c = clampCameraCenterInView(
-          centerX: rawX, centerY: rawY, halfW: ext.halfW, halfH: ext.halfH);
-      nx = c.cx;
-      ny = c.cy;
-    } else {
-      final snap = snapCameraCenter(
-        centerX: rawX,
-        centerY: rawY,
-        canvasSize: canvasSize,
-        size: placement.size,
-        shapeAspect: shapeAspect,
-      );
-      nx = snap.center.dx;
-      ny = snap.center.dy;
-    }
-    cb(CameraPlacement(centerX: nx, centerY: ny, size: placement.size));
-  }
-
   void _resizeBy(Offset deltaPx, Alignment corner) {
     final cb = onPlacementChanged;
     if (cb == null) return;
@@ -408,6 +377,114 @@ class CameraBubble extends StatelessWidget {
       centerY: placement.centerY,
       size: (placement.size + dSize).clamp(_minSize, _maxSize),
     ));
+  }
+}
+
+/// The bubble body as a drag-to-move target.
+///
+/// Stateful on purpose: it accumulates the drag against a *synchronous, local*
+/// base ([_liveRaw]) rather than the parent's [placement]. During a drag the
+/// placement only catches up a frame later (the canvas pushes each move through
+/// a `ValueNotifier` → `ValueListenableBuilder.setState`), but macOS delivers
+/// several pointer-moves per frame. If each move re-read the (stale) placement
+/// as its base, every move but the last in a frame would be overwritten and the
+/// box would trail the mouse — the "heavy" feel. Keeping the base local fixes
+/// that. The base is also kept *unsnapped* (snap is applied only to the reported
+/// value), so a slow drag near an anchor still slips past it instead of sticking.
+class _CameraMoveBody extends StatefulWidget {
+  const _CameraMoveBody({
+    required this.placement,
+    required this.canvasSize,
+    required this.settings,
+    required this.originalAspect,
+    required this.onPlacementChanged,
+    required this.onPlacementCommit,
+    required this.onSelectRequested,
+    required this.child,
+  });
+
+  final CameraPlacement placement;
+  final Size canvasSize;
+  final CameraSettings settings;
+  final double originalAspect;
+  final ValueChanged<CameraPlacement>? onPlacementChanged;
+  final VoidCallback? onPlacementCommit;
+  final VoidCallback? onSelectRequested;
+  final Widget child;
+
+  @override
+  State<_CameraMoveBody> createState() => _CameraMoveBodyState();
+}
+
+class _CameraMoveBodyState extends State<_CameraMoveBody> {
+  /// True (unsnapped, in-view-clamped) center while a drag is in flight; null
+  /// between drags. Mutated synchronously in [_update] — not via setState, since
+  /// the visible position flows back through the parent's placement.
+  Offset? _liveRaw;
+
+  void _start() {
+    final p = widget.placement;
+    _liveRaw = Offset(p.centerX, p.centerY);
+    widget.onSelectRequested?.call();
+  }
+
+  void _update(Offset deltaPx) {
+    final cb = widget.onPlacementChanged;
+    if (cb == null) return;
+    final cs = widget.canvasSize;
+    final p = widget.placement;
+    final shapeAspect = widget.settings.shape.pixelAspect(widget.originalAspect);
+    final base = _liveRaw ?? Offset(p.centerX, p.centerY);
+    final ca = cs.height == 0 ? 1.0 : cs.width / cs.height;
+    final ext = cameraHalfExtents(
+        size: p.size, shapeAspect: shapeAspect, canvasAspect: ca);
+    // Accumulate the true center 1:1 with the pointer, clamped to view so it
+    // can't run off the edge and rubber-band on the way back.
+    final clamped = clampCameraCenterInView(
+      centerX: base.dx + deltaPx.dx / cs.width,
+      centerY: base.dy + deltaPx.dy / cs.height,
+      halfW: ext.halfW,
+      halfH: ext.halfH,
+    );
+    _liveRaw = Offset(clamped.cx, clamped.cy);
+    final double nx, ny;
+    if (HardwareKeyboard.instance.isAltPressed) {
+      // Free move — no anchor snap, but still kept fully in view.
+      nx = clamped.cx;
+      ny = clamped.cy;
+    } else {
+      final snap = snapCameraCenter(
+        centerX: clamped.cx,
+        centerY: clamped.cy,
+        canvasSize: cs,
+        size: p.size,
+        shapeAspect: shapeAspect,
+      );
+      nx = snap.center.dx;
+      ny = snap.center.dy;
+    }
+    cb(CameraPlacement(centerX: nx, centerY: ny, size: p.size));
+  }
+
+  void _end() {
+    _liveRaw = null;
+    widget.onPlacementCommit?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: const Key('camera-move-body'),
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onSelectRequested,
+      onPanStart: (_) => _start(),
+      onPanUpdate: (d) => _update(d.delta),
+      onPanEnd: (_) => _end(),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.move,
+        child: widget.child,
+      ),
+    );
   }
 }
 

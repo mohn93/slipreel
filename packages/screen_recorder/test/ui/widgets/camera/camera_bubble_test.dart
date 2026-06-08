@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
 import 'package:slipreel_engine/models/camera_settings.dart';
@@ -191,6 +192,57 @@ void main() {
     expect(placement.centerX, greaterThan(0.5)); // moved right
     expect(placement.centerY, closeTo(0.5, 1e-6)); // not vertically
     expect(placement.size, 0.25); // unchanged by a move
+  });
+
+  testWidgets(
+      'multiple pan updates within one frame accumulate every delta '
+      '(regression: heavy/trailing drag — the base must be local, not the '
+      'async placement that only catches up next frame)', (tester) async {
+    // The parent holds [placement] FIXED for the whole gesture, mimicking the
+    // real canvas where the live placement only feeds back a frame later via
+    // the override ValueNotifier. A body that read widget.placement as its drag
+    // base would lose every move but the last within a frame → the box trails
+    // the mouse. The local _liveRaw base must accumulate all of them.
+    const fixed = CameraPlacement(centerX: 0.3, centerY: 0.3, size: 0.2);
+    final reports = <CameraPlacement>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 800,
+            height: 450,
+            child: CameraBubble(
+              canvasSize: const Size(800, 450),
+              placement: fixed,
+              settings: const CameraSettings(),
+              selected: true,
+              onPlacementChanged: reports.add,
+              child: const ColoredBox(color: Colors.red),
+            ),
+          ),
+        ),
+      ),
+    ));
+
+    // Alt = free move (no anchor snap) so the reported value is the raw
+    // accumulation, not a snapped one.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    final center = tester.getCenter(find.byKey(const Key('camera-move-body')));
+    final g = await tester.startGesture(center);
+    // Three rightward moves with NO pump between them → all land before any
+    // rebuild, exactly like several pointer-moves arriving in one frame.
+    await g.moveBy(const Offset(30, 0));
+    await g.moveBy(const Offset(30, 0));
+    await g.moveBy(const Offset(30, 0));
+    await g.up();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+
+    // All three deltas accumulated: >= ~2 full 30px steps over 800px past the
+    // start. A stale-base body would report only the last step (0.3 + 30/800 ≈
+    // 0.3375), so this threshold (0.375) fails it but passes the fixed code.
+    expect(reports.last.centerX, greaterThan(0.3 + 60 / 800));
+    expect(reports.last.centerY, closeTo(0.3, 1e-6));
   });
 
   testWidgets('dragging the bottom-right handle outward grows size',
