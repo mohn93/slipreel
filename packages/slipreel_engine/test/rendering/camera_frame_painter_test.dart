@@ -12,7 +12,8 @@ Future<ui.Image> solidImage(int w, int h, Color c) async {
   return rec.endRecording().toImage(w, h);
 }
 
-Future<ui.Image> render(CameraSettings settings, double originalAspect) async {
+Future<ui.Image> render(CameraSettings settings, double originalAspect,
+    {double reveal = 1.0}) async {
   final cam = await solidImage(160, 120, const Color(0xFF3366FF));
   final rec = ui.PictureRecorder();
   final canvas = ui.Canvas(rec);
@@ -25,6 +26,7 @@ Future<ui.Image> render(CameraSettings settings, double originalAspect) async {
     settings: settings,
     originalAspect: originalAspect,
     opacity: settings.opacity,
+    reveal: reveal,
   );
   return rec.endRecording().toImage(300, 200);
 }
@@ -54,5 +56,20 @@ void main() {
       160 / 120,
     );
     await expectLater(img, matchesGoldenFile('goldens/camera_rrect.png'));
+  });
+
+  testWidgets('mid-reveal: faded, blurred, slid down (vanish/appear)',
+      (tester) async {
+    final img = await render(
+      const CameraSettings(
+          shape: CameraShape.circle,
+          mirror: false,
+          shadow: true,
+          borderWidth: 4,
+          borderColor: 0xFFFFFFFF),
+      160 / 120,
+      reveal: 0.5,
+    );
+    await expectLater(img, matchesGoldenFile('goldens/camera_reveal_half.png'));
   });
 }

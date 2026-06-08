@@ -4,10 +4,14 @@ import 'package:flutter/painting.dart';
 import 'package:slipreel_engine/models/camera_settings.dart';
 
 /// Paints the camera bubble onto [canvas] at [pixelBox], pixel-for-pixel with
-/// the editor preview (`CameraBubble`): opacity -> shadow -> shape-clipped,
-/// cover-cropped, optionally mirrored image -> border. Canvas-space only; the
-/// caller positions it (unzoomed) on the final composited frame.
+/// the editor preview (`CameraBubble` + `AnimatedCameraBubble`): opacity ->
+/// shadow -> shape-clipped, cover-cropped, optionally mirrored image -> border,
+/// with the show/hide reveal applied (fade + blur + slide). Canvas-space only;
+/// the caller positions it (unzoomed) on the final composited frame.
 class CameraFramePainter {
+  /// [opacity] is the project's static opacity; [reveal] (0..1, default 1) is
+  /// the vanish/appear progress — at reveal < 1 the bubble fades, blurs, and
+  /// slides down exactly like `AnimatedCameraBubble` in the preview.
   static void paint(
     ui.Canvas canvas, {
     required ui.Image image,
@@ -15,17 +19,31 @@ class CameraFramePainter {
     required CameraSettings settings,
     required double originalAspect,
     required double opacity,
+    double reveal = 1.0,
   }) {
-    final o = opacity.clamp(0.0, 1.0);
-    if (o <= 0) return;
+    final r = reveal.clamp(0.0, 1.0);
+    final hidden = 1.0 - r;
+    final effOpacity = (opacity * r).clamp(0.0, 1.0);
+    if (effOpacity <= 0) return;
+    // Vanish/appear: the bubble slides down and blurs out as it hides
+    // (reveal == 1 → no slide/blur, identical to the steady-state render).
+    final slideY = hidden * 20.0;
+    final blurSigma = hidden * 12.0;
     final isRound = settings.shape.isRound;
     final radius = isRound
         ? pixelBox.shortestSide / 2
         : settings.roundness.clamp(0.0, 1.0) * (pixelBox.shortestSide / 2);
     final rrect = RRect.fromRectAndRadius(pixelBox, Radius.circular(radius));
 
+    final layerPaint = Paint()..color = Color.fromRGBO(0, 0, 0, effOpacity);
+    if (blurSigma > 0.01) {
+      layerPaint.imageFilter =
+          ui.ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma);
+    }
     canvas.saveLayer(
-        pixelBox.inflate(40), Paint()..color = Color.fromRGBO(0, 0, 0, o));
+        pixelBox.shift(Offset(0, slideY)).inflate(40 + blurSigma * 3),
+        layerPaint);
+    canvas.translate(0, slideY);
 
     if (settings.shadow) {
       final sigma = _blurRadiusToSigma(18.0);

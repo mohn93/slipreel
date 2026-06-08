@@ -7,7 +7,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
+import 'package:slipreel_engine/editor/camera_render_resolver.dart';
 import 'package:slipreel_engine/editor/camera_snap.dart';
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
@@ -250,20 +250,25 @@ class FrameCompositor {
           // top of everything else.
           ui.Image? cameraImage;
           Rect? cameraBox;
+          double cameraReveal = 1.0;
           final cam = projectState.cameraSettings;
           final camSource = cameraFrameSource;
           if (cam.enabled && camSource != null) {
-            final placement = CameraPlacementResolver.placementAt(
+            // renderAt (not placementAt) so the bubble fades/blurs/slides in and
+            // out at region edges — the vanish tail keeps drawing the (live)
+            // camera at the last placement for 280ms after a region ends.
+            final render = CameraRenderResolver.renderAt(
                 position, projectState.cameraRegions);
-            if (placement != null) {
+            if (render != null) {
               final bgra = await camSource.frameAt(position);
               if (bgra != null && cameraSrcWidth > 0 && cameraSrcHeight > 0) {
                 cameraImage =
                     await _bgraToImage(bgra, cameraSrcWidth, cameraSrcHeight);
+                cameraReveal = render.reveal;
                 cameraBox = cameraPixelBox(
-                  centerX: placement.centerX,
-                  centerY: placement.centerY,
-                  size: placement.size,
+                  centerX: render.placement.centerX,
+                  centerY: render.placement.centerY,
+                  size: render.placement.size,
                   canvasSize: totalSize,
                   shapeAspect: cam.shape.pixelAspect(cameraOriginalAspect),
                 );
@@ -278,7 +283,8 @@ class FrameCompositor {
                   pixelBox: box,
                   settings: cam,
                   originalAspect: cameraOriginalAspect,
-                  opacity: cam.opacity);
+                  opacity: cam.opacity,
+                  reveal: cameraReveal);
             }
           }
 
