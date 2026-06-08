@@ -70,6 +70,21 @@ void main() {
     expect(op.opacity, 0.5);
   });
 
+  testWidgets('tapping a non-selected bubble requests selection',
+      (tester) async {
+    var requested = false;
+    await tester.pumpWidget(host(CameraBubble(
+      canvasSize: const Size(800, 450),
+      placement: placement, // center (0.8, 0.8) → box around (640, 360)
+      settings: const CameraSettings(shape: CameraShape.square),
+      selected: false,
+      onSelectRequested: () => requested = true,
+      child: const ColoredBox(color: Colors.red),
+    )));
+    await tester.tapAt(const Offset(640, 360));
+    expect(requested, isTrue);
+  });
+
   testWidgets('shows resize handles only when selected & editable',
       (tester) async {
     await tester.pumpWidget(host(CameraBubble(

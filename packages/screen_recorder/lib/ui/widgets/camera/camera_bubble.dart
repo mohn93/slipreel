@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
+import 'package:slipreel_engine/editor/camera_snap.dart';
 import 'package:slipreel_engine/models/camera_settings.dart';
 
 /// The camera PiP bubble, laid out in CANVAS coordinate space (the same
@@ -24,6 +26,7 @@ class CameraBubble extends StatelessWidget {
     this.originalAspect = 1.0,
     this.selected = false,
     this.onPlacementChanged,
+    this.onSelectRequested,
   });
 
   /// The canvas (`totalSize`) this bubble is positioned within.
@@ -40,6 +43,11 @@ class CameraBubble extends StatelessWidget {
   /// When non-null and [selected], the bubble is editable; called with the
   /// new normalized placement during drag/resize.
   final ValueChanged<CameraPlacement>? onPlacementChanged;
+
+  /// When non-null and the bubble is NOT yet the editable selection, tapping
+  /// the bubble on the canvas calls this to select it (so the user can grab it
+  /// straight from the preview without finding its timeline pill).
+  final VoidCallback? onSelectRequested;
 
   static const double _minSize = 0.05;
   static const double _maxSize = 1.2;
@@ -122,6 +130,14 @@ class CameraBubble extends StatelessWidget {
 
     if (_editable) {
       bubble = _withEditAffordances(bubble, box);
+    } else if (onSelectRequested != null) {
+      // Not the active selection yet — a tap selects it so it can be dragged
+      // straight from the preview.
+      bubble = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onSelectRequested,
+        child: MouseRegion(cursor: SystemMouseCursors.click, child: bubble),
+      );
     }
 
     // Self-contained: the bubble fills the canvas and positions its box in an
@@ -133,10 +149,36 @@ class CameraBubble extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
+          // Faint snap-anchor guides while editing, behind the bubble.
+          if (_editable) ..._anchorGuides(),
           Positioned(left: posLeft, top: posTop, child: bubble),
         ],
       ),
     );
+  }
+
+  /// The 9 standard snap targets rendered as faint dots, shown while the
+  /// bubble is being edited so the user can see where it will snap.
+  List<Widget> _anchorGuides() {
+    const dot = 10.0;
+    return [
+      for (final a in cameraSnapAnchors())
+        Positioned(
+          left: a.dx * canvasSize.width - dot / 2,
+          top: a.dy * canvasSize.height - dot / 2,
+          child: IgnorePointer(
+            child: Container(
+              width: dot,
+              height: dot,
+              decoration: BoxDecoration(
+                color: const Color(0x336C63FF),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0x886C63FF)),
+              ),
+            ),
+          ),
+        ),
+    ];
   }
 
   Widget _clipped(Widget c) {
@@ -269,11 +311,16 @@ class CameraBubble extends StatelessWidget {
     if (cb == null) return;
     final dx = deltaPx.dx / canvasSize.width;
     final dy = deltaPx.dy / canvasSize.height;
-    cb(CameraPlacement(
-      centerX: (placement.centerX + dx).clamp(0.0, 1.0),
-      centerY: (placement.centerY + dy).clamp(0.0, 1.0),
-      size: placement.size,
-    ));
+    var nx = (placement.centerX + dx).clamp(0.0, 1.0);
+    var ny = (placement.centerY + dy).clamp(0.0, 1.0);
+    // Snap to the standard anchor grid unless Option/Alt is held (free move).
+    if (!HardwareKeyboard.instance.isAltPressed) {
+      final snap =
+          snapCameraCenter(centerX: nx, centerY: ny, canvasSize: canvasSize);
+      nx = snap.center.dx;
+      ny = snap.center.dy;
+    }
+    cb(CameraPlacement(centerX: nx, centerY: ny, size: placement.size));
   }
 
   void _resizeBy(Offset deltaPx, Alignment corner) {
