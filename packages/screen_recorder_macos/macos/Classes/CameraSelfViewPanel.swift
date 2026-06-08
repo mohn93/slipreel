@@ -23,6 +23,14 @@ final class CameraSelfViewPanel: NSPanel {
     hasShadow = true
     isMovableByWindowBackground = true
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    // Keep this panel out of the screen recording entirely. The editor
+    // re-renders the camera from the separate .camera.mov track, so a
+    // captured self-view circle would double up with the rendered bubble.
+    // sharingType .none is enforced by the window server, so it works even
+    // though the panel is created after the capture stream starts (which is
+    // why excludingApplications on the SCStream filter alone didn't catch it).
+    // The panel stays visible to the user; it's just invisible to capture.
+    sharingType = .none
 
     let host = NSView(frame: frame)
     host.wantsLayer = true
