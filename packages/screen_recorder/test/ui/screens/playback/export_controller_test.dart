@@ -4,7 +4,8 @@ import 'package:slipreel_engine/utils/perf_summary.dart';
 import 'package:screen_recorder/ui/screens/playback/export_controller.dart';
 import 'package:screen_recorder/services/destination_handlers.dart';
 
-ExportPerfSummary _summary() => const ExportPerfSummary(
+ExportPerfSummary _summary({List<String> warnings = const []}) =>
+    ExportPerfSummary(
       inputDurationSeconds: 1,
       wallTimeSeconds: 1,
       decodeMsPerFrame: 1,
@@ -13,6 +14,7 @@ ExportPerfSummary _summary() => const ExportPerfSummary(
       outputBytes: 100,
       outputCodec: 'h264',
       usedHardwareEncoder: true,
+      warnings: warnings,
     );
 
 class _FakeHandler implements DestinationHandler {
@@ -97,5 +99,20 @@ void main() {
       onProgress: (_) {},
     );
     expect(outcome, isA<ExportCancelled>());
+  });
+
+  test('surfaceExportWarnings forwards each warning to the sink', () {
+    final shown = <String>[];
+    surfaceExportWarnings(
+      _summary(warnings: const ['Camera could not be decoded.']),
+      shown.add,
+    );
+    expect(shown, ['Camera could not be decoded.']);
+  });
+
+  test('surfaceExportWarnings shows nothing when there are no warnings', () {
+    final shown = <String>[];
+    surfaceExportWarnings(_summary(), shown.add);
+    expect(shown, isEmpty);
   });
 }

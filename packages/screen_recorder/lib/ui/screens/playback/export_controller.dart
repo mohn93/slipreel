@@ -69,3 +69,14 @@ class ExportController {
 
   void cancel() => cancelToken.cancel();
 }
+
+/// Forwards each export warning (e.g. the camera failed to decode so the
+/// export finished without the camera overlay) to [show]. Kept separate from
+/// the UI so it's unit-testable without an AppAlerts overlay; callers pass
+/// `AppAlerts.warning`.
+void surfaceExportWarnings(
+    ExportPerfSummary summary, void Function(String) show) {
+  for (final w in summary.warnings) {
+    show(w);
+  }
+}
