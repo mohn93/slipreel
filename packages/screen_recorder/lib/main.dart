@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_macos/screen_recorder_macos.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'package:agent_wires_probe/agent_wires_probe.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/rendering/cursor_image_cache.dart';
 import 'package:slipreel_engine/rendering/cursor_overlay_painter.dart';
@@ -71,11 +72,13 @@ Future<void> main() async {
   // Register `ext.qa.*` VM-service extensions so the agent-wires MCP
   // server (running as a separate process) can introspect the live
   // widget tree, capture debugPrint output, and synthesise gestures
-  // for end-to-end debugging. No-op in release builds.
+  // for end-to-end debugging. No-op in release builds (kReleaseMode guard
+  // inside AgentWiresProbe.install).
   if (kDebugMode || kProfileMode) {
+    AgentWiresProbe.install();
     debugProbe.install();
     AppLogger.platform.i(
-      'Debug probe installed (ext.slipreel.* registered)',
+      'Debug probe installed (ext.qa.* + ext.slipreel.* registered)',
     );
   }
 
@@ -457,6 +460,8 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       // Lets agent-wires resolve routes so the agent can call
       // `wait_for_route("RecordingBarScreen")` etc.
       navigatorObservers: [
+        if (kDebugMode || kProfileMode)
+          AgentWiresProbe.routeTracker.createObserver(),
         if (debugProbe.navigatorObserver() case final observer?) observer,
       ],
       home: widget.onboardingDone

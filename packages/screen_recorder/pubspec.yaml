@@ -73,6 +73,11 @@ dependencies:
 
   lucide_icons_flutter: ^3.1.14+2
 
+  # Debug/QA probe — registers ext.qa.* VM-service extensions in debug builds
+  # so the flutter-qa MCP server can screenshot, tap, and inspect the live UI.
+  # No-op in release mode (kReleaseMode guard inside the package).
+  agent_wires_probe: ^0.1.9
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
