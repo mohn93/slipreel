@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
+import 'package:slipreel_engine/utils/app_logger.dart';
 
 import '../../onboarding/tips_controller.dart';
 import '../../state/camera_controller.dart';
@@ -177,7 +178,12 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         onPickMode: _pickAndRecord,
         onClose: () => SystemNavigator.pop(),
         onGearTap: _onGearTap,
-        onDragStart: () => ref.read(windowChromeProvider).startWindowDrag(),
+        onDragStart: () => unawaited(
+              ref.read(windowChromeProvider).startWindowDrag().catchError(
+                    (Object e, StackTrace st) => AppLogger.platform
+                        .w('startWindowDrag failed', error: e, stackTrace: st),
+                  ),
+            ),
         microphone: ref.watch(microphoneControllerProvider),
         onMicTap: _onMicTap,
         systemAudio: ref.watch(systemAudioControllerProvider),
@@ -220,7 +226,12 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
       return;
     }
     _lastBarSize = size;
-    ref.read(windowChromeProvider).setBarSize(size.w, size.h);
+    unawaited(
+      ref.read(windowChromeProvider).setBarSize(size.w, size.h).catchError(
+            (Object e, StackTrace st) => AppLogger.platform
+                .w('setBarSize failed', error: e, stackTrace: st),
+          ),
+    );
   }
 
   Future<void> _onMicTap() async {

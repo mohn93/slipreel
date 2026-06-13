@@ -91,6 +91,49 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   /// the camera track. Set alongside `firstVideoFrameAt`.
   private var firstVideoFrameHostSeconds: Double?
 
+  /// nit: guards the two first-frame fields. They are written once on the
+  /// capture queue and read from the cursor / keystroke / stop threads. The
+  /// nil→value write is atomic on arm64, but a lock makes the cross-thread
+  /// access correct on every architecture. (NSLock — a reference type — is
+  /// captured safely in the @Sendable callbacks below.)
+  private let firstFrameLock = NSLock()
+
+  /// Records the first-frame timing exactly once. Thread-safe.
+  private func captureFirstFrameIfNeeded(
+    wallNow: Date, hostNowSeconds: Double, ptsSeconds: Double
+  ) {
+    firstFrameLock.lock()
+    defer { firstFrameLock.unlock() }
+    guard firstVideoFrameAt == nil else { return }
+    firstVideoFrameAt = FirstFrameTiming.captureInstant(
+      nowWall: wallNow, hostNowSeconds: hostNowSeconds, ptsSeconds: ptsSeconds)
+    firstVideoFrameHostSeconds = ptsSeconds
+  }
+
+  private func currentFirstVideoFrameAt() -> Date? {
+    firstFrameLock.lock()
+    defer { firstFrameLock.unlock() }
+    return firstVideoFrameAt
+  }
+
+  /// Atomically reads `firstVideoFrameHostSeconds` and clears both fields, for
+  /// the stop path that hands the screen anchor to the camera-offset calc.
+  private func takeFirstVideoFrameHostSeconds() -> Double? {
+    firstFrameLock.lock()
+    defer { firstFrameLock.unlock() }
+    let v = firstVideoFrameHostSeconds
+    firstVideoFrameAt = nil
+    firstVideoFrameHostSeconds = nil
+    return v
+  }
+
+  private func resetFirstFrameTiming() {
+    firstFrameLock.lock()
+    defer { firstFrameLock.unlock() }
+    firstVideoFrameAt = nil
+    firstVideoFrameHostSeconds = nil
+  }
+
   /// Verbose diagnostic logger for the cursor-coordinate transform
   /// (`makeCursorTransform`) and the partial-teardown path
   /// (`tearDownPartialLiveRecording`). These call sites can emit dozens
@@ -743,13 +786,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         captureManager?.onFrameReceived = { [weak self, weak encoder] sampleBuffer in
           guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
           let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-          if let self = self, self.firstVideoFrameAt == nil {
+          if let self = self {
             let hostNow = CMClockGetTime(CMClockGetHostTimeClock())
-            self.firstVideoFrameAt = FirstFrameTiming.captureInstant(
-              nowWall: Date(),
+            self.captureFirstFrameIfNeeded(
+              wallNow: Date(),
               hostNowSeconds: CMTimeGetSeconds(hostNow),
               ptsSeconds: CMTimeGetSeconds(pts))
-            self.firstVideoFrameHostSeconds = CMTimeGetSeconds(pts)
           }
           try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
         }
@@ -843,7 +885,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           }
           cursorTracker?.onCursorUpdate = { [weak self] x, y, _, isClicked, state in
             guard let self = self else { return }
-            guard let frameStart = self.firstVideoFrameAt else { return }
+            guard let frameStart = self.currentFirstVideoFrameAt() else { return }
             guard let videoMicros = FirstFrameTiming.videoMicros(
               now: Date(), since: frameStart) else { return }
             let (px, py) = self.cursorTransform?(x, y) ?? (x, y)
@@ -857,7 +899,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         if keystrokeTracker == nil { keystrokeTracker = KeystrokeTracker() }
         keystrokeTracker?.onKeystroke = { [weak self] label in
           guard let self = self else { return }
-          guard let frameStart = self.firstVideoFrameAt else { return }
+          guard let frameStart = self.currentFirstVideoFrameAt() else { return }
           guard let videoMicros = FirstFrameTiming.videoMicros(
             now: Date(), since: frameStart) else { return }
           self.keystrokeStreamHandler?.send(
@@ -956,8 +998,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       if kt.isCurrentlyTracking { kt.stopTracking() }
       keystrokeTracker = nil
     }
-    firstVideoFrameAt = nil
-    firstVideoFrameHostSeconds = nil
+    resetFirstFrameTiming()
     if let enc = liveEncoder {
       enc.finalize()
       liveEncoder = nil
@@ -1005,12 +1046,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           if kt.isCurrentlyTracking { kt.stopTracking() }
           keystrokeTracker = nil
         }
-        firstVideoFrameAt = nil
         // Capture before clearing — the writer.stop completion below (which
         // computes the camera↔screen offset) runs after this point, so reading
         // the instance var there would always see nil.
-        let screenFirstHostSeconds = firstVideoFrameHostSeconds
-        firstVideoFrameHostSeconds = nil
+        let screenFirstHostSeconds = takeFirstVideoFrameHostSeconds()
 
         liveEncoder?.finalize()
         let droppedFrames = liveEncoder?.droppedFrameCount ?? 0
@@ -1080,8 +1119,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
                           message: "No active recording to pause", details: nil))
       return
     }
-    writer.pause()
-    cameraManager?.pause()
+    // nit: one host-clock read shared by both writers so the screen and camera
+    // tracks rebase against the SAME pause instant (no sub-ms A/V drift per
+    // pause cycle from two independent clock reads).
+    let now = CMClockGetTime(CMClockGetHostTimeClock())
+    writer.pause(at: now)
+    cameraManager?.pause(at: now)
     result(nil)
   }
 
@@ -1091,8 +1134,10 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
                           message: "No active recording to resume", details: nil))
       return
     }
-    writer.resume()
-    cameraManager?.resume()
+    // nit: shared host-clock read for both writers (see pauseRecording).
+    let now = CMClockGetTime(CMClockGetHostTimeClock())
+    writer.resume(at: now)
+    cameraManager?.resume(at: now)
     result(nil)
   }
 

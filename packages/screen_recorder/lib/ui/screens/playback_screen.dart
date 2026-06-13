@@ -1747,8 +1747,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           onRevealLastExport: _lastExportPath == null
               ? null
               : () {
+                  // nit: clipboard / shareable-link exports record a temp path
+                  // the OS may have reaped. Check before revealing so the
+                  // button fails loudly instead of silently no-op'ing.
+                  final path = _lastExportPath!;
+                  if (!File(path).existsSync()) {
+                    AppAlerts.warning('That export is no longer available.');
+                    return;
+                  }
                   if (Platform.isMacOS) {
-                    unawaited(Process.run('open', ['-R', _lastExportPath!])
+                    unawaited(Process.run('open', ['-R', path])
                         .catchError((_) => ProcessResult(0, 1, '', '')));
                   }
                 },

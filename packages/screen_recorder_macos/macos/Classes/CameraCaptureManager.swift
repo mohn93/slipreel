@@ -142,8 +142,8 @@ final class CameraCaptureManager: NSObject, AVCaptureVideoDataOutputSampleBuffer
     observers.removeAll()
   }
 
-  func pause() { writer?.pause() }
-  func resume() { writer?.resume() }
+  func pause(at hostTime: CMTime? = nil) { writer?.pause(at: hostTime) }
+  func resume(at hostTime: CMTime? = nil) { writer?.resume(at: hostTime) }
 
   /// Stop the session + self-view, finalize the writer, and return capture info.
   func stop(completion: @escaping (StopInfo) -> Void) {

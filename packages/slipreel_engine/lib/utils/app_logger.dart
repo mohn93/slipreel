@@ -43,7 +43,11 @@ class ZoneLogPrinter extends PrettyPrinter {
 
   @override
   List<String> log(LogEvent event) {
-    final color = PrettyPrinter.defaultLevelColors[event.level];
+    // nit: some levels (verbose/wtf and any future level) have no entry in
+    // defaultLevelColors; fall back to a no-op color so logging them never
+    // throws on a null force-unwrap.
+    final color =
+        PrettyPrinter.defaultLevelColors[event.level] ?? AnsiColor.none();
     final emoji = PrettyPrinter.defaultLevelEmojis[event.level];
     final message = event.message;
 
@@ -54,7 +58,7 @@ class ZoneLogPrinter extends PrettyPrinter {
 
     final output = '$time $emoji $zoneName $levelName $message';
 
-    final lines = <String>[color!(output)];
+    final lines = <String>[color(output)];
 
     if (event.error != null) {
       lines.add(color('Error: ${event.error}'));

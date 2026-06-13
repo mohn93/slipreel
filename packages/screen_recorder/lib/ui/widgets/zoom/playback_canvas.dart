@@ -1288,13 +1288,11 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   Matrix4 _subFrameTransformAt(Duration t, Size videoSize) {
     if (t.isNegative) return Matrix4.identity();
 
-    ZoomRegion? active;
-    for (final region in widget.zoomRegions) {
-      if (region.isActive(t)) {
-        active = region;
-        break;
-      }
-    }
+    // nit: use the same closed-interval lookup as the scene sample
+    // (ZoomRegion.activeAt) rather than a half-open isActive scan, so the
+    // sub-frame transform and the scene-blur accumulation agree on the region
+    // boundary.
+    final active = ZoomRegion.activeAt(t, widget.zoomRegions);
     if (active == null) return Matrix4.identity();
 
     Offset focal;

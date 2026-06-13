@@ -135,20 +135,21 @@ final class CameraSidecarWriter {
     }
   }
 
-  func pause() {
+  /// nit: optional shared host-clock timestamp — see LiveRecordingWriter.pause.
+  func pause(at hostTime: CMTime? = nil) {
     queue.sync {
       guard isStarted, writerActive, !isPaused else { return }
       isPaused = true
-      pauseStart = CMClockGetTime(CMClockGetHostTimeClock())
+      pauseStart = hostTime ?? CMClockGetTime(CMClockGetHostTimeClock())
     }
   }
 
-  func resume() {
+  func resume(at hostTime: CMTime? = nil) {
     queue.sync {
       guard isStarted, isPaused, let start = pauseStart else {
         isPaused = false; pauseStart = nil; return
       }
-      let now = CMClockGetTime(CMClockGetHostTimeClock())
+      let now = hostTime ?? CMClockGetTime(CMClockGetHostTimeClock())
       pausedOffset = CMTimeAdd(pausedOffset, CMTimeSubtract(now, start))
       isPaused = false; pauseStart = nil
     }
