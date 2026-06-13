@@ -401,6 +401,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     if (!_scenePassEnabled) {
       _disposeCapturedScene();
     }
+    // m4: drop the remembered placement when there's nothing left to show it
+    // for. Otherwise, after deleting every camera region (or disabling the
+    // camera) and re-adding one in a gap, the stale placement paints a ghost
+    // bubble at the old spot until the next active region is hit.
+    if (widget.cameraRegions.isEmpty || widget.cameraSettings?.enabled != true) {
+      _lastCameraPlacement = null;
+    }
   }
 
   @override

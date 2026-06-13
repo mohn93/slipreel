@@ -276,4 +276,47 @@ void main() {
     await tester.pump();
     expect(placement.size, greaterThan(0.25)); // bottom-right outward = grow
   });
+
+  testWidgets(
+      'm5: an oversized corner-resize clamps to the canvas-fit size instead of '
+      'snapping the bubble to center', (tester) async {
+    var placement =
+        const CameraPlacement(centerX: 0.82, centerY: 0.82, size: 0.25);
+    const canvas = Size(800, 450); // 16:9 — height is the binding axis
+    await tester.pumpWidget(
+      StatefulBuilder(
+        builder: (ctx, setState) => MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: canvas.width,
+                height: canvas.height,
+                child: CameraBubble(
+                  canvasSize: canvas,
+                  placement: placement,
+                  settings: const CameraSettings(),
+                  selected: true,
+                  onPlacementChanged: (p) => setState(() => placement = p),
+                  child: const ColoredBox(color: Colors.red),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    // Yank the corner far outward — way past what fits on the 16:9 canvas.
+    await tester.drag(
+        find.byKey(const Key('camera-handle-br')), const Offset(2000, 2000));
+    await tester.pump();
+
+    // Circle (aspect 1.0) on 16:9 is height-bound: maxFit = (1 - 2*0.06) *
+    // 450/800 = 0.495 — well under the old 1.2 ceiling that triggered the snap.
+    expect(placement.size, closeTo(0.495, 1e-3));
+    // And the pixel box stays anchored to the corner — it must NOT recenter.
+    final box = tester.getRect(find.byKey(const Key('camera-bubble-box')));
+    final canvasRect = tester.getRect(find.byType(CameraBubble));
+    expect(box.center.dx, greaterThan(canvasRect.center.dx),
+        reason: 'bubble kept its bottom-right bias; did not snap to center');
+  });
 }
