@@ -799,6 +799,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         if let cam = args["camera"] as? [String: Any],
            let camUid = cam["deviceUid"] as? String {
           let manager = CameraCaptureManager()
+          // m17: a webcam unplugged/seized mid-recording is non-fatal — keep
+          // the screen recording going and just log. (Routing through the
+          // recordingError channel would abort the whole recording.)
+          manager.onRuntimeError = { message in
+            NSLog("[ScreenRecorderMacosPlugin] camera runtime error — %@", message)
+          }
           do {
             try manager.start(deviceUid: camUid, outputPath: outputPath)
             self.cameraManager = manager

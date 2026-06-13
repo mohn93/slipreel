@@ -424,32 +424,50 @@ class RecordingController extends StateNotifier<RecordingState> {
     }
   }
 
-  Future<void> pauseRecording() async {
-    if (state.status != RecordingStatus.recording) return;
-    _durationTimer?.cancel();
-    _durationTimer = null;
-    // Capture elapsed-so-far so resume can restart from where we paused.
-    final elapsed = _startTime != null
-        ? DateTime.now().difference(_startTime!)
-        : state.duration;
-    _startTime = null;
-    state = state.copyWith(status: RecordingStatus.paused, duration: elapsed);
-    await ScreenRecorderPlatform.instance.pauseRecording();
+  // m1: pause/resume must reach the native side in the order they were
+  // requested. Chaining each transition onto the previous one serializes the
+  // platform calls so a quick resume can't overtake a still-running pause. The
+  // status flip happens *after* the platform await so observers never see a
+  // state the native side hasn't reached yet.
+  Future<void> _transition = Future<void>.value();
+
+  Future<void> _enqueueTransition(Future<void> Function() op) {
+    final result = _transition.then((_) => op());
+    // Keep the chain alive even if this op throws; the caller still sees the
+    // real error via `result`.
+    _transition = result.catchError((_) {});
+    return result;
   }
 
-  Future<void> resumeRecording() async {
-    if (state.status != RecordingStatus.paused) return;
-    await ScreenRecorderPlatform.instance.resumeRecording();
-    // Re-anchor _startTime to "now minus elapsed" so the periodic timer
-    // continues to fire correct durations from where we paused.
-    _startTime = DateTime.now().subtract(state.duration);
-    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_startTime != null) {
-        state = state.copyWith(duration: DateTime.now().difference(_startTime!));
-      }
-    });
-    state = state.copyWith(status: RecordingStatus.recording);
-  }
+  Future<void> pauseRecording() => _enqueueTransition(() async {
+        if (state.status != RecordingStatus.recording) return;
+        _durationTimer?.cancel();
+        _durationTimer = null;
+        // Capture elapsed-so-far (before the platform await) so resume can
+        // restart from exactly where the user paused.
+        final elapsed = _startTime != null
+            ? DateTime.now().difference(_startTime!)
+            : state.duration;
+        _startTime = null;
+        await ScreenRecorderPlatform.instance.pauseRecording();
+        state =
+            state.copyWith(status: RecordingStatus.paused, duration: elapsed);
+      });
+
+  Future<void> resumeRecording() => _enqueueTransition(() async {
+        if (state.status != RecordingStatus.paused) return;
+        await ScreenRecorderPlatform.instance.resumeRecording();
+        // Re-anchor _startTime to "now minus elapsed" so the periodic timer
+        // continues to fire correct durations from where we paused.
+        _startTime = DateTime.now().subtract(state.duration);
+        _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (_startTime != null) {
+            state =
+                state.copyWith(duration: DateTime.now().difference(_startTime!));
+          }
+        });
+        state = state.copyWith(status: RecordingStatus.recording);
+      });
 
   void _handleError(String message) {
     // Reap any live native capture so a failed/partial session can't keep
@@ -481,14 +499,39 @@ class RecordingController extends StateNotifier<RecordingState> {
     _activeCameraConfig = null;
   }
 
-  void reset() => state = const RecordingState();
+  void reset() {
+    // m2: never abandon a live native capture. Reap it best-effort (same
+    // discipline as _handleError) before clearing back to a pristine state.
+    _reapActiveCapture();
+    state = const RecordingState();
+  }
+
+  /// Best-effort, synchronous teardown of any live native capture. Mirrors
+  /// _handleError's reaping so reset()/dispose() can't leak the session.
+  void _reapActiveCapture() {
+    if (_videoEncoder.isActive) {
+      _videoEncoder.forceReset().ignore();
+    }
+    _cursorCheckpointer?.stop().ignore();
+    _cursorCheckpointer = null;
+    if (_activeMarkerId != null && _sessionMarkerStore != null) {
+      _sessionMarkerStore.remove(_activeMarkerId!).ignore();
+      _activeMarkerId = null;
+    }
+    _activeNdjsonPath = null;
+    _durationTimer?.cancel();
+    _durationTimer = null;
+    _startTime = null;
+  }
 
   @override
   void dispose() {
+    // m2: a controller disposed mid-recording must reap the native session,
+    // otherwise capture keeps running with no owner.
+    _reapActiveCapture();
     _cursorSubscription?.cancel();
     _keystrokeSubscription?.cancel();
     _recordingErrorSubscription?.cancel();
-    _durationTimer?.cancel();
     super.dispose();
   }
 }

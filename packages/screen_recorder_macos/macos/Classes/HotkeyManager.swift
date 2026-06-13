@@ -26,31 +26,38 @@ final class HotkeyManager {
       (3, UInt32(kVK_ANSI_P), .pauseToggle),
     ]
 
-    var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                             eventKind: UInt32(kEventHotKeyPressed))
-    let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-    InstallEventHandler(GetApplicationEventTarget(),
-                        { (_, event, ctx) -> OSStatus in
-                          guard let ctx = ctx, let event = event else { return noErr }
-                          let manager = Unmanaged<HotkeyManager>.fromOpaque(ctx)
-                            .takeUnretainedValue()
-                          var hkID = EventHotKeyID()
-                          let status = GetEventParameter(event,
-                                                          EventParamName(kEventParamDirectObject),
-                                                          EventParamType(typeEventHotKeyID),
-                                                          nil,
-                                                          MemoryLayout<EventHotKeyID>.size,
-                                                          nil,
-                                                          &hkID)
-                          if status == noErr {
-                            manager.dispatch(id: hkID.id)
-                          }
-                          return noErr
-                        },
-                        1,
-                        &spec,
-                        selfPtr,
-                        &handlerRef)
+    // m18: install the Carbon event handler at most once. registerAll() is
+    // re-entrant on the conflict-retry path (registered stays false when every
+    // hotkey failed), so installing unconditionally here would leak a fresh
+    // handler on each retry. The handler outlives individual hotkey refs and is
+    // torn down in unregisterAll().
+    if handlerRef == nil {
+      var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
+                               eventKind: UInt32(kEventHotKeyPressed))
+      let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+      InstallEventHandler(GetApplicationEventTarget(),
+                          { (_, event, ctx) -> OSStatus in
+                            guard let ctx = ctx, let event = event else { return noErr }
+                            let manager = Unmanaged<HotkeyManager>.fromOpaque(ctx)
+                              .takeUnretainedValue()
+                            var hkID = EventHotKeyID()
+                            let status = GetEventParameter(event,
+                                                            EventParamName(kEventParamDirectObject),
+                                                            EventParamType(typeEventHotKeyID),
+                                                            nil,
+                                                            MemoryLayout<EventHotKeyID>.size,
+                                                            nil,
+                                                            &hkID)
+                            if status == noErr {
+                              manager.dispatch(id: hkID.id)
+                            }
+                            return noErr
+                          },
+                          1,
+                          &spec,
+                          selfPtr,
+                          &handlerRef)
+    }
 
     for (id, keyCode, _) in entries {
       var ref: EventHotKeyRef?
