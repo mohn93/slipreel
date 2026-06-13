@@ -272,24 +272,21 @@ class ExportPipeline {
     final compositeSw = Stopwatch();
     int totalFrames = 0;
 
-    // After CFR-resampling at pipelineFps the actual frame count is
-    // duration * pipelineFps. Prefer the probed duration (most
-    // accurate); fall back to scaling nb_frames by the rate ratio if
-    // duration was missing. If neither is available, leave it null —
-    // the progress bar will stay indeterminate, which is preferable
-    // to a wrong percentage. (Final so Dart can promote across the
-    // encode-stage closure that reads it.)
-    final int? expectedFrames = () {
-      final dur = probed.durationSec;
-      if (dur != null && dur > 0) {
-        return (dur * pipelineFps).round();
-      }
-      final nb = probed.nbFrames;
-      if (nb != null && probed.fps > 0) {
-        return (nb * pipelineFps / probed.fps).round();
-      }
-      return null;
-    }();
+    // After CFR-resampling at pipelineFps the encoder emits
+    // outputDurationSec * pipelineFps frames. m9: outputDurationSec is the
+    // EDITED (sliced + speed-adjusted) length, so a trimmed export no longer
+    // measures progress against the full source duration (which froze the bar
+    // well below 100%). Falls back to the probed source duration / nb_frames
+    // only when the edited length is unavailable; null leaves the bar
+    // indeterminate, preferable to a wrong percentage. (Final so Dart can
+    // promote across the encode-stage closure that reads it.)
+    final int? expectedFrames = expectedOutputFrames(
+      outputDurationSec: outputDurationSec,
+      pipelineFps: pipelineFps,
+      sourceDurationSec: probed.durationSec,
+      sourceNbFrames: probed.nbFrames,
+      sourceFps: probed.fps,
+    );
 
     // Three-stage producer/consumer pipeline. Decode reads from ffmpeg's
     // stdout, compose rasterizes the frame chrome + cursor + zoom, encode
@@ -500,6 +497,30 @@ EditorProjectState _ensureSlices(
 }
 
 /// Sum of slice output durations: `Σ effectiveLength / playbackSpeed`.
+/// Frames the encoder will emit for the progress denominator. m9: prefer the
+/// EDITED output length ([outputDurationSec], which already accounts for slice
+/// trims and per-slice playback speed) so trimmed exports reach 100%. Falls
+/// back to the probed source duration, then to scaling nb_frames by the rate
+/// ratio, and finally null (indeterminate) when nothing usable is available.
+int? expectedOutputFrames({
+  required double outputDurationSec,
+  required int pipelineFps,
+  double? sourceDurationSec,
+  int? sourceNbFrames,
+  num sourceFps = 0,
+}) {
+  if (outputDurationSec > 0) {
+    return (outputDurationSec * pipelineFps).round();
+  }
+  if (sourceDurationSec != null && sourceDurationSec > 0) {
+    return (sourceDurationSec * pipelineFps).round();
+  }
+  if (sourceNbFrames != null && sourceFps > 0) {
+    return (sourceNbFrames * pipelineFps / sourceFps).round();
+  }
+  return null;
+}
+
 double _slicedOutputSeconds(List<ClipSlice> clips) {
   var acc = 0.0;
   for (final c in clips) {

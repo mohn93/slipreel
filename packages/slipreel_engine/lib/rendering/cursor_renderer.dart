@@ -68,61 +68,78 @@ class CursorRenderer {
       // Convert BGRA frame data to Image
       final frameImage = await _createImageFromBGRA(processedFrame, width, height);
 
-      // Create canvas to draw on
-      final recorder = ui.PictureRecorder();
-      final canvas = ui.Canvas(recorder);
+      // m13: dispose the frame image, picture, and output image — they are
+      // native handles allocated every frame and otherwise leak until GC.
+      ui.Picture? picture;
+      ui.Image? img;
+      try {
+        // Create canvas to draw on
+        final recorder = ui.PictureRecorder();
+        final canvas = ui.Canvas(recorder);
 
-      // Draw original frame
-      canvas.drawImage(frameImage, ui.Offset.zero, ui.Paint());
+        // Draw original frame
+        canvas.drawImage(frameImage, ui.Offset.zero, ui.Paint());
 
-      // Draw the synthetic cursor at the recorded position. The cursor
-      // recording stores positions in screen-space pixels; for the
-      // export, screen-space matches video-space (we encode at the
-      // capture's native dimensions).
-      //
-      // The ripple is anchored to where the click *landed*, not to the
-      // current cursor position, so click-and-drag in the recording
-      // doesn't drag the ring around (bug #1 from the 2026-05
-      // architecture review — the legacy `paintCursorWithEffects`
-      // wrapper conflated both positions).
-      final clickEvent =
-          mostRecentClickEvent(cursorRecording, timestampMicros);
-      final int? dt = clickEvent == null
-          ? null
-          : timestampMicros - clickEvent.timestampMicros;
-      final dtRelease =
-          microsSinceRelease(cursorRecording, timestampMicros);
-      paintCursorComposed(
-        canvas,
-        CursorPaintRequest(
-          cursorPosition: ui.Offset(cursorPos.x, cursorPos.y),
-          clickPosition: clickEvent?.screenPos,
-          microsSinceClick: dt,
-          microsSinceRelease: dtRelease,
-          baseDiameter: kCursorBaseDiameter * sizeMultiplier,
-          style: style,
-          clickSpring: clickSpring,
-          clickEffect: clickEffect,
-        ),
-      );
+        // Draw the synthetic cursor at the recorded position. The cursor
+        // recording stores positions in screen-space pixels; for the
+        // export, screen-space matches video-space (we encode at the
+        // capture's native dimensions).
+        //
+        // The ripple is anchored to where the click *landed*, not to the
+        // current cursor position, so click-and-drag in the recording
+        // doesn't drag the ring around (bug #1 from the 2026-05
+        // architecture review — the legacy `paintCursorWithEffects`
+        // wrapper conflated both positions).
+        final clickEvent =
+            mostRecentClickEvent(cursorRecording, timestampMicros);
+        final int? dt = clickEvent == null
+            ? null
+            : timestampMicros - clickEvent.timestampMicros;
+        final dtRelease =
+            microsSinceRelease(cursorRecording, timestampMicros);
+        paintCursorComposed(
+          canvas,
+          CursorPaintRequest(
+            cursorPosition: ui.Offset(cursorPos.x, cursorPos.y),
+            clickPosition: clickEvent?.screenPos,
+            microsSinceClick: dt,
+            microsSinceRelease: dtRelease,
+            baseDiameter: kCursorBaseDiameter * sizeMultiplier,
+            style: style,
+            clickSpring: clickSpring,
+            clickEffect: clickEffect,
+          ),
+        );
 
-      // Convert back to BGRA bytes
-      final picture = recorder.endRecording();
-      final img = await picture.toImage(width, height);
-      final byteData = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+        // Convert back to BGRA bytes
+        picture = recorder.endRecording();
+        img = await picture.toImage(width, height);
+        final byteData =
+            await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+        if (byteData == null) {
+          // Don't crash the encode on a null raster — ship the frame as-is.
+          AppLogger.cursorRenderer
+              .w('cursor frame toByteData returned null; using source frame');
+          return processedFrame;
+        }
 
-      // Convert RGBA to BGRA
-      final rgbaBytes = byteData!.buffer.asUint8List();
-      final bgraBytes = Uint8List(rgbaBytes.length);
+        // Convert RGBA to BGRA
+        final rgbaBytes = byteData.buffer.asUint8List();
+        final bgraBytes = Uint8List(rgbaBytes.length);
 
-      for (int i = 0; i < rgbaBytes.length; i += 4) {
-        bgraBytes[i] = rgbaBytes[i + 2];     // B
-        bgraBytes[i + 1] = rgbaBytes[i + 1]; // G
-        bgraBytes[i + 2] = rgbaBytes[i];     // R
-        bgraBytes[i + 3] = rgbaBytes[i + 3]; // A
+        for (int i = 0; i < rgbaBytes.length; i += 4) {
+          bgraBytes[i] = rgbaBytes[i + 2];     // B
+          bgraBytes[i + 1] = rgbaBytes[i + 1]; // G
+          bgraBytes[i + 2] = rgbaBytes[i];     // R
+          bgraBytes[i + 3] = rgbaBytes[i + 3]; // A
+        }
+
+        return bgraBytes;
+      } finally {
+        frameImage.dispose();
+        picture?.dispose();
+        img?.dispose();
       }
-
-      return bgraBytes;
     } catch (e) {
       AppLogger.cursorRenderer.e('Error rendering cursor on frame', error: e);
       return frameData; // Return original frame to avoid breaking encoding
