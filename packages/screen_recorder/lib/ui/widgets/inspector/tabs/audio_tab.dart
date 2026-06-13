@@ -108,6 +108,9 @@ class _RecordingAudioSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final streams = ref.watch(recordingAudioStreamsProvider);
     final roles = inferAudioRoles(streams);
+    // This is a single GLOBAL volume/mute for the whole recording. The
+    // displayed value reads clip 0 as representative; edits apply to ALL slices
+    // (setAll*), so a cut recording stays uniform (m7).
     final clips = ref.watch(editorProjectControllerProvider).timeline.clips;
     final micGain = clips.isEmpty ? 100 : clips.first.micGainPercent;
     final micMuted = clips.isEmpty ? false : clips.first.micMuted;
@@ -121,8 +124,8 @@ class _RecordingAudioSection extends ConsumerWidget {
         label: 'Microphone',
         percent: micGain,
         muted: micMuted,
-        onChanged: (v) => ctl.setSliceMicGain(0, v),
-        onMuteToggle: () => ctl.setSliceMicMuted(0, !micMuted),
+        onChanged: (v) => ctl.setAllMicGain(v),
+        onMuteToggle: () => ctl.setAllMicMuted(!micMuted),
       ));
     }
     if (roles.containsKey(AudioRole.system)) {
@@ -130,8 +133,8 @@ class _RecordingAudioSection extends ConsumerWidget {
         label: 'System audio',
         percent: systemGain,
         muted: systemMuted,
-        onChanged: (v) => ctl.setSliceSystemGain(0, v),
-        onMuteToggle: () => ctl.setSliceSystemMuted(0, !systemMuted),
+        onChanged: (v) => ctl.setAllSystemGain(v),
+        onMuteToggle: () => ctl.setAllSystemMuted(!systemMuted),
       ));
     }
 

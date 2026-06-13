@@ -85,6 +85,45 @@ void main() {
       expect(controller.current.timeline.clips[0].systemMuted, isTrue);
     });
 
+    // m7: the global recording-audio control must reach EVERY slice, not just
+    // clip 0, so a cut recording doesn't leave later slices at the old level.
+    test('setAllMicGain applies to every slice (clamped, single update)', () {
+      controller = EditorProjectController(initial: _stateWithTwoSlices());
+      var notifications = 0;
+      controller.addListener((_) => notifications++);
+      final baseline = notifications;
+
+      controller.setAllMicGain(250); // clamps to 200
+      final clips = controller.current.timeline.clips;
+      expect(clips.map((c) => c.micGainPercent), everyElement(200));
+      expect(notifications - baseline, 1, reason: 'one state update for all');
+    });
+
+    test('setAllSystemGain applies to every slice', () {
+      controller = EditorProjectController(initial: _stateWithTwoSlices());
+      controller.setAllSystemGain(40);
+      expect(controller.current.timeline.clips.map((c) => c.systemGainPercent),
+          everyElement(40));
+    });
+
+    test('setAllMicMuted / setAllSystemMuted apply to every slice', () {
+      controller = EditorProjectController(initial: _stateWithTwoSlices());
+      controller.setAllMicMuted(true);
+      controller.setAllSystemMuted(true);
+      final clips = controller.current.timeline.clips;
+      expect(clips.every((c) => c.micMuted && c.systemMuted), isTrue);
+    });
+
+    test('setAllMicGain no-ops when every slice already matches', () {
+      controller = EditorProjectController(initial: _stateWithTwoSlices());
+      controller.setAllMicGain(150);
+      var notifications = 0;
+      controller.addListener((_) => notifications++);
+      final baseline = notifications;
+      controller.setAllMicGain(150);
+      expect(notifications - baseline, 0);
+    });
+
     test('setSliceFadeIn clamps negatives to zero', () {
       controller.setSliceFadeIn(0, const Duration(seconds: -1));
       expect(controller.current.timeline.clips[0].fadeIn, Duration.zero);

@@ -306,6 +306,52 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     _replaceSlice(sliceIndex, s.copyWith(systemMuted: muted));
   }
 
+  // m7: the inspector's "Recording audio" volume/mute is a single GLOBAL
+  // control, but a cut splits the timeline into multiple slices. These apply
+  // the change to every slice in one state update so later slices aren't left
+  // behind at the old level.
+  void setAllMicGain(int percent) {
+    final clamped = percent < 0 ? 0 : (percent > 200 ? 200 : percent);
+    _mapAllSlices((s) =>
+        s.micGainPercent == clamped ? s : s.copyWith(micGainPercent: clamped));
+  }
+
+  void setAllMicMuted(bool muted) {
+    _mapAllSlices((s) => s.micMuted == muted ? s : s.copyWith(micMuted: muted));
+  }
+
+  void setAllSystemGain(int percent) {
+    final clamped = percent < 0 ? 0 : (percent > 200 ? 200 : percent);
+    _mapAllSlices((s) => s.systemGainPercent == clamped
+        ? s
+        : s.copyWith(systemGainPercent: clamped));
+  }
+
+  void setAllSystemMuted(bool muted) {
+    _mapAllSlices(
+        (s) => s.systemMuted == muted ? s : s.copyWith(systemMuted: muted));
+  }
+
+  /// Maps [f] over every slice and commits once. No-ops (no notification) when
+  /// [f] returns the same instance for all slices — preserving the
+  /// setX(currentX)-is-a-no-op invariant the per-slice setters hold.
+  void _mapAllSlices(ClipSlice Function(ClipSlice) f) {
+    final clips = state.timeline.clips;
+    if (clips.isEmpty) return;
+    final updated = [for (final c in clips) f(c)];
+    var changed = false;
+    for (var i = 0; i < clips.length; i++) {
+      if (!identical(updated[i], clips[i])) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return;
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(clips: updated),
+    );
+  }
+
   void setSliceHideCursor(int sliceIndex, bool value) {
     final s = _slice(sliceIndex);
     if (s == null) return;
