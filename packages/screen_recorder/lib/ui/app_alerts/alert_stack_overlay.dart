@@ -90,6 +90,20 @@ class _AlertStackOverlayState extends State<AlertStackOverlay> {
             child: ValueListenableBuilder<List<AlertEntry>>(
               valueListenable: widget.controller.stack,
               builder: (context, stack, _) {
+                // m8: when the deck is expanded (hovered), a freshly-pushed
+                // alert starts its own auto-dismiss timer in the controller —
+                // _setExpanded only paused the entries present at hover time.
+                // Pause any newly-arrived entry too so it doesn't vanish out
+                // from under the cursor. pauseTimer is idempotent, so already-
+                // paused entries are untouched.
+                if (_expanded) {
+                  final previousKeys = {for (final e in _lastStack) e.key};
+                  for (final entry in stack) {
+                    if (!previousKeys.contains(entry.key)) {
+                      widget.controller.pauseTimer(entry);
+                    }
+                  }
+                }
                 _lastStack = stack;
                 if (stack.isEmpty) return const SizedBox.shrink();
 
