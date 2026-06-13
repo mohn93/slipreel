@@ -359,6 +359,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   SceneMotionBlurSignal _currentSceneSignal = SceneMotionBlurSignal.zero;
   WindowFrame? _lastSeenFrame;
   bool _pendingSceneCapturePaint = false;
+  // m3: deferred-disposal queue for replaced scene captures. The painter from
+  // the most recent build still references the old _capturedScene; disposing it
+  // synchronously can paint a disposed image if a repaint fires before the next
+  // build swaps the painter. Queue here, flush at the START of build so the old
+  // image is freed only once its painter is about to be replaced. Mirrors
+  // SceneBlurOverlay's _disposeQueue.
+  final List<ui.Image> _sceneDisposeQueue = <ui.Image>[];
   // Locked playhead during pause to filter smoothPlayhead's per-tick
   // micro-jitter out of the scene-blur signal. See the comment in
   // build() where it's read for the full rationale.
@@ -437,6 +444,9 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
 
   @override
   Widget build(BuildContext context) {
+    // m3: release any scene capture retired during the previous frame now that
+    // its painter is about to be replaced by this build's painter.
+    _flushSceneDisposeQueue();
     // Pick up the latest MotionTuning from the provider so preset
     // changes from the cursor-tab picker (or a JSON reload at app
     // startup) flow through to the scene-blur knobs read in this
@@ -1329,7 +1339,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       final dpr = MediaQuery.of(context).devicePixelRatio;
       final image = boundary.toImageSync(pixelRatio: dpr);
       final shouldRepaint = _capturedScene == null || _pendingSceneCapturePaint;
-      _capturedScene?.dispose();
+      // m3: defer disposal of the outgoing capture (see _sceneDisposeQueue).
+      if (_capturedScene != null) _sceneDisposeQueue.add(_capturedScene!);
       _capturedScene = image;
       _capturedSceneSignal = _currentSceneSignal;
       if (shouldRepaint) {
@@ -1343,10 +1354,22 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   }
 
   void _disposeCapturedScene() {
+    _flushSceneDisposeQueue();
     _capturedScene?.dispose();
     _capturedScene = null;
     _capturedSceneSignal = SceneMotionBlurSignal.zero;
     _currentSceneSignal = SceneMotionBlurSignal.zero;
+  }
+
+  /// m3: drains the deferred scene-capture disposal queue. Called at the start
+  /// of build so any image queued during the previous frame is released right
+  /// before this build's painter takes its place.
+  void _flushSceneDisposeQueue() {
+    if (_sceneDisposeQueue.isEmpty) return;
+    for (final img in _sceneDisposeQueue) {
+      img.dispose();
+    }
+    _sceneDisposeQueue.clear();
   }
 
   Widget _wallpaperLayer({

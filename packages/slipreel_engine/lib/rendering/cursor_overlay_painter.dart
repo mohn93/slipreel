@@ -306,23 +306,28 @@ class CursorOverlayPainter extends CustomPainter {
             ? Offset(trailVector.dx / trailLen, trailVector.dy / trailLen)
             : const Offset(1, 0);
 
+        // Pulse scales the rect uniformly so a held click visibly shrinks the
+        // smear too. m11: uOutputSize MUST match the destination rect
+        // (scaledSize), not the unscaled buffer — otherwise during a press-
+        // pulse the shader normalizes fragCoord against the wrong size and only
+        // samples the top-left `pulse` fraction of the sprite, clipping the
+        // centered cursor off-center. The trail reach scales by the same pulse
+        // so it stays proportional to the shrunk body. Both are no-ops at
+        // pulse == 1.
+        final scaledSize = spriteBufferSize * pulse;
+        final pulseInset = (spriteBufferSize - scaledSize) / 2;
+
         shader.setImageSampler(0, spriteImage);
-        shader.setFloat(0, spriteBufferSize);
-        shader.setFloat(1, spriteBufferSize);
+        shader.setFloat(0, scaledSize);
+        shader.setFloat(1, scaledSize);
         shader.setFloat(2, trailDir.dx);
         shader.setFloat(3, trailDir.dy);
-        shader.setFloat(4, reach);
+        shader.setFloat(4, reach * pulse);
         shader.setFloat(5, spriteBufferPixelSize.toDouble());
         shader.setFloat(6, spriteBufferPixelSize.toDouble());
 
         // FlutterFragCoord is canvas-local under Skia. Translate the
         // canvas so the rect's top-left is at (0, 0), draw at origin.
-        // Pulse scales the rect uniformly so a held click visibly
-        // shrinks the smear too; the smear length scales with it,
-        // which reads correctly because the trail and the body
-        // belong to the same logical cursor.
-        final scaledSize = spriteBufferSize * pulse;
-        final pulseInset = (spriteBufferSize - scaledSize) / 2;
         canvas.save();
         canvas.translate(
           widgetPos.dx - spriteBufferCenter.dx + pulseInset,
