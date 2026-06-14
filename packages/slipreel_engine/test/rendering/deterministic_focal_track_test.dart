@@ -169,5 +169,61 @@ void main() {
         isFalse,
       );
     });
+
+    test('omitted cursorDelay defaults to zero — back-compat for export', () {
+      // [track] was built without cursorDelay; export calls matches() without
+      // it too, so a delay-less call must still match.
+      expect(
+        track.matches(
+          region: region,
+          cursorRecording: recording,
+          cursorAnimationConfig: config,
+          cursorPostProcess: CursorPostProcess.none,
+          videoSize: videoSize,
+          fps: 60,
+        ),
+        isTrue,
+      );
+    });
+
+    test('changed cursorDelay → false', () {
+      expect(
+        track.matches(
+          region: region,
+          cursorRecording: recording,
+          cursorAnimationConfig: config,
+          cursorPostProcess: CursorPostProcess.none,
+          videoSize: videoSize,
+          fps: 60,
+          cursorDelay: const Duration(milliseconds: 50),
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  test('cursorDelay shifts the followed focal while the cursor is moving', () {
+    final rec = sweep();
+    const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+    final noDelay = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: rec,
+      cursorAnimationConfig: cfg,
+      videoSize: videoSize,
+      fps: 60,
+    );
+    final delayed = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: rec,
+      cursorAnimationConfig: cfg,
+      videoSize: videoSize,
+      fps: 60,
+      cursorDelay: const Duration(milliseconds: 200),
+    );
+    // During the cursor sweep (2500–4500ms) a 200ms delay makes the camera
+    // follow an earlier, less-swept cursor — so the focal differs.
+    final a = noDelay.focalAt(const Duration(milliseconds: 4000));
+    final b = delayed.focalAt(const Duration(milliseconds: 4000));
+    expect((a - b).distance, greaterThan(5.0));
   });
 }
