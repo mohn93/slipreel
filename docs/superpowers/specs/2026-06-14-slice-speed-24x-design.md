@@ -88,11 +88,19 @@ place). A slice is **speed-muted** when
 audio. Add a derived getter, e.g. `ClipSlice.audioSilencedBySpeed =>
 playbackSpeed > kSpeedAudioMuteThreshold` (pure, unit-tested).
 
-**Export** (`export_pipeline.dart` filter-graph builder): for a speed-muted
-slice, the audio branch emits **silence matching the slice's output duration**
-instead of the `atempoChain` path, so the per-slice concat/amix stays
-A/V-aligned. (Effective `micMuted || systemMuted || audioSilencedBySpeed` drives
-whether real audio vs silence is emitted for each track.)
+**Export** (`n_slice_filter_graph.dart` filter-graph builder): for a speed-muted
+slice the audio branch is **silenced by forcing `volume=0` while KEEPING the
+`atempo` chain** (rather than substituting a separately-computed silence). This
+is the existing user-mute mechanism, extended: keeping `atempo` means the silent
+branch retains the slice's exact sped-up duration, so the per-track `concat`
+stays frame-aligned with the video `concat` for any mix of muted/unmuted slices.
+Effectively `muted || audioSilencedBySpeed` drives the `volume=0` decision per
+track.
+
+> Implementation note (2026-06-14): an earlier draft of this section said
+> "emit silence *instead of* the atempoChain." The shipped approach keeps
+> `atempo` + `volume=0` because it guarantees alignment without a hand-computed
+> silence duration. Do not "fix" the code back to dropping `atempo`.
 
 **Preview** (`playback_screen.dart`): when the slice under the playhead is
 speed-muted, set the player volume to 0 (alongside the existing per-slice

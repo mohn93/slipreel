@@ -21,6 +21,11 @@ ClipSlice _slice(double speed) => ClipSlice(
       playbackSpeed: speed,
     );
 
+EditorProjectState _stateWithClips(List<ClipSlice> clips) =>
+    EditorProjectState.defaults().copyWith(
+      timeline: const Timeline(zoomTracks: []).copyWith(clips: clips),
+    );
+
 void main() {
   test('a slice sped past the threshold emits silent audio (volume=0) but '
       'keeps its atempo so the track duration stays aligned', () {
@@ -40,5 +45,24 @@ void main() {
     );
     expect(graph.filterComplex, contains('volume=1.0'));
     expect(graph.filterComplex, isNot(contains('volume=0')));
+  });
+
+  test('in a multi-slice project only the >threshold slice is silenced, and '
+      'every slice keeps its concat slot (A/V alignment)', () {
+    // Slice 0 at 2× (audio kept), slice 1 at 8× (silenced). Both are sped up,
+    // so both carry an atempo; the silenced slice must keep its atempo + concat
+    // slot so the audio concat stays frame-aligned with the video concat.
+    final graph = buildExportFilterGraph(
+      state: _stateWithClips([_slice(2.0), _slice(8.0)]),
+      audioStreams: _oneStream(),
+    );
+    expect(graph.filterComplex, contains('volume=1.0'),
+        reason: 'the 2x slice keeps full-gain audio');
+    expect(graph.filterComplex, contains('volume=0'),
+        reason: 'the 8x slice is silenced');
+    expect(graph.filterComplex, contains('atempo='),
+        reason: 'the silenced slice keeps its atempo for duration alignment');
+    expect(graph.filterComplex, contains('concat=n=2'),
+        reason: 'both slices keep their concat slot — no dropped audio stream');
   });
 }
