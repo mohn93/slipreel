@@ -594,6 +594,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               videoSize: videoSize,
               fps: widget.metadata?.fps ?? 60,
               hasCursorData: hasCursorData,
+              screenRampCurve: widget.screenAnimationConfig.rampCurve,
               // When the placement-picker override is active we want the
               // focal to lock onto the previewed rect immediately — the
               // spring otherwise barely advances while the video is paused
@@ -1288,6 +1289,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
           videoSize: videoSize,
           fps: fps,
           cursorDelay: widget.cursorDelay,
+          screenRampCurve: widget.screenAnimationConfig.rampCurve,
         )) {
       return cached;
     }
@@ -1299,6 +1301,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       fps: fps,
       cursorPostProcess: widget.cursorPostProcess,
       cursorDelay: widget.cursorDelay,
+      screenRampCurve: widget.screenAnimationConfig.rampCurve,
     );
   }
 
