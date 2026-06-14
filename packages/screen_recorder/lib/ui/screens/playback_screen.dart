@@ -215,6 +215,12 @@ Duration? shouldSeekOnTick(List<ClipSlice> clips, Duration sourcePosition) {
 Duration seekFromEditedTime(List<ClipSlice> clips, Duration editedTime) =>
     editedToSource(clips, editedTime);
 
+/// Preview audio volume for a slice playing at [clipSpeed]: silenced above the
+/// auto-mute threshold (matching the export filter graph), full otherwise.
+@visibleForTesting
+double previewVolumeForSpeed(double clipSpeed) =>
+    clipSpeed > kSpeedAudioMuteThreshold ? 0.0 : 1.0;
+
 class PlaybackScreen extends ConsumerStatefulWidget {
   final String videoPath;
 
@@ -543,6 +549,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // non-negative value; guard against degenerate inputs.
     if (effective <= 0) return;
     _controller.setPlaybackSpeed(effective);
+    // Match the export: drop preview audio for slices sped past the threshold.
+    _controller.setVolume(previewVolumeForSpeed(clipSpeed));
   }
 
   /// Per-instance shim around the top-level [effectiveClipSpeedAt]

@@ -229,4 +229,35 @@ void main() {
     ));
     expect(find.textContaining('No slice'), findsOneWidget);
   });
+
+  testWidgets('shows the extended speed presets up to 24x', (tester) async {
+    await tester.pumpWidget(_host(initial: _stateWithOneSlice()));
+    expect(find.text('4x'), findsOneWidget);
+    expect(find.text('8x'), findsOneWidget);
+    expect(find.text('16x'), findsOneWidget);
+    expect(find.text('24x'), findsOneWidget);
+  });
+
+  testWidgets('tapping the 8x chip sets the slice speed to 8x', (tester) async {
+    await tester.pumpWidget(_host(initial: _stateWithOneSlice()));
+    await tester.tap(find.text('8x'));
+    await tester.pumpAndSettle();
+    expect(find.text('Final speed: 800%'), findsOneWidget);
+  });
+
+  testWidgets('above the threshold the audio rows are replaced by a note',
+      (tester) async {
+    await tester.pumpWidget(_host(
+      initial: _stateWithOneSlice(
+        slice: ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(seconds: 10),
+          playbackSpeed: 8.0,
+        ),
+      ),
+    ));
+    expect(find.text('Muted above 4x'), findsOneWidget);
+    expect(find.text('Mic'), findsNothing);
+    expect(find.text('System'), findsNothing);
+  });
 }

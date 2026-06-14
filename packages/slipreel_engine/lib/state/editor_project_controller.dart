@@ -255,7 +255,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final s = _slice(sliceIndex);
     if (s == null) return;
     if (speed.isNaN || !speed.isFinite) return;
-    final clamped = speed.clamp(0.25, 4.0);
+    final clamped = speed.clamp(0.25, 24.0);
     if (clamped == s.playbackSpeed) return;
     _replaceSlice(sliceIndex, s.copyWith(playbackSpeed: clamped));
   }

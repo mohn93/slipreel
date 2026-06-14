@@ -240,8 +240,11 @@ String _audioChainFor(
   if (s.playbackSpeed != 1.0) {
     filters.add(speedAtempo(s.playbackSpeed));
   }
-  // Muted ⇒ volume=0; otherwise gain percent as fraction.
-  final volume = muted ? 0.0 : gainPercent / 100.0;
+  // volume=0 when the user muted the track OR the slice is sped past the
+  // auto-mute threshold (audioSilencedBySpeed). The atempo above still runs so
+  // the silent audio keeps the slice's sped-up duration and the per-track
+  // concat stays aligned with the video concat.
+  final volume = (muted || s.audioSilencedBySpeed) ? 0.0 : gainPercent / 100.0;
   filters.add('volume=${_volumeStr(volume)}');
   filters.add('aformat=sample_rates=48000:channel_layouts=stereo');
   final effectiveOutMicros =

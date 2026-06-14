@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/editor/speed_scale.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
@@ -23,7 +25,9 @@ class SliceEditor extends ConsumerWidget {
   /// the parent's `_selectedSliceIndex` would point at a stale slot.
   final ValueChanged<int>? onRemove;
 
-  static const _speedPresets = <double>[0.5, 1.0, 1.5, 2.0];
+  static const _speedPresets = <double>[
+    0.5, 1.0, 1.5, 2.0, 4.0, 8.0, 16.0, 24.0,
+  ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -73,38 +77,54 @@ class SliceEditor extends ConsumerWidget {
                 const SizedBox(height: 12),
                 InspectorSlider(
                   label: 'Fine-tune',
-                  // Percent format so this row doesn't echo the "1.5"
-                  // substring used by the preset chip labels.
+                  // Percent format so this row doesn't echo the "1.5" substring
+                  // used by the preset chip labels; the slider itself rides a
+                  // log position (SpeedScale), not the raw speed.
                   subtitle:
                       'Final speed: ${(clip.playbackSpeed * 100).round()}%',
-                  value: clip.playbackSpeed,
-                  min: 0.25,
-                  max: 4.0,
-                  onChanged: (v) => notifier.setSliceSpeed(sliceIndex, v),
+                  value: SpeedScale.posFromSpeed(clip.playbackSpeed),
+                  min: 0.0,
+                  max: 1.0,
+                  onChanged: (t) => notifier.setSliceSpeed(
+                    sliceIndex,
+                    SpeedScale.snap(SpeedScale.speedFromPos(t)),
+                  ),
                   onReset: () => notifier.setSliceSpeed(sliceIndex, 1.0),
                   canReset: clip.playbackSpeed != 1.0,
                 ),
                 const InspectorSectionDivider(),
                 const InspectorSectionLabel('Audio'),
-                _GainRow(
-                  label: 'Mic',
-                  percent: clip.micGainPercent,
-                  muted: clip.micMuted,
-                  onPercentChanged: (v) =>
-                      notifier.setSliceMicGain(sliceIndex, v),
-                  onMutedChanged: (v) =>
-                      notifier.setSliceMicMuted(sliceIndex, v),
-                ),
-                const SizedBox(height: 12),
-                _GainRow(
-                  label: 'System',
-                  percent: clip.systemGainPercent,
-                  muted: clip.systemMuted,
-                  onPercentChanged: (v) =>
-                      notifier.setSliceSystemGain(sliceIndex, v),
-                  onMutedChanged: (v) =>
-                      notifier.setSliceSystemMuted(sliceIndex, v),
-                ),
+                if (clip.audioSilencedBySpeed)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      'Muted above '
+                      '${kSpeedAudioMuteThreshold.toStringAsFixed(0)}x',
+                      style: const TextStyle(
+                          color: kInspectorMuted, fontSize: 12),
+                    ),
+                  )
+                else ...[
+                  _GainRow(
+                    label: 'Mic',
+                    percent: clip.micGainPercent,
+                    muted: clip.micMuted,
+                    onPercentChanged: (v) =>
+                        notifier.setSliceMicGain(sliceIndex, v),
+                    onMutedChanged: (v) =>
+                        notifier.setSliceMicMuted(sliceIndex, v),
+                  ),
+                  const SizedBox(height: 12),
+                  _GainRow(
+                    label: 'System',
+                    percent: clip.systemGainPercent,
+                    muted: clip.systemMuted,
+                    onPercentChanged: (v) =>
+                        notifier.setSliceSystemGain(sliceIndex, v),
+                    onMutedChanged: (v) =>
+                        notifier.setSliceSystemMuted(sliceIndex, v),
+                  ),
+                ],
                 const InspectorSectionDivider(),
                 const InspectorSectionLabel('Cursor'),
                 InspectorToggle(

@@ -40,11 +40,13 @@ void main() {
       expect(controller.current.timeline.clips[0].playbackSpeed, 2.0);
     });
 
-    test('setSliceSpeed clamps to [0.25, 4.0]', () {
+    test('setSliceSpeed clamps to [0.25, 24.0]', () {
       controller.setSliceSpeed(0, -1.0);
       expect(controller.current.timeline.clips[0].playbackSpeed, 0.25);
       controller.setSliceSpeed(0, 99.0);
-      expect(controller.current.timeline.clips[0].playbackSpeed, 4.0);
+      expect(controller.current.timeline.clips[0].playbackSpeed, 24.0);
+      controller.setSliceSpeed(0, 8.0);
+      expect(controller.current.timeline.clips[0].playbackSpeed, 8.0);
     });
 
     test('setSliceSpeed no-ops on NaN', () {
