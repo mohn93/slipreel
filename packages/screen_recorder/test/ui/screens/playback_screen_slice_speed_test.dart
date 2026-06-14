@@ -342,4 +342,11 @@ void main() {
       expect(controllerRate, 1.5);
     });
   });
+
+  test('previewVolumeForSpeed silences audio above the threshold', () {
+    expect(previewVolumeForSpeed(1.0), 1.0);
+    expect(previewVolumeForSpeed(4.0), 1.0);
+    expect(previewVolumeForSpeed(8.0), 0.0);
+    expect(previewVolumeForSpeed(24.0), 0.0);
+  });
 }
