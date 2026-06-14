@@ -431,6 +431,9 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         oldWidget.screenMovementBlur != widget.screenMovementBlur ||
         oldWidget.screenZoomBlur != widget.screenZoomBlur ||
         oldWidget.zoomRegions != widget.zoomRegions ||
+        // clips changes alter the speed-aware focal trajectory the scene
+        // blur samples, so invalidate the cached capture for symmetry.
+        oldWidget.clips != widget.clips ||
         oldWidget.screenAnimationConfig != widget.screenAnimationConfig ||
         oldWidget.frame != widget.frame) {
       _pendingSceneCapturePaint = true;
