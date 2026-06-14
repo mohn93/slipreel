@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
@@ -37,15 +36,6 @@ class _CursorTabState extends ConsumerState<CursorTab> {
 
   EditorProjectController get _notifier =>
       ref.read(editorProjectControllerProvider.notifier);
-
-  /// Re-wrap motion-spring slider changes into a custom-spring config.
-  /// The Animation tab's preset picker keeps owning the broad-feel
-  /// choice; these sliders are an override on top of it.
-  void _setMotionSpring(MotionSpring s) {
-    _notifier.setCursorAnimationConfig(
-      CursorAnimationConfig.customSpring(spring: s),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -178,8 +168,6 @@ class _CursorTabState extends ConsumerState<CursorTab> {
             height: 1.4,
           ),
         ),
-        const SizedBox(height: 16),
-        ..._motionSpringSliders(project.cursorAnimationConfig.motionSpring),
         const SizedBox(height: 16),
         ..._clickSpringSliders(project.clickSpring),
         const InspectorSectionDivider(),
@@ -340,44 +328,6 @@ class _CursorTabState extends ConsumerState<CursorTab> {
               .setCursorPostProcess(pp.copyWith(optimizeChanges: v)),
         ),
       ],
-    ];
-  }
-
-  // The motion spring is logically owned by the Animation tab's
-  // cursor preset, but the fine-tune knobs live here. When isSnap
-  // (None preset) the sliders fall back to the smooth defaults so
-  // they're touchable; the first drag converts the active config to
-  // a custom spring (see [_setMotionSpring]).
-  List<Widget> _motionSpringSliders(MotionSpring s) {
-    final stiffness = s.isSnap ? 180.0 : s.stiffness;
-    final damping = s.isSnap ? 1.0 : s.damping;
-    // Seed every edit from a VALID spring. In the None/snap preset `s` is the
-    // sentinel (-1,-1); building edits straight off it would leave the other
-    // knob at -1 (a divergent negative-damping spring, or a silently-ignored
-    // damping change). forEditing swaps in the displayed fallbacks.
-    final base = s.forEditing(stiffness: stiffness, damping: damping);
-    return [
-      InspectorSlider(
-        label: 'Motion stiffness',
-        subtitle: stiffness.round().toString(),
-        value: stiffness,
-        min: 50,
-        max: 1500,
-        onChanged: (v) => _setMotionSpring(base.copyWith(stiffness: v)),
-        onReset: () => _setMotionSpring(base.copyWith(stiffness: 180)),
-        canReset: stiffness != 180,
-      ),
-      const SizedBox(height: 20),
-      InspectorSlider(
-        label: 'Motion damping',
-        subtitle: damping.toStringAsFixed(2),
-        value: damping,
-        min: 0.3,
-        max: 1.4,
-        onChanged: (v) => _setMotionSpring(base.copyWith(damping: v)),
-        onReset: () => _setMotionSpring(base.copyWith(damping: 1.0)),
-        canReset: damping != 1.0,
-      ),
     ];
   }
 

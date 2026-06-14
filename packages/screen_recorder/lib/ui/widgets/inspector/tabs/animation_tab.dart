@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
-import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
-import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
-import 'package:screen_recorder/ui/widgets/inspector/curve_graph_painter.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Animation tab — screen / cursor animation styles + motion blur.
@@ -30,24 +27,6 @@ class AnimationTab extends ConsumerStatefulWidget {
 class _AnimationTabState extends ConsumerState<AnimationTab> {
   EditorProjectController get _notifier =>
       ref.read(editorProjectControllerProvider.notifier);
-  /// Default seed curve for the Screen Custom tile when the user picks
-  /// it for the first time — matches CSS `ease-in-out` so the feel is
-  /// close to the Smooth preset.
-  static const _defaultScreenCustomCurve = CubicBezierCurve(
-    x1: 0.42,
-    y1: 0.0,
-    x2: 0.58,
-    y2: 1.0,
-  );
-
-  /// Default seed curve for the Cursor Custom tile — CSS `ease`, which
-  /// matches the Smooth cursor preset's feel.
-  static const _defaultCursorCustomCurve = CubicBezierCurve(
-    x1: 0.25,
-    y1: 0.1,
-    x2: 0.25,
-    y2: 1.0,
-  );
 
   @override
   Widget build(BuildContext context) {
@@ -84,44 +63,8 @@ class _AnimationTabState extends ConsumerState<AnimationTab> {
                 ),
                 size: 84,
               ),
-            _CustomTile(
-              selected: project.screenAnimationConfig.isCustom,
-              curve:
-                  project.screenAnimationConfig.customCurve ?? _defaultScreenCustomCurve,
-              onTap: () => _notifier.setScreenAnimationConfig(
-                ScreenAnimationConfig.custom(
-                  curve:
-                      project.screenAnimationConfig.customCurve ??
-                      _defaultScreenCustomCurve,
-                  badgeDuration: project.screenAnimationConfig.badgeDuration,
-                ),
-              ),
-              size: 84,
-            ),
           ],
         ),
-        if (project.screenAnimationConfig.isCustom)
-          CurveEditor(
-            curve: project.screenAnimationConfig.customCurve!,
-            duration: project.screenAnimationConfig.badgeDuration,
-            durationLabel: 'Badge duration',
-            durationMin: const Duration(milliseconds: 100),
-            durationMax: const Duration(milliseconds: 1000),
-            onCurveChanged: (c) => _notifier.setScreenAnimationConfig(
-              ScreenAnimationConfig.custom(
-                curve: c,
-                badgeDuration: project.screenAnimationConfig.badgeDuration,
-              ),
-            ),
-            onDurationChanged: (d) => _notifier.setScreenAnimationConfig(
-              ScreenAnimationConfig.custom(
-                curve: project.screenAnimationConfig.customCurve!,
-                badgeDuration: d,
-              ),
-            ),
-            library: widget.library,
-            showDurationSlider: true,
-          ),
         const SizedBox(height: 12),
         const InspectorSectionDivider(),
         const Text(
@@ -150,56 +93,8 @@ class _AnimationTabState extends ConsumerState<AnimationTab> {
                 ),
                 size: 76,
               ),
-            _CustomTile(
-              // Only treat the "Custom" tile as selected when the
-              // active config is specifically a custom *curve*. The
-              // cursor tab's spring sliders also produce an
-              // `isCustom == true` config (custom-spring variant),
-              // but that path has no curve to edit and doesn't
-              // belong to this tile.
-              selected: project.cursorAnimationConfig.customCurve != null,
-              curve:
-                  project.cursorAnimationConfig.customCurve ?? _defaultCursorCustomCurve,
-              onTap: () => _notifier.setCursorAnimationConfig(
-                CursorAnimationConfig.custom(
-                  curve:
-                      project.cursorAnimationConfig.customCurve ??
-                      _defaultCursorCustomCurve,
-                  // The "None" preset reports a zero window; promote it
-                  // to a sensible default so the editor's slider has a
-                  // non-degenerate starting value when the user first
-                  // chooses Custom from None.
-                  window: project.cursorAnimationConfig.window == Duration.zero
-                      ? const Duration(milliseconds: 300)
-                      : project.cursorAnimationConfig.window,
-                ),
-              ),
-              size: 76,
-            ),
           ],
         ),
-        if (project.cursorAnimationConfig.customCurve != null)
-          CurveEditor(
-            curve: project.cursorAnimationConfig.customCurve!,
-            duration: project.cursorAnimationConfig.window,
-            durationLabel: 'Catch-up window',
-            durationMin: const Duration(milliseconds: 50),
-            durationMax: const Duration(milliseconds: 1500),
-            onCurveChanged: (c) => _notifier.setCursorAnimationConfig(
-              CursorAnimationConfig.custom(
-                curve: c,
-                window: project.cursorAnimationConfig.window,
-              ),
-            ),
-            onDurationChanged: (d) => _notifier.setCursorAnimationConfig(
-              CursorAnimationConfig.custom(
-                curve: project.cursorAnimationConfig.customCurve!,
-                window: d,
-              ),
-            ),
-            library: widget.library,
-            showDurationSlider: true,
-          ),
         const SizedBox(height: 12),
         const InspectorSectionDivider(),
         InspectorSlider(
@@ -394,67 +289,6 @@ class _AnimationOptionTileState<T> extends State<_AnimationOptionTile<T>>
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Tile that opens the inline curve editor. Renders a tiny preview of
-/// the user's current bezier as the tile's body so the tile reflects
-/// the curve they're about to edit (or just edited).
-class _CustomTile extends StatelessWidget {
-  const _CustomTile({
-    required this.selected,
-    required this.curve,
-    required this.onTap,
-    required this.size,
-  });
-
-  final bool selected;
-  final CubicBezierCurve curve;
-  final VoidCallback onTap;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SpringHoverButton(
-            onTap: onTap,
-            borderRadius: 12,
-            child: Container(
-              width: size,
-              height: size,
-              decoration: BoxDecoration(
-                color: kInspectorPanel,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: selected ? kInspectorAccent : kInspectorBorder,
-                  width: 1,
-                ),
-              ),
-              child: CustomPaint(
-                painter: CurveGraphPainter(
-                  curve: curve,
-                  demoProgress: 0.5,
-                  draggingHandle: 0,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Custom',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
       ),
     );
   }

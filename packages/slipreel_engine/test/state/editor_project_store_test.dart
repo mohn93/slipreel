@@ -6,7 +6,6 @@ import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
-import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
@@ -39,9 +38,8 @@ void main() {
             predictiveWindow: const Duration(milliseconds: 1200),
           ),
         ],
-        screenAnimationConfig: ScreenAnimationConfig.custom(
-          curve: const CubicBezierCurve(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0),
-          badgeDuration: const Duration(milliseconds: 420),
+        screenAnimationConfig: const ScreenAnimationConfig.preset(
+          ScreenAnimationStyle.focused,
         ),
         cursorAnimationConfig: const CursorAnimationConfig.preset(
           CursorAnimationStyle.rapid,
@@ -80,6 +78,25 @@ void main() {
       expect(restored.clickSpring.damping, closeTo(0.7, 1e-9));
       expect(restored.cursorDelay, const Duration(milliseconds: 120));
       expect(restored.windowFrame, WindowFrame.modern());
+    });
+
+    test('legacy custom animation configs in JSON migrate to the Smooth preset',
+        () {
+      // Projects saved while the custom curve / custom-spring editors
+      // existed carry a non-preset animation config. Loading must not throw
+      // and must degrade to the Smooth preset.
+      final json = EditorProjectState.defaults().toJson();
+      json['screenAnimationConfig'] = {
+        'curve': {'x1': 0.42, 'y1': 0.0, 'x2': 0.58, 'y2': 1.0},
+        'badgeDurationMicros': 420000,
+      };
+      json['cursorAnimationConfig'] = {
+        'spring': {'stiffness': 400.0, 'damping': 0.8},
+      };
+      final restored = EditorProjectState.fromJson(json,
+          videoDuration: const Duration(seconds: 60));
+      expect(restored.screenAnimationConfig.preset, ScreenAnimationStyle.smooth);
+      expect(restored.cursorAnimationConfig.preset, CursorAnimationStyle.smooth);
     });
 
     test('legacy JSON without cursorDelayMicros falls back to the default', () {

@@ -1,9 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
-import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
-import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
@@ -354,46 +352,6 @@ void main() {
       // Same inputs, same output — but importantly, no exception and
       // the reset path doesn't strand stale velocity.
       expect(b!.screenPos.dx, closeTo(a!.screenPos.dx, 1e-6));
-    });
-
-    test('custom-spring config evaluates without throwing and returns finite Offset',
-        () {
-      final ctrl = CursorMotionController();
-      final rec = _record([
-        (micros: 0, x: 0, y: 0, clicked: false),
-        (micros: 1000000, x: 200, y: 100, clicked: false),
-      ]);
-      final cfg = CursorAnimationConfig.customSpring(
-        spring: const MotionSpring(stiffness: 400, damping: 0.8),
-      );
-      final out = _drive(ctrl,
-          rec: rec,
-          config: cfg,
-          microsTimeline: List.generate(30, (i) => i * 16667));
-      expect(out!.screenPos.dx.isFinite, isTrue);
-      expect(out.screenPos.dy.isFinite, isTrue);
-    });
-
-    test('legacy custom-curve config still loads and renders without throwing',
-        () {
-      // Older saved projects used a Bezier+window FIR config. The
-      // controller is spring-only now; the config falls back to the
-      // Smooth preset's spring. Verify the path doesn't crash.
-      final ctrl = CursorMotionController();
-      final rec = _record([
-        (micros: 0, x: 0, y: 0, clicked: false),
-        (micros: 1000000, x: 100, y: 0, clicked: false),
-      ]);
-      final cfg = CursorAnimationConfig.custom(
-        curve:
-            const CubicBezierCurve(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0),
-        window: const Duration(milliseconds: 300),
-      );
-      final out = _drive(ctrl,
-          rec: rec,
-          config: cfg,
-          microsTimeline: List.generate(20, (i) => i * 16667));
-      expect(out!.screenPos.dx.isFinite, isTrue);
     });
 
     test('velocity is zero before the back-look window starts', () {
