@@ -1,3 +1,4 @@
+import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -1111,5 +1112,50 @@ void main() {
       expect(out.focal.dx, greaterThan(0));
       expect(out.focal.dx, lessThan(1000));
     });
+  });
+
+  test('exit ramp honors the resolved screenRampCurve (not hardcoded)', () {
+    // A region that is purely an exit ramp: enter=0, exit=full duration.
+    // The focal lerps rect.center -> video center over the exit. With a
+    // linear curve the focal is exactly halfway at the ramp midpoint;
+    // with easeInOutQuad it is also 0.5 at the midpoint, so probe at the
+    // quarter point where the two curves diverge measurably.
+    final region = ZoomRegion(
+      rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
+      startTime: Duration.zero,
+      duration: const Duration(milliseconds: 1000),
+      zoomLevel: 2.0,
+      enterDuration: Duration.zero,
+      exitDuration: const Duration(milliseconds: 1000),
+      followCursor: true,
+      followMode: FollowMode.centered,
+    );
+    final centre = Offset(_videoSize.width / 2, _videoSize.height / 2);
+
+    Offset focalAtQuarter(Curve curve) {
+      final c = ZoomFocalController();
+      Offset last = Offset.zero;
+      // Walk to 250ms (quarter of the 1000ms exit ramp) at 16ms steps,
+      // cursor held far from centre so the pre-exit focal != centre.
+      for (var ms = 0; ms <= 250; ms += 16) {
+        final u = c.update(
+          position: Duration(milliseconds: ms),
+          zoomRegions: [region],
+          cursor: const Offset(1900, 1060),
+          videoSize: _videoSize,
+          screenRampCurve: curve,
+        );
+        last = u!.focal;
+      }
+      return last;
+    }
+
+    final linear = focalAtQuarter(Curves.linear);
+    final eased = focalAtQuarter(Curves.easeInOutQuad);
+    // easeInOutQuad(0.25)=0.125 vs linear 0.25 → different lerp toward
+    // centre, so the two focal points must differ.
+    expect((linear - eased).distance, greaterThan(1.0),
+        reason: 'exit ramp must follow screenRampCurve, not a hardcode');
+    expect(linear, isNot(equals(centre)));
   });
 }

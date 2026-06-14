@@ -1,4 +1,4 @@
-import 'package:flutter/animation.dart' show Curves;
+import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart' show Offset, Size;
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/follow_strategy.dart';
@@ -215,6 +215,7 @@ class ZoomFocalController {
     Offset cursorVelocity = Offset.zero,
     bool forceSnap = false,
     ZoomRegion? activeRegionOverride,
+    Curve screenRampCurve = Curves.easeInOutQuad,
   }) {
     final activeZoom =
         activeRegionOverride ?? _activeZoomAt(position, zoomRegions);
@@ -227,6 +228,12 @@ class ZoomFocalController {
       _lastUpdatePosition = position;
       return null;
     }
+
+    // Resolved ramp curve for this region's enter/exit focal lock-step.
+    // Mirrors the scale's resolution at the render call sites:
+    // per-region override wins, else the project's screen ramp curve.
+    final rampCurve =
+        activeZoom.rampCurveOverride?.toFlutterCurve() ?? screenRampCurve;
 
     // All-spring policy: there are no instantaneous camera teleports.
     // The only one-time "init" left is the very first frame after the
@@ -322,7 +329,7 @@ class ZoomFocalController {
         // (its rampCurve default). Keeping these in lock-step is what
         // makes the recenter feel like part of the zoom-out instead
         // of a separate motion.
-        final eased = Curves.easeInOutQuad.transform(tNorm.toDouble());
+        final eased = rampCurve.transform(tNorm.toDouble());
         final centre = Offset(videoSize.width / 2, videoSize.height / 2);
         _smoothedFocal = Offset.lerp(_exitRampStartFocal, centre, eased);
         // Zero velocity AND in-flight state so a post-exit re-entry
