@@ -22,6 +22,9 @@ scripts:
       ignore:
         # *example* packages are generated Flutter scaffold; no real tests/lints.
         - "*example*"
+        # video_player_avfoundation: vendored upstream plugin (path-overridden so
+        # we can patch the macOS texture player); don't lint third-party code.
+        - "video_player_avfoundation"
 
   test:
     exec: flutter test
@@ -34,6 +37,8 @@ scripts:
         # method channel with no mock, so it needs a real Windows runner. Excluded
         # from `test` only; it stays in `analyze` (static analysis is host-agnostic).
         - "screen_recorder_windows"
+        # video_player_avfoundation: vendored upstream plugin; don't run its suite.
+        - "video_player_avfoundation"
 
   clean:
     exec: flutter clean

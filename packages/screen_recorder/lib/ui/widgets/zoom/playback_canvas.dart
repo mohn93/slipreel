@@ -42,6 +42,7 @@ import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/camera_settings.dart';
 import 'package:screen_recorder/ui/widgets/camera/camera_bubble.dart';
+import 'package:screen_recorder/ui/widgets/zoom/preview_cursor_timing.dart';
 
 /// The composed playback canvas: wallpaper layer, framed video,
 /// cursor overlay, optional debug HUD, all wrapped in a zoom Transform
@@ -105,6 +106,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     required this.clickSpring,
     required this.isHoverScrubbing,
     this.cursorDelay = Duration.zero,
+    this.displayLatency,
     this.cursorBlurMode = CursorBlurMode.shader,
     this.accumulationExposureMs = 40.0,
     this.accumulationSampleCount = 32,
@@ -206,6 +208,11 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// cursor sprite arrives at the button the same moment the highlight
   /// shows in the recording). Zero = no delay = current behavior.
   final Duration cursorDelay;
+
+  /// Preview-only display latency (AVPlayer clock vs the frame on the texture).
+  /// Subtracted from the playhead while playing so the cursor lands on the
+  /// displayed frame. Null/zero ⇒ no shift (matches pre-existing behaviour).
+  final ValueListenable<Duration>? displayLatency;
 
   /// True when the user is hover-scrubbing the timeline (mouse hover,
   /// no real playback running). The cursor- and zoom-related stateful
@@ -370,6 +377,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   // micro-jitter out of the scene-blur signal. See the comment in
   // build() where it's read for the full rationale.
   Duration? _stablePos;
+  // Previous frame's raw playhead and emitted (latency-adjusted) position while
+  // playing. Used by [steadyPreviewPlayhead] to suppress latency-induced
+  // backward jitter (which otherwise glitches the zoom region + focal spring at
+  // GPU-heavy zoom transitions). Reset to null whenever playback isn't running
+  // so each play segment starts fresh.
+  Duration? _lastPlayingRaw;
+  Duration? _lastPlayingPos;
 
   bool get _scenePassEnabled =>
       widget.motionBlur > 0 &&
@@ -508,9 +522,25 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 widget.controller.value.position;
             final Duration pos;
             if (widget.controller.value.isPlaying) {
-              _stablePos = rawPos;
-              pos = rawPos;
+              // Preview-only: shift back by measured display latency so the
+              // cursor sits on the frame the texture is actually showing.
+              // Steadied so a latency spike (common at a GPU-heavy zoom
+              // transition) can't push the time backward and flicker the
+              // zoom-region selector / snap the focal spring — it holds
+              // instead. Paused branch is left untouched (no decode lag).
+              final adjusted = steadyPreviewPlayhead(
+                rawPlayhead: rawPos,
+                displayLatency: widget.displayLatency?.value ?? Duration.zero,
+                prevRawPlayhead: _lastPlayingRaw,
+                prevEmitted: _lastPlayingPos,
+              );
+              _lastPlayingRaw = rawPos;
+              _lastPlayingPos = adjusted;
+              _stablePos = adjusted;
+              pos = adjusted;
             } else {
+              _lastPlayingRaw = null;
+              _lastPlayingPos = null;
               final stable = _stablePos;
               if (stable == null ||
                   (rawPos.inMicroseconds - stable.inMicroseconds).abs() >

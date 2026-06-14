@@ -805,6 +805,51 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           self?.emitRecordingError(error)
         }
 
+        // Reset first-frame timing for THIS recording before any cursor sample
+        // or video frame can be stamped — otherwise the first cursor sample can
+        // be rebased against the previous recording's frame origin (stale-origin
+        // bug: an off-screen garbage sample with a huge timestamp).
+        resetFirstFrameTiming()
+
+        // liveStartTime must be set BEFORE cursor tracking begins so the
+        // cursor callback can rebase timestamps to video-relative time.
+        // Without this, cursor samples would carry mach_absolute_time
+        // values while playback queries are 0-based video time, and
+        // every lookup would clamp to the first sample.
+        self.liveStartTime = Date()
+
+        if captureCursor {
+          if cursorTracker == nil { cursorTracker = CursorTracker() }
+          // Build the global-points → video-pixels mapping for this
+          // recording so cursor data lands in the same coordinate space
+          // as the captured video frames. Computed on @MainActor because
+          // it touches NSScreen.screens.
+          //
+          // Snapshot `regionSelection` (a `var` higher in this scope)
+          // into a `let` before crossing into the MainActor closure —
+          // capturing a `var` in concurrent code is an error under the
+          // Swift 6 language mode.
+          let regionForTransform = regionSelection
+          self.cursorTransform = await MainActor.run {
+            self.makeCursorTransform(
+              source: source,
+              sourceId: finalSourceId,
+              region: regionForTransform,
+              videoWidthPx: captureWidth,
+              videoHeightPx: captureHeight)
+          }
+          cursorTracker?.onCursorUpdate = { [weak self] x, y, _, isClicked, state in
+            guard let self = self else { return }
+            guard let frameStart = self.currentFirstVideoFrameAt() else { return }
+            guard let videoMicros = FirstFrameTiming.videoMicros(
+              now: Date(), since: frameStart) else { return }
+            let (px, py) = self.cursorTransform?(x, y) ?? (x, y)
+            self.cursorStreamHandler?.sendCursorPosition(
+              x: px, y: py, timestamp: videoMicros, isClicked: isClicked, state: state)
+          }
+          try cursorTracker?.startTracking(frequency: 60)
+        }
+
         try await captureManager?.startCapture(
           sourceId: finalSourceId, fps: fps, isWindow: isWindow,
           region: regionSelection)
@@ -854,45 +899,6 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
             // Degrade gracefully: drop the camera, keep recording screen-only.
             NSLog("Camera capture failed to start: \(error)")
           }
-        }
-
-        // liveStartTime must be set BEFORE cursor tracking begins so the
-        // cursor callback can rebase timestamps to video-relative time.
-        // Without this, cursor samples would carry mach_absolute_time
-        // values while playback queries are 0-based video time, and
-        // every lookup would clamp to the first sample.
-        self.liveStartTime = Date()
-
-        if captureCursor {
-          if cursorTracker == nil { cursorTracker = CursorTracker() }
-          // Build the global-points → video-pixels mapping for this
-          // recording so cursor data lands in the same coordinate space
-          // as the captured video frames. Computed on @MainActor because
-          // it touches NSScreen.screens.
-          //
-          // Snapshot `regionSelection` (a `var` higher in this scope)
-          // into a `let` before crossing into the MainActor closure —
-          // capturing a `var` in concurrent code is an error under the
-          // Swift 6 language mode.
-          let regionForTransform = regionSelection
-          self.cursorTransform = await MainActor.run {
-            self.makeCursorTransform(
-              source: source,
-              sourceId: finalSourceId,
-              region: regionForTransform,
-              videoWidthPx: captureWidth,
-              videoHeightPx: captureHeight)
-          }
-          cursorTracker?.onCursorUpdate = { [weak self] x, y, _, isClicked, state in
-            guard let self = self else { return }
-            guard let frameStart = self.currentFirstVideoFrameAt() else { return }
-            guard let videoMicros = FirstFrameTiming.videoMicros(
-              now: Date(), since: frameStart) else { return }
-            let (px, py) = self.cursorTransform?(x, y) ?? (x, y)
-            self.cursorStreamHandler?.sendCursorPosition(
-              x: px, y: py, timestamp: videoMicros, isClicked: isClicked, state: state)
-          }
-          try cursorTracker?.startTracking(frequency: 60)
         }
 
         // Keystroke tracking (requires Accessibility; silently no-ops if untrusted).
