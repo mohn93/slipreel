@@ -166,6 +166,29 @@ void main() {
     });
   });
 
+  group('audioSilencedBySpeed', () {
+    ClipSlice slice(double speed) => ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(seconds: 5),
+          playbackSpeed: speed,
+        );
+
+    test('is false at or below the threshold', () {
+      expect(slice(1.0).audioSilencedBySpeed, isFalse);
+      expect(slice(4.0).audioSilencedBySpeed, isFalse);
+    });
+
+    test('is true above the threshold', () {
+      expect(slice(4.01).audioSilencedBySpeed, isTrue);
+      expect(slice(8.0).audioSilencedBySpeed, isTrue);
+      expect(slice(24.0).audioSilencedBySpeed, isTrue);
+    });
+
+    test('the threshold constant is 4x', () {
+      expect(kSpeedAudioMuteThreshold, 4.0);
+    });
+  });
+
   group('clipSliceAt', () {
     test('returns the slice containing the position', () {
       final clips = [

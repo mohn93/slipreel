@@ -1,3 +1,9 @@
+/// Slices sped past this factor have their audio auto-silenced in export and
+/// preview — sped-up audio above ~4× is unusable (chipmunk noise). The mute is
+/// DERIVED from speed (see [ClipSlice.audioSilencedBySpeed]); it never touches
+/// the user's micMuted/systemMuted flags.
+const double kSpeedAudioMuteThreshold = 4.0;
+
 /// A temporal segment of the source video with its own playback,
 /// audio, fade, and cursor settings. Sliceable timelines are addressed
 /// via `Timeline.clips`.
@@ -92,6 +98,11 @@ class ClipSlice {
   /// Total trimmed-away duration, summed across both sides. Used by
   /// the slice-editor header subtitle ("trimmed Ns").
   Duration get trimmedDuration => cutSpan - effectiveLength;
+
+  /// Whether this slice's audio should be dropped purely because it is sped up
+  /// past [kSpeedAudioMuteThreshold]. Non-destructive: lowering the speed back
+  /// to ≤ the threshold restores audio.
+  bool get audioSilencedBySpeed => playbackSpeed > kSpeedAudioMuteThreshold;
 
   static const Duration _minLen = Duration(milliseconds: 100);
 
