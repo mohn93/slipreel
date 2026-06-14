@@ -377,6 +377,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   // micro-jitter out of the scene-blur signal. See the comment in
   // build() where it's read for the full rationale.
   Duration? _stablePos;
+  // Previous frame's raw playhead and emitted (latency-adjusted) position while
+  // playing. Used by [steadyPreviewPlayhead] to suppress latency-induced
+  // backward jitter (which otherwise glitches the zoom region + focal spring at
+  // GPU-heavy zoom transitions). Reset to null whenever playback isn't running
+  // so each play segment starts fresh.
+  Duration? _lastPlayingRaw;
+  Duration? _lastPlayingPos;
 
   bool get _scenePassEnabled =>
       widget.motionBlur > 0 &&
@@ -517,14 +524,23 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             if (widget.controller.value.isPlaying) {
               // Preview-only: shift back by measured display latency so the
               // cursor sits on the frame the texture is actually showing.
-              // Paused branch is left untouched (no decode lag while paused).
-              final adjusted = previewPlayheadWithLatency(
-                playhead: rawPos,
+              // Steadied so a latency spike (common at a GPU-heavy zoom
+              // transition) can't push the time backward and flicker the
+              // zoom-region selector / snap the focal spring — it holds
+              // instead. Paused branch is left untouched (no decode lag).
+              final adjusted = steadyPreviewPlayhead(
+                rawPlayhead: rawPos,
                 displayLatency: widget.displayLatency?.value ?? Duration.zero,
+                prevRawPlayhead: _lastPlayingRaw,
+                prevEmitted: _lastPlayingPos,
               );
+              _lastPlayingRaw = rawPos;
+              _lastPlayingPos = adjusted;
               _stablePos = adjusted;
               pos = adjusted;
             } else {
+              _lastPlayingRaw = null;
+              _lastPlayingPos = null;
               final stable = _stablePos;
               if (stable == null ||
                   (rawPos.inMicroseconds - stable.inMicroseconds).abs() >
