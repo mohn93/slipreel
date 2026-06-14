@@ -1,3 +1,4 @@
+import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart';
 
 import 'package:slipreel_engine/effects/ema_velocity_filter.dart';
@@ -124,6 +125,7 @@ class ScenePassBuilder {
     required bool hasCursorData,
     Duration cursorDelay = Duration.zero,
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
+    Curve screenRampCurve = Curves.easeInOutQuad,
     bool forceSnap = false,
     bool bypassVelocityFilter = false,
     /// When non-null, replaces the natural `ZoomRegion.activeAt`
@@ -170,6 +172,7 @@ class ScenePassBuilder {
       cursorVelocity: rawVelocity,
       forceSnap: forceSnap,
       activeRegionOverride: activeRegionOverride,
+      screenRampCurve: screenRampCurve,
     );
 
     final filteredVelocity = bypassVelocityFilter

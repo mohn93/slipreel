@@ -1,7 +1,10 @@
+import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/animation_config.dart';
+import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
@@ -441,6 +444,49 @@ void main() {
       );
 
       expect(pass.filteredCursorVelocity, equals(pass.rawCursorVelocity));
+    });
+
+    test('build forwards screenRampCurve into the focal enter ramp', () {
+      final region = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 400, 400),
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered,
+      );
+      final recording = CursorRecording();
+      for (var ms = 0; ms <= 3000; ms += 16) {
+        recording.addPosition(
+            CursorPosition(x: 1700, y: 950, timestampMicros: ms * 1000));
+      }
+      const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      const videoSize = Size(1920, 1080);
+
+      Offset focalAt250(Curve curve) {
+        final b = ScenePassBuilder();
+        Offset last = Offset.zero;
+        for (var ms = 0; ms <= 250; ms += 16) {
+          final p = b.build(
+            position: Duration(milliseconds: ms),
+            zoomRegions: [region],
+            cursorAnimationConfig: cfg,
+            cursorRecording: recording,
+            videoSize: videoSize,
+            fps: 60,
+            hasCursorData: true,
+            screenRampCurve: curve,
+          );
+          last = p.focalUpdate!.focal;
+        }
+        return last;
+      }
+
+      expect((focalAt250(Curves.linear) - focalAt250(Curves.easeInOutQuad))
+              .distance,
+          greaterThan(1.0));
     });
   });
 }
