@@ -1,4 +1,6 @@
-import 'package:flutter/animation.dart' show Curves;
+import 'dart:math' as math;
+
+import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart' show Offset, Size;
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/follow_strategy.dart';
@@ -79,6 +81,23 @@ class ZoomFocalController {
   // first frame inside the exit ramp; cleared whenever the controller
   // leaves the exit ramp so the next exit captures fresh.
   Offset? _exitRampStartFocal;
+
+  // Focal at the moment the enter ramp started (captured on the first
+  // enter-ramp frame, = rect.center). Cleared when the controller leaves
+  // the enter window so a re-entry re-captures.
+  Offset? _enterRampStartFocal;
+
+  // Back-load exponent for the entry pan relative to the zoom-scale ramp.
+  // The pan and the scale share the same window and curve, so they finish
+  // at the same instant mathematically — but a settling position reads as
+  // "arrived" while it's still a few pixels out, whereas the magnification
+  // stays visibly in motion through the curve's tail. Equal progress
+  // therefore *looks* like the pan reaches the cursor before the zoom
+  // finishes. Raising the eased pan progress to this exponent holds the
+  // focal nearer rect.center through the middle of the ramp and closes the
+  // last of the distance as the zoom completes, so the two land together
+  // perceptually. 1.0 == exact lock-step; larger == more back-loaded.
+  static const double _entryPanBackload = 2.0;
 
   // Floor for the backward-scrub-detection check.
   //
@@ -215,6 +234,7 @@ class ZoomFocalController {
     Offset cursorVelocity = Offset.zero,
     bool forceSnap = false,
     ZoomRegion? activeRegionOverride,
+    Curve screenRampCurve = Curves.easeInOutQuad,
   }) {
     final activeZoom =
         activeRegionOverride ?? _activeZoomAt(position, zoomRegions);
@@ -224,9 +244,16 @@ class ZoomFocalController {
       _focalVy = 0;
       _resetStrategies();
       _exitRampStartFocal = null;
+      _enterRampStartFocal = null;
       _lastUpdatePosition = position;
       return null;
     }
+
+    // Resolved ramp curve for this region's enter/exit focal lock-step.
+    // Mirrors the scale's resolution at the render call sites:
+    // per-region override wins, else the project's screen ramp curve.
+    final rampCurve =
+        activeZoom.rampCurveOverride?.toFlutterCurve() ?? screenRampCurve;
 
     // All-spring policy: there are no instantaneous camera teleports.
     // The only one-time "init" left is the very first frame after the
@@ -247,6 +274,7 @@ class ZoomFocalController {
       _focalVy = 0;
       _resetStrategies();
       _exitRampStartFocal = null;
+      _enterRampStartFocal = null;
       _lastUpdatePosition = position;
       _lastSnapReason = 'init';
       _lastSnapAt = position;
@@ -322,7 +350,7 @@ class ZoomFocalController {
         // (its rampCurve default). Keeping these in lock-step is what
         // makes the recenter feel like part of the zoom-out instead
         // of a separate motion.
-        final eased = Curves.easeInOutQuad.transform(tNorm.toDouble());
+        final eased = rampCurve.transform(tNorm.toDouble());
         final centre = Offset(videoSize.width / 2, videoSize.height / 2);
         _smoothedFocal = Offset.lerp(_exitRampStartFocal, centre, eased);
         // Zero velocity AND in-flight state so a post-exit re-entry
@@ -331,12 +359,78 @@ class ZoomFocalController {
         _focalVx = 0;
         _focalVy = 0;
         _resetStrategies();
+        // Clear the enter anchor here too: a no-hold region (enter window
+        // immediately followed by exit window) returns from the exit branch
+        // every frame and would otherwise never hit the outside-enter-window
+        // clear below, leaking this region's anchor into the NEXT region.
+        _enterRampStartFocal = null;
         return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
       }
     }
     // Outside the exit ramp — clear the captured anchor so the next
     // entry into an exit ramp re-captures from a fresh position.
     _exitRampStartFocal = null;
+
+    // Enter ramp: pan rect.center -> cursor in lock-step with the zoom-in
+    // scale (same window, same resolved curve), symmetric to the exit ramp
+    // above. The focal reaches the cursor exactly as magnification reaches
+    // full, then the spring takes over for steady-state follow.
+    //
+    // Runs BEFORE the per-mode strategy resolve, with DETERMINISTIC,
+    // gate-independent endpoints, so the live spring path, the
+    // DeterministicFocalTrack replay (scrub / paused / scene-blur), and the
+    // export pipeline all produce a byte-identical pan:
+    //   * anchor at activeZoom.rect.center — NOT `_smoothedFocal`, which on a
+    //     PERSISTENT controller crossing back-to-back regions is the prior
+    //     region's leftover focal (its exit ramp left it at ~video-center),
+    //     so the live pan would start ~video-center while the fresh-controller
+    //     track starts at rect.center — a ~700px play-vs-scrub divergence.
+    //   * aim at the raw cursor destination — NOT the bounded strategy's
+    //     deadzone-gated target. The gate's per-frame hold/chase flip swaps
+    //     the lerp endpoint, and because the ramp writes position directly
+    //     (no spring integration to absorb it) that became a 150-430px
+    //     single-frame teleport whenever the cursor moved during zoom-in.
+    // The bounded gate is a steady-state concept; it re-engages cleanly on
+    // the first post-ramp spring frame (resolve runs below).
+    //
+    // The spring is also held at REST for the whole ramp: a non-zero handoff
+    // velocity made the critically-damped spring sail PAST the cursor once
+    // (overshoot, magnified by the zoom). Zero velocity hands it a clean
+    // at-rest state on the cursor.
+    final enter = _enterRampWindow(activeZoom);
+    if (enter != null) {
+      final tIntoRegionUs =
+          position.inMicroseconds - activeZoom.startTime.inMicroseconds;
+      // Inclusive of the exact ramp end (`<=`): at `tIntoRegion == enterUs`
+      // the scale has just reached full zoom (its enter formula switches to
+      // the hold at the same instant), so emitting `panEased(1) == 1` here
+      // lands the focal exactly on the cursor as magnification completes,
+      // with no sub-frame residual for the spring to mop up. The exit ramp
+      // is checked earlier and returns first, so a no-hold (enter==exit
+      // boundary) region can't double-handle this frame.
+      if (tIntoRegionUs >= 0 && tIntoRegionUs <= enter.enterUs) {
+        _enterRampStartFocal ??= activeZoom.rect.center;
+        final entryTarget = (activeZoom.followCursor && cursor != null)
+            ? cursor
+            : activeZoom.rect.center;
+        final tNorm =
+            (tIntoRegionUs / enter.enterUs).clamp(0.0, 1.0).toDouble();
+        // Clamp before the back-load pow: a custom bezier ramp curve can
+        // overshoot <0 or >1, and pow() of a negative base with a
+        // non-integer exponent is NaN.
+        final eased = rampCurve.transform(tNorm).clamp(0.0, 1.0);
+        final panEased = math.pow(eased, _entryPanBackload).toDouble();
+        final newFocal =
+            Offset.lerp(_enterRampStartFocal, entryTarget, panEased)!;
+        _focalVx = 0;
+        _focalVy = 0;
+        _smoothedFocal = newFocal;
+        return ZoomFocalUpdate(zoom: activeZoom, focal: newFocal);
+      }
+    }
+    // Outside the enter window — clear the anchor so a re-entry into an
+    // enter ramp re-captures from a fresh position.
+    _enterRampStartFocal = null;
 
     // Resolve target this frame via the pluggable per-mode strategy.
     // The bounded strategy owns its gate state; centered/predictive
@@ -420,6 +514,7 @@ class ZoomFocalController {
     _focalVy = 0;
     _resetStrategies();
     _exitRampStartFocal = null;
+    _enterRampStartFocal = null;
     _lastUpdatePosition = null;
   }
 
@@ -458,6 +553,25 @@ class ZoomFocalController {
     if (exitUs <= 0) return null;
     final exitStartUs = regionUs - exitUs;
     return (exitStartUs: exitStartUs, exitUs: exitUs);
+  }
+
+  /// Enter ramp window for [zoom] in microseconds — the first
+  /// [ZoomRegion.enterDuration], proportionally squeezed (matching
+  /// [ZoomTransformer._calculateZoomFactor]) when enter+exit overflow the
+  /// region. Returns null when there's no enter ramp (zero-length region
+  /// or zero enter duration).
+  static ({int enterUs})? _enterRampWindow(ZoomRegion zoom) {
+    final regionUs = zoom.duration.inMicroseconds;
+    if (regionUs <= 0) return null;
+    var enterUs = zoom.enterDuration.inMicroseconds;
+    final exitUs = zoom.exitDuration.inMicroseconds;
+    final totalRamp = enterUs + exitUs;
+    if (totalRamp > regionUs && totalRamp > 0) {
+      final scale = regionUs / totalRamp;
+      enterUs = (enterUs * scale).round();
+    }
+    if (enterUs <= 0) return null;
+    return (enterUs: enterUs);
   }
 
   // _baseTarget and _resolveTarget moved into FollowStrategy

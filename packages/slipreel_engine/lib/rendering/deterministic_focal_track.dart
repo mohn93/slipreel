@@ -1,5 +1,6 @@
 import 'dart:ui' show Offset;
 
+import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/widgets.dart' show Size;
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -29,6 +30,7 @@ class DeterministicFocalTrack {
     required this.cursorAnimationConfig,
     required this.cursorPostProcess,
     required this.cursorDelay,
+    required this.screenRampCurve,
     required this.videoSize,
     required this.fps,
     required List<Offset> samples,
@@ -54,6 +56,11 @@ class DeterministicFocalTrack {
   /// uses this track only for scene-blur sampling — is unchanged.
   final Duration cursorDelay;
 
+  /// Screen ramp curve forwarded to the replayed [ScenePassBuilder] so the
+  /// deterministic enter/exit focal ramps match the live camera's. Default
+  /// [Curves.easeInOutQuad] keeps export (which omits it) unchanged.
+  final Curve screenRampCurve;
+
   final Size videoSize;
   final int fps;
 
@@ -72,6 +79,7 @@ class DeterministicFocalTrack {
     required int fps,
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
     Duration cursorDelay = Duration.zero,
+    Curve screenRampCurve = Curves.easeInOutQuad,
   }) {
     final builder = ScenePassBuilder();
     final regions = <ZoomRegion>[region];
@@ -91,6 +99,7 @@ class DeterministicFocalTrack {
         videoSize: videoSize,
         fps: fps,
         hasCursorData: hasCursor,
+        screenRampCurve: screenRampCurve,
       );
       final focal = pass.focalUpdate?.focal;
       // The loop only visits timestamps inside [startUs, endUs), where the
@@ -113,6 +122,7 @@ class DeterministicFocalTrack {
       cursorAnimationConfig: cursorAnimationConfig,
       cursorPostProcess: cursorPostProcess,
       cursorDelay: cursorDelay,
+      screenRampCurve: screenRampCurve,
       videoSize: videoSize,
       fps: fps,
       samples: samples,
@@ -154,12 +164,14 @@ class DeterministicFocalTrack {
     required Size videoSize,
     required int fps,
     Duration cursorDelay = Duration.zero,
+    Curve screenRampCurve = Curves.easeInOutQuad,
   }) {
     return identical(this.cursorRecording, cursorRecording) &&
         this.cursorAnimationConfig == cursorAnimationConfig &&
         this.region == region &&
         this.cursorPostProcess == cursorPostProcess &&
         this.cursorDelay == cursorDelay &&
+        this.screenRampCurve == screenRampCurve &&
         this.videoSize == videoSize &&
         this.fps == fps;
   }

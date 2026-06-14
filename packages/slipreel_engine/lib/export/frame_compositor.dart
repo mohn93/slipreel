@@ -176,6 +176,7 @@ class FrameCompositor {
         videoSize: videoSize,
         fps: fps,
         hasCursorData: _hasCursorData,
+        screenRampCurve: projectState.screenAnimationConfig.rampCurve,
       );
       final motion = scenePass.motion;
       final focalUpdate = scenePass.focalUpdate;
@@ -437,6 +438,7 @@ class FrameCompositor {
           cursorPostProcess: projectState.cursorPostProcess,
           videoSize: videoSize,
           fps: fps,
+          screenRampCurve: projectState.screenAnimationConfig.rampCurve,
         )) {
       return cached;
     }
@@ -447,6 +449,7 @@ class FrameCompositor {
       cursorPostProcess: projectState.cursorPostProcess,
       videoSize: videoSize,
       fps: fps,
+      screenRampCurve: projectState.screenAnimationConfig.rampCurve,
     );
   }
 

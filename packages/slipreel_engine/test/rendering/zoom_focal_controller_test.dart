@@ -1,3 +1,4 @@
+import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -1110,6 +1111,298 @@ void main() {
       // between the start (0) and the target (1000).
       expect(out.focal.dx, greaterThan(0));
       expect(out.focal.dx, lessThan(1000));
+    });
+  });
+
+  test('exit ramp honors the resolved screenRampCurve (not hardcoded)', () {
+    // A region that is purely an exit ramp: enter=0, exit=full duration.
+    // The focal lerps rect.center -> video center over the exit. With a
+    // linear curve the focal is exactly halfway at the ramp midpoint;
+    // with easeInOutQuad it is also 0.5 at the midpoint, so probe at the
+    // quarter point where the two curves diverge measurably.
+    final region = ZoomRegion(
+      rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
+      startTime: Duration.zero,
+      duration: const Duration(milliseconds: 1000),
+      zoomLevel: 2.0,
+      enterDuration: Duration.zero,
+      exitDuration: const Duration(milliseconds: 1000),
+      followCursor: true,
+      followMode: FollowMode.centered,
+    );
+    final centre = Offset(_videoSize.width / 2, _videoSize.height / 2);
+
+    Offset focalAtQuarter(Curve curve) {
+      final c = ZoomFocalController();
+      Offset last = Offset.zero;
+      // Walk to 250ms (quarter of the 1000ms exit ramp) at 16ms steps,
+      // cursor held far from centre so the pre-exit focal != centre.
+      for (var ms = 0; ms <= 250; ms += 16) {
+        final u = c.update(
+          position: Duration(milliseconds: ms),
+          zoomRegions: [region],
+          cursor: const Offset(1900, 1060),
+          videoSize: _videoSize,
+          screenRampCurve: curve,
+        );
+        last = u!.focal;
+      }
+      return last;
+    }
+
+    final linear = focalAtQuarter(Curves.linear);
+    final eased = focalAtQuarter(Curves.easeInOutQuad);
+    // easeInOutQuad(0.25)=0.125 vs linear 0.25 → different lerp toward
+    // centre, so the two focal points must differ.
+    expect((linear - eased).distance, greaterThan(1.0),
+        reason: 'exit ramp must follow screenRampCurve, not a hardcode');
+    expect(linear, isNot(equals(centre)));
+  });
+
+  group('enter ramp lock-step', () {
+    ZoomRegion enterRegion({
+      bool followCursor = true,
+      Duration enter = const Duration(milliseconds: 500),
+    }) =>
+        ZoomRegion(
+          rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
+          startTime: Duration.zero,
+          duration: const Duration(milliseconds: 3000),
+          zoomLevel: 2.0,
+          enterDuration: enter,
+          exitDuration: Duration.zero,
+          followCursor: followCursor,
+          followMode: FollowMode.centered,
+        );
+
+    Offset walkTo(ZoomFocalController c, ZoomRegion r, int toMs,
+        {required Offset cursor, Curve curve = Curves.easeInOutQuad}) {
+      Offset last = Offset.zero;
+      for (var ms = 0; ms <= toMs; ms += 16) {
+        last = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: curve,
+            )!
+            .focal;
+      }
+      return last;
+    }
+
+    test('focal arrives at the cursor by the end of enterDuration', () {
+      final r = enterRegion();
+      const cursor = Offset(1700, 950);
+      // Step 20ms so the walk lands exactly on the 500ms ramp end (the
+      // back-loaded pan reaches the cursor at tNorm=1; a frame sampled a
+      // few ms short is still mid-approach by design).
+      final c = ZoomFocalController();
+      var atEnd = Offset.zero;
+      for (var ms = 0; ms <= 500; ms += 20) {
+        atEnd = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+      }
+      // At the exact ramp end the focal equals the cursor (panEased(1)=1).
+      expect((atEnd - cursor).distance, lessThan(2.0));
+    });
+
+    test('halfway through the ramp the focal is between center and cursor',
+        () {
+      final r = enterRegion();
+      const cursor = Offset(1700, 950);
+      const centre = Offset(200, 200);
+      final mid = walkTo(ZoomFocalController(), r, 250, cursor: cursor);
+      // Strictly between the start (rect.center) and the cursor — proves
+      // the pan is in progress, not snapped and not still parked.
+      expect((mid - centre).distance, greaterThan(2.0));
+      expect((mid - cursor).distance, greaterThan(2.0));
+    });
+
+    test('followCursor:false makes the enter ramp a no-op (stays center)',
+        () {
+      final r = enterRegion(followCursor: false);
+      const cursor = Offset(1700, 950);
+      const centre = Offset(200, 200);
+      final mid = walkTo(ZoomFocalController(), r, 250, cursor: cursor);
+      expect((mid - centre).distance, lessThan(1.0));
+    });
+
+    test('the resolved curve shapes the ramp (linear != easeInOutQuad)',
+        () {
+      final r = enterRegion();
+      const cursor = Offset(1700, 950);
+      final lin = walkTo(ZoomFocalController(), r, 250,
+          cursor: cursor, curve: Curves.linear);
+      final eas = walkTo(ZoomFocalController(), r, 250,
+          cursor: cursor, curve: Curves.easeInOutQuad);
+      expect((lin - eas).distance, greaterThan(1.0));
+    });
+
+    test('hands off from rest — no overshoot past a stationary cursor', () {
+      // The focal pans rect.center -> cursor over the 500ms enter ramp,
+      // then the spring takes over. With a stationary cursor the focal
+      // must never travel FARTHER from the start than the cursor itself;
+      // any excursion beyond |cursor - center| is the spring overshooting
+      // because the ramp injected residual velocity at handoff.
+      final r = enterRegion();
+      const cursor = Offset(1700, 950);
+      const centre = Offset(200, 200); // rect.center of enterRegion
+      final maxReach = (cursor - centre).distance;
+      final c = ZoomFocalController();
+      var observedMax = 0.0;
+      // Walk through the ramp and well into the hold (1000ms total).
+      for (var ms = 0; ms <= 1000; ms += 16) {
+        final f = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        final d = (f - centre).distance;
+        if (d > observedMax) observedMax = d;
+      }
+      expect(observedMax, lessThan(maxReach + 1.0),
+          reason: 'focal overshot the cursor at the ramp->spring handoff');
+    });
+
+    test('gate-independent: bounded matches centered for a moving cursor', () {
+      // The enter ramp must NOT consult the bounded deadzone gate — its
+      // per-frame hold/chase flip would swap the lerp endpoint and (since
+      // the ramp writes position directly) teleport the focal 150-430px.
+      // Driven with the SAME moving cursor, a bounded region and a centered
+      // region must produce identical enter-ramp focals.
+      ZoomRegion regionFor(FollowMode mode) => ZoomRegion(
+            rect: const Rect.fromLTRB(0, 0, 400, 400),
+            startTime: Duration.zero,
+            duration: const Duration(milliseconds: 3000),
+            zoomLevel: 2.0,
+            enterDuration: const Duration(milliseconds: 500),
+            exitDuration: Duration.zero,
+            followCursor: true,
+            followMode: mode,
+            deadzoneRatio: 0.8, // production default
+          );
+      final bounded = ZoomFocalController();
+      final centered = ZoomFocalController();
+      final rb = regionFor(FollowMode.bounded);
+      final rc = regionFor(FollowMode.centered);
+      Offset cursorAt(int ms) => Offset(900 + ms * 1.6, 540 + ms * 0.8);
+      var maxDelta = 0.0;
+      for (var ms = 0; ms <= 500; ms += 16) {
+        final fb = bounded
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [rb],
+              cursor: cursorAt(ms),
+              videoSize: _videoSize,
+              cursorVelocity: const Offset(1600, 800),
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        final fc = centered
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [rc],
+              cursor: cursorAt(ms),
+              videoSize: _videoSize,
+              cursorVelocity: const Offset(1600, 800),
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        final d = (fb - fc).distance;
+        if (d > maxDelta) maxDelta = d;
+      }
+      expect(maxDelta, lessThan(0.001),
+          reason: 'bounded gate must not affect the enter ramp');
+    });
+
+    test('adjacent regions: enter pan anchors at the NEW rect.center', () {
+      // A persistent controller plays region A (which recenters to video
+      // center via its exit ramp) straight into off-center region B. B's
+      // enter pan must anchor at B.rect.center — matching a fresh
+      // DeterministicFocalTrack — NOT A's leftover focal (~video center).
+      final a = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 1000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 200),
+        exitDuration: const Duration(milliseconds: 200),
+        followCursor: true,
+        followMode: FollowMode.centered,
+      );
+      final b = ZoomRegion(
+        rect: const Rect.fromLTRB(1400, 760, 1800, 1000), // center (1600,880)
+        startTime: const Duration(milliseconds: 1000),
+        duration: const Duration(milliseconds: 1000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 200),
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered,
+      );
+      final regions = [a, b];
+      final c = ZoomFocalController();
+      // Walk through all of A (incl. its exit ramp, which clears the anchor).
+      for (var ms = 0; ms <= 992; ms += 16) {
+        c.update(
+          position: Duration(milliseconds: ms),
+          zoomRegions: regions,
+          cursor: const Offset(1700, 950),
+          videoSize: _videoSize,
+          screenRampCurve: Curves.easeInOutQuad,
+        );
+      }
+      // First frame inside B's enter ramp.
+      final atBStart = c
+          .update(
+            position: const Duration(milliseconds: 1008),
+            zoomRegions: regions,
+            cursor: const Offset(1700, 950),
+            videoSize: _videoSize,
+            screenRampCurve: Curves.easeInOutQuad,
+          )!
+          .focal;
+      expect((atBStart - const Offset(1600, 880)).distance, lessThan(2.0),
+          reason: 'B enter must anchor at B.rect.center, not A leftover');
+    });
+
+    test('entry pan is back-loaded: progress lags the raw eased curve', () {
+      // _entryPanBackload > 1 must hold: at mid-ramp the focal's fractional
+      // progress center->cursor is strictly below the scale's eased value
+      // (which is exactly what backload == 1.0 would produce). Linear curve
+      // so eased(0.5) == 0.5 with no curve confound.
+      final r = enterRegion(); // centered, 500ms enter, rect.center (200,200)
+      const cursor = Offset(1700, 950);
+      const centre = Offset(200, 200);
+      final c = ZoomFocalController();
+      var f = Offset.zero;
+      for (var ms = 0; ms <= 250; ms += 10) {
+        f = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.linear,
+            )!
+            .focal;
+      }
+      final progress = (f - centre).distance / (cursor - centre).distance;
+      expect(progress, lessThan(0.5 - 0.05),
+          reason: 'back-load must hold the focal below the raw eased progress');
     });
   });
 }
