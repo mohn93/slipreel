@@ -1,4 +1,3 @@
-import 'package:flutter/animation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
