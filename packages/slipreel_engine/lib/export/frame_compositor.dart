@@ -169,6 +169,7 @@ class FrameCompositor {
       final scenePass = _scenePassBuilder.build(
         position: position,
         zoomRegions: projectState.zoomRegions,
+        clips: projectState.timeline.clips,
         cursorAnimationConfig: projectState.cursorAnimationConfig,
         cursorDelay: projectState.cursorDelay,
         cursorPostProcess: projectState.cursorPostProcess,
@@ -467,6 +468,7 @@ class FrameCompositor {
           videoSize: videoSize,
           fps: fps,
           screenRampCurve: projectState.screenAnimationConfig.rampCurve,
+          clips: projectState.timeline.clips,
         )) {
       return cached;
     }
@@ -478,6 +480,7 @@ class FrameCompositor {
       videoSize: videoSize,
       fps: fps,
       screenRampCurve: projectState.screenAnimationConfig.rampCurve,
+      clips: projectState.timeline.clips,
     );
   }
 

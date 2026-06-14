@@ -3,6 +3,7 @@ import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 CursorRecording _record(
@@ -456,6 +457,158 @@ void main() {
       expect(out!.velocityPxPerSec.dx, lessThan(11000),
           reason: 'Velocity must reflect the actual recorded motion, '
               'not a fabricated jump from a missing sample.');
+    });
+
+    // A horizontal ramp the spring will lag behind. Samples every 16 ms
+    // for 320 ms so there is room to observe steady-state lag.
+    CursorRecording _ramp() => _record([
+          for (int i = 0; i <= 20; i++)
+            (micros: i * 16000, x: i * 50.0, y: 0, clicked: false),
+        ]);
+
+    test('playbackSpeed defaults to 1.0 → output identical to omitting it', () {
+      const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      final rec = _ramp();
+      final timeline = [for (int i = 0; i <= 20; i++) i * 16000];
+
+      final a = CursorMotionController();
+      final b = CursorMotionController();
+      CursorMotionUpdate? lastA;
+      CursorMotionUpdate? lastB;
+      for (final m in timeline) {
+        lastA = a.update(
+            position: Duration(microseconds: m),
+            cursorRecording: rec, config: cfg, fps: 60);
+        lastB = b.update(
+            position: Duration(microseconds: m),
+            cursorRecording: rec, config: cfg, fps: 60, playbackSpeed: 1.0);
+      }
+      expect(lastB!.screenPos.dx, closeTo(lastA!.screenPos.dx, 1e-9));
+      expect(lastB.screenPos.dy, closeTo(lastA.screenPos.dy, 1e-9));
+    });
+
+    test('2× source stepping lags more in source space than 1× (softer)', () {
+      // Same recorded ramp, same wall cadence (real frames). The 1× run
+      // advances source time 16 ms/frame; the 2× run advances 32 ms/frame
+      // (source moves 2× faster per wall frame). At the SAME source
+      // position the speed-aware spring must sit further behind the raw
+      // path — that extra source-lag is what plays back as preserved
+      // wall-time softness.
+      const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      final rec = _ramp();
+
+      final slow = CursorMotionController();
+      CursorMotionUpdate? lastSlow;
+      for (int i = 0; i <= 10; i++) {
+        lastSlow = slow.update(
+            position: Duration(microseconds: i * 16000),
+            cursorRecording: rec, config: cfg, fps: 60, playbackSpeed: 1.0);
+      }
+      // 1× reached source t=160ms.
+      final spriteAt160 = lastSlow!.screenPos.dx;
+
+      final fast = CursorMotionController();
+      CursorMotionUpdate? lastFast;
+      for (int i = 0; i <= 5; i++) {
+        lastFast = fast.update(
+            position: Duration(microseconds: i * 32000),
+            cursorRecording: rec, config: cfg, fps: 60, playbackSpeed: 2.0);
+      }
+      // 2× also reached source t=160ms (5 frames × 32 ms), but the spring
+      // integrated half the effective time per frame → it sits further
+      // behind (smaller dx) than the 1× run at the same source t.
+      expect(lastFast!.screenPos.dx, lessThan(spriteAt160 - 1.0));
+    });
+
+    test('feedforward lead scales with playback speed', () {
+      // Feedforward CONTRIBUTION = (sprite with feedforward) − (sprite
+      // with feedforward disabled), at the same source position. The
+      // lead is scaled by playbackSpeed, so the contribution at 2× must
+      // exceed the contribution at 1×. (Without the `× speedFactor`
+      // factor the lead is identical at both speeds, and since the 2×
+      // run integrates less effective time per source position, its
+      // contribution would NOT exceed the 1× contribution.)
+      const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      // Fast ramp (6250 px/s source) so the feedforward fade is fully on
+      // for both speeds — isolates the `× speedFactor` lead factor.
+      final rec = _record([
+        for (int i = 0; i <= 60; i++)
+          (micros: i * 16000, x: i * 100.0, y: 0, clicked: false),
+      ]);
+
+      double driveTo({required double speed, required MotionTuning tuning}) {
+        final ctrl = CursorMotionController(tuning: tuning);
+        // Step source time in `speed`-sized 16 ms increments so every run
+        // reaches the same source position (480 ms), mirroring real
+        // playback at that speed.
+        final stepMicros = (16000 * speed).round();
+        final frames = 480000 ~/ stepMicros;
+        CursorMotionUpdate? last;
+        for (int i = 0; i <= frames; i++) {
+          last = ctrl.update(
+              position: Duration(microseconds: i * stepMicros),
+              cursorRecording: rec,
+              config: cfg,
+              fps: 60,
+              playbackSpeed: speed);
+        }
+        return last!.screenPos.dx;
+      }
+
+      // Feedforward fully disabled → pure spring chase baseline.
+      const noFf = MotionTuning(cursorFeedforwardStrength: 0.0);
+      final contribution1x = driveTo(speed: 1.0, tuning: MotionTuning.defaults) -
+          driveTo(speed: 1.0, tuning: noFf);
+      final contribution2x = driveTo(speed: 2.0, tuning: MotionTuning.defaults) -
+          driveTo(speed: 2.0, tuning: noFf);
+
+      // Feedforward pulls the sprite forward (toward the raw path)...
+      expect(contribution1x, greaterThan(0));
+      // ...and that pull scales up with playback speed.
+      expect(contribution2x, greaterThan(contribution1x));
+    });
+
+    test('feedforward fade keys off perceived (wall) speed', () {
+      // Source speed 187.5 px/s is BELOW the fade-start threshold
+      // (200 px/s), so at 1× the feedforward is fully faded OFF and
+      // contributes nothing. At 2× the PERCEIVED speed (≈375 px/s) is
+      // inside the fade band, so keying the fade off perceived speed
+      // turns the feedforward back on and its contribution goes
+      // positive. (Under the old source-speed fade the 2× run would also
+      // see 187.5 px/s and stay off, so this discriminates the change.)
+      const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      // 3 px / 16 ms = 187.5 px/s source speed (< 200 px/s fade-start).
+      final rec = _record([
+        for (int i = 0; i <= 60; i++)
+          (micros: i * 16000, x: i * 3.0, y: 0, clicked: false),
+      ]);
+
+      double driveTo({required double speed, required MotionTuning tuning}) {
+        final ctrl = CursorMotionController(tuning: tuning);
+        final stepMicros = (16000 * speed).round();
+        final frames = 480000 ~/ stepMicros;
+        CursorMotionUpdate? last;
+        for (int i = 0; i <= frames; i++) {
+          last = ctrl.update(
+              position: Duration(microseconds: i * stepMicros),
+              cursorRecording: rec,
+              config: cfg,
+              fps: 60,
+              playbackSpeed: speed);
+        }
+        return last!.screenPos.dx;
+      }
+
+      const noFf = MotionTuning(cursorFeedforwardStrength: 0.0);
+      final contribution1x = driveTo(speed: 1.0, tuning: MotionTuning.defaults) -
+          driveTo(speed: 1.0, tuning: noFf);
+      final contribution2x = driveTo(speed: 2.0, tuning: MotionTuning.defaults) -
+          driveTo(speed: 2.0, tuning: noFf);
+
+      // At 1× the sub-threshold source speed keeps the feedforward off.
+      expect(contribution1x, closeTo(0, 1e-9));
+      // Keying the fade off perceived speed turns it on at 2×.
+      expect(contribution2x, greaterThan(1.0));
     });
   });
 }

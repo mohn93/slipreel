@@ -150,6 +150,14 @@ class CursorMotionController {
     required int fps,
     Duration cursorDelay = Duration.zero,
     CursorPostProcess postProcess = CursorPostProcess.none,
+
+    /// Playback speed of the slice covering [position] (source time).
+    /// The spring chases the recorded path in SOURCE time, so its
+    /// settle-time τ is fixed in source time and shrinks in WALL time
+    /// as the slice plays faster. Integrating by `dt / playbackSpeed`
+    /// preserves the per-wall-frame settle, keeping perceived softness
+    /// comparable to 1×. Defaults to 1.0 ⇒ behavior identical to today.
+    double playbackSpeed = 1.0,
   }) {
     // Same-position re-render: serve the cached result without
     // stepping the spring forward (would compound noise from
@@ -283,7 +291,10 @@ class CursorMotionController {
       return _cachedResult;
     }
 
-    final dt = dtMicros / 1e6;
+    // Clamp to a small floor so a degenerate (0 / negative) slice speed
+    // can't divide-by-zero or blow the step up unboundedly.
+    final speedFactor = playbackSpeed < 0.05 ? 0.05 : playbackSpeed;
+    final dt = (dtMicros / 1e6) / speedFactor;
     final desc = spring.toDescription();
 
     // Partial velocity feedforward — target a point ahead of the
@@ -301,15 +312,21 @@ class CursorMotionController {
     // bounded as speed crosses the band).
     final tauSec =
         2.0 * spring.damping * math.sqrt(spring.mass / spring.stiffness);
-    final speed = velocity.distance;
+    // Fade on PERCEIVED (wall) speed = source px/s × playback speed, so
+    // the feedforward engages by what the user actually sees rather than
+    // the speed-deflated source px/s (speedFactor == 1.0 ⇒ unchanged).
+    final perceivedSpeed = velocity.distance * speedFactor;
     final fadeRange =
         _feedforwardFullSpeedPxPerSec - _feedforwardFadeStartPxPerSec;
     final fadeT = fadeRange <= 0
         ? 1.0
-        : ((speed - _feedforwardFadeStartPxPerSec) / fadeRange)
+        : ((perceivedSpeed - _feedforwardFadeStartPxPerSec) / fadeRange)
             .clamp(0.0, 1.0);
     final fadeScale = fadeT * fadeT * (3.0 - 2.0 * fadeT);
-    final leadSec = tauSec * _feedforwardStrength * fadeScale;
+    // Under dt-scaling the spring's source-time lag is τ × speedFactor,
+    // so the feedforward lead scales with it to keep the same wall-time
+    // compensation as 1× (speedFactor == 1.0 ⇒ unchanged).
+    final leadSec = tauSec * speedFactor * _feedforwardStrength * fadeScale;
     final targetX = raw.x.toDouble() + velocity.dx * leadSec;
     final targetY = raw.y.toDouble() + velocity.dy * leadSec;
 

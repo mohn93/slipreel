@@ -12,6 +12,7 @@ import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/effects/scene_accumulation_painter.dart';
@@ -91,6 +92,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     required this.hideCursorOverlay,
     this.sliceHideCursor = false,
     this.sliceDisableSmoothMouse = false,
+    this.clips = const <ClipSlice>[],
     required this.cursorSize,
     required this.cursorStyle,
     required this.cursorClickEffect,
@@ -154,6 +156,12 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// "none" preset (raw, instant focal chase) regardless of the user's
   /// chosen [cursorAnimationConfig].
   final bool sliceDisableSmoothMouse;
+
+  /// Clip slices for the current timeline. Forwarded to
+  /// [ScenePassBuilder.build] and [DeterministicFocalTrack] so the
+  /// cursor spring and the camera it drives are playback-speed aware.
+  /// Empty ⇒ speed 1.0 ⇒ unchanged.
+  final List<ClipSlice> clips;
 
   final double cursorSize;
   final CursorStyle cursorStyle;
@@ -423,6 +431,9 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         oldWidget.screenMovementBlur != widget.screenMovementBlur ||
         oldWidget.screenZoomBlur != widget.screenZoomBlur ||
         oldWidget.zoomRegions != widget.zoomRegions ||
+        // clips changes alter the speed-aware focal trajectory the scene
+        // blur samples, so invalidate the cached capture for symmetry.
+        oldWidget.clips != widget.clips ||
         oldWidget.screenAnimationConfig != widget.screenAnimationConfig ||
         oldWidget.frame != widget.frame) {
       _pendingSceneCapturePaint = true;
@@ -587,6 +598,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             final scenePass = _scenePassBuilder.build(
               position: pos,
               zoomRegions: widget.zoomRegions,
+              clips: widget.clips,
               cursorAnimationConfig: cursorAnimationConfig,
               cursorDelay: widget.cursorDelay,
               cursorPostProcess: widget.cursorPostProcess,
@@ -1290,6 +1302,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
           fps: fps,
           cursorDelay: widget.cursorDelay,
           screenRampCurve: widget.screenAnimationConfig.rampCurve,
+          clips: widget.clips,
         )) {
       return cached;
     }
@@ -1302,6 +1315,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       cursorPostProcess: widget.cursorPostProcess,
       cursorDelay: widget.cursorDelay,
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
+      clips: widget.clips,
     );
   }
 

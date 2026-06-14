@@ -1,11 +1,13 @@
 import 'dart:ui' show Offset;
 
 import 'package:flutter/animation.dart' show Curve, Curves;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart' show Size;
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 
 /// Deterministic, position-pure camera-focal trajectory for one zoom
@@ -33,6 +35,7 @@ class DeterministicFocalTrack {
     required this.screenRampCurve,
     required this.videoSize,
     required this.fps,
+    required this.clips,
     required List<Offset> samples,
     required int startMicros,
   })  : _samples = List.unmodifiable(samples),
@@ -64,6 +67,15 @@ class DeterministicFocalTrack {
   final Size videoSize;
   final int fps;
 
+  /// Clip slices forwarded to the replayed [ScenePassBuilder] so the
+  /// deterministic cursor — and therefore the focal that chases it — is
+  /// resolved at the same playback speed the live/exported cursor uses.
+  /// Without this the replay always runs at speed 1.0, so over a zoom
+  /// region overlapping a sped-up slice the camera would track a different
+  /// cursor path than the one drawn (the cursor-follow "crack"). Defaults
+  /// to empty, which keeps existing callers/tests at speed 1.0.
+  final List<ClipSlice> clips;
+
   final List<Offset> _samples; // focal per fixed step from _startMicros
   final int _startMicros;
 
@@ -80,6 +92,7 @@ class DeterministicFocalTrack {
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
     Duration cursorDelay = Duration.zero,
     Curve screenRampCurve = Curves.easeInOutQuad,
+    List<ClipSlice> clips = const <ClipSlice>[],
   }) {
     final builder = ScenePassBuilder();
     final regions = <ZoomRegion>[region];
@@ -100,6 +113,7 @@ class DeterministicFocalTrack {
         fps: fps,
         hasCursorData: hasCursor,
         screenRampCurve: screenRampCurve,
+        clips: clips,
       );
       final focal = pass.focalUpdate?.focal;
       // The loop only visits timestamps inside [startUs, endUs), where the
@@ -125,6 +139,7 @@ class DeterministicFocalTrack {
       screenRampCurve: screenRampCurve,
       videoSize: videoSize,
       fps: fps,
+      clips: clips,
       samples: samples,
       startMicros: startUs,
     );
@@ -165,6 +180,7 @@ class DeterministicFocalTrack {
     required int fps,
     Duration cursorDelay = Duration.zero,
     Curve screenRampCurve = Curves.easeInOutQuad,
+    List<ClipSlice> clips = const <ClipSlice>[],
   }) {
     return identical(this.cursorRecording, cursorRecording) &&
         this.cursorAnimationConfig == cursorAnimationConfig &&
@@ -173,6 +189,7 @@ class DeterministicFocalTrack {
         this.cursorDelay == cursorDelay &&
         this.screenRampCurve == screenRampCurve &&
         this.videoSize == videoSize &&
-        this.fps == fps;
+        this.fps == fps &&
+        listEquals(this.clips, clips);
   }
 }
