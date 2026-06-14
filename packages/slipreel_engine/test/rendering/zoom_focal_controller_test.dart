@@ -1195,10 +1195,23 @@ void main() {
     test('focal arrives at the cursor by the end of enterDuration', () {
       final r = enterRegion();
       const cursor = Offset(1700, 950);
-      final atEnd =
-          walkTo(ZoomFocalController(), r, 500, cursor: cursor);
-      // By the end of the 500ms enter ramp the focal should essentially
-      // equal the cursor target (the lerp reaches eased(1)=1).
+      // Step 20ms so the walk lands exactly on the 500ms ramp end (the
+      // back-loaded pan reaches the cursor at tNorm=1; a frame sampled a
+      // few ms short is still mid-approach by design).
+      final c = ZoomFocalController();
+      var atEnd = Offset.zero;
+      for (var ms = 0; ms <= 500; ms += 20) {
+        atEnd = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+      }
+      // At the exact ramp end the focal equals the cursor (panEased(1)=1).
       expect((atEnd - cursor).distance, lessThan(2.0));
     });
 

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart' show Offset, Size;
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -84,6 +86,18 @@ class ZoomFocalController {
   // enter-ramp frame, = rect.center). Cleared when the controller leaves
   // the enter window so a re-entry re-captures.
   Offset? _enterRampStartFocal;
+
+  // Back-load exponent for the entry pan relative to the zoom-scale ramp.
+  // The pan and the scale share the same window and curve, so they finish
+  // at the same instant mathematically — but a settling position reads as
+  // "arrived" while it's still a few pixels out, whereas the magnification
+  // stays visibly in motion through the curve's tail. Equal progress
+  // therefore *looks* like the pan reaches the cursor before the zoom
+  // finishes. Raising the eased pan progress to this exponent holds the
+  // focal nearer rect.center through the middle of the ramp and closes the
+  // last of the distance as the zoom completes, so the two land together
+  // perceptually. 1.0 == exact lock-step; larger == more back-loaded.
+  static const double _entryPanBackload = 2.0;
 
   // Floor for the backward-scrub-detection check.
   //
@@ -390,12 +404,23 @@ class ZoomFocalController {
     if (enter != null) {
       final tIntoRegionUs =
           position.inMicroseconds - activeZoom.startTime.inMicroseconds;
-      if (tIntoRegionUs >= 0 && tIntoRegionUs < enter.enterUs) {
+      // Inclusive of the exact ramp end (`<=`): at `tIntoRegion == enterUs`
+      // the scale has just reached full zoom (its enter formula switches to
+      // the hold at the same instant), so emitting `panEased(1) == 1` here
+      // lands the focal exactly on the cursor as magnification completes,
+      // with no sub-frame residual for the spring to mop up. The exit ramp
+      // is checked earlier and returns first, so a no-hold (enter==exit
+      // boundary) region can't double-handle this frame.
+      if (tIntoRegionUs >= 0 && tIntoRegionUs <= enter.enterUs) {
         _enterRampStartFocal ??= _smoothedFocal;
         final tNorm =
             (tIntoRegionUs / enter.enterUs).clamp(0.0, 1.0).toDouble();
-        final eased = rampCurve.transform(tNorm);
-        final newFocal = Offset.lerp(_enterRampStartFocal, target, eased)!;
+        // Clamp before the back-load pow: a custom bezier ramp curve can
+        // overshoot <0 or >1, and pow() of a negative base with a
+        // non-integer exponent is NaN.
+        final eased = rampCurve.transform(tNorm).clamp(0.0, 1.0);
+        final panEased = math.pow(eased, _entryPanBackload).toDouble();
+        final newFocal = Offset.lerp(_enterRampStartFocal, target, panEased)!;
         _focalVx = 0;
         _focalVy = 0;
         _smoothedFocal = newFocal;
