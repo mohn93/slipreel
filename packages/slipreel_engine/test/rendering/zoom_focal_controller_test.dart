@@ -1158,4 +1158,80 @@ void main() {
         reason: 'exit ramp must follow screenRampCurve, not a hardcode');
     expect(linear, isNot(equals(centre)));
   });
+
+  group('enter ramp lock-step', () {
+    ZoomRegion enterRegion({
+      bool followCursor = true,
+      Duration enter = const Duration(milliseconds: 500),
+    }) =>
+        ZoomRegion(
+          rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
+          startTime: Duration.zero,
+          duration: const Duration(milliseconds: 3000),
+          zoomLevel: 2.0,
+          enterDuration: enter,
+          exitDuration: Duration.zero,
+          followCursor: followCursor,
+          followMode: FollowMode.centered,
+        );
+
+    Offset walkTo(ZoomFocalController c, ZoomRegion r, int toMs,
+        {required Offset cursor, Curve curve = Curves.easeInOutQuad}) {
+      Offset last = Offset.zero;
+      for (var ms = 0; ms <= toMs; ms += 16) {
+        last = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: curve,
+            )!
+            .focal;
+      }
+      return last;
+    }
+
+    test('focal arrives at the cursor by the end of enterDuration', () {
+      final r = enterRegion();
+      const cursor = Offset(1700, 950);
+      final atEnd =
+          walkTo(ZoomFocalController(), r, 500, cursor: cursor);
+      // By the end of the 500ms enter ramp the focal should essentially
+      // equal the cursor target (the lerp reaches eased(1)=1).
+      expect((atEnd - cursor).distance, lessThan(2.0));
+    });
+
+    test('halfway through the ramp the focal is between center and cursor',
+        () {
+      final r = enterRegion();
+      const cursor = Offset(1700, 950);
+      const centre = Offset(200, 200);
+      final mid = walkTo(ZoomFocalController(), r, 250, cursor: cursor);
+      // Strictly between the start (rect.center) and the cursor — proves
+      // the pan is in progress, not snapped and not still parked.
+      expect((mid - centre).distance, greaterThan(2.0));
+      expect((mid - cursor).distance, greaterThan(2.0));
+    });
+
+    test('followCursor:false makes the enter ramp a no-op (stays center)',
+        () {
+      final r = enterRegion(followCursor: false);
+      const cursor = Offset(1700, 950);
+      const centre = Offset(200, 200);
+      final mid = walkTo(ZoomFocalController(), r, 250, cursor: cursor);
+      expect((mid - centre).distance, lessThan(1.0));
+    });
+
+    test('the resolved curve shapes the ramp (linear != easeInOutQuad)',
+        () {
+      final r = enterRegion();
+      const cursor = Offset(1700, 950);
+      final lin = walkTo(ZoomFocalController(), r, 250,
+          cursor: cursor, curve: Curves.linear);
+      final eas = walkTo(ZoomFocalController(), r, 250,
+          cursor: cursor, curve: Curves.easeInOutQuad);
+      expect((lin - eas).distance, greaterThan(1.0));
+    });
+  });
 }

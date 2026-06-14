@@ -80,6 +80,11 @@ class ZoomFocalController {
   // leaves the exit ramp so the next exit captures fresh.
   Offset? _exitRampStartFocal;
 
+  // Focal at the moment the enter ramp started (captured on the first
+  // enter-ramp frame, = rect.center). Cleared when the controller leaves
+  // the enter window so a re-entry re-captures.
+  Offset? _enterRampStartFocal;
+
   // Floor for the backward-scrub-detection check.
   //
   // Originally 10 ms — anything below was treated as scheduling
@@ -225,6 +230,7 @@ class ZoomFocalController {
       _focalVy = 0;
       _resetStrategies();
       _exitRampStartFocal = null;
+      _enterRampStartFocal = null;
       _lastUpdatePosition = position;
       return null;
     }
@@ -254,6 +260,7 @@ class ZoomFocalController {
       _focalVy = 0;
       _resetStrategies();
       _exitRampStartFocal = null;
+      _enterRampStartFocal = null;
       _lastUpdatePosition = position;
       _lastSnapReason = 'init';
       _lastSnapAt = position;
@@ -364,6 +371,39 @@ class ZoomFocalController {
     final target = resolution.target;
     final isHolding = resolution.isHolding;
 
+    // Enter ramp: pan rect.center -> cursor in lock-step with the zoom-in
+    // scale (same window, same resolved curve), symmetric to the exit
+    // ramp above. The focal arrives at the cursor target exactly as
+    // magnification reaches full, then the spring takes over for
+    // steady-state follow. A finite-difference velocity is handed to the
+    // spring so a cursor still moving at ramp end doesn't stall.
+    final enter = _enterRampWindow(activeZoom);
+    if (enter != null) {
+      final tIntoRegionUs =
+          position.inMicroseconds - activeZoom.startTime.inMicroseconds;
+      if (tIntoRegionUs >= 0 && tIntoRegionUs < enter.enterUs) {
+        _enterRampStartFocal ??= _smoothedFocal;
+        final tNorm =
+            (tIntoRegionUs / enter.enterUs).clamp(0.0, 1.0).toDouble();
+        final eased = rampCurve.transform(tNorm);
+        final prevFocal = _smoothedFocal!;
+        final newFocal = Offset.lerp(_enterRampStartFocal, target, eased)!;
+        final dtUs = prevPosition == null
+            ? 0
+            : position.inMicroseconds - prevPosition.inMicroseconds;
+        if (dtUs > 0) {
+          final dt = dtUs / 1e6;
+          _focalVx = (newFocal.dx - prevFocal.dx) / dt;
+          _focalVy = (newFocal.dy - prevFocal.dy) / dt;
+        }
+        _smoothedFocal = newFocal;
+        return ZoomFocalUpdate(zoom: activeZoom, focal: newFocal);
+      }
+    }
+    // Outside the enter window — clear the anchor so a re-entry into an
+    // enter ramp re-captures from a fresh position.
+    _enterRampStartFocal = null;
+
     // Step the spring.
     final followUs = activeZoom.followDuration.inMicroseconds;
     if (prevPosition == null || followUs <= 0) {
@@ -427,6 +467,7 @@ class ZoomFocalController {
     _focalVy = 0;
     _resetStrategies();
     _exitRampStartFocal = null;
+    _enterRampStartFocal = null;
     _lastUpdatePosition = null;
   }
 
@@ -465,6 +506,25 @@ class ZoomFocalController {
     if (exitUs <= 0) return null;
     final exitStartUs = regionUs - exitUs;
     return (exitStartUs: exitStartUs, exitUs: exitUs);
+  }
+
+  /// Enter ramp window for [zoom] in microseconds — the first
+  /// [ZoomRegion.enterDuration], proportionally squeezed (matching
+  /// [ZoomTransformer._calculateZoomFactor]) when enter+exit overflow the
+  /// region. Returns null when there's no enter ramp (zero-length region
+  /// or zero enter duration).
+  static ({int enterUs})? _enterRampWindow(ZoomRegion zoom) {
+    final regionUs = zoom.duration.inMicroseconds;
+    if (regionUs <= 0) return null;
+    var enterUs = zoom.enterDuration.inMicroseconds;
+    final exitUs = zoom.exitDuration.inMicroseconds;
+    final totalRamp = enterUs + exitUs;
+    if (totalRamp > regionUs && totalRamp > 0) {
+      final scale = regionUs / totalRamp;
+      enterUs = (enterUs * scale).round();
+    }
+    if (enterUs <= 0) return null;
+    return (enterUs: enterUs);
   }
 
   // _baseTarget and _resolveTarget moved into FollowStrategy
