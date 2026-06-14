@@ -312,12 +312,15 @@ class CursorMotionController {
     // bounded as speed crosses the band).
     final tauSec =
         2.0 * spring.damping * math.sqrt(spring.mass / spring.stiffness);
-    final speed = velocity.distance;
+    // Fade on PERCEIVED (wall) speed = source px/s × playback speed, so
+    // the feedforward engages by what the user actually sees rather than
+    // the speed-deflated source px/s (speedFactor == 1.0 ⇒ unchanged).
+    final perceivedSpeed = velocity.distance * speedFactor;
     final fadeRange =
         _feedforwardFullSpeedPxPerSec - _feedforwardFadeStartPxPerSec;
     final fadeT = fadeRange <= 0
         ? 1.0
-        : ((speed - _feedforwardFadeStartPxPerSec) / fadeRange)
+        : ((perceivedSpeed - _feedforwardFadeStartPxPerSec) / fadeRange)
             .clamp(0.0, 1.0);
     final fadeScale = fadeT * fadeT * (3.0 - 2.0 * fadeT);
     // Under dt-scaling the spring's source-time lag is τ × speedFactor,

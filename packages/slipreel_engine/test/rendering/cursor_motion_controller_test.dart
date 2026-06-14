@@ -567,5 +567,48 @@ void main() {
       // ...and that pull scales up with playback speed.
       expect(contribution2x, greaterThan(contribution1x));
     });
+
+    test('feedforward fade keys off perceived (wall) speed', () {
+      // Source speed 187.5 px/s is BELOW the fade-start threshold
+      // (200 px/s), so at 1× the feedforward is fully faded OFF and
+      // contributes nothing. At 2× the PERCEIVED speed (≈375 px/s) is
+      // inside the fade band, so keying the fade off perceived speed
+      // turns the feedforward back on and its contribution goes
+      // positive. (Under the old source-speed fade the 2× run would also
+      // see 187.5 px/s and stay off, so this discriminates the change.)
+      const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      // 3 px / 16 ms = 187.5 px/s source speed (< 200 px/s fade-start).
+      final rec = _record([
+        for (int i = 0; i <= 60; i++)
+          (micros: i * 16000, x: i * 3.0, y: 0, clicked: false),
+      ]);
+
+      double driveTo({required double speed, required MotionTuning tuning}) {
+        final ctrl = CursorMotionController(tuning: tuning);
+        final stepMicros = (16000 * speed).round();
+        final frames = 480000 ~/ stepMicros;
+        CursorMotionUpdate? last;
+        for (int i = 0; i <= frames; i++) {
+          last = ctrl.update(
+              position: Duration(microseconds: i * stepMicros),
+              cursorRecording: rec,
+              config: cfg,
+              fps: 60,
+              playbackSpeed: speed);
+        }
+        return last!.screenPos.dx;
+      }
+
+      const noFf = MotionTuning(cursorFeedforwardStrength: 0.0);
+      final contribution1x = driveTo(speed: 1.0, tuning: MotionTuning.defaults) -
+          driveTo(speed: 1.0, tuning: noFf);
+      final contribution2x = driveTo(speed: 2.0, tuning: MotionTuning.defaults) -
+          driveTo(speed: 2.0, tuning: noFf);
+
+      // At 1× the sub-threshold source speed keeps the feedforward off.
+      expect(contribution1x, closeTo(0, 1e-9));
+      // Keying the fade off perceived speed turns it on at 2×.
+      expect(contribution2x, greaterThan(1.0));
+    });
   });
 }
