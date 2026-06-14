@@ -375,8 +375,17 @@ class ZoomFocalController {
     // scale (same window, same resolved curve), symmetric to the exit
     // ramp above. The focal arrives at the cursor target exactly as
     // magnification reaches full, then the spring takes over for
-    // steady-state follow. A finite-difference velocity is handed to the
-    // spring so a cursor still moving at ramp end doesn't stall.
+    // steady-state follow.
+    //
+    // The spring is held at REST (velocity zero) for the whole ramp. The
+    // ramp drives position directly, so any retained spring velocity is
+    // meaningless here; carrying the lerp's residual velocity into the
+    // handoff frame made the critically-damped spring sail PAST the cursor
+    // once before easing back (a visible overshoot, magnified by the
+    // zoom). With zero velocity the spring inherits a clean at-rest state
+    // exactly on the cursor; if the cursor is still moving the spring just
+    // re-accelerates within a frame (imperceptible under the bounded
+    // deadzone).
     final enter = _enterRampWindow(activeZoom);
     if (enter != null) {
       final tIntoRegionUs =
@@ -386,16 +395,9 @@ class ZoomFocalController {
         final tNorm =
             (tIntoRegionUs / enter.enterUs).clamp(0.0, 1.0).toDouble();
         final eased = rampCurve.transform(tNorm);
-        final prevFocal = _smoothedFocal!;
         final newFocal = Offset.lerp(_enterRampStartFocal, target, eased)!;
-        final dtUs = prevPosition == null
-            ? 0
-            : position.inMicroseconds - prevPosition.inMicroseconds;
-        if (dtUs > 0) {
-          final dt = dtUs / 1e6;
-          _focalVx = (newFocal.dx - prevFocal.dx) / dt;
-          _focalVy = (newFocal.dy - prevFocal.dy) / dt;
-        }
+        _focalVx = 0;
+        _focalVy = 0;
         _smoothedFocal = newFocal;
         return ZoomFocalUpdate(zoom: activeZoom, focal: newFocal);
       }

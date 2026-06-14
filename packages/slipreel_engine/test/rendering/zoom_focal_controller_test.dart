@@ -1233,5 +1233,35 @@ void main() {
           cursor: cursor, curve: Curves.easeInOutQuad);
       expect((lin - eas).distance, greaterThan(1.0));
     });
+
+    test('hands off from rest — no overshoot past a stationary cursor', () {
+      // The focal pans rect.center -> cursor over the 500ms enter ramp,
+      // then the spring takes over. With a stationary cursor the focal
+      // must never travel FARTHER from the start than the cursor itself;
+      // any excursion beyond |cursor - center| is the spring overshooting
+      // because the ramp injected residual velocity at handoff.
+      final r = enterRegion();
+      const cursor = Offset(1700, 950);
+      const centre = Offset(200, 200); // rect.center of enterRegion
+      final maxReach = (cursor - centre).distance;
+      final c = ZoomFocalController();
+      var observedMax = 0.0;
+      // Walk through the ramp and well into the hold (1000ms total).
+      for (var ms = 0; ms <= 1000; ms += 16) {
+        final f = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        final d = (f - centre).distance;
+        if (d > observedMax) observedMax = d;
+      }
+      expect(observedMax, lessThan(maxReach + 1.0),
+          reason: 'focal overshot the cursor at the ramp->spring handoff');
+    });
   });
 }
