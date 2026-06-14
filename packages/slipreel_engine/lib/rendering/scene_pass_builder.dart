@@ -7,6 +7,7 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
@@ -125,6 +126,10 @@ class ScenePassBuilder {
     required bool hasCursorData,
     Duration cursorDelay = Duration.zero,
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
+    /// Clip slices for the current timeline, used to resolve the
+    /// playback speed of the slice covering [position] (source time).
+    /// Defaults to empty ⇒ speed 1.0 ⇒ cursor smoothing unchanged.
+    List<ClipSlice> clips = const <ClipSlice>[],
     Curve screenRampCurve = Curves.easeInOutQuad,
     bool forceSnap = false,
     bool bypassVelocityFilter = false,
@@ -135,6 +140,10 @@ class ScenePassBuilder {
     /// for one frame. Cleared by the caller when the preview ends.
     ZoomRegion? activeRegionOverride,
   }) {
+    // Resolve once, here in the shared builder, so preview and export —
+    // the only two callers — cannot resolve slice speed differently.
+    final playbackSpeed =
+        clips.isEmpty ? 1.0 : clipSliceAt(clips, position).playbackSpeed;
     final motionSample = hasCursorData
         ? motion.update(
             position: position,
@@ -143,6 +152,7 @@ class ScenePassBuilder {
             fps: fps,
             cursorDelay: cursorDelay,
             postProcess: cursorPostProcess,
+            playbackSpeed: playbackSpeed,
           )
         : null;
 
