@@ -40,7 +40,7 @@ class ZoomTransformer {
     if (z == 1.0) return Matrix4.identity();
 
     final focal = focalPoint ?? zoomRegion.rect.center;
-    final clamped = _clampFocal(focal, videoSize, z);
+    final clamped = clampFocalToBounds(focal, videoSize, z);
     final pCenterRel = clamped -
         Offset(videoSize.width / 2, videoSize.height / 2);
 
@@ -56,7 +56,14 @@ class ZoomTransformer {
   /// within the video. At a zoom factor of Z, the visible window's
   /// half-extents in source space are videoSize/(2Z); the focal point must
   /// stay at least that far from each edge.
-  Offset _clampFocal(Offset focal, Size videoSize, double z) {
+  ///
+  /// This is the single source of truth for "where can the focal actually
+  /// sit at zoom z". [ZoomFocalController]'s enter ramp aims its pan at the
+  /// FULL-zoom-clamped point via this same formula so the eased focal never
+  /// crosses the per-frame clamp mid-ramp (which would pin the viewport to
+  /// the video edge before the magnification finishes). Keep the two in
+  /// lock-step by routing both through here.
+  static Offset clampFocalToBounds(Offset focal, Size videoSize, double z) {
     final halfW = videoSize.width / (2 * z);
     final halfH = videoSize.height / (2 * z);
     final maxX = videoSize.width - halfW;

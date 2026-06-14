@@ -1194,7 +1194,11 @@ void main() {
 
     test('focal arrives at the cursor by the end of enterDuration', () {
       final r = enterRegion();
-      const cursor = Offset(1700, 950);
+      // In-bounds cursor (within maxX=1440, maxY=810 at zoom 2x), so the
+      // achievable target equals the raw cursor and the focal lands exactly
+      // on it. The edge-cursor (off-frame) case is covered separately by the
+      // "never outruns the per-frame zoom clamp" test below.
+      const cursor = Offset(1000, 700);
       // Step 20ms so the walk lands exactly on the 500ms ramp end (the
       // back-loaded pan reaches the cursor at tNorm=1; a frame sampled a
       // few ms short is still mid-approach by design).
@@ -1229,11 +1233,27 @@ void main() {
 
     test('followCursor:false makes the enter ramp a no-op (stays center)',
         () {
-      final r = enterRegion(followCursor: false);
+      // rect.center must be reachable at the full zoom (inside maxX=1440,
+      // maxY=810 at 2x) so "no pan" means the focal sits exactly on it.
+      // An edge-hugging center that can't be framed at full zoom is handled
+      // by the same bound clamp the transformer applies at paint — not the
+      // concern of this no-op check.
+      final r = ZoomRegion(
+        rect: const Rect.fromLTRB(500, 300, 900, 700), // center (700,500)
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: false,
+        followMode: FollowMode.centered,
+      );
       const cursor = Offset(1700, 950);
-      const centre = Offset(200, 200);
+      const centre = Offset(700, 500);
       final mid = walkTo(ZoomFocalController(), r, 250, cursor: cursor);
-      expect((mid - centre).distance, lessThan(1.0));
+      expect((mid - centre).distance, lessThan(1.0),
+          reason: 'followCursor:false must keep the focal on rect.center, '
+              'never panning toward the cursor');
     });
 
     test('the resolved curve shapes the ramp (linear != easeInOutQuad)',
@@ -1377,6 +1397,70 @@ void main() {
           .focal;
       expect((atBStart - const Offset(1600, 880)).distance, lessThan(2.0),
           reason: 'B enter must anchor at B.rect.center, not A leftover');
+    });
+
+    test(
+        'edge cursor: enter pan never outruns the per-frame zoom clamp '
+        '(no early pin at the video edge)', () {
+      // The reported bug: when the zoom targets a cursor near the screen
+      // edge, the pan visibly *finishes* before the magnification does —
+      // the viewport reaches the video edge and stops while the zoom keeps
+      // growing. Root cause: the ramp lerped the focal toward the RAW
+      // cursor, but ZoomTransformer clamps the focal to maxX = W - W/(2z)
+      // using the CURRENT-frame z. An edge cursor sits beyond the
+      // full-zoom bound, so the lerp crossed the current bound partway
+      // through the ramp; from there the transformer pinned the viewport to
+      // the edge (pan "done") while z still climbed (zoom not done).
+      //
+      // Fix: aim the ramp at the FULL-zoom-clamped point. Then the eased +
+      // back-loaded focal stays at/under the per-frame clamp every frame
+      // and reaches the edge exactly as the zoom completes.
+      final r = enterRegion(); // zoom 2.0, 500ms enter, video 1920x1080
+      const cursor = Offset(1700, 950); // dx 1700 > maxX@2x (1440): off-frame
+      const z2 = 2.0;
+      const enterMs = 500;
+      double zAt(double tNorm) =>
+          1.0 + (z2 - 1.0) * Curves.easeInOutQuad.transform(tNorm);
+      double maxXat(double z) => _videoSize.width - _videoSize.width / (2 * z);
+      double maxYat(double z) =>
+          _videoSize.height - _videoSize.height / (2 * z);
+
+      final c = ZoomFocalController();
+      for (var ms = 0; ms <= enterMs; ms += 10) {
+        final f = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        final z = zAt(ms / enterMs);
+        // If the emitted focal stays within the current-frame clamp, the
+        // ZoomTransformer leaves it untouched — the viewport is NOT pinned
+        // to the edge, so the pan keeps progressing with the zoom.
+        expect(f.dx, lessThanOrEqualTo(maxXat(z) + 1e-6),
+            reason: 'focal.dx outran the zoom clamp at t=${ms}ms — '
+                'the viewport would pin to the edge while the zoom is '
+                'still growing (early-pin desync)');
+        expect(f.dy, lessThanOrEqualTo(maxYat(z) + 1e-6),
+            reason: 'focal.dy outran the zoom clamp at t=${ms}ms');
+      }
+      // And it reaches the achievable bound exactly at ramp end, so the pan
+      // lands on the edge as the magnification completes — not before.
+      final end = c
+          .update(
+            position: const Duration(milliseconds: enterMs),
+            zoomRegions: [r],
+            cursor: cursor,
+            videoSize: _videoSize,
+            screenRampCurve: Curves.easeInOutQuad,
+          )!
+          .focal;
+      expect(end.dx, closeTo(maxXat(z2), 1.0),
+          reason: 'pan must reach the achievable edge as the zoom completes');
+      expect(end.dy, closeTo(maxYat(z2), 1.0));
     });
 
     test('entry pan is back-loaded: progress lags the raw eased curve', () {

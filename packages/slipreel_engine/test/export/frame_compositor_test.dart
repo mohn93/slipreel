@@ -9,6 +9,7 @@ import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/frame_painter.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 
 void main() {
@@ -313,6 +314,82 @@ void main() {
     );
 
     test(
+      'shadowed frame + zooming pan composites the crisp chrome layer '
+      'separately from the blurred content (no crash, right size)',
+      () async {
+        // Exercises the chrome/content split: a non-"None" frame with a drop
+        // shadow, zoomed and panning so the scene-blur path engages. The
+        // shadow must be rendered on its own crisp layer (so the camera-motion
+        // smear can't fade it) while the video+cursor content is blurred. We
+        // can't pixel-assert the shader in a headless test, so this guards the
+        // new compositing path against crashes and size regressions; the
+        // visual result is verified at runtime.
+        final recording = CursorRecording();
+        for (var ms = 0; ms <= 800; ms += 16) {
+          // Cursor drifts so the focal pans (non-zero translation → blur).
+          recording.addPosition(CursorPosition(
+            x: 160 + ms * 0.2,
+            y: 120,
+            timestampMicros: ms * 1000,
+          ));
+        }
+        final zoom = ZoomRegion(
+          rect: const Rect.fromLTWH(120, 90, 80, 60),
+          startTime: Duration.zero,
+          duration: const Duration(milliseconds: 800),
+          zoomLevel: 2.0,
+          followCursor: true,
+          enterDuration: const Duration(milliseconds: 300),
+        );
+        final compositor = FrameCompositor(
+          projectState: EditorProjectState.defaults().copyWith(
+            motionBlur: 1.0,
+            screenMovementBlur: 1.0,
+            zoomRegions: [zoom],
+            windowFrame: const WindowFrame(
+              name: 'Shadowed',
+              padding: EdgeInsets.all(24),
+              cornerRadius: 12,
+              shadowBlur: 18,
+              shadowOffset: Offset(0, 8),
+              shadowColor: Color(0x66000000),
+              borderWidth: 0,
+            ),
+          ),
+          cursorRecording: recording,
+          metadata: _meta(),
+          videoSize: const Size(320, 240),
+          fps: 30,
+        );
+
+        final magenta = _solidBgra(320, 240, 0xFF, 0x00, 0xFF);
+        // First compose seeds the velocity tracker; the second lands mid-ramp
+        // (300 ms enter) with a panning focal, so the blur path engages.
+        await compositor.compose(
+          videoFrameBgra: magenta,
+          position: const Duration(milliseconds: 150),
+        );
+        final total = await compositor.compose(
+          videoFrameBgra: magenta,
+          position: const Duration(milliseconds: 200),
+        );
+        final canvas = FramePainter.calculateTotalSize(
+          frame: const WindowFrame(
+            name: 'Shadowed',
+            padding: EdgeInsets.all(24),
+            cornerRadius: 12,
+            shadowBlur: 18,
+            shadowOffset: Offset(0, 8),
+            shadowColor: Color(0x66000000),
+            borderWidth: 0,
+          ),
+          videoSize: const Size(320, 240),
+        );
+        expect(total.length, canvas.width.toInt() * canvas.height.toInt() * 4);
+      },
+    );
+
+    test(
       'follow-cursor zoom: scene-blur translation at region entry is small '
       '(spring-camera focal, not raw cursor snap)',
       () {
@@ -403,6 +480,85 @@ void main() {
               'Scene-blur translation at zoom entry must be small when the '
               'focal tracks the spring camera (DeterministicFocalTrack), not '
               'the raw cursor which snaps 110 px in one frame.',
+        );
+      },
+    );
+
+    test(
+      'edge-cursor zoom: post-ramp scene-blur translation is ~0 (no phantom '
+      'smear from the focal running past the visible clamp)',
+      () {
+        // Repro for "flickers on zoom, fine once it settles". The camera
+        // zooms onto a cursor near the screen corner. The VISIBLE focal is
+        // clamped to what 2x can frame (maxX=1440, maxY=810 on 1920x1080),
+        // but the spring controller's focal keeps chasing the RAW cursor
+        // (1900,1050) past that clamp once the enter ramp ends. Scene-blur
+        // translation is derived from the camera focal; reading the raw
+        // (unclamped) focal smears by motion that never reaches the screen —
+        // a phantom trail over an image that is already pinned at the edge.
+        // The blur must measure the VISIBLE (clamped) focal, so during the
+        // post-ramp settle the translation is ~0.
+        const videoSize = Size(1920, 1080);
+        const zoomRect = Rect.fromLTWH(760, 340, 400, 400); // center (960,540)
+
+        // Cursor parked at the far corner for the whole timeline — beyond
+        // what 2x can frame, so the visible camera pins at the clamp.
+        final recording = CursorRecording();
+        for (var ms = 0; ms <= 3000; ms += 16) {
+          recording.addPosition(CursorPosition(
+            x: 1900,
+            y: 1050,
+            timestampMicros: ms * 1000,
+          ));
+        }
+
+        final zoomRegion = ZoomRegion(
+          rect: zoomRect,
+          startTime: Duration.zero,
+          duration: const Duration(milliseconds: 3000),
+          zoomLevel: 2.0,
+          followCursor: true,
+          followMode: FollowMode.centered,
+          enterDuration: const Duration(milliseconds: 300),
+          exitDuration: Duration.zero,
+          followDuration: const Duration(milliseconds: 400),
+        );
+
+        final compositor = FrameCompositor(
+          projectState: EditorProjectState.defaults().copyWith(
+            motionBlur: 1.0,
+            screenMovementBlur: 1.0,
+            zoomRegions: [zoomRegion],
+            windowFrame: const WindowFrame(
+              name: 'None',
+              padding: EdgeInsets.zero,
+              cornerRadius: 0,
+              shadowBlur: 0,
+              shadowOffset: Offset.zero,
+              shadowColor: Color(0x00000000),
+              borderWidth: 0,
+            ),
+          ),
+          cursorRecording: recording,
+          metadata: _meta(),
+          videoSize: videoSize,
+          fps: 30,
+        );
+
+        // 300 ms into the hold (the 300 ms enter ramp has ended): the spring
+        // is still sliding the raw focal 1440->1900 toward the cursor, but
+        // the visible camera is static at the clamp (1440,810). Both `cur`
+        // and `prev` sit in this post-ramp window, so a visible-focal signal
+        // is ~0 while a raw-focal signal hits the translation cap.
+        final signal =
+            compositor.sceneMotionSignalAt(const Duration(milliseconds: 600));
+
+        expect(
+          signal.translation.distance,
+          lessThan(2.0),
+          reason: 'post-ramp translation must be ~0 — the visible (clamped) '
+              'camera is static; smearing by the raw focal past the clamp is '
+              'the phantom that flickers as the zoom settles',
         );
       },
     );
