@@ -9,82 +9,29 @@ import 'package:slipreel_engine/rendering/spring_config.dart';
 /// state on every change.
 class ScreenAnimationConfig {
   const ScreenAnimationConfig.preset(ScreenAnimationStyle preset)
-      : _preset = preset,
-        _customCurve = null,
-        _customBadgeDuration = null,
-        _customFlutterCurve = null;
+      : _preset = preset;
 
-  ScreenAnimationConfig.custom({
-    required CubicBezierCurve curve,
-    Duration? badgeDuration,
-  })  : _preset = null,
-        _customCurve = curve,
-        _customBadgeDuration = badgeDuration,
-        _customFlutterCurve = curve.toFlutterCurve();
-
-  /// Default badge tween duration when a `.custom` config doesn't
-  /// supply one. Matches the Smooth preset's badge duration so the
-  /// transition between picking "Smooth" and picking "Custom" with no
-  /// duration override doesn't change the feel.
-  static const Duration _defaultCustomBadgeDuration =
-      Duration(milliseconds: 350);
-
-  // Exactly one of (_preset, _customCurve) is non-null. Enforced by the
-  // two named constructors. Resolution accessors below rely on this.
   final ScreenAnimationStyle? _preset;
-  final CubicBezierCurve? _customCurve;
-  final Duration? _customBadgeDuration;
-  final Curve? _customFlutterCurve;
 
-  bool get isCustom => _customCurve != null;
   ScreenAnimationStyle? get preset => _preset;
-  CubicBezierCurve? get customCurve => _customCurve;
 
-  Curve get badgeCurve =>
-      _customFlutterCurve ?? _preset!.badgeCurve;
+  Curve get badgeCurve => _preset!.badgeCurve;
+  Curve get rampCurve => _preset!.rampCurve;
+  Duration get badgeDuration => _preset!.badgeDuration;
 
-  Curve get rampCurve =>
-      _customFlutterCurve ?? _preset!.rampCurve;
-
-  Duration get badgeDuration =>
-      _customBadgeDuration ??
-      _preset?.badgeDuration ??
-      _defaultCustomBadgeDuration;
-
-  Map<String, dynamic> toJson() {
-    if (_preset != null) {
-      return {'preset': _preset.name};
-    }
-    return {
-      'curve': _customCurve!.toJson(),
-      if (_customBadgeDuration != null)
-        'badgeDurationMicros': _customBadgeDuration.inMicroseconds,
-    };
-  }
+  Map<String, dynamic> toJson() => {'preset': _preset!.name};
 
   factory ScreenAnimationConfig.fromJson(Map<String, dynamic> json) {
     final presetName = json['preset'] as String?;
     if (presetName != null) {
-      ScreenAnimationStyle? preset;
       for (final s in ScreenAnimationStyle.values) {
-        if (s.name == presetName) {
-          preset = s;
-          break;
-        }
+        if (s.name == presetName) return ScreenAnimationConfig.preset(s);
       }
-      if (preset == null) {
-        throw FormatException(
-            'Unknown ScreenAnimationStyle preset: $presetName');
-      }
-      return ScreenAnimationConfig.preset(preset);
+      throw FormatException(
+          'Unknown ScreenAnimationStyle preset: $presetName');
     }
-    final curve = AnimationCurve.fromJson(
-        json['curve'] as Map<String, dynamic>) as CubicBezierCurve;
-    final micros = json['badgeDurationMicros'] as int?;
-    return ScreenAnimationConfig.custom(
-      curve: curve,
-      badgeDuration: micros != null ? Duration(microseconds: micros) : null,
-    );
+    // Legacy custom config (curve + badgeDurationMicros) — migrate to Smooth.
+    return const ScreenAnimationConfig.preset(ScreenAnimationStyle.smooth);
   }
 }
 

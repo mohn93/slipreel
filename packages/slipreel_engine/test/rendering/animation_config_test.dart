@@ -13,28 +13,28 @@ void main() {
       expect(cfg.rampCurve, ScreenAnimationStyle.smooth.rampCurve);
     });
 
-    test('custom config resolves curve to the supplied bezier', () {
-      const c = CubicBezierCurve(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.4);
-      final cfg = ScreenAnimationConfig.custom(
-        curve: c,
-        badgeDuration: const Duration(milliseconds: 500),
-      );
-      expect(cfg.badgeCurve, isA<Cubic>());
-      expect(cfg.rampCurve, isA<Cubic>());
-      expect(cfg.badgeDuration, const Duration(milliseconds: 500));
-    });
-
-    test('custom without explicit duration falls back to Smooth preset', () {
-      const c = CubicBezierCurve(x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0);
-      final cfg = ScreenAnimationConfig.custom(curve: c);
-      expect(cfg.badgeDuration, ScreenAnimationStyle.smooth.badgeDuration);
-    });
-
     test('fromJson throws on unknown preset name', () {
       expect(
         () => ScreenAnimationConfig.fromJson({'preset': 'no-such-preset'}),
         throwsA(isA<FormatException>()),
       );
+    });
+
+    test('legacy custom JSON migrates to Smooth', () {
+      // Old custom shape: curve + badgeDurationMicros, no 'preset' key.
+      final cfg = ScreenAnimationConfig.fromJson({
+        'curve': {'type': 'cubic', 'x1': 0.4, 'y1': 0.0, 'x2': 0.2, 'y2': 1.0},
+        'badgeDurationMicros': 250000,
+      });
+      expect(cfg.preset, ScreenAnimationStyle.smooth);
+      expect(cfg.toJson(), {'preset': 'smooth'});
+    });
+
+    test('preset round-trips', () {
+      final cfg = ScreenAnimationConfig.fromJson({'preset': 'focused'});
+      expect(cfg.preset, ScreenAnimationStyle.focused);
+      expect(cfg.rampCurve, ScreenAnimationStyle.focused.rampCurve);
+      expect(cfg.toJson(), {'preset': 'focused'});
     });
   });
 
