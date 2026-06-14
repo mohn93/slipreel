@@ -517,10 +517,21 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
           active.rampCurveOverride?.toFlutterCurve() ??
           widget.screenAnimationConfig.rampCurve,
     );
+    final scale = matrix.storage[0];
+    // Measure the VISIBLE camera, not the raw controller focal. getTransform
+    // clamps the focal so the zoomed viewport stays inside the video; for an
+    // edge cursor the spring focal chases the raw cursor past that clamp once
+    // the enter ramp ends, so smearing by the raw focal paints a phantom
+    // trail over an image that is actually pinned at the edge — the "flicker
+    // as the zoom settles". Clamp to the same visible focal (kept in lock-step
+    // with FrameCompositor._sceneSampleAt so preview == export). Identity for
+    // in-bounds focals.
+    final visibleFocal =
+        ZoomTransformer.clampFocalToBounds(focal, widget.videoSize, scale);
     return SceneCameraSample(
       position: t,
-      focal: focal,
-      scale: matrix.storage[0],
+      focal: visibleFocal,
+      scale: scale,
     );
   }
 

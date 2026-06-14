@@ -406,6 +406,85 @@ void main() {
         );
       },
     );
+
+    test(
+      'edge-cursor zoom: post-ramp scene-blur translation is ~0 (no phantom '
+      'smear from the focal running past the visible clamp)',
+      () {
+        // Repro for "flickers on zoom, fine once it settles". The camera
+        // zooms onto a cursor near the screen corner. The VISIBLE focal is
+        // clamped to what 2x can frame (maxX=1440, maxY=810 on 1920x1080),
+        // but the spring controller's focal keeps chasing the RAW cursor
+        // (1900,1050) past that clamp once the enter ramp ends. Scene-blur
+        // translation is derived from the camera focal; reading the raw
+        // (unclamped) focal smears by motion that never reaches the screen —
+        // a phantom trail over an image that is already pinned at the edge.
+        // The blur must measure the VISIBLE (clamped) focal, so during the
+        // post-ramp settle the translation is ~0.
+        const videoSize = Size(1920, 1080);
+        const zoomRect = Rect.fromLTWH(760, 340, 400, 400); // center (960,540)
+
+        // Cursor parked at the far corner for the whole timeline — beyond
+        // what 2x can frame, so the visible camera pins at the clamp.
+        final recording = CursorRecording();
+        for (var ms = 0; ms <= 3000; ms += 16) {
+          recording.addPosition(CursorPosition(
+            x: 1900,
+            y: 1050,
+            timestampMicros: ms * 1000,
+          ));
+        }
+
+        final zoomRegion = ZoomRegion(
+          rect: zoomRect,
+          startTime: Duration.zero,
+          duration: const Duration(milliseconds: 3000),
+          zoomLevel: 2.0,
+          followCursor: true,
+          followMode: FollowMode.centered,
+          enterDuration: const Duration(milliseconds: 300),
+          exitDuration: Duration.zero,
+          followDuration: const Duration(milliseconds: 400),
+        );
+
+        final compositor = FrameCompositor(
+          projectState: EditorProjectState.defaults().copyWith(
+            motionBlur: 1.0,
+            screenMovementBlur: 1.0,
+            zoomRegions: [zoomRegion],
+            windowFrame: const WindowFrame(
+              name: 'None',
+              padding: EdgeInsets.zero,
+              cornerRadius: 0,
+              shadowBlur: 0,
+              shadowOffset: Offset.zero,
+              shadowColor: Color(0x00000000),
+              borderWidth: 0,
+            ),
+          ),
+          cursorRecording: recording,
+          metadata: _meta(),
+          videoSize: videoSize,
+          fps: 30,
+        );
+
+        // 300 ms into the hold (the 300 ms enter ramp has ended): the spring
+        // is still sliding the raw focal 1440->1900 toward the cursor, but
+        // the visible camera is static at the clamp (1440,810). Both `cur`
+        // and `prev` sit in this post-ramp window, so a visible-focal signal
+        // is ~0 while a raw-focal signal hits the translation cap.
+        final signal =
+            compositor.sceneMotionSignalAt(const Duration(milliseconds: 600));
+
+        expect(
+          signal.translation.distance,
+          lessThan(2.0),
+          reason: 'post-ramp translation must be ~0 — the visible (clamped) '
+              'camera is static; smearing by the raw focal past the clamp is '
+              'the phantom that flickers as the zoom settles',
+        );
+      },
+    );
   });
 }
 
