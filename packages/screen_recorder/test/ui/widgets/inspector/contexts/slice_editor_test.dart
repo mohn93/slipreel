@@ -241,7 +241,7 @@ void main() {
   testWidgets('tapping the 8x chip sets the slice speed to 8x', (tester) async {
     await tester.pumpWidget(_host(initial: _stateWithOneSlice()));
     await tester.tap(find.text('8x'));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text('Final speed: 800%'), findsOneWidget);
   });
 

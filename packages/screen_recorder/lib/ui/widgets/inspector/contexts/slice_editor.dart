@@ -77,6 +77,9 @@ class SliceEditor extends ConsumerWidget {
                 const SizedBox(height: 12),
                 InspectorSlider(
                   label: 'Fine-tune',
+                  // Percent format so this row doesn't echo the "1.5" substring
+                  // used by the preset chip labels; the slider itself rides a
+                  // log position (SpeedScale), not the raw speed.
                   subtitle:
                       'Final speed: ${(clip.playbackSpeed * 100).round()}%',
                   value: SpeedScale.posFromSpeed(clip.playbackSpeed),
