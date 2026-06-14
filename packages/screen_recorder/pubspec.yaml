@@ -53,6 +53,10 @@ dependencies:
 
   # Video playback
   video_player: ^2.9.2
+  # Direct dep so melos generates a workspace path override to our vendored,
+  # patched copy (packages/video_player_avfoundation). Version is what
+  # video_player resolves transitively; the path override bypasses it.
+  video_player_avfoundation: ^2.8.9
 
   # Persistence
   shared_preferences: ^2.2.0
