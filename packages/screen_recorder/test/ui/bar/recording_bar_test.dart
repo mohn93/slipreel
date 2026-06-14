@@ -122,4 +122,24 @@ void main() {
     await tester.drag(find.byType(RecordingBar), const Offset(60, 0));
     expect(dragged, isTrue);
   });
+
+  // The borderless bar window is sized to the row's intrinsic width only after
+  // the first frame; until then the incoming width can be narrower than the
+  // content. A plain Center > Row overflowed (RenderFlex overflowed by N px)
+  // during that window. OverflowBox lets the row take its intrinsic width
+  // without throwing.
+  testWidgets('does not overflow when the window is briefly narrower than the '
+      'content', (tester) async {
+    tester.view.physicalSize = const Size(360, 120); // far narrower than content
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final tips = await _allSeenController();
+    await tester.pumpWidget(_wrap(_bar(), tips));
+
+    expect(tester.takeException(), isNull,
+        reason: 'the bar must not throw a RenderFlex overflow while the '
+            'window is catching up to the content width');
+  });
 }
