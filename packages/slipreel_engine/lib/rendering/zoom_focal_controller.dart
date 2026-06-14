@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart' show Offset, Size;
+import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/follow_strategy.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
@@ -410,9 +411,23 @@ class ZoomFocalController {
       // boundary) region can't double-handle this frame.
       if (tIntoRegionUs >= 0 && tIntoRegionUs <= enter.enterUs) {
         _enterRampStartFocal ??= activeZoom.rect.center;
-        final entryTarget = (activeZoom.followCursor && cursor != null)
+        final rawTarget = (activeZoom.followCursor && cursor != null)
             ? cursor
             : activeZoom.rect.center;
+        // Aim the pan at what the FULL zoom level can actually frame, not
+        // the raw cursor. An edge cursor (or an edge-hugging rect.center)
+        // sits beyond the reachable focal range, so lerping toward the raw
+        // point makes the eased focal cross the *current-frame* bound
+        // partway through the ramp — at which point ZoomTransformer pins the
+        // viewport to the video edge and the pan visibly finishes while the
+        // magnification is still growing. Clamping the target to the
+        // full-zoom bound (same formula the transformer applies at paint)
+        // keeps the back-loaded focal at/under the per-frame clamp the whole
+        // way, so the pan lands on the edge exactly as the zoom completes.
+        // Pure function of (cursor/rect, videoSize, zoomLevel) — play ==
+        // scrub == export stays byte-identical.
+        final entryTarget = ZoomTransformer.clampFocalToBounds(
+            rawTarget, videoSize, activeZoom.zoomLevel);
         final tNorm =
             (tIntoRegionUs / enter.enterUs).clamp(0.0, 1.0).toDouble();
         // Clamp before the back-load pow: a custom bezier ramp curve can
