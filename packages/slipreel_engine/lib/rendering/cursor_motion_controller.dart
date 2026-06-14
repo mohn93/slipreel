@@ -320,7 +320,10 @@ class CursorMotionController {
         : ((speed - _feedforwardFadeStartPxPerSec) / fadeRange)
             .clamp(0.0, 1.0);
     final fadeScale = fadeT * fadeT * (3.0 - 2.0 * fadeT);
-    final leadSec = tauSec * _feedforwardStrength * fadeScale;
+    // Under dt-scaling the spring's source-time lag is τ × speedFactor,
+    // so the feedforward lead scales with it to keep the same wall-time
+    // compensation as 1× (speedFactor == 1.0 ⇒ unchanged).
+    final leadSec = tauSec * speedFactor * _feedforwardStrength * fadeScale;
     final targetX = raw.x.toDouble() + velocity.dx * leadSec;
     final targetY = raw.y.toDouble() + velocity.dy * leadSec;
 

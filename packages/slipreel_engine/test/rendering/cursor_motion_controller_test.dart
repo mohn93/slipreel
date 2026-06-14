@@ -3,6 +3,7 @@ import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 CursorRecording _record(
@@ -517,6 +518,54 @@ void main() {
       // integrated half the effective time per frame → it sits further
       // behind (smaller dx) than the 1× run at the same source t.
       expect(lastFast!.screenPos.dx, lessThan(spriteAt160 - 1.0));
+    });
+
+    test('feedforward lead scales with playback speed', () {
+      // Feedforward CONTRIBUTION = (sprite with feedforward) − (sprite
+      // with feedforward disabled), at the same source position. The
+      // lead is scaled by playbackSpeed, so the contribution at 2× must
+      // exceed the contribution at 1×. (Without the `× speedFactor`
+      // factor the lead is identical at both speeds, and since the 2×
+      // run integrates less effective time per source position, its
+      // contribution would NOT exceed the 1× contribution.)
+      const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      // Fast ramp (6250 px/s source) so the feedforward fade is fully on
+      // for both speeds — isolates the `× speedFactor` lead factor.
+      final rec = _record([
+        for (int i = 0; i <= 60; i++)
+          (micros: i * 16000, x: i * 100.0, y: 0, clicked: false),
+      ]);
+
+      double driveTo({required double speed, required MotionTuning tuning}) {
+        final ctrl = CursorMotionController(tuning: tuning);
+        // Step source time in `speed`-sized 16 ms increments so every run
+        // reaches the same source position (480 ms), mirroring real
+        // playback at that speed.
+        final stepMicros = (16000 * speed).round();
+        final frames = 480000 ~/ stepMicros;
+        CursorMotionUpdate? last;
+        for (int i = 0; i <= frames; i++) {
+          last = ctrl.update(
+              position: Duration(microseconds: i * stepMicros),
+              cursorRecording: rec,
+              config: cfg,
+              fps: 60,
+              playbackSpeed: speed);
+        }
+        return last!.screenPos.dx;
+      }
+
+      // Feedforward fully disabled → pure spring chase baseline.
+      const noFf = MotionTuning(cursorFeedforwardStrength: 0.0);
+      final contribution1x = driveTo(speed: 1.0, tuning: MotionTuning.defaults) -
+          driveTo(speed: 1.0, tuning: noFf);
+      final contribution2x = driveTo(speed: 2.0, tuning: MotionTuning.defaults) -
+          driveTo(speed: 2.0, tuning: noFf);
+
+      // Feedforward pulls the sprite forward (toward the raw path)...
+      expect(contribution1x, greaterThan(0));
+      // ...and that pull scales up with playback speed.
+      expect(contribution2x, greaterThan(contribution1x));
     });
   });
 }
