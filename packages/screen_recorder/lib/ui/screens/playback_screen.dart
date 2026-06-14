@@ -50,6 +50,7 @@ import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
 import 'package:slipreel_engine/editor/camera_seed.dart';
 import 'package:slipreel_engine/models/camera_sidecar_meta.dart';
 import 'package:screen_recorder/state/camera_playback_sync.dart';
+import 'package:screen_recorder/state/display_latency_probe.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/keystroke_group.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
@@ -234,6 +235,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     with TickerProviderStateMixin {
   late VideoPlayerController _controller;
   SmoothPlayheadController? _smoothPlayhead;
+  DisplayLatencyProbe? _latencyProbe;
   // Single source of truth for the EDITED-time playhead position fed
   // into [EditorTimeline]. Updated by listeners on [_smoothPlayhead]
   // (per vsync while playing), [_controller] (per ~250 ms tick while
@@ -644,6 +646,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         videoController: _controller,
         vsync: this,
       );
+      // Preview-only cursor/video sync: poll the vendored video_player patch for
+      // this player's display latency. `playerId` is video_player's internal id
+      // (only a @visibleForTesting getter is public, but it is stable in 2.11.x
+      // and the only way to key the side channel).
+      // ignore: invalid_use_of_visible_for_testing_member
+      _latencyProbe = DisplayLatencyProbe(playerId: _controller.playerId)..start();
       // Per-vsync (while playing) and per-controller-tick (paused/seek)
       // updates of the edited-time playhead notifier. Either listener
       // calling _refreshPlayheadEditedPos is cheap and idempotent — the
@@ -996,6 +1004,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
     _playheadEditedPos.dispose();
     _smoothPlayhead?.dispose();
+    _latencyProbe?.dispose();
     _controller.removeListener(_syncCameraPlayer);
     _cameraController?.dispose();
     _controller.dispose();
@@ -2327,6 +2336,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final playbackCanvas = PlaybackCanvas(
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
+      displayLatency: _latencyProbe?.latency,
       frame: project.windowFrame,
       outputAspect: project.outputAspect,
       metadata: _metadata,
