@@ -242,7 +242,7 @@ void main() {
       expect(clips[1].playbackSpeed, 2.0);
     });
 
-    test('out-of-range setSliceSpeed clamps to [0.25, 4.0]', () {
+    test('out-of-range setSliceSpeed clamps to [0.25, 24.0]', () {
       final container = ProviderContainer(overrides: [
         editorProjectControllerProvider.overrideWith(
           (ref) => EditorProjectController(
@@ -254,7 +254,7 @@ void main() {
 
       container
           .read(editorProjectControllerProvider.notifier)
-          .setSliceSpeed(0, 10.0);
+          .setSliceSpeed(0, 99.0);
       expect(
         container
             .read(editorProjectControllerProvider)
@@ -262,8 +262,8 @@ void main() {
             .clips
             .single
             .playbackSpeed,
-        4.0,
-        reason: 'over-range value clamps to the 4.0 ceiling',
+        24.0,
+        reason: 'over-range value clamps to the 24.0 ceiling',
       );
     });
   });
