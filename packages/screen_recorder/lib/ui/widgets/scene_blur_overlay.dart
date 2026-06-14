@@ -446,6 +446,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
           cursorPostProcess: widget.cursorPostProcess,
           videoSize: widget.videoSize,
           fps: widget.fps,
+          screenRampCurve: widget.screenAnimationConfig.rampCurve,
         )) {
       return cached;
     }
@@ -456,6 +457,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
       cursorPostProcess: widget.cursorPostProcess,
       videoSize: widget.videoSize,
       fps: widget.fps,
+      screenRampCurve: widget.screenAnimationConfig.rampCurve,
     );
   }
 
