@@ -25,6 +25,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Sets the texture Identifier for the frame updater. This method should be called once the texture
 /// identifier is obtained from the texture registry.
 - (void)setTextureIdentifier:(int64_t)textureIdentifier;
+
+/// Slipreel: AVPlayer clock minus the presented frame's media time, in micros
+/// (clamped >= 0), or nil if not yet known. Used by the editor to align the
+/// preview cursor with the frame actually on screen.
+- (nullable NSNumber *)displayLatencyMicros;
 @end
 
 NS_ASSUME_NONNULL_END

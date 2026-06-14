@@ -45,6 +45,7 @@
 @property(nonatomic, strong) id<FVPAVFactory> avFactory;
 @property(nonatomic, strong) NSObject<FVPViewProvider> *viewProvider;
 @property(nonatomic, assign) int64_t nextPlayerIdentifier;
+@property(nonatomic, strong) FlutterMethodChannel *slipreelSyncChannel;
 @end
 
 @implementation FVPVideoPlayerPlugin
@@ -58,6 +59,28 @@
       }];
   [registrar registerViewFactory:factory withId:@"plugins.flutter.dev/video_player_ios"];
   SetUpFVPAVFoundationVideoPlayerApi(registrar.messenger, instance);
+
+  // Slipreel: side channel exposing per-player display latency (AVPlayer clock
+  // vs the frame actually on the texture) so the editor can align its preview
+  // cursor. Retained on the plugin instance so it outlives this method.
+  FlutterMethodChannel *syncChannel =
+      [FlutterMethodChannel methodChannelWithName:@"slipreel/video_sync"
+                                  binaryMessenger:registrar.messenger];
+  [syncChannel setMethodCallHandler:^(FlutterMethodCall *call, FlutterResult result) {
+    if ([@"getDisplayLatencyMicros" isEqualToString:call.method]) {
+      NSNumber *playerId = call.arguments[@"playerId"];
+      FVPVideoPlayer *player =
+          playerId ? instance->_playersByIdentifier[playerId] : nil;
+      if ([player isKindOfClass:[FVPTextureBasedVideoPlayer class]]) {
+        result([(FVPTextureBasedVideoPlayer *)player displayLatencyMicros]);
+      } else {
+        result(nil);
+      }
+    } else {
+      result(FlutterMethodNotImplemented);
+    }
+  }];
+  instance.slipreelSyncChannel = syncChannel;
 }
 
 - (instancetype)initWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {

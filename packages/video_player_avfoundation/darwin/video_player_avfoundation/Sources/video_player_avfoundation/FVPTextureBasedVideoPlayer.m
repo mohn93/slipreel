@@ -29,6 +29,10 @@
 // frame is successfully provided.
 @property(nonatomic, assign) BOOL waitingForFrame;
 
+// Slipreel: media time (CMTime) of the frame most recently handed to the
+// texture. Compared against the player clock to measure display latency.
+@property(nonatomic, assign) CMTime lastPresentedItemTime;
+
 /// Ensures that the frame updater runs until a frame is rendered, regardless of play/pause state.
 - (void)expectFrame;
 @end
@@ -138,11 +142,15 @@
   CVPixelBufferRef buffer = NULL;
   CMTime outputItemTime = [self.videoOutput itemTimeForHostTime:self.targetTime];
   if ([self.videoOutput hasNewPixelBufferForItemTime:outputItemTime]) {
-    buffer = [self.videoOutput copyPixelBufferForItemTime:outputItemTime itemTimeForDisplay:NULL];
+    CMTime presentedItemTime = kCMTimeInvalid;
+    buffer = [self.videoOutput copyPixelBufferForItemTime:outputItemTime
+                                       itemTimeForDisplay:&presentedItemTime];
     if (buffer) {
       // Balance the owned reference from copyPixelBufferForItemTime.
       CVBufferRelease(self.latestPixelBuffer);
       self.latestPixelBuffer = buffer;
+      // Slipreel: remember which media time is now on the texture.
+      self.lastPresentedItemTime = presentedItemTime;
     }
   }
 
@@ -206,6 +214,22 @@
       [self disposeWithError:&error];
     }
   });
+}
+
+// Slipreel: AVPlayer clock minus the presented frame's media time, in micros.
+// Positive means the texture is showing an older frame than the clock (decode
+// lag) — the editor preview subtracts this from the cursor's playhead. Returns
+// nil until a frame has been presented or if either CMTime is invalid.
+- (nullable NSNumber *)displayLatencyMicros {
+  CMTime presented = self.lastPresentedItemTime;
+  CMTime clock = [self.player currentTime];
+  if (!CMTIME_IS_VALID(presented) || !CMTIME_IS_VALID(clock)) return nil;
+  if (presented.timescale == 0 || clock.timescale == 0) return nil;
+  int64_t presentedUs = presented.value * 1000000 / presented.timescale;
+  int64_t clockUs = clock.value * 1000000 / clock.timescale;
+  int64_t latency = clockUs - presentedUs;
+  if (latency < 0) latency = 0;
+  return @(latency);
 }
 
 @end
