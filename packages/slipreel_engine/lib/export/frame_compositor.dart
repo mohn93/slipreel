@@ -203,23 +203,27 @@ class FrameCompositor {
 
       final sceneSignal = _computeSceneMotionSignal(position: position);
 
-      // Render the FOREGROUND (frame chrome + video + cursor) with the
-      // zoom transform applied. The wallpaper is rendered separately
-      // below — it's "sticky" and never goes through the zoom Transform
-      // or the scene-blur shader, mirroring PlaybackCanvas's behaviour.
-      final fgRecorder = ui.PictureRecorder();
-      final fgCanvas = ui.Canvas(
-        fgRecorder,
-        Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
-      );
-
-      if (focalUpdate != null) {
-        fgCanvas.translate(totalSize.width / 2, totalSize.height / 2);
-        fgCanvas.transform(zoomTransform.storage);
-        fgCanvas.translate(-totalSize.width / 2, -totalSize.height / 2);
+      // Apply the same zoom transform to any layer so it scales/pans with
+      // the camera.
+      void applyZoom(ui.Canvas c) {
+        if (focalUpdate == null) return;
+        c.translate(totalSize.width / 2, totalSize.height / 2);
+        c.transform(zoomTransform.storage);
+        c.translate(-totalSize.width / 2, -totalSize.height / 2);
       }
 
-      _framePainter.paint(fgCanvas, totalSize);
+      final layerRect = Rect.fromLTWH(0, 0, totalSize.width, totalSize.height);
+
+      // Foreground CONTENT (video + cursor) — the ONLY layer fed through the
+      // scene-motion-blur smear. The frame chrome (shadow/ring/border) is
+      // rendered crisp below: motion-blurring the soft drop shadow during an
+      // enter/exit ramp spreads its darkness over a wider area and visibly
+      // fades/lowers it ("the shadow hides on export"). The chrome still
+      // scales/pans with the zoom; it just never gets the directional smear.
+      // The wallpaper stays sticky (rendered separately below).
+      final fgRecorder = ui.PictureRecorder();
+      final fgCanvas = ui.Canvas(fgRecorder, layerRect);
+      applyZoom(fgCanvas);
       _paintVideoFrame(fgCanvas, videoImage);
       if (motion != null && !projectState.hideCursorOverlay) {
         final effectiveCursorBlur =
@@ -231,17 +235,34 @@ class FrameCompositor {
           state: motion.state,
         );
       }
-
       final fgPicture = fgRecorder.endRecording();
+
+      // Frame chrome (shadow / inset ring / background / border) — crisp,
+      // never smeared. Skipped for the 'None' frame (FramePainter draws
+      // nothing, so there is no chrome to composite).
+      ui.Picture? chromePicture;
+      if (_frame.name != 'None') {
+        final chromeRecorder = ui.PictureRecorder();
+        final chromeCanvas = ui.Canvas(chromeRecorder, layerRect);
+        applyZoom(chromeCanvas);
+        _framePainter.paint(chromeCanvas, totalSize);
+        chromePicture = chromeRecorder.endRecording();
+      }
+
       try {
         final fgImage = await fgPicture.toImage(
           totalSize.width.toInt(),
           totalSize.height.toInt(),
         );
+        final ui.Image? chromeImage = chromePicture == null
+            ? null
+            : await chromePicture.toImage(
+                totalSize.width.toInt(),
+                totalSize.height.toInt(),
+              );
         try {
-          // Apply scene blur to the foreground ONLY. The wallpaper,
-          // being sticky, doesn't move and therefore shouldn't get
-          // streaked by the camera-motion smear.
+          // Smear the moving CONTENT only. The crisp chrome (shadow) and the
+          // sticky wallpaper are composited un-blurred.
           final blurredFg = await _applySceneMotionBlur(fgImage, sceneSignal);
           final fgToComposite = blurredFg ?? fgImage;
           // Resolve + decode the camera PiP frame (async) BEFORE the
@@ -290,9 +311,11 @@ class FrameCompositor {
 
           try {
             final wallpaperImage = await _ensureWallpaperImage();
-            // No wallpaper AND no camera: foreground IS the final image.
-            // Skip the composite step.
-            if (wallpaperImage == null && cameraImage == null) {
+            // No wallpaper, no chrome, AND no camera: the content IS the
+            // final image. Skip the composite step.
+            if (wallpaperImage == null &&
+                chromeImage == null &&
+                cameraImage == null) {
               final byteData = await fgToComposite.toByteData(
                 format: ui.ImageByteFormat.rawRgba,
               );
@@ -301,11 +324,11 @@ class FrameCompositor {
               }
               return Uint8List.fromList(byteData.buffer.asUint8List());
             }
-            // Composite: sticky wallpaper (if any) underneath, (possibly
-            // blurred) foreground on top, then the canvas-fixed camera
-            // bubble above everything. The foreground's transparent
-            // padding region reveals the wallpaper around the framed
-            // video.
+            // Composite bottom-to-top: sticky wallpaper, crisp frame chrome
+            // (shadow/ring/border), the (possibly blurred) video+cursor
+            // content, then the canvas-fixed camera bubble. The content
+            // layer's transparent padding reveals the chrome (and wallpaper)
+            // around the framed video.
             final composeRecorder = ui.PictureRecorder();
             final composeCanvas = ui.Canvas(
               composeRecorder,
@@ -313,6 +336,9 @@ class FrameCompositor {
             );
             if (wallpaperImage != null) {
               composeCanvas.drawImage(wallpaperImage, Offset.zero, Paint());
+            }
+            if (chromeImage != null) {
+              composeCanvas.drawImage(chromeImage, Offset.zero, Paint());
             }
             composeCanvas.drawImage(fgToComposite, Offset.zero, Paint());
             paintCamera(composeCanvas);
@@ -344,9 +370,11 @@ class FrameCompositor {
           }
         } finally {
           fgImage.dispose();
+          chromeImage?.dispose();
         }
       } finally {
         fgPicture.dispose();
+        chromePicture?.dispose();
       }
     } finally {
       videoImage.dispose();

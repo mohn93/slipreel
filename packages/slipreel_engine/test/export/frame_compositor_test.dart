@@ -9,6 +9,7 @@ import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/frame_painter.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 
 void main() {
@@ -309,6 +310,82 @@ void main() {
         );
         expect(r0.length, 320 * 240 * 4);
         expect(r1.length, 320 * 240 * 4);
+      },
+    );
+
+    test(
+      'shadowed frame + zooming pan composites the crisp chrome layer '
+      'separately from the blurred content (no crash, right size)',
+      () async {
+        // Exercises the chrome/content split: a non-"None" frame with a drop
+        // shadow, zoomed and panning so the scene-blur path engages. The
+        // shadow must be rendered on its own crisp layer (so the camera-motion
+        // smear can't fade it) while the video+cursor content is blurred. We
+        // can't pixel-assert the shader in a headless test, so this guards the
+        // new compositing path against crashes and size regressions; the
+        // visual result is verified at runtime.
+        final recording = CursorRecording();
+        for (var ms = 0; ms <= 800; ms += 16) {
+          // Cursor drifts so the focal pans (non-zero translation → blur).
+          recording.addPosition(CursorPosition(
+            x: 160 + ms * 0.2,
+            y: 120,
+            timestampMicros: ms * 1000,
+          ));
+        }
+        final zoom = ZoomRegion(
+          rect: const Rect.fromLTWH(120, 90, 80, 60),
+          startTime: Duration.zero,
+          duration: const Duration(milliseconds: 800),
+          zoomLevel: 2.0,
+          followCursor: true,
+          enterDuration: const Duration(milliseconds: 300),
+        );
+        final compositor = FrameCompositor(
+          projectState: EditorProjectState.defaults().copyWith(
+            motionBlur: 1.0,
+            screenMovementBlur: 1.0,
+            zoomRegions: [zoom],
+            windowFrame: const WindowFrame(
+              name: 'Shadowed',
+              padding: EdgeInsets.all(24),
+              cornerRadius: 12,
+              shadowBlur: 18,
+              shadowOffset: Offset(0, 8),
+              shadowColor: Color(0x66000000),
+              borderWidth: 0,
+            ),
+          ),
+          cursorRecording: recording,
+          metadata: _meta(),
+          videoSize: const Size(320, 240),
+          fps: 30,
+        );
+
+        final magenta = _solidBgra(320, 240, 0xFF, 0x00, 0xFF);
+        // First compose seeds the velocity tracker; the second lands mid-ramp
+        // (300 ms enter) with a panning focal, so the blur path engages.
+        await compositor.compose(
+          videoFrameBgra: magenta,
+          position: const Duration(milliseconds: 150),
+        );
+        final total = await compositor.compose(
+          videoFrameBgra: magenta,
+          position: const Duration(milliseconds: 200),
+        );
+        final canvas = FramePainter.calculateTotalSize(
+          frame: const WindowFrame(
+            name: 'Shadowed',
+            padding: EdgeInsets.all(24),
+            cornerRadius: 12,
+            shadowBlur: 18,
+            shadowOffset: Offset(0, 8),
+            shadowColor: Color(0x66000000),
+            borderWidth: 0,
+          ),
+          videoSize: const Size(320, 240),
+        );
+        expect(total.length, canvas.width.toInt() * canvas.height.toInt() * 4);
       },
     );
 
