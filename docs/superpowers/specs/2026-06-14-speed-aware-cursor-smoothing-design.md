@@ -107,9 +107,31 @@ passes one resolved `playbackSpeed` double into
 - The existing accepted "per-frame dt vs fixed-fps integration" discretization
   is unchanged in class. Between two source positions, the closed-form
   `SpringSimulation` integrates the same *total* scaled-time
-  (`Δsource / playbackSpeed`) in both paths regardless of step granularity; the
-  only difference remains the piecewise-constant-target hold, already bounded by
-  the preview's sub-stepping.
+  (`Δsource / playbackSpeed`) in both paths regardless of step granularity.
+
+  The remaining difference is the piecewise-constant target hold (the spring
+  retargets to `raw + velocity × leadSec` once per `build()` call, held constant
+  across the step). **Correction to an earlier draft of this spec:** the preview
+  does *not* sub-step the cursor controller — `playback_canvas` calls
+  `ScenePassBuilder.build()` once per wall frame, so `CursorMotionController`
+  integrates one closed-form step per frame at whatever `dt` it's given (the
+  sub-stepping in this pipeline lives in `ZoomFocalController`, not the cursor).
+  Consequently, at **non-1× speeds** the preview steps source time per wall frame
+  (`speed × frame`) while the export steps it in uniform fine increments
+  (`1/pipelineFps`) — a step-granularity mismatch that holds the moving target
+  stale for longer in the coarser-stepped path, producing a bounded cursor-sprite
+  gap that scales with cursor speed and step size (≈30 px at 2× on a ~3000 px/s
+  ramp). This gap is **pre-existing** (it is inherent to coarse-vs-fine stepping
+  at any speed ≠ 1× and is dominated by raw-target staleness); the speed-aware
+  feedforward-lead scaling only mildly amplifies it. At **1× the granularities
+  are equal**, so preview and export remain bit-identical (verified). Closing the
+  non-1× gap entirely would require sub-stepping the cursor controller, which
+  conflicts with the codebase's deliberate single-long-`dt` integration through
+  frame stutters (see the `_scrubThresholdForward`-removal rationale in
+  `cursor_motion_controller.dart`); it is therefore left as a possible future
+  improvement, not part of this change. A characterization test
+  (`scene_pass_builder_speed_test.dart`) pins that the gap stays bounded and
+  converges as the preview step approaches the export step.
 
 ## Testing
 
