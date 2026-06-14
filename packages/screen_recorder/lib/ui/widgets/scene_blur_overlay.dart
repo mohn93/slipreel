@@ -11,6 +11,7 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 
@@ -92,6 +93,7 @@ class SceneBlurOverlay extends StatefulWidget {
     required this.videoSize,
     this.fps = 60,
     this.cursorPostProcess = CursorPostProcess.none,
+    this.clips = const <ClipSlice>[],
   });
 
   /// The widget tree to apply the scene-blur smear to. Usually the
@@ -123,6 +125,11 @@ class SceneBlurOverlay extends StatefulWidget {
   /// arbitrary sub-frame times) so the camera doesn't track shakes or
   /// the freeze-zone past the cap.
   final CursorPostProcess cursorPostProcess;
+
+  /// Clip slices for the current timeline. Forwarded to the
+  /// [DeterministicFocalTrack] so the scene-blur camera trajectory
+  /// follows the speed-aware cursor. Empty ⇒ speed 1.0 ⇒ unchanged.
+  final List<ClipSlice> clips;
 
   @override
   State<SceneBlurOverlay> createState() => _SceneBlurOverlayState();
@@ -226,7 +233,8 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
     if (oldWidget.motionBlur != widget.motionBlur ||
         oldWidget.screenMovementBlur != widget.screenMovementBlur ||
         oldWidget.screenZoomBlur != widget.screenZoomBlur ||
-        oldWidget.zoomRegions != widget.zoomRegions) {
+        oldWidget.zoomRegions != widget.zoomRegions ||
+        oldWidget.clips != widget.clips) {
       _pendingCapturePaint = true;
     }
   }
@@ -447,6 +455,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
           videoSize: widget.videoSize,
           fps: widget.fps,
           screenRampCurve: widget.screenAnimationConfig.rampCurve,
+          clips: widget.clips,
         )) {
       return cached;
     }
@@ -458,6 +467,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
       videoSize: widget.videoSize,
       fps: widget.fps,
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
+      clips: widget.clips,
     );
   }
 
