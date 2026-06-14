@@ -506,6 +506,21 @@ Keep this file in sync with `packages/screen_recorder` Dart code
 (`DisplayLatencyProbe`, channel name `slipreel/video_sync`).
 ```
 
+- [ ] **Step 2b: Add a DIRECT dependency so melos overrides it**
+
+melos only auto-generates path overrides for workspace packages that are
+**direct** dependencies. `video_player_avfoundation` is only a *transitive* dep
+(via `video_player`), so without this it stays resolved to the hosted copy. Add
+it to `packages/screen_recorder/pubspec.yaml` `dependencies:` (next to
+`video_player: ^2.9.2`), matching the resolved version:
+
+```yaml
+  # Direct dep so melos generates a workspace path override to our vendored,
+  # patched copy (see packages/video_player_avfoundation). The version is the
+  # one video_player resolves transitively; the path override bypasses it.
+  video_player_avfoundation: ^2.8.9
+```
+
 - [ ] **Step 3: Exclude the vendored package from melos analyze/test**
 
 In `melos.yaml`, add `video_player_avfoundation` to BOTH the `analyze` and
