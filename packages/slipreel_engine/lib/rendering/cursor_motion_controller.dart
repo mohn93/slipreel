@@ -150,6 +150,14 @@ class CursorMotionController {
     required int fps,
     Duration cursorDelay = Duration.zero,
     CursorPostProcess postProcess = CursorPostProcess.none,
+
+    /// Playback speed of the slice covering [position] (source time).
+    /// The spring chases the recorded path in SOURCE time, so its
+    /// settle-time τ is fixed in source time and shrinks in WALL time
+    /// as the slice plays faster. Integrating by `dt / playbackSpeed`
+    /// preserves the per-wall-frame settle, keeping perceived softness
+    /// comparable to 1×. Defaults to 1.0 ⇒ behavior identical to today.
+    double playbackSpeed = 1.0,
   }) {
     // Same-position re-render: serve the cached result without
     // stepping the spring forward (would compound noise from
@@ -283,7 +291,10 @@ class CursorMotionController {
       return _cachedResult;
     }
 
-    final dt = dtMicros / 1e6;
+    // Clamp to a small floor so a degenerate (0 / negative) slice speed
+    // can't divide-by-zero or blow the step up unboundedly.
+    final speedFactor = playbackSpeed < 0.05 ? 0.05 : playbackSpeed;
+    final dt = (dtMicros / 1e6) / speedFactor;
     final desc = spring.toDescription();
 
     // Partial velocity feedforward — target a point ahead of the

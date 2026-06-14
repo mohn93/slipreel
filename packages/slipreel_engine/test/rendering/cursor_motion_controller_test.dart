@@ -457,5 +457,66 @@ void main() {
           reason: 'Velocity must reflect the actual recorded motion, '
               'not a fabricated jump from a missing sample.');
     });
+
+    // A horizontal ramp the spring will lag behind. Samples every 16 ms
+    // for 320 ms so there is room to observe steady-state lag.
+    CursorRecording _ramp() => _record([
+          for (int i = 0; i <= 20; i++)
+            (micros: i * 16000, x: i * 50.0, y: 0, clicked: false),
+        ]);
+
+    test('playbackSpeed defaults to 1.0 → output identical to omitting it', () {
+      const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      final rec = _ramp();
+      final timeline = [for (int i = 0; i <= 20; i++) i * 16000];
+
+      final a = CursorMotionController();
+      final b = CursorMotionController();
+      CursorMotionUpdate? lastA;
+      CursorMotionUpdate? lastB;
+      for (final m in timeline) {
+        lastA = a.update(
+            position: Duration(microseconds: m),
+            cursorRecording: rec, config: cfg, fps: 60);
+        lastB = b.update(
+            position: Duration(microseconds: m),
+            cursorRecording: rec, config: cfg, fps: 60, playbackSpeed: 1.0);
+      }
+      expect(lastB!.screenPos.dx, closeTo(lastA!.screenPos.dx, 1e-9));
+      expect(lastB.screenPos.dy, closeTo(lastA.screenPos.dy, 1e-9));
+    });
+
+    test('2× source stepping lags more in source space than 1× (softer)', () {
+      // Same recorded ramp, same wall cadence (real frames). The 1× run
+      // advances source time 16 ms/frame; the 2× run advances 32 ms/frame
+      // (source moves 2× faster per wall frame). At the SAME source
+      // position the speed-aware spring must sit further behind the raw
+      // path — that extra source-lag is what plays back as preserved
+      // wall-time softness.
+      const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      final rec = _ramp();
+
+      final slow = CursorMotionController();
+      CursorMotionUpdate? lastSlow;
+      for (int i = 0; i <= 10; i++) {
+        lastSlow = slow.update(
+            position: Duration(microseconds: i * 16000),
+            cursorRecording: rec, config: cfg, fps: 60, playbackSpeed: 1.0);
+      }
+      // 1× reached source t=160ms.
+      final spriteAt160 = lastSlow!.screenPos.dx;
+
+      final fast = CursorMotionController();
+      CursorMotionUpdate? lastFast;
+      for (int i = 0; i <= 5; i++) {
+        lastFast = fast.update(
+            position: Duration(microseconds: i * 32000),
+            cursorRecording: rec, config: cfg, fps: 60, playbackSpeed: 2.0);
+      }
+      // 2× also reached source t=160ms (5 frames × 32 ms), but the spring
+      // integrated half the effective time per frame → it sits further
+      // behind (smaller dx) than the 1× run at the same source t.
+      expect(lastFast!.screenPos.dx, lessThan(spriteAt160 - 1.0));
+    });
   });
 }
