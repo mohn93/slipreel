@@ -59,33 +59,45 @@ class BlurEffect implements BackgroundEffect {
     );
     final inputImage = await completer.future;
 
-    // Apply blur using Canvas
-    final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder);
+    // m12: dispose the input image, picture, and blurred image — each call
+    // otherwise leaks 2 ui.Image + 1 ui.Picture (native GPU handles that GC
+    // only reclaims on finalization).
+    ui.Picture? picture;
+    ui.Image? blurredImage;
+    try {
+      // Apply blur using Canvas
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
 
-    final paint = Paint()
-      ..imageFilter = ui.ImageFilter.blur(sigmaX: sigmaX, sigmaY: sigmaY);
+      final paint = Paint()
+        ..imageFilter = ui.ImageFilter.blur(sigmaX: sigmaX, sigmaY: sigmaY);
 
-    canvas.drawImage(inputImage, ui.Offset.zero, paint);
+      canvas.drawImage(inputImage, ui.Offset.zero, paint);
 
-    final picture = recorder.endRecording();
-    final blurredImage = await picture.toImage(width, height);
+      picture = recorder.endRecording();
+      blurredImage = await picture.toImage(width, height);
 
-    // Convert back to BGRA
-    final byteData = await blurredImage.toByteData(format: ui.ImageByteFormat.rawRgba);
-    if (byteData == null) {
-      throw Exception('Failed to convert blurred image to bytes');
+      // Convert back to BGRA
+      final byteData =
+          await blurredImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (byteData == null) {
+        throw Exception('Failed to convert blurred image to bytes');
+      }
+
+      final rgbaOutput = byteData.buffer.asUint8List();
+      final bgraOutput = Uint8List(rgbaOutput.length);
+      for (int i = 0; i < rgbaOutput.length; i += 4) {
+        bgraOutput[i] = rgbaOutput[i + 2];     // B
+        bgraOutput[i + 1] = rgbaOutput[i + 1]; // G
+        bgraOutput[i + 2] = rgbaOutput[i];     // R
+        bgraOutput[i + 3] = rgbaOutput[i + 3]; // A
+      }
+
+      return bgraOutput;
+    } finally {
+      inputImage.dispose();
+      picture?.dispose();
+      blurredImage?.dispose();
     }
-
-    final rgbaOutput = byteData.buffer.asUint8List();
-    final bgraOutput = Uint8List(rgbaOutput.length);
-    for (int i = 0; i < rgbaOutput.length; i += 4) {
-      bgraOutput[i] = rgbaOutput[i + 2];     // B
-      bgraOutput[i + 1] = rgbaOutput[i + 1]; // G
-      bgraOutput[i + 2] = rgbaOutput[i];     // R
-      bgraOutput[i + 3] = rgbaOutput[i + 3]; // A
-    }
-
-    return bgraOutput;
   }
 }

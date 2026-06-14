@@ -60,7 +60,7 @@ class CameraRenderResolver {
           joinTolerance: joinTolerance,
         );
 
-    final runs = _mergedRuns(regions);
+    final runs = _mergedRuns(regions, joinTolerance);
     final active = placeAt(position);
 
     if (active != null) {
@@ -118,15 +118,20 @@ class CameraRenderResolver {
   }
 
   /// Maximal intervals where the camera is visible (`placementAt != null`):
-  /// regions sorted by start and merged when the next starts at or before the
-  /// current end (overlap or exact half-open adjacency). A real gap (next start
-  /// strictly after current end) breaks the run.
-  static List<_Run> _mergedRuns(List<CameraRegion> regions) {
+  /// regions sorted by start and merged when the next starts within
+  /// [joinTolerance] of the current end. m14: this MUST use the same tolerance
+  /// `CameraPlacementResolver` glides across, otherwise a sub-tolerance gap
+  /// (1–4ms) leaves the bubble continuously placed yet splits the run in two,
+  /// so the second segment replays the appear ramp and the reveal flickers
+  /// out-and-in at the seam. A gap larger than the tolerance is a real gap and
+  /// breaks the run.
+  static List<_Run> _mergedRuns(
+      List<CameraRegion> regions, Duration joinTolerance) {
     final sorted = [...regions]
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
     final runs = <_Run>[];
     for (final r in sorted) {
-      if (runs.isEmpty || r.startTime > runs.last.end) {
+      if (runs.isEmpty || r.startTime > runs.last.end + joinTolerance) {
         runs.add(_Run(r.startTime, r.endTime));
       } else if (r.endTime > runs.last.end) {
         runs.last.end = r.endTime;

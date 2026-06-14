@@ -43,6 +43,13 @@ final class SourcePickerOverlay {
   private func present(targetsByScreen: [NSScreen: [PickerTarget]]) {
     overlayWindows.removeAll()
     pickerViews.removeAll()
+    // nit: with no displays (headless / CI) the loop would create no overlay
+    // windows, so nothing could ever finish/cancel and the awaiting
+    // continuation would hang forever. Resume with nil instead.
+    guard !NSScreen.screens.isEmpty else {
+      cancel()
+      return
+    }
     for screen in NSScreen.screens {
       let win = NSWindow(
         contentRect: screen.frame,

@@ -29,6 +29,13 @@ final class CameraCaptureManager: NSObject, AVCaptureVideoDataOutputSampleBuffer
   private var outWidth = 0
   private var outHeight = 0
 
+  /// m17: invoked (on main) when the capture session reports a runtime error or
+  /// interruption — e.g. the webcam is unplugged mid-recording. Lets the owner
+  /// log/surface a non-fatal warning. The screen recording is NOT torn down;
+  /// frames captured up to the failure stay in the sidecar (finalized on stop).
+  var onRuntimeError: ((String) -> Void)?
+  private var observers: [NSObjectProtocol] = []
+
   /// All connected video capture devices as [{uid,label}] for the picker menu.
   static func availableDevices() -> [[String: String]] {
     var deviceTypes: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera]
@@ -95,6 +102,7 @@ final class CameraCaptureManager: NSObject, AVCaptureVideoDataOutputSampleBuffer
     try w2.start()
     writer = w2
 
+    installSessionObservers()
     session.startRunning()
 
     DispatchQueue.main.async {
@@ -104,11 +112,42 @@ final class CameraCaptureManager: NSObject, AVCaptureVideoDataOutputSampleBuffer
     }
   }
 
-  func pause() { writer?.pause() }
-  func resume() { writer?.resume() }
+  /// m17: observe runtime errors / interruptions on the capture session so an
+  /// unplugged or seized webcam no longer truncates the track silently. We warn
+  /// and keep recording screen-only; frames captured before the failure stay in
+  /// the sidecar (finalized on stop()).
+  private func installSessionObservers() {
+    let center = NotificationCenter.default
+    let runtimeError = center.addObserver(
+      forName: .AVCaptureSessionRuntimeError, object: session, queue: .main
+    ) { [weak self] note in
+      guard let self = self else { return }
+      let err = note.userInfo?[AVCaptureSessionErrorKey] as? NSError
+      let message = err?.localizedDescription ?? "camera capture error"
+      NSLog("[CameraCaptureManager] runtime error: %@", message)
+      self.onRuntimeError?(message)
+    }
+    let interrupted = center.addObserver(
+      forName: .AVCaptureSessionWasInterrupted, object: session, queue: .main
+    ) { [weak self] _ in
+      NSLog("[CameraCaptureManager] capture session interrupted")
+      self?.onRuntimeError?("camera capture interrupted")
+    }
+    observers = [runtimeError, interrupted]
+  }
+
+  private func removeSessionObservers() {
+    let center = NotificationCenter.default
+    for o in observers { center.removeObserver(o) }
+    observers.removeAll()
+  }
+
+  func pause(at hostTime: CMTime? = nil) { writer?.pause(at: hostTime) }
+  func resume(at hostTime: CMTime? = nil) { writer?.resume(at: hostTime) }
 
   /// Stop the session + self-view, finalize the writer, and return capture info.
   func stop(completion: @escaping (StopInfo) -> Void) {
+    removeSessionObservers()
     session.stopRunning()
     // Barrier: drain any in-flight captureOutput callbacks (which call
     // writer.append on this queue) so frameCount/firstSampleHostSeconds are

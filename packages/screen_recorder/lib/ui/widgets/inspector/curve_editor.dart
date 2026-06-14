@@ -135,6 +135,13 @@ class _CurveEditorState extends State<CurveEditor>
         y2 = v.clamp(kCurveGraphYMin, kCurveGraphYMax);
         break;
     }
+    // nit: reflect the clamped value back into the field immediately. Without
+    // this the field keeps showing the raw out-of-range text the user typed
+    // until some later unfocused rebuild re-syncs it.
+    final clamped = [x1, y1, x2, y2][idx];
+    final ctrl = [_x1, _y1, _x2, _y2][idx];
+    final text = clamped.toStringAsFixed(2);
+    if (ctrl.text != text) ctrl.text = text;
     widget.onCurveChanged(CubicBezierCurve(x1: x1, y1: y1, x2: x2, y2: y2));
   }
 

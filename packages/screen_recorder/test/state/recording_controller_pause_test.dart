@@ -11,6 +11,24 @@ class _FakePlatform extends ScreenRecorderPlatform {
   Future<void> resumeRecording() async => resumeCalls++;
 }
 
+/// Records the order in which the native pause/resume bodies actually run.
+/// `pauseRecording` is deliberately slow so an un-serialized resume would
+/// reach the native side first.
+class _OrderedPlatform extends ScreenRecorderPlatform {
+  _OrderedPlatform(this.order);
+  final List<String> order;
+  @override
+  Future<void> pauseRecording() async {
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    order.add('pause');
+  }
+
+  @override
+  Future<void> resumeRecording() async {
+    order.add('resume');
+  }
+}
+
 void main() {
   late _FakePlatform platform;
   setUp(() {
@@ -46,6 +64,23 @@ void main() {
     c.state = c.state.copyWith(status: RecordingStatus.paused);
     await c.resumeRecording();
     expect(platform.resumeCalls, 1);
+    expect(c.state.status, RecordingStatus.recording);
+  });
+
+  // m1: a rapid pause→resume toggle must reach the native side in order. The
+  // old code flipped the Dart status synchronously and fired the platform call
+  // without serializing, so a quick resume could overtake a slow pause.
+  test('rapid pause then resume serializes native calls in order', () async {
+    final order = <String>[];
+    ScreenRecorderPlatform.instance = _OrderedPlatform(order);
+    final c = RecordingController();
+    c.state = c.state.copyWith(status: RecordingStatus.recording);
+
+    final pause = c.pauseRecording();
+    final resume = c.resumeRecording();
+    await Future.wait([pause, resume]);
+
+    expect(order, ['pause', 'resume']);
     expect(c.state.status, RecordingStatus.recording);
   });
 }

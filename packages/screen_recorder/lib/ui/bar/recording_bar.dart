@@ -89,7 +89,16 @@ class RecordingBar extends StatelessWidget {
       height: double.infinity,
       color: const Color(0xFF2C2C30),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      child: Center(
+      // The borderless bar window is sized to the row's intrinsic width by
+      // `_syncBarSize` (RecordingBarScreen). On the first frame(s) — before that
+      // measurement resizes the window — the incoming width can be narrower than
+      // the content, which made a plain `Center > Row` overflow. OverflowBox
+      // lets the row take its intrinsic width (what _syncBarSize measures
+      // anyway) without throwing, while keeping it centred once the window fits.
+      child: OverflowBox(
+        alignment: Alignment.center,
+        minWidth: 0,
+        maxWidth: double.infinity,
         child: Row(
           key: contentKey,
           mainAxisSize: MainAxisSize.min,

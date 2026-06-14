@@ -756,4 +756,14 @@ class FrameCompositor {
     final dy = (canvas.height - videoSize.height) / 2;
     return Rect.fromLTWH(dx, dy, videoSize.width, videoSize.height);
   }
+
+  /// Releases retained GPU resources. m10: the wallpaper is rasterized once and
+  /// cached for the whole export (~8-10MB at 1440p); without this it survives
+  /// until GC finalizes the handle. Call when the compositor is done (see
+  /// InProcessExportCompositor.dispose). Idempotent.
+  void dispose() {
+    _cachedWallpaperImage?.dispose();
+    _cachedWallpaperImage = null;
+    _cachedWallpaperKey = null;
+  }
 }

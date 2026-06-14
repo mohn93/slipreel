@@ -5,6 +5,17 @@ each finding re-checked by an independent adversarial verifier that re-read the 
 
 **45 raw findings → 37 confirmed, 8 refuted.** Severity: **0 critical, 8 major, 19 minor, 10 nit.**
 
+> ### Remediation status (2026-06-14, branch `fix/review-backlog-2026-06-08`)
+> All confirmed findings are now resolved:
+> - **Majors (8):** M1–M8 fixed & merged earlier (see git history).
+> - **Minors (19):** m15/m16 were already fixed by the M-batch; m6 was resolved by M4's
+>   `forEditing` spring seed. The rest — m1, m2, m4, m5, m7, m8, m9, m10, m12, m13, m14, m17, m18 —
+>   fixed on this branch with tests where logic is testable. (m3, m11 are playground/shader-mode-only;
+>   m19 was a reserved placeholder.)
+> - **Nits (10):** nit1–4, nit6–9 fixed. **nit5** (camera vanish-tail freeze) left as-is — the
+>   reviewer flagged it "arguably correct."
+> - Native (Swift) changes compile-verified via `xcodebuild … -destination 'platform=macOS,arch=x86_64'`.
+
 > Note: the "debug-probe seam bypassed" minor (main.dart / pubspec.yaml) is a **false positive** — it
 > reflects the local-only `agent_wires_probe` dev edits that are never committed and pass on a clean
 > checkout. It is excluded from the real backlog below.

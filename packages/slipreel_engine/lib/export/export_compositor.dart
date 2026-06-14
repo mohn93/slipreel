@@ -47,8 +47,9 @@ class InProcessExportCompositor implements ExportCompositor {
 
   @override
   Future<void> dispose() async {
-    // FrameCompositor doesn't own any teardownable resources of its
-    // own — controllers are pure Dart, ui.Picture/Image are disposed
-    // inside compose(). Nothing to do here.
+    // m10: release the compositor's cached wallpaper ui.Image (rasterized once
+    // and held for the whole export). Other resources are pure Dart or are
+    // disposed inside compose().
+    _delegate.dispose();
   }
 }

@@ -351,6 +351,24 @@ class CameraBubble extends StatelessWidget {
     );
   }
 
+  /// m5: the largest width-fraction whose pixel box still fits inside the
+  /// padded canvas on BOTH axes. Past this, `cameraPixelBox` would clamp the
+  /// center to 0.5 (its "bigger than the padded canvas → centered" branch),
+  /// which read as the bubble snapping to canvas center mid-resize. Capping the
+  /// resize here keeps the box pinned under the cursor instead.
+  double get _maxFitSize {
+    const m = kCameraEdgeMargin;
+    final aspect = settings.shape.pixelAspect(originalAspect);
+    final ca =
+        canvasSize.height == 0 ? 1.0 : canvasSize.width / canvasSize.height;
+    final fitW = 1 - 2 * m; // width ≤ padded canvas width
+    final fitH = (aspect.isFinite && aspect > 0)
+        ? aspect * (1 - 2 * m) / ca // derived height ≤ padded canvas height
+        : fitW;
+    final fit = fitW < fitH ? fitW : fitH;
+    return fit < _maxSize ? fit : _maxSize;
+  }
+
   void _resizeBy(Offset deltaPx, Alignment corner) {
     final cb = onPlacementChanged;
     if (cb == null) return;
@@ -362,7 +380,7 @@ class CameraBubble extends StatelessWidget {
     cb(CameraPlacement(
       centerX: placement.centerX,
       centerY: placement.centerY,
-      size: (placement.size + dSize).clamp(_minSize, _maxSize),
+      size: (placement.size + dSize).clamp(_minSize, _maxFitSize),
     ));
   }
 }

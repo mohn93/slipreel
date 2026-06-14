@@ -27,6 +27,22 @@ void main() {
     expect(s.placement.centerX, 0.5);
   });
 
+  test(
+      'm14: two regions joined within joinTolerance stay fully revealed across '
+      'the seam (no appear-ramp flicker)', () {
+    // First region [100,1100), second [1103,2103): a 3ms gap < the 4ms
+    // joinTolerance, so placementAt glides across it as one continuous run.
+    // The reveal must NOT dip back toward 0 at the second region's start.
+    final regions = [region(100, 1000), region(1103, 1000)];
+    // Steady inside the first region: fully shown.
+    expect(CameraRenderResolver.renderAt(ms(700), regions)!.reveal, 1.0);
+    // Right at the second region's start — would replay the appear ramp (≈0)
+    // if the runs weren't merged with joinTolerance.
+    expect(CameraRenderResolver.renderAt(ms(1103), regions)!.reveal, 1.0);
+    // Just inside the second region.
+    expect(CameraRenderResolver.renderAt(ms(1150), regions)!.reveal, 1.0);
+  });
+
   test('appear ramps 0→1 over 280ms when the run starts after t=0', () {
     final regions = [region(1000, 1000, cx: 0.8)];
     final atStart = CameraRenderResolver.renderAt(ms(1000), regions)!;

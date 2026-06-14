@@ -296,24 +296,28 @@ class LiveRecordingWriter {
   /// the session, this is a no-op — pausing nothing-yet-captured has no
   /// observable effect, and skipping it avoids a broken state where the
   /// rebase offset accumulates before any session start exists.
-  func pause() {
+  /// nit: accepts a host-clock timestamp so the screen and camera writers can
+  /// share ONE read per pause/resume edge instead of each sampling the clock
+  /// independently (which drifts A/V sub-ms per cycle). Falls back to its own
+  /// read when called without one.
+  func pause(at hostTime: CMTime? = nil) {
     writerQueue.sync {
       guard isStarted, writerActive, !isPaused else { return }
       isPaused = true
-      pauseStart = CMClockGetTime(CMClockGetHostTimeClock())
+      pauseStart = hostTime ?? CMClockGetTime(CMClockGetHostTimeClock())
     }
   }
 
   /// Resume appending. Adds the elapsed paused duration to `pausedOffset` so
   /// subsequent samples have their PTS rebased seamlessly. Idempotent.
-  func resume() {
+  func resume(at hostTime: CMTime? = nil) {
     writerQueue.sync {
       guard isStarted, isPaused, let start = pauseStart else {
         isPaused = false
         pauseStart = nil
         return
       }
-      let now = CMClockGetTime(CMClockGetHostTimeClock())
+      let now = hostTime ?? CMClockGetTime(CMClockGetHostTimeClock())
       pausedOffset = CMTimeAdd(pausedOffset, CMTimeSubtract(now, start))
       isPaused = false
       pauseStart = nil

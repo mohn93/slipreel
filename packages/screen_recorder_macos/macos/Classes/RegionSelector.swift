@@ -37,6 +37,10 @@ final class RegionSelector {
     overlayWindows.removeAll()
     views.removeAll()
 
+    // nit: with no displays (headless / CI) there are no overlays to drive the
+    // selection, so the continuation below would never resume. Bail with nil.
+    guard !NSScreen.screens.isEmpty else { return nil }
+
     for screen in NSScreen.screens {
       // contentRect is in GLOBAL screen coordinates. We intentionally do NOT
       // pass `screen:` — when that parameter is non-nil, AppKit interprets
