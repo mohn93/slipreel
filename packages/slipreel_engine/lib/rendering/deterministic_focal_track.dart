@@ -28,6 +28,7 @@ class DeterministicFocalTrack {
     required this.cursorRecording,
     required this.cursorAnimationConfig,
     required this.cursorPostProcess,
+    required this.cursorDelay,
     required this.videoSize,
     required this.fps,
     required List<Offset> samples,
@@ -44,6 +45,15 @@ class DeterministicFocalTrack {
   final CursorRecording cursorRecording;
   final CursorAnimationConfig cursorAnimationConfig;
   final CursorPostProcess cursorPostProcess;
+
+  /// Cursor sprite delay the live camera follows. The focal chases the
+  /// spring-smoothed *sprite*, which is sampled at `position - cursorDelay`,
+  /// so the replay must apply the same delay or the deterministic focal would
+  /// diverge from the live one by `cursorDelay` of cursor motion (a visible
+  /// jump at the play↔scrub boundary). Defaults to zero so export — which
+  /// uses this track only for scene-blur sampling — is unchanged.
+  final Duration cursorDelay;
+
   final Size videoSize;
   final int fps;
 
@@ -61,6 +71,7 @@ class DeterministicFocalTrack {
     required Size videoSize,
     required int fps,
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
+    Duration cursorDelay = Duration.zero,
   }) {
     final builder = ScenePassBuilder();
     final regions = <ZoomRegion>[region];
@@ -74,6 +85,7 @@ class DeterministicFocalTrack {
         position: Duration(microseconds: us),
         zoomRegions: regions,
         cursorAnimationConfig: cursorAnimationConfig,
+        cursorDelay: cursorDelay,
         cursorPostProcess: cursorPostProcess,
         cursorRecording: cursorRecording,
         videoSize: videoSize,
@@ -100,6 +112,7 @@ class DeterministicFocalTrack {
       cursorRecording: cursorRecording,
       cursorAnimationConfig: cursorAnimationConfig,
       cursorPostProcess: cursorPostProcess,
+      cursorDelay: cursorDelay,
       videoSize: videoSize,
       fps: fps,
       samples: samples,
@@ -140,11 +153,13 @@ class DeterministicFocalTrack {
     required CursorPostProcess cursorPostProcess,
     required Size videoSize,
     required int fps,
+    Duration cursorDelay = Duration.zero,
   }) {
     return identical(this.cursorRecording, cursorRecording) &&
         this.cursorAnimationConfig == cursorAnimationConfig &&
         this.region == region &&
         this.cursorPostProcess == cursorPostProcess &&
+        this.cursorDelay == cursorDelay &&
         this.videoSize == videoSize &&
         this.fps == fps;
   }

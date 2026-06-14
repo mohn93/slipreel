@@ -100,4 +100,66 @@ void main() {
       );
     });
   });
+
+  group('shouldUseDeterministicFocal', () {
+    test('scrubbing → true (live spring is path-dependent there)', () {
+      expect(
+        shouldUseDeterministicFocal(
+          isHoverScrubbing: true,
+          isPlaying: false,
+          hasOverride: false,
+          followCursor: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('paused (not playing) → true', () {
+      expect(
+        shouldUseDeterministicFocal(
+          isHoverScrubbing: false,
+          isPlaying: false,
+          hasOverride: false,
+          followCursor: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('forward playback → false (live spring is correct)', () {
+      expect(
+        shouldUseDeterministicFocal(
+          isHoverScrubbing: false,
+          isPlaying: true,
+          hasOverride: false,
+          followCursor: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('placement override active → false (override drives the focal)', () {
+      expect(
+        shouldUseDeterministicFocal(
+          isHoverScrubbing: true,
+          isPlaying: false,
+          hasOverride: true,
+          followCursor: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('non-follow-cursor region → false (rect-center is already pure)', () {
+      expect(
+        shouldUseDeterministicFocal(
+          isHoverScrubbing: true,
+          isPlaying: false,
+          hasOverride: false,
+          followCursor: false,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

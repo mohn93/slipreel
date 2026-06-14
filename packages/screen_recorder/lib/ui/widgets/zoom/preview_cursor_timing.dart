@@ -45,3 +45,27 @@ Duration steadyPreviewPlayhead({
   // Forward/held raw: suppress latency-induced reversals by holding.
   return adjusted < prevEmitted ? prevEmitted : adjusted;
 }
+
+/// Whether the preview should render the zoom focal from the deterministic
+/// [DeterministicFocalTrack] (a pure function of the playhead) instead of the
+/// live, path-dependent focal spring.
+///
+/// The live spring integrates frame-to-frame in increasing-time order, so it is
+/// correct during forward playback but lands on the wrong spot when the user
+/// scrubs — especially backward — because its retained state reflects the path
+/// taken, not the destination time. In those states we replay the deterministic
+/// track instead.
+///
+/// Returns false when a placement override is active (that intentionally drives
+/// the focal to a previewed rect) or for non-follow-cursor regions (whose focal
+/// is the fixed `rect.center` and already position-pure).
+bool shouldUseDeterministicFocal({
+  required bool isHoverScrubbing,
+  required bool isPlaying,
+  required bool hasOverride,
+  required bool followCursor,
+}) {
+  if (hasOverride) return false;
+  if (!followCursor) return false;
+  return isHoverScrubbing || !isPlaying;
+}

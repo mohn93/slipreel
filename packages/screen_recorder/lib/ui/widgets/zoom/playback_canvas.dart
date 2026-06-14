@@ -11,6 +11,7 @@ import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
+import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/effects/scene_accumulation_painter.dart';
@@ -353,6 +354,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
 
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
 
+  /// Cached deterministic focal trajectory for the active follow-cursor zoom
+  /// region. Used to render a position-pure focal while scrubbing/paused — the
+  /// live focal spring is path-dependent and lands on the wrong spot when the
+  /// user scrubs backward. Rebuilt when the region or its replay inputs change
+  /// (mirrors `FrameCompositor._trackFor`).
+  DeterministicFocalTrack? _focalTrack;
+
   /// Single source of truth for per-frame scene state (cursor sprite,
   /// focal trajectory, EMA-filtered cursor velocity). Shared with the
   /// export pipeline ([FrameCompositor]) — same instance class, same
@@ -598,6 +606,28 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             );
             final motion = scenePass.motion;
             final focalUpdate = scenePass.focalUpdate;
+            // The rendered zoom focal must be a deterministic function of the
+            // playhead. The live spring (in `scenePass`) integrates frame-to-
+            // frame and is correct during forward playback, but when the user
+            // scrubs — especially backward — its retained state reflects the
+            // path taken, not time `pos`, so the camera centres on the wrong
+            // spot. In scrub/paused states replay the deterministic focal track
+            // instead (built with the same cursorDelay so it matches playback).
+            Offset? effectiveFocal = focalUpdate?.focal;
+            if (focalUpdate != null &&
+                shouldUseDeterministicFocal(
+                  isHoverScrubbing: widget.isHoverScrubbing,
+                  isPlaying: widget.controller.value.isPlaying,
+                  hasOverride: widget.zoomPreviewOverride?.value != null,
+                  followCursor: focalUpdate.zoom.followCursor,
+                )) {
+              effectiveFocal = _focalTrackFor(
+                focalUpdate.zoom,
+                videoSize,
+                widget.metadata?.fps ?? 60,
+                cursorAnimationConfig,
+              ).focalAt(pos);
+            }
             final effectiveCursorBlur =
                 widget.motionBlur * widget.cursorMovementBlur;
             final effectiveCursorTuning = widget.motionBlurTuning.copyWith(
@@ -676,7 +706,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                         cursorState: motion.state,
                         devicePixelRatio:
                             MediaQuery.of(context).devicePixelRatio,
-                        currentFocalVideo: focalUpdate?.focal,
+                        currentFocalVideo: effectiveFocal,
                         currentScale: focalUpdate?.zoom.zoomLevel ?? 1.0,
                         focalAt: widget.accumulationCameraFocalAt,
                         scaleAt: widget.accumulationCameraScaleAt,
@@ -981,7 +1011,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             }
 
             final activeZoom = focalUpdate.zoom;
-            final focalForFrame = focalUpdate.focal;
+            final focalForFrame = effectiveFocal ?? focalUpdate.focal;
 
             // Smoothly interpolate the rendered zoom level when the
             // user changes it via the badge — otherwise stepping the
@@ -1237,6 +1267,39 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       deltas.add(delta);
     }
     return deltas;
+  }
+
+  /// Returns a cached [DeterministicFocalTrack] for [region], rebuilding only
+  /// when the region or its replay inputs change. Used to render a position-pure
+  /// focal while scrubbing/paused.
+  DeterministicFocalTrack _focalTrackFor(
+    ZoomRegion region,
+    Size videoSize,
+    int fps,
+    CursorAnimationConfig cursorAnimationConfig,
+  ) {
+    final cached = _focalTrack;
+    if (cached != null &&
+        cached.matches(
+          region: region,
+          cursorRecording: widget.cursorRecording,
+          cursorAnimationConfig: cursorAnimationConfig,
+          cursorPostProcess: widget.cursorPostProcess,
+          videoSize: videoSize,
+          fps: fps,
+          cursorDelay: widget.cursorDelay,
+        )) {
+      return cached;
+    }
+    return _focalTrack = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: widget.cursorRecording,
+      cursorAnimationConfig: cursorAnimationConfig,
+      videoSize: videoSize,
+      fps: fps,
+      cursorPostProcess: widget.cursorPostProcess,
+      cursorDelay: widget.cursorDelay,
+    );
   }
 
   /// Stateless `(focal, scale)` lookup at an arbitrary timestamp, used
