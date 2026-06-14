@@ -226,4 +226,77 @@ void main() {
     final b = delayed.focalAt(const Duration(milliseconds: 4000));
     expect((a - b).distance, greaterThan(5.0));
   });
+
+  test('screenRampCurve shapes the deterministic enter-ramp focal', () {
+    final rec = sweep();
+    const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+    // The shared [region] starts at 2542ms with a 500ms enter ramp, so
+    // probe ~125ms into the ramp where curve shape matters.
+    final probe = region.startTime + const Duration(milliseconds: 125);
+    final linear = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: rec,
+      cursorAnimationConfig: cfg,
+      videoSize: videoSize,
+      fps: 60,
+      screenRampCurve: Curves.linear,
+    ).focalAt(probe);
+    final eased = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: rec,
+      cursorAnimationConfig: cfg,
+      videoSize: videoSize,
+      fps: 60,
+      screenRampCurve: Curves.easeInOutQuad,
+    ).focalAt(probe);
+    expect((linear - eased).distance, greaterThan(1.0));
+  });
+
+  test('changed screenRampCurve → matches() false', () {
+    final recording = sweep();
+    const config = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+    final track = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: recording,
+      cursorAnimationConfig: config,
+      videoSize: videoSize,
+      fps: 60,
+      screenRampCurve: Curves.easeInOutQuad,
+    );
+    expect(
+      track.matches(
+        region: region,
+        cursorRecording: recording,
+        cursorAnimationConfig: config,
+        cursorPostProcess: CursorPostProcess.none,
+        videoSize: videoSize,
+        fps: 60,
+        screenRampCurve: Curves.linear,
+      ),
+      isFalse,
+    );
+  });
+
+  test('omitted screenRampCurve defaults to easeInOutQuad — back-compat', () {
+    final recording = sweep();
+    const config = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+    final track = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: recording,
+      cursorAnimationConfig: config,
+      videoSize: videoSize,
+      fps: 60,
+    ); // no screenRampCurve
+    expect(
+      track.matches(
+        region: region,
+        cursorRecording: recording,
+        cursorAnimationConfig: config,
+        cursorPostProcess: CursorPostProcess.none,
+        videoSize: videoSize,
+        fps: 60,
+      ), // no screenRampCurve
+      isTrue,
+    );
+  });
 }
