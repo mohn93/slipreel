@@ -1067,6 +1067,24 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 // Screen-pan tracker is now ticked in the AnimatedBuilder
                 // above (for combined velocity). Don't double-tick here.
                 //
+                // At z==1 ramp endpoints getTransform() is identity. Render
+                // exactly like the no-zoom path (no clip) so the cursor can
+                // still bleed onto the padding and preview matches export,
+                // which also skips the clip when the transform is identity.
+                if (transform.isIdentity()) {
+                  return _buildSceneMotionBlurPass(
+                    body: composition,
+                    cursorOverlay: cursorOverlay,
+                    keystrokeOverlayWidget: keystrokeOverlayWidget,
+                    cameraOverlayWidget: cameraOverlayWidget,
+                    stickyBackground: stickyBackground,
+                    position: pos,
+                    totalSize: totalSize,
+                    videoSize: videoSize,
+                    currentTransform: transform,
+                  );
+                }
+                //
                 // Fixed rounded clip at the video window. The magnified
                 // video/cursor are clipped to this so the frame + padding
                 // stay put and only the footage scales inside the window.
