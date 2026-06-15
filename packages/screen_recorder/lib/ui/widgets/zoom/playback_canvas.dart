@@ -510,13 +510,15 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     // VideoPlayer is held as `child` so its widget isn't reconstructed
     // each frame even though the surrounding Stack is.
     //
-    // Padding-preserving zoom: the frame chrome (shadow/ring/border)
-    // and the wallpaper stay FIXED at the padded rect; only the
-    // video+cursor content is magnified/panned and clipped to the
-    // fixed rounded video window (see the active-zoom branch below).
-    // So a zoom pushes into the content, not the frame — the padding
-    // never shrinks. ClipRect on the outside keeps the scaled-up tail
-    // inside the frame so it doesn't leak across the editor backdrop.
+    // Padding-preserving HYBRID zoom: during a zoom the framed card
+    // (chrome + rounded window) scales up by a clamped factor so it
+    // visibly pushes in, but only until the wallpaper padding shrinks
+    // to a floor — it never hits zero. The video+cursor content takes
+    // the FULL zoom and is clipped to the grown rounded card. The
+    // wallpaper stays sticky. (See the active-zoom branch below and
+    // ZoomTransformer.resolveCardPushIn.) ClipRect on the outside keeps
+    // the scaled-up tail inside the frame so it doesn't leak across the
+    // editor backdrop.
     Widget framedVideo = SizedBox(
       width: totalSize.width,
       height: totalSize.height,
@@ -1579,9 +1581,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
   }
 }
 
-/// Clips a totalSize-sized child to the fixed (un-zoomed) rounded video
-/// window. Used so the zoomed video/cursor content stays inside the
-/// padded frame instead of scaling out over the wallpaper padding.
+/// Clips a totalSize-sized child to the rounded card window it is given
+/// (the padding-preserving push-in card rect when zooming). Keeps the
+/// magnified content inside the rounded frame instead of scaling out
+/// over the wallpaper padding.
 class _VideoWindowClipper extends CustomClipper<Path> {
   const _VideoWindowClipper(this.windowRect, this.cornerRadius);
   final Rect windowRect;

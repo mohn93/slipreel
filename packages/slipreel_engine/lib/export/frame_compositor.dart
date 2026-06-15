@@ -226,12 +226,13 @@ class FrameCompositor {
       // (rendered separately below).
       final fgRecorder = ui.PictureRecorder();
       final fgCanvas = ui.Canvas(fgRecorder, layerRect);
-      // When a zoom is active, clip the magnified content to the FIXED
-      // (un-zoomed) rounded video rect so the window/padding stay put and
-      // only the footage scales inside it. The clip is applied BEFORE the
-      // zoom transform, so it stays anchored in canvas space. At identity
-      // (no active zoom) skip the clip to preserve current behavior
-      // (notably the cursor bleeding onto the padding near an edge).
+      // When a zoom is active, clip the magnified content to the GROWN
+      // card rect (pushIn.cardRect): the card pushes in to the padding
+      // floor (chrome scaled by zCard below) while the content takes the
+      // full zoom inside it. The clip is applied BEFORE the zoom transform,
+      // so it stays anchored in canvas space. At identity (no active zoom)
+      // skip the clip to preserve current behavior (notably the cursor
+      // bleeding onto the padding near an edge).
       final zoomActive = !zoomTransform.isIdentity();
       // Hybrid push-in: the chrome scales up to a clamped card rect (padding
       // shrinks only to the floor), while the content keeps the full zoom and
