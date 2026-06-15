@@ -1,53 +1,213 @@
-# Padding-preserving Zoom Implementation Plan
+# Padding-preserving Zoom (Hybrid) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** When a zoom is active, keep the wallpaper padding and rounded window frame fixed; magnify/pan only the recording content inside the fixed rounded window (clipped to the corners), in both preview and export.
+**Goal:** During a zoom the framed card pushes in (scales up toward a clamp), the wallpaper padding shrinks only to a floor and never to zero, and the focal region is magnified by the full zoom level inside the rounded window — in both preview and export.
 
-**Architecture:** The zoom matrix (`ZoomTransformer.getTransform`) and focal/clamp logic are unchanged. We move *where* the transform applies: the frame chrome (shadow/ring/border) stops being zoomed, and the magnified video+cursor is clipped to the fixed, un-zoomed rounded video rect. Export = `frame_compositor.dart`; preview = `playback_canvas.dart`.
+**Architecture:** A shared pure helper (`ZoomTransformer.resolveCardPushIn`) turns the effective zoom factor + padding floor into a clamped **card scale** `zCard` and a centered **card rect**. The chrome (frame/shadow) is scaled by `zCard` (centered); the content (video+cursor) keeps the FULL zoom transform (`getTransform`, unchanged) but is clipped to the centered card rect (rounded, radius `cornerRadius·zCard`). This extends the current branch (which already clips content to a fixed rect): chrome now grows by `zCard` and the clip rect follows it.
 
-**Tech Stack:** Dart / Flutter; `flutter_test`; `dart:ui` Canvas/Picture; `Transform` + `ClipPath`/`clipRRect`.
+**Tech Stack:** Dart / Flutter; `flutter_test`; `dart:ui` Canvas; `Transform`/`ClipPath`.
 
-**Spec:** `docs/superpowers/specs/2026-06-15-padding-preserving-zoom-design.md`
+**Spec:** `docs/superpowers/specs/2026-06-15-padding-preserving-zoom-design.md` (hybrid).
+
+**Branch state:** `feat/padding-preserving-zoom` currently implements the *fixed-frame* model (chrome un-zoomed, content clipped to fixed `_videoRect`). This plan revises that to the hybrid. The effective zoom factor `z` at a frame is the scale of the zoom matrix: `zoomTransform.storage[0]` (export) / `transform.storage[0]` (preview).
 
 ---
 
 ## File Structure
 
-- **Modify** `packages/slipreel_engine/lib/export/frame_compositor.dart` — stop zooming the chrome; clip the zoomed video+cursor to the fixed rounded `_videoRect`. (Task 1)
-- **Modify** `packages/screen_recorder/lib/ui/widgets/zoom/playback_canvas.dart` — pull `FramePainter` out of the zoom `Transform`; wrap the zoomed video and cursor each in a fixed rounded clip (`ClipPath`) at the video window rect; add a small `CustomClipper`. (Task 2)
-- **Test** `packages/slipreel_engine/test/export/frame_compositor_test.dart` — add a discriminating pixel test that the zoom does not grow the video into the padding. (Task 1)
-- Manual runtime verification. (Task 3)
-
-Run engine tests from `packages/slipreel_engine`, app tests from `packages/screen_recorder`, with `flutter test`.
+- **Modify** `packages/slipreel_engine/lib/effects/zoom_transformer.dart` — add `resolveCardPushIn` pure helper. (Task A)
+- **Modify** `packages/slipreel_engine/lib/export/frame_compositor.dart` — scale chrome by `zCard`; clip content to the grown card rect. (Task B)
+- **Modify** `packages/screen_recorder/lib/ui/widgets/zoom/playback_canvas.dart` — scale `framePainterLayer` by `zCard`; clipper uses the grown card rect. (Task C)
+- **Test** `packages/slipreel_engine/test/effects/zoom_transformer_test.dart` (or the existing zoom_transformer test file) — clamp unit tests. (Task A)
+- **Test** `packages/slipreel_engine/test/export/frame_compositor_test.dart` — revise the padding test to assert the floor (padding shrinks but survives). (Task B)
+- Manual runtime verification. (Task D)
 
 ---
 
-### Task 1: Export — fixed frame + content-clipped zoom in `FrameCompositor`
+### Task A: Shared `resolveCardPushIn` helper
+
+**Files:**
+- Modify: `packages/slipreel_engine/lib/effects/zoom_transformer.dart`
+- Test: create `packages/slipreel_engine/test/effects/zoom_transformer_card_pushin_test.dart`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `packages/slipreel_engine/test/effects/zoom_transformer_card_pushin_test.dart`:
+
+```dart
+import 'package:flutter/painting.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:slipreel_engine/effects/zoom_transformer.dart';
+
+void main() {
+  // Canvas 400×320, video 320×240 centered → padding 40 each side.
+  const canvas = Size(400, 320);
+  const videoRect = Rect.fromLTWH(40, 40, 320, 240);
+  const cornerRadius = 12.0;
+
+  group('resolveCardPushIn', () {
+    test('floorFraction 1.0 ⇒ card never grows (fixed-frame degenerate)', () {
+      final r = ZoomTransformer.resolveCardPushIn(
+        videoRect: videoRect,
+        canvasSize: canvas,
+        cornerRadius: cornerRadius,
+        zoom: 4.0,
+        paddingFloorFraction: 1.0,
+      );
+      expect(r.zCard, closeTo(1.0, 1e-9));
+      expect(r.cardRect, videoRect);
+      expect(r.cornerRadius, closeTo(cornerRadius, 1e-9));
+    });
+
+    test('low zoom below zCardMax ⇒ card scales by the full zoom', () {
+      // zCardMax (x) = (400 - 0.4*(400-320)) / 320 = (400-32)/320 = 1.15.
+      // zCardMax (y) = (320 - 0.4*(320-240)) / 240 = (320-32)/240 = 1.20.
+      // zCardMax = min = 1.15. So zoom 1.10 < 1.15 ⇒ zCard == 1.10.
+      final r = ZoomTransformer.resolveCardPushIn(
+        videoRect: videoRect,
+        canvasSize: canvas,
+        cornerRadius: cornerRadius,
+        zoom: 1.10,
+        paddingFloorFraction: 0.4,
+      );
+      expect(r.zCard, closeTo(1.10, 1e-9));
+      // Centered: card grows about the canvas center.
+      expect(r.cardRect.center, const Offset(200, 160));
+      expect(r.cardRect.width, closeTo(320 * 1.10, 1e-6));
+      expect(r.cornerRadius, closeTo(cornerRadius * 1.10, 1e-6));
+      // Padding still ≥ floor (16): (400 - 352)/2 = 24 ≥ 16. ✓
+    });
+
+    test('high zoom clamps card scale to zCardMax; padding holds at floor', () {
+      final r = ZoomTransformer.resolveCardPushIn(
+        videoRect: videoRect,
+        canvasSize: canvas,
+        cornerRadius: cornerRadius,
+        zoom: 4.0,
+        paddingFloorFraction: 0.4,
+      );
+      expect(r.zCard, closeTo(1.15, 1e-6)); // = min axis zCardMax
+      // Padding on the binding (x) axis == floor 16: (400 - 320*1.15)/2 = 16.
+      final padX = (canvas.width - r.cardRect.width) / 2;
+      expect(padX, closeTo(0.4 * 40, 1e-6)); // 16
+      // Card never exceeds canvas-inset-by-floor.
+      expect(r.cardRect.width, lessThanOrEqualTo(canvas.width - 2 * 16 + 1e-6));
+    });
+
+    test('zoom 1.0 ⇒ zCard 1.0, cardRect == videoRect', () {
+      final r = ZoomTransformer.resolveCardPushIn(
+        videoRect: videoRect,
+        canvasSize: canvas,
+        cornerRadius: cornerRadius,
+        zoom: 1.0,
+        paddingFloorFraction: 0.4,
+      );
+      expect(r.zCard, closeTo(1.0, 1e-9));
+      expect(r.cardRect, videoRect);
+    });
+  });
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `cd packages/slipreel_engine && flutter test test/effects/zoom_transformer_card_pushin_test.dart`
+Expected: FAIL — `resolveCardPushIn` does not exist (compile error).
+
+- [ ] **Step 3: Implement the helper**
+
+In `zoom_transformer.dart`, add a result record typedef and a static method on `ZoomTransformer` (place after `clampFocalToBounds`):
+
+```dart
+  /// Result of [resolveCardPushIn]: the clamped card scale, the centered
+  /// on-canvas card rect at that scale, and the effective (scaled) corner
+  /// radius.
+  static ({double zCard, Rect cardRect, double cornerRadius}) resolveCardPushIn({
+    required Rect videoRect,
+    required Size canvasSize,
+    required double cornerRadius,
+    required double zoom,
+    double paddingFloorFraction = 0.4,
+  }) {
+    // Padding (per axis) is the inset of the centered 1× video rect.
+    final padX = (canvasSize.width - videoRect.width) / 2;
+    final padY = (canvasSize.height - videoRect.height) / 2;
+    final floorX = paddingFloorFraction * padX;
+    final floorY = paddingFloorFraction * padY;
+    // Largest card scale that keeps each axis inset ≥ its floor:
+    //   zCardMax_axis = (canvas_axis - 2·floor_axis) / videoRect_axis.
+    final zCardMaxX = videoRect.width <= 0
+        ? 1.0
+        : (canvasSize.width - 2 * floorX) / videoRect.width;
+    final zCardMaxY = videoRect.height <= 0
+        ? 1.0
+        : (canvasSize.height - 2 * floorY) / videoRect.height;
+    final zCardMax = zCardMaxX < zCardMaxY ? zCardMaxX : zCardMaxY;
+    final cappedMax = zCardMax < 1.0 ? 1.0 : zCardMax;
+    var zCard = zoom < 1.0 ? 1.0 : zoom;
+    if (zCard > cappedMax) zCard = cappedMax;
+    final center = Offset(canvasSize.width / 2, canvasSize.height / 2);
+    final cardRect = Rect.fromCenter(
+      center: center,
+      width: videoRect.width * zCard,
+      height: videoRect.height * zCard,
+    );
+    return (
+      zCard: zCard,
+      cardRect: cardRect,
+      cornerRadius: cornerRadius * zCard,
+    );
+  }
+```
+
+(Confirm `Rect`/`Size`/`Offset` are imported — `zoom_transformer.dart` imports `dart:ui` `Offset, Size`; add `Rect` to that show-list if needed.)
+
+- [ ] **Step 4: Run to verify pass**
+
+Run: `cd packages/slipreel_engine && flutter test test/effects/zoom_transformer_card_pushin_test.dart`
+Expected: PASS (all 4).
+
+- [ ] **Step 5: Run the existing zoom_transformer tests (no regressions)**
+
+Run: `cd packages/slipreel_engine && flutter test test/effects/`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/slipreel_engine/lib/effects/zoom_transformer.dart \
+        packages/slipreel_engine/test/effects/zoom_transformer_card_pushin_test.dart
+git commit -m "feat(zoom): add resolveCardPushIn clamp helper (card scale + grown rect) (#zoom-padding)"
+```
+
+---
+
+### Task B: Export — clamped card push-in + grown content clip
 
 **Files:**
 - Modify: `packages/slipreel_engine/lib/export/frame_compositor.dart`
 - Test: `packages/slipreel_engine/test/export/frame_compositor_test.dart`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Revise the failing test**
 
-Append this test inside the existing `group('FrameCompositor', () { ... })` in `frame_compositor_test.dart` (before the group's closing `});`). It reuses the file's `_meta` and `_solidBgra` helpers.
+Replace the existing test named `active zoom does not grow the video into the padding (padding band stays clear)` in `frame_compositor_test.dart` with the hybrid version below (the old fixed-frame assertion — whole 0–40 band clear — is now wrong; the card pushes in so the band between the floor and the 1× padding is covered):
 
 ```dart
-    test('active zoom does not grow the video into the padding '
-        '(padding band stays clear)', () async {
-      // 320×240 video, uniform 40px padding → totalSize 400×320, and the
-      // video rect is (40,40,320,240). A solid-magenta video with a 2×
-      // zoom centered on the video. With the fixed-frame model the
-      // magnified video must stay clipped to the video rect, so a pixel
-      // in the padding band (x<40) stays clear (transparent). With the
-      // old whole-window scaling, the video would cover that pixel.
+    test('active zoom pushes the card in to the padding floor (padding '
+        'shrinks but does not vanish)', () async {
+      // 320×240 video, 40px padding → totalSize 400×320, videoRect
+      // (40,40,320,240). floorFraction 0.4 → floor 16px. zCardMax (x) =
+      // (400-32)/320 = 1.15 → at 2× the card clamps to 1.15× and the left
+      // padding becomes (400-368)/2 = 16px. So: a pixel inside the floor
+      // (x<16) stays clear; a pixel between the floor and the old padding
+      // (16<x<40) is now covered by the pushed-in card; the center is video.
       final compositor = FrameCompositor(
         projectState: EditorProjectState.defaults().copyWith(
           windowFrame: const WindowFrame(
             name: 'Custom',
             padding: EdgeInsets.all(40),
-            cornerRadius: 0, // square: sample points aren't near a corner
+            cornerRadius: 0,
             shadowBlur: 0,
             shadowOffset: Offset.zero,
             shadowColor: Color(0x00000000),
@@ -55,7 +215,7 @@ Append this test inside the existing `group('FrameCompositor', () { ... })` in `
           ),
           zoomRegions: [
             ZoomRegion(
-              rect: const Rect.fromLTWH(0, 0, 320, 240), // center (160,120)
+              rect: const Rect.fromLTWH(0, 0, 320, 240),
               startTime: Duration.zero,
               duration: const Duration(seconds: 1),
               zoomLevel: 2.0,
@@ -72,333 +232,171 @@ Append this test inside the existing `group('FrameCompositor', () { ... })` in `
       );
 
       final magenta = _solidBgra(320, 240, 0xFF, 0x00, 0xFF);
-      // Mid-region: 2× hold (no enter/exit ramp).
       final rgba = await compositor.compose(
         videoFrameBgra: magenta,
         position: const Duration(milliseconds: 500),
       );
 
-      const w = 400; // totalSize width
+      const w = 400;
       bool isMagenta(int x, int y) {
         final i = (y * w + x) * 4;
-        // RGBA: magenta video reads R=0xFF, B=0xFF (see existing tests).
         return rgba[i + 0] == 0xFF && rgba[i + 2] == 0xFF && rgba[i + 3] == 0xFF;
       }
 
-      // Window center is magnified video → magenta.
+      // Inside the floor: still clear (padding survives).
+      expect(isMagenta(8, 160), isFalse,
+          reason: 'padding inside the floor must survive the zoom');
+      // Between floor (16) and old padding (40): card pushed in here.
+      expect(isMagenta(28, 160), isTrue,
+          reason: 'the card pushes in to the floor (padding shrinks 40→~16)');
+      // Center is the magnified video.
       expect(isMagenta(200, 160), isTrue,
-          reason: 'window center should show the (magnified) video');
-      // Left padding band (x=20 < 40) must NOT be covered by the video.
-      expect(isMagenta(20, 160), isFalse,
-          reason: 'padding must stay clear of the zoomed video');
-      // Top padding band (y=20 < 40) likewise.
-      expect(isMagenta(200, 20), isFalse,
-          reason: 'top padding must stay clear of the zoomed video');
+          reason: 'window center shows the magnified video');
     });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+(Keep the rounded-corner test from the earlier commit — it still holds; the card at z=2 clamps to 1.15× and the corner is still rounded. If that test's exact sample pixel now lands inside the grown card, adjust its sample to a still-outside-the-arc point and note it; do not weaken it.)
 
-Run: `cd packages/slipreel_engine && flutter test test/export/frame_compositor_test.dart --plain-name "does not grow the video into the padding"`
-Expected: FAIL — with the current whole-window scaling the magnified video covers the padding, so `isMagenta(20,160)` is `true` (assertion `isFalse` fails).
+- [ ] **Step 2: Run to verify it fails**
 
-- [ ] **Step 3: Stop zooming the chrome**
+Run: `cd packages/slipreel_engine && flutter test test/export/frame_compositor_test.dart --plain-name "pushes the card in to the padding floor"`
+Expected: FAIL — with the current fixed-frame code the card does NOT push in, so `isMagenta(28,160)` is `false` (assertion `isTrue` fails).
 
-In `frame_compositor.dart`, the chrome layer is currently built with the zoom applied (~lines 244–251):
+- [ ] **Step 3: Compute the card push-in and apply it**
 
-```dart
-      ui.Picture? chromePicture;
-      if (_frame.name != 'None') {
-        final chromeRecorder = ui.PictureRecorder();
-        final chromeCanvas = ui.Canvas(chromeRecorder, layerRect);
-        applyZoom(chromeCanvas);
-        _framePainter.paint(chromeCanvas, totalSize);
-        chromePicture = chromeRecorder.endRecording();
-      }
-```
-
-Remove the `applyZoom(chromeCanvas);` line so the chrome paints crisp at the fixed padded rect:
+In `compose()`, after `zoomActive` is determined and before building the foreground clip, compute the push-in when active:
 
 ```dart
-      ui.Picture? chromePicture;
-      if (_frame.name != 'None') {
-        final chromeRecorder = ui.PictureRecorder();
-        final chromeCanvas = ui.Canvas(chromeRecorder, layerRect);
-        // Chrome (shadow/ring/border) stays at the FIXED padded rect — it
-        // is not zoomed, so the window frame and padding don't move when
-        // the camera pushes into the content.
-        _framePainter.paint(chromeCanvas, totalSize);
-        chromePicture = chromeRecorder.endRecording();
-      }
-```
-
-- [ ] **Step 4: Clip the zoomed content to the fixed rounded video rect**
-
-Still in `compose()`, the foreground (video + cursor) is currently built as (~lines 225–239):
-
-```dart
-      final fgRecorder = ui.PictureRecorder();
-      final fgCanvas = ui.Canvas(fgRecorder, layerRect);
-      applyZoom(fgCanvas);
-      _paintVideoFrame(fgCanvas, videoImage);
-      if (motion != null && !projectState.hideCursorOverlay) {
-        final effectiveCursorBlur =
-            projectState.motionBlur * projectState.cursorMovementBlur;
-        _paintCursor(
-          fgCanvas,
-          position: position,
-          intensity: effectiveCursorBlur,
-          state: motion.state,
-        );
-      }
-      final fgPicture = fgRecorder.endRecording();
-```
-
-Wrap the zoomed draws in a fixed (device-space, un-zoomed) rounded clip at `_videoRect`, engaged only when a zoom is actually active:
-
-```dart
-      final fgRecorder = ui.PictureRecorder();
-      final fgCanvas = ui.Canvas(fgRecorder, layerRect);
-      // When a zoom is active, clip the magnified content to the FIXED
-      // (un-zoomed) rounded video rect so the window/padding stay put and
-      // only the footage scales inside it. The clip is applied BEFORE the
-      // zoom transform, so it stays anchored in canvas space. At identity
-      // (no active zoom) we skip the clip to preserve current behavior —
-      // notably the cursor's ability to bleed onto the padding near an edge.
       final zoomActive = !zoomTransform.isIdentity();
+      // Hybrid push-in: the chrome scales up to a clamped card rect (padding
+      // shrinks only to the floor), while the content keeps the full zoom and
+      // is clipped to that grown card. zCard==1 / cardRect==_videoRect when
+      // not zooming.
+      final pushIn = zoomActive
+          ? ZoomTransformer.resolveCardPushIn(
+              videoRect: _videoRect,
+              canvasSize: totalSize,
+              cornerRadius: _frame.cornerRadius,
+              zoom: zoomTransform.storage[0], // effective ramped zoom = scaleX
+            )
+          : null;
+```
+
+Then change the foreground clip to use the grown card rect:
+
+```dart
       if (zoomActive) {
         fgCanvas.save();
         fgCanvas.clipRRect(
           RRect.fromRectAndRadius(
-            _videoRect,
-            Radius.circular(_frame.cornerRadius),
+            pushIn!.cardRect,
+            Radius.circular(pushIn.cornerRadius),
           ),
         );
       }
       applyZoom(fgCanvas);
-      _paintVideoFrame(fgCanvas, videoImage);
-      if (motion != null && !projectState.hideCursorOverlay) {
-        final effectiveCursorBlur =
-            projectState.motionBlur * projectState.cursorMovementBlur;
-        _paintCursor(
-          fgCanvas,
-          position: position,
-          intensity: effectiveCursorBlur,
-          state: motion.state,
-        );
-      }
+      // ... _paintVideoFrame + _paintCursor unchanged ...
       if (zoomActive) {
         fgCanvas.restore();
       }
-      final fgPicture = fgRecorder.endRecording();
 ```
 
-(Note: `_paintVideoFrame` keeps its own inner `clipRRect(_videoRect)` for the no-zoom path's rounded corners; under the new outer fixed clip it is harmlessly redundant because the outer clip is the tighter one in canvas space.)
+- [ ] **Step 4: Scale the chrome by `zCard` (centered)**
 
-- [ ] **Step 5: Run the test to verify it passes**
+Replace the chrome build so it scales by `zCard` about the canvas center when zooming (was: painted un-zoomed). Update the stale "chrome stays at the fixed padded rect" comment too:
 
-Run: `cd packages/slipreel_engine && flutter test test/export/frame_compositor_test.dart --plain-name "does not grow the video into the padding"`
+```dart
+      ui.Picture? chromePicture;
+      if (_frame.name != 'None') {
+        final chromeRecorder = ui.PictureRecorder();
+        final chromeCanvas = ui.Canvas(chromeRecorder, layerRect);
+        // Hybrid push-in: the chrome (shadow/ring/border + rounded window)
+        // scales by zCard, centered, so the card visibly pushes in but only
+        // until the padding reaches its floor. Never smeared (composited crisp
+        // below). zCard==1 when not zooming ⇒ unchanged.
+        if (pushIn != null && pushIn.zCard != 1.0) {
+          chromeCanvas.translate(totalSize.width / 2, totalSize.height / 2);
+          chromeCanvas.scale(pushIn.zCard, pushIn.zCard);
+          chromeCanvas.translate(-totalSize.width / 2, -totalSize.height / 2);
+        }
+        _framePainter.paint(chromeCanvas, totalSize);
+        chromePicture = chromeRecorder.endRecording();
+      }
+```
+
+Also fix the now-inaccurate comment at the foreground block (lines ~218–224, "The chrome still scales/pans with the zoom") to describe the hybrid: chrome scales by `zCard` (centered, crisp), content gets the full zoom clipped to the grown card.
+
+- [ ] **Step 5: Run to verify pass**
+
+Run: `cd packages/slipreel_engine && flutter test test/export/frame_compositor_test.dart --plain-name "pushes the card in to the padding floor"`
 Expected: PASS.
 
-- [ ] **Step 6: Run the full compositor test file (no regressions)**
+- [ ] **Step 6: Full compositor file**
 
 Run: `cd packages/slipreel_engine && flutter test test/export/frame_compositor_test.dart`
-Expected: PASS (all tests — including the existing "shadowed frame + zooming pan" chrome-split smoke test and the "None"-frame zoom focal test).
+Expected: PASS (all — including the rounded-corner test and the existing shadowed/zoom-pan smoke tests). Fix the rounded-corner sample point if needed (per Step 1 note).
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add packages/slipreel_engine/lib/export/frame_compositor.dart \
         packages/slipreel_engine/test/export/frame_compositor_test.dart
-git commit -m "feat(zoom): export keeps frame/padding fixed, zooms content inside the window (#zoom-padding)"
+git commit -m "feat(zoom): export hybrid push-in — chrome scales to padding floor, content clipped to grown card (#zoom-padding)"
 ```
 
 ---
 
-### Task 2: Preview — fixed frame + content-clipped zoom in `PlaybackCanvas`
+### Task C: Preview — clamped card push-in + grown content clip
 
 **Files:**
 - Modify: `packages/screen_recorder/lib/ui/widgets/zoom/playback_canvas.dart`
 
-Preview mirrors export: `FramePainter` leaves the zoom `Transform`; the magnified video and cursor are each clipped to the fixed rounded video window. The zoom matrix is unchanged, and the no-zoom branch (`focalUpdate == null`) is untouched.
+- [ ] **Step 1: Compute the push-in in the active-zoom builder**
 
-- [ ] **Step 1: Add a clipper for the fixed rounded video window**
-
-At the bottom of `playback_canvas.dart` (file scope, after the `_PlaybackCanvasState` class), add:
+In the `TweenAnimationBuilder` builder, after `transform` is computed and after the `transform.isIdentity()` short-circuit, add:
 
 ```dart
-/// Clips a totalSize-sized child to the fixed (un-zoomed) rounded video
-/// window. Used so the zoomed video/cursor content stays inside the
-/// padded frame instead of scaling out over the wallpaper padding.
-class _VideoWindowClipper extends CustomClipper<Path> {
-  const _VideoWindowClipper(this.windowRect, this.cornerRadius);
-  final Rect windowRect;
-  final double cornerRadius;
-
-  @override
-  Path getClip(Size size) => Path()
-    ..addRRect(
-      RRect.fromRectAndRadius(windowRect, Radius.circular(cornerRadius)),
-    );
-
-  @override
-  bool shouldReclip(_VideoWindowClipper oldClipper) =>
-      oldClipper.windowRect != windowRect ||
-      oldClipper.cornerRadius != cornerRadius;
-}
-```
-
-- [ ] **Step 2: Split the composition into chrome / video-layer / debug widgets**
-
-In `build()`, the `composition` Stack (currently ~lines 908–1010) bundles `FramePainter`, the `Positioned` video, and the debug overlays. Replace the single `final composition = Stack(children: [...]);` with three named pieces plus the no-zoom composition built from them. Find the block that starts `final composition = Stack(` and ends at its matching `);` (the `]` then `);` after the debug `Builder`), and replace it with:
-
-```dart
-            // Frame chrome (shadow/ring/border/background). NOT zoomed in
-            // the new model — it stays at the fixed padded rect.
-            final framePainterLayer = CustomPaint(
-              size: totalSize,
-              painter: FramePainter(
-                frame: currentFrame,
-                videoSize: videoSize,
-                aspect: widget.outputAspect,
-              ),
-            );
-
-            // The video, positioned + rounded at the padded rect, wrapped
-            // in a totalSize Stack so it can be fed through a Transform
-            // (a bare Positioned can only live directly under a Stack).
-            final videoLayer = SizedBox.fromSize(
-              size: totalSize,
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: videoOriginX,
-                    top: videoOriginY,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(
-                        currentFrame.cornerRadius,
-                      ),
-                      child: SizedBox(
-                        width: videoSize.width,
-                        height: videoSize.height,
-                        child: videoPlayer!,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-
-            final debugLayers = <Widget>[
-              if (widget.showZoomDebug)
-                Positioned(
-                  left: currentFrame.padding.left,
-                  top: currentFrame.padding.top,
-                  child: IgnorePointer(
-                    child: SizedBox(
-                      width: videoSize.width,
-                      height: videoSize.height,
-                      child: CustomPaint(
-                        painter: ZoomFocalDebugPainter(
-                          cursorRecording: widget.cursorRecording,
-                          position: pos,
-                          videoSize: videoSize,
-                          smoothedFocal: _zoomFocalController.smoothedFocal,
-                          activeZoom: focalUpdate?.zoom,
-                          inFlight: _zoomFocalController.inFlight,
-                          focalVelocity: _zoomFocalController.focalVelocity,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              if (widget.showZoomDebug && widget.debugSnapshot != null)
-                Builder(builder: (_) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!mounted) return;
-                    final raw = cursorAt(widget.cursorRecording, pos);
-                    final positions = widget.cursorRecording.positions;
-                    (double, double)? xRange;
-                    (double, double)? yRange;
-                    if (positions.isNotEmpty) {
-                      var minX = positions.first.x;
-                      var maxX = positions.first.x;
-                      var minY = positions.first.y;
-                      var maxY = positions.first.y;
-                      for (final p in positions) {
-                        if (p.x < minX) minX = p.x;
-                        if (p.x > maxX) maxX = p.x;
-                        if (p.y < minY) minY = p.y;
-                        if (p.y > maxY) maxY = p.y;
-                      }
-                      xRange = (minX, maxX);
-                      yRange = (minY, maxY);
-                    }
-                    widget.debugSnapshot!.value = ZoomDebugSnapshot(
-                      cursor: raw == null ? null : Offset(raw.x, raw.y),
-                      smoothedFocal: _zoomFocalController.smoothedFocal,
-                      activeZoom: focalUpdate?.zoom,
-                      inFlight: _zoomFocalController.inFlight,
-                      focalVelocity: _zoomFocalController.focalVelocity,
-                      cursorVelocity: motion?.velocityPxPerSec ?? Offset.zero,
-                      videoSize: videoSize,
-                      cursorSampleCount: widget.cursorRecording.count,
-                      position: pos,
-                      cursorXRange: xRange,
-                      cursorYRange: yRange,
-                      lastSnapReason: _zoomFocalController.lastSnapReason,
-                      lastSnapAt: _zoomFocalController.lastSnapAt,
-                    );
-                  });
-                  return const SizedBox.shrink();
-                }),
-            ];
-
-            // No-zoom composition (unchanged behavior): chrome + video +
-            // debug, none of it transformed.
-            final composition = Stack(
-              children: [framePainterLayer, videoLayer, ...debugLayers],
-            );
-```
-
-- [ ] **Step 3: Rework the active-zoom branch to clip+zoom only the content**
-
-The active-zoom branch is the `TweenAnimationBuilder` whose `builder` currently produces `transformed` (the whole composition wrapped in a `Transform`) and `transformedCursor` (~lines 1037–1080). Replace the body of that `builder` (from `final tweenedRegion = ...` through the `return _buildSceneMotionBlurPass(...)`) with:
-
-```dart
-                final tweenedRegion = activeZoom.copyWith(
-                  zoomLevel: animatedZoom,
-                );
-                final transform = _zoomTransformer.getTransform(
-                  position: pos,
-                  zoomRegion: tweenedRegion,
-                  videoSize: videoSize,
-                  focalPoint: focalForFrame,
-                  rampCurve: activeZoom.rampCurveOverride?.toFlutterCurve() ??
-                      widget.screenAnimationConfig.rampCurve,
-                );
-
-                // Fixed rounded clip at the video window. The magnified
-                // video/cursor are clipped to this so the frame + padding
-                // stay put and only the footage scales inside the window.
-                final windowClipper = _VideoWindowClipper(
-                  Rect.fromLTWH(
+                // Hybrid push-in: chrome scales by zCard (centered, clamped to
+                // the padding floor); the content keeps the full zoom and is
+                // clipped to the grown card rect.
+                final pushIn = ZoomTransformer.resolveCardPushIn(
+                  videoRect: Rect.fromLTWH(
                     videoOriginX,
                     videoOriginY,
                     videoSize.width,
                     videoSize.height,
                   ),
-                  currentFrame.cornerRadius,
+                  canvasSize: totalSize,
+                  cornerRadius: currentFrame.cornerRadius,
+                  zoom: transform.storage[0], // effective ramped zoom = scaleX
+                );
+```
+
+(`ZoomTransformer` is already imported in this file — it's used for `_zoomTransformer.getTransform`. If `ZoomTransformer` is only referenced via the instance, add the static call via the type name; the import already covers it.)
+
+- [ ] **Step 2: Scale the chrome by `zCard`; clip to the grown card**
+
+Update the `transformed` Stack and the `windowClipper` in the builder. The chrome layer gets a centered `Transform(scale zCard)`; the clipper uses `pushIn.cardRect` + `pushIn.cornerRadius`:
+
+```dart
+                final windowClipper = _VideoWindowClipper(
+                  pushIn.cardRect,
+                  pushIn.cornerRadius,
                 );
 
-                // Body: un-zoomed chrome, then the clipped+zoomed video,
-                // then un-zoomed debug. (transformChild is `composition`,
-                // unused here — we compose the split layers directly so the
-                // chrome stays out of the transform.)
+                final scaledChrome = pushIn.zCard == 1.0
+                    ? framePainterLayer
+                    : Transform(
+                        transform: Matrix4.identity()
+                          ..scaleByDouble(pushIn.zCard, pushIn.zCard, 1.0, 1.0),
+                        alignment: Alignment.center,
+                        child: framePainterLayer,
+                      );
+
                 final transformed = Stack(
                   fit: StackFit.expand,
                   children: [
-                    framePainterLayer,
+                    scaledChrome,
                     ClipPath(
                       clipper: windowClipper,
                       child: Transform(
@@ -411,9 +409,6 @@ The active-zoom branch is the `TweenAnimationBuilder` whose `builder` currently 
                   ],
                 );
 
-                // Cursor goes through the same zoom + same fixed clip, but
-                // OUTSIDE the scene-blur capture so the shader never smears
-                // it (accumulation already blurs the cursor).
                 final transformedCursor = cursorOverlay == null
                     ? null
                     : ClipPath(
@@ -424,85 +419,55 @@ The active-zoom branch is the `TweenAnimationBuilder` whose `builder` currently 
                           child: cursorOverlay,
                         ),
                       );
-
-                return _buildSceneMotionBlurPass(
-                  body: transformed,
-                  cursorOverlay: transformedCursor,
-                  keystrokeOverlayWidget: keystrokeOverlayWidget,
-                  cameraOverlayWidget: cameraOverlayWidget,
-                  stickyBackground: stickyBackground,
-                  position: pos,
-                  totalSize: totalSize,
-                  videoSize: videoSize,
-                  currentTransform: transform,
-                );
 ```
 
-Leave the `TweenAnimationBuilder(... child: composition, builder: (context, animatedZoom, transformChild) { ... })` wrapper as-is (it still passes `composition` as `transformChild`; the new body ignores it in favor of the split layers — that's intentional and harmless). The no-zoom early return `if (focalUpdate == null) { return _buildSceneMotionBlurPass(body: composition, cursorOverlay: cursorOverlay, ...); }` stays exactly as it is.
+(`framePainterLayer` / `videoLayer` / `debugLayers` are the existing named layers; `_buildSceneMotionBlurPass(...)` call below stays unchanged. `Matrix4`/`Transform`/`Alignment` are already imported.)
 
-- [ ] **Step 4: Static-analyze**
+- [ ] **Step 3: Analyze**
 
 Run: `cd packages/screen_recorder && flutter analyze lib/ui/widgets/zoom/playback_canvas.dart`
-Expected: No errors. (If the analyzer flags `transformChild` as unused, rename it to `_` in the builder signature: `builder: (context, animatedZoom, _) {`.)
+Expected: No issues. (If `framePainterLayer` is now only used to build `scaledChrome` and the analyzer complains about anything, resolve it; it's still used in the no-zoom `composition`.)
 
-- [ ] **Step 5: Run the preview widget tests (no regressions)**
+- [ ] **Step 4: Widget tests (no regressions)**
 
-Run: `cd packages/screen_recorder && flutter test test/ --plain-name "playback_canvas"`
-Then the scene-blur tests: `cd packages/screen_recorder && flutter test test/ --plain-name "scene_blur"`
-Expected: PASS. (These exercise the camera/latency/scene-blur tree; they must still build and pass with the restructured composition.)
+Run the playback_canvas + scene_blur widget test files under `packages/screen_recorder/test/` (e.g. `test/ui/widgets/zoom/playback_canvas_camera_test.dart`, `test/widgets/scene_blur_*_test.dart`).
+Run: `cd packages/screen_recorder && flutter test test/ui/widgets/zoom/playback_canvas_camera_test.dart test/widgets/scene_blur_tree_stable_test.dart test/widgets/scene_blur_focal_track_test.dart test/widgets/scene_blur_no_remount_test.dart`
+Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add packages/screen_recorder/lib/ui/widgets/zoom/playback_canvas.dart
-git commit -m "feat(zoom): preview keeps frame/padding fixed, zooms content inside the window (#zoom-padding)"
+git commit -m "feat(zoom): preview hybrid push-in — chrome scales to padding floor, content clipped to grown card (#zoom-padding)"
 ```
 
 ---
 
-### Task 3: Manual runtime verification
+### Task D: Manual runtime verification
 
-Automated coverage proves the export geometry and that preview builds; the visual result needs eyes. Use the flutter-qa probe (`boot_app`) per the project's runtime setup.
+**Files:** none (verification only). Use the flutter-qa probe; the branch must be built (`stop_app` then `boot_app` to pick up the branch code).
 
-**Files:** none (verification only).
-
-- [ ] **Step 1: Launch the app and open a recording in the editor**
-
-Boot the app; open a recording that has a zoom region (or add one).
-
-- [ ] **Step 2: The original repro — padding constant at high zoom**
-
-Set a zoom to ~4× with the focal in a corner (e.g. top-right), as in the original report. Expected: the wallpaper padding border is the **same width** as at 1× — it does not shrink — and the rounded window frame stays put while the footage magnifies/pans inside it (clipped to the rounded corners).
-
-- [ ] **Step 3: 1× unchanged**
-
-Scrub to a 1× section (no active zoom). Expected: identical to before — including the cursor still able to sit slightly over the padding near a screen edge.
-
-- [ ] **Step 4: Preview ↔ export agreement**
-
-Export the project and scrub the MP4 across the zoom: the padding is constant and the content-zoom matches the preview.
-
-- [ ] **Step 5: Scene-blur check (the flagged interaction)**
-
-With screen motion blur enabled (`motionBlur` + `screenMovementBlur`/`screenZoomBlur` > 0), play through a zoom ramp. Watch the fixed frame/shadow: if the static border visibly smears during the ramp, note it — that's the flagged follow-up (confine the smear to the content layer). It does not block this change.
-
-- [ ] **Step 6: Record the outcome**
-
-Note the result in the PR/issue. No commit unless a fix was needed.
+- [ ] **Step 1:** Launch the app, open a recording, ensure a zoom region exists (or add one).
+- [ ] **Step 2 — the repro:** Set a zoom to ~4× with the focal in a corner (top-right). Expected: the **card is visibly larger than at 1×** (pushed in), there is a **clear padding margin (~the floor) that does NOT vanish**, and the content shows the top-right region magnified. Contrast with the previously-built fixed-frame build (card didn't grow) and the original (padding vanished).
+- [ ] **Step 3 — 1× unchanged:** a no-zoom section renders exactly as before (cursor can bleed onto the padding near an edge).
+- [ ] **Step 4 — preview ↔ export:** export and scrub the MP4 across the zoom; the push-in amount and padding floor match the preview.
+- [ ] **Step 5 — scene-blur check:** with screen motion blur on, play a zoom ramp; watch whether the scaling chrome smears objectionably in preview (flagged follow-up, not a blocker).
+- [ ] **Step 6:** Record the outcome. If the push-in feels too subtle or too strong, the `paddingFloorFraction` default (0.4) is the dial — note a preferred value.
 
 ---
 
 ## Self-Review
 
 **Spec coverage:**
-- Stop zooming the chrome → Task 1 Step 3 (export), Task 2 Steps 2–3 (preview, chrome out of Transform). ✓
-- Clip magnified content to the fixed rounded video rect → Task 1 Step 4 (export `clipRRect`), Task 2 Steps 1+3 (preview `ClipPath` + `_VideoWindowClipper`). ✓
-- Cursor magnifies inside the clipped window, kept out of scene-blur capture → Task 2 Step 3 (`transformedCursor` clipped+zoomed, passed as `cursorOverlay`). ✓
-- Wallpaper stays sticky → unchanged in both (export composites wallpaper un-zoomed; preview `stickyBackground` outside transform). ✓
-- 1× / no-zoom unchanged → export `zoomActive` gate (Task 1 Step 4); preview `focalUpdate == null` branch untouched + `composition` unchanged (Task 2). ✓
-- Scene-blur interaction verified, not expanded → Task 3 Step 5. ✓
-- Testing: export pixel test (Task 1), preview build/analyze + existing widget tests (Task 2), manual repro (Task 3). ✓
+- Clamped card scale + centered grown rect + floor → Task A (`resolveCardPushIn`) + unit tests. ✓
+- Chrome scales by `zCard` (centered) → Task B Step 4 (export), Task C Step 2 (preview `scaledChrome`). ✓
+- Content keeps full zoom, clipped to grown card (radius·zCard) → Task B Step 3 (export clip `pushIn.cardRect`), Task C Step 2 (preview `windowClipper` from `pushIn`). ✓
+- Effective zoom read from matrix scale → Task B Step 3 / Task C Step 1 (`storage[0]`). ✓
+- Padding floor holds, padding shrinks-but-survives → Task B revised pixel test (clear inside floor, covered between floor and old padding). ✓
+- Degenerate cases (floorFraction 1 ⇒ fixed-frame; zoom 1 ⇒ unchanged) → Task A tests + `zoomActive`/`zCard==1` gates. ✓
+- 1× unchanged + identity short-circuit retained → Task C keeps the `transform.isIdentity()` early return; export `zoomActive` gate. ✓
+- Scene-blur verify-not-fix → Task D Step 5. ✓
 
-**Placeholder scan:** No TBD/TODO; every code step shows full code; commands have expected output. ✓
+**Placeholder scan:** No TBD/TODO; every code step has full code; commands have expected output. ✓
 
-**Type consistency:** `_VideoWindowClipper(windowRect, cornerRadius)` defined in Task 2 Step 1 and constructed in Step 3 with the same positional args. `zoomTransform`/`zoomActive` (export) are locals in `compose()`. `framePainterLayer`/`videoLayer`/`debugLayers`/`composition` defined in Task 2 Step 2 and consumed in Step 3 and the no-zoom branch. `transform` built identically to current via `_zoomTransformer.getTransform`. ✓
+**Type consistency:** `resolveCardPushIn(...)` returns `({double zCard, Rect cardRect, double cornerRadius})`, consumed as `pushIn.zCard` / `pushIn.cardRect` / `pushIn.cornerRadius` in Tasks B and C. `_VideoWindowClipper(rect, radius)` (existing) constructed with `pushIn.cardRect, pushIn.cornerRadius`. Effective zoom `transform.storage[0]` / `zoomTransform.storage[0]` (the `scaleByDouble(z,z,..)` x-scale). ✓
