@@ -381,7 +381,26 @@ class ZoomFocalController {
         // of a separate motion.
         final eased = rampCurve.transform(tNorm.toDouble());
         final centre = Offset(videoSize.width / 2, videoSize.height / 2);
-        _smoothedFocal = Offset.lerp(_exitRampStartFocal, centre, eased);
+        // Mirror the enter pan on the way out. The enter places the focal at
+        // fraction `zoomInProgress^backload` from center toward the
+        // placement; during exit the zoom-in progress runs 1->0 as
+        // `1 - eased`, so the focal must sit at `(1 - eased)^backload` from
+        // center for the zoom-out to be the exact time-reverse of the
+        // zoom-in. A fixed lock-step exit (backload 1.0) against a
+        // zoom-dependent leading enter is what read as "wrong" by a
+        // different amount at each zoom level. followCursor keeps lock-step
+        // (backload 1.0 => t01 == eased, the prior behavior). For manual,
+        // the same per-region override / zoom-level fit drives both ramps.
+        final exitBackload = activeZoom.followCursor
+            ? 1.0
+            : (activeZoom.manualPanBackload ??
+                manualBackloadForZoom(activeZoom.zoomLevel));
+        final t01 = exitBackload == 1.0
+            ? eased
+            : 1.0 -
+                math.pow((1.0 - eased).clamp(0.0, 1.0), exitBackload)
+                    .toDouble();
+        _smoothedFocal = Offset.lerp(_exitRampStartFocal, centre, t01);
         // Zero velocity AND in-flight state so a post-exit re-entry
         // doesn't carry stale momentum or a stale chase flag from
         // before the ramp.

@@ -1160,6 +1160,53 @@ void main() {
     expect(linear, isNot(equals(centre)));
   });
 
+  test('manual exit pan time-mirrors the enter pan at matching zoom progress',
+      () {
+    // A manual placement reachable at full zoom (so enter ends, and hold
+    // holds, exactly on rect.center == the exit-start focal). With the same
+    // per-region back-load on both ramps, the focal at enter-progress p must
+    // equal the focal at exit zoom-in-progress p — i.e. the zoom-out is the
+    // exact time-reverse of the zoom-in. Sampled with a LINEAR ramp so eased
+    // == tNorm: enter t=100ms of a 200ms ramp gives progress 0.5, and exit
+    // t=100ms gives eased 0.5 whose mirrored zoom-in progress (1 − 0.5) = 0.5
+    // matches exactly. (easeInOutQuad is a Cubic approximation whose value at
+    // 0.5 is ~0.499, which would offset the two samples by a few px.)
+    final r = ZoomRegion(
+      rect: const Rect.fromLTRB(500, 300, 900, 700), // center (700,500)
+      startTime: Duration.zero,
+      duration: const Duration(milliseconds: 1000),
+      zoomLevel: 2.0,
+      enterDuration: const Duration(milliseconds: 200),
+      exitDuration: const Duration(milliseconds: 200),
+      followCursor: false,
+      followMode: FollowMode.centered,
+      manualPanBackload: 0.5, // pronounced lead so lock-step would differ
+    );
+    Offset walkExactlyTo(int toMs) {
+      final c = ZoomFocalController();
+      Offset last = Offset.zero;
+      // 20 ms steps land exactly on 100 and 900.
+      for (var ms = 0; ms <= toMs; ms += 20) {
+        last = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: Offset.zero,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.linear,
+            )!
+            .focal;
+      }
+      return last;
+    }
+
+    final enterMid = walkExactlyTo(100); // mid enter ramp
+    final exitMid = walkExactlyTo(900); // mid exit ramp (region 800..1000ms)
+    expect((enterMid - exitMid).distance, lessThan(0.5),
+        reason: 'manual exit must be the time-mirror of the enter at the '
+            'same zoom progress (a lock-step exit would diverge here)');
+  });
+
   group('enter ramp lock-step', () {
     ZoomRegion enterRegion({
       bool followCursor = true,
