@@ -197,4 +197,52 @@ void main() {
       expect(v.y, closeTo(-videoSize.height / 2, 0.5));
     });
   });
+
+  group('ZoomTransformer.clampFocalToBoundsRadial', () {
+    const videoSize = Size(1920, 1080);
+    const centre = Offset(960, 540);
+
+    test('returns the video center when the box has collapsed (z <= 1)', () {
+      expect(
+          ZoomTransformer.clampFocalToBoundsRadial(
+              const Offset(400, 600), videoSize, 1.0),
+          centre);
+    });
+
+    test('leaves an in-box point unchanged (no-op)', () {
+      // At z=2 the box half-extents are (480, 270); (900, 520) is inside.
+      const p = Offset(900, 520);
+      final out = ZoomTransformer.clampFocalToBoundsRadial(p, videoSize, 2.0);
+      expect((out - p).distance, lessThan(1e-9));
+    });
+
+    test('an out-of-box off-center point is scaled onto the box, staying '
+        'collinear with the center', () {
+      // z=1.1 → box half-extents ((W/2)(1-1/1.1), …) ≈ (87.3, 49.1). The
+      // straight ray center→(400,600) far exceeds that, so it gets scaled
+      // back to the box boundary along the SAME ray.
+      const target = Offset(400, 600);
+      final out =
+          ZoomTransformer.clampFocalToBoundsRadial(target, videoSize, 1.1);
+      // Collinear: cross product of (target-centre) and (out-centre) ≈ 0.
+      final d1 = target - centre;
+      final d2 = out - centre;
+      expect((d1.dx * d2.dy - d1.dy * d2.dx).abs(), lessThan(1e-6));
+      // On the boundary: the per-axis clamp at the same z is now a no-op.
+      final reclamped =
+          ZoomTransformer.clampFocalToBounds(out, videoSize, 1.1);
+      expect((reclamped - out).distance, lessThan(1e-6));
+    });
+
+    test('a zero-offset axis is unconstrained (point moves only along the '
+        'nonzero axis)', () {
+      // Pure-horizontal offset: y stays at center, x scales to the x bound.
+      const target = Offset(0, 540); // far left, vertically centered
+      final out =
+          ZoomTransformer.clampFocalToBoundsRadial(target, videoSize, 1.5);
+      expect(out.dy, closeTo(540, 1e-9));
+      // x bound at z=1.5 is halfW = (W/2)(1-1/1.5) = 320 left of center.
+      expect(out.dx, closeTo(960 - 320, 1e-6));
+    });
+  });
 }

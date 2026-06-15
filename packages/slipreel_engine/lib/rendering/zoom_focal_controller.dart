@@ -390,7 +390,18 @@ class ZoomFocalController {
       final tIntoRegionUs =
           position.inMicroseconds - activeZoom.startTime.inMicroseconds;
       if (tIntoRegionUs >= exit.exitStartUs) {
-        _exitRampStartFocal ??= _smoothedFocal;
+        // Capture the exit-start anchor as the VISIBLE focal. For a MANUAL
+        // edge/inset placement the hold-phase spring settles on the UN-clamped
+        // rect.center (which sits outside the full-zoom box), but the
+        // transformer paints the per-axis-clamped point — so capturing the raw
+        // _smoothedFocal would make the hold->exit handoff (and the radial
+        // clamp below) jump on the first exit frame. Capturing the clamped
+        // (painted) focal removes that one-frame jump and makes the exit-start
+        // radial a true no-op. followCursor keeps the raw capture (unchanged).
+        _exitRampStartFocal ??= activeZoom.followCursor
+            ? _smoothedFocal
+            : ZoomTransformer.clampFocalToBounds(
+                _smoothedFocal!, videoSize, activeZoom.zoomLevel);
         final tIntoExit = (tIntoRegionUs - exit.exitStartUs)
             .clamp(0, exit.exitUs);
         final tNorm =
@@ -420,7 +431,16 @@ class ZoomFocalController {
             : 1.0 -
                 math.pow((1.0 - eased).clamp(0.0, 1.0), exitBackload)
                     .toDouble();
-        _smoothedFocal = Offset.lerp(_exitRampStartFocal, centre, t01);
+        final lerped = Offset.lerp(_exitRampStartFocal, centre, t01)!;
+        // Symmetric with the enter ramp: radially clamp the manual return so
+        // the focal stays on the placement->center ray (no dog-leg) and inside
+        // the current-frame box. z mirrors the enter's, time-reversed:
+        // zoom-in progress runs 1 -> 0 across the exit, so z = 1 +
+        // (zoomLevel-1)*(1 - eased). followCursor stays byte-identical.
+        final z = 1.0 + (activeZoom.zoomLevel - 1.0) * (1.0 - eased);
+        _smoothedFocal = activeZoom.followCursor
+            ? lerped
+            : ZoomTransformer.clampFocalToBoundsRadial(lerped, videoSize, z);
         // Zero velocity AND in-flight state so a post-exit re-entry
         // doesn't carry stale momentum or a stale chase flag from
         // before the ramp.
@@ -533,10 +553,27 @@ class ZoomFocalController {
         final panEased = math.pow(eased, backload).toDouble();
         final newFocal =
             Offset.lerp(_enterRampStartFocal, entryTarget, panEased)!;
+        // MANUAL only: a leading pan (backload < 1) walks the focal along the
+        // straight center->placement ray FASTER than the zoom grows, so at low
+        // z it overshoots the small current-frame reachable box. The
+        // transformer's PER-AXIS clamp would then pin one axis and let the
+        // other keep moving — bending an off-center/inset placement's path into
+        // a dog-leg ("takes some turns before landing"). Clamp RADIALLY here
+        // (z = the transformer's own per-frame factor) so the focal stays on
+        // the ray AND inside the box; the downstream per-axis clamp is then a
+        // no-op for these frames (exact on export/track; the preview badge
+        // tween can transiently differ but only ever pulls further in-bounds).
+        // followCursor is anchored at rect.center (not the video center) and
+        // lags rather than leads, so radial-about-center is neither collinear
+        // nor needed there — leave it byte-identical.
+        final z = 1.0 + (activeZoom.zoomLevel - 1.0) * eased;
+        final clampedFocal = activeZoom.followCursor
+            ? newFocal
+            : ZoomTransformer.clampFocalToBoundsRadial(newFocal, videoSize, z);
         _focalVx = 0;
         _focalVy = 0;
-        _smoothedFocal = newFocal;
-        return ZoomFocalUpdate(zoom: activeZoom, focal: newFocal);
+        _smoothedFocal = clampedFocal;
+        return ZoomFocalUpdate(zoom: activeZoom, focal: clampedFocal);
       }
     }
     // Outside the enter window — clear the anchor so a re-entry into an

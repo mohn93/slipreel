@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1678,6 +1680,263 @@ void main() {
       final progress = (f - centre).distance / (cursor - centre).distance;
       expect(progress, lessThan(0.5 - 0.05),
           reason: 'back-load must hold the focal below the raw eased progress');
+    });
+  });
+
+  group('manual pan dog-leg fix (radial clamp)', () {
+    final videoCentre =
+        Offset(_videoSize.width / 2, _videoSize.height / 2); // (960,540)
+    final transformer = ZoomTransformer();
+
+    // Perpendicular distance from [p] to the ray videoCentre -> [target].
+    double perpFromRay(Offset p, Offset target) {
+      final ray = target - videoCentre;
+      final v = p - videoCentre;
+      final len = ray.distance;
+      if (len < 1e-9) return v.distance;
+      return (ray.dx * v.dy - ray.dy * v.dx).abs() / len;
+    }
+
+    // The transform's per-frame zoom factor for a region at [position].
+    double transformZ(ZoomRegion r, Duration position) => transformer
+        .getTransform(
+          position: position,
+          zoomRegion: r,
+          videoSize: _videoSize,
+          focalPoint: videoCentre,
+          rampCurve: Curves.easeInOutQuad,
+        )
+        .storage[0];
+
+    ZoomRegion manual({
+      required Rect rect,
+      double zoomLevel = 2.5,
+      double? backload = 0.26,
+      Duration enter = const Duration(milliseconds: 500),
+      Duration exit = Duration.zero,
+      Duration duration = const Duration(milliseconds: 3000),
+    }) =>
+        ZoomRegion(
+          rect: rect,
+          startTime: Duration.zero,
+          duration: duration,
+          zoomLevel: zoomLevel,
+          enterDuration: enter,
+          exitDuration: exit,
+          followCursor: false,
+          followMode: FollowMode.centered,
+          manualPanBackload: backload,
+        );
+
+    test('interior placement stays collinear with center->placement through '
+        'the whole enter ramp (no dog-leg)', () {
+      // (400,600) on 1920x1080 at 2.5x: offsets (-560,+60) have unequal box
+      // ratios, so the OLD per-axis clamp bent this ~20px off the ray.
+      final r = manual(rect: const Rect.fromLTRB(200, 480, 600, 720));
+      final entryTarget = ZoomTransformer.clampFocalToBounds(
+          r.rect.center, _videoSize, r.zoomLevel);
+      final c = ZoomFocalController();
+      for (var ms = 0; ms <= 500; ms += 16) {
+        final focal = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: null,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        expect(perpFromRay(focal, entryTarget), lessThan(0.5),
+            reason: 'enter focal must stay on the center->placement ray at '
+                'ms=$ms');
+      }
+    });
+
+    test('enter: per-axis clamp is a no-op on the radially-clamped focal', () {
+      final r = manual(rect: const Rect.fromLTRB(200, 480, 600, 720));
+      final c = ZoomFocalController();
+      for (var ms = 0; ms <= 500; ms += 16) {
+        final pos = Duration(milliseconds: ms);
+        final focal = c
+            .update(
+              position: pos,
+              zoomRegions: [r],
+              cursor: null,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        final z = transformZ(r, pos);
+        if (z <= 1.0) continue;
+        final clamped =
+            ZoomTransformer.clampFocalToBounds(focal, _videoSize, z);
+        expect((clamped - focal).distance, lessThan(1e-6),
+            reason: 'per-axis clamp must not move the focal at ms=$ms (z=$z)');
+      }
+    });
+
+    test('exit: per-axis clamp is a no-op on the radially-clamped focal', () {
+      final r = manual(
+        rect: const Rect.fromLTRB(200, 480, 600, 720),
+        enter: const Duration(milliseconds: 300),
+        exit: const Duration(milliseconds: 500),
+      );
+      final c = ZoomFocalController();
+      for (var ms = 0; ms <= 3000; ms += 16) {
+        final pos = Duration(milliseconds: ms);
+        final focal = c
+            .update(
+              position: pos,
+              zoomRegions: [r],
+              cursor: null,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        // Only assert during the exit window (last 500ms).
+        if (ms < 2500) continue;
+        final z = transformZ(r, pos);
+        if (z <= 1.0) continue;
+        final clamped =
+            ZoomTransformer.clampFocalToBounds(focal, _videoSize, z);
+        expect((clamped - focal).distance, lessThan(1e-6),
+            reason: 'exit per-axis clamp must not move the focal at ms=$ms '
+                '(z=$z)');
+      }
+    });
+
+    test('enter endpoints unchanged: starts at video center, ends at '
+        'entryTarget', () {
+      final r = manual(rect: const Rect.fromLTRB(200, 480, 600, 720));
+      final entryTarget = ZoomTransformer.clampFocalToBounds(
+          r.rect.center, _videoSize, r.zoomLevel);
+      final c = ZoomFocalController();
+      // First enter-ramp frame (z ~ 1) sits at the video center.
+      c.update(
+          position: Duration.zero,
+          zoomRegions: [r],
+          cursor: null,
+          videoSize: _videoSize);
+      final firstRamp = c.update(
+          position: const Duration(milliseconds: 16),
+          zoomRegions: [r],
+          cursor: null,
+          videoSize: _videoSize,
+          screenRampCurve: Curves.easeInOutQuad)!;
+      // z is barely > 1, so the radially-clamped focal rides the tiny box
+      // boundary a few px from center — far closer to center than to the
+      // placement (it starts the pan from center, it does NOT jump out).
+      final dCentre = (firstRamp.focal - videoCentre).distance;
+      expect(dCentre, lessThan(15.0));
+      expect(dCentre,
+          lessThan((firstRamp.focal - entryTarget).distance));
+      // Exact ramp end lands on entryTarget.
+      final atEnd = c.update(
+          position: const Duration(milliseconds: 500),
+          zoomRegions: [r],
+          cursor: null,
+          videoSize: _videoSize,
+          screenRampCurve: Curves.easeInOutQuad)!;
+      expect((atEnd.focal - entryTarget).distance, lessThan(0.5));
+    });
+
+    test('edge placement on the hold->exit handoff has no one-frame jump', () {
+      // A left-edge inset placement: rect.center (0,300) is unreachable at
+      // full zoom, so the hold focal settles outside the box. Capturing the
+      // VISIBLE (clamped) focal as the exit anchor must keep the painted
+      // focal continuous across the hold->exit seam.
+      final r = manual(
+        rect: const Rect.fromLTRB(-200, 180, 200, 420), // center (0,300)
+        enter: const Duration(milliseconds: 300),
+        exit: const Duration(milliseconds: 500),
+      );
+      final c = ZoomFocalController();
+      Offset painted(Duration pos) {
+        final focal = c
+            .update(
+              position: pos,
+              zoomRegions: [r],
+              cursor: null,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        return ZoomTransformer.clampFocalToBounds(
+            focal, _videoSize, transformZ(r, pos));
+      }
+
+      Offset last = videoCentre;
+      // Walk hold + into exit; exit starts at 2500ms.
+      for (var ms = 0; ms <= 2500; ms += 16) {
+        last = painted(Duration(milliseconds: ms));
+      }
+      final firstExit = painted(const Duration(milliseconds: 2516));
+      expect((firstExit - last).distance, lessThan(2.0),
+          reason: 'painted focal must be continuous across hold->exit');
+    });
+
+    test('edge mid-line placement keeps the focal on the axis (no regression)',
+        () {
+      // (0,540): left edge, vertically centered. Y must stay at 540 and the
+      // path must be the straight horizontal ride it already was.
+      final r = manual(rect: const Rect.fromLTRB(-200, 420, 200, 660));
+      final entryTarget = ZoomTransformer.clampFocalToBounds(
+          r.rect.center, _videoSize, r.zoomLevel);
+      final c = ZoomFocalController();
+      for (var ms = 16; ms <= 500; ms += 16) {
+        final focal = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: null,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        expect(focal.dy, closeTo(540, 1e-6));
+        expect(perpFromRay(focal, entryTarget), lessThan(0.5));
+      }
+    });
+
+    test('followCursor enter ramp is byte-identical (radial clamp is gated '
+        'out)', () {
+      // The gate must leave the working followCursor pan untouched: the focal
+      // equals the un-radially-clamped lerp(rect.center, entryTarget,
+      // eased^2.0) at every frame.
+      final r = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 400),
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered,
+      );
+      const cursor = Offset(1500, 950);
+      final entryTarget =
+          ZoomTransformer.clampFocalToBounds(cursor, _videoSize, r.zoomLevel);
+      const anchor = Offset(200, 200);
+      final c = ZoomFocalController();
+      for (var ms = 0; ms <= 400; ms += 16) {
+        final focal = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        if (ms == 0) continue; // first frame is the init snap to rect.center
+        final tNorm = (ms / 400).clamp(0.0, 1.0);
+        final eased = Curves.easeInOutQuad.transform(tNorm.toDouble());
+        final panEased = math.pow(eased, 2.0).toDouble();
+        final expected = Offset.lerp(anchor, entryTarget, panEased)!;
+        expect((focal - expected).distance, lessThan(1e-6),
+            reason: 'followCursor focal must match the un-clamped lerp at '
+                'ms=$ms');
+      }
     });
   });
 }

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show Offset, Size;
 
 import 'package:flutter/animation.dart' show Curve, Curves;
@@ -72,6 +73,42 @@ class ZoomTransformer {
       halfW <= maxX ? focal.dx.clamp(halfW, maxX) : videoSize.width / 2,
       halfH <= maxY ? focal.dy.clamp(halfH, maxY) : videoSize.height / 2,
     );
+  }
+
+  /// RADIAL counterpart of [clampFocalToBounds]: clamp [focal] into the same
+  /// reachable box at zoom [z], but by scaling the whole offset from the
+  /// video center by a single scalar instead of clamping each axis
+  /// independently. This keeps the result exactly on the ray from the video
+  /// center through [focal] (collinear), so a focal that is being panned
+  /// along a straight center→placement line stays on that line when it
+  /// overshoots the current-frame box — where the per-axis [clampFocalToBounds]
+  /// would pin one axis and let the other keep moving, bending the path into a
+  /// dog-leg ("the camera takes some turns before landing").
+  ///
+  /// The reachable box is center-symmetric about the video center with
+  /// half-extents `hx = (W/2)(1 − 1/z)`, `hy = (H/2)(1 − 1/z)`. A point at
+  /// offset `d` from center is scaled by `s = min(1, hx/|dx|, hy/|dy|)` (axes
+  /// with a ~zero offset don't constrain `s`). Because `s` is uniform the
+  /// direction is preserved and `|d·s|` is within the box on both axes, so a
+  /// subsequent per-axis [clampFocalToBounds] at the same `z` is a no-op.
+  ///
+  /// [ZoomFocalController] applies this to its MANUAL (non-followCursor)
+  /// enter/exit pan, whose anchor is the video center — the only anchor for
+  /// which "radial about the video center" is collinear with the pan. At
+  /// `z <= 1` the box collapses, so this returns the video center (matching
+  /// [clampFocalToBounds]'s degenerate fallback).
+  static Offset clampFocalToBoundsRadial(
+      Offset focal, Size videoSize, double z) {
+    final centre = Offset(videoSize.width / 2, videoSize.height / 2);
+    final hx = (videoSize.width / 2) * (1 - 1 / z);
+    final hy = (videoSize.height / 2) * (1 - 1 / z);
+    if (hx <= 0 || hy <= 0) return centre;
+    final d = focal - centre;
+    const eps = 1e-9;
+    final sx = d.dx.abs() > eps ? hx / d.dx.abs() : double.infinity;
+    final sy = d.dy.abs() > eps ? hy / d.dy.abs() : double.infinity;
+    final s = math.min(1.0, math.min(sx, sy));
+    return centre + d * s;
   }
 
   /// Three-phase zoom: ease-in over [enterDuration], hold at full
