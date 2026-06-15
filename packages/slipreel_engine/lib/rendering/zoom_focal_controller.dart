@@ -108,25 +108,39 @@ class ZoomFocalController {
   static const double _entryPanBackload = 2.0;
 
   // Default manual-placement enter-pan back-load as a function of zoom
-  // level. Fit from hand-tuned sweet spots — 1.5×→0.76, 2.0×→0.63,
-  // 2.5×→0.50 — which are exactly linear (−0.26 per 1× of zoom). A lower
-  // exponent lets the pan lead the zoom more, which reads as synced at
-  // lower magnifications where the reachable framing is tight; higher zoom
-  // wants closer to lock-step. The raw line crosses zero near 4.4×, so the
-  // result is clamped to keep the exponent positive and sane outside the
-  // tuned 1.5–2.5× band. A region's [ZoomRegion.manualPanBackload] override
-  // takes precedence when set.
-  static const double _manualBackloadIntercept = 1.15;
-  static const double _manualBackloadSlope = -0.26;
-  static const double _manualBackloadFloor = 0.2;
-  static const double _manualBackloadCeil = 1.5;
+  // level, from hand-tuned sweet spots. A lower exponent lets the pan lead
+  // the zoom more (reads as synced at lower magnifications where the
+  // reachable framing is tight); the decline STEEPENS past 2× — 0.76, 0.63,
+  // 0.26 is not linear — so the relationship is a piecewise-linear curve
+  // through the measured points rather than one line (a line mis-fit the
+  // upper range). Below/above the measured band the nearest endpoint holds.
+  // Extend [_manualBackloadPoints] as higher-zoom points are measured. A
+  // region's [ZoomRegion.manualPanBackload] override takes precedence.
+  //
+  // (zoomLevel, backload), sorted ascending by zoomLevel.
+  static const List<(double, double)> _manualBackloadPoints = [
+    (1.5, 0.76),
+    (2.0, 0.63),
+    (2.5, 0.26),
+  ];
 
-  /// The default manual enter-pan back-load exponent for [zoomLevel] (the
-  /// fitted `1.15 − 0.26·zoom`, clamped). Public so the editor can show the
-  /// computed default next to the per-zoom override slider.
-  static double manualBackloadForZoom(double zoomLevel) =>
-      (_manualBackloadIntercept + _manualBackloadSlope * zoomLevel)
-          .clamp(_manualBackloadFloor, _manualBackloadCeil);
+  /// The default manual enter-pan back-load exponent for [zoomLevel],
+  /// piecewise-linearly interpolated through [_manualBackloadPoints] and
+  /// clamped flat outside the measured range. Public so the editor can show
+  /// the computed default next to the per-zoom override slider.
+  static double manualBackloadForZoom(double zoomLevel) {
+    const pts = _manualBackloadPoints;
+    if (zoomLevel <= pts.first.$1) return pts.first.$2;
+    if (zoomLevel >= pts.last.$1) return pts.last.$2;
+    for (var i = 0; i < pts.length - 1; i++) {
+      final (z1, b1) = pts[i + 1];
+      if (zoomLevel <= z1) {
+        final (z0, b0) = pts[i];
+        return b0 + (b1 - b0) * ((zoomLevel - z0) / (z1 - z0));
+      }
+    }
+    return pts.last.$2; // unreachable (guarded above)
+  }
 
   // Floor for the backward-scrub-detection check.
   //

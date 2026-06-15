@@ -122,7 +122,7 @@ class ZoomContextInspector extends StatelessWidget {
                   subtitle: _panBackloadSubtitle(
                       zoom.zoomLevel, zoom.manualPanBackload),
                   value: zoom.manualPanBackload ?? 1.0,
-                  min: 0.5,
+                  min: 0.0,
                   max: 3.0,
                   onChanged: (v) =>
                       onChanged(zoom.copyWith(manualPanBackload: v)),
