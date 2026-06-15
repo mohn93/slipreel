@@ -84,8 +84,10 @@ class ZoomFocalController {
   Offset? _exitRampStartFocal;
 
   // Focal at the moment the enter ramp started (captured on the first
-  // enter-ramp frame, = rect.center). Cleared when the controller leaves
-  // the enter window so a re-entry re-captures.
+  // enter-ramp frame): rect.center for a followCursor zoom, the video
+  // center for a manual (followCursor:false) placement — see the enter-ramp
+  // anchor comment in [update] for why the two differ. Cleared when the
+  // controller leaves the enter window so a re-entry re-captures.
   Offset? _enterRampStartFocal;
 
   // Back-load exponent for the entry pan relative to the zoom-scale ramp.
@@ -410,7 +412,26 @@ class ZoomFocalController {
       // is checked earlier and returns first, so a no-hold (enter==exit
       // boundary) region can't double-handle this frame.
       if (tIntoRegionUs >= 0 && tIntoRegionUs <= enter.enterUs) {
-        _enterRampStartFocal ??= activeZoom.rect.center;
+        // Anchor the enter pan at the honest z=1 framing.
+        //   * followCursor: the region's rect.center — the framing the user
+        //     drew, which the pan then leaves to chase the cursor.
+        //   * MANUAL (followCursor:false): the pan's only destination IS
+        //     rect.center, so anchoring there leaves the lerp below FLAT and
+        //     hands the entire visible pan to ZoomTransformer's per-frame
+        //     bounds clamp — a 1/z curve that FRONT-LOADS the pan ahead of the
+        //     eased scale (camera lunges to the corner, then the magnification
+        //     catches up; the "zoom-then-slide" the manual placement showed).
+        //     Anchoring at the video center instead lets the back-loaded lerp
+        //     trace the pan center->placement IN STEP with the scale. Proven:
+        //     lerp(center, fullZoomClampedTarget, eased^_entryPanBackload)
+        //     stays at/under the per-frame clamp for all t and any zoomLevel
+        //     (equality only at the endpoints), so the transformer never
+        //     re-clamps it and cannot front-load. Deterministic (pure fn of
+        //     videoSize) — play == scrub == export parity holds.
+        final enterAnchor = activeZoom.followCursor
+            ? activeZoom.rect.center
+            : Offset(videoSize.width / 2, videoSize.height / 2);
+        _enterRampStartFocal ??= enterAnchor;
         final rawTarget = (activeZoom.followCursor && cursor != null)
             ? cursor
             : activeZoom.rect.center;

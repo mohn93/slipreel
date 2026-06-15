@@ -1,6 +1,7 @@
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 
@@ -1231,13 +1232,16 @@ void main() {
       expect((mid - cursor).distance, greaterThan(2.0));
     });
 
-    test('followCursor:false makes the enter ramp a no-op (stays center)',
-        () {
-      // rect.center must be reachable at the full zoom (inside maxX=1440,
-      // maxY=810 at 2x) so "no pan" means the focal sits exactly on it.
-      // An edge-hugging center that can't be framed at full zoom is handled
-      // by the same bound clamp the transformer applies at paint — not the
-      // concern of this no-op check.
+    test(
+        'followCursor:false enter pan anchors at the video center and '
+        'arrives at the placement', () {
+      // A manual placement zoom must pan FROM the video center (the only
+      // honest framing at z=1) OUT to rect.center, in step with the scale —
+      // not sit parked at rect.center while the transformer's per-frame bounds
+      // clamp front-loads the apparent pan to the corner (the old "zoom to the
+      // edge then slide back to where it's supposed to be"). rect.center here
+      // is reachable at full zoom (inside maxX=1440, maxY=810 at 2x) so the
+      // pan lands exactly on it.
       final r = ZoomRegion(
         rect: const Rect.fromLTRB(500, 300, 900, 700), // center (700,500)
         startTime: Duration.zero,
@@ -1248,12 +1252,71 @@ void main() {
         followCursor: false,
         followMode: FollowMode.centered,
       );
-      const cursor = Offset(1700, 950);
-      const centre = Offset(700, 500);
-      final mid = walkTo(ZoomFocalController(), r, 250, cursor: cursor);
-      expect((mid - centre).distance, lessThan(1.0),
-          reason: 'followCursor:false must keep the focal on rect.center, '
-              'never panning toward the cursor');
+      const placement = Offset(700, 500);
+      final videoCentre =
+          Offset(_videoSize.width / 2, _videoSize.height / 2); // (960,540)
+      // Midway: strictly between the video center and the placement — the pan
+      // is in progress, neither parked at rect.center nor already arrived.
+      final mid = walkTo(ZoomFocalController(), r, 250, cursor: Offset.zero);
+      expect((mid - videoCentre).distance, greaterThan(2.0),
+          reason: 'pan must have left the video-center anchor');
+      expect((mid - placement).distance, greaterThan(2.0),
+          reason: 'pan must not have arrived at the placement yet');
+      // By the end of the ramp the focal lands on the placement.
+      final end = walkTo(ZoomFocalController(), r, 500, cursor: Offset.zero);
+      expect((end - placement).distance, lessThan(2.0),
+          reason: 'pan must arrive at rect.center as the zoom completes');
+    });
+
+    test(
+        'followCursor:false enter pan never outruns the per-frame zoom clamp '
+        '(no transformer front-load)', () {
+      // The fix relies on the eased pan staying at/under the per-frame bounds
+      // clamp for the WHOLE ramp, so ZoomTransformer.getTransform never has to
+      // re-clamp the focal (which is what used to front-load the pan). Walk a
+      // bottom-left placement through the ramp and assert the transformer's
+      // clamp is a no-op on the controller's focal at every frame.
+      final r = ZoomRegion(
+        rect: const Rect.fromLTRB(200, 600, 600, 1000), // center (400,800)
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.5,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: false,
+        followMode: FollowMode.centered,
+      );
+      final transformer = ZoomTransformer();
+      final c = ZoomFocalController();
+      for (var ms = 0; ms <= 500; ms += 16) {
+        final pos = Duration(milliseconds: ms);
+        final focal = c
+            .update(
+              position: pos,
+              zoomRegions: [r],
+              cursor: null,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        // x-scale of the transform == the current-frame zoom factor.
+        final z = transformer
+            .getTransform(
+              position: pos,
+              zoomRegion: r,
+              videoSize: _videoSize,
+              focalPoint: focal,
+              rampCurve: Curves.easeInOutQuad,
+            )
+            .storage[0];
+        if (z <= 1.0) continue; // identity frame — focal is irrelevant
+        final clamped =
+            ZoomTransformer.clampFocalToBounds(focal, _videoSize, z);
+        expect((clamped - focal).distance, lessThan(0.5),
+            reason: 'at ms=$ms (z=$z) the controller focal must already '
+                'respect the per-frame clamp; a clamp delta means the '
+                'transformer is front-loading the pan');
+      }
     });
 
     test('the resolved curve shapes the ramp (linear != easeInOutQuad)',
