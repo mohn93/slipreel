@@ -562,6 +562,62 @@ void main() {
         );
       },
     );
+
+    test('active zoom does not grow the video into the padding '
+        '(padding band stays clear)', () async {
+      // 320×240 video, uniform 40px padding → totalSize 400×320, video
+      // rect (40,40,320,240). Solid-magenta video with a 2× zoom centered
+      // on the video. With the fixed-frame model the magnified video stays
+      // clipped to the video rect, so a padding-band pixel (x<40) stays
+      // clear; with the old whole-window scaling the video covers it.
+      final compositor = FrameCompositor(
+        projectState: EditorProjectState.defaults().copyWith(
+          windowFrame: const WindowFrame(
+            name: 'Custom',
+            padding: EdgeInsets.all(40),
+            cornerRadius: 0,
+            shadowBlur: 0,
+            shadowOffset: Offset.zero,
+            shadowColor: Color(0x00000000),
+            borderWidth: 0,
+          ),
+          zoomRegions: [
+            ZoomRegion(
+              rect: const Rect.fromLTWH(0, 0, 320, 240), // center (160,120)
+              startTime: Duration.zero,
+              duration: const Duration(seconds: 1),
+              zoomLevel: 2.0,
+              followCursor: false,
+              enterDuration: Duration.zero,
+              exitDuration: Duration.zero,
+            ),
+          ],
+        ),
+        cursorRecording: CursorRecording(),
+        metadata: _meta(),
+        videoSize: const Size(320, 240),
+        fps: 30,
+      );
+
+      final magenta = _solidBgra(320, 240, 0xFF, 0x00, 0xFF);
+      final rgba = await compositor.compose(
+        videoFrameBgra: magenta,
+        position: const Duration(milliseconds: 500),
+      );
+
+      const w = 400; // totalSize width
+      bool isMagenta(int x, int y) {
+        final i = (y * w + x) * 4;
+        return rgba[i + 0] == 0xFF && rgba[i + 2] == 0xFF && rgba[i + 3] == 0xFF;
+      }
+
+      expect(isMagenta(200, 160), isTrue,
+          reason: 'window center should show the (magnified) video');
+      expect(isMagenta(20, 160), isFalse,
+          reason: 'left padding must stay clear of the zoomed video');
+      expect(isMagenta(200, 20), isFalse,
+          reason: 'top padding must stay clear of the zoomed video');
+    });
   });
 }
 

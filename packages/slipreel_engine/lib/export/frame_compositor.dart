@@ -224,6 +224,22 @@ class FrameCompositor {
       // The wallpaper stays sticky (rendered separately below).
       final fgRecorder = ui.PictureRecorder();
       final fgCanvas = ui.Canvas(fgRecorder, layerRect);
+      // When a zoom is active, clip the magnified content to the FIXED
+      // (un-zoomed) rounded video rect so the window/padding stay put and
+      // only the footage scales inside it. The clip is applied BEFORE the
+      // zoom transform, so it stays anchored in canvas space. At identity
+      // (no active zoom) skip the clip to preserve current behavior
+      // (notably the cursor bleeding onto the padding near an edge).
+      final zoomActive = !zoomTransform.isIdentity();
+      if (zoomActive) {
+        fgCanvas.save();
+        fgCanvas.clipRRect(
+          RRect.fromRectAndRadius(
+            _videoRect,
+            Radius.circular(_frame.cornerRadius),
+          ),
+        );
+      }
       applyZoom(fgCanvas);
       _paintVideoFrame(fgCanvas, videoImage);
       if (motion != null && !projectState.hideCursorOverlay) {
@@ -236,6 +252,9 @@ class FrameCompositor {
           state: motion.state,
         );
       }
+      if (zoomActive) {
+        fgCanvas.restore();
+      }
       final fgPicture = fgRecorder.endRecording();
 
       // Frame chrome (shadow / inset ring / background / border) — crisp,
@@ -245,7 +264,9 @@ class FrameCompositor {
       if (_frame.name != 'None') {
         final chromeRecorder = ui.PictureRecorder();
         final chromeCanvas = ui.Canvas(chromeRecorder, layerRect);
-        applyZoom(chromeCanvas);
+        // Chrome (shadow/ring/border) stays at the fixed padded rect — it is
+        // NOT zoomed. The fixed-frame model keeps the rounded window and its
+        // padding put while only the footage inside scales (see foreground).
         _framePainter.paint(chromeCanvas, totalSize);
         chromePicture = chromeRecorder.endRecording();
       }
