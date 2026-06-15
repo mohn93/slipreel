@@ -26,7 +26,6 @@ class MotionTuning {
     this.cursorFeedforwardStrength = 0.5,
     this.cursorFeedforwardFadeStartPxPerSec = 200.0,
     this.cursorFeedforwardFullSpeedPxPerSec = 800.0,
-    this.manualEntryPanBackload = 1.0,
     this.sceneBlurExposureMs = 16.0,
     this.sceneBlurMaxTranslation = 60.0,
     this.sceneBlurSampleCount = 48,
@@ -75,25 +74,6 @@ class MotionTuning {
   /// Cursor speed (px/s) at which the feedforward is fully on. Above
   /// this speed [cursorFeedforwardStrength] applies in full.
   final double cursorFeedforwardFullSpeedPxPerSec;
-
-  /// Back-load exponent applied to the eased pan progress during a
-  /// MANUAL (followCursor:false) zoom's enter ramp, which pans the
-  /// focal from the video center out to the placement. `1.0` =
-  /// lock-step with the eased zoom-scale ramp — the pan and the
-  /// magnification cover equal fractions at every instant and land
-  /// together (this mirrors the exit ramp, which is exponent 1.0 and
-  /// reads as perfectly synced). `>1.0` holds the focal nearer the
-  /// center through the middle of the ramp and closes the distance at
-  /// the end (pan lags the zoom). `<1.0` front-loads the pan (reaches
-  /// the placement before the zoom finishes). Cursor-following enter
-  /// pans use their own fixed back-load and are unaffected.
-  ///
-  /// Any value keeps the eased focal at/under the per-frame bounds
-  /// clamp for `exp >= 1.0` (proven), so the transformer never
-  /// re-clamps and the pan can't be force-finished early; values
-  /// `< 1.0` can cross the clamp mid-ramp and pin to the edge, so
-  /// keep this `>= 1.0` unless you want that look.
-  final double manualEntryPanBackload;
 
   /// Base virtual-shutter window for the scene-blur shader before
   /// the user-facing motion-blur and sub-blur sliders modulate it.
@@ -161,7 +141,6 @@ class MotionTuning {
     double? cursorFeedforwardStrength,
     double? cursorFeedforwardFadeStartPxPerSec,
     double? cursorFeedforwardFullSpeedPxPerSec,
-    double? manualEntryPanBackload,
     double? sceneBlurExposureMs,
     double? sceneBlurMaxTranslation,
     int? sceneBlurSampleCount,
@@ -183,8 +162,6 @@ class MotionTuning {
           this.cursorFeedforwardFadeStartPxPerSec,
       cursorFeedforwardFullSpeedPxPerSec: cursorFeedforwardFullSpeedPxPerSec ??
           this.cursorFeedforwardFullSpeedPxPerSec,
-      manualEntryPanBackload:
-          manualEntryPanBackload ?? this.manualEntryPanBackload,
       sceneBlurExposureMs:
           sceneBlurExposureMs ?? this.sceneBlurExposureMs,
       sceneBlurMaxTranslation:
@@ -211,7 +188,6 @@ class MotionTuning {
             cursorFeedforwardFadeStartPxPerSec,
         'cursorFeedforwardFullSpeedPxPerSec':
             cursorFeedforwardFullSpeedPxPerSec,
-        'manualEntryPanBackload': manualEntryPanBackload,
         'sceneBlurExposureMs': sceneBlurExposureMs,
         'sceneBlurMaxTranslation': sceneBlurMaxTranslation,
         'sceneBlurSampleCount': sceneBlurSampleCount,
@@ -267,10 +243,6 @@ class MotionTuning {
       cursorFeedforwardFullSpeedPxPerSec: doubleOr(
         'cursorFeedforwardFullSpeedPxPerSec',
         d.cursorFeedforwardFullSpeedPxPerSec,
-      ),
-      manualEntryPanBackload: doubleOr(
-        'manualEntryPanBackload',
-        d.manualEntryPanBackload,
       ),
       sceneBlurExposureMs:
           doubleOr('sceneBlurExposureMs', d.sceneBlurExposureMs),

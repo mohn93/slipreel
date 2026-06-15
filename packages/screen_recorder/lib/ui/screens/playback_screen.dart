@@ -21,7 +21,6 @@ import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/state/editor_project_store.dart';
 import 'package:slipreel_engine/state/export_settings_store.dart';
 import 'package:slipreel_engine/state/export_telemetry_store.dart';
-import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/export/export_estimator.dart';
 import 'package:slipreel_engine/models/compression_bitrate.dart';
 import 'package:screen_recorder/ui/widgets/cta_spinner.dart';
@@ -82,12 +81,6 @@ import 'package:screen_recorder/ui/widgets/command_palette/command_palette.dart'
 /// without needing to find and tap the transport buttons. Null when no
 /// editor is open.
 VideoPlayerController? debugPlaybackController;
-
-/// Live [MotionTuningController] for the open editor, published (debug/profile
-/// only) so `ext.slipreel.setMotionTuning` can dial motion-feel knobs — e.g.
-/// the manual-zoom enter-pan back-load — without a rebuild. Null when no
-/// editor is open. See [debugPlaybackController] for the same pattern.
-MotionTuningController? debugMotionTuningController;
 
 /// Every sidecar file Slipreel writes alongside `<videoPath>`. Deleting a
 /// recording must unlink all of these or they orphan on disk — notably the
@@ -2017,7 +2010,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // full restart. See [debugPlaybackController].
     assert(() {
       debugPlaybackController = _controller;
-      debugMotionTuningController = ref.read(motionTuningProvider.notifier);
       return true;
     }());
     // Single source of truth: every editor-state read in the body

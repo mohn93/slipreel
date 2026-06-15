@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
+import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
@@ -312,17 +313,19 @@ class ZoomContextInspector extends StatelessWidget {
   }
 
   /// Readout for the debug pan-back-load knob. Surfaces the
-  /// (zoomLevel, backload) pair so tuning produces clean data points
-  /// for fitting `backload = f(zoomLevel)`. 1.0 = lock-step with the
-  /// zoom; <1 leads the zoom; >1 lags it. `null` ⇒ session default.
+  /// (zoomLevel, backload) pair so tuning produces clean data points.
+  /// 1.0 = lock-step with the zoom; <1 leads the zoom; >1 lags it.
+  /// `null` ⇒ the zoom-level-aware default fit (shown as "(auto)").
   static String _panBackloadSubtitle(double zoomLevel, double? v) {
     final z = '${zoomLevel.toStringAsFixed(2)}×';
-    if (v == null) return 'zoom $z · default (lock-step 1.00×)';
-    final n = '${v.toStringAsFixed(2)}×';
-    final feel = (v - 1.0).abs() < 0.01
+    final effective =
+        v ?? ZoomFocalController.manualBackloadForZoom(zoomLevel);
+    final n = '${effective.toStringAsFixed(2)}×';
+    final feel = (effective - 1.0).abs() < 0.01
         ? 'lock-step'
-        : (v < 1.0 ? 'pan leads' : 'pan lags');
-    return 'zoom $z · back-load $n — $feel';
+        : (effective < 1.0 ? 'pan leads' : 'pan lags');
+    final src = v == null ? ' (auto)' : '';
+    return 'zoom $z · back-load $n$src — $feel';
   }
 }
 

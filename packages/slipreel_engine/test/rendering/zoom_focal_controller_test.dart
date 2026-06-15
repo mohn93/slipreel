@@ -3,7 +3,6 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
-import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 
 const Size _videoSize = Size(1920, 1080);
@@ -1270,13 +1269,14 @@ void main() {
     });
 
     test(
-        'followCursor:false enter pan never outruns the per-frame zoom clamp '
-        '(no transformer front-load)', () {
-      // The fix relies on the eased pan staying at/under the per-frame bounds
-      // clamp for the WHOLE ramp, so ZoomTransformer.getTransform never has to
-      // re-clamp the focal (which is what used to front-load the pan). Walk a
-      // bottom-left placement through the ramp and assert the transformer's
-      // clamp is a no-op on the controller's focal at every frame.
+        'manual enter pan at lock-step (exp 1.0) stays within the per-frame '
+        'zoom clamp', () {
+      // The geometric invariant the center anchor buys us: at exponent >= 1
+      // the eased pan stays at/under the per-frame bounds clamp for the WHOLE
+      // ramp, so ZoomTransformer never re-clamps the focal. (The tuned
+      // DEFAULT exponent is < 1 and deliberately leads/rides the clamp — that
+      // is the next test; this one pins the >= 1 guarantee via an explicit
+      // lock-step override.)
       final r = ZoomRegion(
         rect: const Rect.fromLTRB(200, 600, 600, 1000), // center (400,800)
         startTime: Duration.zero,
@@ -1286,6 +1286,7 @@ void main() {
         exitDuration: Duration.zero,
         followCursor: false,
         followMode: FollowMode.centered,
+        manualPanBackload: 1.0, // explicit lock-step
       );
       final transformer = ZoomTransformer();
       final c = ZoomFocalController();
@@ -1314,19 +1315,17 @@ void main() {
         final clamped =
             ZoomTransformer.clampFocalToBounds(focal, _videoSize, z);
         expect((clamped - focal).distance, lessThan(0.5),
-            reason: 'at ms=$ms (z=$z) the controller focal must already '
-                'respect the per-frame clamp; a clamp delta means the '
-                'transformer is front-loading the pan');
+            reason: 'at ms=$ms (z=$z) a lock-step focal must respect the '
+                'per-frame clamp');
       }
     });
 
-    test(
-        'manualEntryPanBackload tunes the manual enter pan (higher = lags '
-        'more, lower = leads)', () {
-      // Same manual placement, three back-loads. At the ramp midpoint a
-      // larger exponent must hold the focal nearer the video center (pan
-      // lags); a smaller one pushes it nearer the placement (pan leads).
-      ZoomRegion regionFor() => ZoomRegion(
+    test('manualPanBackload override tunes the manual enter pan (higher = '
+        'lags more, lower = leads)', () {
+      // Same manual placement, three per-region back-loads. At the ramp
+      // midpoint a larger exponent holds the focal nearer the video center
+      // (pan lags); a smaller one pushes it nearer the placement (pan leads).
+      ZoomRegion regionFor(double backload) => ZoomRegion(
             rect: const Rect.fromLTRB(500, 300, 900, 700), // center (700,500)
             startTime: Duration.zero,
             duration: const Duration(milliseconds: 3000),
@@ -1335,15 +1334,12 @@ void main() {
             exitDuration: Duration.zero,
             followCursor: false,
             followMode: FollowMode.centered,
+            manualPanBackload: backload,
           );
       final videoCentre = Offset(_videoSize.width / 2, _videoSize.height / 2);
-      Offset midFor(double backload) {
-        final c = ZoomFocalController(
-          tuning: MotionTuning.defaults
-              .copyWith(manualEntryPanBackload: backload),
-        );
-        return walkTo(c, regionFor(), 250, cursor: Offset.zero);
-      }
+      Offset midFor(double backload) =>
+          walkTo(ZoomFocalController(), regionFor(backload), 250,
+              cursor: Offset.zero);
 
       final dLags = (midFor(3.0) - videoCentre).distance; // back-loaded
       final dLock = (midFor(1.0) - videoCentre).distance; // synced
@@ -1352,6 +1348,46 @@ void main() {
           reason: 'a larger back-load must keep the pan nearer the center');
       expect(dLock, lessThan(dLeads),
           reason: 'a smaller back-load must push the pan nearer the placement');
+    });
+
+    test('manualBackloadForZoom matches the hand-tuned fit and clamps', () {
+      // The fitted line backload = 1.15 - 0.26*zoom, from the tuned sweet
+      // spots, clamped to keep the exponent positive/sane on extrapolation.
+      expect(ZoomFocalController.manualBackloadForZoom(1.5),
+          closeTo(0.76, 1e-9));
+      expect(ZoomFocalController.manualBackloadForZoom(2.0),
+          closeTo(0.63, 1e-9));
+      expect(ZoomFocalController.manualBackloadForZoom(2.5),
+          closeTo(0.50, 1e-9));
+      // Below the floor on extrapolation (raw line crosses 0 near 4.4x).
+      expect(ZoomFocalController.manualBackloadForZoom(5.0),
+          greaterThanOrEqualTo(0.2));
+    });
+
+    test('a manual region with no override uses manualBackloadForZoom', () {
+      // No per-region override → the default fit drives the pan. The mid
+      // focal must match an explicit override equal to the fit value.
+      ZoomRegion regionFor(double? backload) => ZoomRegion(
+            rect: const Rect.fromLTRB(500, 300, 900, 700),
+            startTime: Duration.zero,
+            duration: const Duration(milliseconds: 3000),
+            zoomLevel: 2.0,
+            enterDuration: const Duration(milliseconds: 500),
+            exitDuration: Duration.zero,
+            followCursor: false,
+            followMode: FollowMode.centered,
+            manualPanBackload: backload,
+          );
+      final fromDefault =
+          walkTo(ZoomFocalController(), regionFor(null), 250,
+              cursor: Offset.zero);
+      final fromExplicit = walkTo(
+          ZoomFocalController(),
+          regionFor(ZoomFocalController.manualBackloadForZoom(2.0)),
+          250,
+          cursor: Offset.zero);
+      expect((fromDefault - fromExplicit).distance, lessThan(0.01),
+          reason: 'null override must resolve to the zoom-level fit');
     });
 
     test('the resolved curve shapes the ramp (linear != easeInOutQuad)',

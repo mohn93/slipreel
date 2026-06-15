@@ -254,31 +254,6 @@ void _registerSlipreelDebugExtensions({TipsController? tipsController}) {
     return developer.ServiceExtensionResponse.result('{"enabled": $enabled}');
   });
 
-  // Live motion-feel tuning. Currently exposes the manual-zoom enter-pan
-  // back-load (`manualEntryPanBackload`): 1.0 = pan locks step-for-step with
-  // the zoom-scale ramp (mirrors the synced zoom-out); >1.0 lags the pan;
-  // <1.0 front-loads it. Updates flow through motionTuningProvider into the
-  // live focal controller, so the next replay reflects the new value without
-  // a rebuild. Echoes the resulting MotionTuning as JSON.
-  developer.registerExtension('ext.slipreel.setMotionTuning',
-      (method, params) async {
-    final ctrl = debugMotionTuningController;
-    if (ctrl == null) {
-      return developer.ServiceExtensionResponse.result(
-        '{"attached": false}',
-      );
-    }
-    final backloadRaw = params['manualEntryPanBackload'];
-    final backload =
-        backloadRaw == null ? null : double.tryParse(backloadRaw);
-    if (backload != null) {
-      ctrl.replace(ctrl.current.copyWith(manualEntryPanBackload: backload));
-    }
-    return developer.ServiceExtensionResponse.result(
-      '{"attached": true, ${_motionTuningFields(ctrl.current)}}',
-    );
-  });
-
   developer.registerExtension(
     'ext.slipreel.resetOnboarding',
     (method, params) async {
@@ -293,12 +268,6 @@ void _registerSlipreelDebugExtensions({TipsController? tipsController}) {
     },
   );
 }
-
-/// Compact JSON fragment of the live-tunable motion-feel knobs, for the
-/// `ext.slipreel.setMotionTuning` echo. Not wrapped in braces so the caller
-/// can splice it into a larger object.
-String _motionTuningFields(MotionTuning t) =>
-    '"manualEntryPanBackload": ${t.manualEntryPanBackload}';
 
 String _playbackStateJson() {
   final c = debugPlaybackController;

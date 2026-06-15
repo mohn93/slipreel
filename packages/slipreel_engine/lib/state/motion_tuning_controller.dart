@@ -44,12 +44,6 @@ class MotionTuningController extends StateNotifier<MotionTuning> {
     state = next;
   }
 
-  /// The active tuning. Public read accessor over the protected
-  /// [StateNotifier.state] for non-widget callers (e.g. the
-  /// `ext.slipreel.setMotionTuning` VM hook reading + echoing the
-  /// current values).
-  MotionTuning get current => state;
-
   /// Returns the [MotionTuningPreset] whose tuning matches the
   /// current state (by reference equality with the shippable
   /// presets), or null if the state is custom.

@@ -107,6 +107,27 @@ class ZoomFocalController {
   // synced at lock-step (1.0), unlike the cursor case.
   static const double _entryPanBackload = 2.0;
 
+  // Default manual-placement enter-pan back-load as a function of zoom
+  // level. Fit from hand-tuned sweet spots — 1.5×→0.76, 2.0×→0.63,
+  // 2.5×→0.50 — which are exactly linear (−0.26 per 1× of zoom). A lower
+  // exponent lets the pan lead the zoom more, which reads as synced at
+  // lower magnifications where the reachable framing is tight; higher zoom
+  // wants closer to lock-step. The raw line crosses zero near 4.4×, so the
+  // result is clamped to keep the exponent positive and sane outside the
+  // tuned 1.5–2.5× band. A region's [ZoomRegion.manualPanBackload] override
+  // takes precedence when set.
+  static const double _manualBackloadIntercept = 1.15;
+  static const double _manualBackloadSlope = -0.26;
+  static const double _manualBackloadFloor = 0.2;
+  static const double _manualBackloadCeil = 1.5;
+
+  /// The default manual enter-pan back-load exponent for [zoomLevel] (the
+  /// fitted `1.15 − 0.26·zoom`, clamped). Public so the editor can show the
+  /// computed default next to the per-zoom override slider.
+  static double manualBackloadForZoom(double zoomLevel) =>
+      (_manualBackloadIntercept + _manualBackloadSlope * zoomLevel)
+          .clamp(_manualBackloadFloor, _manualBackloadCeil);
+
   // Floor for the backward-scrub-detection check.
   //
   // Originally 10 ms — anything below was treated as scheduling
@@ -462,14 +483,14 @@ class ZoomFocalController {
         final eased = rampCurve.transform(tNorm).clamp(0.0, 1.0);
         // followCursor pans rect.center -> cursor and uses the fixed
         // back-load tuned for that geometry. A MANUAL placement pans
-        // center -> placement and reads as synced near lock-step; its
-        // exponent comes from the region's own manualPanBackload (the
-        // per-zoom tuning override) when set, else the session default
-        // MotionTuning.manualEntryPanBackload. Per-region because the
-        // ideal exponent depends on zoomLevel (see those doc comments).
+        // center -> placement; its exponent comes from the region's own
+        // manualPanBackload override when set, else the zoom-level-aware
+        // default fit (manualBackloadForZoom) — the ideal exponent depends
+        // on zoomLevel, so a single constant can't serve every region.
         final backload = activeZoom.followCursor
             ? _entryPanBackload
-            : (activeZoom.manualPanBackload ?? tuning.manualEntryPanBackload);
+            : (activeZoom.manualPanBackload ??
+                manualBackloadForZoom(activeZoom.zoomLevel));
         final panEased = math.pow(eased, backload).toDouble();
         final newFocal =
             Offset.lerp(_enterRampStartFocal, entryTarget, panEased)!;
