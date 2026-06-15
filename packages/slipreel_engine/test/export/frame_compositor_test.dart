@@ -671,12 +671,13 @@ void main() {
         return rgba[i + 0] == 0xFF && rgba[i + 2] == 0xFF && rgba[i + 3] == 0xFF;
       }
 
-      // Hybrid push-in grows the card to ~1.15× (top-left ≈ (16,22)), so the
-      // old (45,45) sample now sits inside the pushed-in window. Sample (8,8)
-      // instead: it is inside the surviving padding floor (x=8 < card-left
-      // ~16), well outside the grown rounded card corner → must stay clear.
-      expect(isMagenta(8, 8), isFalse,
-          reason: 'rounded corner must clip the magnified video');
+      // (24,30) is inside the grown card's top-left bounding box (card ≈
+      // left 16 / top 22 at zCard 1.15) but outside the scaled rounded arc
+      // (≈69px radius, arc center ≈ (85,91); distance ≈ 86 > 69) — so it is
+      // clear only because the clip is ROUNDED. A plain rect clip would
+      // render it as video. This is what proves the corner is rounded.
+      expect(isMagenta(24, 30), isFalse,
+          reason: 'magnified content must be clipped by the ROUNDED corner');
       // A deep-interior pixel is still inside the rounded window → magenta.
       expect(isMagenta(200, 160), isTrue,
           reason: 'window interior still shows the magnified video');
