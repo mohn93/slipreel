@@ -1,4 +1,4 @@
-import 'dart:ui' show Offset, Size;
+import 'dart:ui' show Offset, Rect, Size;
 
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/rendering.dart' show Matrix4;
@@ -71,6 +71,46 @@ class ZoomTransformer {
     return Offset(
       halfW <= maxX ? focal.dx.clamp(halfW, maxX) : videoSize.width / 2,
       halfH <= maxY ? focal.dy.clamp(halfH, maxY) : videoSize.height / 2,
+    );
+  }
+
+  /// Result of [resolveCardPushIn]: the clamped card scale, the centered
+  /// on-canvas card rect at that scale, and the effective (scaled) corner
+  /// radius.
+  static ({double zCard, Rect cardRect, double cornerRadius}) resolveCardPushIn({
+    required Rect videoRect,
+    required Size canvasSize,
+    required double cornerRadius,
+    required double zoom,
+    double paddingFloorFraction = 0.4,
+  }) {
+    // Padding (per axis) is the inset of the centered 1× video rect.
+    final padX = (canvasSize.width - videoRect.width) / 2;
+    final padY = (canvasSize.height - videoRect.height) / 2;
+    final floorX = paddingFloorFraction * padX;
+    final floorY = paddingFloorFraction * padY;
+    // Largest card scale that keeps each axis inset >= its floor:
+    //   zCardMax_axis = (canvas_axis - 2*floor_axis) / videoRect_axis.
+    final zCardMaxX = videoRect.width <= 0
+        ? 1.0
+        : (canvasSize.width - 2 * floorX) / videoRect.width;
+    final zCardMaxY = videoRect.height <= 0
+        ? 1.0
+        : (canvasSize.height - 2 * floorY) / videoRect.height;
+    final zCardMax = zCardMaxX < zCardMaxY ? zCardMaxX : zCardMaxY;
+    final cappedMax = zCardMax < 1.0 ? 1.0 : zCardMax;
+    var zCard = zoom < 1.0 ? 1.0 : zoom;
+    if (zCard > cappedMax) zCard = cappedMax;
+    final center = Offset(canvasSize.width / 2, canvasSize.height / 2);
+    final cardRect = Rect.fromCenter(
+      center: center,
+      width: videoRect.width * zCard,
+      height: videoRect.height * zCard,
+    );
+    return (
+      zCard: zCard,
+      cardRect: cardRect,
+      cornerRadius: cornerRadius * zCard,
     );
   }
 
