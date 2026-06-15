@@ -510,12 +510,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     // VideoPlayer is held as `child` so its widget isn't reconstructed
     // each frame even though the surrounding Stack is.
     //
-    // Zoom Transform wraps the ENTIRE composition (wallpaper + frame
-    // + video + cursor + dev HUD) so when zoom kicks in everything
-    // pushes in together rather than only the video pixels scaling
-    // while the wallpaper stays put. ClipRect on the outside keeps
-    // the scaled-up tail inside the frame so it doesn't leak across
-    // the editor backdrop.
+    // Padding-preserving zoom: the frame chrome (shadow/ring/border)
+    // and the wallpaper stay FIXED at the padded rect; only the
+    // video+cursor content is magnified/panned and clipped to the
+    // fixed rounded video window (see the active-zoom branch below).
+    // So a zoom pushes into the content, not the frame — the padding
+    // never shrinks. ClipRect on the outside keeps the scaled-up tail
+    // inside the frame so it doesn't leak across the editor backdrop.
     Widget framedVideo = SizedBox(
       width: totalSize.width,
       height: totalSize.height,
@@ -1050,7 +1051,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               tween: Tween<double>(end: activeZoom.zoomLevel),
               duration: widget.screenAnimationConfig.badgeDuration,
               curve: widget.screenAnimationConfig.badgeCurve,
-              child: composition,
               builder: (context, animatedZoom, _) {
                 final tweenedRegion = activeZoom.copyWith(
                   zoomLevel: animatedZoom,
