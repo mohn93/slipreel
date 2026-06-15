@@ -1406,14 +1406,19 @@ void main() {
           closeTo(0.63, 1e-9));
       expect(ZoomFocalController.manualBackloadForZoom(2.5),
           closeTo(0.26, 1e-9));
-      // Linear interpolation between points (midpoint of 2.0..2.5).
+      expect(ZoomFocalController.manualBackloadForZoom(5.0),
+          closeTo(0.0, 1e-9));
+      // Linear interpolation between points (midpoint of 2.0..2.5, and of
+      // the wide 2.5..5.0 segment).
       expect(ZoomFocalController.manualBackloadForZoom(2.25),
           closeTo((0.63 + 0.26) / 2, 1e-9));
+      expect(ZoomFocalController.manualBackloadForZoom(3.75),
+          closeTo(0.26 / 2, 1e-9)); // halfway from 0.26 down to 0.0
       // Flat clamp to the nearest endpoint outside the measured band.
       expect(ZoomFocalController.manualBackloadForZoom(1.0),
           closeTo(0.76, 1e-9));
-      expect(ZoomFocalController.manualBackloadForZoom(5.0),
-          closeTo(0.26, 1e-9));
+      expect(ZoomFocalController.manualBackloadForZoom(6.0),
+          closeTo(0.0, 1e-9));
     });
 
     test('a manual region with no override uses manualBackloadForZoom', () {

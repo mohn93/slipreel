@@ -117,11 +117,17 @@ class ZoomFocalController {
   // Extend [_manualBackloadPoints] as higher-zoom points are measured. A
   // region's [ZoomRegion.manualPanBackload] override takes precedence.
   //
-  // (zoomLevel, backload), sorted ascending by zoomLevel.
+  // (zoomLevel, backload), sorted ascending by zoomLevel. 5.0 is the max
+  // zoomLevel (ZoomRegion clamps 1..5) and tuned to 0.0 — at max zoom the
+  // pan rides the bounds clamp from the first frame (the original
+  // clamp-driven front-load), which reads right there. 3–4× is currently
+  // linear interpolation between the 2.5× and 5.0× anchors (not directly
+  // measured); add points here if that band needs shaping.
   static const List<(double, double)> _manualBackloadPoints = [
     (1.5, 0.76),
     (2.0, 0.63),
     (2.5, 0.26),
+    (5.0, 0.0),
   ];
 
   /// The default manual enter-pan back-load exponent for [zoomLevel],
