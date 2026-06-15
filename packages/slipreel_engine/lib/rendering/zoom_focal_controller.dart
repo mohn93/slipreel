@@ -90,6 +90,15 @@ class ZoomFocalController {
   // controller leaves the enter window so a re-entry re-captures.
   Offset? _enterRampStartFocal;
 
+  // Pan TARGET captured once on the first enter-ramp frame, tied to the same
+  // lifecycle as [_enterRampStartFocal]. For a manual placement this is just
+  // rect.center (already stable). For a followCursor zoom it pins the enter
+  // pan to the cursor position when the zoom began, so a cursor that moves
+  // DURING the enter ramp doesn't make the camera swing to chase it (the hold
+  // spring takes over live cursor tracking once the ramp ends). Deterministic,
+  // so play == scrub == export agree.
+  Offset? _enterRampTarget;
+
   // Back-load exponent for the entry pan relative to the zoom-scale ramp.
   // The pan and the scale share the same window and curve, so they finish
   // at the same instant mathematically — but a settling position reads as
@@ -294,6 +303,7 @@ class ZoomFocalController {
       _resetStrategies();
       _exitRampStartFocal = null;
       _enterRampStartFocal = null;
+      _enterRampTarget = null;
       _lastUpdatePosition = position;
       return null;
     }
@@ -324,6 +334,7 @@ class ZoomFocalController {
       _resetStrategies();
       _exitRampStartFocal = null;
       _enterRampStartFocal = null;
+      _enterRampTarget = null;
       _lastUpdatePosition = position;
       _lastSnapReason = 'init';
       _lastSnapAt = position;
@@ -461,6 +472,7 @@ class ZoomFocalController {
         // every frame and would otherwise never hit the outside-enter-window
         // clear below, leaking this region's anchor into the NEXT region.
         _enterRampStartFocal = null;
+        _enterRampTarget = null;
         return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
       }
     }
@@ -526,9 +538,18 @@ class ZoomFocalController {
             ? activeZoom.rect.center
             : Offset(videoSize.width / 2, videoSize.height / 2);
         _enterRampStartFocal ??= enterAnchor;
-        final rawTarget = (activeZoom.followCursor && cursor != null)
+        final liveTarget = (activeZoom.followCursor && cursor != null)
             ? cursor
             : activeZoom.rect.center;
+        // Capture the pan target ONCE (first enter frame) and hold it for the
+        // whole ramp. Manual placements pass rect.center (already stable), so
+        // this is a no-op for them. For followCursor it pins the enter to the
+        // cursor when the zoom began — a cursor that darts around DURING the
+        // ~enterDuration zoom-in no longer makes the camera swing out to chase
+        // it (the "swing to the edge then back"); the hold spring resumes live
+        // tracking, smoothly, once the ramp ends.
+        _enterRampTarget ??= liveTarget;
+        final rawTarget = _enterRampTarget!;
         // Aim the pan at what the FULL zoom level can actually frame, not
         // the raw cursor. An edge cursor (or an edge-hugging rect.center)
         // sits beyond the reachable focal range, so lerping toward the raw
@@ -598,9 +619,10 @@ class ZoomFocalController {
         return ZoomFocalUpdate(zoom: activeZoom, focal: clampedFocal);
       }
     }
-    // Outside the enter window — clear the anchor so a re-entry into an
-    // enter ramp re-captures from a fresh position.
+    // Outside the enter window — clear the anchor + captured target so a
+    // re-entry into an enter ramp re-captures from a fresh position.
     _enterRampStartFocal = null;
+    _enterRampTarget = null;
 
     // Resolve target this frame via the pluggable per-mode strategy.
     // The bounded strategy owns its gate state; centered/predictive
@@ -685,6 +707,7 @@ class ZoomFocalController {
     _resetStrategies();
     _exitRampStartFocal = null;
     _enterRampStartFocal = null;
+    _enterRampTarget = null;
     _lastUpdatePosition = null;
   }
 

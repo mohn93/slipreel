@@ -1941,6 +1941,65 @@ void main() {
       }
     });
 
+    test('followCursor enter does not swing to chase a cursor that moves '
+        'during the ramp', () {
+      // The enter pan target is captured ONCE at ramp start, so a cursor that
+      // darts toward an edge then settles inward during the zoom-in does NOT
+      // make the camera swing out and back (the reported issue). The painted
+      // focal pans monotonically (no left-then-right reversal). Without the
+      // captured target it dove ~400px left chasing the dart, then returned.
+      final r = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered,
+      );
+      Offset cursorAt(int ms) {
+        if (ms <= 250) {
+          return Offset(960 + (120 - 960) * (ms / 250), 540); // dart left
+        }
+        final t = ((ms - 250) / 250).clamp(0.0, 1.0);
+        return Offset(120 + (700 - 120) * t, 540); // settle inward
+      }
+
+      final c = ZoomFocalController();
+      double? prevX;
+      for (var ms = 0; ms <= 1200; ms += 16) {
+        final pos = Duration(milliseconds: ms);
+        final focal = c
+            .update(
+              position: pos,
+              zoomRegions: [r],
+              cursor: cursorAt(ms),
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        final z = transformer
+            .getTransform(
+              position: pos,
+              zoomRegion: r,
+              videoSize: _videoSize,
+              focalPoint: focal,
+              rampCurve: Curves.easeInOutQuad,
+            )
+            .storage[0];
+        final paintedX =
+            ZoomTransformer.clampFocalToBounds(focal, _videoSize, z).dx;
+        if (prevX != null) {
+          // Monotonic-left (within epsilon) — never swings left then back.
+          expect(paintedX, lessThan(prevX! + 2.0),
+              reason: 'focal reversed direction at ms=$ms (swing) — '
+                  '$paintedX vs prev $prevX');
+        }
+        prevX = paintedX;
+      }
+    });
+
     test('followCursor enter ramp is byte-identical (radial clamp is gated '
         'out)', () {
       // The gate must leave the working followCursor pan untouched: the focal
