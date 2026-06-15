@@ -1084,26 +1084,41 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                     currentTransform: transform,
                   );
                 }
-                //
-                // Fixed rounded clip at the video window. The magnified
-                // video/cursor are clipped to this so the frame + padding
-                // stay put and only the footage scales inside the window.
-                final windowClipper = _VideoWindowClipper(
-                  Rect.fromLTWH(
+                // Hybrid push-in: chrome scales by zCard (centered, clamped to
+                // the padding floor); the content keeps the full zoom and is
+                // clipped to the grown card rect.
+                final pushIn = ZoomTransformer.resolveCardPushIn(
+                  videoRect: Rect.fromLTWH(
                     videoOriginX,
                     videoOriginY,
                     videoSize.width,
                     videoSize.height,
                   ),
-                  currentFrame.cornerRadius,
+                  canvasSize: totalSize,
+                  cornerRadius: currentFrame.cornerRadius,
+                  zoom: transform.storage[0], // effective ramped zoom = scaleX
                 );
 
-                // Chrome stays un-zoomed; only the video content is
-                // clipped + zoomed inside the fixed window.
+                final windowClipper = _VideoWindowClipper(
+                  pushIn.cardRect,
+                  pushIn.cornerRadius,
+                );
+
+                // The frame chrome scales by zCard (centered) so the card
+                // visibly pushes in, clamped at the padding floor.
+                final scaledChrome = pushIn.zCard == 1.0
+                    ? framePainterLayer
+                    : Transform(
+                        transform: Matrix4.identity()
+                          ..scaleByDouble(pushIn.zCard, pushIn.zCard, 1.0, 1.0),
+                        alignment: Alignment.center,
+                        child: framePainterLayer,
+                      );
+
                 final transformed = Stack(
                   fit: StackFit.expand,
                   children: [
-                    framePainterLayer,
+                    scaledChrome,
                     ClipPath(
                       clipper: windowClipper,
                       child: Transform(
