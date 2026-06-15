@@ -17,6 +17,7 @@ void main() {
         exitDuration: const Duration(milliseconds: 450),
         rampCurveOverride:
             const CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 0.7, y2: 0.9),
+        manualPanBackload: 0.76,
         followCursor: false,
         followMode: FollowMode.predictive,
         deadzoneRatio: 0.42,

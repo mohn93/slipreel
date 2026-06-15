@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
@@ -201,29 +200,6 @@ class _CursorTabState extends ConsumerState<CursorTab> {
                 .save(preset.tuning);
           },
         ),
-        if (kDebugMode) ...[
-          const SizedBox(height: 20),
-          InspectorSlider(
-            label: 'Manual zoom pan (debug)',
-            subtitle: _manualPanSubtitle(
-                ref.watch(motionTuningProvider).manualEntryPanBackload),
-            value: ref.watch(motionTuningProvider).manualEntryPanBackload,
-            min: 0.5,
-            max: 3.0,
-            onChanged: (v) {
-              final n = ref.read(motionTuningProvider.notifier);
-              n.replace(n.current.copyWith(manualEntryPanBackload: v));
-            },
-            onReset: () {
-              final n = ref.read(motionTuningProvider.notifier);
-              n.replace(n.current.copyWith(manualEntryPanBackload: 1.0));
-            },
-            canReset: (ref.watch(motionTuningProvider).manualEntryPanBackload -
-                        1.0)
-                    .abs() >
-                0.001,
-          ),
-        ],
         const SizedBox(height: 20),
         InspectorSlider(
           label: 'Cursor delay',
@@ -252,15 +228,6 @@ class _CursorTabState extends ConsumerState<CursorTab> {
         const SizedBox(height: 24),
       ],
     );
-  }
-
-  /// Human-readable readout for the debug manual-zoom pan back-load.
-  /// 1.0 = the pan tracks the zoom-scale ramp exactly; >1 lags it; <1
-  /// leads it. Mirrors the [MotionTuning.manualEntryPanBackload] doc.
-  static String _manualPanSubtitle(double v) {
-    final n = '${v.toStringAsFixed(2)}×';
-    if ((v - 1.0).abs() < 0.01) return '$n — lock-step with the zoom';
-    return v < 1.0 ? '$n — pan leads the zoom' : '$n — pan lags the zoom';
   }
 
   /// "Advanced" section — collapsible group of per-project cursor

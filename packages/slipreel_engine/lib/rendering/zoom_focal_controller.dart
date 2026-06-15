@@ -462,13 +462,14 @@ class ZoomFocalController {
         final eased = rampCurve.transform(tNorm).clamp(0.0, 1.0);
         // followCursor pans rect.center -> cursor and uses the fixed
         // back-load tuned for that geometry. A MANUAL placement pans
-        // center -> placement and reads as synced at lock-step (1.0,
-        // mirroring the exit ramp); its exponent is live-tunable via
-        // MotionTuning.manualEntryPanBackload so the feel can be dialed
-        // without a rebuild.
+        // center -> placement and reads as synced near lock-step; its
+        // exponent comes from the region's own manualPanBackload (the
+        // per-zoom tuning override) when set, else the session default
+        // MotionTuning.manualEntryPanBackload. Per-region because the
+        // ideal exponent depends on zoomLevel (see those doc comments).
         final backload = activeZoom.followCursor
             ? _entryPanBackload
-            : tuning.manualEntryPanBackload;
+            : (activeZoom.manualPanBackload ?? tuning.manualEntryPanBackload);
         final panEased = math.pow(eased, backload).toDouble();
         final newFocal =
             Offset.lerp(_enterRampStartFocal, entryTarget, panEased)!;

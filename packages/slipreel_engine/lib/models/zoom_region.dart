@@ -54,6 +54,14 @@ class ZoomRegion {
   final Duration exitDuration;
   final CubicBezierCurve? rampCurveOverride;
 
+  /// Debug/tuning override for the MANUAL (followCursor:false) enter-pan
+  /// back-load exponent (see [MotionTuning.manualEntryPanBackload]). `null`
+  /// ⇒ fall back to the session default. Stored per-region because the
+  /// ideal exponent depends on this region's [zoomLevel]; it exists so the
+  /// sweet spot can be tuned at several zoom levels to derive
+  /// `backload = f(zoomLevel)`. No effect when [followCursor] is true.
+  final double? manualPanBackload;
+
   /// Whether the zoom focal point follows the recorded cursor.
   ///
   /// When `false`, the focal stays pinned to [rect.center] for the
@@ -96,6 +104,7 @@ class ZoomRegion {
     Duration? exitDuration,
     Size? videoBounds,
     this.rampCurveOverride,
+    this.manualPanBackload,
     this.followCursor = true,
     this.followMode = FollowMode.bounded,
     double deadzoneRatio = 0.8,
@@ -177,6 +186,8 @@ class ZoomRegion {
     Size? videoBounds,
     CubicBezierCurve? rampCurveOverride,
     bool clearRampCurveOverride = false,
+    double? manualPanBackload,
+    bool clearManualPanBackload = false,
     bool? followCursor,
     FollowMode? followMode,
     double? deadzoneRatio,
@@ -194,6 +205,9 @@ class ZoomRegion {
       rampCurveOverride: clearRampCurveOverride
           ? null
           : (rampCurveOverride ?? this.rampCurveOverride),
+      manualPanBackload: clearManualPanBackload
+          ? null
+          : (manualPanBackload ?? this.manualPanBackload),
       followCursor: followCursor ?? this.followCursor,
       followMode: followMode ?? this.followMode,
       deadzoneRatio: deadzoneRatio ?? this.deadzoneRatio,
@@ -217,6 +231,7 @@ class ZoomRegion {
       'exitDurationMicros': exitDuration.inMicroseconds,
       if (rampCurveOverride != null)
         'rampCurveOverride': rampCurveOverride!.toJson(),
+      if (manualPanBackload != null) 'manualPanBackload': manualPanBackload,
       'followCursor': followCursor,
       'followMode': followMode.name,
       'deadzoneRatio': deadzoneRatio,
@@ -279,6 +294,7 @@ class ZoomRegion {
       exitDuration: optMicros('exitDurationMicros'),
       rampCurveOverride: parseBezier(
           json['rampCurveOverride'] as Map<String, dynamic>?),
+      manualPanBackload: (json['manualPanBackload'] as num?)?.toDouble(),
       followCursor: (json['followCursor'] as bool?) ?? true,
       followMode: mode,
       deadzoneRatio: (json['deadzoneRatio'] as num?)?.toDouble() ?? 0.8,
@@ -308,6 +324,7 @@ class ZoomRegion {
           enterDuration == other.enterDuration &&
           exitDuration == other.exitDuration &&
           rampCurveOverride == other.rampCurveOverride &&
+          manualPanBackload == other.manualPanBackload &&
           followCursor == other.followCursor &&
           followMode == other.followMode &&
           deadzoneRatio == other.deadzoneRatio &&
@@ -323,6 +340,7 @@ class ZoomRegion {
         enterDuration,
         exitDuration,
         rampCurveOverride,
+        manualPanBackload,
         followCursor,
         followMode,
         deadzoneRatio,

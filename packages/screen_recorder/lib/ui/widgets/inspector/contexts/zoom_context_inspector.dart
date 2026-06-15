@@ -110,6 +110,27 @@ class ZoomContextInspector extends StatelessWidget {
                 subtitle: '${zoom.zoomLevel.toStringAsFixed(1)}×',
               ),
               const InspectorSectionDivider(),
+              // Debug-only tuning knob for the manual-placement enter-pan
+              // back-load. Per-zoom because the sweet spot depends on this
+              // region's zoom level; the subtitle reads out the
+              // (zoomLevel, backload) pair so the curve can be fit. Only
+              // meaningful for manual placements (followCursor off).
+              if (kDebugMode && !zoom.followCursor) ...[
+                InspectorSlider(
+                  label: 'Pan back-load (debug)',
+                  subtitle: _panBackloadSubtitle(
+                      zoom.zoomLevel, zoom.manualPanBackload),
+                  value: zoom.manualPanBackload ?? 1.0,
+                  min: 0.5,
+                  max: 3.0,
+                  onChanged: (v) =>
+                      onChanged(zoom.copyWith(manualPanBackload: v)),
+                  onReset: () =>
+                      onChanged(zoom.copyWith(clearManualPanBackload: true)),
+                  canReset: zoom.manualPanBackload != null,
+                ),
+                const InspectorSectionDivider(),
+              ],
               InspectorToggle(
                 label: 'Auto-zoom on cursor',
                 subtitle:
@@ -288,6 +309,20 @@ class ZoomContextInspector extends StatelessWidget {
       return '$m:$s';
     }
     return '${fmt(z.startTime)} → ${fmt(z.endTime)}';
+  }
+
+  /// Readout for the debug pan-back-load knob. Surfaces the
+  /// (zoomLevel, backload) pair so tuning produces clean data points
+  /// for fitting `backload = f(zoomLevel)`. 1.0 = lock-step with the
+  /// zoom; <1 leads the zoom; >1 lags it. `null` ⇒ session default.
+  static String _panBackloadSubtitle(double zoomLevel, double? v) {
+    final z = '${zoomLevel.toStringAsFixed(2)}×';
+    if (v == null) return 'zoom $z · default (lock-step 1.00×)';
+    final n = '${v.toStringAsFixed(2)}×';
+    final feel = (v - 1.0).abs() < 0.01
+        ? 'lock-step'
+        : (v < 1.0 ? 'pan leads' : 'pan lags');
+    return 'zoom $z · back-load $n — $feel';
   }
 }
 
