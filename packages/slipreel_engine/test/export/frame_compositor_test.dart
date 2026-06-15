@@ -618,6 +618,64 @@ void main() {
       expect(isMagenta(200, 20), isFalse,
           reason: 'top padding must stay clear of the zoomed video');
     });
+
+    test('active zoom clips magnified content to the ROUNDED window corners',
+        () async {
+      // Same setup as the padding test but with a large corner radius.
+      // A pixel just inside the video rect's top-left corner bounding box
+      // but OUTSIDE the rounded arc must stay clear of the (magnified)
+      // video — proving the clip is rounded (clipRRect), not a plain rect.
+      const radius = 60.0;
+      final compositor = FrameCompositor(
+        projectState: EditorProjectState.defaults().copyWith(
+          windowFrame: const WindowFrame(
+            name: 'Custom',
+            padding: EdgeInsets.all(40),
+            cornerRadius: radius,
+            shadowBlur: 0,
+            shadowOffset: Offset.zero,
+            shadowColor: Color(0x00000000),
+            borderWidth: 0,
+          ),
+          zoomRegions: [
+            ZoomRegion(
+              rect: const Rect.fromLTWH(0, 0, 320, 240),
+              startTime: Duration.zero,
+              duration: const Duration(seconds: 1),
+              zoomLevel: 2.0,
+              followCursor: false,
+              enterDuration: Duration.zero,
+              exitDuration: Duration.zero,
+            ),
+          ],
+        ),
+        cursorRecording: CursorRecording(),
+        metadata: _meta(),
+        videoSize: const Size(320, 240),
+        fps: 30,
+      );
+
+      final magenta = _solidBgra(320, 240, 0xFF, 0x00, 0xFF);
+      final rgba = await compositor.compose(
+        videoFrameBgra: magenta,
+        position: const Duration(milliseconds: 500),
+      );
+
+      const w = 400; // totalSize width
+      bool isMagenta(int x, int y) {
+        final i = (y * w + x) * 4;
+        return rgba[i + 0] == 0xFF && rgba[i + 2] == 0xFF && rgba[i + 3] == 0xFF;
+      }
+
+      // Video rect top-left is (40,40). Sample (45,45): inside the corner's
+      // bounding box but well outside the r=60 rounded arc (arc center is
+      // (100,100); distance from (45,45) ≈ 77.8 > 60) → must be clear.
+      expect(isMagenta(45, 45), isFalse,
+          reason: 'rounded corner must clip the magnified video');
+      // A deep-interior pixel is still inside the rounded window → magenta.
+      expect(isMagenta(200, 160), isTrue,
+          reason: 'window interior still shows the magnified video');
+    });
   });
 }
 
