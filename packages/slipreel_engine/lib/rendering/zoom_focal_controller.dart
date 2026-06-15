@@ -100,6 +100,11 @@ class ZoomFocalController {
   // focal nearer rect.center through the middle of the ramp and closes the
   // last of the distance as the zoom completes, so the two land together
   // perceptually. 1.0 == exact lock-step; larger == more back-loaded.
+  //
+  // This is the FOLLOWCURSOR back-load (pan rect.center -> cursor). The
+  // manual-placement enter pan (center -> placement) uses the live-tunable
+  // MotionTuning.manualEntryPanBackload instead — its geometry reads as
+  // synced at lock-step (1.0), unlike the cursor case.
   static const double _entryPanBackload = 2.0;
 
   // Floor for the backward-scrub-detection check.
@@ -455,7 +460,16 @@ class ZoomFocalController {
         // overshoot <0 or >1, and pow() of a negative base with a
         // non-integer exponent is NaN.
         final eased = rampCurve.transform(tNorm).clamp(0.0, 1.0);
-        final panEased = math.pow(eased, _entryPanBackload).toDouble();
+        // followCursor pans rect.center -> cursor and uses the fixed
+        // back-load tuned for that geometry. A MANUAL placement pans
+        // center -> placement and reads as synced at lock-step (1.0,
+        // mirroring the exit ramp); its exponent is live-tunable via
+        // MotionTuning.manualEntryPanBackload so the feel can be dialed
+        // without a rebuild.
+        final backload = activeZoom.followCursor
+            ? _entryPanBackload
+            : tuning.manualEntryPanBackload;
+        final panEased = math.pow(eased, backload).toDouble();
         final newFocal =
             Offset.lerp(_enterRampStartFocal, entryTarget, panEased)!;
         _focalVx = 0;

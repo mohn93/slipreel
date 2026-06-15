@@ -3,6 +3,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 
 const Size _videoSize = Size(1920, 1080);
@@ -1317,6 +1318,40 @@ void main() {
                 'respect the per-frame clamp; a clamp delta means the '
                 'transformer is front-loading the pan');
       }
+    });
+
+    test(
+        'manualEntryPanBackload tunes the manual enter pan (higher = lags '
+        'more, lower = leads)', () {
+      // Same manual placement, three back-loads. At the ramp midpoint a
+      // larger exponent must hold the focal nearer the video center (pan
+      // lags); a smaller one pushes it nearer the placement (pan leads).
+      ZoomRegion regionFor() => ZoomRegion(
+            rect: const Rect.fromLTRB(500, 300, 900, 700), // center (700,500)
+            startTime: Duration.zero,
+            duration: const Duration(milliseconds: 3000),
+            zoomLevel: 2.0,
+            enterDuration: const Duration(milliseconds: 500),
+            exitDuration: Duration.zero,
+            followCursor: false,
+            followMode: FollowMode.centered,
+          );
+      final videoCentre = Offset(_videoSize.width / 2, _videoSize.height / 2);
+      Offset midFor(double backload) {
+        final c = ZoomFocalController(
+          tuning: MotionTuning.defaults
+              .copyWith(manualEntryPanBackload: backload),
+        );
+        return walkTo(c, regionFor(), 250, cursor: Offset.zero);
+      }
+
+      final dLags = (midFor(3.0) - videoCentre).distance; // back-loaded
+      final dLock = (midFor(1.0) - videoCentre).distance; // synced
+      final dLeads = (midFor(0.5) - videoCentre).distance; // front-loaded
+      expect(dLags, lessThan(dLock),
+          reason: 'a larger back-load must keep the pan nearer the center');
+      expect(dLock, lessThan(dLeads),
+          reason: 'a smaller back-load must push the pan nearer the placement');
     });
 
     test('the resolved curve shapes the ramp (linear != easeInOutQuad)',

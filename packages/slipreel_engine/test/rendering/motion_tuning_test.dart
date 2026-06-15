@@ -18,6 +18,8 @@ void main() {
       expect(t.cursorFeedforwardStrength, 0.5);
       expect(t.cursorFeedforwardFadeStartPxPerSec, 200.0);
       expect(t.cursorFeedforwardFullSpeedPxPerSec, 800.0);
+      // Manual-zoom enter pan defaults to lock-step with the zoom scale.
+      expect(t.manualEntryPanBackload, 1.0);
       // Scene-blur knobs (phase B).
       expect(t.sceneBlurExposureMs, 16.0);
       expect(t.sceneBlurMaxTranslation, 60.0);
@@ -59,6 +61,7 @@ void main() {
         cursorFeedforwardStrength: 0.75,
         cursorFeedforwardFadeStartPxPerSec: 150.0,
         cursorFeedforwardFullSpeedPxPerSec: 900.0,
+        manualEntryPanBackload: 2.5,
         sceneBlurExposureMs: 20.0,
         sceneBlurMaxTranslation: 80.0,
         sceneBlurSampleCount: 64,
@@ -84,6 +87,7 @@ void main() {
         round.cursorFeedforwardFullSpeedPxPerSec,
         original.cursorFeedforwardFullSpeedPxPerSec,
       );
+      expect(round.manualEntryPanBackload, original.manualEntryPanBackload);
       expect(round.sceneBlurExposureMs, original.sceneBlurExposureMs);
       expect(round.sceneBlurMaxTranslation, original.sceneBlurMaxTranslation);
       expect(round.sceneBlurSampleCount, original.sceneBlurSampleCount);
