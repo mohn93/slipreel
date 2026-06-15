@@ -510,15 +510,12 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     // VideoPlayer is held as `child` so its widget isn't reconstructed
     // each frame even though the surrounding Stack is.
     //
-    // Padding-preserving HYBRID zoom: during a zoom the framed card
-    // (chrome + rounded window) scales up by a clamped factor so it
-    // visibly pushes in, but only until the wallpaper padding shrinks
-    // to a floor — it never hits zero. The video+cursor content takes
-    // the FULL zoom and is clipped to the grown rounded card. The
-    // wallpaper stays sticky. (See the active-zoom branch below and
-    // ZoomTransformer.resolveCardPushIn.) ClipRect on the outside keeps
-    // the scaled-up tail inside the frame so it doesn't leak across the
-    // editor backdrop.
+    // Zoom Transform wraps the ENTIRE composition (wallpaper + frame
+    // + video + cursor + dev HUD) so when zoom kicks in everything
+    // pushes in together rather than only the video pixels scaling
+    // while the wallpaper stays put. ClipRect on the outside keeps
+    // the scaled-up tail inside the frame so it doesn't leak across
+    // the editor backdrop.
     Widget framedVideo = SizedBox(
       width: totalSize.width,
       height: totalSize.height,
@@ -908,45 +905,31 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                     blur: currentFrame.backgroundBlur,
                   );
 
-            // Chrome (frame + wallpaper-window border + shadow). Stays at
-            // the fixed padded rect — pulled OUT of the zoom Transform so
-            // padding never shrinks when a zoom is active.
-            final framePainterLayer = CustomPaint(
-              size: totalSize,
-              painter: FramePainter(
-                frame: currentFrame,
-                videoSize: videoSize,
-                aspect: widget.outputAspect,
-              ),
-            );
-
-            // The video footage, wrapped in a totalSize Stack so it can be
-            // fed to a Transform (a bare Positioned can only sit directly
-            // under a Stack).
-            final videoLayer = SizedBox.fromSize(
-              size: totalSize,
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: videoOriginX,
-                    top: videoOriginY,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(
-                        currentFrame.cornerRadius,
-                      ),
-                      child: SizedBox(
-                        width: videoSize.width,
-                        height: videoSize.height,
-                        child: videoPlayer!,
-                      ),
+            final composition = Stack(
+              children: [
+                CustomPaint(
+                  size: totalSize,
+                  painter: FramePainter(
+                    frame: currentFrame,
+                    videoSize: videoSize,
+                    aspect: widget.outputAspect,
+                  ),
+                ),
+                Positioned(
+                  left: videoOriginX,
+                  top: videoOriginY,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(
+                      currentFrame.cornerRadius,
+                    ),
+                    child: SizedBox(
+                      width: videoSize.width,
+                      height: videoSize.height,
+                      child: videoPlayer!,
                     ),
                   ),
-                ],
-              ),
-            );
-
-            final debugLayers = <Widget>[
-              if (widget.showZoomDebug)
+                ),
+                if (widget.showZoomDebug)
                   Positioned(
                     left: currentFrame.padding.left,
                     top: currentFrame.padding.top,
@@ -1023,10 +1006,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                     });
                     return const SizedBox.shrink();
                   }),
-            ];
-
-            final composition = Stack(
-              children: [framePainterLayer, videoLayer, ...debugLayers],
+              ],
             );
 
             if (focalUpdate == null) {
@@ -1053,7 +1033,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               tween: Tween<double>(end: activeZoom.zoomLevel),
               duration: widget.screenAnimationConfig.badgeDuration,
               curve: widget.screenAnimationConfig.badgeCurve,
-              builder: (context, animatedZoom, _) {
+              child: composition,
+              builder: (context, animatedZoom, transformChild) {
                 final tweenedRegion = activeZoom.copyWith(
                   zoomLevel: animatedZoom,
                 );
@@ -1068,84 +1049,21 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 );
                 // Screen-pan tracker is now ticked in the AnimatedBuilder
                 // above (for combined velocity). Don't double-tick here.
-                //
-                // At z==1 ramp endpoints getTransform() is identity. Render
-                // exactly like the no-zoom path (no clip) so the cursor can
-                // still bleed onto the padding and preview matches export,
-                // which also skips the clip when the transform is identity.
-                if (transform.isIdentity()) {
-                  return _buildSceneMotionBlurPass(
-                    body: composition,
-                    cursorOverlay: cursorOverlay,
-                    keystrokeOverlayWidget: keystrokeOverlayWidget,
-                    cameraOverlayWidget: cameraOverlayWidget,
-                    stickyBackground: stickyBackground,
-                    position: pos,
-                    totalSize: totalSize,
-                    videoSize: videoSize,
-                    currentTransform: transform,
-                  );
-                }
-                // Hybrid push-in: chrome scales by zCard (centered, clamped to
-                // the padding floor); the content keeps the full zoom and is
-                // clipped to the grown card rect.
-                final pushIn = ZoomTransformer.resolveCardPushIn(
-                  videoRect: Rect.fromLTWH(
-                    videoOriginX,
-                    videoOriginY,
-                    videoSize.width,
-                    videoSize.height,
-                  ),
-                  canvasSize: totalSize,
-                  cornerRadius: currentFrame.cornerRadius,
-                  zoom: transform.storage[0], // effective ramped zoom = scaleX
+                final transformed = Transform(
+                  transform: transform,
+                  alignment: Alignment.center,
+                  child: transformChild,
                 );
-
-                final windowClipper = _VideoWindowClipper(
-                  pushIn.cardRect,
-                  pushIn.cornerRadius,
-                );
-
-                // The frame chrome scales by zCard (centered) so the card
-                // visibly pushes in, clamped at the padding floor.
-                final scaledChrome = pushIn.zCard == 1.0
-                    ? framePainterLayer
-                    : Transform(
-                        transform: Matrix4.identity()
-                          ..scaleByDouble(pushIn.zCard, pushIn.zCard, 1.0, 1.0),
-                        alignment: Alignment.center,
-                        child: framePainterLayer,
-                      );
-
-                final transformed = Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    scaledChrome,
-                    ClipPath(
-                      clipper: windowClipper,
-                      child: Transform(
-                        transform: transform,
-                        alignment: Alignment.center,
-                        child: videoLayer,
-                      ),
-                    ),
-                    ...debugLayers,
-                  ],
-                );
-
-                // Cursor: same zoom + same fixed clip, but kept OUTSIDE the
-                // scene-blur capture so the shader never smears it.
+                // Cursor goes through the same zoom transform but is
+                // applied OUTSIDE the scene-blur capture, so the shader
+                // smear never touches it.
                 final transformedCursor = cursorOverlay == null
                     ? null
-                    : ClipPath(
-                        clipper: windowClipper,
-                        child: Transform(
-                          transform: transform,
-                          alignment: Alignment.center,
-                          child: cursorOverlay,
-                        ),
+                    : Transform(
+                        transform: transform,
+                        alignment: Alignment.center,
+                        child: cursorOverlay,
                       );
-
                 return _buildSceneMotionBlurPass(
                   body: transformed,
                   cursorOverlay: transformedCursor,
@@ -1579,25 +1497,4 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       ),
     );
   }
-}
-
-/// Clips a totalSize-sized child to the rounded card window it is given
-/// (the padding-preserving push-in card rect when zooming). Keeps the
-/// magnified content inside the rounded frame instead of scaling out
-/// over the wallpaper padding.
-class _VideoWindowClipper extends CustomClipper<Path> {
-  const _VideoWindowClipper(this.windowRect, this.cornerRadius);
-  final Rect windowRect;
-  final double cornerRadius;
-
-  @override
-  Path getClip(Size size) => Path()
-    ..addRRect(
-      RRect.fromRectAndRadius(windowRect, Radius.circular(cornerRadius)),
-    );
-
-  @override
-  bool shouldReclip(_VideoWindowClipper oldClipper) =>
-      oldClipper.windowRect != windowRect ||
-      oldClipper.cornerRadius != cornerRadius;
 }

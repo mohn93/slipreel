@@ -219,41 +219,11 @@ class FrameCompositor {
       // scene-motion-blur smear. The frame chrome (shadow/ring/border) is
       // rendered crisp below: motion-blurring the soft drop shadow during an
       // enter/exit ramp spreads its darkness over a wider area and visibly
-      // fades/lowers it ("the shadow hides on export"). The chrome scales by
-      // zCard (centered, crisp) so the card pushes in to the padding floor,
-      // while the content here gets the FULL zoom clipped to the grown card;
-      // it just never gets the directional smear. The wallpaper stays sticky
-      // (rendered separately below).
+      // fades/lowers it ("the shadow hides on export"). The chrome still
+      // scales/pans with the zoom; it just never gets the directional smear.
+      // The wallpaper stays sticky (rendered separately below).
       final fgRecorder = ui.PictureRecorder();
       final fgCanvas = ui.Canvas(fgRecorder, layerRect);
-      // When a zoom is active, clip the magnified content to the GROWN
-      // card rect (pushIn.cardRect): the card pushes in to the padding
-      // floor (chrome scaled by zCard below) while the content takes the
-      // full zoom inside it. The clip is applied BEFORE the zoom transform,
-      // so it stays anchored in canvas space. At identity (no active zoom)
-      // skip the clip to preserve current behavior (notably the cursor
-      // bleeding onto the padding near an edge).
-      final zoomActive = !zoomTransform.isIdentity();
-      // Hybrid push-in: the chrome scales up to a clamped card rect (padding
-      // shrinks only to the floor), while the content keeps the full zoom and
-      // is clipped to that grown card. null / zCard==1 when not zooming.
-      final pushIn = zoomActive
-          ? ZoomTransformer.resolveCardPushIn(
-              videoRect: _videoRect,
-              canvasSize: totalSize,
-              cornerRadius: _frame.cornerRadius,
-              zoom: zoomTransform.storage[0], // effective ramped zoom = scaleX
-            )
-          : null;
-      if (zoomActive) {
-        fgCanvas.save();
-        fgCanvas.clipRRect(
-          RRect.fromRectAndRadius(
-            pushIn!.cardRect,
-            Radius.circular(pushIn.cornerRadius),
-          ),
-        );
-      }
       applyZoom(fgCanvas);
       _paintVideoFrame(fgCanvas, videoImage);
       if (motion != null && !projectState.hideCursorOverlay) {
@@ -266,9 +236,6 @@ class FrameCompositor {
           state: motion.state,
         );
       }
-      if (zoomActive) {
-        fgCanvas.restore();
-      }
       final fgPicture = fgRecorder.endRecording();
 
       // Frame chrome (shadow / inset ring / background / border) — crisp,
@@ -278,15 +245,7 @@ class FrameCompositor {
       if (_frame.name != 'None') {
         final chromeRecorder = ui.PictureRecorder();
         final chromeCanvas = ui.Canvas(chromeRecorder, layerRect);
-        // Hybrid push-in: the chrome (shadow/ring/border + rounded window)
-        // scales by zCard, centered, so the card visibly pushes in but only
-        // until the padding reaches its floor. Composited crisp (never
-        // smeared). zCard==1 when not zooming => unchanged.
-        if (pushIn != null && pushIn.zCard != 1.0) {
-          chromeCanvas.translate(totalSize.width / 2, totalSize.height / 2);
-          chromeCanvas.scale(pushIn.zCard, pushIn.zCard);
-          chromeCanvas.translate(-totalSize.width / 2, -totalSize.height / 2);
-        }
+        applyZoom(chromeCanvas);
         _framePainter.paint(chromeCanvas, totalSize);
         chromePicture = chromeRecorder.endRecording();
       }
