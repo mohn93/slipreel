@@ -42,6 +42,7 @@ class ZoomLane extends StatefulWidget {
     this.onZoomSelected,
     this.onZoomDeleted,
     this.onZoomAdded,
+    this.onBarPointerDown,
     this.trimDragging = false,
     this.animateLayout = true,
   });
@@ -62,6 +63,12 @@ class ZoomLane extends StatefulWidget {
   final ValueChanged<int?>? onZoomSelected;
   final ValueChanged<int>? onZoomDeleted;
   final void Function(Duration start, Duration end)? onZoomAdded;
+
+  /// Fires on pointer-down anywhere on a zoom pill (body, handles, delete).
+  /// The timeline uses it to suppress its tap-seek for that gesture so a
+  /// pill press selects/drags WITHOUT the tap-seek committing a seek that
+  /// would immediately deselect the just-selected pill.
+  final VoidCallback? onBarPointerDown;
 
   /// True while ANY slice's trim handle is being dragged anywhere in
   /// the timeline. Drives the zoom-pill position tween's duration —
@@ -225,6 +232,7 @@ class _ZoomLaneState extends State<ZoomLane> {
               onSelected: widget.onZoomSelected,
               onDeleted: widget.onZoomDeleted,
               onSeek: widget.onSeek,
+              onBarPointerDown: widget.onBarPointerDown,
               trimDragging: widget.trimDragging,
               animateLayout: widget.animateLayout,
             ),
@@ -311,6 +319,7 @@ class _ZoomPill extends StatefulWidget {
     this.onChanged,
     this.onSelected,
     this.onDeleted,
+    this.onBarPointerDown,
     this.trimDragging = false,
     this.animateLayout = true,
   });
@@ -327,6 +336,7 @@ class _ZoomPill extends StatefulWidget {
   final void Function(int, ZoomRegion)? onChanged;
   final ValueChanged<int?>? onSelected;
   final ValueChanged<int>? onDeleted;
+  final VoidCallback? onBarPointerDown;
   final bool trimDragging;
   final bool animateLayout;
 
@@ -537,9 +547,15 @@ class _ZoomPillState extends State<_ZoomPill> {
       top: zoomPillInset,
       width: pillWidth,
       height: pillBodyHeight + zoomBadgeAreaHeight,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
+      // Raw pointer-down hook (fires deepest-first, before the timeline's
+      // tap-seek Listener) so a press anywhere on the pill suppresses the
+      // tap-seek for this gesture — selecting/dragging a pill must not commit
+      // a seek that immediately deselects it.
+      child: Listener(
+        onPointerDown: (_) => widget.onBarPointerDown?.call(),
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -558,6 +574,7 @@ class _ZoomPillState extends State<_ZoomPill> {
                 // touch / stylus — trackpad pan flows through to the
                 // timeline scroll view instead of dragging the pill.
                 child: RawGestureDetector(
+                  key: ValueKey('zoom-pill-body-${widget.index}'),
                   behavior: HitTestBehavior.opaque,
                   gestures: <Type, GestureRecognizerFactory>{
                     TapGestureRecognizer:
@@ -645,6 +662,7 @@ class _ZoomPillState extends State<_ZoomPill> {
                 ),
               ),
           ],
+          ),
         ),
       ),
     );

@@ -425,6 +425,11 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   Offset? _tapSeekDownLocal;
   bool _tapSeekMoved = false;
   bool _tapSeekBlocked = false;
+  // Set by a selectable bar's raw pointer-down Listener (fires deepest-first,
+  // BEFORE _onTapSeekPointerDown) when a press lands on a bar. Consumed at the
+  // next tap-seek pointer-down to block that gesture's seek, so selecting or
+  // dragging a bar can't trigger a seek that immediately deselects it.
+  bool _barPointerDownPending = false;
   // True between onScaleEnd and the ticker settling onto the final
   // target. Keeps the ticker applying (so the scale lands exactly on
   // the user's intended zoom) until converged, then stops.
@@ -884,6 +889,12 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   }
 
   void _onTapSeekPointerDown(PointerDownEvent event) {
+    // A bar's pointer-down Listener (deepest-first) ran just before this and
+    // may have flagged that the press landed on a selectable bar. Capture and
+    // consume it now, before the early returns, so it can't leak into a later
+    // gesture.
+    final barPressed = _barPointerDownPending;
+    _barPointerDownPending = false;
     if (!_isPrimaryTapSeekPointer(event)) return;
     if (_tapSeekPointer != null) {
       _tapSeekBlocked = true;
@@ -892,7 +903,9 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     _tapSeekPointer = event.pointer;
     _tapSeekDownLocal = event.localPosition;
     _tapSeekMoved = false;
-    _tapSeekBlocked = false;
+    // Blocked from the start when the press landed on a bar — selecting it
+    // must not also seek (and deselect) on the same tap.
+    _tapSeekBlocked = barPressed;
   }
 
   void _onTapSeekPointerMove(PointerMoveEvent event) {
@@ -1740,6 +1753,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                                       onZoomDeleted: widget.onZoomDeleted,
                                       onZoomAdded: widget.onZoomAdded,
                                       onSeek: widget.onSeek,
+                                      onBarPointerDown: () =>
+                                          _barPointerDownPending = true,
                                       trimDragging: _trimDragging,
                                       animateLayout: animateTimelineLayout,
                                     ),

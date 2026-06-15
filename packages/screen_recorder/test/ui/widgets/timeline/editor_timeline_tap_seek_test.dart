@@ -96,7 +96,7 @@ void main() {
     _expectSeek(seeked, const Duration(seconds: 2));
   });
 
-  testWidgets('tapping an existing zoom pill seeks the playhead', (
+  testWidgets('tapping a zoom pill does NOT seek (no select-then-deselect)', (
     tester,
   ) async {
     final tips = await _freshTips();
@@ -123,14 +123,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final zoomLaneTopLeft = tester.getTopLeft(find.byType(ZoomLane));
-    await tester.tapAt(
-      zoomLaneTopLeft + const Offset(168, 22),
+    // Press the pill body. Its pointer-down Listener must suppress the
+    // timeline tap-seek for this gesture — a pill tap selects the pill and
+    // must NOT commit a seek (which would immediately deselect it, the
+    // reported select-then-deselect flicker). Contrast with the
+    // 'tapping empty zoom lane seeks' test above, which DOES seek.
+    await tester.tap(
+      find.byKey(const ValueKey('zoom-pill-body-0')),
       kind: PointerDeviceKind.mouse,
     );
     await tester.pump();
 
-    _expectSeek(seeked, const Duration(seconds: 3));
+    expect(seeked, isNull,
+        reason: 'a press on a zoom pill must not trigger the tap-seek');
   });
 
   testWidgets('tapping a seam marker seeks the playhead', (tester) async {
