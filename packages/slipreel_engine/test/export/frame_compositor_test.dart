@@ -563,13 +563,14 @@ void main() {
       },
     );
 
-    test('active zoom does not grow the video into the padding '
-        '(padding band stays clear)', () async {
-      // 320×240 video, uniform 40px padding → totalSize 400×320, video
-      // rect (40,40,320,240). Solid-magenta video with a 2× zoom centered
-      // on the video. With the fixed-frame model the magnified video stays
-      // clipped to the video rect, so a padding-band pixel (x<40) stays
-      // clear; with the old whole-window scaling the video covers it.
+    test('active zoom pushes the card in to the padding floor (padding '
+        'shrinks but does not vanish)', () async {
+      // 320×240 video, 40px padding → totalSize 400×320, videoRect
+      // (40,40,320,240). floorFraction 0.4 → floor 16px. zCardMax(x) =
+      // (400-32)/320 = 1.15 → at 2× the card clamps to 1.15× and the left
+      // padding becomes (400-368)/2 = 16px. So: a pixel inside the floor
+      // (x<16) stays clear; a pixel between the floor and the old padding
+      // (16<x<40) is now covered by the pushed-in card; the center is video.
       final compositor = FrameCompositor(
         projectState: EditorProjectState.defaults().copyWith(
           windowFrame: const WindowFrame(
@@ -583,7 +584,7 @@ void main() {
           ),
           zoomRegions: [
             ZoomRegion(
-              rect: const Rect.fromLTWH(0, 0, 320, 240), // center (160,120)
+              rect: const Rect.fromLTWH(0, 0, 320, 240),
               startTime: Duration.zero,
               duration: const Duration(seconds: 1),
               zoomLevel: 2.0,
@@ -605,18 +606,21 @@ void main() {
         position: const Duration(milliseconds: 500),
       );
 
-      const w = 400; // totalSize width
+      const w = 400;
       bool isMagenta(int x, int y) {
         final i = (y * w + x) * 4;
         return rgba[i + 0] == 0xFF && rgba[i + 2] == 0xFF && rgba[i + 3] == 0xFF;
       }
 
+      // Inside the floor: still clear (padding survives).
+      expect(isMagenta(8, 160), isFalse,
+          reason: 'padding inside the floor must survive the zoom');
+      // Between floor (16) and old padding (40): card pushed in here.
+      expect(isMagenta(28, 160), isTrue,
+          reason: 'the card pushes in to the floor (padding shrinks 40->~16)');
+      // Center is the magnified video.
       expect(isMagenta(200, 160), isTrue,
-          reason: 'window center should show the (magnified) video');
-      expect(isMagenta(20, 160), isFalse,
-          reason: 'left padding must stay clear of the zoomed video');
-      expect(isMagenta(200, 20), isFalse,
-          reason: 'top padding must stay clear of the zoomed video');
+          reason: 'window center shows the magnified video');
     });
 
     test('active zoom clips magnified content to the ROUNDED window corners',
@@ -667,10 +671,11 @@ void main() {
         return rgba[i + 0] == 0xFF && rgba[i + 2] == 0xFF && rgba[i + 3] == 0xFF;
       }
 
-      // Video rect top-left is (40,40). Sample (45,45): inside the corner's
-      // bounding box but well outside the r=60 rounded arc (arc center is
-      // (100,100); distance from (45,45) ≈ 77.8 > 60) → must be clear.
-      expect(isMagenta(45, 45), isFalse,
+      // Hybrid push-in grows the card to ~1.15× (top-left ≈ (16,22)), so the
+      // old (45,45) sample now sits inside the pushed-in window. Sample (8,8)
+      // instead: it is inside the surviving padding floor (x=8 < card-left
+      // ~16), well outside the grown rounded card corner → must stay clear.
+      expect(isMagenta(8, 8), isFalse,
           reason: 'rounded corner must clip the magnified video');
       // A deep-interior pixel is still inside the rounded window → magenta.
       expect(isMagenta(200, 160), isTrue,
