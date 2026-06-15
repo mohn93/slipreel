@@ -421,8 +421,17 @@ class ZoomFocalController {
         // zoom-dependent leading enter is what read as "wrong" by a
         // different amount at each zoom level. followCursor keeps lock-step
         // (backload 1.0 => t01 == eased, the prior behavior). For manual,
-        // the same per-region override / zoom-level fit drives both ramps.
-        final exitBackload = activeZoom.followCursor
+        // the same per-region override / zoom-level fit drives both ramps —
+        // EXCEPT a reachable (interior) placement uses lock-step (1.0) too,
+        // mirroring the enter ramp, so the zoom-OUT doesn't ride the video
+        // edge before returning to center for an interior placement.
+        final exitReachable = !activeZoom.followCursor &&
+            (ZoomTransformer.clampFocalToBounds(activeZoom.rect.center,
+                        videoSize, activeZoom.zoomLevel) -
+                    activeZoom.rect.center)
+                    .distance <
+                0.5;
+        final exitBackload = (activeZoom.followCursor || exitReachable)
             ? 1.0
             : (activeZoom.manualPanBackload ??
                 manualBackloadForZoom(activeZoom.zoomLevel));
@@ -534,6 +543,17 @@ class ZoomFocalController {
         // scrub == export stays byte-identical.
         final entryTarget = ZoomTransformer.clampFocalToBounds(
             rawTarget, videoSize, activeZoom.zoomLevel);
+        // Is the placement reachable at full zoom (interior), or clamped to
+        // the bounds (edge)? A LEADING pan (backload<1) overshoots the small
+        // low-zoom box, so the focal rides the box boundary — i.e. the
+        // viewport touches the video EDGE — early, then pulls back in to an
+        // interior placement ("to the edge then back"). For a clamped/EDGE
+        // placement that ride IS the intended motion (it ends at the edge),
+        // so the tuned lead is right there. For a reachable INTERIOR
+        // placement, lock-step (backload 1.0) is the fastest pan that
+        // provably never exceeds the box (no edge touch) — so use it.
+        final reachable =
+            (entryTarget - rawTarget).distance < 0.5;
         final tNorm =
             (tIntoRegionUs / enter.enterUs).clamp(0.0, 1.0).toDouble();
         // Clamp before the back-load pow: a custom bezier ramp curve can
@@ -548,8 +568,10 @@ class ZoomFocalController {
         // on zoomLevel, so a single constant can't serve every region.
         final backload = activeZoom.followCursor
             ? _entryPanBackload
-            : (activeZoom.manualPanBackload ??
-                manualBackloadForZoom(activeZoom.zoomLevel));
+            : reachable
+                ? 1.0
+                : (activeZoom.manualPanBackload ??
+                    manualBackloadForZoom(activeZoom.zoomLevel));
         final panEased = math.pow(eased, backload).toDouble();
         final newFocal =
             Offset.lerp(_enterRampStartFocal, entryTarget, panEased)!;

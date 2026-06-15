@@ -1371,11 +1371,13 @@ void main() {
 
     test('manualPanBackload override tunes the manual enter pan (higher = '
         'lags more, lower = leads)', () {
-      // Same manual placement, three per-region back-loads. At the ramp
+      // CLAMPED (edge) placement — the back-load only applies to clamped
+      // placements (a reachable/interior one is forced to lock-step to avoid
+      // the to-edge-then-back ride). Three per-region back-loads: at the ramp
       // midpoint a larger exponent holds the focal nearer the video center
-      // (pan lags); a smaller one pushes it nearer the placement (pan leads).
+      // (pan lags); a smaller one pushes it nearer the edge (pan leads).
       ZoomRegion regionFor(double backload) => ZoomRegion(
-            rect: const Rect.fromLTRB(500, 300, 900, 700), // center (700,500)
+            rect: const Rect.fromLTRB(-200, 300, 200, 700), // center (0,500)
             startTime: Duration.zero,
             duration: const Duration(milliseconds: 3000),
             zoomLevel: 2.0,
@@ -1425,9 +1427,11 @@ void main() {
 
     test('a manual region with no override uses manualBackloadForZoom', () {
       // No per-region override → the default fit drives the pan. The mid
-      // focal must match an explicit override equal to the fit value.
+      // focal must match an explicit override equal to the fit value. Uses a
+      // CLAMPED (edge) placement so the fit/override actually applies (a
+      // reachable placement would be forced to lock-step instead).
       ZoomRegion regionFor(double? backload) => ZoomRegion(
-            rect: const Rect.fromLTRB(500, 300, 900, 700),
+            rect: const Rect.fromLTRB(-200, 300, 200, 700), // center (0,500)
             startTime: Duration.zero,
             duration: const Duration(milliseconds: 3000),
             zoomLevel: 2.0,
@@ -1727,6 +1731,45 @@ void main() {
           followMode: FollowMode.centered,
           manualPanBackload: backload,
         );
+
+    test('reachable interior placement never rides the video edge '
+        '(no to-edge-then-back)', () {
+      // (700,800) is off-center toward the bottom-right but REACHABLE at 2x.
+      // A leading back-load (<1) would push the focal to the box boundary
+      // early — the viewport touching the video bottom edge — then pull back
+      // in (the user's "to the edge then back"). Reachable placements use
+      // lock-step, which provably keeps the focal strictly inside the box, so
+      // the viewport never touches an edge mid-ramp.
+      final r = manual(
+          rect: const Rect.fromLTRB(600, 700, 800, 900), // center (700,800)
+          zoomLevel: 2.0,
+          backload: null);
+      final c = ZoomFocalController();
+      for (var ms = 16; ms < 500; ms += 16) {
+        final pos = Duration(milliseconds: ms);
+        final focal = c
+            .update(
+              position: pos,
+              zoomRegions: [r],
+              cursor: null,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        final z = transformZ(r, pos);
+        if (z <= 1.01) continue;
+        final halfW = _videoSize.width / (2 * z);
+        final halfH = _videoSize.height / (2 * z);
+        final maxX = _videoSize.width - halfW;
+        final maxY = _videoSize.height - halfH;
+        // Strictly inside the reachable box — never AT an edge mid-ramp.
+        expect(focal.dx, greaterThan(halfW + 0.5), reason: 'left edge @ms=$ms');
+        expect(focal.dx, lessThan(maxX - 0.5), reason: 'right edge @ms=$ms');
+        expect(focal.dy, greaterThan(halfH + 0.5), reason: 'top edge @ms=$ms');
+        expect(focal.dy, lessThan(maxY - 0.5),
+            reason: 'bottom edge @ms=$ms (the reported to-edge ride)');
+      }
+    });
 
     test('interior placement stays collinear with center->placement through '
         'the whole enter ramp (no dog-leg)', () {
