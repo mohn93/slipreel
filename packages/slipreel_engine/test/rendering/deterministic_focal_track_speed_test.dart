@@ -25,11 +25,17 @@ void main() {
   // A bounded-follow zoom region so the focal tracks the cursor sprite.
   // ZoomRegion uses startTime + duration (endTime is a derived getter), so
   // the region runs [100ms, 1200ms).
+  // Short enter/exit so most of the region is the HOLD phase, where the
+  // camera continuously tracks the speed-aware smoothed cursor (the enter
+  // pan now targets the raw settle cursor, which is speed-independent by
+  // design — see ScenePassBuilder.enterCursorTarget).
   final region = ZoomRegion(
     startTime: const Duration(milliseconds: 100),
     duration: const Duration(milliseconds: 1100),
     rect: const Rect.fromLTWH(660, 390, 600, 300),
     zoomLevel: 2.0,
+    enterDuration: const Duration(milliseconds: 100),
+    exitDuration: const Duration(milliseconds: 100),
     followMode: FollowMode.bounded,
   );
 

@@ -293,6 +293,13 @@ class ZoomFocalController {
     bool forceSnap = false,
     ZoomRegion? activeRegionOverride,
     Curve screenRampCurve = Curves.easeInOutQuad,
+    /// For a followCursor zoom, the SETTLE target for the enter pan: the
+    /// (raw) cursor position at the end of the enter ramp — i.e. where the
+    /// cursor will be once the zoom is fully in. The enter pans straight
+    /// here instead of chasing the lagging SMOOTHED cursor's catch-up path
+    /// (which read as "the zoom goes to the wrong spot then slides to the
+    /// cursor"). Null ⇒ fall back to the live cursor / rect.center.
+    Offset? enterCursorTarget,
   }) {
     final activeZoom =
         activeRegionOverride ?? _activeZoomAt(position, zoomRegions);
@@ -543,12 +550,19 @@ class ZoomFocalController {
             : activeZoom.rect.center;
         // Capture the pan target ONCE (first enter frame) and hold it for the
         // whole ramp. Manual placements pass rect.center (already stable), so
-        // this is a no-op for them. For followCursor it pins the enter to the
-        // cursor when the zoom began — a cursor that darts around DURING the
-        // ~enterDuration zoom-in no longer makes the camera swing out to chase
-        // it (the "swing to the edge then back"); the hold spring resumes live
-        // tracking, smoothly, once the ramp ends.
-        _enterRampTarget ??= liveTarget;
+        // this is a no-op for them. For followCursor, prefer the SETTLE target
+        // (enterCursorTarget = raw cursor at the enter-ramp end): the enter
+        // pans straight to where the cursor ends up, instead of chasing the
+        // lagging SMOOTHED cursor's catch-up path (which read as "the zoom
+        // goes to the wrong spot below/left then slides to the cursor"). Falls
+        // back to the live cursor when no settle target is supplied. Either
+        // way it's captured once so a cursor that keeps moving during the ramp
+        // doesn't drag the camera around; the hold spring resumes smooth live
+        // tracking once the ramp ends.
+        _enterRampTarget ??= (activeZoom.followCursor &&
+                enterCursorTarget != null)
+            ? enterCursorTarget
+            : liveTarget;
         final rawTarget = _enterRampTarget!;
         // Aim the pan at what the FULL zoom level can actually frame, not
         // the raw cursor. An edge cursor (or an edge-hugging rect.center)

@@ -174,6 +174,24 @@ class ScenePassBuilder {
 
     final rawVelocity = motionSample?.velocityPxPerSec ?? Offset.zero;
 
+    // SETTLE target for a followCursor enter pan: the RAW cursor at the
+    // end of the enter ramp — where the cursor will be once the zoom is
+    // fully in. The focal controller pans the enter straight here instead
+    // of chasing the lagging smoothed cursor (whose catch-up path read as
+    // "the zoom goes to the wrong spot then slides to the cursor"). Sampled
+    // from the recording at a fixed source time, so play == scrub == export.
+    Offset? enterCursorTarget;
+    if (activeZoom != null && activeZoom.followCursor && hasCursorData) {
+      final enterEnd = activeZoom.startTime + activeZoom.enterDuration;
+      final raw = cursorAt(cursorRecording, enterEnd);
+      if (raw != null) {
+        enterCursorTarget = Offset(
+          raw.x.toDouble().clamp(0, videoSize.width),
+          raw.y.toDouble().clamp(0, videoSize.height),
+        );
+      }
+    }
+
     final focalUpdate = focal.update(
       position: position,
       zoomRegions: zoomRegions,
@@ -183,6 +201,7 @@ class ScenePassBuilder {
       forceSnap: forceSnap,
       activeRegionOverride: activeRegionOverride,
       screenRampCurve: screenRampCurve,
+      enterCursorTarget: enterCursorTarget,
     );
 
     final filteredVelocity = bypassVelocityFilter

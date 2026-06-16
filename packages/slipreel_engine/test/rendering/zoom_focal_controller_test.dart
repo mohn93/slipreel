@@ -2000,6 +2000,47 @@ void main() {
       }
     });
 
+    test('followCursor enter pans to the settle target, not the lagging '
+        'live cursor', () {
+      // The camera follows the SMOOTHED cursor, which lags. When the cursor
+      // was just moved to a spot before the zoom, the smoothed cursor is
+      // still catching up, so the live value is at an intermediate spot. The
+      // enterCursorTarget (raw cursor at the enter-ramp end = where it
+      // settles) lets the enter pan straight to the real spot instead.
+      final r = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered,
+      );
+      const liveCursor = Offset(900, 820); // lagging smoothed cursor
+      const settle = Offset(300, 220); // where the cursor actually is (top-left)
+      final settleTarget =
+          ZoomTransformer.clampFocalToBounds(settle, _videoSize, 2.0);
+      final c = ZoomFocalController();
+      Offset end = Offset.zero;
+      for (var ms = 0; ms <= 500; ms += 16) {
+        end = c
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [r],
+              cursor: liveCursor,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+              enterCursorTarget: settle,
+            )!
+            .focal;
+      }
+      expect((end - settleTarget).distance, lessThan(2.0),
+          reason: 'enter must land on the settle target (top-left)');
+      expect((end - liveCursor).distance, greaterThan(100.0),
+          reason: 'enter must NOT chase the lagging live cursor');
+    });
+
     test('followCursor enter ramp is byte-identical (radial clamp is gated '
         'out)', () {
       // The gate must leave the working followCursor pan untouched: the focal
