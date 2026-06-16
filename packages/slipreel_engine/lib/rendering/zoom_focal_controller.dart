@@ -31,7 +31,7 @@ import 'package:slipreel_engine/rendering/motion_tuning.dart';
 /// ramp.
 class ZoomFocalController {
   ZoomFocalController({MotionTuning? tuning})
-      : tuning = tuning ?? MotionTuning.defaults;
+    : tuning = tuning ?? MotionTuning.defaults;
 
   /// Motion-feel tuning (reverse-scrub floor, sub-step caps, the
   /// bounded-mode at-rest velocity threshold). Defaults to the
@@ -82,39 +82,34 @@ class ZoomFocalController {
   // first frame inside the exit ramp; cleared whenever the controller
   // leaves the exit ramp so the next exit captures fresh.
   Offset? _exitRampStartFocal;
+  bool? _exitRampStartReachable;
 
-  // Focal at the moment the enter ramp started (captured on the first
-  // enter-ramp frame): rect.center for a followCursor zoom, the video
-  // center for a manual (followCursor:false) placement — see the enter-ramp
-  // anchor comment in [update] for why the two differ. Cleared when the
-  // controller leaves the enter window so a re-entry re-captures.
+  // Focal at the moment the enter ramp started. Manual placements start at the
+  // video center and pan to rect.center. Auto-follow also starts at the video
+  // center and pans to the cursor; the region rect may contain stale manual
+  // placement and must not steer a followCursor zoom.
   Offset? _enterRampStartFocal;
 
   // Pan TARGET captured once on the first enter-ramp frame, tied to the same
   // lifecycle as [_enterRampStartFocal]. For a manual placement this is just
-  // rect.center (already stable). For a followCursor zoom it pins the enter
-  // pan to the cursor position when the zoom began, so a cursor that moves
-  // DURING the enter ramp doesn't make the camera swing to chase it (the hold
-  // spring takes over live cursor tracking once the ramp ends). Deterministic,
-  // so play == scrub == export agree.
+  // rect.center (already stable). For a followCursor zoom this is the cursor
+  // target, never rect.center.
   Offset? _enterRampTarget;
 
-  // Back-load exponent for the entry pan relative to the zoom-scale ramp.
-  // The pan and the scale share the same window and curve, so they finish
-  // at the same instant mathematically — but a settling position reads as
-  // "arrived" while it's still a few pixels out, whereas the magnification
-  // stays visibly in motion through the curve's tail. Equal progress
-  // therefore *looks* like the pan reaches the cursor before the zoom
-  // finishes. Raising the eased pan progress to this exponent holds the
-  // focal nearer rect.center through the middle of the ramp and closes the
-  // last of the distance as the zoom completes, so the two land together
-  // perceptually. 1.0 == exact lock-step; larger == more back-loaded.
-  //
-  // This is the FOLLOWCURSOR back-load (pan rect.center -> cursor). The
-  // manual-placement enter pan (center -> placement) uses the live-tunable
-  // MotionTuning.manualEntryPanBackload instead — its geometry reads as
-  // synced at lock-step (1.0), unlike the cursor case.
-  static const double _entryPanBackload = 2.0;
+  // Full-zoom-clamped focal target emitted by the enter ramp. Preserved across
+  // the enter->hold boundary for followCursor zooms so the first hold frame can
+  // distinguish a genuinely new cursor move from the smoothed cursor sprite
+  // still catching up to a parked raw cursor.
+  Offset? _enterRampFocalTarget;
+
+  // Transitional hold target immediately after a followCursor enter ramp. When
+  // the raw cursor is already parked at the enter target but the smoothed sprite
+  // is still lagging behind, the normal hold strategy would chase that lagging
+  // sprite and visibly yank the camera away from the just-landed enter focal.
+  // Holding the painted enter target until the sprite reaches the same
+  // full-zoom clamped basin removes that handoff detour. Cleared as soon as the
+  // raw cursor starts moving again, the sprite catches up, or the zoom exits.
+  Offset? _postEnterHoldTarget;
 
   // Default manual-placement enter-pan back-load as a function of zoom
   // level, from hand-tuned sweet spots. A lower exponent lets the pan lead
@@ -124,7 +119,9 @@ class ZoomFocalController {
   // through the measured points rather than one line (a line mis-fit the
   // upper range). Below/above the measured band the nearest endpoint holds.
   // Extend [_manualBackloadPoints] as higher-zoom points are measured. A
-  // region's [ZoomRegion.manualPanBackload] override takes precedence.
+  // manual regions' [ZoomRegion.manualPanBackload] override takes precedence.
+  // Follow-cursor regions reuse the zoom-level curve, but ignore any stale
+  // manual override stored on the region.
   //
   // (zoomLevel, backload), sorted ascending by zoomLevel. 5.0 is the max
   // zoomLevel (ZoomRegion clamps 1..5) and tuned to 0.0 — at max zoom the
@@ -293,12 +290,13 @@ class ZoomFocalController {
     bool forceSnap = false,
     ZoomRegion? activeRegionOverride,
     Curve screenRampCurve = Curves.easeInOutQuad,
+
     /// For a followCursor zoom, the SETTLE target for the enter pan: the
     /// (raw) cursor position at the end of the enter ramp — i.e. where the
     /// cursor will be once the zoom is fully in. The enter pans straight
     /// here instead of chasing the lagging SMOOTHED cursor's catch-up path
     /// (which read as "the zoom goes to the wrong spot then slides to the
-    /// cursor"). Null ⇒ fall back to the live cursor / rect.center.
+    /// cursor"). Null ⇒ fall back to the live cursor / base focal.
     Offset? enterCursorTarget,
   }) {
     final activeZoom =
@@ -309,8 +307,11 @@ class ZoomFocalController {
       _focalVy = 0;
       _resetStrategies();
       _exitRampStartFocal = null;
+      _exitRampStartReachable = null;
       _enterRampStartFocal = null;
       _enterRampTarget = null;
+      _enterRampFocalTarget = null;
+      _postEnterHoldTarget = null;
       _lastUpdatePosition = position;
       return null;
     }
@@ -324,24 +325,21 @@ class ZoomFocalController {
     // All-spring policy: there are no instantaneous camera teleports.
     // The only one-time "init" left is the very first frame after the
     // controller has no focal at all — we have to park the spring
-    // *somewhere* before it can chase. We park it at the zoom rect's
-    // centre because at the moment of init the zoom factor is still 1
-    // (we're at the very start of the enter ramp); the focal at
-    // zoom=1 is visually invisible (the camera is in identity-
-    // transform mode), so this "snap" produces no perceptible jump.
-    // As the enter ramp scales the zoom factor up, the camera
-    // smoothly zooms in centred on rect.center — which is the
-    // framing the user intended when they drew the rect. The gate
-    // then decides each frame whether to spring-chase the cursor
-    // (cursor outside dz around the focal) or hold.
+    // *somewhere* before it can chase. Manual placements park at the zoom
+    // rect's centre. Auto-follow parks at the video centre because any
+    // existing rect is only stale/manual placement metadata once
+    // followCursor is enabled; it must not steer the camera.
     if (_smoothedFocal == null) {
-      _smoothedFocal = activeZoom.rect.center;
+      _smoothedFocal = _baseFocal(activeZoom, videoSize);
       _focalVx = 0;
       _focalVy = 0;
       _resetStrategies();
       _exitRampStartFocal = null;
+      _exitRampStartReachable = null;
       _enterRampStartFocal = null;
       _enterRampTarget = null;
+      _enterRampFocalTarget = null;
+      _postEnterHoldTarget = null;
       _lastUpdatePosition = position;
       _lastSnapReason = 'init';
       _lastSnapAt = position;
@@ -363,26 +361,29 @@ class ZoomFocalController {
     // The 200 ms reverse-scrub floor still applies — sub-200 ms
     // backward jitter (typical hover-scrub commits) is ignored as
     // playback noise.
-    final reverseScrub = _lastUpdatePosition != null &&
+    final reverseScrub =
+        _lastUpdatePosition != null &&
         _lastUpdatePosition!.inMicroseconds - position.inMicroseconds >
             _reverseScrubMinMicros;
     if (forceSnap || reverseScrub) {
       _focalVx = 0;
       _focalVy = 0;
       _resetStrategies();
-      _lastSnapReason = forceSnap ? 'forceSnap (vel→0)' : 'reverseScrub (vel→0)';
+      _lastSnapReason = forceSnap
+          ? 'forceSnap (vel→0)'
+          : 'reverseScrub (vel→0)';
       _lastSnapAt = position;
     }
 
     // Placement-picker preview: when a caller injects an override AND
-    // asks for forceSnap, teleport the focal to the override's
-    // rect.center directly. Without this, the spring would have to
+    // asks for forceSnap, teleport the focal to the override's base focal
+    // directly. Without this, the spring would have to
     // integrate over many frames to chase the new target — fine when
     // playing (frames keep arriving) but invisible while paused (no
     // frame loop). Returning the override frame here keeps the camera
     // glued to the dragged rect even when the video is paused.
     if (forceSnap && activeRegionOverride != null) {
-      _smoothedFocal = activeRegionOverride.rect.center;
+      _smoothedFocal = _baseFocal(activeRegionOverride, videoSize);
       _focalVx = 0;
       _focalVy = 0;
       _lastSnapReason = 'forceSnap+override (teleport)';
@@ -408,28 +409,36 @@ class ZoomFocalController {
       final tIntoRegionUs =
           position.inMicroseconds - activeZoom.startTime.inMicroseconds;
       if (tIntoRegionUs >= exit.exitStartUs) {
-        // Capture the exit-start anchor as the VISIBLE focal. For a MANUAL
-        // edge/inset placement the hold-phase spring settles on the UN-clamped
-        // rect.center (which sits outside the full-zoom box), but the
-        // transformer paints the per-axis-clamped point — so capturing the raw
-        // _smoothedFocal would make the hold->exit handoff (and the radial
-        // clamp below) jump on the first exit frame. Capturing the clamped
-        // (painted) focal removes that one-frame jump and makes the exit-start
-        // radial a true no-op. followCursor keeps the raw capture (unchanged).
-        _exitRampStartFocal ??= activeZoom.followCursor
-            ? _smoothedFocal
-            : ZoomTransformer.clampFocalToBounds(
-                _smoothedFocal!, videoSize, activeZoom.zoomLevel);
-        final tIntoExit = (tIntoRegionUs - exit.exitStartUs)
-            .clamp(0, exit.exitUs);
-        final tNorm =
-            exit.exitUs == 0 ? 1.0 : tIntoExit / exit.exitUs;
+        final centre = Offset(videoSize.width / 2, videoSize.height / 2);
+        // Capture the exit-start anchor as the VISIBLE focal. For edge
+        // placements/cursors the hold-phase spring can sit outside the
+        // full-zoom box, while the transformer paints the per-axis-clamped
+        // point; capturing the painted point removes a one-frame hold->exit
+        // jump.
+        _exitRampStartFocal ??= ZoomTransformer.clampFocalToBounds(
+          _smoothedFocal!,
+          videoSize,
+          activeZoom.zoomLevel,
+        );
+        _exitRampStartReachable ??=
+            (ZoomTransformer.clampFocalToBounds(
+                      _smoothedFocal!,
+                      videoSize,
+                      activeZoom.zoomLevel,
+                    ) -
+                    _smoothedFocal!)
+                .distance <
+            0.5;
+        final tIntoExit = (tIntoRegionUs - exit.exitStartUs).clamp(
+          0,
+          exit.exitUs,
+        );
+        final tNorm = exit.exitUs == 0 ? 1.0 : tIntoExit / exit.exitUs;
         // Same curve the ZoomTransformer applies to the zoom factor
         // (its rampCurve default). Keeping these in lock-step is what
         // makes the recenter feel like part of the zoom-out instead
         // of a separate motion.
         final eased = rampCurve.transform(tNorm.toDouble());
-        final centre = Offset(videoSize.width / 2, videoSize.height / 2);
         // Mirror the enter pan on the way out. The enter places the focal at
         // fraction `zoomInProgress^backload` from center toward the
         // placement; during exit the zoom-in progress runs 1->0 as
@@ -437,37 +446,45 @@ class ZoomFocalController {
         // center for the zoom-out to be the exact time-reverse of the
         // zoom-in. A fixed lock-step exit (backload 1.0) against a
         // zoom-dependent leading enter is what read as "wrong" by a
-        // different amount at each zoom level. followCursor keeps lock-step
-        // (backload 1.0 => t01 == eased, the prior behavior). For manual,
-        // the same per-region override / zoom-level fit drives both ramps —
-        // EXCEPT a reachable (interior) placement uses lock-step (1.0) too,
-        // mirroring the enter ramp, so the zoom-OUT doesn't ride the video
-        // edge before returning to center for an interior placement.
-        final exitReachable = !activeZoom.followCursor &&
-            (ZoomTransformer.clampFocalToBounds(activeZoom.rect.center,
-                        videoSize, activeZoom.zoomLevel) -
-                    activeZoom.rect.center)
+        // different amount at each zoom level. Manual regions use the
+        // per-region override / zoom-level fit; follow-cursor regions use the
+        // same zoom-level fit but never inherit a stale manual override.
+        // Reachable (interior) placements/cursors use lock-step (1.0), so the
+        // zoom-OUT doesn't ride the video edge before returning to center.
+        final manualExitReachable =
+            !activeZoom.followCursor &&
+            (ZoomTransformer.clampFocalToBounds(
+                          activeZoom.rect.center,
+                          videoSize,
+                          activeZoom.zoomLevel,
+                        ) -
+                        activeZoom.rect.center)
                     .distance <
                 0.5;
-        final exitBackload = (activeZoom.followCursor || exitReachable)
+        final exitReachable = activeZoom.followCursor
+            ? (_exitRampStartReachable ?? true)
+            : manualExitReachable;
+        final exitBackload = exitReachable
             ? 1.0
-            : (activeZoom.manualPanBackload ??
-                manualBackloadForZoom(activeZoom.zoomLevel));
+            : _manualStyleBackload(activeZoom);
         final t01 = exitBackload == 1.0
             ? eased
             : 1.0 -
-                math.pow((1.0 - eased).clamp(0.0, 1.0), exitBackload)
-                    .toDouble();
+                  math
+                      .pow((1.0 - eased).clamp(0.0, 1.0), exitBackload)
+                      .toDouble();
         final lerped = Offset.lerp(_exitRampStartFocal, centre, t01)!;
         // Symmetric with the enter ramp: radially clamp the manual return so
         // the focal stays on the placement->center ray (no dog-leg) and inside
         // the current-frame box. z mirrors the enter's, time-reversed:
         // zoom-in progress runs 1 -> 0 across the exit, so z = 1 +
-        // (zoomLevel-1)*(1 - eased). followCursor stays byte-identical.
+        // (zoomLevel-1)*(1 - eased).
         final z = 1.0 + (activeZoom.zoomLevel - 1.0) * (1.0 - eased);
-        _smoothedFocal = activeZoom.followCursor
-            ? lerped
-            : ZoomTransformer.clampFocalToBoundsRadial(lerped, videoSize, z);
+        _smoothedFocal = ZoomTransformer.clampFocalToBoundsRadial(
+          lerped,
+          videoSize,
+          z,
+        );
         // Zero velocity AND in-flight state so a post-exit re-entry
         // doesn't carry stale momentum or a stale chase flag from
         // before the ramp.
@@ -480,14 +497,17 @@ class ZoomFocalController {
         // clear below, leaking this region's anchor into the NEXT region.
         _enterRampStartFocal = null;
         _enterRampTarget = null;
+        _enterRampFocalTarget = null;
+        _postEnterHoldTarget = null;
         return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
       }
     }
     // Outside the exit ramp — clear the captured anchor so the next
     // entry into an exit ramp re-captures from a fresh position.
     _exitRampStartFocal = null;
+    _exitRampStartReachable = null;
 
-    // Enter ramp: pan rect.center -> cursor in lock-step with the zoom-in
+    // Enter ramp: pan base focal -> target in lock-step with the zoom-in
     // scale (same window, same resolved curve), symmetric to the exit ramp
     // above. The focal reaches the cursor exactly as magnification reaches
     // full, then the spring takes over for steady-state follow.
@@ -496,11 +516,11 @@ class ZoomFocalController {
     // gate-independent endpoints, so the live spring path, the
     // DeterministicFocalTrack replay (scrub / paused / scene-blur), and the
     // export pipeline all produce a byte-identical pan:
-    //   * anchor at activeZoom.rect.center — NOT `_smoothedFocal`, which on a
+    //   * anchor at the base focal — NOT `_smoothedFocal`, which on a
     //     PERSISTENT controller crossing back-to-back regions is the prior
     //     region's leftover focal (its exit ramp left it at ~video-center),
     //     so the live pan would start ~video-center while the fresh-controller
-    //     track starts at rect.center — a ~700px play-vs-scrub divergence.
+    //     track starts at the base focal — a large play-vs-scrub divergence.
     //   * aim at the raw cursor destination — NOT the bounded strategy's
     //     deadzone-gated target. The gate's per-frame hold/chase flip swaps
     //     the lerp endpoint, and because the ramp writes position directly
@@ -525,32 +545,18 @@ class ZoomFocalController {
       // is checked earlier and returns first, so a no-hold (enter==exit
       // boundary) region can't double-handle this frame.
       if (tIntoRegionUs >= 0 && tIntoRegionUs <= enter.enterUs) {
-        // Anchor the enter pan at the honest z=1 framing.
-        //   * followCursor: the region's rect.center — the framing the user
-        //     drew, which the pan then leaves to chase the cursor.
-        //   * MANUAL (followCursor:false): the pan's only destination IS
-        //     rect.center, so anchoring there leaves the lerp below FLAT and
-        //     hands the entire visible pan to ZoomTransformer's per-frame
-        //     bounds clamp — a 1/z curve that FRONT-LOADS the pan ahead of the
-        //     eased scale (camera lunges to the corner, then the magnification
-        //     catches up; the "zoom-then-slide" the manual placement showed).
-        //     Anchoring at the video center instead lets the back-loaded lerp
-        //     trace the pan center->placement IN STEP with the scale. Proven:
-        //     lerp(center, fullZoomClampedTarget, eased^_entryPanBackload)
-        //     stays at/under the per-frame clamp for all t and any zoomLevel
-        //     (equality only at the endpoints), so the transformer never
-        //     re-clamps it and cannot front-load. Deterministic (pure fn of
-        //     videoSize) — play == scrub == export parity holds.
-        final enterAnchor = activeZoom.followCursor
-            ? activeZoom.rect.center
-            : Offset(videoSize.width / 2, videoSize.height / 2);
+        final videoCentre = Offset(videoSize.width / 2, videoSize.height / 2);
+        // Anchor the enter pan at the honest z=1 framing. For followCursor
+        // that is always video center; a stale manual rect must not influence
+        // auto-follow once the toggle is enabled.
+        final enterAnchor = videoCentre;
         _enterRampStartFocal ??= enterAnchor;
         final liveTarget = (activeZoom.followCursor && cursor != null)
             ? cursor
-            : activeZoom.rect.center;
+            : _baseFocal(activeZoom, videoSize);
         // Capture the pan target ONCE (first enter frame) and hold it for the
-        // whole ramp. Manual placements pass rect.center (already stable), so
-        // this is a no-op for them. For followCursor, prefer the SETTLE target
+        // whole ramp. Manual placements pass rect.center (already stable). For
+        // followCursor, prefer the SETTLE target
         // (enterCursorTarget = raw cursor at the enter-ramp end): the enter
         // pans straight to where the cursor ends up, instead of chasing the
         // lagging SMOOTHED cursor's catch-up path (which read as "the zoom
@@ -559,13 +565,13 @@ class ZoomFocalController {
         // way it's captured once so a cursor that keeps moving during the ramp
         // doesn't drag the camera around; the hold spring resumes smooth live
         // tracking once the ramp ends.
-        _enterRampTarget ??= (activeZoom.followCursor &&
-                enterCursorTarget != null)
+        _enterRampTarget ??=
+            (activeZoom.followCursor && enterCursorTarget != null)
             ? enterCursorTarget
             : liveTarget;
         final rawTarget = _enterRampTarget!;
         // Aim the pan at what the FULL zoom level can actually frame, not
-        // the raw cursor. An edge cursor (or an edge-hugging rect.center)
+        // the raw target. An edge cursor (or an edge-hugging rect.center)
         // sits beyond the reachable focal range, so lerping toward the raw
         // point makes the eased focal cross the *current-frame* bound
         // partway through the ramp — at which point ZoomTransformer pins the
@@ -577,7 +583,11 @@ class ZoomFocalController {
         // Pure function of (cursor/rect, videoSize, zoomLevel) — play ==
         // scrub == export stays byte-identical.
         final entryTarget = ZoomTransformer.clampFocalToBounds(
-            rawTarget, videoSize, activeZoom.zoomLevel);
+          rawTarget,
+          videoSize,
+          activeZoom.zoomLevel,
+        );
+        _enterRampFocalTarget = entryTarget;
         // Is the placement reachable at full zoom (interior), or clamped to
         // the bounds (edge)? A LEADING pan (backload<1) overshoots the small
         // low-zoom box, so the focal rides the box boundary — i.e. the
@@ -587,30 +597,25 @@ class ZoomFocalController {
         // so the tuned lead is right there. For a reachable INTERIOR
         // placement, lock-step (backload 1.0) is the fastest pan that
         // provably never exceeds the box (no edge touch) — so use it.
-        final reachable =
-            (entryTarget - rawTarget).distance < 0.5;
-        final tNorm =
-            (tIntoRegionUs / enter.enterUs).clamp(0.0, 1.0).toDouble();
+        final reachable = (entryTarget - rawTarget).distance < 0.5;
+        final tNorm = (tIntoRegionUs / enter.enterUs)
+            .clamp(0.0, 1.0)
+            .toDouble();
         // Clamp before the back-load pow: a custom bezier ramp curve can
         // overshoot <0 or >1, and pow() of a negative base with a
         // non-integer exponent is NaN.
         final eased = rampCurve.transform(tNorm).clamp(0.0, 1.0);
-        // followCursor pans rect.center -> cursor and uses the fixed
-        // back-load tuned for that geometry. A MANUAL placement pans
-        // center -> placement; its exponent comes from the region's own
-        // manualPanBackload override when set, else the zoom-level-aware
-        // default fit (manualBackloadForZoom) — the ideal exponent depends
-        // on zoomLevel, so a single constant can't serve every region.
-        final backload = activeZoom.followCursor
-            ? _entryPanBackload
-            : reachable
-                ? 1.0
-                : (activeZoom.manualPanBackload ??
-                    manualBackloadForZoom(activeZoom.zoomLevel));
+        // followCursor uses the same ramp geometry as manual placement, but
+        // with the cursor as target. The region rect can contain stale manual
+        // placement, so it is ignored whenever auto-follow is enabled.
+        final backload = reachable ? 1.0 : _manualStyleBackload(activeZoom);
         final panEased = math.pow(eased, backload).toDouble();
-        final newFocal =
-            Offset.lerp(_enterRampStartFocal, entryTarget, panEased)!;
-        // MANUAL only: a leading pan (backload < 1) walks the focal along the
+        final newFocal = Offset.lerp(
+          _enterRampStartFocal,
+          entryTarget,
+          panEased,
+        )!;
+        // Manual-style ramps: a leading pan (backload < 1) walks the focal along the
         // straight center->placement ray FASTER than the zoom grows, so at low
         // z it overshoots the small current-frame reachable box. The
         // transformer's PER-AXIS clamp would then pin one axis and let the
@@ -620,13 +625,12 @@ class ZoomFocalController {
         // the ray AND inside the box; the downstream per-axis clamp is then a
         // no-op for these frames (exact on export/track; the preview badge
         // tween can transiently differ but only ever pulls further in-bounds).
-        // followCursor is anchored at rect.center (not the video center) and
-        // lags rather than leads, so radial-about-center is neither collinear
-        // nor needed there — leave it byte-identical.
         final z = 1.0 + (activeZoom.zoomLevel - 1.0) * eased;
-        final clampedFocal = activeZoom.followCursor
-            ? newFocal
-            : ZoomTransformer.clampFocalToBoundsRadial(newFocal, videoSize, z);
+        final clampedFocal = ZoomTransformer.clampFocalToBoundsRadial(
+          newFocal,
+          videoSize,
+          z,
+        );
         _focalVx = 0;
         _focalVy = 0;
         _smoothedFocal = clampedFocal;
@@ -635,8 +639,39 @@ class ZoomFocalController {
     }
     // Outside the enter window — clear the anchor + captured target so a
     // re-entry into an enter ramp re-captures from a fresh position.
+    if (activeZoom.followCursor && _enterRampFocalTarget != null) {
+      _postEnterHoldTarget ??= _enterRampFocalTarget;
+    }
     _enterRampStartFocal = null;
     _enterRampTarget = null;
+    _enterRampFocalTarget = null;
+
+    final handoffTarget = _postEnterHoldTarget;
+    if (handoffTarget != null && activeZoom.followCursor) {
+      final cursorClamped = cursor == null
+          ? null
+          : ZoomTransformer.clampFocalToBounds(
+              cursor,
+              videoSize,
+              activeZoom.zoomLevel,
+            );
+      final cursorCaughtUp =
+          cursorClamped != null &&
+          (cursorClamped - handoffTarget).distance < 0.5;
+      final cursorStillSettling =
+          cursorVelocity.distance < tuning.cursorAtRestPxPerSec;
+      if (cursorCaughtUp || !cursorStillSettling || cursor == null) {
+        _postEnterHoldTarget = null;
+      } else {
+        _smoothedFocal = handoffTarget;
+        _focalVx = 0;
+        _focalVy = 0;
+        _resetStrategies();
+        return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
+      }
+    } else {
+      _postEnterHoldTarget = null;
+    }
 
     // Resolve target this frame via the pluggable per-mode strategy.
     // The bounded strategy owns its gate state; centered/predictive
@@ -671,8 +706,10 @@ class ZoomFocalController {
       var dtMicros = position.inMicroseconds - prevPosition.inMicroseconds;
       if (dtMicros > 0) {
         if (dtMicros > _maxTotalDtMicros) dtMicros = _maxTotalDtMicros;
-        final numSteps =
-            (dtMicros / _maxSubStepMicros).ceil().clamp(1, 1 << 20);
+        final numSteps = (dtMicros / _maxSubStepMicros).ceil().clamp(
+          1,
+          1 << 20,
+        );
         final subDtMicros = dtMicros / numSteps;
         final subDt = subDtMicros / 1e6;
         final settleSeconds = followUs / 1e6;
@@ -720,8 +757,11 @@ class ZoomFocalController {
     _focalVy = 0;
     _resetStrategies();
     _exitRampStartFocal = null;
+    _exitRampStartReachable = null;
     _enterRampStartFocal = null;
     _enterRampTarget = null;
+    _enterRampFocalTarget = null;
+    _postEnterHoldTarget = null;
     _lastUpdatePosition = null;
   }
 
@@ -786,6 +826,17 @@ class ZoomFocalController {
   // delegates per-frame target resolution to a pluggable strategy
   // keyed by FollowMode.
 
+  static Offset _baseFocal(ZoomRegion zoom, Size videoSize) {
+    if (!zoom.followCursor) return zoom.rect.center;
+    return Offset(videoSize.width / 2, videoSize.height / 2);
+  }
+
+  static double _manualStyleBackload(ZoomRegion zoom) {
+    final defaultBackload = manualBackloadForZoom(zoom.zoomLevel);
+    if (zoom.followCursor) return defaultBackload;
+    return zoom.manualPanBackload ?? defaultBackload;
+  }
+
   // Closed-end lookup: includes `position == endTime` so the focal
   // controller still emits the exit-ramp completion frame (zoom factor
   // at 1.0×, focal at video centre). Delegates to [ZoomRegion.activeAt]
@@ -793,8 +844,7 @@ class ZoomFocalController {
   static ZoomRegion? _activeZoomAt(
     Duration position,
     List<ZoomRegion> zoomRegions,
-  ) =>
-      ZoomRegion.activeAt(position, zoomRegions);
+  ) => ZoomRegion.activeAt(position, zoomRegions);
 }
 
 /// Result of a [ZoomFocalController.update] call when a zoom is active.

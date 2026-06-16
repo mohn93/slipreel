@@ -63,16 +63,10 @@ bool sceneBlurTraceEnabled = false;
 /// Exposed for the behavioral remount test; `_SceneBlurOverlayState`'s
 /// build is the only production caller.
 @visibleForTesting
-Widget buildSceneBlurTree({
-  required Widget framedChild,
-  Widget? smearOverlay,
-}) {
+Widget buildSceneBlurTree({required Widget framedChild, Widget? smearOverlay}) {
   return Stack(
     fit: StackFit.expand,
-    children: [
-      framedChild,
-      if (smearOverlay != null) smearOverlay,
-    ],
+    children: [framedChild, if (smearOverlay != null) smearOverlay],
   );
 }
 
@@ -365,7 +359,10 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
   SceneMotionBlurSignal _computeSignal(Duration pos) {
     final movementExposure = Duration(
       microseconds:
-          (_baseExposureMs * widget.motionBlur * widget.screenMovementBlur * 1000)
+          (_baseExposureMs *
+                  widget.motionBlur *
+                  widget.screenMovementBlur *
+                  1000)
               .round(),
     );
     final zoomExposure = Duration(
@@ -386,7 +383,8 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
     // confirms the slider is actually feeding new exposures into the
     // compute path. Quiet during steady-state.
     assert(() {
-      final key = '${widget.motionBlur.toStringAsFixed(6)}|'
+      final key =
+          '${widget.motionBlur.toStringAsFixed(6)}|'
           '${widget.screenMovementBlur.toStringAsFixed(6)}|'
           '${widget.screenZoomBlur.toStringAsFixed(6)}';
       if (key != _lastDebugKey) {
@@ -414,10 +412,12 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
         // Sample the same current/prev pair the controller saw so the
         // log shows exactly what fed the math, not a re-derivation.
         final cur = _approxSampleAt(pos);
-        final prev =
-            _approxSampleAt(pos - (movementExposure > Duration.zero
-                ? movementExposure
-                : zoomExposure));
+        final prev = _approxSampleAt(
+          pos -
+              (movementExposure > Duration.zero
+                  ? movementExposure
+                  : zoomExposure),
+        );
         debugPrint(
           '[SceneBlur frame] '
           'pos=${pos.inMicroseconds / 1000}ms '
@@ -509,12 +509,16 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
         focal = track.focalAt(t);
       } else {
         final s = cursorAtFiltered(
-            widget.cursorRecording, t, widget.cursorPostProcess);
+          widget.cursorRecording,
+          t,
+          widget.cursorPostProcess,
+        );
         focal = s == null
-            ? active.rect.center
+            ? widget.videoSize.center(Offset.zero)
             : Offset(
                 s.x.toDouble().clamp(0, widget.videoSize.width),
-                s.y.toDouble().clamp(0, widget.videoSize.height));
+                s.y.toDouble().clamp(0, widget.videoSize.height),
+              );
       }
     }
 
@@ -536,13 +540,12 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
     // as the zoom settles". Clamp to the same visible focal (kept in lock-step
     // with FrameCompositor._sceneSampleAt so preview == export). Identity for
     // in-bounds focals.
-    final visibleFocal =
-        ZoomTransformer.clampFocalToBounds(focal, widget.videoSize, scale);
-    return SceneCameraSample(
-      position: t,
-      focal: visibleFocal,
-      scale: scale,
+    final visibleFocal = ZoomTransformer.clampFocalToBounds(
+      focal,
+      widget.videoSize,
+      scale,
     );
+    return SceneCameraSample(position: t, focal: visibleFocal, scale: scale);
   }
 
   void _captureScene() {

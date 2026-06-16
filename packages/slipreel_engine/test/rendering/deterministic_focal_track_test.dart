@@ -19,19 +19,11 @@ void main() {
     for (var ms = 0; ms <= 6000; ms += 16) {
       final x = ms < 2500
           ? 200.0
-          : 200.0 +
-              (1200 - 200) *
-                  ((ms - 2500) / 2000).clamp(0.0, 1.0);
+          : 200.0 + (1200 - 200) * ((ms - 2500) / 2000).clamp(0.0, 1.0);
       final y = ms < 2500
           ? 200.0
-          : 200.0 +
-              (800 - 200) *
-                  ((ms - 2500) / 2000).clamp(0.0, 1.0);
-      rec.addPosition(CursorPosition(
-        x: x,
-        y: y,
-        timestampMicros: ms * 1000,
-      ));
+          : 200.0 + (800 - 200) * ((ms - 2500) / 2000).clamp(0.0, 1.0);
+      rec.addPosition(CursorPosition(x: x, y: y, timestampMicros: ms * 1000));
     }
     return rec;
   }
@@ -50,13 +42,14 @@ void main() {
   const videoSize = Size(1728, 1117);
 
   DeterministicFocalTrack buildTrack() => DeterministicFocalTrack.build(
-        region: region,
-        cursorRecording: sweep(),
-        cursorAnimationConfig:
-            const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
-        videoSize: videoSize,
-        fps: 60,
-      );
+    region: region,
+    cursorRecording: sweep(),
+    cursorAnimationConfig: const CursorAnimationConfig.preset(
+      CursorAnimationStyle.smooth,
+    ),
+    videoSize: videoSize,
+    fps: 60,
+  );
 
   test('focalAt is a pure function: same t → same focal, any call order', () {
     final track = buildTrack();
@@ -67,23 +60,25 @@ void main() {
   });
 
   test(
-      'focal does NOT snap at region entry — moves <40px in the first 16ms',
-      () {
-    final track = buildTrack();
-    final f0 = track.focalAt(const Duration(milliseconds: 2542));
-    final f1 = track.focalAt(const Duration(milliseconds: 2558));
-    expect(
-      (f1 - f0).distance,
-      lessThan(40.0),
-      reason: 'spring ramps from rect.center; it must not teleport to the '
-          'cursor in one frame (that snap was the scene-blur crack)',
-    );
-  });
+    'focal does NOT snap at region entry — moves <40px in the first 16ms',
+    () {
+      final track = buildTrack();
+      final f0 = track.focalAt(const Duration(milliseconds: 2542));
+      final f1 = track.focalAt(const Duration(milliseconds: 2558));
+      expect(
+        (f1 - f0).distance,
+        lessThan(40.0),
+        reason:
+            'spring ramps from the base focal; it must not teleport to the '
+            'cursor in one frame (that snap was the scene-blur crack)',
+      );
+    },
+  );
 
   test('focal converges toward the cursor during the hold phase', () {
     final track = buildTrack();
     // By 1s into the 2s region the spring should have chased most of the
-    // way toward the cursor at (200, 200) from the rect center (864, 558).
+    // way toward the cursor at (200, 200) from the video center (864, 558).
     final focal = track.focalAt(const Duration(milliseconds: 3600));
     expect(
       focal.dx,
@@ -94,8 +89,7 @@ void main() {
 
   group('matches()', () {
     final recording = sweep();
-    const config =
-        CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+    const config = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
     final track = DeterministicFocalTrack.build(
       region: region,
       cursorRecording: recording,
@@ -133,14 +127,12 @@ void main() {
       );
     });
 
-    test('separate but value-equal CursorAnimationConfig instances → true',
-        () {
+    test('separate but value-equal CursorAnimationConfig instances → true', () {
       // A distinct instance with the same preset value — must not thrash
       // the cache. Built without `const` so Dart can't canonicalize it to
       // the same object as [config]; this proves `matches` is value-based.
       // ignore: prefer_const_constructors
-      final fresh =
-          CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      final fresh = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
       expect(identical(config, fresh), isFalse);
       expect(
         track.matches(
@@ -161,8 +153,7 @@ void main() {
           region: region,
           cursorRecording: recording,
           cursorAnimationConfig: config,
-          cursorPostProcess:
-              const CursorPostProcess(removeShakes: true),
+          cursorPostProcess: const CursorPostProcess(removeShakes: true),
           videoSize: videoSize,
           fps: 60,
         ),

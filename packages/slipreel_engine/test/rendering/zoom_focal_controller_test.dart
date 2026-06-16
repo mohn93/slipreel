@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -87,18 +85,13 @@ void main() {
       expect(ctrl.smoothedFocal, isNull);
     });
 
-    test(
-        'first frame of a zoom snaps to the rect centre — regardless of '
-        'cursor position', () {
-      // The user drew a zoom rect around a specific area; the camera
-      // should frame *that area* when the zoom kicks in. The bounded
-      // gate (followCursor + dz) then decides whether to chase the
-      // cursor or stay put.
+    test('first frame of an auto-follow zoom ignores stale manual rect', () {
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 2),
         rect: const Rect.fromLTWH(0, 0, 100, 100),
+        followCursor: true,
       );
 
       final update = ctrl.update(
@@ -110,32 +103,80 @@ void main() {
 
       expect(update, isNotNull);
       expect(update!.zoom, same(zoom));
-      expect(update.focal, const Offset(50, 50),
-          reason: 'first frame of a zoom must land on rect.center, '
-              'not on the cursor');
+      expect(
+        update.focal,
+        const Offset(960, 540),
+        reason:
+            'followCursor=true must not let an old manual rect steer the '
+            'camera before the cursor target takes over',
+      );
     });
 
-    test('falls back to rect.center when no cursor sample exists', () {
+    test('first frame of a manual zoom snaps to the rect centre', () {
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 2),
-        rect: const Rect.fromLTWH(200, 100, 400, 300),
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        followCursor: false,
       );
 
       final update = ctrl.update(
-        position: const Duration(milliseconds: 500),
+        position: Duration.zero,
         zoomRegions: [zoom],
-        cursor: null,
+        cursor: const Offset(500, 400),
         videoSize: _videoSize,
       );
 
-      expect(update, isNotNull);
-      expect(update!.focal, const Offset(400, 250));
+      expect(update!.focal, const Offset(50, 50));
     });
 
     test(
-        'crossing into a different zoom region spring-chases the new '
+      'auto-follow falls back to video center when no cursor sample exists',
+      () {
+        final ctrl = ZoomFocalController();
+        final zoom = _zoomAt(
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 2),
+          rect: const Rect.fromLTWH(200, 100, 400, 300),
+          followCursor: true,
+        );
+
+        final update = ctrl.update(
+          position: const Duration(milliseconds: 500),
+          zoomRegions: [zoom],
+          cursor: null,
+          videoSize: _videoSize,
+        );
+
+        expect(update, isNotNull);
+        expect(update!.focal, const Offset(960, 540));
+      },
+    );
+
+    test(
+      'manual zoom falls back to rect.center when no cursor sample exists',
+      () {
+        final ctrl = ZoomFocalController();
+        final zoom = _zoomAt(
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 2),
+          rect: const Rect.fromLTWH(200, 100, 400, 300),
+          followCursor: false,
+        );
+
+        final update = ctrl.update(
+          position: Duration.zero,
+          zoomRegions: [zoom],
+          cursor: null,
+          videoSize: _videoSize,
+        );
+
+        expect(update!.focal, const Offset(400, 250));
+      },
+    );
+
+    test('crossing into a different zoom region spring-chases the new '
         'rect, no instant snap', () {
       // All-spring policy: crossing from one zoom region to another
       // is just another change of target. The spring carries the
@@ -149,11 +190,13 @@ void main() {
         startTime: Duration.zero,
         duration: const Duration(seconds: 1),
         rect: const Rect.fromLTWH(0, 0, 100, 100), // center (50, 50)
+        followCursor: false,
       );
       final zoomB = _zoomAt(
         startTime: const Duration(seconds: 1),
         duration: const Duration(seconds: 1),
         rect: const Rect.fromLTWH(900, 800, 100, 100), // center (950, 850)
+        followCursor: false,
       );
 
       // Settle the spring on zoomA at (50, 50).
@@ -183,9 +226,13 @@ void main() {
       );
       expect(crossover, isNotNull);
       expect(crossover!.zoom, same(zoomB));
-      expect(crossover.focal.dx, lessThan(200),
-          reason: 'spring must still be near zoomA.center on the '
-              'very first frame of zoomB — not snapped to zoomB.center');
+      expect(
+        crossover.focal.dx,
+        lessThan(200),
+        reason:
+            'spring must still be near zoomA.center on the '
+            'very first frame of zoomB — not snapped to zoomB.center',
+      );
       expect(crossover.focal.dy, lessThan(200));
 
       // After driving inside zoomB for a while (staying within its
@@ -198,23 +245,27 @@ void main() {
         to: const Duration(milliseconds: 1980),
         cursor: const Offset(950, 850),
       );
-      expect(settled!.focal.dx, greaterThan(700),
-          reason: 'spring should have advanced well toward zoomB.center');
+      expect(
+        settled!.focal.dx,
+        greaterThan(700),
+        reason: 'spring should have advanced well toward zoomB.center',
+      );
     });
 
-    test(
-        'clears smoothing state when leaving a zoom so the next entry '
+    test('clears smoothing state when leaving a zoom so the next entry '
         'snaps cleanly', () {
       final ctrl = ZoomFocalController();
       final zoomEarly = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 1),
         rect: const Rect.fromLTWH(0, 0, 100, 100),
+        followCursor: false,
       );
       final zoomLate = _zoomAt(
         startTime: const Duration(seconds: 3),
         duration: const Duration(seconds: 1),
         rect: const Rect.fromLTWH(800, 800, 100, 100),
+        followCursor: false,
       );
 
       ctrl.update(
@@ -249,6 +300,7 @@ void main() {
         startTime: Duration.zero,
         duration: const Duration(seconds: 2),
         rect: const Rect.fromLTRB(100, 100, 100, 100),
+        followCursor: false,
       );
 
       ctrl.update(
@@ -322,27 +374,28 @@ void main() {
 
     // --- followCursor / boundedFollow / deadzone semantics ---------------
 
-    test('followCursor=false pins focal to rect.center even with cursor data',
-        () {
-      final ctrl = ZoomFocalController();
-      final zoom = _zoomAt(
-        startTime: Duration.zero,
-        duration: const Duration(seconds: 2),
-        rect: const Rect.fromLTWH(200, 100, 400, 300),
-        followCursor: false,
-      );
-
-      final out = ctrl.update(
-        position: Duration.zero,
-        zoomRegions: [zoom],
-        cursor: const Offset(1500, 900),
-        videoSize: _videoSize,
-      );
-      expect(out!.focal, const Offset(400, 250));
-    });
-
     test(
-        'stiff spring + jittering cursor inside a large deadzone — focal '
+      'followCursor=false pins focal to rect.center even with cursor data',
+      () {
+        final ctrl = ZoomFocalController();
+        final zoom = _zoomAt(
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 2),
+          rect: const Rect.fromLTWH(200, 100, 400, 300),
+          followCursor: false,
+        );
+
+        final out = ctrl.update(
+          position: Duration.zero,
+          zoomRegions: [zoom],
+          cursor: const Offset(1500, 900),
+          videoSize: _videoSize,
+        );
+        expect(out!.focal, const Offset(400, 250));
+      },
+    );
+
+    test('stiff spring + jittering cursor inside a large deadzone — focal '
         'holds (no slow drift toward the cursor)', () {
       // Regression for "camera slowly drifts toward the cursor" with
       // followDuration=100 ms (stiff spring) and a wide deadzone. The
@@ -390,48 +443,53 @@ void main() {
           videoSize: _videoSize,
         );
         // Focal must stay exactly at the snap point (no drift).
-        expect(out!.focal.dx, closeTo(960, 1e-9),
-            reason: 'focal must not drift inside a wide deadzone (t=${ms}ms)');
+        expect(
+          out!.focal.dx,
+          closeTo(960, 1e-9),
+          reason: 'focal must not drift inside a wide deadzone (t=${ms}ms)',
+        );
         expect(out.focal.dy, closeTo(540, 1e-9));
       }
     });
 
-    test('bounded follow holds focal while cursor stays inside the deadzone',
-        () {
-      final ctrl = ZoomFocalController();
-      final zoom = _zoomAt(
-        startTime: Duration.zero,
-        duration: const Duration(seconds: 5),
-        zoomLevel: 2.0,
-        followMode: FollowMode.bounded,
-        deadzoneRatio: 0.3,
-        // rect.center coincides with the initial cursor so the snap
-        // lands inside the deadzone immediately.
-        rect: const Rect.fromLTRB(960, 540, 960, 540),
-      );
+    test(
+      'bounded follow holds focal while cursor stays inside the deadzone',
+      () {
+        final ctrl = ZoomFocalController();
+        final zoom = _zoomAt(
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 5),
+          zoomLevel: 2.0,
+          followMode: FollowMode.bounded,
+          deadzoneRatio: 0.3,
+          // rect.center coincides with the initial cursor so the snap
+          // lands inside the deadzone immediately.
+          rect: const Rect.fromLTRB(960, 540, 960, 540),
+        );
 
-      ctrl.update(
-        position: Duration.zero,
-        zoomRegions: [zoom],
-        cursor: const Offset(960, 540),
-        videoSize: _videoSize,
-      );
-      final f2 = ctrl.update(
-        position: const Duration(seconds: 1),
-        zoomRegions: [zoom],
-        cursor: const Offset(1000, 560),
-        videoSize: _videoSize,
-      );
-      final f3 = ctrl.update(
-        position: const Duration(seconds: 2),
-        zoomRegions: [zoom],
-        cursor: const Offset(1050, 580),
-        videoSize: _videoSize,
-      );
+        ctrl.update(
+          position: Duration.zero,
+          zoomRegions: [zoom],
+          cursor: const Offset(960, 540),
+          videoSize: _videoSize,
+        );
+        final f2 = ctrl.update(
+          position: const Duration(seconds: 1),
+          zoomRegions: [zoom],
+          cursor: const Offset(1000, 560),
+          videoSize: _videoSize,
+        );
+        final f3 = ctrl.update(
+          position: const Duration(seconds: 2),
+          zoomRegions: [zoom],
+          cursor: const Offset(1050, 580),
+          videoSize: _videoSize,
+        );
 
-      expect(f2!.focal, const Offset(960, 540));
-      expect(f3!.focal, const Offset(960, 540));
-    });
+        expect(f2!.focal, const Offset(960, 540));
+        expect(f3!.focal, const Offset(960, 540));
+      },
+    );
 
     // --- spring dynamics --------------------------------------------------
 
@@ -455,22 +513,21 @@ void main() {
         videoSize: _videoSize,
       );
       // Drive the controller from t=0 to t=1.5s (≈ 3.75× settle time)
-      // with the cursor at (100, 0). After 3× the camera should be
+      // with the cursor at (1000, 540). After 3× the camera should be
       // visually arrived (within a few px of the cursor).
       final settled = _drive(
         ctrl,
         zoom,
         from: Duration.zero,
         to: const Duration(milliseconds: 1500),
-        cursor: const Offset(100, 0),
+        cursor: const Offset(1000, 540),
       );
 
-      expect(settled!.focal.dx, closeTo(100, 2));
-      expect(settled.focal.dy, closeTo(0, 2));
+      expect(settled!.focal.dx, closeTo(1000, 2));
+      expect(settled.focal.dy, closeTo(540, 2));
     });
 
-    test('followDuration=0 snaps the focal to the cursor each frame',
-        () {
+    test('followDuration=0 snaps the focal to the cursor each frame', () {
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
@@ -531,12 +588,14 @@ void main() {
         cursor: const Offset(200, 0),
       );
 
-      expect(settled!.focal.dx, closeTo(200, 2),
-          reason: 'spring must home in on the latest cursor target');
+      expect(
+        settled!.focal.dx,
+        closeTo(200, 2),
+        reason: 'spring must home in on the latest cursor target',
+      );
     });
 
-    test(
-        'cursor returning inside the moving deadzone stops the chase '
+    test('cursor returning inside the moving deadzone stops the chase '
         '(leash semantic, not full re-center)', () {
       // The bounded gate is purely positional. The moment the cursor
       // sits inside the deadzone box around the current focal, the
@@ -594,8 +653,7 @@ void main() {
       expect(settled.focal.dy, closeTo(540, 1));
     });
 
-    test(
-        'after the spring settles, the deadzone re-engages around the '
+    test('after the spring settles, the deadzone re-engages around the '
         'new focal so further small cursor moves are ignored', () {
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
@@ -640,12 +698,14 @@ void main() {
         to: const Duration(milliseconds: 3500),
         cursor: const Offset(1180, 540),
       );
-      expect(still!.focal.dx, closeTo(finished.focal.dx, 2),
-          reason: 'cursor inside the new deadzone — focal should hold');
+      expect(
+        still!.focal.dx,
+        closeTo(finished.focal.dx, 2),
+        reason: 'cursor inside the new deadzone — focal should hold',
+      );
     });
 
-    test(
-        'tweaking a non-structural field mid-flight does not snap the '
+    test('tweaking a non-structural field mid-flight does not snap the '
         'spring (no jolt while dragging an inspector slider)', () {
       // copyWith() returns a fresh ZoomRegion instance every time the
       // user nudges an inspector slider. The controller used to treat
@@ -701,15 +761,17 @@ void main() {
         cursor: const Offset(1200, 540),
         videoSize: _videoSize,
       );
-      expect(afterEdit!.focal.dx, closeTo(focalBefore.dx, 1e-6),
-          reason: 'non-structural edit must not reset the spring');
+      expect(
+        afterEdit!.focal.dx,
+        closeTo(focalBefore.dx, 1e-6),
+        reason: 'non-structural edit must not reset the spring',
+      );
       expect(afterEdit.focal.dy, closeTo(focalBefore.dy, 1e-6));
       // And the new instance is what the controller reports back.
       expect(identical(afterEdit.zoom, edited), isTrue);
     });
 
-    test(
-        'editing a zoom region while paused at the same position takes '
+    test('editing a zoom region while paused at the same position takes '
         'effect on the next update (no stale-cache hangover)', () {
       // Regression for "settings on the side panel don't apply till I
       // change them again to take effect": the controller used to
@@ -746,21 +808,22 @@ void main() {
         videoSize: _videoSize,
       );
 
-      // followCursor=false pins focal to rect.center = (50, 50).
-      // (Identical here to the earlier cursor coincidentally — what
-      // matters is the snap branch fired and the focal is now the
-      // rect.center even though only the toggle changed.)
-      expect(out!.focal, const Offset(50, 50));
+      // Same-position re-evaluation does not integrate a phantom frame, but
+      // it must report the freshly edited region instead of returning a stale
+      // cached update.
+      expect(out!.focal, const Offset(960, 540));
 
       // And the zoom in the result is the new instance, not the old.
-      expect(identical(out.zoom, edited), isTrue,
-          reason:
-              'controller must report the freshly-edited zoom region, '
-              'not the cached one from the previous call');
+      expect(
+        identical(out.zoom, edited),
+        isTrue,
+        reason:
+            'controller must report the freshly-edited zoom region, '
+            'not the cached one from the previous call',
+      );
     });
 
-    test(
-        'cursor matches sprite when caller passes a smoothed cursor — '
+    test('cursor matches sprite when caller passes a smoothed cursor — '
         'no drift between camera and the visible cursor', () {
       // Regression: previously the controller looked up the cursor
       // from a CursorRecording while the visible sprite was drawn at
@@ -793,8 +856,7 @@ void main() {
       expect(update!.focal, const Offset(540, 410));
     });
 
-    test(
-        'mid-zoom (post-enter) cursor moves drive the spring with the '
+    test('mid-zoom (post-enter) cursor moves drive the spring with the '
         'user-tuned settle time', () {
       // After the enter ramp the spring chases cursor moves using the
       // user-tuned [followDuration] as its settle time. Drive long
@@ -836,8 +898,7 @@ void main() {
       expect(landed.focal.dy, closeTo(600, 3));
     });
 
-    test(
-        'exit ramp stops following cursor and lerps focal to video centre '
+    test('exit ramp stops following cursor and lerps focal to video centre '
         'in lock-step with the zoom-out', () {
       // Once the zoom starts unwinding, the viewport widens every frame
       // and the user can already see where the cursor is heading. The
@@ -873,8 +934,11 @@ void main() {
         to: const Duration(milliseconds: 400),
         cursor: const Offset(500, 500),
       );
-      expect(inHold!.focal.dx, closeTo(500, 1),
-          reason: 'sanity: spring should have settled by now');
+      expect(
+        inHold!.focal.dx,
+        closeTo(500, 1),
+        reason: 'sanity: spring should have settled by now',
+      );
       expect(inHold.focal.dy, closeTo(500, 1));
 
       // Frame at 950ms — halfway through the exit ramp at 900..1000ms.
@@ -890,13 +954,17 @@ void main() {
       );
       final startFocal = inHold.focal;
       const centre = Offset(960, 540);
-      final progressX = (midExit!.focal.dx - startFocal.dx) /
-          (centre.dx - startFocal.dx);
-      final progressY = (midExit.focal.dy - startFocal.dy) /
-          (centre.dy - startFocal.dy);
-      expect(progressX, closeTo(progressY, 1e-9),
-          reason: 'X and Y must lerp at the same progress so they finish '
-              'together — that is the whole point of the explicit lerp.');
+      final progressX =
+          (midExit!.focal.dx - startFocal.dx) / (centre.dx - startFocal.dx);
+      final progressY =
+          (midExit.focal.dy - startFocal.dy) / (centre.dy - startFocal.dy);
+      expect(
+        progressX,
+        closeTo(progressY, 1e-9),
+        reason:
+            'X and Y must lerp at the same progress so they finish '
+            'together — that is the whole point of the explicit lerp.',
+      );
       expect(progressX, greaterThan(0));
       expect(progressX, lessThan(1));
 
@@ -908,14 +976,19 @@ void main() {
         cursor: const Offset(900, 900),
         videoSize: _videoSize,
       );
-      expect(endExit!.focal.dx, closeTo(960, 1e-6),
-          reason: 'X must finish at video centre when the zoom hits 1.0×');
-      expect(endExit.focal.dy, closeTo(540, 1e-6),
-          reason: 'Y must finish at video centre when the zoom hits 1.0×');
+      expect(
+        endExit!.focal.dx,
+        closeTo(960, 1e-6),
+        reason: 'X must finish at video centre when the zoom hits 1.0×',
+      );
+      expect(
+        endExit.focal.dy,
+        closeTo(540, 1e-6),
+        reason: 'Y must finish at video centre when the zoom hits 1.0×',
+      );
     });
 
-    test(
-        'meaningful backward scrub mid-flight keeps focal in place and '
+    test('meaningful backward scrub mid-flight keeps focal in place and '
         'just zeros the spring velocity', () {
       // Under the all-spring policy the focal never teleports — not
       // even on a user-intended scrub. Instead the controller zeros
@@ -966,8 +1039,7 @@ void main() {
       expect(ctrl.focalVelocity.dy, 0);
     });
 
-    test(
-        'small backward jitter (≤200 ms) does NOT snap — that case is '
+    test('small backward jitter (≤200 ms) does NOT snap — that case is '
         'usually a hover-scrub commit, not a user-intended seek', () {
       // Regression for "camera suddenly centres on my cursor every
       // time I click somewhere": the playhead can hiccup backwards
@@ -1004,8 +1076,11 @@ void main() {
         cursor: const Offset(400, 400),
         videoSize: _videoSize,
       );
-      expect(out!.focal.dx, closeTo(focalBefore.dx, 1),
-          reason: 'small backward jitter must not snap the focal');
+      expect(
+        out!.focal.dx,
+        closeTo(focalBefore.dx, 1),
+        reason: 'small backward jitter must not snap the focal',
+      );
       expect(out.focal.dy, closeTo(focalBefore.dy, 1));
     });
 
@@ -1024,31 +1099,30 @@ void main() {
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoom],
-        cursor: const Offset(0, 0),
+        cursor: const Offset(960, 540),
         videoSize: _videoSize,
       );
       final f1 = ctrl.update(
         position: const Duration(milliseconds: 16),
         zoomRegions: [zoom],
-        cursor: const Offset(500, 0),
+        cursor: const Offset(1400, 540),
         videoSize: _videoSize,
       );
       final f2 = ctrl.update(
         position: const Duration(milliseconds: 32),
         zoomRegions: [zoom],
-        cursor: const Offset(500, 0),
+        cursor: const Offset(1400, 540),
         videoSize: _videoSize,
       );
       // Focal advanced toward target on each frame, monotonically.
-      expect(f1!.focal.dx, greaterThan(0));
+      expect(f1!.focal.dx, greaterThan(960));
       expect(f2!.focal.dx, greaterThan(f1.focal.dx));
       // And nowhere near the target after just 32 ms (settle = 400 ms),
       // so we know we're integrating, not snapping.
-      expect(f2.focal.dx, lessThan(150));
+      expect(f2.focal.dx, lessThan(1110));
     });
 
-    test('spring chasing a moving target stays monotonic — no overshoot',
-        () {
+    test('spring chasing a moving target stays monotonic — no overshoot', () {
       // Critical damping means no oscillation. Walk the cursor at a
       // constant rightward velocity and verify the focal stays behind
       // the cursor the whole time AND advances each frame.
@@ -1061,24 +1135,31 @@ void main() {
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoom],
-        cursor: const Offset(0, 0),
+        cursor: const Offset(960, 540),
         videoSize: _videoSize,
       );
-      var lastX = 0.0;
+      var lastX = 960.0;
       for (var ms = 16; ms <= 1000; ms += 16) {
         // Cursor moves at 0.5 px/ms = 500 px/s.
-        final cursorX = ms * 0.5;
+        final cursorX = 960 + ms * 0.5;
         final out = ctrl.update(
           position: Duration(milliseconds: ms),
           zoomRegions: [zoom],
           cursor: Offset(cursorX, 0),
           videoSize: _videoSize,
         );
-        expect(out!.focal.dx, greaterThanOrEqualTo(lastX),
-            reason: 'focal must advance monotonically (no oscillation) '
-                'at t=${ms}ms');
-        expect(out.focal.dx, lessThanOrEqualTo(cursorX + 1),
-            reason: 'focal must not pass the cursor at t=${ms}ms');
+        expect(
+          out!.focal.dx,
+          greaterThanOrEqualTo(lastX),
+          reason:
+              'focal must advance monotonically (no oscillation) '
+              'at t=${ms}ms',
+        );
+        expect(
+          out.focal.dx,
+          lessThanOrEqualTo(cursorX + 1),
+          reason: 'focal must not pass the cursor at t=${ms}ms',
+        );
         lastX = out.focal.dx;
       }
     });
@@ -1097,29 +1178,29 @@ void main() {
       ctrl.update(
         position: Duration.zero,
         zoomRegions: [zoom],
-        cursor: const Offset(0, 0),
+        cursor: const Offset(960, 540),
         videoSize: _videoSize,
       );
-      // Massive forward jump (5 s) with the cursor 1000 px away.
+      // Massive forward jump (5 s) with the cursor 440 px away.
       final out = ctrl.update(
         position: const Duration(seconds: 5),
         zoomRegions: [zoom],
-        cursor: const Offset(1000, 0),
+        cursor: const Offset(1400, 540),
         videoSize: _videoSize,
       );
       expect(out!.focal.dx.isFinite, isTrue);
       expect(out.focal.dy.isFinite, isTrue);
       // The dt cap means the spring only integrates 250 ms worth on
       // this call (well short of settle). Focal must lie strictly
-      // between the start (0) and the target (1000).
-      expect(out.focal.dx, greaterThan(0));
-      expect(out.focal.dx, lessThan(1000));
+      // between the start (960) and the target (1400).
+      expect(out.focal.dx, greaterThan(960));
+      expect(out.focal.dx, lessThan(1400));
     });
   });
 
   test('exit ramp honors the resolved screenRampCurve (not hardcoded)', () {
     // A region that is purely an exit ramp: enter=0, exit=full duration.
-    // The focal lerps rect.center -> video center over the exit. With a
+    // The manual focal lerps rect.center -> video center over the exit. With a
     // linear curve the focal is exactly halfway at the ramp midpoint;
     // with easeInOutQuad it is also 0.5 at the midpoint, so probe at the
     // quarter point where the two curves diverge measurably.
@@ -1130,7 +1211,7 @@ void main() {
       zoomLevel: 2.0,
       enterDuration: Duration.zero,
       exitDuration: const Duration(milliseconds: 1000),
-      followCursor: true,
+      followCursor: false,
       followMode: FollowMode.centered,
     );
     final centre = Offset(_videoSize.width / 2, _videoSize.height / 2);
@@ -1157,76 +1238,89 @@ void main() {
     final eased = focalAtQuarter(Curves.easeInOutQuad);
     // easeInOutQuad(0.25)=0.125 vs linear 0.25 → different lerp toward
     // centre, so the two focal points must differ.
-    expect((linear - eased).distance, greaterThan(1.0),
-        reason: 'exit ramp must follow screenRampCurve, not a hardcode');
+    expect(
+      (linear - eased).distance,
+      greaterThan(1.0),
+      reason: 'exit ramp must follow screenRampCurve, not a hardcode',
+    );
     expect(linear, isNot(equals(centre)));
   });
 
-  test('manual exit pan time-mirrors the enter pan at matching zoom progress',
-      () {
-    // A manual placement reachable at full zoom (so enter ends, and hold
-    // holds, exactly on rect.center == the exit-start focal). With the same
-    // per-region back-load on both ramps, the focal at enter-progress p must
-    // equal the focal at exit zoom-in-progress p — i.e. the zoom-out is the
-    // exact time-reverse of the zoom-in. Sampled with a LINEAR ramp so eased
-    // == tNorm: enter t=100ms of a 200ms ramp gives progress 0.5, and exit
-    // t=100ms gives eased 0.5 whose mirrored zoom-in progress (1 − 0.5) = 0.5
-    // matches exactly. (easeInOutQuad is a Cubic approximation whose value at
-    // 0.5 is ~0.499, which would offset the two samples by a few px.)
-    final r = ZoomRegion(
-      rect: const Rect.fromLTRB(500, 300, 900, 700), // center (700,500)
-      startTime: Duration.zero,
-      duration: const Duration(milliseconds: 1000),
-      zoomLevel: 2.0,
-      enterDuration: const Duration(milliseconds: 200),
-      exitDuration: const Duration(milliseconds: 200),
-      followCursor: false,
-      followMode: FollowMode.centered,
-      manualPanBackload: 0.5, // pronounced lead so lock-step would differ
-    );
-    Offset walkExactlyTo(int toMs) {
-      final c = ZoomFocalController();
-      Offset last = Offset.zero;
-      // 20 ms steps land exactly on 100 and 900.
-      for (var ms = 0; ms <= toMs; ms += 20) {
-        last = c
-            .update(
-              position: Duration(milliseconds: ms),
-              zoomRegions: [r],
-              cursor: Offset.zero,
-              videoSize: _videoSize,
-              screenRampCurve: Curves.linear,
-            )!
-            .focal;
+  test(
+    'manual exit pan time-mirrors the enter pan at matching zoom progress',
+    () {
+      // A manual placement reachable at full zoom (so enter ends, and hold
+      // holds, exactly on rect.center == the exit-start focal). With the same
+      // per-region back-load on both ramps, the focal at enter-progress p must
+      // equal the focal at exit zoom-in-progress p — i.e. the zoom-out is the
+      // exact time-reverse of the zoom-in. Sampled with a LINEAR ramp so eased
+      // == tNorm: enter t=100ms of a 200ms ramp gives progress 0.5, and exit
+      // t=100ms gives eased 0.5 whose mirrored zoom-in progress (1 − 0.5) = 0.5
+      // matches exactly. (easeInOutQuad is a Cubic approximation whose value at
+      // 0.5 is ~0.499, which would offset the two samples by a few px.)
+      final r = ZoomRegion(
+        rect: const Rect.fromLTRB(500, 300, 900, 700), // center (700,500)
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 1000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 200),
+        exitDuration: const Duration(milliseconds: 200),
+        followCursor: false,
+        followMode: FollowMode.centered,
+        manualPanBackload: 0.5, // pronounced lead so lock-step would differ
+      );
+      Offset walkExactlyTo(int toMs) {
+        final c = ZoomFocalController();
+        Offset last = Offset.zero;
+        // 20 ms steps land exactly on 100 and 900.
+        for (var ms = 0; ms <= toMs; ms += 20) {
+          last = c
+              .update(
+                position: Duration(milliseconds: ms),
+                zoomRegions: [r],
+                cursor: Offset.zero,
+                videoSize: _videoSize,
+                screenRampCurve: Curves.linear,
+              )!
+              .focal;
+        }
+        return last;
       }
-      return last;
-    }
 
-    final enterMid = walkExactlyTo(100); // mid enter ramp
-    final exitMid = walkExactlyTo(900); // mid exit ramp (region 800..1000ms)
-    expect((enterMid - exitMid).distance, lessThan(0.5),
-        reason: 'manual exit must be the time-mirror of the enter at the '
-            'same zoom progress (a lock-step exit would diverge here)');
-  });
+      final enterMid = walkExactlyTo(100); // mid enter ramp
+      final exitMid = walkExactlyTo(900); // mid exit ramp (region 800..1000ms)
+      expect(
+        (enterMid - exitMid).distance,
+        lessThan(0.5),
+        reason:
+            'manual exit must be the time-mirror of the enter at the '
+            'same zoom progress (a lock-step exit would diverge here)',
+      );
+    },
+  );
 
   group('enter ramp lock-step', () {
     ZoomRegion enterRegion({
       bool followCursor = true,
       Duration enter = const Duration(milliseconds: 500),
-    }) =>
-        ZoomRegion(
-          rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
-          startTime: Duration.zero,
-          duration: const Duration(milliseconds: 3000),
-          zoomLevel: 2.0,
-          enterDuration: enter,
-          exitDuration: Duration.zero,
-          followCursor: followCursor,
-          followMode: FollowMode.centered,
-        );
+    }) => ZoomRegion(
+      rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
+      startTime: Duration.zero,
+      duration: const Duration(milliseconds: 3000),
+      zoomLevel: 2.0,
+      enterDuration: enter,
+      exitDuration: Duration.zero,
+      followCursor: followCursor,
+      followMode: FollowMode.centered,
+    );
 
-    Offset walkTo(ZoomFocalController c, ZoomRegion r, int toMs,
-        {required Offset cursor, Curve curve = Curves.easeInOutQuad}) {
+    Offset walkTo(
+      ZoomFocalController c,
+      ZoomRegion r,
+      int toMs, {
+      required Offset cursor,
+      Curve curve = Curves.easeInOutQuad,
+    }) {
       Offset last = Offset.zero;
       for (var ms = 0; ms <= toMs; ms += 16) {
         last = c
@@ -1269,8 +1363,7 @@ void main() {
       expect((atEnd - cursor).distance, lessThan(2.0));
     });
 
-    test('halfway through the ramp the focal is between center and cursor',
-        () {
+    test('halfway through the ramp the focal is between center and cursor', () {
       final r = enterRegion();
       const cursor = Offset(1700, 950);
       const centre = Offset(200, 200);
@@ -1281,8 +1374,7 @@ void main() {
       expect((mid - cursor).distance, greaterThan(2.0));
     });
 
-    test(
-        'followCursor:false enter pan anchors at the video center and '
+    test('followCursor:false enter pan anchors at the video center and '
         'arrives at the placement', () {
       // A manual placement zoom must pan FROM the video center (the only
       // honest framing at z=1) OUT to rect.center, in step with the scale —
@@ -1302,23 +1394,33 @@ void main() {
         followMode: FollowMode.centered,
       );
       const placement = Offset(700, 500);
-      final videoCentre =
-          Offset(_videoSize.width / 2, _videoSize.height / 2); // (960,540)
+      final videoCentre = Offset(
+        _videoSize.width / 2,
+        _videoSize.height / 2,
+      ); // (960,540)
       // Midway: strictly between the video center and the placement — the pan
       // is in progress, neither parked at rect.center nor already arrived.
       final mid = walkTo(ZoomFocalController(), r, 250, cursor: Offset.zero);
-      expect((mid - videoCentre).distance, greaterThan(2.0),
-          reason: 'pan must have left the video-center anchor');
-      expect((mid - placement).distance, greaterThan(2.0),
-          reason: 'pan must not have arrived at the placement yet');
+      expect(
+        (mid - videoCentre).distance,
+        greaterThan(2.0),
+        reason: 'pan must have left the video-center anchor',
+      );
+      expect(
+        (mid - placement).distance,
+        greaterThan(2.0),
+        reason: 'pan must not have arrived at the placement yet',
+      );
       // By the end of the ramp the focal lands on the placement.
       final end = walkTo(ZoomFocalController(), r, 500, cursor: Offset.zero);
-      expect((end - placement).distance, lessThan(2.0),
-          reason: 'pan must arrive at rect.center as the zoom completes');
+      expect(
+        (end - placement).distance,
+        lessThan(2.0),
+        reason: 'pan must arrive at rect.center as the zoom completes',
+      );
     });
 
-    test(
-        'manual enter pan at lock-step (exp 1.0) stays within the per-frame '
+    test('manual enter pan at lock-step (exp 1.0) stays within the per-frame '
         'zoom clamp', () {
       // The geometric invariant the center anchor buys us: at exponent >= 1
       // the eased pan stays at/under the per-frame bounds clamp for the WHOLE
@@ -1361,11 +1463,18 @@ void main() {
             )
             .storage[0];
         if (z <= 1.0) continue; // identity frame — focal is irrelevant
-        final clamped =
-            ZoomTransformer.clampFocalToBounds(focal, _videoSize, z);
-        expect((clamped - focal).distance, lessThan(0.5),
-            reason: 'at ms=$ms (z=$z) a lock-step focal must respect the '
-                'per-frame clamp');
+        final clamped = ZoomTransformer.clampFocalToBounds(
+          focal,
+          _videoSize,
+          z,
+        );
+        expect(
+          (clamped - focal).distance,
+          lessThan(0.5),
+          reason:
+              'at ms=$ms (z=$z) a lock-step focal must respect the '
+              'per-frame clamp',
+        );
       }
     });
 
@@ -1377,53 +1486,80 @@ void main() {
       // midpoint a larger exponent holds the focal nearer the video center
       // (pan lags); a smaller one pushes it nearer the edge (pan leads).
       ZoomRegion regionFor(double backload) => ZoomRegion(
-            rect: const Rect.fromLTRB(-200, 300, 200, 700), // center (0,500)
-            startTime: Duration.zero,
-            duration: const Duration(milliseconds: 3000),
-            zoomLevel: 2.0,
-            enterDuration: const Duration(milliseconds: 500),
-            exitDuration: Duration.zero,
-            followCursor: false,
-            followMode: FollowMode.centered,
-            manualPanBackload: backload,
-          );
+        rect: const Rect.fromLTRB(-200, 300, 200, 700), // center (0,500)
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: false,
+        followMode: FollowMode.centered,
+        manualPanBackload: backload,
+      );
       final videoCentre = Offset(_videoSize.width / 2, _videoSize.height / 2);
-      Offset midFor(double backload) =>
-          walkTo(ZoomFocalController(), regionFor(backload), 250,
-              cursor: Offset.zero);
+      Offset midFor(double backload) => walkTo(
+        ZoomFocalController(),
+        regionFor(backload),
+        250,
+        cursor: Offset.zero,
+      );
 
       final dLags = (midFor(3.0) - videoCentre).distance; // back-loaded
       final dLock = (midFor(1.0) - videoCentre).distance; // synced
       final dLeads = (midFor(0.5) - videoCentre).distance; // front-loaded
-      expect(dLags, lessThan(dLock),
-          reason: 'a larger back-load must keep the pan nearer the center');
-      expect(dLock, lessThan(dLeads),
-          reason: 'a smaller back-load must push the pan nearer the placement');
+      expect(
+        dLags,
+        lessThan(dLock),
+        reason: 'a larger back-load must keep the pan nearer the center',
+      );
+      expect(
+        dLock,
+        lessThan(dLeads),
+        reason: 'a smaller back-load must push the pan nearer the placement',
+      );
     });
 
-    test('manualBackloadForZoom interpolates the hand-tuned points + clamps',
-        () {
-      // Exact at every measured point.
-      expect(ZoomFocalController.manualBackloadForZoom(1.5),
-          closeTo(0.76, 1e-9));
-      expect(ZoomFocalController.manualBackloadForZoom(2.0),
-          closeTo(0.63, 1e-9));
-      expect(ZoomFocalController.manualBackloadForZoom(2.5),
-          closeTo(0.26, 1e-9));
-      expect(ZoomFocalController.manualBackloadForZoom(5.0),
-          closeTo(0.0, 1e-9));
-      // Linear interpolation between points (midpoint of 2.0..2.5, and of
-      // the wide 2.5..5.0 segment).
-      expect(ZoomFocalController.manualBackloadForZoom(2.25),
-          closeTo((0.63 + 0.26) / 2, 1e-9));
-      expect(ZoomFocalController.manualBackloadForZoom(3.75),
-          closeTo(0.26 / 2, 1e-9)); // halfway from 0.26 down to 0.0
-      // Flat clamp to the nearest endpoint outside the measured band.
-      expect(ZoomFocalController.manualBackloadForZoom(1.0),
-          closeTo(0.76, 1e-9));
-      expect(ZoomFocalController.manualBackloadForZoom(6.0),
-          closeTo(0.0, 1e-9));
-    });
+    test(
+      'manualBackloadForZoom interpolates the hand-tuned points + clamps',
+      () {
+        // Exact at every measured point.
+        expect(
+          ZoomFocalController.manualBackloadForZoom(1.5),
+          closeTo(0.76, 1e-9),
+        );
+        expect(
+          ZoomFocalController.manualBackloadForZoom(2.0),
+          closeTo(0.63, 1e-9),
+        );
+        expect(
+          ZoomFocalController.manualBackloadForZoom(2.5),
+          closeTo(0.26, 1e-9),
+        );
+        expect(
+          ZoomFocalController.manualBackloadForZoom(5.0),
+          closeTo(0.0, 1e-9),
+        );
+        // Linear interpolation between points (midpoint of 2.0..2.5, and of
+        // the wide 2.5..5.0 segment).
+        expect(
+          ZoomFocalController.manualBackloadForZoom(2.25),
+          closeTo((0.63 + 0.26) / 2, 1e-9),
+        );
+        expect(
+          ZoomFocalController.manualBackloadForZoom(3.75),
+          closeTo(0.26 / 2, 1e-9),
+        ); // halfway from 0.26 down to 0.0
+        // Flat clamp to the nearest endpoint outside the measured band.
+        expect(
+          ZoomFocalController.manualBackloadForZoom(1.0),
+          closeTo(0.76, 1e-9),
+        );
+        expect(
+          ZoomFocalController.manualBackloadForZoom(6.0),
+          closeTo(0.0, 1e-9),
+        );
+      },
+    );
 
     test('a manual region with no override uses manualBackloadForZoom', () {
       // No per-region override → the default fit drives the pan. The mid
@@ -1431,36 +1567,52 @@ void main() {
       // CLAMPED (edge) placement so the fit/override actually applies (a
       // reachable placement would be forced to lock-step instead).
       ZoomRegion regionFor(double? backload) => ZoomRegion(
-            rect: const Rect.fromLTRB(-200, 300, 200, 700), // center (0,500)
-            startTime: Duration.zero,
-            duration: const Duration(milliseconds: 3000),
-            zoomLevel: 2.0,
-            enterDuration: const Duration(milliseconds: 500),
-            exitDuration: Duration.zero,
-            followCursor: false,
-            followMode: FollowMode.centered,
-            manualPanBackload: backload,
-          );
-      final fromDefault =
-          walkTo(ZoomFocalController(), regionFor(null), 250,
-              cursor: Offset.zero);
+        rect: const Rect.fromLTRB(-200, 300, 200, 700), // center (0,500)
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: false,
+        followMode: FollowMode.centered,
+        manualPanBackload: backload,
+      );
+      final fromDefault = walkTo(
+        ZoomFocalController(),
+        regionFor(null),
+        250,
+        cursor: Offset.zero,
+      );
       final fromExplicit = walkTo(
-          ZoomFocalController(),
-          regionFor(ZoomFocalController.manualBackloadForZoom(2.0)),
-          250,
-          cursor: Offset.zero);
-      expect((fromDefault - fromExplicit).distance, lessThan(0.01),
-          reason: 'null override must resolve to the zoom-level fit');
+        ZoomFocalController(),
+        regionFor(ZoomFocalController.manualBackloadForZoom(2.0)),
+        250,
+        cursor: Offset.zero,
+      );
+      expect(
+        (fromDefault - fromExplicit).distance,
+        lessThan(0.01),
+        reason: 'null override must resolve to the zoom-level fit',
+      );
     });
 
-    test('the resolved curve shapes the ramp (linear != easeInOutQuad)',
-        () {
+    test('the resolved curve shapes the ramp (linear != easeInOutQuad)', () {
       final r = enterRegion();
       const cursor = Offset(1700, 950);
-      final lin = walkTo(ZoomFocalController(), r, 250,
-          cursor: cursor, curve: Curves.linear);
-      final eas = walkTo(ZoomFocalController(), r, 250,
-          cursor: cursor, curve: Curves.easeInOutQuad);
+      final lin = walkTo(
+        ZoomFocalController(),
+        r,
+        250,
+        cursor: cursor,
+        curve: Curves.linear,
+      );
+      final eas = walkTo(
+        ZoomFocalController(),
+        r,
+        250,
+        cursor: cursor,
+        curve: Curves.easeInOutQuad,
+      );
       expect((lin - eas).distance, greaterThan(1.0));
     });
 
@@ -1490,8 +1642,11 @@ void main() {
         final d = (f - centre).distance;
         if (d > observedMax) observedMax = d;
       }
-      expect(observedMax, lessThan(maxReach + 1.0),
-          reason: 'focal overshot the cursor at the ramp->spring handoff');
+      expect(
+        observedMax,
+        lessThan(maxReach + 1.0),
+        reason: 'focal overshot the cursor at the ramp->spring handoff',
+      );
     });
 
     test('gate-independent: bounded matches centered for a moving cursor', () {
@@ -1501,16 +1656,16 @@ void main() {
       // Driven with the SAME moving cursor, a bounded region and a centered
       // region must produce identical enter-ramp focals.
       ZoomRegion regionFor(FollowMode mode) => ZoomRegion(
-            rect: const Rect.fromLTRB(0, 0, 400, 400),
-            startTime: Duration.zero,
-            duration: const Duration(milliseconds: 3000),
-            zoomLevel: 2.0,
-            enterDuration: const Duration(milliseconds: 500),
-            exitDuration: Duration.zero,
-            followCursor: true,
-            followMode: mode,
-            deadzoneRatio: 0.8, // production default
-          );
+        rect: const Rect.fromLTRB(0, 0, 400, 400),
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: mode,
+        deadzoneRatio: 0.8, // production default
+      );
       final bounded = ZoomFocalController();
       final centered = ZoomFocalController();
       final rb = regionFor(FollowMode.bounded);
@@ -1541,63 +1696,71 @@ void main() {
         final d = (fb - fc).distance;
         if (d > maxDelta) maxDelta = d;
       }
-      expect(maxDelta, lessThan(0.001),
-          reason: 'bounded gate must not affect the enter ramp');
+      expect(
+        maxDelta,
+        lessThan(0.001),
+        reason: 'bounded gate must not affect the enter ramp',
+      );
     });
 
-    test('adjacent regions: enter pan anchors at the NEW rect.center', () {
-      // A persistent controller plays region A (which recenters to video
-      // center via its exit ramp) straight into off-center region B. B's
-      // enter pan must anchor at B.rect.center — matching a fresh
-      // DeterministicFocalTrack — NOT A's leftover focal (~video center).
-      final a = ZoomRegion(
-        rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
-        startTime: Duration.zero,
-        duration: const Duration(milliseconds: 1000),
-        zoomLevel: 2.0,
-        enterDuration: const Duration(milliseconds: 200),
-        exitDuration: const Duration(milliseconds: 200),
-        followCursor: true,
-        followMode: FollowMode.centered,
-      );
-      final b = ZoomRegion(
-        rect: const Rect.fromLTRB(1400, 760, 1800, 1000), // center (1600,880)
-        startTime: const Duration(milliseconds: 1000),
-        duration: const Duration(milliseconds: 1000),
-        zoomLevel: 2.0,
-        enterDuration: const Duration(milliseconds: 200),
-        exitDuration: Duration.zero,
-        followCursor: true,
-        followMode: FollowMode.centered,
-      );
-      final regions = [a, b];
-      final c = ZoomFocalController();
-      // Walk through all of A (incl. its exit ramp, which clears the anchor).
-      for (var ms = 0; ms <= 992; ms += 16) {
-        c.update(
-          position: Duration(milliseconds: ms),
-          zoomRegions: regions,
-          cursor: const Offset(1700, 950),
-          videoSize: _videoSize,
-          screenRampCurve: Curves.easeInOutQuad,
+    test(
+      'adjacent followCursor regions ignore the next region rect center',
+      () {
+        // A persistent controller plays region A (which recenters to video
+        // center via its exit ramp) straight into off-center region B. B's
+        // enter pan must ignore B.rect.center; a stale/manual rect should not
+        // steer auto-follow.
+        final a = ZoomRegion(
+          rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
+          startTime: Duration.zero,
+          duration: const Duration(milliseconds: 1000),
+          zoomLevel: 2.0,
+          enterDuration: const Duration(milliseconds: 200),
+          exitDuration: const Duration(milliseconds: 200),
+          followCursor: true,
+          followMode: FollowMode.centered,
         );
-      }
-      // First frame inside B's enter ramp.
-      final atBStart = c
-          .update(
-            position: const Duration(milliseconds: 1008),
+        final b = ZoomRegion(
+          rect: const Rect.fromLTRB(1400, 760, 1800, 1000), // center (1600,880)
+          startTime: const Duration(milliseconds: 1000),
+          duration: const Duration(milliseconds: 1000),
+          zoomLevel: 2.0,
+          enterDuration: const Duration(milliseconds: 200),
+          exitDuration: Duration.zero,
+          followCursor: true,
+          followMode: FollowMode.centered,
+        );
+        final regions = [a, b];
+        final c = ZoomFocalController();
+        // Walk through all of A (incl. its exit ramp, which clears the anchor).
+        for (var ms = 0; ms <= 992; ms += 16) {
+          c.update(
+            position: Duration(milliseconds: ms),
             zoomRegions: regions,
             cursor: const Offset(1700, 950),
             videoSize: _videoSize,
             screenRampCurve: Curves.easeInOutQuad,
-          )!
-          .focal;
-      expect((atBStart - const Offset(1600, 880)).distance, lessThan(2.0),
-          reason: 'B enter must anchor at B.rect.center, not A leftover');
-    });
+          );
+        }
+        // First frame inside B's enter ramp.
+        final atBStart = c
+            .update(
+              position: const Duration(milliseconds: 1008),
+              zoomRegions: regions,
+              cursor: const Offset(1700, 950),
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        expect(
+          (atBStart - const Offset(960, 540)).distance,
+          lessThan(20.0),
+          reason: 'B enter must start from video center, not B.rect.center',
+        );
+      },
+    );
 
-    test(
-        'edge cursor: enter pan never outruns the per-frame zoom clamp '
+    test('edge cursor: enter pan never outruns the per-frame zoom clamp '
         '(no early pin at the video edge)', () {
       // The reported bug: when the zoom targets a cursor near the screen
       // edge, the pan visibly *finishes* before the magnification does —
@@ -1637,12 +1800,19 @@ void main() {
         // If the emitted focal stays within the current-frame clamp, the
         // ZoomTransformer leaves it untouched — the viewport is NOT pinned
         // to the edge, so the pan keeps progressing with the zoom.
-        expect(f.dx, lessThanOrEqualTo(maxXat(z) + 1e-6),
-            reason: 'focal.dx outran the zoom clamp at t=${ms}ms — '
-                'the viewport would pin to the edge while the zoom is '
-                'still growing (early-pin desync)');
-        expect(f.dy, lessThanOrEqualTo(maxYat(z) + 1e-6),
-            reason: 'focal.dy outran the zoom clamp at t=${ms}ms');
+        expect(
+          f.dx,
+          lessThanOrEqualTo(maxXat(z) + 1e-6),
+          reason:
+              'focal.dx outran the zoom clamp at t=${ms}ms — '
+              'the viewport would pin to the edge while the zoom is '
+              'still growing (early-pin desync)',
+        );
+        expect(
+          f.dy,
+          lessThanOrEqualTo(maxYat(z) + 1e-6),
+          reason: 'focal.dy outran the zoom clamp at t=${ms}ms',
+        );
       }
       // And it reaches the achievable bound exactly at ramp end, so the pan
       // lands on the edge as the magnification completes — not before.
@@ -1655,19 +1825,21 @@ void main() {
             screenRampCurve: Curves.easeInOutQuad,
           )!
           .focal;
-      expect(end.dx, closeTo(maxXat(z2), 1.0),
-          reason: 'pan must reach the achievable edge as the zoom completes');
+      expect(
+        end.dx,
+        closeTo(maxXat(z2), 1.0),
+        reason: 'pan must reach the achievable edge as the zoom completes',
+      );
       expect(end.dy, closeTo(maxYat(z2), 1.0));
     });
 
-    test('entry pan is back-loaded: progress lags the raw eased curve', () {
-      // _entryPanBackload > 1 must hold: at mid-ramp the focal's fractional
-      // progress center->cursor is strictly below the scale's eased value
-      // (which is exactly what backload == 1.0 would produce). Linear curve
-      // so eased(0.5) == 0.5 with no curve confound.
-      final r = enterRegion(); // centered, 500ms enter, rect.center (200,200)
+    test('followCursor entry pan uses the manual zoom-level backload', () {
+      // Auto-follow now shares the manual placement ramp shape: at 2x the
+      // default backload is < 1, so with a linear ramp the pan leads raw
+      // lock-step progress instead of using the old cursor-specific lag.
+      final r = enterRegion();
       const cursor = Offset(1700, 950);
-      const centre = Offset(200, 200);
+      const centre = Offset(960, 540);
       final c = ZoomFocalController();
       var f = Offset.zero;
       for (var ms = 0; ms <= 250; ms += 10) {
@@ -1681,15 +1853,25 @@ void main() {
             )!
             .focal;
       }
-      final progress = (f - centre).distance / (cursor - centre).distance;
-      expect(progress, lessThan(0.5 - 0.05),
-          reason: 'back-load must hold the focal below the raw eased progress');
+      final entryTarget = ZoomTransformer.clampFocalToBounds(
+        cursor,
+        _videoSize,
+        r.zoomLevel,
+      );
+      final progress = (f - centre).distance / (entryTarget - centre).distance;
+      expect(
+        progress,
+        greaterThan(0.5 + 0.05),
+        reason: 'auto-follow should use the same leading pan as manual zoom',
+      );
     });
   });
 
   group('manual pan dog-leg fix (radial clamp)', () {
-    final videoCentre =
-        Offset(_videoSize.width / 2, _videoSize.height / 2); // (960,540)
+    final videoCentre = Offset(
+      _videoSize.width / 2,
+      _videoSize.height / 2,
+    ); // (960,540)
     final transformer = ZoomTransformer();
 
     // Perpendicular distance from [p] to the ray videoCentre -> [target].
@@ -1719,18 +1901,17 @@ void main() {
       Duration enter = const Duration(milliseconds: 500),
       Duration exit = Duration.zero,
       Duration duration = const Duration(milliseconds: 3000),
-    }) =>
-        ZoomRegion(
-          rect: rect,
-          startTime: Duration.zero,
-          duration: duration,
-          zoomLevel: zoomLevel,
-          enterDuration: enter,
-          exitDuration: exit,
-          followCursor: false,
-          followMode: FollowMode.centered,
-          manualPanBackload: backload,
-        );
+    }) => ZoomRegion(
+      rect: rect,
+      startTime: Duration.zero,
+      duration: duration,
+      zoomLevel: zoomLevel,
+      enterDuration: enter,
+      exitDuration: exit,
+      followCursor: false,
+      followMode: FollowMode.centered,
+      manualPanBackload: backload,
+    );
 
     test('reachable interior placement never rides the video edge '
         '(no to-edge-then-back)', () {
@@ -1741,9 +1922,10 @@ void main() {
       // lock-step, which provably keeps the focal strictly inside the box, so
       // the viewport never touches an edge mid-ramp.
       final r = manual(
-          rect: const Rect.fromLTRB(600, 700, 800, 900), // center (700,800)
-          zoomLevel: 2.0,
-          backload: null);
+        rect: const Rect.fromLTRB(600, 700, 800, 900), // center (700,800)
+        zoomLevel: 2.0,
+        backload: null,
+      );
       final c = ZoomFocalController();
       for (var ms = 16; ms < 500; ms += 16) {
         final pos = Duration(milliseconds: ms);
@@ -1766,8 +1948,11 @@ void main() {
         expect(focal.dx, greaterThan(halfW + 0.5), reason: 'left edge @ms=$ms');
         expect(focal.dx, lessThan(maxX - 0.5), reason: 'right edge @ms=$ms');
         expect(focal.dy, greaterThan(halfH + 0.5), reason: 'top edge @ms=$ms');
-        expect(focal.dy, lessThan(maxY - 0.5),
-            reason: 'bottom edge @ms=$ms (the reported to-edge ride)');
+        expect(
+          focal.dy,
+          lessThan(maxY - 0.5),
+          reason: 'bottom edge @ms=$ms (the reported to-edge ride)',
+        );
       }
     });
 
@@ -1777,7 +1962,10 @@ void main() {
       // ratios, so the OLD per-axis clamp bent this ~20px off the ray.
       final r = manual(rect: const Rect.fromLTRB(200, 480, 600, 720));
       final entryTarget = ZoomTransformer.clampFocalToBounds(
-          r.rect.center, _videoSize, r.zoomLevel);
+        r.rect.center,
+        _videoSize,
+        r.zoomLevel,
+      );
       final c = ZoomFocalController();
       for (var ms = 0; ms <= 500; ms += 16) {
         final focal = c
@@ -1789,9 +1977,13 @@ void main() {
               screenRampCurve: Curves.easeInOutQuad,
             )!
             .focal;
-        expect(perpFromRay(focal, entryTarget), lessThan(0.5),
-            reason: 'enter focal must stay on the center->placement ray at '
-                'ms=$ms');
+        expect(
+          perpFromRay(focal, entryTarget),
+          lessThan(0.5),
+          reason:
+              'enter focal must stay on the center->placement ray at '
+              'ms=$ms',
+        );
       }
     });
 
@@ -1811,10 +2003,16 @@ void main() {
             .focal;
         final z = transformZ(r, pos);
         if (z <= 1.0) continue;
-        final clamped =
-            ZoomTransformer.clampFocalToBounds(focal, _videoSize, z);
-        expect((clamped - focal).distance, lessThan(1e-6),
-            reason: 'per-axis clamp must not move the focal at ms=$ms (z=$z)');
+        final clamped = ZoomTransformer.clampFocalToBounds(
+          focal,
+          _videoSize,
+          z,
+        );
+        expect(
+          (clamped - focal).distance,
+          lessThan(1e-6),
+          reason: 'per-axis clamp must not move the focal at ms=$ms (z=$z)',
+        );
       }
     });
 
@@ -1840,11 +2038,18 @@ void main() {
         if (ms < 2500) continue;
         final z = transformZ(r, pos);
         if (z <= 1.0) continue;
-        final clamped =
-            ZoomTransformer.clampFocalToBounds(focal, _videoSize, z);
-        expect((clamped - focal).distance, lessThan(1e-6),
-            reason: 'exit per-axis clamp must not move the focal at ms=$ms '
-                '(z=$z)');
+        final clamped = ZoomTransformer.clampFocalToBounds(
+          focal,
+          _videoSize,
+          z,
+        );
+        expect(
+          (clamped - focal).distance,
+          lessThan(1e-6),
+          reason:
+              'exit per-axis clamp must not move the focal at ms=$ms '
+              '(z=$z)',
+        );
       }
     });
 
@@ -1852,34 +2057,39 @@ void main() {
         'entryTarget', () {
       final r = manual(rect: const Rect.fromLTRB(200, 480, 600, 720));
       final entryTarget = ZoomTransformer.clampFocalToBounds(
-          r.rect.center, _videoSize, r.zoomLevel);
+        r.rect.center,
+        _videoSize,
+        r.zoomLevel,
+      );
       final c = ZoomFocalController();
       // First enter-ramp frame (z ~ 1) sits at the video center.
       c.update(
-          position: Duration.zero,
-          zoomRegions: [r],
-          cursor: null,
-          videoSize: _videoSize);
+        position: Duration.zero,
+        zoomRegions: [r],
+        cursor: null,
+        videoSize: _videoSize,
+      );
       final firstRamp = c.update(
-          position: const Duration(milliseconds: 16),
-          zoomRegions: [r],
-          cursor: null,
-          videoSize: _videoSize,
-          screenRampCurve: Curves.easeInOutQuad)!;
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [r],
+        cursor: null,
+        videoSize: _videoSize,
+        screenRampCurve: Curves.easeInOutQuad,
+      )!;
       // z is barely > 1, so the radially-clamped focal rides the tiny box
       // boundary a few px from center — far closer to center than to the
       // placement (it starts the pan from center, it does NOT jump out).
       final dCentre = (firstRamp.focal - videoCentre).distance;
       expect(dCentre, lessThan(15.0));
-      expect(dCentre,
-          lessThan((firstRamp.focal - entryTarget).distance));
+      expect(dCentre, lessThan((firstRamp.focal - entryTarget).distance));
       // Exact ramp end lands on entryTarget.
       final atEnd = c.update(
-          position: const Duration(milliseconds: 500),
-          zoomRegions: [r],
-          cursor: null,
-          videoSize: _videoSize,
-          screenRampCurve: Curves.easeInOutQuad)!;
+        position: const Duration(milliseconds: 500),
+        zoomRegions: [r],
+        cursor: null,
+        videoSize: _videoSize,
+        screenRampCurve: Curves.easeInOutQuad,
+      )!;
       expect((atEnd.focal - entryTarget).distance, lessThan(0.5));
     });
 
@@ -1905,7 +2115,10 @@ void main() {
             )!
             .focal;
         return ZoomTransformer.clampFocalToBounds(
-            focal, _videoSize, transformZ(r, pos));
+          focal,
+          _videoSize,
+          transformZ(r, pos),
+        );
       }
 
       Offset last = videoCentre;
@@ -1914,32 +2127,40 @@ void main() {
         last = painted(Duration(milliseconds: ms));
       }
       final firstExit = painted(const Duration(milliseconds: 2516));
-      expect((firstExit - last).distance, lessThan(2.0),
-          reason: 'painted focal must be continuous across hold->exit');
+      expect(
+        (firstExit - last).distance,
+        lessThan(2.0),
+        reason: 'painted focal must be continuous across hold->exit',
+      );
     });
 
-    test('edge mid-line placement keeps the focal on the axis (no regression)',
-        () {
-      // (0,540): left edge, vertically centered. Y must stay at 540 and the
-      // path must be the straight horizontal ride it already was.
-      final r = manual(rect: const Rect.fromLTRB(-200, 420, 200, 660));
-      final entryTarget = ZoomTransformer.clampFocalToBounds(
-          r.rect.center, _videoSize, r.zoomLevel);
-      final c = ZoomFocalController();
-      for (var ms = 16; ms <= 500; ms += 16) {
-        final focal = c
-            .update(
-              position: Duration(milliseconds: ms),
-              zoomRegions: [r],
-              cursor: null,
-              videoSize: _videoSize,
-              screenRampCurve: Curves.easeInOutQuad,
-            )!
-            .focal;
-        expect(focal.dy, closeTo(540, 1e-6));
-        expect(perpFromRay(focal, entryTarget), lessThan(0.5));
-      }
-    });
+    test(
+      'edge mid-line placement keeps the focal on the axis (no regression)',
+      () {
+        // (0,540): left edge, vertically centered. Y must stay at 540 and the
+        // path must be the straight horizontal ride it already was.
+        final r = manual(rect: const Rect.fromLTRB(-200, 420, 200, 660));
+        final entryTarget = ZoomTransformer.clampFocalToBounds(
+          r.rect.center,
+          _videoSize,
+          r.zoomLevel,
+        );
+        final c = ZoomFocalController();
+        for (var ms = 16; ms <= 500; ms += 16) {
+          final focal = c
+              .update(
+                position: Duration(milliseconds: ms),
+                zoomRegions: [r],
+                cursor: null,
+                videoSize: _videoSize,
+                screenRampCurve: Curves.easeInOutQuad,
+              )!
+              .focal;
+          expect(focal.dy, closeTo(540, 1e-6));
+          expect(perpFromRay(focal, entryTarget), lessThan(0.5));
+        }
+      },
+    );
 
     test('followCursor enter does not swing to chase a cursor that moves '
         'during the ramp', () {
@@ -1988,13 +2209,20 @@ void main() {
               rampCurve: Curves.easeInOutQuad,
             )
             .storage[0];
-        final paintedX =
-            ZoomTransformer.clampFocalToBounds(focal, _videoSize, z).dx;
+        final paintedX = ZoomTransformer.clampFocalToBounds(
+          focal,
+          _videoSize,
+          z,
+        ).dx;
         if (prevX != null) {
           // Monotonic-left (within epsilon) — never swings left then back.
-          expect(paintedX, lessThan(prevX! + 2.0),
-              reason: 'focal reversed direction at ms=$ms (swing) — '
-                  '$paintedX vs prev $prevX');
+          expect(
+            paintedX,
+            lessThan(prevX + 2.0),
+            reason:
+                'focal reversed direction at ms=$ms (swing) — '
+                '$paintedX vs prev $prevX',
+          );
         }
         prevX = paintedX;
       }
@@ -2018,9 +2246,15 @@ void main() {
         followMode: FollowMode.centered,
       );
       const liveCursor = Offset(900, 820); // lagging smoothed cursor
-      const settle = Offset(300, 220); // where the cursor actually is (top-left)
-      final settleTarget =
-          ZoomTransformer.clampFocalToBounds(settle, _videoSize, 2.0);
+      const settle = Offset(
+        300,
+        220,
+      ); // where the cursor actually is (top-left)
+      final settleTarget = ZoomTransformer.clampFocalToBounds(
+        settle,
+        _videoSize,
+        2.0,
+      );
       final c = ZoomFocalController();
       Offset end = Offset.zero;
       for (var ms = 0; ms <= 500; ms += 16) {
@@ -2035,50 +2269,179 @@ void main() {
             )!
             .focal;
       }
-      expect((end - settleTarget).distance, lessThan(2.0),
-          reason: 'enter must land on the settle target (top-left)');
-      expect((end - liveCursor).distance, greaterThan(100.0),
-          reason: 'enter must NOT chase the lagging live cursor');
+      expect(
+        (end - settleTarget).distance,
+        lessThan(2.0),
+        reason: 'enter must land on the settle target (top-left)',
+      );
+      expect(
+        (end - liveCursor).distance,
+        greaterThan(100.0),
+        reason: 'enter must NOT chase the lagging live cursor',
+      );
     });
 
-    test('followCursor enter ramp is byte-identical (radial clamp is gated '
-        'out)', () {
-      // The gate must leave the working followCursor pan untouched: the focal
-      // equals the un-radially-clamped lerp(rect.center, entryTarget,
-      // eased^2.0) at every frame.
+    test('followCursor enter-to-hold handoff ignores a lagging settled '
+        'cursor sprite', () {
+      // Runtime repro shape: the raw cursor is already parked at the
+      // enter-settle point, but the smoothed cursor sprite is still lagging
+      // behind when the enter ramp completes. The first hold frame must not
+      // chase that stale sprite backward, or the camera visibly yanks away
+      // from the just-landed enter focal before sliding forward again.
       final r = ZoomRegion(
-        rect: const Rect.fromLTRB(0, 0, 400, 400), // center (200,200)
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
         startTime: Duration.zero,
         duration: const Duration(milliseconds: 3000),
         zoomLevel: 2.0,
-        enterDuration: const Duration(milliseconds: 400),
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered,
+        followDuration: const Duration(milliseconds: 100),
+      );
+      const laggingSprite = Offset(900, 820);
+      const settle = Offset(300, 220);
+      final settleTarget = ZoomTransformer.clampFocalToBounds(
+        settle,
+        _videoSize,
+        2.0,
+      );
+      final c = ZoomFocalController();
+
+      for (var ms = 0; ms <= 500; ms += 16) {
+        c.update(
+          position: Duration(milliseconds: ms),
+          zoomRegions: [r],
+          cursor: laggingSprite,
+          cursorVelocity: Offset.zero,
+          videoSize: _videoSize,
+          screenRampCurve: Curves.easeInOutQuad,
+          enterCursorTarget: settle,
+        );
+      }
+
+      final handoff = c.update(
+        position: const Duration(milliseconds: 516),
+        zoomRegions: [r],
+        cursor: laggingSprite,
+        cursorVelocity: Offset.zero,
+        videoSize: _videoSize,
+        screenRampCurve: Curves.easeInOutQuad,
+        enterCursorTarget: settle,
+      )!;
+
+      expect(
+        (handoff.focal - settleTarget).distance,
+        lessThan(0.5),
+        reason:
+            'the first hold frame should stay on the enter target '
+            'while the parked cursor sprite catches up',
+      );
+    });
+
+    test('followCursor enter ignores stale manual rect and matches manual '
+        'placement to the cursor', () {
+      // A region can carry an off-center rect from a previous manual placement.
+      // Once followCursor is enabled, that rect must not affect the auto
+      // camera. The cursor target should behave exactly like a manual
+      // placement to the same point.
+      final follow = ZoomRegion(
+        rect: const Rect.fromLTRB(1200, 700, 1600, 1000),
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
         exitDuration: Duration.zero,
         followCursor: true,
         followMode: FollowMode.centered,
       );
-      const cursor = Offset(1500, 950);
-      final entryTarget =
-          ZoomTransformer.clampFocalToBounds(cursor, _videoSize, r.zoomLevel);
-      const anchor = Offset(200, 200);
-      final c = ZoomFocalController();
-      for (var ms = 0; ms <= 400; ms += 16) {
-        final focal = c
+      final manual = ZoomRegion(
+        rect: const Rect.fromLTRB(300, 220, 300, 220),
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: false,
+        followMode: FollowMode.centered,
+      );
+      const cursor = Offset(300, 220);
+      final followController = ZoomFocalController();
+      final manualController = ZoomFocalController();
+      for (var ms = 0; ms <= 500; ms += 16) {
+        final followFocal = followController
             .update(
               position: Duration(milliseconds: ms),
-              zoomRegions: [r],
+              zoomRegions: [follow],
               cursor: cursor,
               videoSize: _videoSize,
               screenRampCurve: Curves.easeInOutQuad,
             )!
             .focal;
-        if (ms == 0) continue; // first frame is the init snap to rect.center
-        final tNorm = (ms / 400).clamp(0.0, 1.0);
-        final eased = Curves.easeInOutQuad.transform(tNorm.toDouble());
-        final panEased = math.pow(eased, 2.0).toDouble();
-        final expected = Offset.lerp(anchor, entryTarget, panEased)!;
-        expect((focal - expected).distance, lessThan(1e-6),
-            reason: 'followCursor focal must match the un-clamped lerp at '
-                'ms=$ms');
+        final manualFocal = manualController
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [manual],
+              cursor: null,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        if (ms == 0) continue; // zoom=1 identity frame; focal is invisible.
+        expect(
+          (followFocal - manualFocal).distance,
+          lessThan(1e-6),
+          reason:
+              'followCursor should ignore stale manual rect placement at '
+              'ms=$ms',
+        );
+      }
+    });
+
+    test('followCursor ignores stale manual pan backload override', () {
+      ZoomRegion followWith(double? manualBackload) => ZoomRegion(
+        rect: const Rect.fromLTRB(1200, 700, 1600, 1000),
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 3000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered,
+        manualPanBackload: manualBackload,
+      );
+
+      const cursor = Offset(1700, 950);
+      final normal = ZoomFocalController();
+      final staleManualOverride = ZoomFocalController();
+
+      for (var ms = 0; ms <= 500; ms += 16) {
+        final withoutOverride = normal
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [followWith(null)],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+        final withOverride = staleManualOverride
+            .update(
+              position: Duration(milliseconds: ms),
+              zoomRegions: [followWith(4.0)],
+              cursor: cursor,
+              videoSize: _videoSize,
+              screenRampCurve: Curves.easeInOutQuad,
+            )!
+            .focal;
+
+        expect(
+          (withOverride - withoutOverride).distance,
+          lessThan(1e-6),
+          reason:
+              'manualPanBackload is manual-placement metadata and must not '
+              'steer followCursor at ms=$ms',
+        );
       }
     });
   });

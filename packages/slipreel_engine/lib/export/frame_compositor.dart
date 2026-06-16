@@ -281,12 +281,17 @@ class FrameCompositor {
             // out at region edges — the vanish tail keeps drawing the (live)
             // camera at the last placement for 280ms after a region ends.
             final render = CameraRenderResolver.renderAt(
-                position, projectState.cameraRegions);
+              position,
+              projectState.cameraRegions,
+            );
             if (render != null) {
               final bgra = await camSource.frameAt(position);
               if (bgra != null && cameraSrcWidth > 0 && cameraSrcHeight > 0) {
-                cameraImage =
-                    await _bgraToImage(bgra, cameraSrcWidth, cameraSrcHeight);
+                cameraImage = await _bgraToImage(
+                  bgra,
+                  cameraSrcWidth,
+                  cameraSrcHeight,
+                );
                 cameraReveal = render.reveal;
                 cameraBox = cameraPixelBox(
                   centerX: render.placement.centerX,
@@ -301,12 +306,14 @@ class FrameCompositor {
           void paintCamera(ui.Canvas c) {
             final img = cameraImage, box = cameraBox;
             if (img != null && box != null) {
-              CameraFramePainter.paint(c,
-                  image: img,
-                  pixelBox: box,
-                  settings: cam,
-                  opacity: cam.opacity,
-                  reveal: cameraReveal);
+              CameraFramePainter.paint(
+                c,
+                image: img,
+                pixelBox: box,
+                settings: cam,
+                opacity: cam.opacity,
+                reveal: cameraReveal,
+              );
             }
           }
 
@@ -396,7 +403,8 @@ class FrameCompositor {
       return null;
     }
 
-    final key = '$category|${_frame.wallpaperIndex}|'
+    final key =
+        '$category|${_frame.wallpaperIndex}|'
         '${_frame.backgroundBlur}|'
         '${totalSize.width.toInt()}x${totalSize.height.toInt()}';
     final cached = _cachedWallpaperImage;
@@ -564,7 +572,7 @@ class FrameCompositor {
           projectState.cursorPostProcess,
         );
         focal = s == null
-            ? active.rect.center
+            ? videoSize.center(Offset.zero)
             : Offset(
                 s.x.toDouble().clamp(0, videoSize.width),
                 s.y.toDouble().clamp(0, videoSize.height),
@@ -589,13 +597,12 @@ class FrameCompositor {
     // trail over an image that is actually pinned at the edge — the "flicker
     // as the zoom settles". Clamp to the same visible focal so post-clamp
     // motion contributes no smear. Identity for in-bounds focals.
-    final visibleFocal =
-        ZoomTransformer.clampFocalToBounds(focal, videoSize, scale);
-    return SceneCameraSample(
-      position: t,
-      focal: visibleFocal,
-      scale: scale,
+    final visibleFocal = ZoomTransformer.clampFocalToBounds(
+      focal,
+      videoSize,
+      scale,
     );
+    return SceneCameraSample(position: t, focal: visibleFocal, scale: scale);
   }
 
   Future<ui.Image?> _applySceneMotionBlur(
@@ -643,12 +650,7 @@ class FrameCompositor {
     void drawPhoto() {
       canvas.drawImageRect(
         photo!,
-        Rect.fromLTWH(
-          0,
-          0,
-          photo.width.toDouble(),
-          photo.height.toDouble(),
-        ),
+        Rect.fromLTWH(0, 0, photo.width.toDouble(), photo.height.toDouble()),
         totalRect,
         Paint()..filterQuality = FilterQuality.medium,
       );

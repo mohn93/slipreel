@@ -38,8 +38,8 @@ class DeterministicFocalTrack {
     required this.clips,
     required List<Offset> samples,
     required int startMicros,
-  })  : _samples = List.unmodifiable(samples),
-        _startMicros = startMicros;
+  }) : _samples = List.unmodifiable(samples),
+       _startMicros = startMicros;
 
   /// Fixed sub-step in microseconds. Matches [ZoomFocalController]'s
   /// maximum sub-step (16 ms) so the replay integrates identically to a
@@ -146,10 +146,14 @@ class DeterministicFocalTrack {
   }
 
   /// Focal at [t], interpolated from the cached trajectory. Clamps to
-  /// the covered range. Returns [region.rect.center] when the trajectory
+  /// the covered range. Returns the region's base focal when the trajectory
   /// is empty (no active zoom was seen during replay).
   Offset focalAt(Duration t) {
-    if (_samples.isEmpty) return region.rect.center;
+    if (_samples.isEmpty) {
+      return region.followCursor
+          ? videoSize.center(Offset.zero)
+          : region.rect.center;
+    }
     if (_samples.length == 1) return _samples.first;
 
     final rel = t.inMicroseconds - _startMicros;

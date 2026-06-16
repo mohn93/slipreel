@@ -1,6 +1,7 @@
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
@@ -12,15 +13,18 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 const Size _videoSize = Size(1920, 1080);
 
 CursorRecording _record(
-    List<({int micros, double x, double y, bool clicked})> samples) {
+  List<({int micros, double x, double y, bool clicked})> samples,
+) {
   final r = CursorRecording();
   for (final s in samples) {
-    r.addPosition(CursorPosition(
-      x: s.x,
-      y: s.y,
-      timestampMicros: s.micros,
-      isClicked: s.clicked,
-    ));
+    r.addPosition(
+      CursorPosition(
+        x: s.x,
+        y: s.y,
+        timestampMicros: s.micros,
+        isClicked: s.clicked,
+      ),
+    );
   }
   return r;
 }
@@ -37,9 +41,7 @@ CursorRecording _eastBoundRecording({
   final out = <({int micros, double x, double y, bool clicked})>[];
   for (var t = 0; t <= durationMs; t += stepMs) {
     final dx = pxPerSec * t / 1000.0;
-    out.add(
-      (micros: t * 1000, x: start.dx + dx, y: start.dy, clicked: false),
-    );
+    out.add((micros: t * 1000, x: start.dx + dx, y: start.dy, clicked: false));
   }
   return _record(out);
 }
@@ -173,60 +175,62 @@ void main() {
       expect(pass.focalUpdate, isNotNull);
     });
 
-    test(
-      'propagates cursor velocity to the bounded gate '
-      '(gate stays engaged while cursor moves through dz)',
-      () {
-        // BUG #2 in the architecture review: FrameCompositor was not
-        // passing cursorVelocity to ZoomFocalController.update, so the
-        // velocity-aware gate-release would fire mid-flight whenever the
-        // cursor briefly entered the deadzone — producing a snap-back
-        // followed by a chase. The unified builder MUST plumb the
-        // motion sample's velocity through to the focal controller for
-        // both call sites.
-        //
-        // Setup: a bounded zoom at 2× with a generous deadzone, cursor
-        // moving east at 600 px/s (well above the 80 px/s "at-rest"
-        // threshold) across the deadzone. The gate engages on entry
-        // and must STAY engaged the entire time the cursor is moving.
-        final builder = ScenePassBuilder();
-        final project = _projectWith(
-          zooms: [
-            _bounded(
-              startTime: Duration.zero,
-              duration: const Duration(seconds: 2),
-              rect: const Rect.fromLTWH(960, 540, 0, 0),
-              deadzoneRatio: 0.6,
-            ),
-          ],
-        );
-        final recording = _eastBoundRecording(durationMs: 1000);
+    test('propagates cursor velocity to the bounded gate '
+        '(gate stays engaged while cursor moves through dz)', () {
+      // BUG #2 in the architecture review: FrameCompositor was not
+      // passing cursorVelocity to ZoomFocalController.update, so the
+      // velocity-aware gate-release would fire mid-flight whenever the
+      // cursor briefly entered the deadzone — producing a snap-back
+      // followed by a chase. The unified builder MUST plumb the
+      // motion sample's velocity through to the focal controller for
+      // both call sites.
+      //
+      // Setup: a bounded zoom at 2× with a generous deadzone, cursor
+      // moving east at 600 px/s (well above the 80 px/s "at-rest"
+      // threshold) across the deadzone. The gate engages on entry
+      // and must STAY engaged the entire time the cursor is moving.
+      final builder = ScenePassBuilder();
+      final project = _projectWith(
+        zooms: [
+          _bounded(
+            startTime: Duration.zero,
+            duration: const Duration(seconds: 2),
+            rect: const Rect.fromLTWH(960, 540, 0, 0),
+            deadzoneRatio: 0.6,
+          ),
+        ],
+      );
+      final recording = _eastBoundRecording(durationMs: 1000);
 
-        // Drive 800 ms forward — long enough that the cursor has
-        // travelled ~480 px east of the rect centre.
-        final pass = _drive(
-          builder,
-          project: project,
-          recording: recording,
-          from: Duration.zero,
-          to: const Duration(milliseconds: 800),
-        );
+      // Drive 800 ms forward — long enough that the cursor has
+      // travelled ~480 px east of the rect centre.
+      final pass = _drive(
+        builder,
+        project: project,
+        recording: recording,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 800),
+      );
 
-        // The focal gate must read a non-zero cursor velocity (it came
-        // from the motion sample). This is the direct contract being
-        // tested.
-        expect(pass.rawCursorVelocity.distance, greaterThan(200),
-            reason:
-                'Builder must compute cursor scene velocity from the recording');
+      // The focal gate must read a non-zero cursor velocity (it came
+      // from the motion sample). This is the direct contract being
+      // tested.
+      expect(
+        pass.rawCursorVelocity.distance,
+        greaterThan(200),
+        reason: 'Builder must compute cursor scene velocity from the recording',
+      );
 
-        // And the gate must be engaged: cursor crossed the dz boundary
-        // moving fast, gate did not flap to released mid-flight.
-        expect(builder.focal.inFlight, isTrue,
-            reason:
-                'With cursorVelocity > 80 px/s, bounded gate must remain '
-                'engaged across the deadzone instead of releasing each frame');
-      },
-    );
+      // And the gate must be engaged: cursor crossed the dz boundary
+      // moving fast, gate did not flap to released mid-flight.
+      expect(
+        builder.focal.inFlight,
+        isTrue,
+        reason:
+            'With cursorVelocity > 80 px/s, bounded gate must remain '
+            'engaged across the deadzone instead of releasing each frame',
+      );
+    });
 
     test('uses median cursor for predictive follow mode', () {
       // Predictive mode points the focal at the dwell location (median
@@ -256,8 +260,11 @@ void main() {
 
       expect(pass.activeZoom, isNotNull);
       expect(pass.activeZoom!.followMode, FollowMode.predictive);
-      expect(pass.motion, isNotNull,
-          reason: 'Motion sample still computed for the cursor sprite');
+      expect(
+        pass.motion,
+        isNotNull,
+        reason: 'Motion sample still computed for the cursor sprite',
+      );
       // cursorForFocal != motion.screenPos in predictive mode.
       expect(pass.cursorForFocal, isNotNull);
       expect(
@@ -291,9 +298,12 @@ void main() {
       );
 
       expect(pass.activeZoom!.followMode, FollowMode.bounded);
-      expect(pass.cursorForFocal, equals(pass.motion!.screenPos),
-          reason:
-              'Non-predictive follow modes feed the motion sprite to the focal');
+      expect(
+        pass.cursorForFocal,
+        equals(pass.motion!.screenPos),
+        reason:
+            'Non-predictive follow modes feed the motion sprite to the focal',
+      );
     });
 
     test('filteredCursorVelocity differs from raw when EMA is engaged', () {
@@ -339,72 +349,75 @@ void main() {
       );
     });
 
-    test(
-      'shared-edge: at t == A.endTime == B.startTime, A wins and '
-      'activeZoom stays non-null across the seam',
-      () {
-        // Two abutting bounded zooms: A [0s, 2s], B [2s, 4s]. The
-        // exit-ramp completion frame at exactly t=2s must:
-        //   - resolve to A via ZoomRegion.activeAt (earlier wins by loop
-        //     order at the closed end edge), AND
-        //   - flow through ScenePassBuilder so ScenePass.activeZoom is
-        //     non-null AND === A (no one-frame "no zoom" drop-out
-        //     between adjacent regions).
-        // This guards every call site that was migrated to activeAt:
-        // a regression to bare isActive at the seam would either drop
-        // activeZoom or hand the frame to B.
-        final a = _bounded(
-          startTime: Duration.zero,
-          duration: const Duration(seconds: 2),
-          rect: const Rect.fromLTWH(480, 270, 0, 0),
-        );
-        final b = _bounded(
-          startTime: const Duration(seconds: 2),
-          duration: const Duration(seconds: 2),
-          rect: const Rect.fromLTWH(1440, 810, 0, 0),
-        );
+    test('shared-edge: at t == A.endTime == B.startTime, A wins and '
+        'activeZoom stays non-null across the seam', () {
+      // Two abutting bounded zooms: A [0s, 2s], B [2s, 4s]. The
+      // exit-ramp completion frame at exactly t=2s must:
+      //   - resolve to A via ZoomRegion.activeAt (earlier wins by loop
+      //     order at the closed end edge), AND
+      //   - flow through ScenePassBuilder so ScenePass.activeZoom is
+      //     non-null AND === A (no one-frame "no zoom" drop-out
+      //     between adjacent regions).
+      // This guards every call site that was migrated to activeAt:
+      // a regression to bare isActive at the seam would either drop
+      // activeZoom or hand the frame to B.
+      final a = _bounded(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        rect: const Rect.fromLTWH(480, 270, 0, 0),
+      );
+      final b = _bounded(
+        startTime: const Duration(seconds: 2),
+        duration: const Duration(seconds: 2),
+        rect: const Rect.fromLTWH(1440, 810, 0, 0),
+      );
 
-        // 1) Helper-level contract.
-        expect(
-          ZoomRegion.activeAt(const Duration(seconds: 2), [a, b]),
-          same(a),
-          reason:
-              'At the shared edge, earlier region wins via activeAt loop order',
-        );
+      // 1) Helper-level contract.
+      expect(
+        ZoomRegion.activeAt(const Duration(seconds: 2), [a, b]),
+        same(a),
+        reason:
+            'At the shared edge, earlier region wins via activeAt loop order',
+      );
 
-        // 2) ScenePassBuilder propagates that decision through to
-        //    ScenePass.activeZoom at the seam.
-        final builder = ScenePassBuilder();
-        final project = _projectWith(zooms: [a, b]);
-        final recording = _eastBoundRecording(durationMs: 2200);
+      // 2) ScenePassBuilder propagates that decision through to
+      //    ScenePass.activeZoom at the seam.
+      final builder = ScenePassBuilder();
+      final project = _projectWith(zooms: [a, b]);
+      final recording = _eastBoundRecording(durationMs: 2200);
 
-        // Prime the builder up through the seam.
-        _drive(
-          builder,
-          project: project,
-          recording: recording,
-          from: Duration.zero,
-          to: const Duration(seconds: 2) - const Duration(milliseconds: 16),
-        );
+      // Prime the builder up through the seam.
+      _drive(
+        builder,
+        project: project,
+        recording: recording,
+        from: Duration.zero,
+        to: const Duration(seconds: 2) - const Duration(milliseconds: 16),
+      );
 
-        final atSeam = builder.build(
-          position: const Duration(seconds: 2),
-          zoomRegions: project.zoomRegions,
-          cursorAnimationConfig: project.cursorAnimationConfig,
-          cursorRecording: recording,
-          videoSize: _videoSize,
-          fps: 60,
-          hasCursorData: true,
-        );
+      final atSeam = builder.build(
+        position: const Duration(seconds: 2),
+        zoomRegions: project.zoomRegions,
+        cursorAnimationConfig: project.cursorAnimationConfig,
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+      );
 
-        expect(atSeam.activeZoom, isNotNull,
-            reason:
-                'Closed end-edge lookup must keep the exit-ramp completion '
-                'frame attributed to a zoom');
-        expect(atSeam.activeZoom, same(a),
-            reason: 'Earlier region wins at the shared edge');
-      },
-    );
+      expect(
+        atSeam.activeZoom,
+        isNotNull,
+        reason:
+            'Closed end-edge lookup must keep the exit-ramp completion '
+            'frame attributed to a zoom',
+      );
+      expect(
+        atSeam.activeZoom,
+        same(a),
+        reason: 'Earlier region wins at the shared edge',
+      );
+    });
 
     test('bypassVelocityFilter=true returns raw velocity as filtered', () {
       // Hover-scrub semantics: with bypass on, the filtered output
@@ -460,7 +473,8 @@ void main() {
       final recording = CursorRecording();
       for (var ms = 0; ms <= 3000; ms += 16) {
         recording.addPosition(
-            CursorPosition(x: 1700, y: 950, timestampMicros: ms * 1000));
+          CursorPosition(x: 1700, y: 950, timestampMicros: ms * 1000),
+        );
       }
       const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
       const videoSize = Size(1920, 1080);
@@ -484,9 +498,76 @@ void main() {
         return last;
       }
 
-      expect((focalAt250(Curves.linear) - focalAt250(Curves.easeInOutQuad))
-              .distance,
-          greaterThan(1.0));
+      expect(
+        (focalAt250(Curves.linear) - focalAt250(Curves.easeInOutQuad)).distance,
+        greaterThan(1.0),
+      );
+    });
+
+    test('followCursor enter-hold handoff does not chase a lagging '
+        'smoothed cursor', () {
+      // This drives the whole runtime path, not just ZoomFocalController:
+      // the cursor spring is primed before the zoom, the raw cursor jumps to
+      // a corner at zoom start, and the first post-enter frame still sees a
+      // lagging smoothed sprite. The camera should keep the painted focal on
+      // the enter target while that parked sprite catches up.
+      final region = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: const Duration(milliseconds: 500),
+        duration: const Duration(milliseconds: 2000),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 200),
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered,
+        followDuration: const Duration(milliseconds: 100),
+      );
+      final project = _projectWith(zooms: [region]);
+      final recording = CursorRecording();
+      for (var ms = 0; ms <= 1200; ms += 16) {
+        final parked = ms >= 500;
+        recording.addPosition(
+          CursorPosition(
+            x: parked ? 300 : 960,
+            y: parked ? 220 : 540,
+            timestampMicros: ms * 1000,
+          ),
+        );
+      }
+
+      final builder = ScenePassBuilder();
+      ScenePass? pass;
+      for (var ms = 0; ms <= 716; ms += 16) {
+        pass = builder.build(
+          position: Duration(milliseconds: ms),
+          zoomRegions: project.zoomRegions,
+          cursorAnimationConfig: project.cursorAnimationConfig,
+          cursorDelay: project.cursorDelay,
+          cursorPostProcess: project.cursorPostProcess,
+          cursorRecording: recording,
+          videoSize: _videoSize,
+          fps: 60,
+          hasCursorData: true,
+        );
+      }
+
+      final settleTarget = ZoomTransformer.clampFocalToBounds(
+        pass!.enterCursorTarget!,
+        _videoSize,
+        region.zoomLevel,
+      );
+      final paintedFocal = ZoomTransformer.clampFocalToBounds(
+        pass.focalUpdate!.focal,
+        _videoSize,
+        region.zoomLevel,
+      );
+      expect(
+        (paintedFocal - settleTarget).distance,
+        lessThan(5.0),
+        reason:
+            'the runtime builder should not let the hold phase yank '
+            'the camera toward the lagging smoothed cursor',
+      );
     });
   });
 }

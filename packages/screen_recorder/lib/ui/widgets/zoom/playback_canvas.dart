@@ -138,6 +138,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
 
   final VideoPlayerController controller;
   final SmoothPlayheadController? smoothPlayhead;
+
   /// Chrome (wallpaper, padding, corners, shadow, blur) for the current
   /// recording. Read on every build to derive the composition layout
   /// and drive scene-blur capture invalidation.
@@ -317,7 +318,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// Called with the edited region's new placement during on-canvas
   /// drag/resize. Null in pure-playback callers.
   final void Function(int index, CameraPlacement placement)?
-      onCameraPlacementChanged;
+  onCameraPlacementChanged;
 
   /// Called when the user taps a not-yet-selected camera bubble on the canvas,
   /// to select that region. Null in pure-playback callers.
@@ -333,7 +334,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// editor). The canvas reads this for the active region's bubble and only
   /// rebuilds itself when it changes.
   final ValueListenable<({int index, CameraPlacement placement})?>?
-      cameraDragOverride;
+  cameraDragOverride;
 
   @override
   ConsumerState<PlaybackCanvas> createState() => _PlaybackCanvasState();
@@ -445,7 +446,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
     // for. Otherwise, after deleting every camera region (or disabling the
     // camera) and re-adding one in a gap, the stale placement paints a ghost
     // bubble at the old spot until the next active region is hit.
-    if (widget.cameraRegions.isEmpty || widget.cameraSettings?.enabled != true) {
+    if (widget.cameraRegions.isEmpty ||
+        widget.cameraSettings?.enabled != true) {
       _lastCameraPlacement = null;
     }
   }
@@ -537,7 +539,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             // free during playback, lock during pause. Release the
             // lock only if the raw playhead deviates by >100 ms,
             // meaning the user actually scrubbed.
-            final rawPos = widget.smoothPlayhead?.position ??
+            final rawPos =
+                widget.smoothPlayhead?.position ??
                 widget.controller.value.position;
             final Duration pos;
             if (widget.controller.value.isPlaying) {
@@ -577,9 +580,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             final hasCursorData =
                 widget.metadata?.isPureSource == true &&
                 widget.cursorRecording.count > 0;
-            final showCursor = hasCursorData
-                && !widget.hideCursorOverlay
-                && !widget.sliceHideCursor;
+            final showCursor =
+                hasCursorData &&
+                !widget.hideCursorOverlay &&
+                !widget.sliceHideCursor;
 
             // Single call into the shared scene builder. The export
             // pipeline calls the same builder with the same inputs in
@@ -591,9 +595,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             // Hover-scrub bypasses the EMA filter so the same timestamp
             // renders the same regardless of approach direction.
             final cursorAnimationConfig = widget.sliceDisableSmoothMouse
-                ? const CursorAnimationConfig.preset(
-                    CursorAnimationStyle.none,
-                  )
+                ? const CursorAnimationConfig.preset(CursorAnimationStyle.none)
                 : widget.cursorAnimationConfig;
             final scenePass = _scenePassBuilder.build(
               position: pos,
@@ -612,7 +614,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               // spring otherwise barely advances while the video is paused
               // (no frame loop to integrate), so the user sees nothing
               // change until they resume playback.
-              forceSnap: widget.isHoverScrubbing ||
+              forceSnap:
+                  widget.isHoverScrubbing ||
                   widget.zoomPreviewOverride?.value != null,
               bypassVelocityFilter: widget.isHoverScrubbing,
               activeRegionOverride: widget.zoomPreviewOverride?.value,
@@ -650,31 +653,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             );
             final combinedCursorVelocity = scenePass.filteredCursorVelocity;
 
-            // Visible-camera focal trace. Logs the spring focal, its
-            // velocity, the bounded-gate state, and the most recent
-            // snap reason for the LIVE render path (once per frame).
-            // Lets us tell a smooth-but-fast pan from a gate snap or
-            // overshoot during a fast cursor flick. See
-            // [cameraFocalTraceEnabled].
-            assert(() {
-              if (cameraFocalTraceEnabled) {
-                final fc = _zoomFocalController;
-                final f = focalUpdate?.focal;
-                final raw = motion?.screenPos;
-                debugPrint(
-                  '[CamFocal] pos=${pos.inMicroseconds / 1000}ms '
-                  'play=${widget.controller.value.isPlaying} '
-                  '| focal=${f == null ? "null" : "(${f.dx.toStringAsFixed(1)},${f.dy.toStringAsFixed(1)})"} '
-                  'vel=${fc.focalVelocity.distance.toStringAsFixed(0)}px/s '
-                  'inFlight=${fc.inFlight} '
-                  'snap=${fc.lastSnapReason ?? "-"}@${fc.lastSnapAt?.inMilliseconds ?? -1} '
-                  '| rawCur=${raw == null ? "null" : "(${raw.dx.toStringAsFixed(0)},${raw.dy.toStringAsFixed(0)})"} '
-                  'filtVel=${combinedCursorVelocity.distance.toStringAsFixed(0)}px/s',
-                );
-              }
-              return true;
-            }());
-
             // Cursor is extracted from the body composition so the
             // scene-blur shader (which captures and smears the entire
             // composition) doesn't double-smear it. The AccumulationCursorPainter
@@ -711,14 +689,14 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                         position: pos,
                         videoSize: videoSize,
                         exposureMs:
-                            widget.accumulationExposureMs *
-                            effectiveCursorBlur,
+                            widget.accumulationExposureMs * effectiveCursorBlur,
                         sampleCount: widget.accumulationSampleCount,
                         sizeMultiplier: widget.cursorSize,
                         style: widget.cursorStyle,
                         cursorState: motion.state,
-                        devicePixelRatio:
-                            MediaQuery.of(context).devicePixelRatio,
+                        devicePixelRatio: MediaQuery.of(
+                          context,
+                        ).devicePixelRatio,
                         currentFocalVideo: effectiveFocal,
                         currentScale: focalUpdate?.zoom.zoomLevel ?? 1.0,
                         focalAt: widget.accumulationCameraFocalAt,
@@ -769,8 +747,9 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                                 cursorState: motion.state,
                                 cursorShadow: widget.cursorShadow,
                                 clickSpring: widget.clickSpring,
-                                devicePixelRatio:
-                                    MediaQuery.of(context).devicePixelRatio,
+                                devicePixelRatio: MediaQuery.of(
+                                  context,
+                                ).devicePixelRatio,
                               ),
                             ),
                           ),
@@ -829,7 +808,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                     }
                   }
                 }
-                final editable = activeIndex != null &&
+                final editable =
+                    activeIndex != null &&
                     activeIndex == widget.selectedCameraIndex &&
                     widget.onCameraPlacementChanged != null;
                 final isPlaying = widget.controller.value.isPlaying;
@@ -839,8 +819,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 // AnimatedCameraBubble fills the canvas, positions its own box,
                 // and fades/blurs/slides in/out across region edges.
                 AnimatedCameraBubble buildBubble(
-                    ({int index, CameraPlacement placement})? ov) {
-                  final effectivePlacement = (ov != null &&
+                  ({int index, CameraPlacement placement})? ov,
+                ) {
+                  final effectivePlacement =
+                      (ov != null &&
                           activeIndex != null &&
                           ov.index == activeIndex)
                       ? ov.placement
@@ -856,17 +838,21 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                     // drags and playback glides immediately.
                     animatePosition:
                         !isPlaying && !widget.isHoverScrubbing && ov == null,
-                    onPlacementCommit: (activeIndex != null &&
+                    onPlacementCommit:
+                        (activeIndex != null &&
                             widget.onCameraPlacementCommit != null)
                         ? widget.onCameraPlacementCommit
                         : null,
                     // The active region's bubble is grab-draggable whether or
                     // not it's the selection (a drag selects it).
-                    onPlacementChanged: (activeIndex != null &&
+                    onPlacementChanged:
+                        (activeIndex != null &&
                             widget.onCameraPlacementChanged != null)
-                        ? (p) => widget.onCameraPlacementChanged!(activeIndex!, p)
+                        ? (p) =>
+                              widget.onCameraPlacementChanged!(activeIndex!, p)
                         : null,
-                    onSelectRequested: (!editable &&
+                    onSelectRequested:
+                        (!editable &&
                             activeIndex != null &&
                             widget.onCameraSelectRequested != null)
                         ? () => widget.onCameraSelectRequested!(activeIndex!)
@@ -882,7 +868,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 cameraOverlayWidget = override == null
                     ? buildBubble(null)
                     : ValueListenableBuilder<
-                        ({int index, CameraPlacement placement})?>(
+                        ({int index, CameraPlacement placement})?
+                      >(
                         valueListenable: override,
                         builder: (context, ov, _) => buildBubble(ov),
                       );
@@ -896,8 +883,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             // / pans, and the scene shader / accumulation pass only
             // smears the actual moving content. Pulled out of the
             // composition Stack for that reason.
-            final Widget? stickyBackground = currentFrame.wallpaperCategory ==
-                    null
+            final Widget? stickyBackground =
+                currentFrame.wallpaperCategory == null
                 ? null
                 : _wallpaperLayer(
                     category: currentFrame.wallpaperCategory!,
@@ -945,8 +932,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                             smoothedFocal: _zoomFocalController.smoothedFocal,
                             activeZoom: focalUpdate?.zoom,
                             inFlight: _zoomFocalController.inFlight,
-                            focalVelocity:
-                                _zoomFocalController.focalVelocity,
+                            focalVelocity: _zoomFocalController.focalVelocity,
                           ),
                         ),
                       ),
@@ -959,53 +945,48 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                 // (the canvas itself is inside a zoom Transform that
                 // would move/clip an inline overlay during zoom-ins).
                 if (widget.showZoomDebug && widget.debugSnapshot != null)
-                  Builder(builder: (_) {
-                    WidgetsBinding.instance
-                        .addPostFrameCallback((_) {
-                      if (!mounted) return;
-                      final raw = cursorAt(widget.cursorRecording, pos);
-                      final positions = widget.cursorRecording.positions;
-                      (double, double)? xRange;
-                      (double, double)? yRange;
-                      if (positions.isNotEmpty) {
-                        var minX = positions.first.x;
-                        var maxX = positions.first.x;
-                        var minY = positions.first.y;
-                        var maxY = positions.first.y;
-                        for (final p in positions) {
-                          if (p.x < minX) minX = p.x;
-                          if (p.x > maxX) maxX = p.x;
-                          if (p.y < minY) minY = p.y;
-                          if (p.y > maxY) maxY = p.y;
+                  Builder(
+                    builder: (_) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted) return;
+                        final raw = cursorAt(widget.cursorRecording, pos);
+                        final positions = widget.cursorRecording.positions;
+                        (double, double)? xRange;
+                        (double, double)? yRange;
+                        if (positions.isNotEmpty) {
+                          var minX = positions.first.x;
+                          var maxX = positions.first.x;
+                          var minY = positions.first.y;
+                          var maxY = positions.first.y;
+                          for (final p in positions) {
+                            if (p.x < minX) minX = p.x;
+                            if (p.x > maxX) maxX = p.x;
+                            if (p.y < minY) minY = p.y;
+                            if (p.y > maxY) maxY = p.y;
+                          }
+                          xRange = (minX, maxX);
+                          yRange = (minY, maxY);
                         }
-                        xRange = (minX, maxX);
-                        yRange = (minY, maxY);
-                      }
-                      widget.debugSnapshot!.value = ZoomDebugSnapshot(
-                        cursor:
-                            raw == null ? null : Offset(raw.x, raw.y),
-                        smoothedFocal:
-                            _zoomFocalController.smoothedFocal,
-                        activeZoom: focalUpdate?.zoom,
-                        inFlight: _zoomFocalController.inFlight,
-                        focalVelocity:
-                            _zoomFocalController.focalVelocity,
-                        cursorVelocity:
-                            motion?.velocityPxPerSec ?? Offset.zero,
-                        videoSize: videoSize,
-                        cursorSampleCount:
-                            widget.cursorRecording.count,
-                        position: pos,
-                        cursorXRange: xRange,
-                        cursorYRange: yRange,
-                        lastSnapReason:
-                            _zoomFocalController.lastSnapReason,
-                        lastSnapAt:
-                            _zoomFocalController.lastSnapAt,
-                      );
-                    });
-                    return const SizedBox.shrink();
-                  }),
+                        widget.debugSnapshot!.value = ZoomDebugSnapshot(
+                          cursor: raw == null ? null : Offset(raw.x, raw.y),
+                          smoothedFocal: _zoomFocalController.smoothedFocal,
+                          activeZoom: focalUpdate?.zoom,
+                          inFlight: _zoomFocalController.inFlight,
+                          focalVelocity: _zoomFocalController.focalVelocity,
+                          cursorVelocity:
+                              motion?.velocityPxPerSec ?? Offset.zero,
+                          videoSize: videoSize,
+                          cursorSampleCount: widget.cursorRecording.count,
+                          position: pos,
+                          cursorXRange: xRange,
+                          cursorYRange: yRange,
+                          lastSnapReason: _zoomFocalController.lastSnapReason,
+                          lastSnapAt: _zoomFocalController.lastSnapAt,
+                        );
+                      });
+                      return const SizedBox.shrink();
+                    },
+                  ),
               ],
             );
 
@@ -1047,6 +1028,48 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                       activeZoom.rampCurveOverride?.toFlutterCurve() ??
                       widget.screenAnimationConfig.rampCurve,
                 );
+                assert(() {
+                  if (cameraFocalTraceEnabled) {
+                    String fmt(Offset? o, {int digits = 1}) => o == null
+                        ? 'null'
+                        : '(${o.dx.toStringAsFixed(digits)},'
+                              '${o.dy.toStringAsFixed(digits)})';
+                    final rawSample = cursorAt(widget.cursorRecording, pos);
+                    final rawCursor = rawSample == null
+                        ? null
+                        : Offset(
+                            rawSample.x.toDouble(),
+                            rawSample.y.toDouble(),
+                          );
+                    final renderedZoom = transform.storage[0];
+                    final paintedFocal = ZoomTransformer.clampFocalToBounds(
+                      focalForFrame,
+                      videoSize,
+                      renderedZoom,
+                    );
+                    final fc = _zoomFocalController;
+                    debugPrint(
+                      '[CamFocal] pos=${pos.inMicroseconds / 1000}ms '
+                      'play=${widget.controller.value.isPlaying} '
+                      'zoom=${renderedZoom.toStringAsFixed(3)} '
+                      'zoomEnd=${activeZoom.zoomLevel.toStringAsFixed(3)} '
+                      'animated=${animatedZoom.toStringAsFixed(3)} '
+                      '| ctrl=${fmt(focalUpdate.focal)} '
+                      'effective=${fmt(focalForFrame)} '
+                      'painted=${fmt(paintedFocal)} '
+                      '| cursorForFocal=${fmt(scenePass.cursorForFocal, digits: 0)} '
+                      'sprite=${fmt(motion?.screenPos, digits: 0)} '
+                      'raw=${fmt(rawCursor, digits: 0)} '
+                      'enterTarget=${fmt(scenePass.enterCursorTarget, digits: 0)} '
+                      '| focalVel=${fc.focalVelocity.distance.toStringAsFixed(0)}px/s '
+                      'rawVel=${scenePass.rawCursorVelocity.distance.toStringAsFixed(0)}px/s '
+                      'filtVel=${combinedCursorVelocity.distance.toStringAsFixed(0)}px/s '
+                      'inFlight=${fc.inFlight} '
+                      'snap=${fc.lastSnapReason ?? "-"}@${fc.lastSnapAt?.inMilliseconds ?? -1}',
+                    );
+                  }
+                  return true;
+                }());
                 // Screen-pan tracker is now ticked in the AnimatedBuilder
                 // above (for combined velocity). Don't double-tick here.
                 final transformed = Transform(
@@ -1366,7 +1389,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         widget.cursorPostProcess,
       );
       focal = sample == null
-          ? active.rect.center
+          ? videoSize.center(Offset.zero)
           : Offset(
               sample.x.toDouble().clamp(0, videoSize.width),
               sample.y.toDouble().clamp(0, videoSize.height),
@@ -1419,7 +1442,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         widget.cursorPostProcess,
       );
       focal = sample == null
-          ? active.rect.center
+          ? videoSize.center(Offset.zero)
           : Offset(
               sample.x.toDouble().clamp(0, videoSize.width),
               sample.y.toDouble().clamp(0, videoSize.height),

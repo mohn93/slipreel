@@ -58,8 +58,9 @@ abstract class FollowStrategy {
 }
 
 /// Cursor-centred follow: target is the live cursor, no gating.
-/// When `followCursor` is off or the cursor is unavailable, the
-/// strategy collapses to the zoom rect centre with holding=true.
+/// When `followCursor` is off, the strategy collapses to the zoom rect centre.
+/// When `followCursor` is on but the cursor is unavailable, it falls back to
+/// video center so stale manual placement does not affect auto-follow.
 ///
 /// `predictive` mode reuses this same strategy — the differentiator
 /// is upstream (the scene builder passes the rolling-median cursor
@@ -74,8 +75,11 @@ class CenteredFollowStrategy extends FollowStrategy {
     required Size videoSize,
     required MotionTuning tuning,
   }) {
-    if (!zoom.followCursor || cursor == null) {
-      return FollowResolution(target: zoom.rect.center, isHolding: true);
+    if (!zoom.followCursor) {
+      return _fixedTarget(zoom.rect.center, currentFocal);
+    }
+    if (cursor == null) {
+      return _fixedTarget(_baseFocalForFollow(zoom, videoSize), currentFocal);
     }
     return FollowResolution(target: cursor, isHolding: false);
   }
@@ -116,15 +120,19 @@ class BoundedFollowStrategy extends FollowStrategy {
   }) {
     // Degenerate cases: no cursor, follow-off, no deadzone — behave
     // like centered/no-follow.
-    final boundsActive = zoom.followCursor &&
+    final boundsActive =
+        zoom.followCursor &&
         cursor != null &&
         zoom.deadzoneRatio > 0 &&
         videoSize.width > 0 &&
         videoSize.height > 0;
     if (!boundsActive) {
       _inFlight = false;
-      if (!zoom.followCursor || cursor == null) {
-        return FollowResolution(target: zoom.rect.center, isHolding: true);
+      if (!zoom.followCursor) {
+        return _fixedTarget(zoom.rect.center, currentFocal);
+      }
+      if (cursor == null) {
+        return _fixedTarget(_baseFocalForFollow(zoom, videoSize), currentFocal);
       }
       return FollowResolution(target: cursor, isHolding: false);
     }
@@ -132,11 +140,7 @@ class BoundedFollowStrategy extends FollowStrategy {
     final z = zoom.zoomLevel;
     final dzW = (videoSize.width / z) * zoom.deadzoneRatio;
     final dzH = (videoSize.height / z) * zoom.deadzoneRatio;
-    final dz = Rect.fromCenter(
-      center: currentFocal,
-      width: dzW,
-      height: dzH,
-    );
+    final dz = Rect.fromCenter(center: currentFocal, width: dzW, height: dzH);
 
     if (_inFlight) {
       // Release condition: cursor inside dz AND at rest.
@@ -179,4 +183,16 @@ FollowStrategy followStrategyFor(FollowMode mode) {
     case FollowMode.centered:
       return CenteredFollowStrategy();
   }
+}
+
+Offset _baseFocalForFollow(ZoomRegion zoom, Size videoSize) {
+  if (!zoom.followCursor) return zoom.rect.center;
+  return Offset(videoSize.width / 2, videoSize.height / 2);
+}
+
+FollowResolution _fixedTarget(Offset target, Offset currentFocal) {
+  return FollowResolution(
+    target: target,
+    isHolding: (target - currentFocal).distance < 0.5,
+  );
 }

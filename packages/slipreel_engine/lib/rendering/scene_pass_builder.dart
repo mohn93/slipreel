@@ -30,6 +30,7 @@ class ScenePass {
     required this.motion,
     required this.activeZoom,
     required this.cursorForFocal,
+    required this.enterCursorTarget,
     required this.focalUpdate,
     required this.rawCursorVelocity,
     required this.filteredCursorVelocity,
@@ -50,6 +51,12 @@ class ScenePass {
   /// spring-smoothed sprite — so the camera and the cursor visibly
   /// agree.
   final Offset? cursorForFocal;
+
+  /// Raw-recording settle target sampled at the followCursor enter-ramp end,
+  /// when one exists. Passed to [ZoomFocalController] and surfaced for runtime
+  /// focal traces so preview logs can show whether the controller was aiming
+  /// at the intended enter target.
+  final Offset? enterCursorTarget;
 
   /// The zoom focal/region pair, or null when no zoom is active.
   final ZoomFocalUpdate? focalUpdate;
@@ -85,9 +92,9 @@ class ScenePassBuilder {
     CursorMotionController? motion,
     ZoomFocalController? focal,
     EmaVelocityFilter? velocityFilter,
-  })  : motion = motion ?? CursorMotionController(),
-        focal = focal ?? ZoomFocalController(),
-        velocityFilter = velocityFilter ?? EmaVelocityFilter();
+  }) : motion = motion ?? CursorMotionController(),
+       focal = focal ?? ZoomFocalController(),
+       velocityFilter = velocityFilter ?? EmaVelocityFilter();
 
   final CursorMotionController motion;
   final ZoomFocalController focal;
@@ -126,6 +133,7 @@ class ScenePassBuilder {
     required bool hasCursorData,
     Duration cursorDelay = Duration.zero,
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
+
     /// Clip slices for the current timeline, used to resolve the
     /// playback speed of the slice covering [position] (source time).
     /// Defaults to empty ⇒ speed 1.0 ⇒ cursor smoothing unchanged.
@@ -133,6 +141,7 @@ class ScenePassBuilder {
     Curve screenRampCurve = Curves.easeInOutQuad,
     bool forceSnap = false,
     bool bypassVelocityFilter = false,
+
     /// When non-null, replaces the natural `ZoomRegion.activeAt`
     /// lookup result for this frame. Used by the editor's manual
     /// placement picker to live-preview a drag-in-flight rect, and by
@@ -142,8 +151,9 @@ class ScenePassBuilder {
   }) {
     // Resolve once, here in the shared builder, so preview and export —
     // the only two callers — cannot resolve slice speed differently.
-    final playbackSpeed =
-        clips.isEmpty ? 1.0 : clipSliceAt(clips, position).playbackSpeed;
+    final playbackSpeed = clips.isEmpty
+        ? 1.0
+        : clipSliceAt(clips, position).playbackSpeed;
     final motionSample = hasCursorData
         ? motion.update(
             position: position,
@@ -165,12 +175,12 @@ class ScenePassBuilder {
         activeRegionOverride ?? _activeZoomAt(position, zoomRegions);
     final Offset? cursorForFocal =
         activeZoom?.followMode == FollowMode.predictive
-            ? medianCursorOver(
-                recording: cursorRecording,
-                t: position,
-                window: activeZoom!.predictiveWindow,
-              )
-            : motionSample?.screenPos;
+        ? medianCursorOver(
+            recording: cursorRecording,
+            t: position,
+            window: activeZoom!.predictiveWindow,
+          )
+        : motionSample?.screenPos;
 
     final rawVelocity = motionSample?.velocityPxPerSec ?? Offset.zero;
 
@@ -212,6 +222,7 @@ class ScenePassBuilder {
       motion: motionSample,
       activeZoom: activeZoom,
       cursorForFocal: cursorForFocal,
+      enterCursorTarget: enterCursorTarget,
       focalUpdate: focalUpdate,
       rawCursorVelocity: rawVelocity,
       filteredCursorVelocity: filteredVelocity,

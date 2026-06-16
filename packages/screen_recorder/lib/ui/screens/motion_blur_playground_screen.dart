@@ -837,9 +837,9 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       // window in steady state; this matches without needing the
       // controller's full stateful tween.
       final laggedT = t - const Duration(milliseconds: 200);
-      if (laggedT.isNegative) return region.rect.center;
+      if (laggedT.isNegative) return defaultFocal;
       final s = cursorAt(_cursorRecording, laggedT);
-      if (s == null) return region.rect.center;
+      if (s == null) return defaultFocal;
       return Offset(
         s.x.toDouble().clamp(0, videoSize.width),
         s.y.toDouble().clamp(0, videoSize.height),
