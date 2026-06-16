@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/audio/waveform_extractor.dart';
+import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 
 void main() {
   group('reducePcmToPeaks', () {
@@ -69,5 +71,35 @@ void main() {
       expect(args, containsAllInOrder(['-map', '[aout]']));
       expect(args, containsAllInOrder(['-ac', '1', '-ar', '8000']));
     });
+  });
+
+  group('WaveformExtractor.extract (ffmpeg integration)', () {
+    final fixture = File('test/fixtures/sample_recording.mp4');
+
+    test('matches the fixture audio presence', () async {
+      if (!fixture.existsSync()) {
+        markTestSkipped('fixture missing');
+        return;
+      }
+      final probe = await ffmpegProbe(path: fixture.path);
+      final peaks = await const WaveformExtractor().extract(fixture.path);
+
+      if (probe.audioStreams.isEmpty) {
+        expect(peaks, isNull);
+      } else {
+        expect(peaks, isNotNull);
+        expect(peaks!.peaks, isNotEmpty);
+        expect(peaks.bucketsPerSecond, kWaveformBucketsPerSecond);
+        expect(peaks.sourceDuration, greaterThan(Duration.zero));
+        expect(peaks.peaks.every((p) => p >= 0.0 && p <= 1.0), isTrue);
+      }
+    }, timeout: const Timeout(Duration(seconds: 60)));
+
+    test('returns null for a path with no audio streams', () async {
+      // A bogus path makes ffprobe report zero streams -> null, no throw.
+      final peaks =
+          await const WaveformExtractor().extract('/nonexistent/none.mp4');
+      expect(peaks, isNull);
+    }, timeout: const Timeout(Duration(seconds: 30)));
   });
 }
