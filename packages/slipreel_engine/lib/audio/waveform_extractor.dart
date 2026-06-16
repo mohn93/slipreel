@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' show min;
 import 'dart:typed_data';
 
@@ -85,15 +86,17 @@ class WaveformExtractor {
         stdoutEncoding: null, // keep stdout as raw bytes (List<int>)
       );
       if (result.exitCode != 0) return null;
-      final bytes = result.stdout as List<int>;
+      final stdout = result.stdout;
+      final bytes = stdout is Uint8List
+          ? stdout
+          : Uint8List.fromList(stdout as List<int>);
       if (bytes.length < 2) return null;
 
-      final samples = _bytesToInt16(bytes);
-      final peaks = reducePcmToPeaks(samples,
-          samplesPerBucket: kWaveformSamplesPerBucket);
+      final peaks = await Isolate.run(() => _decodeAndReducePcm(bytes));
       if (peaks.isEmpty) return null;
 
-      final micros = (samples.length / kWaveformSampleRate * 1e6).round();
+      final sampleCount = bytes.length ~/ 2;
+      final micros = (sampleCount / kWaveformSampleRate * 1e6).round();
       return WaveformPeaks(
         bucketsPerSecond: kWaveformBucketsPerSecond,
         peaks: peaks,
@@ -103,15 +106,21 @@ class WaveformExtractor {
       return null;
     }
   }
+}
 
-  static Int16List _bytesToInt16(List<int> bytes) {
-    final u8 = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
-    final bd = ByteData.sublistView(u8);
-    final n = bd.lengthInBytes ~/ 2;
-    final out = Int16List(n);
-    for (var i = 0; i < n; i++) {
-      out[i] = bd.getInt16(i * 2, Endian.little);
-    }
-    return out;
+/// Runs on a worker isolate: decode PCM bytes to Int16 samples and reduce to
+/// the normalized peak array. Pure CPU work kept off the calling isolate.
+List<double> _decodeAndReducePcm(Uint8List bytes) {
+  final samples = _int16FromBytes(bytes);
+  return reducePcmToPeaks(samples, samplesPerBucket: kWaveformSamplesPerBucket);
+}
+
+Int16List _int16FromBytes(Uint8List bytes) {
+  final bd = ByteData.sublistView(bytes);
+  final n = bd.lengthInBytes ~/ 2;
+  final out = Int16List(n);
+  for (var i = 0; i < n; i++) {
+    out[i] = bd.getInt16(i * 2, Endian.little);
   }
+  return out;
 }
