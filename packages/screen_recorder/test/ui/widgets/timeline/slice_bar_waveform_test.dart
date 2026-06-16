@@ -51,34 +51,38 @@ void main() {
         onTrimEndChanged: (_) {},
       );
 
-  testWidgets('no waveform painter when peaks are absent', (tester) async {
+  testWidgets('paints empty samples when peaks are absent', (tester) async {
     await tester.pumpWidget(_host(build(waveform: null)));
-    final hasWavePainter = tester
-        .widgetList<CustomPaint>(find.byType(CustomPaint))
-        .any((w) => w.painter is WaveformPainter);
-    // The layer may exist with empty samples, but it must paint nothing.
-    if (hasWavePainter) {
-      expect(_painterOf(tester).samples, isEmpty);
-    }
+    expect(_painterOf(tester).samples, isEmpty);
   });
 
   testWidgets('renders a non-empty WaveformPainter when peaks exist',
       (tester) async {
     await tester.pumpWidget(_host(build(waveform: _peaks())));
     await tester.pump(const Duration(milliseconds: 250)); // fade-in
-    expect(_painterOf(tester).samples, isNotEmpty);
+    final painter = tester
+        .widget<CustomPaint>(
+          find.descendant(
+            of: find.byKey(const ValueKey('slice-bar-waveform')),
+            matching: find.byType(CustomPaint),
+          ),
+        )
+        .painter as WaveformPainter;
+    expect(painter.samples, isNotEmpty);
   });
 
   testWidgets('muted slice dims the waveform layer to a low opacity',
       (tester) async {
-    await tester
-        .pumpWidget(_host(build(waveform: _peaks(), micMuted: true)));
+    await tester.pumpWidget(_host(build(waveform: _peaks(), micMuted: true)));
     await tester.pump(const Duration(milliseconds: 250));
-    final opacity = tester
-        .widgetList<AnimatedOpacity>(find.byType(AnimatedOpacity))
-        .map((w) => w.opacity)
-        .where((o) => o < 0.5)
-        .toList();
-    expect(opacity, isNotEmpty); // the waveform layer is dimmed
+    final waveformOpacity = tester
+        .widget<AnimatedOpacity>(
+          find.descendant(
+            of: find.byKey(const ValueKey('slice-bar-waveform')),
+            matching: find.byType(AnimatedOpacity),
+          ),
+        )
+        .opacity;
+    expect(waveformOpacity, lessThan(0.5));
   });
 }
