@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:screen_recorder/ui/widgets/timeline/slice_bar.dart';
+import 'package:slipreel_engine/audio/waveform_peaks.dart';
 
 /// Multi-slice clip lane. Lays slices end-to-end in EDITED time (so
 /// trimmed-away source regions disappear visually), delegates per-slice
@@ -22,6 +23,9 @@ class ClipLane extends StatefulWidget {
     required this.onSliceTrimEndChanged,
     this.onTrimDragChanged,
     this.animateLayout = true,
+    this.waveform,
+    this.hasMic = false,
+    this.hasSystem = false,
   });
 
   final List<ClipSlice> clips;
@@ -43,6 +47,10 @@ class ClipLane extends StatefulWidget {
   /// geometry. Pinch zoom disables this so the content under the
   /// cursor stays pinned instead of chasing a 220 ms tween.
   final bool animateLayout;
+
+  final WaveformPeaks? waveform;
+  final bool hasMic;
+  final bool hasSystem;
 
   @override
   State<ClipLane> createState() => _ClipLaneState();
@@ -153,6 +161,9 @@ class _ClipLaneState extends State<ClipLane> {
           pixelsPerSecond: widget.pixelsPerSecond,
           editedStart: editedStart,
           animateLayout: widget.animateLayout,
+          waveform: widget.waveform,
+          hasMic: widget.hasMic,
+          hasSystem: widget.hasSystem,
           onSelectionToggle: (idx) {
             widget.onSliceSelected(
               widget.selectedSliceIndex == idx ? null : idx,

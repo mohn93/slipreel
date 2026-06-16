@@ -44,6 +44,8 @@ import 'package:slipreel_engine/export/export_pipeline.dart';
 import 'package:slipreel_engine/export/gif_export_pipeline.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/export/audio_mix_args.dart';
+import 'package:slipreel_engine/export/audio_streams.dart';
+import 'package:screen_recorder/state/waveform_provider.dart';
 import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
 import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
@@ -2646,6 +2648,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               final editedDuration = clipsForTimeline.isEmpty
                   ? _controller.value.duration
                   : totalEditedDuration(clipsForTimeline);
+              final audioRoles =
+                  inferAudioRoles(ref.watch(recordingAudioStreamsProvider));
               return EditorTimeline(
                 duration: editedDuration,
                 position: _playheadEditedPos,
@@ -2842,6 +2846,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 // cursorXListenable stays unset — when cut mode is on,
                 // EditorTimeline pipes its own overlay's cursor in. Off
                 // mode falls back to a no-op notifier.
+                waveform:
+                    ref.watch(waveformProvider(widget.videoPath)).valueOrNull,
+                hasMic: audioRoles.containsKey(AudioRole.microphone),
+                hasSystem: audioRoles.containsKey(AudioRole.system),
               );
             },
           ),
