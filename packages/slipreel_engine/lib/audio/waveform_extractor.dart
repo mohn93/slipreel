@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' show min;
 import 'dart:typed_data';
 
 import 'package:slipreel_engine/audio/waveform_peaks.dart';
@@ -25,9 +26,7 @@ List<double> reducePcmToPeaks(
   var globalMax = 0.0;
   for (var b = 0; b < bucketCount; b++) {
     final start = b * samplesPerBucket;
-    final end = (start + samplesPerBucket) < samples.length
-        ? (start + samplesPerBucket)
-        : samples.length;
+    final end = min(start + samplesPerBucket, samples.length);
     var peak = 0;
     for (var i = start; i < end; i++) {
       final a = samples[i] < 0 ? -samples[i] : samples[i];
@@ -51,6 +50,9 @@ List<double> reducePcmToPeaks(
 List<String> buildWaveformPcmArgs(String videoPath, int streamCount) {
   final args = <String>['-v', 'error', '-i', videoPath];
   if (streamCount >= 2) {
+    // Exactly-two-streams (mic + system audio) case. Our recording model only
+    // ever produces two audio streams; a hypothetical 3rd would be dropped
+    // here since amix only references 0:a:0 and 0:a:1.
     args.addAll([
       '-filter_complex',
       '[0:a:0][0:a:1]amix=inputs=2:duration=longest[aout]',
@@ -60,7 +62,8 @@ List<String> buildWaveformPcmArgs(String videoPath, int streamCount) {
   } else {
     args.addAll(['-map', '0:a:0']);
   }
-  args.addAll(['-ac', '1', '-ar', '$kWaveformSampleRate', '-f', 's16le', '-']);
+  args.addAll(
+      ['-vn', '-ac', '1', '-ar', '$kWaveformSampleRate', '-f', 's16le', '-']);
   return args;
 }
 
@@ -71,34 +74,39 @@ class WaveformExtractor {
   const WaveformExtractor();
 
   Future<WaveformPeaks?> extract(String videoPath) async {
-    final probe = await ffmpegProbe(path: videoPath);
-    final streamCount = probe.audioStreams.length;
-    if (streamCount == 0) return null;
+    try {
+      final probe = await ffmpegProbe(path: videoPath);
+      final streamCount = probe.audioStreams.length;
+      if (streamCount == 0) return null;
 
-    final result = await Process.run(
-      Ffmpeg.resolve(),
-      buildWaveformPcmArgs(videoPath, streamCount),
-      stdoutEncoding: null, // keep stdout as raw bytes (List<int>)
-    );
-    if (result.exitCode != 0) return null;
-    final bytes = result.stdout as List<int>;
-    if (bytes.length < 2) return null;
+      final result = await Process.run(
+        Ffmpeg.resolve(),
+        buildWaveformPcmArgs(videoPath, streamCount),
+        stdoutEncoding: null, // keep stdout as raw bytes (List<int>)
+      );
+      if (result.exitCode != 0) return null;
+      final bytes = result.stdout as List<int>;
+      if (bytes.length < 2) return null;
 
-    final samples = _bytesToInt16(bytes);
-    final peaks =
-        reducePcmToPeaks(samples, samplesPerBucket: kWaveformSamplesPerBucket);
-    if (peaks.isEmpty) return null;
+      final samples = _bytesToInt16(bytes);
+      final peaks = reducePcmToPeaks(samples,
+          samplesPerBucket: kWaveformSamplesPerBucket);
+      if (peaks.isEmpty) return null;
 
-    final micros = (samples.length / kWaveformSampleRate * 1e6).round();
-    return WaveformPeaks(
-      bucketsPerSecond: kWaveformBucketsPerSecond,
-      peaks: peaks,
-      sourceDuration: Duration(microseconds: micros),
-    );
+      final micros = (samples.length / kWaveformSampleRate * 1e6).round();
+      return WaveformPeaks(
+        bucketsPerSecond: kWaveformBucketsPerSecond,
+        peaks: peaks,
+        sourceDuration: Duration(microseconds: micros),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   static Int16List _bytesToInt16(List<int> bytes) {
-    final bd = ByteData.sublistView(Uint8List.fromList(bytes));
+    final u8 = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    final bd = ByteData.sublistView(u8);
     final n = bd.lengthInBytes ~/ 2;
     final out = Int16List(n);
     for (var i = 0; i < n; i++) {

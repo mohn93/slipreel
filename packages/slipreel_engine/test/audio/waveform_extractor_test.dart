@@ -30,6 +30,27 @@ void main() {
       expect(peaks.length, 3);
       expect(peaks.every((p) => p == 0.0), isTrue);
     });
+
+    test('partial final bucket: ceil() path, peak over smaller sample set', () {
+      // 200 samples => ceil(200/80) = 3 buckets (80, 80, 40 samples).
+      // Bucket 0 peak = 2000, bucket 1 peak = 4000, bucket 2 (partial, 40
+      // samples) peak = 8000 => global max => normalized 0.25, 0.5, 1.0.
+      final s = Int16List(200);
+      for (var i = 0; i < 80; i++) {
+        s[i] = 2000;
+      }
+      for (var i = 80; i < 160; i++) {
+        s[i] = 4000;
+      }
+      for (var i = 160; i < 200; i++) {
+        s[i] = 8000;
+      }
+      final peaks = reducePcmToPeaks(s, samplesPerBucket: 80);
+      expect(peaks.length, 3);
+      expect(peaks[0], closeTo(0.25, 1e-6));
+      expect(peaks[1], closeTo(0.5, 1e-6));
+      expect(peaks[2], closeTo(1.0, 1e-6));
+    });
   });
 
   group('buildWaveformPcmArgs', () {
