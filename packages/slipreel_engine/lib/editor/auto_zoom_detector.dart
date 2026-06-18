@@ -89,6 +89,18 @@ class AutoZoomDetector {
         : _totalDuration;
     if (duration <= Duration.zero) return null;
 
+    // Skip clicks that happened off the captured display. On multi-monitor
+    // setups the cursor (and its clicks) live in global screen space, so a
+    // click on another monitor is recorded as out-of-video-bounds (often
+    // negative) coordinates. Zooming to a point clamped back in-bounds would
+    // land on a spot where nothing actually happened.
+    if (click.x < 0 ||
+        click.y < 0 ||
+        click.x > videoSize.width ||
+        click.y > videoSize.height) {
+      return null;
+    }
+
     final w = videoSize.width / zoomLevel;
     final h = videoSize.height / zoomLevel;
     final cx = click.x.clamp(w / 2, videoSize.width - w / 2);

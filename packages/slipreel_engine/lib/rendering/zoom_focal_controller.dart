@@ -111,6 +111,14 @@ class ZoomFocalController {
   // raw cursor starts moving again, the sprite catches up, or the zoom exits.
   Offset? _postEnterHoldTarget;
 
+  // Last cursor sample that fell inside the video frame. On multi-monitor
+  // recordings the cursor moves onto another display and is recorded with
+  // out-of-bounds (often negative) coordinates; rather than chase the camera
+  // off-screen, we freeze the follow target here until the cursor returns
+  // in-bounds. Null until the first in-bounds sample of the active region;
+  // reset whenever the controller leaves the region.
+  Offset? _lastInBoundsCursor;
+
   // Default manual-placement enter-pan back-load as a function of zoom
   // level, from hand-tuned sweet spots. A lower exponent lets the pan lead
   // the zoom more (reads as synced at lower magnifications where the
@@ -312,8 +320,23 @@ class ZoomFocalController {
       _enterRampTarget = null;
       _enterRampFocalTarget = null;
       _postEnterHoldTarget = null;
+      _lastInBoundsCursor = null;
       _lastUpdatePosition = position;
       return null;
+    }
+
+    // Off-screen cursor freeze: on multi-monitor recordings the cursor moves
+    // onto another display and is recorded out of the video frame (often
+    // negative). Don't chase the camera off-screen — substitute the last
+    // in-bounds cursor so the follow target FREEZES where the cursor left the
+    // frame, and resumes live tracking the moment it returns in-bounds. Runs
+    // before every cursor consumer below (enter pan, hold handoff, strategy).
+    if (cursor != null) {
+      if (_inBounds(cursor, videoSize)) {
+        _lastInBoundsCursor = cursor;
+      } else {
+        cursor = _lastInBoundsCursor;
+      }
     }
 
     // Resolved ramp curve for this region's enter/exit focal lock-step.
@@ -762,6 +785,7 @@ class ZoomFocalController {
     _enterRampTarget = null;
     _enterRampFocalTarget = null;
     _postEnterHoldTarget = null;
+    _lastInBoundsCursor = null;
     _lastUpdatePosition = null;
   }
 
@@ -829,6 +853,16 @@ class ZoomFocalController {
   static Offset _baseFocal(ZoomRegion zoom, Size videoSize) {
     if (!zoom.followCursor) return zoom.rect.center;
     return Offset(videoSize.width / 2, videoSize.height / 2);
+  }
+
+  /// Whether [cursor] falls within the video frame. Out-of-bounds samples
+  /// come from multi-monitor recordings where the cursor is on another
+  /// display; the follow camera freezes rather than chasing them.
+  static bool _inBounds(Offset cursor, Size videoSize) {
+    return cursor.dx >= 0 &&
+        cursor.dy >= 0 &&
+        cursor.dx <= videoSize.width &&
+        cursor.dy <= videoSize.height;
   }
 
   static double _manualStyleBackload(ZoomRegion zoom) {
