@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
+import 'package:slipreel_engine/audio/waveform_peaks.dart';
 import 'package:screen_recorder/ui/widgets/timeline/clip_lane.dart';
 import 'package:screen_recorder/ui/widgets/timeline/slice_bar.dart';
+import 'package:screen_recorder/ui/widgets/timeline/waveform_painter.dart';
 
 ClipSlice _slice({int cs = 0, int ce = 10, int? ts, int? te}) =>
     ClipSlice(
@@ -105,6 +107,45 @@ void main() {
         onSliceTrimEndChanged: (_, __) {},
       )));
       expect(find.byKey(const ValueKey('slice-bar-body')), findsNWidgets(2));
+    });
+
+    testWidgets('forwards waveform to slices', (tester) async {
+      final peaks = WaveformPeaks(
+        bucketsPerSecond: 100,
+        peaks: List<double>.generate(600, (i) => (i % 30) / 30.0),
+        sourceDuration: const Duration(seconds: 6),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ClipLane(
+                  clips: [
+                    ClipSlice(
+                      cutStart: Duration.zero,
+                      cutEnd: const Duration(seconds: 6),
+                    ),
+                  ],
+                  selectedSliceIndex: null,
+                  pixelsPerSecond: 50,
+                  waveform: peaks,
+                  hasMic: true,
+                  onSliceSelected: (_) {},
+                  onSliceTrimStartChanged: (_, __) {},
+                  onSliceTrimEndChanged: (_, __) {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+      final hasWave = tester
+          .widgetList<CustomPaint>(find.byType(CustomPaint))
+          .any((w) => w.painter is WaveformPainter &&
+              (w.painter as WaveformPainter).samples.isNotEmpty);
+      expect(hasWave, isTrue);
     });
   });
 }

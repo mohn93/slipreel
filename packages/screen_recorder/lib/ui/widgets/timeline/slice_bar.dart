@@ -3,8 +3,10 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:slipreel_engine/audio/waveform_peaks.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:screen_recorder/ui/widgets/timeline/timeline_constants.dart';
+import 'package:screen_recorder/ui/widgets/timeline/waveform_painter.dart';
 
 /// Which handle of a slice is being dragged. Bubbled out of
 /// [SliceBar.onTrimDragChanged] so the parent timeline can react
@@ -37,6 +39,9 @@ class SliceBar extends StatefulWidget {
     required this.onTrimEndChanged,
     this.onTrimDragChanged,
     this.animateLayout = true,
+    this.waveform,
+    this.hasMic = false,
+    this.hasSystem = false,
   });
 
   final ClipSlice slice;
@@ -56,6 +61,16 @@ class SliceBar extends StatefulWidget {
   // edge, so only those drags need the timeline-edge pad to expand.
   final ValueChanged<TrimDragInfo?>? onTrimDragChanged;
   final bool animateLayout;
+
+  /// Shared waveform for the whole recording; this slice samples its own
+  /// source range out of it. Null when the recording has no audio (or the
+  /// extraction hasn't finished yet) — then no waveform is drawn.
+  final WaveformPeaks? waveform;
+
+  /// Whether the recording has a mic / system audio stream. Drives the dim
+  /// rule together with this slice's mute flags and speed.
+  final bool hasMic;
+  final bool hasSystem;
 
   @override
   State<SliceBar> createState() => _SliceBarState();
@@ -203,6 +218,24 @@ class _SliceBarState extends State<SliceBar> with TickerProviderStateMixin {
   static const double _kTicksMinBodyPx = 48.0;
   static const double _kLabelMinBodyPx = 80.0;
   static const double _kCaptionMinBodyPx = 140.0;
+
+  // Waveform suppresses below this body width — sub-16px bars just shimmer.
+  static const double _kWaveformMinBodyPx = 16.0;
+
+  /// This slice's slice of the shared recording waveform, mapped to its
+  /// SOURCE trim range. Empty when there's no waveform.
+  List<double> get _waveformSamples =>
+      widget.waveform?.slice(widget.slice.trimStart, widget.slice.trimEnd) ??
+      const [];
+
+  /// True when this slice's mixed audio is effectively silent — every present
+  /// stream is muted, or it's speed-silenced. Drives the dim treatment.
+  bool get _audioSilent {
+    if (widget.slice.audioSilencedBySpeed) return true;
+    final micSilent = !widget.hasMic || widget.slice.micMuted;
+    final sysSilent = !widget.hasSystem || widget.slice.systemMuted;
+    return micSilent && sysSilent;
+  }
 
   @override
   void initState() {
@@ -532,6 +565,7 @@ class _SliceBarState extends State<SliceBar> with TickerProviderStateMixin {
                     if (bandRight > _kDimBandMinPx)
                       _buildRightDimScissors(bandRight, t),
                     _buildBody(isSel: isSel),
+                    _buildWaveform(),
                     // Glow lines at the dim/bright seam — gated on the
                     // same band visibility so they only appear when a
                     // trimmed side has a non-trivial band to divide.
@@ -608,6 +642,38 @@ class _SliceBarState extends State<SliceBar> with TickerProviderStateMixin {
           // (rendered later) so the body itself can drop the white
           // border.
           border: isSel ? null : Border.all(color: clipStroke, width: 1.0),
+        ),
+      ),
+    );
+  }
+
+  /// Bottom-anchored waveform painted inside the body, behind the label.
+  /// Always present (so the AnimatedOpacity can fade it in when extraction
+  /// finishes); the painter no-ops on empty samples. Dims to a low opacity
+  /// when the slice's audio is silent.
+  Widget _buildWaveform() {
+    final samples = _waveformSamples;
+    final bodyWidth = math.max(0.0, _widthPx - _kInterSliceGap);
+    final show = samples.length >= 2 && bodyWidth >= _kWaveformMinBodyPx;
+    final opacity = !show ? 0.0 : (_audioSilent ? 0.12 : 1.0);
+    return Positioned(
+      key: const ValueKey('slice-bar-waveform'),
+      left: 0,
+      top: 0,
+      width: bodyWidth,
+      height: laneHeight,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          opacity: opacity,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: CustomPaint(
+              size: Size(bodyWidth, laneHeight),
+              painter: WaveformPainter(samples: samples),
+            ),
+          ),
         ),
       ),
     );

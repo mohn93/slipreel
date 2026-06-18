@@ -30,6 +30,7 @@ import 'package:screen_recorder/ui/widgets/timeline/snap_flash_overlay.dart';
 import 'package:screen_recorder/ui/widgets/timeline/zoom_lane.dart';
 import 'package:screen_recorder/ui/widgets/timeline/camera_lane.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
+import 'package:slipreel_engine/audio/waveform_peaks.dart';
 
 /// Computes the hover-scrub progress fraction (0..1 of total content)
 /// from the raw inputs that [_updateHover] has available.
@@ -158,6 +159,9 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.onCameraDeleted,
     this.onCameraAdded,
     this.showCameraLane = false,
+    this.waveform,
+    this.hasMic = false,
+    this.hasSystem = false,
   });
 
   final Duration duration;
@@ -305,6 +309,12 @@ class EditorTimeline extends ConsumerStatefulWidget {
   /// Gate this on the recording having a valid camera sidecar so
   /// screen-only recordings don't get a dead empty lane.
   final bool showCameraLane;
+
+  /// Shared recording waveform handed down to each [SliceBar]. Null = no
+  /// audio / not yet extracted.
+  final WaveformPeaks? waveform;
+  final bool hasMic;
+  final bool hasSystem;
 
   @override
   ConsumerState<EditorTimeline> createState() => _EditorTimelineState();
@@ -1703,6 +1713,9 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                                                   ?.call(i, v),
                                           onTrimDragChanged: _setTrimDragging,
                                           animateLayout: animateTimelineLayout,
+                                          waveform: widget.waveform,
+                                          hasMic: widget.hasMic,
+                                          hasSystem: widget.hasSystem,
                                         ),
                                       ),
                                       if (widget.cutModeActive)
