@@ -163,6 +163,8 @@ class InspectorChipGroup<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      // Don't clip the chips' hover lean/tilt overshoot at the panel edge.
+      clipBehavior: Clip.none,
       child: Row(
         children: [
           for (final item in items) ...[

@@ -49,6 +49,8 @@ class CameraTab extends ConsumerWidget {
 
     return ListView(
       padding: const EdgeInsets.only(right: 12),
+      // Let hover lean/tilt overshoot paint past the panel edge.
+      clipBehavior: Clip.none,
       children: [
         InspectorToggle(
           key: const Key('camera-enable-toggle'),

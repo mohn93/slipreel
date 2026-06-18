@@ -26,6 +26,8 @@ class ShortcutsTab extends ConsumerWidget {
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      // Let hover lean/tilt overshoot paint past the panel edge.
+      clipBehavior: Clip.none,
       children: [
         // ── Section label ────────────────────────────────────────────────
         const Text(

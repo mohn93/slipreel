@@ -58,6 +58,8 @@ class SliceEditor extends ConsumerWidget {
         Expanded(
           child: SingleChildScrollView(
             padding: EdgeInsets.zero,
+            // Let hover lean/tilt overshoot paint past the panel edge.
+            clipBehavior: Clip.none,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

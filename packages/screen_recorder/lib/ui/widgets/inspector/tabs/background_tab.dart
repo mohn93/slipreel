@@ -90,6 +90,8 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
 
     return ListView(
       padding: EdgeInsets.zero,
+      // Let hover lean/tilt overshoot paint past the panel edge.
+      clipBehavior: Clip.none,
       children: [
         _wallpaperHeader(),
         const SizedBox(height: 12),
