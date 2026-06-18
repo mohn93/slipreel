@@ -34,6 +34,8 @@ class _AudioTabState extends State<AudioTab> {
   Widget build(BuildContext context) {
     return ListView(
       padding: EdgeInsets.zero,
+      // Let hover lean/tilt overshoot paint past the panel edge.
+      clipBehavior: Clip.none,
       children: [
         const _RecordingAudioSection(),
         const InspectorSectionDivider(),
