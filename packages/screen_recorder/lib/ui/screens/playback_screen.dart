@@ -84,6 +84,14 @@ import 'package:screen_recorder/ui/widgets/command_palette/command_palette.dart'
 /// editor is open.
 VideoPlayerController? debugPlaybackController;
 
+/// The live editor [WidgetRef], published here (in debug/profile builds)
+/// so VM-service extensions (`ext.slipreel.setFeel`, registered in
+/// main.dart) can drive the Feel A/B lab — the editor canvas isn't
+/// tappable via the test probe, so the lab is driven through this ref.
+/// Null when no editor is open. See [debugPlaybackController] for the
+/// sibling playback hook.
+WidgetRef? debugFeelLabRef;
+
 /// Every sidecar file Slipreel writes alongside `<videoPath>`. Deleting a
 /// recording must unlink all of these or they orphan on disk — notably the
 /// `.camera.mov`, which can be hundreds of MB. The video file itself is
@@ -1994,6 +2002,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // full restart. See [debugPlaybackController].
     assert(() {
       debugPlaybackController = _controller;
+      debugFeelLabRef = ref;
       return true;
     }());
     // Single source of truth: every editor-state read in the body

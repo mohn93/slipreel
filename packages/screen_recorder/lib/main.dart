@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
@@ -21,6 +22,7 @@ import 'platform/window_chrome_channel.dart';
 import 'onboarding/onboarding_store.dart';
 import 'onboarding/tips_controller.dart';
 import 'onboarding/tips_store.dart';
+import 'state/feel_lab_controller.dart';
 import 'state/hotkey_controller.dart';
 import 'state/long_recording_watcher.dart';
 import 'state/permissions_controller.dart';
@@ -267,6 +269,26 @@ void _registerSlipreelDebugExtensions({TipsController? tipsController}) {
     final enabled = raw == 'true' || raw == '1';
     cameraFocalTraceEnabled = enabled;
     return developer.ServiceExtensionResponse.result('{"enabled": $enabled}');
+  });
+
+  // Feel A/B lab driver: applies a FeelVariant candidate by index through
+  // the editor + motion-tuning setters. The editor canvas isn't tappable
+  // via the test probe, so this hook lets an agent cycle candidates and
+  // read back the active label during runtime verification. Requires an
+  // open editor (debugFeelLabRef is published from the editor screen).
+  developer.registerExtension('ext.slipreel.setFeel', (method, params) async {
+    final i = int.tryParse(params['index'] ?? '') ?? 0;
+    final ref = debugFeelLabRef;
+    if (ref == null) {
+      return developer.ServiceExtensionResponse.result(
+        jsonEncode({'attached': false}),
+      );
+    }
+    ref.read(feelLabControllerProvider.notifier).apply(i);
+    final label = ref.read(feelLabControllerProvider.notifier).activeLabel;
+    return developer.ServiceExtensionResponse.result(
+      jsonEncode({'index': i, 'label': label}),
+    );
   });
 
   developer.registerExtension(
