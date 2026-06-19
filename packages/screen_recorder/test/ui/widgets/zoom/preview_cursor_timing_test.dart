@@ -76,6 +76,25 @@ void main() {
       );
     });
 
+    test('a runaway latency never freezes the preview far behind the clock', () {
+      // Texture stalls during a GPU-heavy zoom: the latency estimate balloons
+      // so `adjusted` falls ~1.7s behind while the raw clock keeps advancing.
+      // The hold must NOT freeze the preview at prevEmitted (which stuck the
+      // zoom at full magnification and never let it ramp out). The preview may
+      // trail the real clock by at most the bounded max lag.
+      final out = steadyPreviewPlayhead(
+        rawPlayhead: const Duration(milliseconds: 7700),
+        displayLatency: const Duration(milliseconds: 1704), // adjusted = 5996
+        prevRawPlayhead: const Duration(milliseconds: 7680),
+        prevEmitted: const Duration(milliseconds: 5996), // was held here
+      );
+      expect(
+        out,
+        greaterThan(const Duration(milliseconds: 7000)),
+        reason: 'preview must not stay frozen ~1.7s behind the play clock',
+      );
+    });
+
     test('a real backward seek (raw moves back) is followed, not held', () {
       expect(
         steadyPreviewPlayhead(

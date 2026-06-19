@@ -21,6 +21,34 @@ const Set<PointerDeviceKind> _kPillDragDevices = {
   PointerDeviceKind.invertedStylus,
 };
 
+/// Resolves the enter/exit ramps for a zoom region being resized.
+///
+/// Resizing or translating a region does NOT recompute its ramps — they
+/// pass through from where they were at drag start (issue #4). Enter/exit
+/// durations change only when the user edits them explicitly in the zoom
+/// inspector, so the animation feel never drifts just because a region was
+/// stretched or shrunk.
+///
+/// The one exception is the defensive clamp: if the region is shrunk
+/// shorter than enter+exit, the ramps are proportionally compressed so the
+/// model never stores an impossible (ramps > duration) state.
+@visibleForTesting
+({Duration enter, Duration exit}) resolveResizeRamps({
+  required Duration dragStartEnter,
+  required Duration dragStartExit,
+  required Duration newDuration,
+}) {
+  var enter = dragStartEnter;
+  var exit = dragStartExit;
+  final ramps = enter + exit;
+  if (ramps > newDuration && ramps > Duration.zero) {
+    final factor = newDuration.inMicroseconds / ramps.inMicroseconds;
+    enter = Duration(microseconds: (enter.inMicroseconds * factor).round());
+    exit = newDuration - enter;
+  }
+  return (enter: enter, exit: exit);
+}
+
 /// The bottom lane in the editor timeline: hosts zoom regions as draggable
 /// pills, a hover-driven "click to add" ghost in the empty area, and routes
 /// per-zoom edit gestures (drag body / drag edges / drag ramp dividers /
@@ -459,50 +487,22 @@ class _ZoomPillState extends State<_ZoomPill> {
     var nextEnd = _editedToSource(editedNextEnd);
 
     final newDuration = nextEnd - nextStart;
-    // Enter and exit ramps now scale PROPORTIONALLY with the pill's
-    // width. Stretching the pill stretches the ramps; shrinking it
-    // shrinks them. The fraction-of-duration each ramp occupies is
-    // locked at drag start — anchoring on `_dragStartEnter` /
-    // `_dragStartExit` (NOT widget.zoom.*, which mutates every tick)
-    // keeps the ratio stable across a continuous drag.
-    //
-    // Body-mode drags (translate, newDuration == dragStartDuration)
-    // collapse to ratio=1 and the ramps pass through unchanged.
-    final dragStartDuration = _dragEndTime - _dragStartTime;
-    Duration newEnter;
-    Duration newExit;
-    if (dragStartDuration > Duration.zero) {
-      final ratio =
-          newDuration.inMicroseconds / dragStartDuration.inMicroseconds;
-      newEnter = Duration(
-        microseconds: (_dragStartEnter.inMicroseconds * ratio).round(),
-      );
-      newExit = Duration(
-        microseconds: (_dragStartExit.inMicroseconds * ratio).round(),
-      );
-    } else {
-      newEnter = _dragStartEnter;
-      newExit = _dragStartExit;
-    }
-    // Defensive clamp: if enter + exit > newDuration after rounding,
-    // proportionally compress so the model never stores impossible
-    // ramps (it always was an invariant, even with scaling).
-    final ramps = newEnter + newExit;
-    if (ramps > newDuration && ramps > Duration.zero) {
-      final factor = newDuration.inMicroseconds / ramps.inMicroseconds;
-      newEnter = Duration(
-        microseconds: (newEnter.inMicroseconds * factor).round(),
-      );
-      newExit = newDuration - newEnter;
-    }
+    // Resizing/translating a region passes the ramps through unchanged;
+    // they only ever shrink under the defensive clamp when the region is
+    // dragged shorter than enter+exit. See resolveResizeRamps (#4).
+    final ramps = resolveResizeRamps(
+      dragStartEnter: _dragStartEnter,
+      dragStartExit: _dragStartExit,
+      newDuration: newDuration,
+    );
 
     widget.onChanged!(
       widget.index,
       widget.zoom.copyWith(
         startTime: nextStart,
         duration: newDuration,
-        enterDuration: newEnter,
-        exitDuration: newExit,
+        enterDuration: ramps.enter,
+        exitDuration: ramps.exit,
       ),
     );
   }
