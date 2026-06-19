@@ -71,6 +71,9 @@ dependencies:
   # Path manipulation — replaces inline _basename/_fileExtension helpers
   path: ^1.9.0
 
+  # App version / build-number for the About section
+  package_info_plus: ^8.0.0
+
   # Declarative, physics-first animations. Used for the CTA spinner that
   # rotates inside the Export button while an export is running.
   cue: ^0.2.1
