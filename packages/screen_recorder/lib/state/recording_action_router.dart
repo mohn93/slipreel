@@ -6,6 +6,7 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 
 import 'countdown_controller.dart';
 import 'camera_controller.dart';
+import 'global_preferences_controller.dart';
 import 'microphone_controller.dart';
 import 'permissions_controller.dart';
 import 'recording_settings_controller.dart';
@@ -44,6 +45,11 @@ class RecordingActionRouter {
         // Providers not overridden in test — that's fine; recording can
         // proceed without mic / system audio / camera configs.
       }
+      String? defaultSaveLocation;
+      try {
+        defaultSaveLocation =
+            _container.read(globalPreferencesControllerProvider).defaultSaveLocation;
+      } catch (_) {}
       await controller.startRecording(
         microphone: micConfig,
         systemAudio: sysAudioConfig,
@@ -53,6 +59,7 @@ class RecordingActionRouter {
           if (!context.mounted) return Future.value();
           return PermissionDeniedSheet.show(context, kind);
         },
+        defaultSaveLocation: defaultSaveLocation,
       );
     }
 
