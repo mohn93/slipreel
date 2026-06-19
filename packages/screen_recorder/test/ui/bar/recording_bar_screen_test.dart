@@ -107,6 +107,7 @@ class _FakeRecordingController extends RecordingController {
     CameraConfig? camera,
     PermissionsSnapshot? permissions,
     Future<void> Function(PermissionKind kind)? onDenied,
+    String? defaultSaveLocation,
   }) async =>
       startCalls++;
 
