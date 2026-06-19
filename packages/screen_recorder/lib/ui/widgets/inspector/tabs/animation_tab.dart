@@ -200,39 +200,79 @@ class FeelAbRow extends ConsumerWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: kInspectorBorder),
       ),
-      child: Row(
+      // Two lines so the controls fit the narrow inspector panel without
+      // overflowing: a title row, then a [‹ label ›  ⟳] controls row with
+      // tight, low-density buttons.
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.science_outlined, color: Colors.white70, size: 18),
-          const SizedBox(width: 8),
-          const Text('Feel A/B (dev)',
-              style:
-                  TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.chevron_left, color: Colors.white),
-            onPressed: lab.cyclePrev,
-            tooltip: 'Previous feel',
+          Row(
+            children: [
+              const Icon(Icons.science_outlined,
+                  color: Colors.white70, size: 16),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text('Feel A/B (dev)',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+              ),
+              _compactIconButton(
+                icon: Icons.restart_alt,
+                color: Colors.white60,
+                tooltip: 'Restore original',
+                onPressed: lab.restore,
+              ),
+            ],
           ),
-          SizedBox(
-            width: 96,
-            child: Text(label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white)),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right, color: Colors.white),
-            onPressed: lab.cycle,
-            tooltip: 'Next feel',
-          ),
-          IconButton(
-            icon: const Icon(Icons.restart_alt, color: Colors.white70),
-            onPressed: lab.restore,
-            tooltip: 'Restore original',
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              _compactIconButton(
+                icon: Icons.chevron_left,
+                color: Colors.white,
+                tooltip: 'Previous feel',
+                onPressed: lab.cyclePrev,
+              ),
+              Expanded(
+                child: Text(label,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w500)),
+              ),
+              _compactIconButton(
+                icon: Icons.chevron_right,
+                color: Colors.white,
+                tooltip: 'Next feel',
+                onPressed: lab.cycle,
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+
+  /// A 28×28 tap target with no default 48px IconButton padding — the stock
+  /// IconButton is far too wide for the narrow inspector panel.
+  static Widget _compactIconButton({
+    required IconData icon,
+    required Color color,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) =>
+      IconButton(
+        icon: Icon(icon, color: color, size: 20),
+        onPressed: onPressed,
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        splashRadius: 18,
+      );
 }
 
 /// Tile that defaults to icon + label, but on hover swaps the icon
