@@ -69,6 +69,16 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
         ScreenAnimationStyle.studioSnappy => const Cubic(0.4, 0.0, 0.2, 1.0),
       };
 
+  /// Multiplier on a zoom region's enter/exit ramp DURATION. >1 = slower,
+  /// more cinematic push; <1 = quicker snap. The feel's most perceptible
+  /// lever on modest zooms (curve shape alone is nearly invisible).
+  double get rampDurationScale => switch (this) {
+        ScreenAnimationStyle.focused => 0.8,
+        ScreenAnimationStyle.smooth => 1.0,
+        ScreenAnimationStyle.studioSoft => 1.4,
+        ScreenAnimationStyle.studioSnappy => 0.55,
+      };
+
   /// Curve used for the picker's hover-driven demo circle.
   Curve get previewCurve => switch (this) {
         ScreenAnimationStyle.focused => Curves.easeOutCubic,

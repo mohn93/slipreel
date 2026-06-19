@@ -178,6 +178,8 @@ class FrameCompositor {
         fps: fps,
         hasCursorData: _hasCursorData,
         screenRampCurve: projectState.screenAnimationConfig.rampCurve,
+        rampDurationScale:
+            projectState.screenAnimationConfig.rampDurationScale,
       );
       final motion = scenePass.motion;
       final focalUpdate = scenePass.focalUpdate;
@@ -199,6 +201,8 @@ class FrameCompositor {
           videoSize: videoSize,
           focalPoint: focalUpdate.focal,
           rampCurve: ramp,
+          rampDurationScale:
+              projectState.screenAnimationConfig.rampDurationScale,
         );
       }
 
@@ -476,6 +480,8 @@ class FrameCompositor {
           videoSize: videoSize,
           fps: fps,
           screenRampCurve: projectState.screenAnimationConfig.rampCurve,
+          rampDurationScale:
+              projectState.screenAnimationConfig.rampDurationScale,
           clips: projectState.timeline.clips,
         )) {
       return cached;
@@ -488,6 +494,8 @@ class FrameCompositor {
       videoSize: videoSize,
       fps: fps,
       screenRampCurve: projectState.screenAnimationConfig.rampCurve,
+      rampDurationScale:
+          projectState.screenAnimationConfig.rampDurationScale,
       clips: projectState.timeline.clips,
     );
   }
@@ -588,6 +596,8 @@ class FrameCompositor {
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
           projectState.screenAnimationConfig.rampCurve,
+      rampDurationScale:
+          projectState.screenAnimationConfig.rampDurationScale,
     );
     final scale = matrix.storage[0];
     // Measure the VISIBLE camera, not the raw controller focal. getTransform

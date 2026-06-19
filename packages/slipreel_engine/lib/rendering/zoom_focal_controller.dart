@@ -298,6 +298,7 @@ class ZoomFocalController {
     bool forceSnap = false,
     ZoomRegion? activeRegionOverride,
     Curve screenRampCurve = Curves.easeInOutQuad,
+    double rampDurationScale = 1.0,
 
     /// For a followCursor zoom, the SETTLE target for the enter pan: the
     /// (raw) cursor position at the end of the enter ramp — i.e. where the
@@ -427,7 +428,7 @@ class ZoomFocalController {
     // axis with the larger frozen offset gets clamped first, the
     // other one snaps to centre only on the final identity frame),
     // which the user reads as "X moved, Y didn't, then Y jumped".
-    final exit = _exitRampWindow(activeZoom);
+    final exit = _exitRampWindow(activeZoom, rampDurationScale);
     if (exit != null) {
       final tIntoRegionUs =
           position.inMicroseconds - activeZoom.startTime.inMicroseconds;
@@ -556,7 +557,7 @@ class ZoomFocalController {
     // velocity made the critically-damped spring sail PAST the cursor once
     // (overshoot, magnified by the zoom). Zero velocity hands it a clean
     // at-rest state on the cursor.
-    final enter = _enterRampWindow(activeZoom);
+    final enter = _enterRampWindow(activeZoom, rampDurationScale);
     if (enter != null) {
       final tIntoRegionUs =
           position.inMicroseconds - activeZoom.startTime.inMicroseconds;
@@ -807,12 +808,13 @@ class ZoomFocalController {
   /// last [ZoomRegion.exitDuration] post-squeeze when enter+exit
   /// exceed the region length. Returns null when there's no exit
   /// ramp to enter (zero-length region or zero exit duration).
-  static ({int exitStartUs, int exitUs})? _exitRampWindow(ZoomRegion zoom) {
+  static ({int exitStartUs, int exitUs})? _exitRampWindow(
+      ZoomRegion zoom, double rampDurationScale) {
     final regionUs = zoom.duration.inMicroseconds;
     if (regionUs <= 0) return null;
 
-    var enterUs = zoom.enterDuration.inMicroseconds;
-    var exitUs = zoom.exitDuration.inMicroseconds;
+    var enterUs = (zoom.enterDuration.inMicroseconds * rampDurationScale).round();
+    var exitUs = (zoom.exitDuration.inMicroseconds * rampDurationScale).round();
     final totalRamp = enterUs + exitUs;
     if (totalRamp > regionUs && totalRamp > 0) {
       // Match ZoomTransformer._calculateZoomFactor's proportional
@@ -831,11 +833,12 @@ class ZoomFocalController {
   /// [ZoomTransformer._calculateZoomFactor]) when enter+exit overflow the
   /// region. Returns null when there's no enter ramp (zero-length region
   /// or zero enter duration).
-  static ({int enterUs})? _enterRampWindow(ZoomRegion zoom) {
+  static ({int enterUs})? _enterRampWindow(
+      ZoomRegion zoom, double rampDurationScale) {
     final regionUs = zoom.duration.inMicroseconds;
     if (regionUs <= 0) return null;
-    var enterUs = zoom.enterDuration.inMicroseconds;
-    final exitUs = zoom.exitDuration.inMicroseconds;
+    var enterUs = (zoom.enterDuration.inMicroseconds * rampDurationScale).round();
+    final exitUs = (zoom.exitDuration.inMicroseconds * rampDurationScale).round();
     final totalRamp = enterUs + exitUs;
     if (totalRamp > regionUs && totalRamp > 0) {
       final scale = regionUs / totalRamp;

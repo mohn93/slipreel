@@ -609,6 +609,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
               fps: widget.metadata?.fps ?? 60,
               hasCursorData: hasCursorData,
               screenRampCurve: widget.screenAnimationConfig.rampCurve,
+              rampDurationScale:
+                  widget.screenAnimationConfig.rampDurationScale,
               // When the placement-picker override is active we want the
               // focal to lock onto the previewed rect immediately — the
               // spring otherwise barely advances while the video is paused
@@ -1027,6 +1029,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                   rampCurve:
                       activeZoom.rampCurveOverride?.toFlutterCurve() ??
                       widget.screenAnimationConfig.rampCurve,
+                  rampDurationScale:
+                      widget.screenAnimationConfig.rampDurationScale,
                 );
                 assert(() {
                   if (cameraFocalTraceEnabled) {
@@ -1325,6 +1329,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
           fps: fps,
           cursorDelay: widget.cursorDelay,
           screenRampCurve: widget.screenAnimationConfig.rampCurve,
+          rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
           clips: widget.clips,
         )) {
       return cached;
@@ -1338,6 +1343,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       cursorPostProcess: widget.cursorPostProcess,
       cursorDelay: widget.cursorDelay,
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
+      rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
       clips: widget.clips,
     );
   }
@@ -1404,6 +1410,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
           widget.screenAnimationConfig.rampCurve,
+      rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
     );
     return SceneCameraSample(
       position: t,
@@ -1457,6 +1464,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
           widget.screenAnimationConfig.rampCurve,
+      rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
     );
   }
 

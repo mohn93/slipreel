@@ -17,6 +17,7 @@ class ScreenAnimationConfig {
   Curve get badgeCurve => _preset!.badgeCurve;
   Curve get rampCurve => _preset!.rampCurve;
   Duration get badgeDuration => _preset!.badgeDuration;
+  double get rampDurationScale => _preset!.rampDurationScale;
 
   Map<String, dynamic> toJson() => {'preset': _preset!.name};
 
