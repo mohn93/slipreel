@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import '../services/save_directory.dart';
 import 'cursor_checkpointer.dart';
 import 'permissions_controller.dart';
 import 'session_marker.dart';
@@ -135,6 +136,7 @@ class RecordingController extends StateNotifier<RecordingState> {
     CameraConfig? camera,
     PermissionsSnapshot? permissions,
     Future<void> Function(PermissionKind kind)? onDenied,
+    String? defaultSaveLocation,
   }) async {
     if (!state.canStartRecording ||
         state.selectedSourceId == null ||
@@ -188,8 +190,12 @@ class RecordingController extends StateNotifier<RecordingState> {
       );
 
       final docsDir = await getApplicationDocumentsDirectory();
+      final saveDir = resolveSaveDirectory(
+        defaultSaveLocation: defaultSaveLocation,
+        documentsPath: docsDir.path,
+      );
       final ts = DateTime.now().millisecondsSinceEpoch;
-      final outputPath = '${docsDir.path}/recording_$ts.mp4';
+      final outputPath = '$saveDir/recording_$ts.mp4';
 
       final markerId = '$ts';
       final ndjsonPath = '$outputPath.cursor.ndjson';

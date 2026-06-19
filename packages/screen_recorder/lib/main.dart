@@ -25,6 +25,8 @@ import 'state/hotkey_controller.dart';
 import 'state/long_recording_watcher.dart';
 import 'state/permissions_controller.dart';
 import 'state/recording_action_router.dart';
+import 'state/global_preferences_controller.dart';
+import 'state/global_preferences_store.dart';
 import 'state/recording_settings_controller.dart';
 import 'state/recording_settings_store.dart';
 import 'state/sleep_observer.dart';
@@ -143,6 +145,14 @@ Future<void> main() async {
   );
   final initialRecordingSettings = await recordingSettingsStore.load();
 
+  final globalPreferencesStore = GlobalPreferencesStore(
+    path: p.join(
+      (await getApplicationSupportDirectory()).path,
+      'global_preferences.json',
+    ),
+  );
+  final initialGlobalPreferences = await globalPreferencesStore.load();
+
   final paletteStore = await AppPaletteStore.resolveDefault();
   final initialPalette = (await paletteStore.load()) ?? PaletteId.midnight;
 
@@ -171,6 +181,11 @@ Future<void> main() async {
           RecordingSettingsController(
               store: recordingSettingsStore,
               initial: initialRecordingSettings)),
+      globalPreferencesStoreProvider.overrideWithValue(globalPreferencesStore),
+      globalPreferencesControllerProvider.overrideWith((ref) =>
+          GlobalPreferencesController(
+              store: globalPreferencesStore,
+              initial: initialGlobalPreferences)),
       sessionMarkerStoreProvider.overrideWithValue(sessionMarkerStore),
       recoveryServiceProvider.overrideWith((ref) => recoveryService),
       recordingControllerProvider.overrideWith((ref) => RecordingController(
