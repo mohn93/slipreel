@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
-/// A label + subtitle row with a status-driven action: a check when granted,
-/// "Open System Settings" when denied/restricted, "Grant" otherwise. Shared by
-/// first-run onboarding and the Settings permissions section.
+/// A leading icon + label + subtitle row with a status-driven action: a check
+/// when granted, "Open System Settings" when denied/restricted, "Enable"
+/// otherwise. Shared by first-run onboarding and the Settings permissions
+/// section.
 class PermissionStatusRow extends StatelessWidget {
   const PermissionStatusRow({
     super.key,
     required this.kind,
+    required this.icon,
     required this.label,
     required this.subtitle,
     required this.status,
@@ -16,6 +18,7 @@ class PermissionStatusRow extends StatelessWidget {
   });
 
   final PermissionKind kind;
+  final IconData icon;
   final String label;
   final String subtitle;
   final PermissionStatus status;
@@ -28,6 +31,16 @@ class PermissionStatusRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 20, color: Colors.white70),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,7 +75,7 @@ class PermissionStatusRow extends StatelessWidget {
       case PermissionStatus.unsupported:
         return FilledButton.tonal(
           onPressed: onGrant,
-          child: const Text('Grant'),
+          child: const Text('Enable'),
         );
     }
   }

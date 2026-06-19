@@ -7,11 +7,13 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 
 PermissionsSnapshot _snap({
   PermissionStatus screen = PermissionStatus.notDetermined,
+  PermissionStatus camera = PermissionStatus.notDetermined,
   PermissionStatus mic = PermissionStatus.notDetermined,
   PermissionStatus ax = PermissionStatus.notDetermined,
 }) =>
     PermissionsSnapshot({
       PermissionKind.screenRecording: screen,
+      PermissionKind.camera: camera,
       PermissionKind.microphone: mic,
       PermissionKind.accessibility: ax,
     });
@@ -39,26 +41,38 @@ Future<void> pump(WidgetTester tester, PermissionsSnapshot snapshot) async {
 }
 
 void main() {
-  testWidgets('Continue is disabled when Screen Rec is not granted',
+  testWidgets('Confirm is disabled when Screen Rec is not granted',
       (tester) async {
     await pump(tester, _snap(screen: PermissionStatus.notDetermined));
     final btn = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Continue'));
+        find.widgetWithText(FilledButton, 'Confirm'));
     expect(btn.onPressed, isNull);
   });
 
-  testWidgets('Continue is enabled when Screen Rec is granted',
+  testWidgets(
+      'Confirm is enabled when Screen Rec is granted even if others denied',
       (tester) async {
     await pump(
         tester,
         _snap(
           screen: PermissionStatus.granted,
+          camera: PermissionStatus.denied,
           mic: PermissionStatus.denied,
           ax: PermissionStatus.denied,
         ));
     final btn = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Continue'));
+        find.widgetWithText(FilledButton, 'Confirm'));
     expect(btn.onPressed, isNotNull);
+  });
+
+  testWidgets('surfaces all four permission rows including Camera',
+      (tester) async {
+    await pump(tester, _snap());
+    expect(find.text('Screen Recording'), findsOneWidget);
+    expect(find.text('Camera'), findsOneWidget);
+    expect(find.text('Microphone'), findsOneWidget);
+    expect(find.text('Accessibility'), findsOneWidget);
+    expect(find.byIcon(Icons.videocam_outlined), findsOneWidget);
   });
 
   testWidgets('Granted rows show a check mark', (tester) async {

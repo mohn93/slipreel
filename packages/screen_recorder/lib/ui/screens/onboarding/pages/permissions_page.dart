@@ -11,21 +11,30 @@ class PermissionsPage extends ConsumerWidget {
 
   static const _labels = {
     PermissionKind.screenRecording: 'Screen Recording',
+    PermissionKind.camera: 'Camera',
     PermissionKind.microphone: 'Microphone',
     PermissionKind.accessibility: 'Accessibility',
   };
 
   static const _subtitles = {
     PermissionKind.screenRecording: 'Required to capture your screen.',
+    PermissionKind.camera: 'Optional — for webcam / facecam.',
     PermissionKind.microphone: 'Optional — for voice narration.',
     PermissionKind.accessibility: 'Optional — for richer click tracking.',
   };
 
-  /// Permissions surfaced during first-run onboarding. Camera is intentionally
-  /// excluded — it's optional and requested on demand when the user picks a
-  /// camera device, not a first-run gate.
+  static const _icons = {
+    PermissionKind.screenRecording: Icons.desktop_windows_outlined,
+    PermissionKind.camera: Icons.videocam_outlined,
+    PermissionKind.microphone: Icons.mic_none_outlined,
+    PermissionKind.accessibility: Icons.keyboard_outlined,
+  };
+
+  /// Permissions surfaced during first-run onboarding, in the reference order.
+  /// Camera is shown but optional — only Screen Recording gates Confirm.
   static const _onboardingKinds = [
     PermissionKind.screenRecording,
+    PermissionKind.camera,
     PermissionKind.microphone,
     PermissionKind.accessibility,
   ];
@@ -48,6 +57,7 @@ class PermissionsPage extends ConsumerWidget {
           for (final kind in _onboardingKinds)
             PermissionStatusRow(
               kind: kind,
+              icon: _icons[kind]!,
               label: _labels[kind]!,
               subtitle: _subtitles[kind]!,
               status: snap.byKind[kind] ?? PermissionStatus.unsupported,
@@ -62,7 +72,7 @@ class PermissionsPage extends ConsumerWidget {
             onPressed: screenRecGranted ? onNext : null,
             child: const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('Continue'),
+              child: Text('Confirm'),
             ),
           ),
         ],
