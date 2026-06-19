@@ -38,7 +38,6 @@ import 'package:screen_recorder/ui/widgets/canvas_toolbar/snap_toggle_pill.dart'
 import 'package:screen_recorder/ui/widgets/canvas_toolbar/timeline_scale_slider.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 import 'package:screen_recorder/ui/widgets/export_dialog/export_dialog.dart';
-import 'package:screen_recorder/ui/screens/settings_screen.dart';
 import 'package:screen_recorder/ui/screens/zoom_shortcuts.dart';
 import 'package:slipreel_engine/export/export_pipeline.dart';
 import 'package:slipreel_engine/export/gif_export_pipeline.dart';
@@ -1668,27 +1667,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     notifier.setKeystrokeOverlay(settings.copyWith(disabledKeys: next));
   }
 
-  void _openFrameSettings() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) {
-          // Watch the controller so a sidecar load (or external
-          // mutation) pushed into the notifier while this route is
-          // mounted is reflected in the settings UI.
-          return Consumer(builder: (context, ref, _) {
-            final frame = ref.watch(editorProjectControllerProvider).windowFrame;
-            return SettingsScreen(
-              frame: frame,
-              onChanged: ref
-                  .read(editorProjectControllerProvider.notifier)
-                  .setWindowFrame,
-            );
-          });
-        },
-      ),
-    );
-  }
-
   Future<void> _export() async {
     // Re-entrancy guard. The Export button stays mounted (the
     // settings/progress dialogs cover but don't replace the playback
@@ -2880,20 +2858,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 tooltip: 'Redo (Cmd+Shift+Z)',
                 color: context.palette.accent,
                 disabledColor: Colors.white24,
-              ),
-
-              // Frame settings button. Reads windowFrame through the
-              // controller so the tint flips the moment the user picks
-              // a non-None template — same source of truth as the
-              // PlaybackCanvas's `frame` prop above.
-              IconButton(
-                onPressed: _openFrameSettings,
-                icon: const Icon(Icons.settings),
-                color: ref.watch(editorProjectControllerProvider).windowFrame.name !=
-                        'None'
-                    ? context.palette.accent
-                    : Colors.white70,
-                tooltip: 'Frame Settings',
               ),
 
               // Dev HUD toggle: shows the recorded cursor position

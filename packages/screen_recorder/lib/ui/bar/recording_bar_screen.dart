@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 
 import '../../onboarding/tips_controller.dart';
@@ -32,13 +31,6 @@ class RecordingBarScreen extends ConsumerStatefulWidget {
 }
 
 class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
-  // Frame chrome shown by the gear → Settings panel when opened from
-  // the bar. Held locally because the bar has no recording context to
-  // persist against — edits are discarded on close, matching the
-  // pre-refactor behaviour (the panel previously wrote into a
-  // FrameSettingsProvider that nothing else read).
-  WindowFrame _barFrame = WindowFrame.rounded();
-
   // Auto-size: the bar window hugs its content, which varies with the mic
   // (and later system-audio) label. We measure the content Row's intrinsic
   // width after each bar frame and ask the native window to match it.
@@ -265,10 +257,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
       case 'recents':
         await _openPanel(const RecentsScreen());
       case 'settings':
-        await _openPanel(SettingsScreen(
-          frame: _barFrame,
-          onChanged: (next) => setState(() => _barFrame = next),
-        ));
+        await _openPanel(const SettingsScreen());
       case 'quit':
         await SystemNavigator.pop();
     }
