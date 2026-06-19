@@ -168,8 +168,10 @@ Future<void> main() async {
   runApp(ProviderScope(
     overrides: [
       motionTuningProvider.overrideWith(
+        // New sessions default to the cinematic feedforward baked from the
+        // tuned Studio Soft feel (#7); a saved tuning still wins if present.
         (ref) => MotionTuningController(
-          initial: loadedTuning ?? MotionTuning.defaults,
+          initial: loadedTuning ?? MotionTuning.cinematic,
         ),
       ),
       motionTuningStoreProvider.overrideWithValue(tuningStore),

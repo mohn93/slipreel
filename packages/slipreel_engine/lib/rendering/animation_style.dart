@@ -45,8 +45,8 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
   /// user nudges the badge). Focused snaps in faster; Smooth lingers.
   Duration get badgeDuration => switch (this) {
         ScreenAnimationStyle.focused => const Duration(milliseconds: 150),
-        ScreenAnimationStyle.smooth => const Duration(milliseconds: 350),
-        ScreenAnimationStyle.studioSoft => const Duration(milliseconds: 420),
+        ScreenAnimationStyle.smooth => const Duration(milliseconds: 520),
+        ScreenAnimationStyle.studioSoft => const Duration(milliseconds: 520),
         ScreenAnimationStyle.studioSnappy => const Duration(milliseconds: 260),
       };
 
@@ -62,15 +62,17 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
   /// and steadies; Smooth eases on both ends for a film-like push.
   Curve get rampCurve => switch (this) {
         ScreenAnimationStyle.focused => Curves.easeOutCubic,
-        ScreenAnimationStyle.smooth => Curves.easeInOutCubic,
-        ScreenAnimationStyle.studioSoft => const Cubic(0.33, 0.0, 0.15, 1.0),
+        // Baked from the tuned Studio Soft feel (#7): ease-out — quick off
+        // the line, decelerating into the destination with a soft landing.
+        ScreenAnimationStyle.smooth => const Cubic(0.22, 0.61, 0.35, 1.0),
+        ScreenAnimationStyle.studioSoft => const Cubic(0.22, 0.61, 0.35, 1.0),
         ScreenAnimationStyle.studioSnappy => const Cubic(0.4, 0.0, 0.2, 1.0),
       };
 
   /// Curve used for the picker's hover-driven demo circle.
   Curve get previewCurve => switch (this) {
         ScreenAnimationStyle.focused => Curves.easeOutCubic,
-        ScreenAnimationStyle.smooth => Curves.easeInOutSine,
+        ScreenAnimationStyle.smooth => Curves.easeOutCubic,
         ScreenAnimationStyle.studioSoft => Curves.easeInOutCubic,
         ScreenAnimationStyle.studioSnappy => Curves.easeOutCubic,
       };
@@ -123,11 +125,11 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
   /// Lerp factor passed to [ZoomFocalController.update]. 1.0 = no
   /// smoothing (focal snaps to the cursor every frame).
   double get smoothing => switch (this) {
-        CursorAnimationStyle.smooth => 0.08,
+        CursorAnimationStyle.smooth => 0.09,
         CursorAnimationStyle.medium => 0.18,
         CursorAnimationStyle.rapid => 0.40,
         CursorAnimationStyle.none => 1.0,
-        CursorAnimationStyle.studioSoft => 0.12,
+        CursorAnimationStyle.studioSoft => 0.09,
         CursorAnimationStyle.studioSnappy => 0.22,
       };
 
@@ -176,15 +178,16 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
   /// cursor tab switches the config to a custom spring that overrides
   /// these.
   MotionSpring get motionSpring => switch (this) {
+        // Baked from the tuned Studio Soft feel (#7): a lazier chase.
         CursorAnimationStyle.smooth =>
-          const MotionSpring(stiffness: 180, damping: 1.0),
+          const MotionSpring(stiffness: 160, damping: 1.0),
         CursorAnimationStyle.medium =>
           const MotionSpring(stiffness: 380, damping: 1.0),
         CursorAnimationStyle.rapid =>
           const MotionSpring(stiffness: 900, damping: 1.0),
         CursorAnimationStyle.none => MotionSpring.snap,
         CursorAnimationStyle.studioSoft =>
-          const MotionSpring(stiffness: 240, damping: 1.0),
+          const MotionSpring(stiffness: 160, damping: 1.0),
         CursorAnimationStyle.studioSnappy =>
           const MotionSpring(stiffness: 520, damping: 1.0),
       };
