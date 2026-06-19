@@ -84,14 +84,22 @@ class FileSaver implements DestinationHandler {
   /// Constructs a [FileSaver].
   ///
   /// [saveDialog] is injectable for testing. In production the default
-  /// implementation opens the real system Save dialog via `file_selector`.
+  /// implementation opens the real system Save dialog via `file_selector`,
+  /// pointed at [initialDirectory] when one is provided.
   FileSaver({
     Future<String?> Function(String suggestedName)? saveDialog,
-  }) : _saveDialog = saveDialog ?? _defaultSaveDialog;
+    this.initialDirectory,
+  }) : _saveDialog =
+            saveDialog ?? ((name) => _defaultSaveDialog(name, initialDirectory));
+
+  /// Folder the Save dialog opens at (the configured default save location),
+  /// or null to let the OS pick.
+  final String? initialDirectory;
 
   final Future<String?> Function(String suggestedName) _saveDialog;
 
-  static Future<String?> _defaultSaveDialog(String suggestedName) async {
+  static Future<String?> _defaultSaveDialog(
+      String suggestedName, String? initialDirectory) async {
     final ext = p.extension(suggestedName); // e.g. ".mp4"
     final XTypeGroup typeGroup;
     if (ext == '.gif') {
@@ -103,6 +111,7 @@ class FileSaver implements DestinationHandler {
     final location = await getSaveLocation(
       suggestedName: suggestedName,
       acceptedTypeGroups: [typeGroup],
+      initialDirectory: initialDirectory,
     );
     return location?.path;
   }

@@ -69,6 +69,7 @@ import 'playback/export_controller.dart';
 import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
 import 'package:screen_recorder/ui/screens/playback/slice_nav_decision.dart';
 import 'package:screen_recorder/state/snap_preference_controller.dart';
+import '../../state/global_preferences_controller.dart';
 import 'package:slipreel_engine/timeline/slice_navigation.dart' show NavDirection;
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
@@ -1801,7 +1802,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // ── Phase 2: pick save location ────────────────────────────────────
     // Resolve destination handler.
     final DestinationHandler handler = switch (settings.destination) {
-      ExportDestination.file => FileSaver(),
+      ExportDestination.file => FileSaver(
+          initialDirectory:
+              ref.read(globalPreferencesControllerProvider).defaultSaveLocation,
+        ),
       ExportDestination.clipboard => ClipboardCopier(),
       ExportDestination.shareableLink => ShareableLinkPublisher(),
     };
