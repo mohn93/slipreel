@@ -29,6 +29,14 @@ Duration previewPlayheadWithLatency({
 ///
 /// [prevRawPlayhead]/[prevEmitted] are the previous frame's raw input and
 /// emitted output, or null on the first frame of a play segment (no clamp).
+///
+/// The hold is BOUNDED by [kMaxPreviewLag]: a held value can never trail the
+/// real [rawPlayhead] by more than that. Display latency is normally a few
+/// frames, but a texture stall during a GPU-heavy zoom can make the polled
+/// estimate balloon — `adjusted` then stays below `prevEmitted` indefinitely
+/// and the unbounded hold would FREEZE the preview clock while playback keeps
+/// running (the zoom stuck at full magnification, never ramping out). The
+/// floor converts that into a bounded trail so the preview always advances.
 Duration steadyPreviewPlayhead({
   required Duration rawPlayhead,
   required Duration displayLatency,
@@ -42,9 +50,19 @@ Duration steadyPreviewPlayhead({
   if (prevRawPlayhead == null || prevEmitted == null) return adjusted;
   // Real backward seek/loop — the raw playhead itself moved back. Follow it.
   if (rawPlayhead < prevRawPlayhead) return adjusted;
-  // Forward/held raw: suppress latency-induced reversals by holding.
-  return adjusted < prevEmitted ? prevEmitted : adjusted;
+  // Forward/held raw: suppress latency-induced reversals by holding...
+  final held = adjusted < prevEmitted ? prevEmitted : adjusted;
+  // ...but never let the hold (or a runaway latency estimate) trail the real
+  // clock by more than the bounded max — otherwise the preview freezes.
+  final floor = rawPlayhead - kMaxPreviewLag;
+  return held < floor ? floor : held;
 }
+
+/// Upper bound on how far the steadied preview clock may trail the real
+/// playback clock. Comfortably above genuine decode latency (a few frames) so
+/// normal jitter suppression is untouched, but small enough that a stalled
+/// texture / runaway latency estimate can't freeze the preview.
+const Duration kMaxPreviewLag = Duration(milliseconds: 250);
 
 /// Whether the preview should render the zoom focal from the deterministic
 /// [DeterministicFocalTrack] (a pure function of the playhead) instead of the
