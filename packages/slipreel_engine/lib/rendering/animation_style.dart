@@ -61,8 +61,9 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
   /// front-loads the motion so the camera reaches the target quickly
   /// and steadies; Smooth eases on both ends for a film-like push.
   Curve get rampCurve => switch (this) {
-        ScreenAnimationStyle.focused => Curves.easeOutCubic,
-        // Baked from the tuned Studio Soft feel (#7): ease-out — quick off
+        // Focused = the quick, decisive Studio Snappy push (#7).
+        ScreenAnimationStyle.focused => const Cubic(0.4, 0.0, 0.2, 1.0),
+        // Smooth = the tuned Studio Soft feel (#7): ease-out — quick off
         // the line, decelerating into the destination with a soft landing.
         ScreenAnimationStyle.smooth => const Cubic(0.22, 0.61, 0.35, 1.0),
         ScreenAnimationStyle.studioSoft => const Cubic(0.22, 0.61, 0.35, 1.0),
@@ -73,8 +74,9 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
   /// more cinematic push; <1 = quicker snap. The feel's most perceptible
   /// lever on modest zooms (curve shape alone is nearly invisible).
   double get rampDurationScale => switch (this) {
-        ScreenAnimationStyle.focused => 0.8,
-        ScreenAnimationStyle.smooth => 1.0,
+        // Focused = quick snap; Smooth = slow cinematic glide (#7).
+        ScreenAnimationStyle.focused => 0.55,
+        ScreenAnimationStyle.smooth => 1.4,
         ScreenAnimationStyle.studioSoft => 1.4,
         ScreenAnimationStyle.studioSnappy => 0.55,
       };
