@@ -27,21 +27,27 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   static const _permissionKinds = [
     PermissionKind.screenRecording,
-    PermissionKind.microphone,
     PermissionKind.camera,
+    PermissionKind.microphone,
     PermissionKind.accessibility,
   ];
   static const _permLabels = {
     PermissionKind.screenRecording: 'Screen Recording',
-    PermissionKind.microphone: 'Microphone',
     PermissionKind.camera: 'Camera',
+    PermissionKind.microphone: 'Microphone',
     PermissionKind.accessibility: 'Accessibility',
   };
   static const _permSubtitles = {
     PermissionKind.screenRecording: 'Required to capture your screen.',
-    PermissionKind.microphone: 'Optional — for voice narration.',
     PermissionKind.camera: 'Optional — for webcam / facecam.',
+    PermissionKind.microphone: 'Optional — for voice narration.',
     PermissionKind.accessibility: 'Optional — for richer click tracking.',
+  };
+  static const _permIcons = {
+    PermissionKind.screenRecording: Icons.desktop_windows_outlined,
+    PermissionKind.camera: Icons.videocam_outlined,
+    PermissionKind.microphone: Icons.mic_none_outlined,
+    PermissionKind.accessibility: Icons.keyboard_outlined,
   };
 
   // Resolved once — a fresh Future each build would make FutureBuilder
@@ -179,6 +185,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           for (final kind in _permissionKinds)
             PermissionStatusRow(
               kind: kind,
+              icon: _permIcons[kind]!,
               label: _permLabels[kind]!,
               subtitle: _permSubtitles[kind]!,
               status: snap.byKind[kind] ?? PermissionStatus.unsupported,
