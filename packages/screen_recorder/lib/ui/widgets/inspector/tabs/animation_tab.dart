@@ -1,12 +1,9 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
-import 'package:slipreel_engine/rendering/feel_variant.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
-import 'package:screen_recorder/state/feel_lab_controller.dart';
 import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
@@ -42,11 +39,6 @@ class _AnimationTabState extends ConsumerState<AnimationTab> {
       // Let hover lean/tilt overshoot paint past the panel edge.
       clipBehavior: Clip.none,
       children: [
-        if (kDebugMode) ...[
-          const FeelAbRow(),
-          const SizedBox(height: 12),
-          const InspectorSectionDivider(),
-        ],
         const Text(
           'Screen animation style',
           style: TextStyle(
@@ -60,8 +52,7 @@ class _AnimationTabState extends ConsumerState<AnimationTab> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            for (final s
-                in ScreenAnimationStyle.values.where((s) => !s.experimental))
+            for (final s in ScreenAnimationStyle.values)
               _AnimationOptionTile<ScreenAnimationStyle>(
                 value: s,
                 selected: project.screenAnimationConfig.preset,
@@ -91,8 +82,7 @@ class _AnimationTabState extends ConsumerState<AnimationTab> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            for (final s
-                in CursorAnimationStyle.values.where((s) => !s.experimental))
+            for (final s in CursorAnimationStyle.values)
               _AnimationOptionTile<CursorAnimationStyle>(
                 value: s,
                 selected: project.cursorAnimationConfig.preset,
@@ -169,8 +159,6 @@ class _AnimationTabState extends ConsumerState<AnimationTab> {
   static IconData _screenIcon(ScreenAnimationStyle s) => switch (s) {
     ScreenAnimationStyle.focused => Icons.adjust,
     ScreenAnimationStyle.smooth => Icons.timeline,
-    ScreenAnimationStyle.studioSoft => Icons.movie_filter_outlined,
-    ScreenAnimationStyle.studioSnappy => Icons.movie_filter,
   };
 
   static IconData _cursorIcon(CursorAnimationStyle s) => switch (s) {
@@ -178,101 +166,7 @@ class _AnimationTabState extends ConsumerState<AnimationTab> {
     CursorAnimationStyle.medium => Icons.swipe,
     CursorAnimationStyle.rapid => Icons.bolt,
     CursorAnimationStyle.none => Icons.near_me,
-    CursorAnimationStyle.studioSoft => Icons.auto_awesome_outlined,
-    CursorAnimationStyle.studioSnappy => Icons.auto_awesome,
   };
-}
-
-/// Debug-only A/B control: cycles bundled feels via FeelLabController.
-@visibleForTesting
-class FeelAbRow extends ConsumerWidget {
-  const FeelAbRow({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final index = ref.watch(feelLabControllerProvider);
-    final lab = ref.read(feelLabControllerProvider.notifier);
-    final label = FeelVariant.candidates[index].label;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: kInspectorPanel,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: kInspectorBorder),
-      ),
-      // Two lines so the controls fit the narrow inspector panel without
-      // overflowing: a title row, then a [‹ label ›  ⟳] controls row with
-      // tight, low-density buttons.
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.science_outlined,
-                  color: Colors.white70, size: 16),
-              const SizedBox(width: 6),
-              const Expanded(
-                child: Text('Feel A/B (dev)',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-              ),
-              _compactIconButton(
-                icon: Icons.restart_alt,
-                color: Colors.white60,
-                tooltip: 'Restore original',
-                onPressed: lab.restore,
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              _compactIconButton(
-                icon: Icons.chevron_left,
-                color: Colors.white,
-                tooltip: 'Previous feel',
-                onPressed: lab.cyclePrev,
-              ),
-              Expanded(
-                child: Text(label,
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w500)),
-              ),
-              _compactIconButton(
-                icon: Icons.chevron_right,
-                color: Colors.white,
-                tooltip: 'Next feel',
-                onPressed: lab.cycle,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// A 28×28 tap target with no default 48px IconButton padding — the stock
-  /// IconButton is far too wide for the narrow inspector panel.
-  static Widget _compactIconButton({
-    required IconData icon,
-    required Color color,
-    required String tooltip,
-    required VoidCallback onPressed,
-  }) =>
-      IconButton(
-        icon: Icon(icon, color: color, size: 20),
-        onPressed: onPressed,
-        tooltip: tooltip,
-        padding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-        splashRadius: 18,
-      );
 }
 
 /// Tile that defaults to icon + label, but on hover swaps the icon

@@ -7,25 +7,12 @@ import 'package:slipreel_engine/rendering/spring_config.dart';
 enum ScreenAnimationStyle {
   focused,
   smooth,
-  studioSoft,
-  studioSnappy,
 }
 
 extension ScreenAnimationStyleData on ScreenAnimationStyle {
   String get label => switch (this) {
         ScreenAnimationStyle.focused => 'Focused',
         ScreenAnimationStyle.smooth => 'Smooth',
-        ScreenAnimationStyle.studioSoft => 'Studio Soft',
-        ScreenAnimationStyle.studioSnappy => 'Studio Snappy',
-      };
-
-  /// Whether this preset is a hidden experimental option excluded from
-  /// the normal selectable picker set.
-  bool get experimental => switch (this) {
-        ScreenAnimationStyle.focused || ScreenAnimationStyle.smooth => false,
-        ScreenAnimationStyle.studioSoft ||
-        ScreenAnimationStyle.studioSnappy =>
-          true,
       };
 
   String get description => switch (this) {
@@ -35,10 +22,6 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
         ScreenAnimationStyle.smooth =>
           'Animation is more fluid. Great for more creative content '
               'not focused on reading',
-        ScreenAnimationStyle.studioSoft =>
-          'Experimental: a soft, film-like push with eased ends',
-        ScreenAnimationStyle.studioSnappy =>
-          'Experimental: a quick, decisive push that steadies fast',
       };
 
   /// Tween duration applied to live zoom-level changes (e.g., when the
@@ -46,15 +29,11 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
   Duration get badgeDuration => switch (this) {
         ScreenAnimationStyle.focused => const Duration(milliseconds: 150),
         ScreenAnimationStyle.smooth => const Duration(milliseconds: 520),
-        ScreenAnimationStyle.studioSoft => const Duration(milliseconds: 520),
-        ScreenAnimationStyle.studioSnappy => const Duration(milliseconds: 260),
       };
 
   Curve get badgeCurve => switch (this) {
         ScreenAnimationStyle.focused => Curves.easeOutCubic,
         ScreenAnimationStyle.smooth => Curves.easeInOutCubic,
-        ScreenAnimationStyle.studioSoft => Curves.easeInOutCubic,
-        ScreenAnimationStyle.studioSnappy => Curves.easeOutCubic,
       };
 
   /// Curve used for the zoom region's enter/exit ramps. Focused
@@ -66,8 +45,6 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
         // Smooth = the tuned Studio Soft feel (#7): ease-out — quick off
         // the line, decelerating into the destination with a soft landing.
         ScreenAnimationStyle.smooth => const Cubic(0.22, 0.61, 0.35, 1.0),
-        ScreenAnimationStyle.studioSoft => const Cubic(0.22, 0.61, 0.35, 1.0),
-        ScreenAnimationStyle.studioSnappy => const Cubic(0.4, 0.0, 0.2, 1.0),
       };
 
   /// Multiplier on a zoom region's enter/exit ramp DURATION. >1 = slower,
@@ -77,16 +54,12 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
         // Focused = quick snap; Smooth = slow cinematic glide (#7).
         ScreenAnimationStyle.focused => 0.55,
         ScreenAnimationStyle.smooth => 1.4,
-        ScreenAnimationStyle.studioSoft => 1.4,
-        ScreenAnimationStyle.studioSnappy => 0.55,
       };
 
   /// Curve used for the picker's hover-driven demo circle.
   Curve get previewCurve => switch (this) {
         ScreenAnimationStyle.focused => Curves.easeOutCubic,
         ScreenAnimationStyle.smooth => Curves.easeOutCubic,
-        ScreenAnimationStyle.studioSoft => Curves.easeInOutCubic,
-        ScreenAnimationStyle.studioSnappy => Curves.easeOutCubic,
       };
 
   /// One forward-and-back cycle for the demo. Longer for Smooth so the
@@ -94,8 +67,6 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
   Duration get previewDuration => switch (this) {
         ScreenAnimationStyle.focused => const Duration(milliseconds: 700),
         ScreenAnimationStyle.smooth => const Duration(milliseconds: 1300),
-        ScreenAnimationStyle.studioSoft => const Duration(milliseconds: 1100),
-        ScreenAnimationStyle.studioSnappy => const Duration(milliseconds: 800),
       };
 }
 
@@ -107,8 +78,6 @@ enum CursorAnimationStyle {
   medium,
   rapid,
   none,
-  studioSoft,
-  studioSnappy,
 }
 
 extension CursorAnimationStyleData on CursorAnimationStyle {
@@ -117,21 +86,6 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
         CursorAnimationStyle.medium => 'Medium',
         CursorAnimationStyle.rapid => 'Rapid',
         CursorAnimationStyle.none => 'None',
-        CursorAnimationStyle.studioSoft => 'Studio Soft',
-        CursorAnimationStyle.studioSnappy => 'Studio Snappy',
-      };
-
-  /// Whether this preset is a hidden experimental option excluded from
-  /// the normal selectable picker set.
-  bool get experimental => switch (this) {
-        CursorAnimationStyle.smooth ||
-        CursorAnimationStyle.medium ||
-        CursorAnimationStyle.rapid ||
-        CursorAnimationStyle.none =>
-          false,
-        CursorAnimationStyle.studioSoft ||
-        CursorAnimationStyle.studioSnappy =>
-          true,
       };
 
   /// Lerp factor passed to [ZoomFocalController.update]. 1.0 = no
@@ -141,8 +95,6 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
         CursorAnimationStyle.medium => 0.18,
         CursorAnimationStyle.rapid => 0.40,
         CursorAnimationStyle.none => 1.0,
-        CursorAnimationStyle.studioSoft => 0.09,
-        CursorAnimationStyle.studioSnappy => 0.22,
       };
 
   /// Curve used for the picker's hover demo.
@@ -151,8 +103,6 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
         CursorAnimationStyle.medium => Curves.easeOutCubic,
         CursorAnimationStyle.rapid => Curves.easeOutQuint,
         CursorAnimationStyle.none => Curves.linear,
-        CursorAnimationStyle.studioSoft => Curves.easeOutCubic,
-        CursorAnimationStyle.studioSnappy => Curves.easeOutQuint,
       };
 
   Duration get previewDuration => switch (this) {
@@ -160,8 +110,6 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
         CursorAnimationStyle.medium => const Duration(milliseconds: 800),
         CursorAnimationStyle.rapid => const Duration(milliseconds: 350),
         CursorAnimationStyle.none => const Duration(milliseconds: 80),
-        CursorAnimationStyle.studioSoft => const Duration(milliseconds: 1000),
-        CursorAnimationStyle.studioSnappy => const Duration(milliseconds: 600),
       };
 
   /// Re-tuning table: maps each preset to its FIR (window, curve) pair.
@@ -176,10 +124,6 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
           (window: const Duration(milliseconds: 65), curve: Curves.easeOutCubic),
         CursorAnimationStyle.none =>
           (window: Duration.zero, curve: Curves.linear),
-        CursorAnimationStyle.studioSoft =>
-          (window: const Duration(milliseconds: 300), curve: Curves.easeOutCubic),
-        CursorAnimationStyle.studioSnappy =>
-          (window: const Duration(milliseconds: 140), curve: Curves.easeOutCubic),
       };
 
   /// Spring parameters that drive the cursor's motion chase. Stiffness
@@ -198,9 +142,5 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
         CursorAnimationStyle.rapid =>
           const MotionSpring(stiffness: 900, damping: 1.0),
         CursorAnimationStyle.none => MotionSpring.snap,
-        CursorAnimationStyle.studioSoft =>
-          const MotionSpring(stiffness: 160, damping: 1.0),
-        CursorAnimationStyle.studioSnappy =>
-          const MotionSpring(stiffness: 520, damping: 1.0),
       };
 }
