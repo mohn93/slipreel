@@ -38,6 +38,30 @@ class VideoEncoder {
     AppLogger.videoEncoder.i('Live recording started: ${_width}x$_height @ ${_fps}fps -> $_outputPath');
   }
 
+  /// Start a device (iPhone/iPad over USB) recording session.
+  ///
+  /// Unlike [start] this calls [ScreenRecorderPlatform.startDeviceRecording]
+  /// (an AVCaptureSession-backed path) rather than [startLiveRecording], but
+  /// the native side finalizes it through the SAME stopLiveRecording path, so
+  /// the encoder is marked active here and torn down by [stop]/[forceReset]
+  /// exactly like a screen recording. The MP4 is written by the native side.
+  Future<void> startDevice({
+    required String deviceId,
+    required bool captureDeviceAudio,
+    required bool captureMic,
+    required String outputPath,
+  }) async {
+    _outputPath = outputPath;
+    await ScreenRecorderPlatform.instance.startDeviceRecording(
+      deviceId: deviceId,
+      captureDeviceAudio: captureDeviceAudio,
+      captureMic: captureMic,
+      outputPath: outputPath,
+    );
+    _isActive = true;
+    AppLogger.videoEncoder.i('Device recording started -> $_outputPath');
+  }
+
   /// Stop the live recording and return the result (path + native perf stats).
   Future<RecordingResult> stop() async {
     if (!_isActive) {

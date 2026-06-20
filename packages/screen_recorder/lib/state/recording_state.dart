@@ -286,6 +286,81 @@ class RecordingController extends StateNotifier<RecordingState> {
     }
   }
 
+  /// Start recording an external device (iPhone/iPad over USB).
+  ///
+  /// Mirrors [startRecording]'s path-resolution and state transitions but
+  /// targets [ScreenRecorderPlatform.startDeviceRecording]. A touch device has
+  /// no host-side cursor/keystroke input to track, so this path does NOT start
+  /// the cursor checkpointer or subscribe to the cursor/keystroke streams; the
+  /// stop/finalize path consequently writes only the metadata sidecar (the
+  /// cursor/keystroke sidecar blocks are skipped because their recordings stay
+  /// null).
+  Future<void> startDeviceRecording({
+    required String deviceId,
+    required bool captureDeviceAudio,
+    MicrophoneConfig? microphone,
+    String? defaultSaveLocation,
+  }) async {
+    if (!state.canStartRecording) return;
+
+    // Defense-in-depth: never stack a second native session on top of a live
+    // one (mirrors startRecording).
+    if (_videoEncoder.isActive) {
+      AppLogger.recording
+          .w('startDeviceRecording ignored: a capture session is still active');
+      return;
+    }
+
+    try {
+      state = state.copyWith(
+        status: RecordingStatus.recording,
+        selectedSourceKind: RecordingSource.device,
+        selectedSourceId: deviceId,
+        frameCount: 0,
+        duration: Duration.zero,
+        videoPath: null,
+        error: null,
+      );
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final saveDir = resolveSaveDirectory(
+        defaultSaveLocation: defaultSaveLocation,
+        documentsPath: docsDir.path,
+      );
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final outputPath = '$saveDir/recording_$ts.mp4';
+
+      await _videoEncoder.startDevice(
+        deviceId: deviceId,
+        captureDeviceAudio: captureDeviceAudio,
+        captureMic: microphone != null,
+        outputPath: outputPath,
+      );
+
+      // No cursor/keystroke tracking for touch devices — intentionally skip the
+      // checkpointer + cursor/keystroke stream subscriptions. We still listen
+      // for fatal native errors so the UI leaves "recording" on failure.
+      _recordingErrorSubscription =
+          ScreenRecorderPlatform.instance.recordingErrorStream.listen(
+        (message) {
+          if (state.isRecording) _handleError(message);
+        },
+        onError: (e) =>
+            AppLogger.recording.w('recordingError stream error', error: e),
+      );
+
+      _startTime = DateTime.now();
+      _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (_startTime != null) {
+          state =
+              state.copyWith(duration: DateTime.now().difference(_startTime!));
+        }
+      });
+    } catch (e) {
+      _handleError('Failed to start device recording: $e');
+    }
+  }
+
   Future<void> stopRecording() async {
     if (!state.isRecording) return;
     try {
@@ -307,15 +382,23 @@ class RecordingController extends StateNotifier<RecordingState> {
 
       final result = await _videoEncoder.stop();
 
+      // Device (iPhone/iPad) recordings have no host-side cursor/keystroke
+      // input to capture, so the cursor/keystroke recordings stay null and the
+      // sidecars are never written. The explicit guard documents the contract
+      // (and skips the work even if a future change pre-allocates them).
+      final isDevice = state.selectedSourceKind == RecordingSource.device;
+
       // Save cursor sidecar (next to MP4).
-      if (_cursorRecording != null && _cursorRecording!.count > 0) {
+      if (!isDevice && _cursorRecording != null && _cursorRecording!.count > 0) {
         await _cursorRecording!.saveToFile('${result.outputPath}.cursor.json');
         AppLogger.recording.i('Cursor data saved: ${_cursorRecording!.count} positions');
       }
       _cursorRecording = null;
 
       // Save keystroke sidecar.
-      if (_keystrokeRecording != null && _keystrokeRecording!.count > 0) {
+      if (!isDevice &&
+          _keystrokeRecording != null &&
+          _keystrokeRecording!.count > 0) {
         await _keystrokeRecording!
             .saveToFile('${result.outputPath}.keystrokes.json');
         AppLogger.recording.i(
