@@ -3,30 +3,18 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 
 import '../theme/app_palette.dart';
 
-/// Modal that lists iPhone/iPad devices connected over USB so the user can
-/// pick one to record. Returns the chosen [DeviceSource], or `null` if the
-/// sheet was dismissed.
+/// Full-window screen that lists iPhone/iPad devices connected over USB so the
+/// user can pick one to record. Pushed through the recording bar's panel-morph
+/// (the bar window is only ~68px tall, so a `showDialog` would overflow — this
+/// must be shown in the expanded panel window). Pops with the chosen
+/// [DeviceSource], or `null` if dismissed/back.
 ///
-/// Styled to match the app's dark surfaces. It reads [AppPalette] from the
-/// nearest theme when present and falls back to [AppPalette.midnight]
-/// constants otherwise, so it renders correctly even without an AppPalette
-/// ancestor (e.g. in widget tests).
-class DevicePickerOverlay extends StatelessWidget {
-  const DevicePickerOverlay._({required this.devices});
+/// Reads [AppPalette] from the nearest theme when present, falling back to
+/// [AppPalette.midnight] so it renders without an AppPalette ancestor (tests).
+class DevicePickerScreen extends StatelessWidget {
+  const DevicePickerScreen({super.key, required this.devices});
 
   final List<DeviceSource> devices;
-
-  /// Shows the picker and resolves to the selected device, or `null`.
-  static Future<DeviceSource?> show(
-    BuildContext context, {
-    required List<DeviceSource> devices,
-  }) {
-    return showDialog<DeviceSource>(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (_) => DevicePickerOverlay._(devices: devices),
-    );
-  }
 
   AppPalette _palette(BuildContext context) =>
       Theme.of(context).extension<AppPalette>() ?? AppPalette.midnight;
@@ -34,33 +22,31 @@ class DevicePickerOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = _palette(context);
-    return Dialog(
-      backgroundColor: palette.surfaceCard,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-              child: Text(
-                'Record a device',
-                style: TextStyle(
-                  color: palette.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
+    return Scaffold(
+      backgroundColor: palette.appBackground,
+      appBar: AppBar(
+        title: const Text('Record a device'),
+        backgroundColor: palette.surfaceElevated,
+        foregroundColor: palette.textPrimary,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: devices.isEmpty
+              ? _EmptyState(palette: palette)
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final d in devices)
+                      _DeviceRow(device: d, palette: palette),
+                  ],
                 ),
-              ),
-            ),
-            if (devices.isEmpty)
-              _EmptyState(palette: palette)
-            else
-              ...devices.map((d) => _DeviceRow(device: d, palette: palette)),
-            const SizedBox(height: 8),
-          ],
         ),
       ),
     );
@@ -75,16 +61,20 @@ class _DeviceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icon = device.kind == DeviceKind.tablet
-        ? Icons.tablet_mac
-        : Icons.smartphone;
+    final icon =
+        device.kind == DeviceKind.tablet ? Icons.tablet_mac : Icons.smartphone;
     return InkWell(
       onTap: () => Navigator.pop(context, device),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: palette.surfaceCard,
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Row(
           children: [
-            Icon(icon, size: 22, color: palette.textPrimary),
+            Icon(icon, size: 24, color: palette.textPrimary),
             const SizedBox(width: 14),
             Expanded(
               child: Text(
@@ -109,17 +99,18 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.usb, size: 32, color: palette.textSecondary),
-          const SizedBox(height: 14),
+          Icon(Icons.usb, size: 40, color: palette.textSecondary),
+          const SizedBox(height: 16),
           Text(
             'Connect an iPhone or iPad over USB and tap Trust This Computer.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: palette.textSecondary,
-              fontSize: 13,
+              fontSize: 14,
               height: 1.4,
             ),
           ),

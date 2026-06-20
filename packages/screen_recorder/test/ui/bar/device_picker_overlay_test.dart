@@ -5,32 +5,30 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 
 void main() {
   testWidgets('empty state shows the connect/trust hint', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: Builder(builder: (context) {
-        return TextButton(
-          onPressed: () => DevicePickerOverlay.show(context, devices: const []),
-          child: const Text('open'),
-        );
-      })),
+    await tester.pumpWidget(const MaterialApp(
+      home: DevicePickerScreen(devices: []),
     ));
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
     expect(find.textContaining('Connect an iPhone or iPad'), findsOneWidget);
   });
 
-  testWidgets('tapping a device returns it', (tester) async {
+  testWidgets('tapping a device pops it as the route result', (tester) async {
     DeviceSource? picked;
     await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: Builder(builder: (context) {
+      home: Builder(builder: (context) {
         return TextButton(
           onPressed: () async {
-            picked = await DevicePickerOverlay.show(context, devices: const [
-              DeviceSource(id: 'uid-1', name: 'My iPhone', kind: DeviceKind.phone),
-            ]);
+            picked = await Navigator.of(context).push<DeviceSource>(
+              MaterialPageRoute(
+                builder: (_) => const DevicePickerScreen(devices: [
+                  DeviceSource(
+                      id: 'uid-1', name: 'My iPhone', kind: DeviceKind.phone),
+                ]),
+              ),
+            );
           },
           child: const Text('open'),
         );
-      })),
+      }),
     ));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();

@@ -146,6 +146,18 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     await _window.showBar();
   }
 
+  /// Like [_openPanel] but returns the route's pop value — used by the device
+  /// picker, which must show in the expanded panel (the bar window is too
+  /// short for a dialog) and hand a [DeviceSource] back to the caller.
+  Future<T?> _openPanelForResult<T>(WidgetBuilder builder) async {
+    await _window.showPanel();
+    if (!mounted) return null;
+    final result =
+        await Navigator.of(context).push<T>(MaterialPageRoute(builder: builder));
+    if (mounted) await _window.showBar();
+    return result;
+  }
+
   Future<void> _pickAndRecord(BarSourceMode mode) async {
     final controller = ref.read(recordingControllerProvider.notifier);
     switch (mode) {
@@ -169,11 +181,13 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         await recordingActionRouterRef?.start(context);
       case BarSourceMode.device:
         final devices = await ScreenRecorderPlatform.instance.listDevices();
-        if (!context.mounted) return;
-        final picked =
-            await DevicePickerOverlay.show(context, devices: devices);
+        if (!mounted) return;
+        final picked = await _openPanelForResult<DeviceSource>(
+          (_) => DevicePickerScreen(devices: devices),
+        );
         if (picked == null) return;
         controller.selectSource(kind: RecordingSource.device, id: picked.id);
+        if (!mounted) return;
         await recordingActionRouterRef?.start(context);
     }
   }
