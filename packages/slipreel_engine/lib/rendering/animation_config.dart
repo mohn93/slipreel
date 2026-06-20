@@ -17,6 +17,7 @@ class ScreenAnimationConfig {
   Curve get badgeCurve => _preset!.badgeCurve;
   Curve get rampCurve => _preset!.rampCurve;
   Duration get badgeDuration => _preset!.badgeDuration;
+  double get rampDurationScale => _preset!.rampDurationScale;
 
   Map<String, dynamic> toJson() => {'preset': _preset!.name};
 
@@ -26,8 +27,15 @@ class ScreenAnimationConfig {
       for (final s in ScreenAnimationStyle.values) {
         if (s.name == presetName) return ScreenAnimationConfig.preset(s);
       }
-      throw FormatException(
-          'Unknown ScreenAnimationStyle preset: $presetName');
+      // Retired #7 experimental presets — migrate to their baked
+      // equivalents (Smooth/Focused now embody those feels, so lossless):
+      // `studioSnappy` → Focused, anything else (incl. `studioSoft`) →
+      // Smooth. Keeps saved projects loading after the enums were removed.
+      return ScreenAnimationConfig.preset(
+        presetName == 'studioSnappy'
+            ? ScreenAnimationStyle.focused
+            : ScreenAnimationStyle.smooth,
+      );
     }
     // Legacy custom config (curve + badgeDurationMicros) — migrate to Smooth.
     return const ScreenAnimationConfig.preset(ScreenAnimationStyle.smooth);
@@ -54,8 +62,15 @@ class CursorAnimationConfig {
       for (final s in CursorAnimationStyle.values) {
         if (s.name == presetName) return CursorAnimationConfig.preset(s);
       }
-      throw FormatException(
-          'Unknown CursorAnimationStyle preset: $presetName');
+      // Retired #7 experimental presets — migrate to their baked
+      // equivalents: `studioSnappy` → Medium, anything else (incl.
+      // `studioSoft`) → Smooth. Keeps saved projects loading after the
+      // enums were removed.
+      return CursorAnimationConfig.preset(
+        presetName == 'studioSnappy'
+            ? CursorAnimationStyle.medium
+            : CursorAnimationStyle.smooth,
+      );
     }
     // Legacy custom / custom-spring config (spring, or curve+windowMicros) —
     // migrate to the Smooth preset.

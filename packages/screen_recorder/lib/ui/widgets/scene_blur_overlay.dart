@@ -455,6 +455,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
           videoSize: widget.videoSize,
           fps: widget.fps,
           screenRampCurve: widget.screenAnimationConfig.rampCurve,
+          rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
           clips: widget.clips,
         )) {
       return cached;
@@ -467,6 +468,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
       videoSize: widget.videoSize,
       fps: widget.fps,
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
+      rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
       clips: widget.clips,
     );
   }
@@ -530,6 +532,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
           widget.screenAnimationConfig.rampCurve,
+      rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
     );
     final scale = matrix.storage[0];
     // Measure the VISIBLE camera, not the raw controller focal. getTransform

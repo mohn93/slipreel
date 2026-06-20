@@ -139,6 +139,7 @@ class ScenePassBuilder {
     /// Defaults to empty ⇒ speed 1.0 ⇒ cursor smoothing unchanged.
     List<ClipSlice> clips = const <ClipSlice>[],
     Curve screenRampCurve = Curves.easeInOutQuad,
+    double rampDurationScale = 1.0,
     bool forceSnap = false,
     bool bypassVelocityFilter = false,
 
@@ -192,7 +193,14 @@ class ScenePassBuilder {
     // from the recording at a fixed source time, so play == scrub == export.
     Offset? enterCursorTarget;
     if (activeZoom != null && activeZoom.followCursor && hasCursorData) {
-      final enterEnd = activeZoom.startTime + activeZoom.enterDuration;
+      // Sample the settle target at the SCALED enter-ramp end so it tracks
+      // where the cursor actually is when the (feel-scaled) zoom completes —
+      // mirrors the rampDurationScale applied in the focal/transform math.
+      final enterEnd = activeZoom.startTime +
+          Duration(
+              microseconds: (activeZoom.enterDuration.inMicroseconds *
+                      rampDurationScale)
+                  .round());
       final raw = cursorAt(cursorRecording, enterEnd);
       if (raw != null) {
         enterCursorTarget = Offset(
@@ -211,6 +219,7 @@ class ScenePassBuilder {
       forceSnap: forceSnap,
       activeRegionOverride: activeRegionOverride,
       screenRampCurve: screenRampCurve,
+      rampDurationScale: rampDurationScale,
       enterCursorTarget: enterCursorTarget,
     );
 

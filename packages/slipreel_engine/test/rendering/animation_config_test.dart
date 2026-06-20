@@ -11,10 +11,22 @@ void main() {
       expect(cfg.rampCurve, ScreenAnimationStyle.smooth.rampCurve);
     });
 
-    test('fromJson throws on unknown preset name', () {
+    test('fromJson migrates unknown preset name to Smooth', () {
+      // Unknown names no longer throw — they fall back to Smooth so
+      // saved projects keep loading after a preset is removed.
+      final cfg = ScreenAnimationConfig.fromJson({'preset': 'no-such-preset'});
+      expect(cfg.preset, ScreenAnimationStyle.smooth);
+    });
+
+    test('retired #7 experimental preset names migrate to baked equivalents',
+        () {
       expect(
-        () => ScreenAnimationConfig.fromJson({'preset': 'no-such-preset'}),
-        throwsA(isA<FormatException>()),
+        ScreenAnimationConfig.fromJson({'preset': 'studioSoft'}).preset,
+        ScreenAnimationStyle.smooth,
+      );
+      expect(
+        ScreenAnimationConfig.fromJson({'preset': 'studioSnappy'}).preset,
+        ScreenAnimationStyle.focused,
       );
     });
 
@@ -48,10 +60,20 @@ void main() {
       expect(cfg.window, Duration.zero);
     });
 
-    test('fromJson throws on unknown preset name', () {
+    test('fromJson migrates unknown preset name to Smooth', () {
+      final cfg = CursorAnimationConfig.fromJson({'preset': 'no-such-preset'});
+      expect(cfg.preset, CursorAnimationStyle.smooth);
+    });
+
+    test('retired #7 experimental preset names migrate to baked equivalents',
+        () {
       expect(
-        () => CursorAnimationConfig.fromJson({'preset': 'no-such-preset'}),
-        throwsA(isA<FormatException>()),
+        CursorAnimationConfig.fromJson({'preset': 'studioSoft'}).preset,
+        CursorAnimationStyle.smooth,
+      );
+      expect(
+        CursorAnimationConfig.fromJson({'preset': 'studioSnappy'}).preset,
+        CursorAnimationStyle.medium,
       );
     });
 

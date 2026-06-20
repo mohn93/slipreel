@@ -33,6 +33,7 @@ class DeterministicFocalTrack {
     required this.cursorPostProcess,
     required this.cursorDelay,
     required this.screenRampCurve,
+    required this.rampDurationScale,
     required this.videoSize,
     required this.fps,
     required this.clips,
@@ -64,6 +65,12 @@ class DeterministicFocalTrack {
   /// [Curves.easeInOutQuad] keeps export (which omits it) unchanged.
   final Curve screenRampCurve;
 
+  /// Multiplier on the zoom region's enter/exit ramp duration, forwarded to
+  /// the replayed [ScenePassBuilder] so the deterministic focal ramps push
+  /// at the same speed as the live camera. Part of the cache key in
+  /// [matches] so flipping the feel invalidates a stale track.
+  final double rampDurationScale;
+
   final Size videoSize;
   final int fps;
 
@@ -92,6 +99,7 @@ class DeterministicFocalTrack {
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
     Duration cursorDelay = Duration.zero,
     Curve screenRampCurve = Curves.easeInOutQuad,
+    double rampDurationScale = 1.0,
     List<ClipSlice> clips = const <ClipSlice>[],
   }) {
     final builder = ScenePassBuilder();
@@ -113,6 +121,7 @@ class DeterministicFocalTrack {
         fps: fps,
         hasCursorData: hasCursor,
         screenRampCurve: screenRampCurve,
+        rampDurationScale: rampDurationScale,
         clips: clips,
       );
       final focal = pass.focalUpdate?.focal;
@@ -137,6 +146,7 @@ class DeterministicFocalTrack {
       cursorPostProcess: cursorPostProcess,
       cursorDelay: cursorDelay,
       screenRampCurve: screenRampCurve,
+      rampDurationScale: rampDurationScale,
       videoSize: videoSize,
       fps: fps,
       clips: clips,
@@ -184,6 +194,7 @@ class DeterministicFocalTrack {
     required int fps,
     Duration cursorDelay = Duration.zero,
     Curve screenRampCurve = Curves.easeInOutQuad,
+    double rampDurationScale = 1.0,
     List<ClipSlice> clips = const <ClipSlice>[],
   }) {
     return identical(this.cursorRecording, cursorRecording) &&
@@ -192,6 +203,7 @@ class DeterministicFocalTrack {
         this.cursorPostProcess == cursorPostProcess &&
         this.cursorDelay == cursorDelay &&
         this.screenRampCurve == screenRampCurve &&
+        this.rampDurationScale == rampDurationScale &&
         this.videoSize == videoSize &&
         this.fps == fps &&
         listEquals(this.clips, clips);

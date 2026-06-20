@@ -26,6 +26,7 @@ class ZoomTransformer {
     required Size videoSize,
     Offset? focalPoint,
     Curve rampCurve = Curves.easeInOutQuad,
+    double rampDurationScale = 1.0,
   }) {
     // Route the activation check through [ZoomRegion.activeAt] so the
     // closed end-edge frame (`position == endTime`) resolves consistently
@@ -37,7 +38,8 @@ class ZoomTransformer {
     if (active == null) {
       return Matrix4.identity();
     }
-    final z = _calculateZoomFactor(position, zoomRegion, rampCurve);
+    final z = _calculateZoomFactor(
+        position, zoomRegion, rampCurve, rampDurationScale);
     if (z == 1.0) return Matrix4.identity();
 
     final focal = focalPoint ?? zoomRegion.rect.center;
@@ -117,14 +119,14 @@ class ZoomTransformer {
   /// down proportionally so the shape is preserved (and the hold goes
   /// to zero in the limit).
   double _calculateZoomFactor(
-      Duration position, ZoomRegion z, Curve curve) {
+      Duration position, ZoomRegion z, Curve curve, double rampDurationScale) {
     final tIntoRegionUs =
         (position - z.startTime).inMicroseconds.clamp(0, z.duration.inMicroseconds);
     final regionUs = z.duration.inMicroseconds;
     if (regionUs <= 0) return 1.0;
 
-    var enterUs = z.enterDuration.inMicroseconds;
-    var exitUs = z.exitDuration.inMicroseconds;
+    var enterUs = (z.enterDuration.inMicroseconds * rampDurationScale).round();
+    var exitUs = (z.exitDuration.inMicroseconds * rampDurationScale).round();
     final totalRamp = enterUs + exitUs;
     if (totalRamp > regionUs && totalRamp > 0) {
       final scale = regionUs / totalRamp;
