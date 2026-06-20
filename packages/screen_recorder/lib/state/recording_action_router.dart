@@ -62,6 +62,11 @@ class RecordingActionRouter {
           captureDeviceAudio:
               _container.read(deviceAudioEnabledProvider),
           microphone: micConfig,
+          permissions: snapshot,
+          onDenied: (kind) {
+            if (!context.mounted) return Future.value();
+            return PermissionDeniedSheet.show(context, kind);
+          },
           defaultSaveLocation: defaultSaveLocation,
         );
         return;

@@ -980,10 +980,17 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         await self.tearDownPartialLiveRecording()
 
         let manager = DeviceCaptureManager()
-        // A device unplugged mid-recording reports through onDisconnect; drive
-        // the same single stop path Dart would (no double-finalize race).
+        // A device unplugged mid-recording reports through onDisconnect. Route
+        // it through the SAME recordingError channel the screen path uses for
+        // mid-capture failures: emitRecordingError hops to main and feeds the
+        // Dart RecordingController._handleError, which reaps the encoder and
+        // cleans state. This avoids a silent native-only stop (orphaned file +
+        // stuck UI) and avoids running teardown on the NotificationCenter thread.
         manager.onDisconnect = { [weak self] in
-          self?.stopLiveRecording(result: { _ in })
+          self?.emitRecordingError(
+            NSError(domain: "ScreenRecorderMacos",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Device disconnected during recording."]))
         }
 
         try manager.start(deviceUid: deviceId, captureAudio: captureDeviceAudio)

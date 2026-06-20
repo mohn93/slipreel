@@ -10,6 +10,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:screen_recorder/state/permissions_controller.dart';
 import 'package:screen_recorder/state/recording_state.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
@@ -57,7 +58,13 @@ void main() {
     ScreenRecorderPlatform.instance = platform;
 
     final c = RecordingController();
-    await c.startDeviceRecording(deviceId: 'uid-1', captureDeviceAudio: true);
+    // permissions: null => ungated, asserting the current/legacy behavior that
+    // a device recording starts without a permission snapshot.
+    await c.startDeviceRecording(
+      deviceId: 'uid-1',
+      captureDeviceAudio: true,
+      permissions: null,
+    );
 
     expect(platform.deviceId, 'uid-1');
     expect(platform.deviceAudio, true);
@@ -88,6 +95,42 @@ void main() {
 
     expect(platform.mic, true);
     expect(platform.deviceAudio, false);
+
+    c.dispose();
+  });
+
+  test('startDeviceRecording aborts + reports camera-denied', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    PathProviderPlatform.instance = _FakePathProvider();
+    final platform = _FakePlatform();
+    ScreenRecorderPlatform.instance = platform;
+
+    // An iOS capture device is a VIDEO AVCaptureDevice, so CAMERA permission is
+    // REQUIRED. With camera denied, the controller must NOT touch the platform
+    // and must report the denial via onDenied(PermissionKind.camera).
+    const denied = PermissionsSnapshot({
+      PermissionKind.screenRecording: PermissionStatus.granted,
+      PermissionKind.microphone: PermissionStatus.granted,
+      PermissionKind.accessibility: PermissionStatus.granted,
+      PermissionKind.camera: PermissionStatus.denied,
+    });
+
+    final deniedKinds = <PermissionKind>[];
+    final c = RecordingController();
+    await c.startDeviceRecording(
+      deviceId: 'uid-3',
+      captureDeviceAudio: true,
+      permissions: denied,
+      onDenied: (kind) async => deniedKinds.add(kind),
+    );
+
+    // Platform was never asked to start.
+    expect(platform.deviceId, isNull);
+    expect(platform.outputPath, isNull);
+    // Controller did not transition into recording.
+    expect(c.state.isRecording, isFalse);
+    // The denial was surfaced for camera.
+    expect(deniedKinds, [PermissionKind.camera]);
 
     c.dispose();
   });

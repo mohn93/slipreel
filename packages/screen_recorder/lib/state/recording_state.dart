@@ -299,6 +299,8 @@ class RecordingController extends StateNotifier<RecordingState> {
     required String deviceId,
     required bool captureDeviceAudio,
     MicrophoneConfig? microphone,
+    PermissionsSnapshot? permissions,
+    Future<void> Function(PermissionKind kind)? onDenied,
     String? defaultSaveLocation,
   }) async {
     if (!state.canStartRecording) return;
@@ -309,6 +311,28 @@ class RecordingController extends StateNotifier<RecordingState> {
       AppLogger.recording
           .w('startDeviceRecording ignored: a capture session is still active');
       return;
+    }
+
+    // Permission gate (mirrors startRecording). An iOS capture device is a
+    // VIDEO AVCaptureDevice, so CAMERA permission is REQUIRED: short-circuit if
+    // the caller passed a snapshot and camera isn't granted. (Both params are
+    // nullable so existing tests that don't care about permissions still work.)
+    if (permissions != null &&
+        permissions.camera != PermissionStatus.granted &&
+        permissions.camera != PermissionStatus.unsupported) {
+      await onDenied?.call(PermissionKind.camera);
+      return;
+    }
+
+    // Mic narration is OPTIONAL: only keep mic if it's granted (or ungated).
+    // A mic-denied device recording proceeds WITHOUT mic instead of aborting,
+    // mirroring the screen path's mic gate.
+    var micConfig = microphone;
+    if (micConfig != null &&
+        permissions != null &&
+        permissions.microphone != PermissionStatus.granted &&
+        permissions.microphone != PermissionStatus.unsupported) {
+      micConfig = null;
     }
 
     try {
@@ -333,7 +357,7 @@ class RecordingController extends StateNotifier<RecordingState> {
       await _videoEncoder.startDevice(
         deviceId: deviceId,
         captureDeviceAudio: captureDeviceAudio,
-        captureMic: microphone != null,
+        captureMic: micConfig != null,
         outputPath: outputPath,
       );
 
