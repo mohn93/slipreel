@@ -272,6 +272,34 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  Future<List<DeviceSource>> listDevices() async {
+    final raw = await _recordingChannel
+        .invokeListMethod<dynamic>(ScreenRecorderMethods.listDevices);
+    if (raw == null) return const [];
+    return raw
+        .map((e) => DeviceSource.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  @override
+  Future<void> startDeviceRecording({
+    required String deviceId,
+    required bool captureDeviceAudio,
+    required bool captureMic,
+    required String outputPath,
+  }) async {
+    await _recordingChannel.invokeMethod<void>(
+      ScreenRecorderMethods.startDeviceRecording,
+      {
+        'deviceId': deviceId,
+        'captureDeviceAudio': captureDeviceAudio,
+        'captureMic': captureMic,
+        'outputPath': outputPath,
+      },
+    );
+  }
+
+  @override
   Future<Uint8List?> captureThumbnail(
     String id,
     RecordingSource kind, {
