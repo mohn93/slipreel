@@ -229,6 +229,12 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
     throw UnsupportedError('pickSource() is not supported on this platform.');
   }
 
+  /// Shows the native device dropdown (NSMenu) of connected iOS devices.
+  /// Returns the selected device's uid, or null (cancelled / nothing picked).
+  Future<String?> showDeviceMenu() {
+    throw UnsupportedError('showDeviceMenu() is not supported on this platform.');
+  }
+
   /// Enumerate connected external recordable devices (iPhone/iPad over USB).
   /// Returns empty when none are connected/trusted.
   Future<List<DeviceSource>> listDevices() {

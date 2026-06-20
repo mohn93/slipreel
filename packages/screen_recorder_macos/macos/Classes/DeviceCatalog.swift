@@ -19,26 +19,34 @@ enum DeviceCatalog {
       UInt32(MemoryLayout<UInt32>.size), &allow)
   }
 
-  /// Connected iOS devices. iPhones/iPads show up as `.external` (macOS 14+)
-  /// or `.externalUnknown` once enabled + trusted + unlocked.
+  /// Connected iOS SCREEN-capture devices. iPhones/iPads show up as `.external`
+  /// (macOS 14+) or `.externalUnknown` once enabled + trusted + unlocked.
+  ///
+  /// We keep ONLY muxed devices — the iPhone screen device exposes a MUXED
+  /// (audio+video) stream, whereas the Continuity Camera is a video-only
+  /// `.continuityCamera`. Filtering to muxed (and excluding `.continuityCamera`)
+  /// drops the camera so the picker lists screens only.
   static func connectedDevices() -> [[String: String]] {
-    var types: [AVCaptureDevice.DeviceType] = []
+    var types: [AVCaptureDevice.DeviceType] = [.externalUnknown]
     if #available(macOS 14.0, *) {
       types.append(.external)
-    } else {
-      types.append(.externalUnknown)
     }
-    let discoveryMuxed = AVCaptureDevice.DiscoverySession(
-      deviceTypes: types, mediaType: .muxed, position: .unspecified)
-    let discoveryVideo = AVCaptureDevice.DiscoverySession(
-      deviceTypes: types, mediaType: .video, position: .unspecified)
+    let session = AVCaptureDevice.DiscoverySession(
+      deviceTypes: types, mediaType: nil, position: .unspecified)
     var seen = Set<String>()
-    let all = discoveryMuxed.devices + discoveryVideo.devices
-    return all.compactMap { d in
-      guard seen.insert(d.uniqueID).inserted else { return nil }
-      let lower = d.localizedName.lowercased()
-      let kind = lower.contains("ipad") ? "tablet" : "phone"
-      return ["id": d.uniqueID, "name": d.localizedName, "kind": kind]
+    var out: [[String: String]] = []
+    for d in session.devices {
+      guard seen.insert(d.uniqueID).inserted else { continue }
+      // Keep only muxed screen devices; drop the video-only Continuity Camera.
+      guard d.hasMediaType(.muxed) else { continue }
+      if #available(macOS 14.0, *), d.deviceType == .continuityCamera { continue }
+      let kind = d.localizedName.lowercased().contains("ipad") ? "tablet" : "phone"
+      out.append([
+        "id": d.uniqueID,
+        "name": d.localizedName,
+        "kind": kind,
+      ])
     }
+    return out
   }
 }

@@ -339,6 +339,10 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  Future<String?> showDeviceMenu() async =>
+      _recordingChannel.invokeMethod<String>(ScreenRecorderMethods.showDeviceMenu);
+
+  @override
   Future<MicrophoneMenuResult> showMicrophoneMenu(MicrophoneConfig? current) async {
     final raw = await _recordingChannel.invokeMapMethod<String, dynamic>(
       ScreenRecorderMethods.showMicrophoneMenu,

@@ -265,6 +265,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       showSystemAudioMenu(args: call.arguments as? [String: Any], result: result)
     case "showCameraMenu":
       showCameraMenu(args: call.arguments as? [String: Any], result: result)
+    case "showDeviceMenu":
+      showDeviceMenu(result: result)
     case "startMicMonitor":
       if let args = call.arguments as? [String: Any] {
         micLevelMonitor.start(
@@ -653,6 +655,44 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
           reply(nil)
         }
       }
+    }
+  }
+
+  /// Shows a native dropdown (NSMenu) of connected iOS screen-capture devices,
+  /// anchored at the cursor. Mirrors `showCameraMenu`: each enabled item carries
+  /// its device id in `representedObject`, the synchronous `popUp` blocks until
+  /// dismissed, and the target's captured id is returned afterward (nil =
+  /// cancelled / empty placeholder).
+  private func showDeviceMenu(result: @escaping FlutterResult) {
+    DispatchQueue.main.async {
+      let target = DeviceMenuTarget()
+      let menu = NSMenu()
+      let devices = DeviceCatalog.connectedDevices()
+
+      if devices.isEmpty {
+        let hint = NSMenuItem(
+          title: "Connect an iPhone or iPad over USB", action: nil, keyEquivalent: "")
+        hint.isEnabled = false
+        menu.addItem(hint)
+        let trust = NSMenuItem(
+          title: "and tap Trust This Computer", action: nil, keyEquivalent: "")
+        trust.isEnabled = false
+        menu.addItem(trust)
+      } else {
+        for dev in devices {
+          let id = dev["id"] ?? ""
+          let name = dev["name"] ?? id
+          let item = NSMenuItem(
+            title: name,
+            action: #selector(DeviceMenuTarget.pickDevice(_:)), keyEquivalent: "")
+          item.target = target
+          item.representedObject = id
+          menu.addItem(item)
+        }
+      }
+
+      menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+      result(target.selectedId)
     }
   }
 
@@ -1736,6 +1776,15 @@ private final class CameraMenuTarget: NSObject {
     }
   }
   @objc func dontRecord(_ s: NSMenuItem) { action = .dontRecord }
+}
+
+// MARK: - Device Menu Target
+
+private final class DeviceMenuTarget: NSObject {
+  var selectedId: String?
+  @objc func pickDevice(_ s: NSMenuItem) {
+    selectedId = s.representedObject as? String
+  }
 }
 
 // MARK: - System Audio Menu Target

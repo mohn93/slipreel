@@ -63,6 +63,7 @@ class ScreenRecorderMethods {
   static const String getCameraPermission = 'getCameraPermission';
   static const String requestCameraPermission = 'requestCameraPermission';
   static const String showCameraMenu = 'showCameraMenu';
+  static const String showDeviceMenu = 'showDeviceMenu';
   static const String requestScreenRecordingPermission =
       'requestScreenRecordingPermission';
   static const String getStockCursorImages = 'getStockCursorImages';
