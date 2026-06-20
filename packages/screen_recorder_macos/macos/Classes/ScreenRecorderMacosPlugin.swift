@@ -201,6 +201,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     sleepChannel.setStreamHandler(instance.sleepStreamHandler)
     recordingErrorChannel.setStreamHandler(instance.recordingErrorStreamHandler)
 
+    // Make USB-connected iOS devices (iPhone/iPad) discoverable as
+    // AVFoundation capture devices. They're DAL screen-capture devices
+    // hidden by default; this flips the CoreMediaIO property QuickTime
+    // sets. Idempotent — safe to call once at plugin load.
+    DeviceCatalog.enableScreenCaptureDevices()
+
     // Register the app with macOS's Accessibility TCC list at plugin
     // load. Without this an app that has never asked for the permission
     // doesn't appear in System Settings → Privacy & Security →
@@ -250,6 +256,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       pickSource(call: call, result: result)
     case "getAudioDevices":
       getAudioDevices(result: result)
+    case "listDevices":
+      result(DeviceCatalog.connectedDevices())
     case "showMicrophoneMenu":
       showMicrophoneMenu(args: call.arguments as? [String: Any], result: result)
     case "showSystemAudioMenu":
