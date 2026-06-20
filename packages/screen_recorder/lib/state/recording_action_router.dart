@@ -50,6 +50,23 @@ class RecordingActionRouter {
         defaultSaveLocation =
             _container.read(globalPreferencesControllerProvider).defaultSaveLocation;
       } catch (_) {}
+
+      // Device sources (iPhone/iPad over USB) take a different start path: the
+      // device feeds its own audio/video, so there's no host system-audio,
+      // camera, or cursor capture. Branch on the armed source kind.
+      final state = _container.read(recordingControllerProvider);
+      if (state.selectedSourceKind == RecordingSource.device &&
+          state.selectedSourceId != null) {
+        await controller.startDeviceRecording(
+          deviceId: state.selectedSourceId!,
+          captureDeviceAudio:
+              _container.read(deviceAudioEnabledProvider),
+          microphone: micConfig,
+          defaultSaveLocation: defaultSaveLocation,
+        );
+        return;
+      }
+
       await controller.startRecording(
         microphone: micConfig,
         systemAudio: sysAudioConfig,
@@ -95,6 +112,11 @@ class RecordingActionRouter {
     }
   }
 }
+
+/// Whether device-audio capture is enabled for the next device recording
+/// (iPhone/iPad over USB). Driven by the bar's device-audio control; read by
+/// [RecordingActionRouter] when starting a device source. Defaults to true.
+final deviceAudioEnabledProvider = StateProvider<bool>((ref) => true);
 
 /// Throw-by-default provider. Set in main() so HotkeyController + SleepObserver
 /// can resolve it via Ref if needed.

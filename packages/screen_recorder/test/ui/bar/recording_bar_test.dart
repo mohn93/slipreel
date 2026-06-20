@@ -83,14 +83,13 @@ void main() {
     expect(picked, BarSourceMode.window);
   });
 
-  testWidgets('tapping Device does NOT fire onPickMode (disabled)',
-      (tester) async {
+  testWidgets('tapping Device fires onPickMode(device)', (tester) async {
     _wide(tester);
     BarSourceMode? picked;
     final tips = await _allSeenController();
     await tester.pumpWidget(_wrap(_bar(onPickMode: (m) => picked = m), tips));
-    await tester.tap(find.text('Device'), warnIfMissed: false);
-    expect(picked, isNull);
+    await tester.tap(find.text('Device'));
+    expect(picked, BarSourceMode.device);
   });
 
   testWidgets('close button fires onClose', (tester) async {
