@@ -229,6 +229,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
       videoSize: widget.videoSize,
       onPlacementPreview: widget.onPlacementPreview,
       onPlacementCommit: widget.onPlacementCommit,
+      isDevice: widget.isDevice,
     );
   }
 

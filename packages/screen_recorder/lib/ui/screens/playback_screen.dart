@@ -673,7 +673,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       try {
         final hasNoZooms = saved.zoomRegions.isEmpty;
         final hasClicks = _cursorRecording.positions.any((p) => p.isClicked);
-        if (hasNoZooms && hasClicks && _metadata != null) {
+        // Device (iPhone/iPad) recordings carry no clicks, so hasClicks is
+        // already false; the explicit guard documents that auto-zoom never
+        // runs for them even if a future change seeds synthetic cursor data.
+        if (hasNoZooms &&
+            hasClicks &&
+            _metadata != null &&
+            !_metadata!.isDeviceCapture) {
           final detected = const AutoZoomDetector().detect(
             cursor: _cursorRecording,
             videoSize: Size(
@@ -1206,7 +1212,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           CommandPaletteEntry(
             label: 'Restore default zoom ranges',
             icon: LucideIcons.rotateCw,
-            enabled: hasCursorClicks && hasMetadata,
+            enabled: hasCursorClicks &&
+                hasMetadata &&
+                _metadata?.isDeviceCapture != true,
             action: () {
               final detected = const AutoZoomDetector().detect(
                 cursor: _cursorRecording,

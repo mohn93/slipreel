@@ -29,6 +29,7 @@ class ZoomContextInspector extends StatelessWidget {
     required this.videoSize,
     this.onPlacementPreview,
     this.onPlacementCommit,
+    this.isDevice = false,
   });
 
   final ZoomRegion zoom;
@@ -52,6 +53,11 @@ class ZoomContextInspector extends StatelessWidget {
   /// rect, so the editor can persist it via `updateZoomAt`.
   final ValueChanged<Rect>? onPlacementCommit;
 
+  /// True for iPhone/iPad recordings captured over USB. These have no
+  /// cursor, so the cursor-follow controls are hidden, manual placement is
+  /// always offered, and the placement note explains auto-zoom is off.
+  final bool isDevice;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -73,7 +79,7 @@ class ZoomContextInspector extends StatelessWidget {
             // Let hover lean/tilt overshoot paint past the panel edge.
             clipBehavior: Clip.none,
             children: [
-              if (!zoom.followCursor && !videoSize.isEmpty) ...[
+              if ((isDevice || !zoom.followCursor) && !videoSize.isEmpty) ...[
                 const Text(
                   'Placement',
                   style: TextStyle(
@@ -83,9 +89,12 @@ class ZoomContextInspector extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Drag to set the zoom focal.',
-                  style: TextStyle(
+                Text(
+                  isDevice
+                      ? 'Auto-zoom and cursor-follow are not available for '
+                          'iPhone/iPad recordings — position the zoom manually.'
+                      : 'Drag to set the zoom focal.',
+                  style: const TextStyle(
                     color: kInspectorMuted,
                     fontSize: 12,
                   ),
@@ -134,17 +143,18 @@ class ZoomContextInspector extends StatelessWidget {
                 ),
                 const InspectorSectionDivider(),
               ],
-              InspectorToggle(
-                label: 'Auto-zoom on cursor',
-                subtitle:
-                    'Camera follows the recorded cursor through the '
-                    'zoom region. Off pins the focal to the zoom\'s '
-                    'rect center.',
-                value: zoom.followCursor,
-                onChanged: (v) =>
-                    onChanged(zoom.copyWith(followCursor: v)),
-              ),
-              if (zoom.followCursor) ...[
+              if (!isDevice)
+                InspectorToggle(
+                  label: 'Auto-zoom on cursor',
+                  subtitle:
+                      'Camera follows the recorded cursor through the '
+                      'zoom region. Off pins the focal to the zoom\'s '
+                      'rect center.',
+                  value: zoom.followCursor,
+                  onChanged: (v) =>
+                      onChanged(zoom.copyWith(followCursor: v)),
+                ),
+              if (!isDevice && zoom.followCursor) ...[
                 const SizedBox(height: 16),
                 const Text(
                   'Follow style',
