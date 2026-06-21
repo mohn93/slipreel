@@ -46,11 +46,33 @@ feasibility probe; the device is there even though QuickTime's UI doesn't offer 
 (An earlier session step concluded "infeasible — even QuickTime can't" — that was
 premature: the phone was locked / not yet cable-connected at that moment.)
 
-## 4. What works at runtime (verified with a real iPhone 14 Pro Max)
+## 4. What works at runtime (verified with a real iPhone over USB)
+
+> ### ✅ BREAKTHROUGH 2026-06-21 — END-TO-END CAPTURE WORKS (the core unknown is resolved)
+> A real device recording produced a valid file: `~/Documents/recording_1782030881275.mp4`
+> — **`h264`, 1170×2532 (iPhone portrait), 215 frames over ~4.0s** (`ffprobe`-verified).
+> **The muxed iPhone device DOES deliver video frames through the EXISTING
+> `AVCaptureVideoDataOutput` → `VideoToolboxEncoder` → `LiveRecordingWriter` pipeline.**
+> The §5c hypothesis (muxed frames won't flow) is **DISPROVEN**, and the
+> `AVCaptureMovieFileOutput` rewrite floated in §6.1 is **NOT needed**. The recording
+> opened in the editor. Capture is viable as-built.
+>
+> **What it took to get here (all dev-build/env, NOT product issues):** the feature needs
+> **Camera AND Screen Recording** permission (an iOS screen device is a video
+> `AVCaptureDevice` *and* enumerating it via `AVCaptureDevice.DiscoverySession` is gated by
+> Screen Recording). The ad-hoc-signed debug build couldn't hold TCC grants (cdhash changes
+> each rebuild) and—when launched by `flutter run`—attributed camera to the harness, so the
+> app never registered in the permission lists. Fix that unblocked it: **(a)** sign the
+> Debug build with a stable Apple Development cert (local-only pbxproj edit, team
+> `799PAFQLNK`, do NOT commit), **(b)** launch the built `.app` **standalone** (parent =
+> `launchd`) so it's its own TCC responsible process. Then grant Camera (inline prompt) +
+> Screen Recording (Settings toggle + app restart). In a shipped/notarized build none of
+> this friction exists (permissions persist + already granted for normal recording).
 
 - Device **detection + listing**: the muxed screen device appears in the dropdown.
 - The **native dropdown** UX (no overflow; floats free of the 68px bar window).
 - Recording **starts** (countdown runs, state flips to `recording`).
+- **Full capture → valid `.mp4` → editor** (see breakthrough box above).
 
 ### 4b. Off-main-thread fix — RUNTIME-VERIFIED 2026-06-21 — commits `bfc0df2c` → `27edecb5`
 **Earlier symptom (pre-fix):** starting a device recording froze the whole Flutter UI
@@ -142,6 +164,25 @@ camera gate (§5d) must be cleared, or native capture never runs.
   by the zero-frame stop guard).
 - Re-entrancy guard in `stop()`.
 
+**STATUS 2026-06-21:** all three §5d fixes are **implemented** (commit `cf03a3a2`) and the
+camera gate is cleared — capture then works end-to-end (§4 breakthrough). §5d is RESOLVED.
+
+### 5e. Device capture needs Screen Recording too + repeated prompt — **NEW, polish** 2026-06-21
+**Finding:** capturing an iPhone screen needs **Screen Recording** permission in addition to
+Camera, because `DeviceCatalog.connectedDevices()` runs an `AVCaptureDevice.DiscoverySession`
+over `.external`/`.externalUnknown` **screen-capture** devices, which macOS gates behind
+Screen Recording. The pre-flight (`cf03a3a2`) only checks **Camera** — a gap.
+**Symptom (user-reported, non-blocking):** the macOS Screen-Recording prompt re-appears on
+**every Device-chip click**, even after the user granted it. Two compounding causes:
+  1. Screen Recording permission only takes effect after an **app restart**; granting it
+     mid-session leaves the running process re-checking on each enumeration.
+  2. `connectedDevices()` re-enumerates screen-capture devices on every `showDeviceMenu`
+     (plugin L670), and each enumeration re-triggers the gate until the restart lands.
+**Fixes (follow-up, not blocking — capture works):**
+  - Restart resolves it immediately for the user.
+  - Pre-flight should ensure **Screen Recording** (not just Camera) for a device source.
+  - Consider caching the device list / not re-enumerating on every chip click.
+
 ## 6. Remaining work (to make capture actually produce video)
 
 **Do these in order — the camera gate (§5d) blocks everything else.**
@@ -182,24 +223,27 @@ camera gate (§5d) must be cleared, or native capture never runs.
   `recording_bar.dart`) behind a flag, OR keep it on the branch only.
 - The non-device work on this branch is sound and reusable.
 
-## 8. Verdicts (updated 2026-06-21 after the off-main re-test)
+## 8. Verdicts (updated 2026-06-21 — END-TO-END CAPTURE CONFIRMED WORKING)
 
-- **Feasibility:** ✅ iPhone screen capture over USB is possible (muxed AVCaptureDevice).
+- **Feasibility:** ✅ iPhone screen capture over USB works — muxed `AVCaptureDevice`.
+- **Capture pipeline (muxed delivery):** ✅ **WORKS as-built** — the muxed device delivers
+  frames through the existing `AVCaptureVideoDataOutput` → `VideoToolboxEncoder` →
+  `LiveRecordingWriter` path. Verified file: 1170×2532 h264, 215 frames (§4 breakthrough).
+  No `AVCaptureMovieFileOutput` rewrite needed.
 - **Detection + UX:** ✅ working (dropdown lists the screen device; device-mode controls).
-- **UI no longer freezes:** ✅ **verified 2026-06-21** — off-main session setup (§4b)
-  removed the main-thread wedge; the bar cleanly resets after an attempt.
-- **Current blocker — Camera permission gate (§5d):** ❌ device recording bails in Dart at
-  the camera-permission gate *after the countdown*, never flips to `recording` (no pill),
-  and renders the deny sheet clipped inside the 68px bar ("empty modal"). This is what the
-  user actually hits today, and it short-circuits before native capture runs.
-- **Capture pipeline (muxed delivery):** ❓ **UNTESTED** — because §5d blocks first, we have
-  never confirmed whether the muxed device delivers video frames. (An earlier "zero frames
-  confirmed" claim was retracted — see §5c.)
-- **Stability:** ✅ no longer wedges; fails to a clean state (no force-kill).
-- **Branch recommendation:** **do NOT merge** `feat/device-capture` — the Device chip is
-  enabled but cannot yet produce a recording. Keep it on-branch, or gate the chip off
-  before any merge.
-- **Next session starting point (revised):** (1) clear the camera-permission gate — grant
-  Camera + move the check before the countdown + stop rendering the sheet in the bar (§5d);
-  (2) THEN, with native capture actually running, test muxed frame delivery on a
-  release/profile build (§5c) and decide encoder-path vs `AVCaptureMovieFileOutput` (§6.1).
+- **Permission UX fix:** ✅ camera pre-flight before the countdown + deny UI as a full
+  panel (not a clipped bar sheet) — committed `cf03a3a2`, runtime-confirmed (the panel
+  renders full-screen).
+- **UI no longer freezes:** ✅ off-main session setup (§4b) — verified.
+- **Permissions required:** ⚠️ device capture needs **BOTH Camera and Screen Recording**.
+  The pre-flight currently only gates **Camera** — it should also ensure Screen Recording
+  (gap; see §5e). In a shipped build Screen Recording is already granted (normal recording),
+  so this rarely bites in production, but the flow should handle it.
+- **Stability:** ✅ no wedge; clean failure when permissions/ frames are missing.
+- **Branch recommendation:** capture is proven; the remaining work to ship is **polish**
+  (§5e repeated Screen-Recording prompt + Screen-Recording pre-flight, iPad parity). The
+  **signing pbxproj edit is LOCAL-ONLY — must NOT be committed** (hardcodes a personal cert;
+  would break other machines/CI). Revert it before merging device work.
+- **Next session starting point (revised):** address §5e (cache device enumeration / ensure
+  Screen Recording in the pre-flight so the prompt doesn't repeat), iPad parity check, then
+  the mockup-frames sub-project B.
