@@ -25,21 +25,21 @@ class ScreenCaptureManager: NSObject {
 
   // MARK: - Permission Handling
 
-  /// Check if screen recording permission is granted
+  /// Check if screen recording permission is granted.
+  ///
+  /// PASSIVE status check ONLY — must not trigger the consent dialog.
+  /// `CGPreflightScreenCaptureAccess()` reports the current Screen Recording
+  /// authorization *without* prompting. The previous implementation called
+  /// `SCShareableContent`, which can re-pop the Screen Recording prompt even
+  /// when access is already granted — and because the Dart app re-probes all
+  /// permissions on every app focus (`refreshAll()` on resume), that surfaced
+  /// as a Screen Recording dialog reappearing on every window focus.
+  ///
+  /// The actual consent prompt is still triggered where it belongs — by
+  /// `requestPermission()` and by a real capture attempt — not by this check.
+  /// (Available macOS 10.15+; the app's deployment target is 13.0.)
   func checkPermission() async -> Bool {
-    if #available(macOS 13.0, *) {
-      // For macOS 13+, we can check by attempting to get shareable content
-      do {
-        _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        return true
-      } catch {
-        return false
-      }
-    } else {
-      // For earlier versions, assume permission is granted
-      // (ScreenCaptureKit requires macOS 12.3+)
-      return true
-    }
+    return CGPreflightScreenCaptureAccess()
   }
 
   /// Request screen recording permission
