@@ -44,6 +44,8 @@ class ScreenRecorderMethods {
   static const String startLiveRecording = 'startLiveRecording';
   static const String stopLiveRecording = 'stopLiveRecording';
   static const String listSources = 'listSources';
+  static const String listDevices = 'listDevices';
+  static const String startDeviceRecording = 'startDeviceRecording';
   static const String captureThumbnail = 'captureThumbnail';
   static const String selectRegion = 'selectRegion';
   static const String pickSource = 'pickSource';
@@ -61,6 +63,7 @@ class ScreenRecorderMethods {
   static const String getCameraPermission = 'getCameraPermission';
   static const String requestCameraPermission = 'requestCameraPermission';
   static const String showCameraMenu = 'showCameraMenu';
+  static const String showDeviceMenu = 'showDeviceMenu';
   static const String requestScreenRecordingPermission =
       'requestScreenRecordingPermission';
   static const String getStockCursorImages = 'getStockCursorImages';

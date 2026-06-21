@@ -40,6 +40,9 @@ class RecordingBar extends StatelessWidget {
     required this.onCameraTap,
     this.contentKey,
     this.micLevelStream,
+    this.deviceMode = false,
+    this.deviceAudioEnabled = true,
+    this.onDeviceAudioTap,
   });
 
   final void Function(BarSourceMode mode) onPickMode;
@@ -75,6 +78,19 @@ class RecordingBar extends StatelessWidget {
   /// Live mic level (0..1) stream; when non-null a meter is shown under the mic
   /// control. Null when not monitoring.
   final Stream<double>? micLevelStream;
+
+  /// True when the armed source is an external device (iPhone/iPad). In this
+  /// mode the system-audio control is replaced by a device-audio control (the
+  /// device feeds its own audio over USB; host system-audio capture is N/A).
+  final bool deviceMode;
+
+  /// Whether device audio capture is enabled. Only meaningful when
+  /// [deviceMode] is true.
+  final bool deviceAudioEnabled;
+
+  /// Fired when the device-audio control is tapped (toggles device audio).
+  /// Only used when [deviceMode] is true.
+  final VoidCallback? onDeviceAudioTap;
 
   @override
   Widget build(BuildContext context) {
@@ -130,15 +146,25 @@ class RecordingBar extends StatelessWidget {
               label: 'Area',
               onTap: () => onPickMode(BarSourceMode.area),
             ),
-            const _Mode(icon: LucideIcons.smartphone, label: 'Device'),
+            _Mode(
+              icon: LucideIcons.smartphone,
+              label: 'Device',
+              onTap: () => onPickMode(BarSourceMode.device),
+            ),
             const _Divider(),
             _CameraControl(camera: camera, onTap: onCameraTap),
             _MicControl(
                 microphone: microphone,
                 onTap: onMicTap,
                 levelStream: micLevelStream),
-            _SystemAudioControl(
-                systemAudio: systemAudio, onTap: onSystemAudioTap),
+            if (deviceMode)
+              _DeviceAudioControl(
+                enabled: deviceAudioEnabled,
+                onTap: onDeviceAudioTap ?? () {},
+              )
+            else
+              _SystemAudioControl(
+                  systemAudio: systemAudio, onTap: onSystemAudioTap),
             const _Divider(),
             _GearButton(onTap: onGearTap),
           ],
@@ -353,6 +379,65 @@ class _SystemAudioControlState extends State<_SystemAudioControl> {
                   const SizedBox(width: 2),
                   const Icon(LucideIcons.chevronDown,
                       size: 13, color: Color(0xFF7E7E86)),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Device-audio control shown in device mode IN PLACE OF [_SystemAudioControl].
+/// Speaker icon + label + chevron, mirroring [_SystemAudioControl]'s look. When
+/// [enabled] the device's audio (carried over USB) is captured; tapping toggles.
+class _DeviceAudioControl extends StatefulWidget {
+  const _DeviceAudioControl({required this.enabled, required this.onTap});
+
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  State<_DeviceAudioControl> createState() => _DeviceAudioControlState();
+}
+
+class _DeviceAudioControlState extends State<_DeviceAudioControl> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = widget.enabled;
+    final active = on || _hover;
+    return SpringHoverButton(
+      key: const Key('bar-device-audio'),
+      onTap: widget.onTap,
+      onHoverChanged: (h) => setState(() => _hover = h),
+      child: SizedBox(
+        width: _kMicChipWidth,
+        height: _kBarButtonHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(end: active ? 1.0 : 0.0),
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            builder: (context, t, _) {
+              final color = Color.lerp(
+                  const Color(0xFF6E6E76), const Color(0xFFE9E9EC), t)!;
+              return Row(
+                children: [
+                  Icon(on ? LucideIcons.volume2 : LucideIcons.volumeOff,
+                      size: 22, color: color),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(on ? 'Device audio' : 'No device audio',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        textAlign: TextAlign.left,
+                        style: TextStyle(fontSize: 12, color: color)),
+                  ),
                 ],
               );
             },

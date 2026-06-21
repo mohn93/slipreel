@@ -12,6 +12,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
   private var audioCaptureManager: AudioCaptureManager?
   private var systemAudioManager: Any?  // SystemAudioCaptureManager (gated to macOS 13+)
   private var cameraManager: CameraCaptureManager?
+  private var deviceManager: DeviceCaptureManager?
   private var cursorStreamHandler: CursorStreamHandler?
   private var cursorTracker: CursorTracker?
   private var keystrokeStreamHandler: KeystrokeStreamHandler?
@@ -201,6 +202,12 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     sleepChannel.setStreamHandler(instance.sleepStreamHandler)
     recordingErrorChannel.setStreamHandler(instance.recordingErrorStreamHandler)
 
+    // Make USB-connected iOS devices (iPhone/iPad) discoverable as
+    // AVFoundation capture devices. They're DAL screen-capture devices
+    // hidden by default; this flips the CoreMediaIO property QuickTime
+    // sets. Idempotent — safe to call once at plugin load.
+    DeviceCatalog.enableScreenCaptureDevices()
+
     // Register the app with macOS's Accessibility TCC list at plugin
     // load. Without this an app that has never asked for the permission
     // doesn't appear in System Settings → Privacy & Security →
@@ -250,12 +257,16 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       pickSource(call: call, result: result)
     case "getAudioDevices":
       getAudioDevices(result: result)
+    case "listDevices":
+      result(DeviceCatalog.connectedDevices())
     case "showMicrophoneMenu":
       showMicrophoneMenu(args: call.arguments as? [String: Any], result: result)
     case "showSystemAudioMenu":
       showSystemAudioMenu(args: call.arguments as? [String: Any], result: result)
     case "showCameraMenu":
       showCameraMenu(args: call.arguments as? [String: Any], result: result)
+    case "showDeviceMenu":
+      showDeviceMenu(result: result)
     case "startMicMonitor":
       if let args = call.arguments as? [String: Any] {
         micLevelMonitor.start(
@@ -269,6 +280,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       result(nil)
     case "startLiveRecording":
       startLiveRecording(call: call, result: result)
+    case "startDeviceRecording":
+      startDeviceRecording(call: call, result: result)
     case "stopLiveRecording":
       stopLiveRecording(result: result)
 
@@ -645,6 +658,44 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     }
   }
 
+  /// Shows a native dropdown (NSMenu) of connected iOS screen-capture devices,
+  /// anchored at the cursor. Mirrors `showCameraMenu`: each enabled item carries
+  /// its device id in `representedObject`, the synchronous `popUp` blocks until
+  /// dismissed, and the target's captured id is returned afterward (nil =
+  /// cancelled / empty placeholder).
+  private func showDeviceMenu(result: @escaping FlutterResult) {
+    DispatchQueue.main.async {
+      let target = DeviceMenuTarget()
+      let menu = NSMenu()
+      let devices = DeviceCatalog.connectedDevices()
+
+      if devices.isEmpty {
+        let hint = NSMenuItem(
+          title: "Connect an iPhone or iPad over USB", action: nil, keyEquivalent: "")
+        hint.isEnabled = false
+        menu.addItem(hint)
+        let trust = NSMenuItem(
+          title: "and tap Trust This Computer", action: nil, keyEquivalent: "")
+        trust.isEnabled = false
+        menu.addItem(trust)
+      } else {
+        for dev in devices {
+          let id = dev["id"] ?? ""
+          let name = dev["name"] ?? id
+          let item = NSMenuItem(
+            title: name,
+            action: #selector(DeviceMenuTarget.pickDevice(_:)), keyEquivalent: "")
+          item.target = target
+          item.representedObject = id
+          menu.addItem(item)
+        }
+      }
+
+      menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+      result(target.selectedId)
+    }
+  }
+
   // MARK: - Permissions
 
   private func requestPermissions(result: @escaping FlutterResult) {
@@ -943,6 +994,142 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     }
   }
 
+  /// Record a USB-attached iOS device's screen (+ optional device audio / mic).
+  ///
+  /// Mirrors `startLiveRecording`'s wiring but sources raw frames + audio from a
+  /// `DeviceCaptureManager` (AVCaptureSession) instead of an SCStream. Frames go
+  /// through the SAME shared `VideoToolboxEncoder` → `LiveRecordingWriter` path,
+  /// and the recording is torn down by the existing `stopLiveRecording`.
+  private func startDeviceRecording(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    micLevelMonitor.stop()
+    guard let args = call.arguments as? [String: Any],
+          let deviceId = args["deviceId"] as? String,
+          let outputPath = args["outputPath"] as? String else {
+      result(FlutterError(code: "BAD_ARGS",
+                          message: "startDeviceRecording missing args",
+                          details: nil))
+      return
+    }
+    let captureDeviceAudio = (args["captureDeviceAudio"] as? Bool) ?? true
+    let captureMic = (args["captureMic"] as? Bool) ?? false
+
+    Task {
+      do {
+        // Clear any stale subsystems from a previously-failed start so we
+        // begin from a clean slate (matches startLiveRecording).
+        await self.tearDownPartialLiveRecording()
+
+        let manager = DeviceCaptureManager()
+        // A device unplugged mid-recording reports through onDisconnect. Route
+        // it through the SAME recordingError channel the screen path uses for
+        // mid-capture failures: emitRecordingError hops to main and feeds the
+        // Dart RecordingController._handleError, which reaps the encoder and
+        // cleans state. This avoids a silent native-only stop (orphaned file +
+        // stuck UI) and avoids running teardown on the NotificationCenter thread.
+        manager.onDisconnect = { [weak self] in
+          self?.emitRecordingError(
+            NSError(domain: "ScreenRecorderMacos",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Device disconnected during recording."]))
+        }
+
+        // `manager.start()` configures + starts an AVCaptureSession for an
+        // external/muxed device — every step (input creation, commitConfiguration,
+        // activeFormat reads, startRunning) can BLOCK. This Task inherits the main
+        // actor, so running start() inline freezes the UI and the recording-bar
+        // window never morphs to the Stop/Pause pill (it looks like an empty
+        // modal over the bar). Run the whole blocking setup on a background queue
+        // and await it without blocking the main thread; dimensions are ready when
+        // it resumes.
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+          DispatchQueue.global(qos: .userInitiated).async {
+            do {
+              try manager.start(deviceUid: deviceId, captureAudio: captureDeviceAudio)
+              cont.resume()
+            } catch {
+              cont.resume(throwing: error)
+            }
+          }
+        }
+
+        let w = manager.width > 0 ? manager.width : 1170
+        let h = manager.height > 0 ? manager.height : 2532
+        let fps = manager.nominalFps
+
+        // Build the writer's audio tracks. The iOS device's own audio is a
+        // "system"-role track (stereo, like system audio); an optional mic is a
+        // separate "microphone"-role track sourced from AudioCaptureManager.
+        var roles: [AudioTrackRole] = []
+        if captureDeviceAudio { roles.append(.system) }
+        if captureMic { roles.append(.microphone) }
+
+        let writer = LiveRecordingWriter(
+          outputPath: outputPath, width: w, height: h, fps: fps, audioTracks: roles)
+        try writer.start()
+
+        let encoder = VideoToolboxEncoder(width: w, height: h, fps: fps)
+        encoder.onCompressedSample = { [weak writer] sb in
+          writer?.appendVideo(sb)
+        }
+        try encoder.initialize()
+
+        manager.onVideoFrame = { [weak self, weak encoder] sb in
+          guard let pb = CMSampleBufferGetImageBuffer(sb) else { return }
+          let pts = CMSampleBufferGetPresentationTimeStamp(sb)
+          if let self = self {
+            let hostNow = CMClockGetTime(CMClockGetHostTimeClock())
+            self.captureFirstFrameIfNeeded(
+              wallNow: Date(),
+              hostNowSeconds: CMTimeGetSeconds(hostNow),
+              ptsSeconds: CMTimeGetSeconds(pts))
+          }
+          try? encoder?.encode(pixelBuffer: pb, timestamp: pts)
+        }
+
+        if captureDeviceAudio {
+          manager.onAudioSample = { [weak writer] sb in
+            writer?.appendAudio(sb, role: .system)
+          }
+        }
+
+        // Reset first-frame timing for THIS recording before any frame can be
+        // stamped (matches startLiveRecording's stale-origin guard).
+        resetFirstFrameTiming()
+        self.liveStartTime = Date()
+
+        // Optional microphone track, sourced exactly like the screen path.
+        if captureMic {
+          if audioCaptureManager == nil { audioCaptureManager = AudioCaptureManager() }
+          audioCaptureManager?.onSampleBufferReceived = { [weak writer] sb in
+            writer?.appendAudio(sb, role: .microphone)
+          }
+          try audioCaptureManager?.startMicrophoneCapture(
+            deviceUid: nil, reduceNoise: false, disableAgc: false)
+        }
+
+        let sampler = PerfSampler()
+        sampler.start()
+
+        self.deviceManager = manager
+        self.liveWriter = writer
+        self.liveEncoder = encoder
+        self.perfSampler = sampler
+        self.liveFrameCount = 0
+        self.liveCaptureWidth = w
+        self.liveCaptureHeight = h
+
+        result(nil)
+      } catch {
+        // Roll back any subsystems that already started (mirrors the screen
+        // path's catch). Each helper guards its own state, so this is safe.
+        await self.tearDownPartialLiveRecording()
+        result(FlutterError(code: "DEVICE_START_FAILED",
+                            message: error.localizedDescription,
+                            details: nil))
+      }
+    }
+  }
+
   /// Reports a fatal mid-capture failure to Flutter over the recordingError
   /// channel. Invoked from the SCStream delegate queue, so it hops to main to
   /// touch the FlutterEventSink. Teardown is driven by the Dart side
@@ -973,6 +1160,13 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       cm.onError = nil // don't emit a recordingError for an intentional stop
       try? await cm.stopCapture()
       captureManager = nil
+    }
+    if let dm = deviceManager {
+      dm.onVideoFrame = nil
+      dm.onAudioSample = nil
+      dm.onDisconnect = nil
+      dm.stop()
+      deviceManager = nil
     }
     if let am = audioCaptureManager {
       // Stop unconditionally — even if isCaptureActive() reports
@@ -1026,6 +1220,33 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         captureManager?.onError = nil // intentional stop: suppress error emit
         try await captureManager?.stopCapture()
         captureManager = nil
+
+        // Stop the USB-device capture source (if this was a device recording)
+        // BEFORE finalizing the encoder/writer below, mirroring the screen-
+        // capture teardown ordering so no frames arrive after finalize.
+        //
+        // ROBUSTNESS (#device-capture): A muxed iPhone screen device may deliver
+        // ZERO video frames (see DeviceCaptureManager's muxed-hypothesis note).
+        // In that case the writer's lazy AVAssetWriter session was never opened.
+        // We MUST still tear the device manager down and reach the writer.stop
+        // below, which already handles the never-started-session case gracefully
+        // (it returns `.nothingWritten` and calls back immediately instead of
+        // blocking on a finalize that has nothing to finish). Nil the callbacks
+        // FIRST, then stop() (which is itself re-entrancy-safe and re-nils the
+        // callbacks), so no frame can race in after this point.
+        if let dm = deviceManager {
+          let frames = dm.deliveredVideoFrameCount
+          if frames == 0 {
+            NSLog("[ScreenRecorderMacosPlugin] device capture produced ZERO video frames — writer session never opened; finalizing to whatever exists (#device-capture)")
+          } else {
+            NSLog("[ScreenRecorderMacosPlugin] device capture delivered %d video frames", frames)
+          }
+          dm.onVideoFrame = nil
+          dm.onAudioSample = nil
+          dm.onDisconnect = nil
+          dm.stop()
+          deviceManager = nil
+        }
 
         if let am = audioCaptureManager, am.isCaptureActive() {
           am.onSampleBufferReceived = nil
@@ -1590,6 +1811,15 @@ private final class CameraMenuTarget: NSObject {
     }
   }
   @objc func dontRecord(_ s: NSMenuItem) { action = .dontRecord }
+}
+
+// MARK: - Device Menu Target
+
+private final class DeviceMenuTarget: NSObject {
+  var selectedId: String?
+  @objc func pickDevice(_ s: NSMenuItem) {
+    selectedId = s.representedObject as? String
+  }
 }
 
 // MARK: - System Audio Menu Target

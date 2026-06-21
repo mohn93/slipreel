@@ -51,6 +51,11 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   // we can avoid redundant start/stop calls and detect device changes.
   MicrophoneConfig? _monitoredConfig;
 
+  // Whether device-audio capture is enabled when recording an external device.
+  // Threaded into startDeviceRecording via the action router's device-audio
+  // flag provider.
+  bool _deviceAudio = true;
+
   // Cache the level stream once — the getter returns a fresh
   // receiveBroadcastStream() on each call, so we must not call it per-build.
   late final Stream<double> _micLevelStream =
@@ -162,31 +167,45 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         );
         await recordingActionRouterRef?.start(context);
       case BarSourceMode.device:
-        break;
+        final deviceId = await ScreenRecorderPlatform.instance.showDeviceMenu();
+        if (deviceId == null || !mounted) return;
+        controller.selectSource(kind: RecordingSource.device, id: deviceId);
+        if (!mounted) return;
+        await recordingActionRouterRef?.start(context);
     }
   }
 
-  Widget _buildBar() => RecordingBar(
-        onPickMode: _pickAndRecord,
-        onClose: () => SystemNavigator.pop(),
-        onGearTap: _onGearTap,
-        onDragStart: () => unawaited(
-              ref.read(windowChromeProvider).startWindowDrag().catchError(
-                    (Object e, StackTrace st) => AppLogger.platform
-                        .w('startWindowDrag failed', error: e, stackTrace: st),
-                  ),
-            ),
-        microphone: ref.watch(microphoneControllerProvider),
-        onMicTap: _onMicTap,
-        systemAudio: ref.watch(systemAudioControllerProvider),
-        onSystemAudioTap: _onSystemAudioTap,
-        camera: ref.watch(cameraControllerProvider),
-        onCameraTap: _onCameraTap,
-        contentKey: _barContentKey,
-        micLevelStream: ref.watch(microphoneControllerProvider) != null
-            ? _micLevelStream
-            : null,
-      );
+  Widget _buildBar() {
+    // Device mode: the bar swaps its system-audio control for a device-audio
+    // toggle when an external device (iPhone/iPad) is the armed source.
+    final deviceMode = ref.watch(recordingControllerProvider
+            .select((s) => s.selectedSourceKind)) ==
+        RecordingSource.device;
+    return RecordingBar(
+      onPickMode: _pickAndRecord,
+      onClose: () => SystemNavigator.pop(),
+      onGearTap: _onGearTap,
+      onDragStart: () => unawaited(
+            ref.read(windowChromeProvider).startWindowDrag().catchError(
+                  (Object e, StackTrace st) => AppLogger.platform
+                      .w('startWindowDrag failed', error: e, stackTrace: st),
+                ),
+          ),
+      microphone: ref.watch(microphoneControllerProvider),
+      onMicTap: _onMicTap,
+      systemAudio: ref.watch(systemAudioControllerProvider),
+      onSystemAudioTap: _onSystemAudioTap,
+      camera: ref.watch(cameraControllerProvider),
+      onCameraTap: _onCameraTap,
+      contentKey: _barContentKey,
+      micLevelStream: ref.watch(microphoneControllerProvider) != null
+          ? _micLevelStream
+          : null,
+      deviceMode: deviceMode,
+      deviceAudioEnabled: _deviceAudio,
+      onDeviceAudioTap: _onDeviceAudioTap,
+    );
+  }
 
   /// Schedules a single post-frame `_syncBarSize` call per frame.
   void _scheduleBarSync() {
@@ -248,6 +267,11 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         await ScreenRecorderPlatform.instance.showCameraMenu(current);
     if (!mounted || result.cancelled) return;
     ref.read(cameraControllerProvider.notifier).set(result.config);
+  }
+
+  void _onDeviceAudioTap() {
+    setState(() => _deviceAudio = !_deviceAudio);
+    ref.read(deviceAudioEnabledProvider.notifier).state = _deviceAudio;
   }
 
   Future<void> _onGearTap() async {

@@ -5,6 +5,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'models/audio_data.dart';
 import 'models/audio_device_info.dart';
 import 'models/cursor_position.dart';
+import 'models/device_source.dart';
 import 'models/keystroke_event.dart';
 import 'models/frame_data.dart';
 import 'models/recording_result.dart';
@@ -226,6 +227,30 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   /// user cancelled (Esc / clicked empty space).
   Future<PickedSource?> pickSource(RecordingSource kind) {
     throw UnsupportedError('pickSource() is not supported on this platform.');
+  }
+
+  /// Shows the native device dropdown (NSMenu) of connected iOS devices.
+  /// Returns the selected device's uid, or null (cancelled / nothing picked).
+  Future<String?> showDeviceMenu() {
+    throw UnsupportedError('showDeviceMenu() is not supported on this platform.');
+  }
+
+  /// Enumerate connected external recordable devices (iPhone/iPad over USB).
+  /// Returns empty when none are connected/trusted.
+  Future<List<DeviceSource>> listDevices() {
+    throw UnsupportedError('listDevices() is not supported on this platform.');
+  }
+
+  /// Start recording the given device to [outputPath].
+  Future<void> startDeviceRecording({
+    required String deviceId,
+    required bool captureDeviceAudio,
+    required bool captureMic,
+    required String outputPath,
+  }) {
+    throw UnsupportedError(
+      'startDeviceRecording() is not supported on this platform.',
+    );
   }
 
   /// Shows the native microphone dropdown (NSMenu) seeded with [current].

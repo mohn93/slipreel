@@ -123,4 +123,5 @@ enum RecordingSource {
   screen,
   window,
   area,
+  device,
 }
