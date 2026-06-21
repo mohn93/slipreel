@@ -1,9 +1,13 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
+import 'package:screen_recorder/state/frame_extractor_provider.dart';
 import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
@@ -16,7 +20,7 @@ import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 /// [onChanged] (or [onCurveOverrideChanged] for the curve override,
 /// which needs `clearRampCurveOverride` semantics that don't fit a
 /// plain copyWith).
-class ZoomContextInspector extends StatelessWidget {
+class ZoomContextInspector extends ConsumerWidget {
   const ZoomContextInspector({
     super.key,
     required this.zoom,
@@ -30,6 +34,7 @@ class ZoomContextInspector extends StatelessWidget {
     this.onPlacementPreview,
     this.onPlacementCommit,
     this.isDevice = false,
+    this.videoPath = '',
   });
 
   final ZoomRegion zoom;
@@ -58,8 +63,16 @@ class ZoomContextInspector extends StatelessWidget {
   /// always offered, and the placement note explains auto-zoom is off.
   final bool isDevice;
 
+  /// Source video path, used to extract the screen frame shown behind the
+  /// placement box at the zoom's start time. Empty ⇒ no preview.
+  final String videoPath;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final showPlacement =
+        (isDevice || !zoom.followCursor) && !videoSize.isEmpty;
+    final ui.Image? placementFrame =
+        showPlacement ? _watchPlacementFrame(ref) : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -79,7 +92,7 @@ class ZoomContextInspector extends StatelessWidget {
             // Let hover lean/tilt overshoot paint past the panel edge.
             clipBehavior: Clip.none,
             children: [
-              if ((isDevice || !zoom.followCursor) && !videoSize.isEmpty) ...[
+              if (showPlacement) ...[
                 const Text(
                   'Placement',
                   style: TextStyle(
@@ -106,6 +119,7 @@ class ZoomContextInspector extends StatelessWidget {
                   zoomLevel: zoom.zoomLevel,
                   onPreview: (r) => onPlacementPreview?.call(r),
                   onCommit: (r) => onPlacementCommit?.call(r),
+                  backgroundImage: placementFrame,
                 ),
                 const InspectorSectionDivider(),
               ],
@@ -313,6 +327,28 @@ class ZoomContextInspector extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// Watches the extracted screen frame for this zoom's start time, sized to
+  /// the placement mini-frame (longest side ~640px, video aspect preserved).
+  /// Returns null while loading or on failure — the picker falls back to a
+  /// plain background.
+  ui.Image? _watchPlacementFrame(WidgetRef ref) {
+    if (videoPath.isEmpty || videoSize.isEmpty) return null;
+    final aspect = videoSize.width / videoSize.height;
+    final int tw, th;
+    if (aspect >= 1) {
+      tw = 640;
+      th = (640 / aspect).round().clamp(1, 4096);
+    } else {
+      th = 640;
+      tw = (640 * aspect).round().clamp(1, 4096);
+    }
+    return ref
+        .watch(frameExtractorProvider(
+          FrameKey(videoPath, zoom.startTime.inMicroseconds, tw, th),
+        ))
+        .valueOrNull;
   }
 
   static String _rangeLabel(ZoomRegion z) {

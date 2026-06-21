@@ -2258,6 +2258,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                             });
                           },
                           videoSize: _videoSize(),
+                          videoPath: widget.videoPath,
                           onPlacementPreview: _onPlacementPreview,
                           onPlacementCommit: _onPlacementCommit,
                         ),

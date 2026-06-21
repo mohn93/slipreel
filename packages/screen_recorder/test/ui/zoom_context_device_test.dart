@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
@@ -10,13 +11,15 @@ import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspe
 /// For an iPhone/iPad recording there is no cursor, so the zoom inspector's
 /// cursor-follow controls are meaningless. The inspector hides them, always
 /// offers manual placement, and explains why.
-Widget _host(Widget child) => MaterialApp(
-      theme: ThemeData(
-        extensions: const [AppPalette.midnight],
-        useMaterial3: true,
-      ),
-      home: Scaffold(
-        body: SizedBox(width: 380, height: 700, child: child),
+Widget _host(Widget child) => ProviderScope(
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: Scaffold(
+          body: SizedBox(width: 380, height: 700, child: child),
+        ),
       ),
     );
 
