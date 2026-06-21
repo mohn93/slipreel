@@ -1,6 +1,8 @@
 // packages/slipreel_engine/lib/models/device_frame.dart
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart' show Color;
+import 'package:flutter/services.dart' show rootBundle;
 
 /// Normalized screen-cutout rect within a bezel image (0..1 of bezel
 /// width/height). The video is drawn into this sub-rect.
@@ -126,4 +128,27 @@ Color _parseHexColor(String hex) {
   var h = hex.replaceFirst('#', '').trim();
   if (h.length == 6) h = 'FF$h';
   return Color(int.parse(h, radix: 16));
+}
+
+// --- asset loading (appended) ---------------------------------------------
+
+const String kDeviceFrameManifestAsset = 'assets/device_frames/manifest.json';
+
+DeviceFrameCatalog? _cachedCatalog;
+
+@visibleForTesting
+void debugSetDeviceFrameCatalog(DeviceFrameCatalog? c) => _cachedCatalog = c;
+
+/// Loads + caches the device-frame catalog from the bundled manifest.
+/// Returns an empty catalog when the manifest asset is absent (the app
+/// ships functional before the real Apple art is populated).
+Future<DeviceFrameCatalog> loadDeviceFrameCatalog() async {
+  final cached = _cachedCatalog;
+  if (cached != null) return cached;
+  try {
+    final jsonStr = await rootBundle.loadString(kDeviceFrameManifestAsset);
+    return _cachedCatalog = DeviceFrameCatalog.parse(jsonStr);
+  } catch (_) {
+    return _cachedCatalog = const DeviceFrameCatalog([]);
+  }
 }
