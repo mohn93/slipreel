@@ -135,16 +135,12 @@ final class DeviceCaptureManager: NSObject,
       self, selector: #selector(deviceDisconnected(_:)),
       name: .AVCaptureDeviceWasDisconnected, object: device)
 
-    // `AVCaptureSession.startRunning()` is a BLOCKING call (Apple: "can take
-    // some time"). The plugin invokes start() from the Flutter method-channel
-    // handler, which runs on the main thread — blocking it here freezes the UI
-    // so the recording-bar window never morphs to the Stop/Pause pill (the user
-    // sees a stuck bar). Dimensions are already resolved above (pre-startRunning),
-    // so kick the start onto a background queue and return immediately. Frame
-    // delegate callbacks still arrive on videoQueue/audioQueue.
-    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-      self?.session.startRunning()
-    }
+    // NOTE: this whole method (AVCaptureDeviceInput creation, addInput/addOutput,
+    // commitConfiguration, activeFormat reads, and startRunning) can BLOCK for an
+    // external/muxed device. The plugin MUST call start() off the main thread (it
+    // does, via a background dispatch) so the recording-bar UI can paint the
+    // Stop/Pause pill. Do NOT call this from the main thread.
+    session.startRunning()
   }
 
   @objc private func deviceDisconnected(_ note: Notification) { onDisconnect?() }

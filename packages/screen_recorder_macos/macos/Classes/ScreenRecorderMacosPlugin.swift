@@ -1033,7 +1033,24 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
                     userInfo: [NSLocalizedDescriptionKey: "Device disconnected during recording."]))
         }
 
-        try manager.start(deviceUid: deviceId, captureAudio: captureDeviceAudio)
+        // `manager.start()` configures + starts an AVCaptureSession for an
+        // external/muxed device — every step (input creation, commitConfiguration,
+        // activeFormat reads, startRunning) can BLOCK. This Task inherits the main
+        // actor, so running start() inline freezes the UI and the recording-bar
+        // window never morphs to the Stop/Pause pill (it looks like an empty
+        // modal over the bar). Run the whole blocking setup on a background queue
+        // and await it without blocking the main thread; dimensions are ready when
+        // it resumes.
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+          DispatchQueue.global(qos: .userInitiated).async {
+            do {
+              try manager.start(deviceUid: deviceId, captureAudio: captureDeviceAudio)
+              cont.resume()
+            } catch {
+              cont.resume(throwing: error)
+            }
+          }
+        }
 
         let w = manager.width > 0 ? manager.width : 1170
         let h = manager.height > 0 ? manager.height : 2532
