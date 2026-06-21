@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 /// Mini-frame placement picker for a manual (`followCursor: false`)
@@ -14,6 +16,7 @@ class ZoomPlacementPicker extends StatefulWidget {
     required this.zoomLevel,
     required this.onPreview,
     required this.onCommit,
+    this.backgroundImage,
   });
 
   /// Source video size in pixels (e.g. 1920×1080).
@@ -30,6 +33,12 @@ class ZoomPlacementPicker extends StatefulWidget {
 
   /// Fires once on pan end with the final rect (video coords, clamped).
   final ValueChanged<Rect> onCommit;
+
+  /// Optional screen preview painted behind the framing rect — the source
+  /// frame at the zoom's start time, scaled to the mini-frame. When non-null,
+  /// the area outside the framing rect is dimmed (a spotlight) so the user
+  /// can see exactly what the zoom will frame. Null ⇒ plain dark background.
+  final ui.Image? backgroundImage;
 
   @override
   State<ZoomPlacementPicker> createState() => _ZoomPlacementPickerState();
@@ -113,6 +122,25 @@ class _ZoomPlacementPickerState extends State<ZoomPlacementPicker> {
                 child: ClipRect(
                   child: Stack(
                     children: [
+                      // Screen preview + spotlight (only when a frame is
+                      // available). The frame fills the mini-frame; the
+                      // spotlight dims everything outside the framing rect.
+                      if (widget.backgroundImage != null) ...[
+                        Positioned.fill(
+                          child: CustomPaint(
+                            key: const Key('zoom-placement-frame'),
+                            painter: _FramePainter(widget.backgroundImage!),
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: CustomPaint(
+                            key: const Key('zoom-placement-spotlight'),
+                            painter: _SpotlightPainter(
+                              Rect.fromLTWH(innerLeft, innerTop, innerW, innerH),
+                            ),
+                          ),
+                        ),
+                      ],
                       Positioned(
                         left: innerLeft,
                         top: innerTop,
@@ -182,4 +210,47 @@ class _ZoomPlacementPickerState extends State<ZoomPlacementPicker> {
       },
     );
   }
+}
+
+/// Paints the extracted screen frame to fill the mini-frame.
+class _FramePainter extends CustomPainter {
+  _FramePainter(this.image);
+
+  final ui.Image image;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final src =
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+    final dst = Offset.zero & size;
+    canvas.drawImageRect(
+      image,
+      src,
+      dst,
+      Paint()..filterQuality = FilterQuality.medium,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_FramePainter old) => old.image != image;
+}
+
+/// Dims everything outside [selection] (a spotlight) so the framed region
+/// stays bright. Uses a clear-blend punch-out over a translucent scrim.
+class _SpotlightPainter extends CustomPainter {
+  _SpotlightPainter(this.selection);
+
+  final Rect selection;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final full = Offset.zero & size;
+    canvas.saveLayer(full, Paint());
+    canvas.drawRect(full, Paint()..color = Colors.black54);
+    canvas.drawRect(selection, Paint()..blendMode = BlendMode.clear);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_SpotlightPainter old) => old.selection != selection;
 }
