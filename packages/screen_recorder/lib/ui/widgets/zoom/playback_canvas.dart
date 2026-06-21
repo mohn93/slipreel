@@ -81,6 +81,89 @@ CameraPlacement? cameraPlacementForTest(
   return CameraPlacementResolver.placementAt(position, regions);
 }
 
+/// Action the preview badge zoom-LEVEL tween should take this frame. See
+/// [badgeTweenDecision].
+enum BadgeTweenAction { snap, animate, hold }
+
+/// Pure decision for the preview badge zoom-LEVEL tween (see the badge field
+/// docs on the canvas state). [prevKey]/[prevLevel] is the region the badge is
+/// currently tracking; [activeKey]/[activeLevel] is the region to render this
+/// frame; [currentDisplayed] is the level on screen right now.
+///
+///  * Region identity changed ([activeKey] != [prevKey]) → [BadgeTweenAction.snap]
+///    with begin == end == [activeLevel]: the rendered SCALE uses the new
+///    region's real level immediately, so it stays lock-step with the
+///    source-time pan ramp (the old wall-clock tween lagged here, letting the
+///    pan outrun the scale on region crossings).
+///  * Same region, edited level → [BadgeTweenAction.animate] from
+///    [currentDisplayed] to [activeLevel] (preserves inspector edit smoothing).
+///  * Otherwise → [BadgeTweenAction.hold].
+///
+/// Exposed (with [badgeDisplayedLevel]) for unit testing — the decision is a
+/// pure comparison, independent of any wall clock.
+BadgeTweenDecision badgeTweenDecision({
+  required Duration? prevKey,
+  required double prevLevel,
+  required double currentDisplayed,
+  required Duration activeKey,
+  required double activeLevel,
+}) {
+  if (activeKey != prevKey) {
+    return BadgeTweenDecision(
+      action: BadgeTweenAction.snap,
+      begin: activeLevel,
+      end: activeLevel,
+      key: activeKey,
+      level: activeLevel,
+    );
+  }
+  if (activeLevel != prevLevel) {
+    return BadgeTweenDecision(
+      action: BadgeTweenAction.animate,
+      begin: currentDisplayed,
+      end: activeLevel,
+      key: activeKey,
+      level: activeLevel,
+    );
+  }
+  return BadgeTweenDecision(
+    action: BadgeTweenAction.hold,
+    begin: currentDisplayed,
+    end: activeLevel,
+    key: activeKey,
+    level: activeLevel,
+  );
+}
+
+/// Result of [badgeTweenDecision].
+@immutable
+class BadgeTweenDecision {
+  const BadgeTweenDecision({
+    required this.action,
+    required this.begin,
+    required this.end,
+    required this.key,
+    required this.level,
+  });
+
+  final BadgeTweenAction action;
+
+  /// Tween start/end for the displayed level. For [BadgeTweenAction.snap],
+  /// begin == end == the region's real level.
+  final double begin;
+  final double end;
+
+  /// Region identity ([ZoomRegion.startTime]) and level the canvas should store.
+  final Duration key;
+  final double level;
+}
+
+/// The displayed badge zoom level: [begin]→[end] interpolated by [curve] at
+/// progress [t] (clamped to 0..1). Pure; pairs with [badgeTweenDecision].
+double badgeDisplayedLevel(double begin, double end, Curve curve, double t) {
+  return ui.lerpDouble(begin, end, curve.transform(t.clamp(0.0, 1.0))) ?? end;
+}
+
 class PlaybackCanvas extends ConsumerStatefulWidget {
   const PlaybackCanvas({
     super.key,
@@ -491,13 +574,22 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
           break;
         }
       }
-      if (tracked != null && tracked.zoomLevel != _badgeLevel) {
-        _badgeBegin = _displayedBadgeZoom;
-        _badgeEnd = tracked.zoomLevel;
-        _badgeLevel = tracked.zoomLevel;
-        _badgeController
-          ..duration = widget.screenAnimationConfig.badgeDuration
-          ..forward(from: 0.0);
+      if (tracked != null) {
+        final d = badgeTweenDecision(
+          prevKey: _badgeRegionKey,
+          prevLevel: _badgeLevel,
+          currentDisplayed: _displayedBadgeZoom,
+          activeKey: tracked.startTime,
+          activeLevel: tracked.zoomLevel,
+        );
+        if (d.action == BadgeTweenAction.animate) {
+          _badgeBegin = d.begin;
+          _badgeEnd = d.end;
+          _badgeLevel = d.level;
+          _badgeController
+            ..duration = widget.screenAnimationConfig.badgeDuration
+            ..forward(from: 0.0);
+        }
       }
     }
   }
@@ -518,12 +610,12 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
   /// `zoomLevel` into [ZoomTransformer.getTransform]. Interpolates the tween
   /// endpoints by the eased controller value; equals [_badgeEnd] when settled
   /// or snapped (begin == end).
-  double get _displayedBadgeZoom {
-    final t = widget.screenAnimationConfig.badgeCurve.transform(
-      _badgeController.value.clamp(0.0, 1.0),
-    );
-    return ui.lerpDouble(_badgeBegin, _badgeEnd, t) ?? _badgeEnd;
-  }
+  double get _displayedBadgeZoom => badgeDisplayedLevel(
+    _badgeBegin,
+    _badgeEnd,
+    widget.screenAnimationConfig.badgeCurve,
+    _badgeController.value,
+  );
 
   /// Snap the badge tween to [activeZoom] when the ACTIVE region identity
   /// changes (playback crossing into a different region / selecting another
@@ -535,11 +627,22 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
   /// [didUpdateWidget]. Plain-field write during build — mirrors the
   /// `_lastCameraPlacement` bookkeeping in the same build closure.
   void _syncBadgeRegion(ZoomRegion activeZoom) {
-    if (activeZoom.startTime != _badgeRegionKey) {
-      _badgeRegionKey = activeZoom.startTime;
-      _badgeLevel = activeZoom.zoomLevel;
-      _badgeBegin = activeZoom.zoomLevel;
-      _badgeEnd = activeZoom.zoomLevel;
+    final d = badgeTweenDecision(
+      prevKey: _badgeRegionKey,
+      prevLevel: _badgeLevel,
+      currentDisplayed: _displayedBadgeZoom,
+      activeKey: activeZoom.startTime,
+      activeLevel: activeZoom.zoomLevel,
+    );
+    // Only the SNAP is applied during build: it writes plain fields only
+    // (begin == end neutralizes the controller without touching it, which is
+    // unsafe mid-build). A same-region level edit (ANIMATE) is driven from
+    // [didUpdateWidget].
+    if (d.action == BadgeTweenAction.snap) {
+      _badgeRegionKey = d.key;
+      _badgeLevel = d.level;
+      _badgeBegin = d.begin;
+      _badgeEnd = d.end;
     }
   }
 
