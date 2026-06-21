@@ -23,8 +23,8 @@ only, iPhone + iPad only, device audio (toggleable) + optional mic, no live prev
 | Platform model | `RecordingSource.device` + `DeviceSource`/`DeviceKind` + JSON | ✅ tested |
 | Method channel | `listDevices` + `startDeviceRecording` | ✅ tested |
 | Native enumerate | `DeviceCatalog` (DAL enable + muxed-only filter, excludes Continuity Camera) | ✅ compiles, runtime-confirmed listing |
-| Native capture | `DeviceCaptureManager` (AVCaptureSession) → existing `VideoToolboxEncoder` + `LiveRecordingWriter` | ❌ session setup off-main works, but **muxed device delivers zero frames via `AVCaptureVideoDataOutput`** (confirmed 2026-06-21, §5c) — needs the `AVCaptureMovieFileOutput` path (§6.1) |
-| Controller | `RecordingController.startDeviceRecording` (skips cursor/keystroke sidecars; camera-required + mic-optional permission gates) | ✅ tested |
+| Native capture | `DeviceCaptureManager` (AVCaptureSession) → existing `VideoToolboxEncoder` + `LiveRecordingWriter` | ❓ session setup off-main works; **frame delivery still UNTESTED** — the camera gate (§5d) blocks before native capture runs |
+| Controller | `RecordingController.startDeviceRecording` (skips cursor/keystroke sidecars; camera-required + mic-optional permission gates) | ⚠️ logic tested, but the camera gate fires post-countdown + shows the deny sheet in the bar (§5d) — the actual current blocker |
 | Picker UX | **Native `NSMenu` dropdown** anchored to the chip (replaced an earlier panel-screen attempt) | ✅ runtime-confirmed |
 | Bar wiring | Device chip enabled; device-mode swaps System-audio → **Device audio** toggle | ✅ runtime-confirmed |
 
@@ -90,28 +90,48 @@ source-kind gating. The "no UI" was a **consequence of the Stop wedge** (frozen 
 not a missing transition. Fixing 5a should restore the normal recording pill. (A
 load-bearing comment was added to keep the status-flip parity.)
 
-### 5c. Muxed video frames do NOT flow — **CONFIRMED by behavior 2026-06-21 (the crux)**
-**Hypothesis (now confirmed):** the iPhone screen device is **muxed**, but
-`DeviceCaptureManager` uses a separate `AVCaptureVideoDataOutput`. AVFoundation does not
-deliver demuxed **video** frames from a muxed device through that output → zero frames →
-everything downstream (no preview, empty file, the old wedge).
-**Runtime evidence (2026-06-21, iPhone connected, off-main fix in place):** a record
-attempt produced **no output file at all** — the newest file in the save dir
-(`~/Documents/recording_*.mp4`) is from **June 17**, the app's `recording_history`
-pref has **no entry past June 17**, and no `.mp4`/`.mov`/`.tmp` was written anywhere in
-the attempt window. Combined with the clean idle-reset (no wedge, §4b), this is the
-zero-frame path firing: the muxed device delivers no usable video through
-`AVCaptureVideoDataOutput`, the writer's lazy `AVAssetWriter` session never opens, and
-the zero-frame Stop guard (§5a) resolves the flow to a clean error → idle bar.
+### 5c. Muxed video frames — **STILL UNVERIFIED** (a 2026-06-21 over-claim was retracted)
+**Hypothesis:** the iPhone screen device is **muxed**, but `DeviceCaptureManager` uses a
+separate `AVCaptureVideoDataOutput`. AVFoundation may not deliver demuxed **video** frames
+from a muxed device through that output → zero frames downstream.
+**RETRACTION:** an earlier 2026-06-21 note claimed today's "no output file" *confirmed*
+zero-frame delivery. **That was wrong.** The record attempt never reached native capture
+at all — it bails in Dart at the **Camera-permission gate** (see §5d) and shows the deny
+sheet *before* `_videoEncoder.startDevice(...)` is called. So "no file" is fully explained
+by the permission gate; it says **nothing** about muxed frame delivery, which remains
+untested. The hypothesis stands but is unproven.
 **Tooling limit (why no literal native log line):** under a debug `flutter run`, native
 `NSLog` goes to the Flutter console's stderr, **not** the unified log store — so
 `log show --predicate '...DeviceCaptureManager...'` returns nothing, and flutter-qa
 `get_logs` only captures Dart `debugPrint`. The diagnostic NSLogs (`.video connection
-nil`, first-frame, frame count) are real but **unreadable through the agent's tools** in
-this build mode. To capture them next time: run a **release/profile build** (NSLog →
-unified store), **or** route the diagnostic string back over the method channel so it
-surfaces as a Dart `debugPrint` / the error message. The behavioral outcome above is
-already decisive without the line.
+nil`, first-frame, frame count) are therefore **unreadable through the agent's tools** in
+this build mode. To read them: run a **release/profile build** (NSLog → unified store), or
+route the diagnostic back over the method channel as a Dart `debugPrint`. But first the
+camera gate (§5d) must be cleared, or native capture never runs.
+
+### 5d. Camera-permission gate fires after the countdown + renders the deny sheet IN the bar — **NEW (the actual current blocker)** 2026-06-21
+**Symptom (user-reported):** after the 3-2-1 countdown, the bar shows an "empty modal" and
+**never morphs to the recording pill**.
+**Root cause:** an iPhone-over-USB is a *video* `AVCaptureDevice`, so
+`startDeviceRecording` requires **Camera** permission and gates on it
+(`recording_state.dart` ~L320). Camera is **not granted** to Slipreel, so it calls
+`onDenied(PermissionKind.camera)` → `PermissionDeniedSheet.show(context, …)`, which is a
+`showModalBottomSheet` rendered into the **bar window's** context
+(`recording_action_router.dart` ~L66). Two consequences:
+  1. **No pill** — the gate `return`s *before* the `status: recording` flip
+     (`recording_state.dart` ~L349) that drives the pill, so the recording never starts.
+  2. **"Empty modal"** — the sheet (~150px: title + body + 2 buttons) is clipped inside the
+     68px bar window down to a dark scrim + drag handle. A modal bottom sheet has no business
+     rendering in the bar at all.
+**Fixes needed (independent of muxed delivery):**
+  - Grant Slipreel **Camera** access (System Settings → Privacy & Security → Camera) to get
+    past the gate at all. Better: trigger the **system camera prompt**
+    (`AVCaptureDevice.requestAccess(for: .video)`) on first device use instead of only
+    showing a go-to-Settings sheet on `notDetermined`.
+  - **Check camera permission BEFORE the countdown**, not after (don't waste a countdown
+    then deny).
+  - **Don't render the deny sheet in the bar** — show it as a panel screen / proper dialog
+    window (same lesson as the device-picker overflow fix, 0811f010 → 44018c2f).
 **Best-effort changes (compile-only, NEED DEVICE VERIFICATION):**
 - NSLog of the device's `hasMediaType(.muxed/.video/.audio)` + formats at `start()`.
 - Loud WARNING log if `videoOutput.connection(with: .video) == nil` (would directly
@@ -124,12 +144,22 @@ already decisive without the line.
 
 ## 6. Remaining work (to make capture actually produce video)
 
-The blocking unknown from the prior session is now **resolved by the 2026-06-21 re-test**:
-the muxed device yields **zero** usable frames through `AVCaptureVideoDataOutput` (no file
-produced). So the decision is made — the next implementation step is the **`AVCaptureMovieFileOutput`
-path**, not more diagnosis of the data-output path.
+**Do these in order — the camera gate (§5d) blocks everything else.**
 
-1. **Switch the device path to `AVCaptureMovieFileOutput` (blocking, do this first).**
+0. **Clear the Camera-permission gate (§5d) — do this FIRST.** Until it's cleared, native
+   capture never runs and nothing below is testable.
+   - Grant Slipreel Camera access (or, better, trigger `AVCaptureDevice.requestAccess`
+     on first device use).
+   - Move the camera check **before** the countdown.
+   - Render the deny sheet as a **panel/dialog**, not `showModalBottomSheet` into the bar.
+
+1. **THEN diagnose muxed delivery (§5c) — the real unknown.** With native capture finally
+   running, on a release/profile build read the `.video connection` / first-frame NSLogs.
+   - If frames flow → the existing `VideoToolboxEncoder`/`LiveRecordingWriter` path may
+     just work; verify a file is produced.
+   - If zero frames → switch the device path to **`AVCaptureMovieFileOutput`** (writes the
+     muxed H.264 stream straight to a `.mov`; bypasses the manual encoder/writer). Keep the
+     session setup **off-main** (§4b — already correct and verified).
    Add the muxed device's `AVCaptureDeviceInput` to the session and attach an
    `AVCaptureMovieFileOutput`; call `startRecording(to:recordingDelegate:)` to write the
    muxed stream straight to a `.mov`/`.mp4` (the iPhone stream is already H.264 — no
@@ -157,16 +187,19 @@ path**, not more diagnosis of the data-output path.
 - **Feasibility:** ✅ iPhone screen capture over USB is possible (muxed AVCaptureDevice).
 - **Detection + UX:** ✅ working (dropdown lists the screen device; device-mode controls).
 - **UI no longer freezes:** ✅ **verified 2026-06-21** — off-main session setup (§4b)
-  removed the main-thread wedge; the bar cleanly resets to idle after an attempt.
-- **Capture pipeline:** ❌ **does not produce a video file** — the muxed device delivers
-  zero frames through `AVCaptureVideoDataOutput` (confirmed: no file written, no history
-  entry). This is the one real blocker and the reason the recording pill never sticks.
-- **Stability:** ✅ no longer wedges; fails to a clean idle/error state (no force-kill).
-- **Effort to finish:** small-to-medium and **no longer gated on an unknown** — the fix is
-  a known one: add the `AVCaptureMovieFileOutput` device-writer branch (§6.1).
+  removed the main-thread wedge; the bar cleanly resets after an attempt.
+- **Current blocker — Camera permission gate (§5d):** ❌ device recording bails in Dart at
+  the camera-permission gate *after the countdown*, never flips to `recording` (no pill),
+  and renders the deny sheet clipped inside the 68px bar ("empty modal"). This is what the
+  user actually hits today, and it short-circuits before native capture runs.
+- **Capture pipeline (muxed delivery):** ❓ **UNTESTED** — because §5d blocks first, we have
+  never confirmed whether the muxed device delivers video frames. (An earlier "zero frames
+  confirmed" claim was retracted — see §5c.)
+- **Stability:** ✅ no longer wedges; fails to a clean state (no force-kill).
 - **Branch recommendation:** **do NOT merge** `feat/device-capture` — the Device chip is
-  enabled but cannot yet produce a recording. Either keep it on-branch, or gate the chip
-  off before any merge of the (sound, reusable) non-device work on this branch.
-- **Next session starting point:** implement §6.1 (`AVCaptureMovieFileOutput` path) on a
-  release/profile build so the native `.video`/first-frame logs are readable; verify a
-  real `.mov` is produced and opens in the editor.
+  enabled but cannot yet produce a recording. Keep it on-branch, or gate the chip off
+  before any merge.
+- **Next session starting point (revised):** (1) clear the camera-permission gate — grant
+  Camera + move the check before the countdown + stop rendering the sheet in the bar (§5d);
+  (2) THEN, with native capture actually running, test muxed frame delivery on a
+  release/profile build (§5c) and decide encoder-path vs `AVCaptureMovieFileOutput` (§6.1).
