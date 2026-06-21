@@ -1,4 +1,4 @@
-// packages/screen_recorder/lib/models/recording_metadata.dart
+// packages/slipreel_engine/lib/models/recording_metadata.dart
 import 'dart:convert';
 import 'dart:io';
 
@@ -20,6 +20,13 @@ class RecordingMetadata {
   /// predate this field — callers probe + backfill on demand.
   final Duration? duration;
 
+  /// True when the source was an iPhone/iPad captured over USB
+  /// (`RecordingSource.device`). Such recordings carry no cursor / click /
+  /// keystroke data (iOS doesn't expose taps over USB), so the editor uses
+  /// this to disable + annotate the data-dependent features. Defaults to
+  /// false for legacy (schema ≤ v2) sidecars that predate this field.
+  final bool isDeviceCapture;
+
   const RecordingMetadata({
     required this.isPureSource,
     required this.recordedAt,
@@ -27,6 +34,7 @@ class RecordingMetadata {
     required this.heightPx,
     required this.fps,
     this.duration,
+    this.isDeviceCapture = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -36,7 +44,8 @@ class RecordingMetadata {
         'heightPx': heightPx,
         'fps': fps,
         if (duration != null) 'durationMs': duration!.inMilliseconds,
-        'schemaVersion': 2,
+        'isDeviceCapture': isDeviceCapture,
+        'schemaVersion': 3,
       };
 
   factory RecordingMetadata.fromJson(Map<String, dynamic> json) {
@@ -49,6 +58,7 @@ class RecordingMetadata {
       heightPx: json['heightPx'] as int? ?? 0,
       fps: json['fps'] as int? ?? 30,
       duration: durMs == null ? null : Duration(milliseconds: durMs),
+      isDeviceCapture: json['isDeviceCapture'] as bool? ?? false,
     );
   }
 
