@@ -45,6 +45,17 @@ void main() {
     expect(autoSelectDeviceFrame(_catalog, const Size(800, 600)), isNull);
   });
 
+  test('flexibleMatches returns all catalog entries (pass-through, no filter)', () {
+    // Pin the v1 behavior: flexibleMatches must return every entry in the
+    // catalog so the Flexible picker shows all device options. If a future
+    // kind/orientation filter is added, this test catches a regression to
+    // empty (e.g., filtering a phone recording against a tablet-only catalog).
+    final allIds = _catalog.entries.map((e) => e.id).toSet();
+    final result = flexibleMatches(_catalog, const Size(1206, 2622));
+    expect(result.map((e) => e.id).toSet(), equals(allIds));
+    expect(result.length, _catalog.entries.length);
+  });
+
   test('windowFrameWithAutoDeviceFrame sets id+color only when off and matched', () {
     final off = WindowFrame.none();
     final enabled = windowFrameWithAutoDeviceFrame(

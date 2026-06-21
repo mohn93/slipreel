@@ -180,7 +180,10 @@ class _InspectorPanelState extends State<InspectorPanel> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       child: switch (_selected) {
-        InspectorTab.background => const BackgroundTab(),
+        InspectorTab.background => BackgroundTab(
+            isDevice: widget.isDevice,
+            recordingSize: widget.videoSize,
+          ),
         InspectorTab.cursor => CursorTab(
             canHideCursor: widget.canHideCursor,
             isDevice: widget.isDevice,

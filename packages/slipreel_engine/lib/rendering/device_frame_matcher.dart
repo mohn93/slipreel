@@ -20,8 +20,16 @@ bool deviceMatchesRecording(DeviceFrameEntry entry, Size recording) {
 List<DeviceFrameEntry> perfectMatches(DeviceFrameCatalog c, Size recording) =>
     [for (final e in c.entries) if (deviceMatchesRecording(e, recording)) e];
 
-/// All entries whose *kind* fits a portrait/landscape recording — used
-/// for the "Flexible" picker (scaled to fit, not exact).
+/// Returns ALL catalog entries, regardless of kind or orientation.
+///
+/// This is the v1 "Flexible" picker behavior: show every device and let
+/// the renderer scale the bezel to fit the recording. No filtering is
+/// applied intentionally — the [recording] parameter is accepted for API
+/// symmetry with [perfectMatches] and may be used in a future revision.
+///
+/// TODO(device-frames): once the Flexible picker design is finalised,
+/// consider filtering by kind (phone/tablet) and orientation to reduce
+/// the list length; add a regression test if you do.
 List<DeviceFrameEntry> flexibleMatches(DeviceFrameCatalog c, Size recording) =>
     List<DeviceFrameEntry>.from(c.entries);
 
