@@ -45,9 +45,11 @@ class InspectorPanel extends StatefulWidget {
     this.onSliceRemoved,
     this.canHideCursor = false,
     this.hasKeystrokeData = false,
+    this.isDevice = false,
     this.hasCamera = false,
     required this.curveLibrary,
     this.videoSize = Size.zero,
+    this.videoPath = '',
     this.onPlacementPreview,
     this.onPlacementCommit,
     this.cameraRegions = const [],
@@ -69,6 +71,11 @@ class InspectorPanel extends StatefulWidget {
   /// Whether the recording has any keystroke data captured. When false
   /// the Shortcuts tab toggle is disabled with an explanation.
   final bool hasKeystrokeData;
+
+  /// True for iPhone/iPad recordings captured over USB. Such recordings
+  /// carry no cursor / click / keystroke data, so the Cursor and Shortcuts
+  /// tabs show a "not available" note instead of their controls.
+  final bool isDevice;
 
   /// Whether this recording has a camera sidecar (enables the Camera tab's
   /// real controls; otherwise the tab shows a placeholder).
@@ -108,6 +115,10 @@ class InspectorPanel extends StatefulWidget {
   /// Video frame size; passed to `ZoomContextInspector` so the
   /// placement picker can render and compute coordinates.
   final Size videoSize;
+
+  /// Source video path; passed to `ZoomContextInspector` so the placement
+  /// picker can show a screen-frame preview behind the box.
+  final String videoPath;
 
   /// Live placement preview callback for the zoom context.
   final ValueChanged<Rect>? onPlacementPreview;
@@ -170,13 +181,17 @@ class _InspectorPanelState extends State<InspectorPanel> {
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       child: switch (_selected) {
         InspectorTab.background => const BackgroundTab(),
-        InspectorTab.cursor =>
-            CursorTab(canHideCursor: widget.canHideCursor),
+        InspectorTab.cursor => CursorTab(
+            canHideCursor: widget.canHideCursor,
+            isDevice: widget.isDevice,
+          ),
         InspectorTab.camera => CameraTab(hasCamera: widget.hasCamera),
         InspectorTab.captions => const CaptionsTab(),
         InspectorTab.audio => const AudioTab(),
-        InspectorTab.shortcuts =>
-          ShortcutsTab(hasKeystrokeData: widget.hasKeystrokeData),
+        InspectorTab.shortcuts => ShortcutsTab(
+            hasKeystrokeData: widget.hasKeystrokeData,
+            isDevice: widget.isDevice,
+          ),
         InspectorTab.animation => AnimationTab(library: widget.curveLibrary),
       },
     );
@@ -219,6 +234,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
       videoSize: widget.videoSize,
       onPlacementPreview: widget.onPlacementPreview,
       onPlacementCommit: widget.onPlacementCommit,
+      isDevice: widget.isDevice,
+      videoPath: widget.videoPath,
     );
   }
 

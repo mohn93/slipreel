@@ -477,6 +477,7 @@ class RecordingController extends StateNotifier<RecordingState> {
         widthPx: actualWidth,
         heightPx: actualHeight,
         fps: _videoEncoder.fps,
+        isDeviceCapture: isDevice,
       );
       await meta.saveForVideo(result.outputPath);
 

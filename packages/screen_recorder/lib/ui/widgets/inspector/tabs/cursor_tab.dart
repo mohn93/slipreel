@@ -18,11 +18,20 @@ import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 /// settings (always-pointer, hide-if-still, loop-position) live on
 /// the state object until they get real model fields.
 class CursorTab extends ConsumerStatefulWidget {
-  const CursorTab({super.key, required this.canHideCursor});
+  const CursorTab({
+    super.key,
+    required this.canHideCursor,
+    this.isDevice = false,
+  });
 
   /// Whether hiding the cursor is supported for the current recording.
   /// When false the "Hide cursor" toggle is rendered disabled.
   final bool canHideCursor;
+
+  /// True for iPhone/iPad recordings captured over USB, which carry no
+  /// cursor or click data. The whole tab is replaced with a "not available"
+  /// note since none of these controls can take effect.
+  final bool isDevice;
 
   @override
   ConsumerState<CursorTab> createState() => _CursorTabState();
@@ -39,6 +48,15 @@ class _CursorTabState extends ConsumerState<CursorTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.isDevice) {
+      return const InspectorPlaceholder(
+        icon: Icons.mouse_outlined,
+        title: 'Not available for iPhone/iPad recordings',
+        body: 'Cursor size, style, and click effects need cursor and click '
+            'data, which is not captured when recording a connected iPhone '
+            'or iPad over USB.',
+      );
+    }
     // ref.watch on the whole state — every slider drag rebuilds this
     // tab, matching the previous setState-driven scope. Granular
     // .select() per field would skip rebuilds when an unrelated field

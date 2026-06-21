@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 
 void main() {
-  test('round-trips durationMs and writes schemaVersion 2', () {
+  test('round-trips durationMs and writes schemaVersion 3', () {
     final meta = RecordingMetadata(
       isPureSource: true,
       recordedAt: DateTime.utc(2026, 5, 14, 19, 33, 40),
@@ -17,7 +17,7 @@ void main() {
     );
     final json = meta.toJson();
     expect(json['durationMs'], 41823);
-    expect(json['schemaVersion'], 2);
+    expect(json['schemaVersion'], 3);
 
     final back = RecordingMetadata.fromJson(json);
     expect(back.duration, const Duration(milliseconds: 41823));
@@ -49,6 +49,42 @@ void main() {
     );
     expect(meta.duration, isNull);
     expect(meta.toJson().containsKey('durationMs'), isFalse);
+  });
+
+  test('round-trips isDeviceCapture', () {
+    final meta = RecordingMetadata(
+      isPureSource: true,
+      recordedAt: DateTime.utc(2026, 6, 21),
+      widthPx: 1170,
+      heightPx: 2532,
+      fps: 60,
+      isDeviceCapture: true,
+    );
+    final back = RecordingMetadata.fromJson(meta.toJson());
+    expect(back.isDeviceCapture, isTrue);
+  });
+
+  test('isDeviceCapture defaults to false when absent (legacy sidecar)', () {
+    final back = RecordingMetadata.fromJson({
+      'isPureSource': true,
+      'recordedAt': '2026-06-21T00:00:00Z',
+      'widthPx': 1920,
+      'heightPx': 1080,
+      'fps': 30,
+      'schemaVersion': 2,
+    });
+    expect(back.isDeviceCapture, isFalse);
+  });
+
+  test('isDeviceCapture defaults to false when constructed without it', () {
+    final meta = RecordingMetadata(
+      isPureSource: false,
+      recordedAt: DateTime.utc(1970),
+      widthPx: 0,
+      heightPx: 0,
+      fps: 30,
+    );
+    expect(meta.isDeviceCapture, isFalse);
   });
 
   group('existing behavior preserved', () {

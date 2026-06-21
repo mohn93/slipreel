@@ -673,7 +673,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       try {
         final hasNoZooms = saved.zoomRegions.isEmpty;
         final hasClicks = _cursorRecording.positions.any((p) => p.isClicked);
-        if (hasNoZooms && hasClicks && _metadata != null) {
+        // Device (iPhone/iPad) recordings carry no clicks, so hasClicks is
+        // already false; the explicit guard documents that auto-zoom never
+        // runs for them even if a future change seeds synthetic cursor data.
+        if (hasNoZooms &&
+            hasClicks &&
+            _metadata != null &&
+            !_metadata!.isDeviceCapture) {
           final detected = const AutoZoomDetector().detect(
             cursor: _cursorRecording,
             videoSize: Size(
@@ -1206,7 +1212,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           CommandPaletteEntry(
             label: 'Restore default zoom ranges',
             icon: LucideIcons.rotateCw,
-            enabled: hasCursorClicks && hasMetadata,
+            enabled: hasCursorClicks &&
+                hasMetadata &&
+                _metadata?.isDeviceCapture != true,
             action: () {
               final detected = const AutoZoomDetector().detect(
                 cursor: _cursorRecording,
@@ -1538,6 +1546,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final region = _project.zoomRegions[idx];
     _zoomPreviewOverride.value = region.copyWith(
       rect: newRect,
+      // Dragging the placement box expresses manual intent — pin the focal to
+      // the rect so the canvas previews the chosen framing (and so device
+      // zooms, which can't follow a cursor, actually respond to placement).
+      followCursor: false,
       videoBounds: _metadata == null
           ? null
           : Size(_metadata!.widthPx.toDouble(), _metadata!.heightPx.toDouble()),
@@ -1552,6 +1564,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         idx,
         region.copyWith(
           rect: newRect,
+          // Committing a placement pins the focal to the rect (manual), so the
+          // saved zoom frames where the user dropped it — required for device
+          // recordings and correct for any manual placement.
+          followCursor: false,
           videoBounds: _metadata == null
               ? null
               : Size(
@@ -1585,6 +1601,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       duration: end - start,
       zoomLevel: 2.0,
       videoBounds: videoSize,
+      // Device (iPhone/iPad) recordings have no cursor to follow, so new
+      // zooms must be manual — otherwise the focal chases nonexistent cursor
+      // data and the placement rect (the only control we show) is ignored.
+      followCursor: _metadata?.isDeviceCapture != true,
     );
 
     _projectController.addZoom(zoomRegion);
@@ -2197,6 +2217,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           canHideCursor: _metadata?.isPureSource == true &&
                               _cursorRecording.count > 0,
                           hasKeystrokeData: _keystrokeRecording.count > 0,
+                          isDevice: _metadata?.isDeviceCapture == true,
                           curveLibrary: _curveLibrary,
                           onZoomChanged: (i, next) {
                             _zoomPreviewOverride.value = null;
@@ -2249,6 +2270,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                             });
                           },
                           videoSize: _videoSize(),
+                          videoPath: widget.videoPath,
                           onPlacementPreview: _onPlacementPreview,
                           onPlacementCommit: _onPlacementCommit,
                         ),
