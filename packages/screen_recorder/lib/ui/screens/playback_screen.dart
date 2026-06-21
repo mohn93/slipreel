@@ -2197,6 +2197,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           canHideCursor: _metadata?.isPureSource == true &&
                               _cursorRecording.count > 0,
                           hasKeystrokeData: _keystrokeRecording.count > 0,
+                          isDevice: _metadata?.isDeviceCapture == true,
                           curveLibrary: _curveLibrary,
                           onZoomChanged: (i, next) {
                             _zoomPreviewOverride.value = null;

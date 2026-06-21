@@ -45,6 +45,7 @@ class InspectorPanel extends StatefulWidget {
     this.onSliceRemoved,
     this.canHideCursor = false,
     this.hasKeystrokeData = false,
+    this.isDevice = false,
     this.hasCamera = false,
     required this.curveLibrary,
     this.videoSize = Size.zero,
@@ -69,6 +70,11 @@ class InspectorPanel extends StatefulWidget {
   /// Whether the recording has any keystroke data captured. When false
   /// the Shortcuts tab toggle is disabled with an explanation.
   final bool hasKeystrokeData;
+
+  /// True for iPhone/iPad recordings captured over USB. Such recordings
+  /// carry no cursor / click / keystroke data, so the Cursor and Shortcuts
+  /// tabs show a "not available" note instead of their controls.
+  final bool isDevice;
 
   /// Whether this recording has a camera sidecar (enables the Camera tab's
   /// real controls; otherwise the tab shows a placeholder).
@@ -170,13 +176,17 @@ class _InspectorPanelState extends State<InspectorPanel> {
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       child: switch (_selected) {
         InspectorTab.background => const BackgroundTab(),
-        InspectorTab.cursor =>
-            CursorTab(canHideCursor: widget.canHideCursor),
+        InspectorTab.cursor => CursorTab(
+            canHideCursor: widget.canHideCursor,
+            isDevice: widget.isDevice,
+          ),
         InspectorTab.camera => CameraTab(hasCamera: widget.hasCamera),
         InspectorTab.captions => const CaptionsTab(),
         InspectorTab.audio => const AudioTab(),
-        InspectorTab.shortcuts =>
-          ShortcutsTab(hasKeystrokeData: widget.hasKeystrokeData),
+        InspectorTab.shortcuts => ShortcutsTab(
+            hasKeystrokeData: widget.hasKeystrokeData,
+            isDevice: widget.isDevice,
+          ),
         InspectorTab.animation => AnimationTab(library: widget.curveLibrary),
       },
     );

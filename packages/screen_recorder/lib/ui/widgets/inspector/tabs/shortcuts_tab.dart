@@ -9,14 +9,30 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 /// captured keyboard shortcuts on the canvas during playback and export,
 /// and toggles the shortcuts timeline lane in the editor.
 class ShortcutsTab extends ConsumerWidget {
-  const ShortcutsTab({super.key, this.hasKeystrokeData = false});
+  const ShortcutsTab({
+    super.key,
+    this.hasKeystrokeData = false,
+    this.isDevice = false,
+  });
 
   /// Whether the current recording has any captured keystroke data.
   /// When false the overlay toggle is dimmed with an explanation.
   final bool hasKeystrokeData;
 
+  /// True for iPhone/iPad recordings captured over USB, which carry no
+  /// keystroke data. The whole tab is replaced with a "not available" note.
+  final bool isDevice;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (isDevice) {
+      return const InspectorPlaceholder(
+        icon: Icons.keyboard_outlined,
+        title: 'Not available for iPhone/iPad recordings',
+        body: 'Keyboard shortcut overlays need keystroke data, which is not '
+            'captured when recording a connected iPhone or iPad over USB.',
+      );
+    }
     final project = ref.watch(editorProjectControllerProvider);
     final settings = project.keystrokeOverlay;
     final notifier = ref.read(editorProjectControllerProvider.notifier);
