@@ -23,8 +23,15 @@ void main() {
       adjustSize: true,
     );
     expect(layout.canvasSize.width, closeTo(1350, 1e-6));
-    expect(layout.canvasSize.height, closeTo(2760, 1e-6));
-    expect(layout.bezelRect, const Rect.fromLTWH(0, 0, 1350, 2760));
+    // The declared recording (1206x2622) isn't perfectly consistent with the
+    // normalized screenRect (0.8934*1350 = 1206.09, not 1206), so even a
+    // "perfect match" picks up a ~0.2px vertical stretch. Sub-pixel, visually
+    // irrelevant (the export canvas is even-rounded anyway) -> 0.5px tolerance.
+    expect(layout.canvasSize.height, closeTo(2760, 0.5));
+    expect(layout.bezelRect.left, closeTo(0, 1e-6));
+    expect(layout.bezelRect.top, closeTo(0, 1e-6));
+    expect(layout.bezelRect.width, closeTo(1350, 1e-6));
+    expect(layout.bezelRect.height, closeTo(2760, 0.5));
     // screen rect = normalized * bezel
     expect(layout.screenRect.left, closeTo(0.0533 * 1350, 1e-3));
     expect(layout.screenRect.width, closeTo((0.9467 - 0.0533) * 1350, 1e-3));

@@ -8,6 +8,12 @@ import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 /// Resolved geometry for drawing a device frame: the output canvas, the
 /// rect where the bezel PNG is drawn, the screen cutout sub-rect, and
 /// the rect where the source video is drawn.
+///
+/// Downstream the bezel PNG is drawn into [bezelRect] with `BoxFit.fill` and
+/// the video into [videoRect]. Both [screenRect] and [videoRect] derive from
+/// the same [bezelRect], so the video always lands inside the PNG's
+/// transparent screen cutout — even when [resolveDeviceFrameLayout] stretches
+/// the bezel (the PNG's hole stretches with it).
 class DeviceFrameLayout {
   const DeviceFrameLayout({
     required this.canvasSize,
@@ -24,13 +30,14 @@ class DeviceFrameLayout {
 
 /// Computes the device-frame layout. See [DeviceFrameLayout].
 ///
-/// [adjustSize] == true: the bezel keeps its native pixel dimensions, but the
-/// screen cutout's height is recomputed so its aspect matches [recordingSize].
-/// The video fills the adjusted screen rect exactly.
+/// [adjustSize] == true stretches the bezel height so the screen cutout
+/// matches the recording's aspect; the video then fills the cutout exactly.
+/// Because the bezel PNG is later drawn into the (stretched) [bezelRect] with
+/// `BoxFit.fill`, its transparent hole stretches with it and stays aligned
+/// with the video.
 ///
-/// [adjustSize] == false: the bezel keeps its true proportions and the screen
-/// cutout is the native normalized sub-rect. The video is letterbox-fitted
-/// (aspect-preserved, centered) inside that native cutout.
+/// [adjustSize] == false keeps the bezel's true proportions and letterbox-fits
+/// the video (aspect-preserved, centered) inside the native cutout.
 DeviceFrameLayout resolveDeviceFrameLayout({
   required DeviceFrameOrientationAsset asset,
   required Size recordingSize,
@@ -42,66 +49,56 @@ DeviceFrameLayout resolveDeviceFrameLayout({
   final bh = asset.bezelHeight.toDouble();
   final sr = asset.screenRect;
 
-  // The bezel is always used at its native pixel size as the "content" fed to
-  // OutputCanvasResolver (which adds padding and enforces the output aspect).
+  // Native screen cutout px and its aspect.
+  final nativeScreenW = sr.width * bw;
+  final nativeScreenH = sr.height * bh;
+  final recAspect = recordingSize.height <= 0
+      ? 1.0
+      : recordingSize.width / recordingSize.height;
+
+  // Content (bezel) size, stretched vertically when adjustSize so the
+  // screen cutout takes on the recording's aspect. The bezel PNG is later
+  // drawn into the resulting bezelRect, so its hole stretches in lock-step.
+  Size contentSize = Size(bw, bh);
+  if (adjustSize && nativeScreenW > 0 && recAspect > 0) {
+    final desiredScreenH = nativeScreenW / recAspect;
+    final scaleY = desiredScreenH / nativeScreenH;
+    contentSize = Size(bw, bh * scaleY);
+  }
+
   final resolved = OutputCanvasResolver.resolve(
-    videoSize: Size(bw, bh),
+    videoSize: contentSize,
     padding: padding,
     aspect: aspect,
   );
   final canvasSize = resolved.canvasSize;
   final bezelRect = resolved.videoRect;
 
-  // Native screen cutout in bezel-relative pixels.
-  final nativeScreenLeft = bezelRect.left + sr.l * bezelRect.width;
-  final nativeScreenRight = bezelRect.left + sr.r * bezelRect.width;
-  final nativeScreenWidth = nativeScreenRight - nativeScreenLeft;
-  final nativeScreenTop = bezelRect.top + sr.t * bezelRect.height;
-  final nativeScreenBottom = bezelRect.top + sr.b * bezelRect.height;
-  final nativeScreenHeight = nativeScreenBottom - nativeScreenTop;
-
-  final Rect screenRect;
-  if (adjustSize &&
-      nativeScreenWidth > 0 &&
-      recordingSize.width > 0 &&
-      recordingSize.height > 0) {
-    // Recompute screen height so the cutout aspect matches the recording.
-    // Left/right edges are fixed; center is preserved from the native cutout.
-    final recAspect = recordingSize.width / recordingSize.height;
-    final adjustedHeight = nativeScreenWidth / recAspect;
-    final centerY = (nativeScreenTop + nativeScreenBottom) / 2;
-    screenRect = Rect.fromLTRB(
-      nativeScreenLeft,
-      centerY - adjustedHeight / 2,
-      nativeScreenRight,
-      centerY + adjustedHeight / 2,
-    );
-  } else {
-    screenRect = Rect.fromLTRB(
-      nativeScreenLeft,
-      nativeScreenTop,
-      nativeScreenRight,
-      nativeScreenBottom,
-    );
-  }
+  // Screen cutout = normalized sub-rect of the (possibly stretched) bezelRect.
+  final screenRect = Rect.fromLTRB(
+    bezelRect.left + sr.l * bezelRect.width,
+    bezelRect.top + sr.t * bezelRect.height,
+    bezelRect.left + sr.r * bezelRect.width,
+    bezelRect.top + sr.b * bezelRect.height,
+  );
 
   final Rect videoRect;
   if (adjustSize) {
     // Aspect already matches the screen rect by construction.
     videoRect = screenRect;
   } else {
-    // Letterbox-fit the recording inside the native screen cutout.
+    // Letterbox-fit (contain) the recording inside the native screen cutout.
     if (recordingSize.width <= 0 || recordingSize.height <= 0) {
       videoRect = screenRect;
     } else {
-      final scaleW = nativeScreenWidth / recordingSize.width;
-      final scaleH = nativeScreenHeight / recordingSize.height;
+      final scaleW = screenRect.width / recordingSize.width;
+      final scaleH = screenRect.height / recordingSize.height;
       final s = scaleW < scaleH ? scaleW : scaleH;
       final w = recordingSize.width * s;
       final h = recordingSize.height * s;
       videoRect = Rect.fromLTWH(
-        screenRect.left + (nativeScreenWidth - w) / 2,
-        screenRect.top + (nativeScreenHeight - h) / 2,
+        screenRect.left + (screenRect.width - w) / 2,
+        screenRect.top + (screenRect.height - h) / 2,
         w,
         h,
       );
