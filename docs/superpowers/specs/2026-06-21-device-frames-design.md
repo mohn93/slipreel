@@ -99,6 +99,15 @@ Preview uses Flutter widgets (`Image.asset` bezel + `Positioned` video texture);
 the bezel as a cached `ui.Image` (mirroring `_loadWallpaperPhoto`) and draws both through
 `applyZoom()`. Device captures carry no cursor data, so no cursor layer.
 
+### Known / accepted divergences
+
+- **Preview smears the device bezel during zoom ramps** (scene-blur captures the entire
+  `DeviceFrameComposition` subtree, including the bezel); export keeps the bezel crisp because
+  `FrameCompositor._composeDeviceFrame` draws the bezel in a separate pass *after* the
+  motion-blur step. This is an accepted preview-only divergence, identical in class to the
+  drop-shadow smear on the standard chrome path. Revisit if runtime testing shows it's
+  objectionable.
+
 ## 6. Data model
 
 New flat fields on `WindowFrame` (consistent with `padding` / `wallpaperCategory` /

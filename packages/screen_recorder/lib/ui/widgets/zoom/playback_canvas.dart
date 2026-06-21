@@ -1113,6 +1113,17 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                     blur: currentFrame.backgroundBlur,
                   );
 
+            // BEZEL-BLUR DIVERGENCE (accepted): DeviceFrameComposition renders
+            // both the video and the bezel PNG as a single widget subtree that
+            // is placed inside this Stack.  That Stack becomes the scene-blur
+            // capture target (RepaintBoundary below), so the bezel is captured
+            // by the scene-blur shader and smears during zoom ramps — just like
+            // the drop-shadow in the standard chrome path.  The export
+            // compositor (FrameCompositor._composeDeviceFrame) draws the bezel
+            // in a separate crisp layer AFTER the motion-blur pass, so the
+            // export bezel is always crisp.  This is the same accepted
+            // preview-only divergence as the drop-shadow smear; revisit if
+            // runtime testing shows it's objectionable.
             final composition = Stack(
               children: [
                 if (deviceLayout != null && deviceAsset != null)
