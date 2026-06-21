@@ -995,7 +995,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 position: pos,
                 keystrokeRecording: ksRecording,
                 settings: ksSettings,
-                canvasSize: totalSize,
+                canvasSize: effTotalSize,
               );
             }
 
@@ -1050,7 +1050,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                       : shownPlacement;
                   return AnimatedCameraBubble(
                     visible: placement != null,
-                    canvasSize: totalSize,
+                    canvasSize: effTotalSize,
                     placement: effectivePlacement,
                     settings: camSettings,
                     originalAspect: widget.cameraOriginalAspect,
@@ -1235,7 +1235,11 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 cameraOverlayWidget: cameraOverlayWidget,
                 stickyBackground: stickyBackground,
                 position: pos,
-                totalSize: totalSize,
+                // effTotalSize is the composition's actual canvas (device
+                // canvas when a frame is active, else == totalSize). The pass's
+                // scene-blur capture size AND the zoom pivot it derives must
+                // match the composition center and export's device-canvas pivot.
+                totalSize: effTotalSize,
                 videoSize: videoSize,
                 currentTransform: Matrix4.identity(),
               );
@@ -1346,7 +1350,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   cameraOverlayWidget: cameraOverlayWidget,
                   stickyBackground: stickyBackground,
                   position: pos,
-                  totalSize: totalSize,
+                  // See note at the other call site: effTotalSize keeps the
+                  // scene-blur canvas + zoom pivot lock-step with the
+                  // composition center (device canvas when a frame is active).
+                  totalSize: effTotalSize,
                   videoSize: videoSize,
                   currentTransform: transform,
                 );

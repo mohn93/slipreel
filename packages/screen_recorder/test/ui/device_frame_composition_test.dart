@@ -33,6 +33,31 @@ void main() {
     expect(videoRect.width, closeTo(100, 0.5));
     expect(videoRect.height, closeTo(220, 0.5));
     expect(find.byType(Image), findsOneWidget);
+
+    // Bezel MUST paint ON TOP of the video: in a Stack, later children paint
+    // above earlier ones, so the video child must come BEFORE the bezel Image
+    // in the Stack's child list. A swapped Stack fails here.
+    final stack = tester.widget<Stack>(
+      find.descendant(
+        of: find.byType(DeviceFrameComposition),
+        matching: find.byType(Stack),
+      ),
+    );
+    int indexOf(bool Function(Widget) test) =>
+        stack.children.indexWhere(test);
+    final videoIndex = indexOf(
+      (w) => w is Positioned && w.child.key == const Key('video'),
+    );
+    final bezelIndex = indexOf(
+      (w) => w is Positioned && w.child is Image,
+    );
+    expect(videoIndex, isNonNegative);
+    expect(bezelIndex, isNonNegative);
+    expect(
+      bezelIndex,
+      greaterThan(videoIndex),
+      reason: 'bezel Image must be after (on top of) the video in the Stack',
+    );
   });
 }
 
