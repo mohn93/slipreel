@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
+import '../models/device_frame.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
 import '../rendering/output_canvas_resolver.dart';
@@ -50,6 +51,7 @@ class GifExportPipeline {
     required this.cursorRecording,
     required this.projectState,
     required this.settings,
+    this.deviceFrameCatalog,
   }) {
     if (settings.format != ExportFormat.gif) {
       throw ArgumentError.value(
@@ -66,6 +68,11 @@ class GifExportPipeline {
   final CursorRecording cursorRecording;
   final EditorProjectState projectState;
   final ExportSettings settings;
+
+  /// Optional device-frame catalog forwarded to both [FrameCompositor]
+  /// instances (pass 1 + pass 2). Ensures the GIF output matches the
+  /// editor preview when a device frame is active.
+  final DeviceFrameCatalog? deviceFrameCatalog;
 
   // Holds the directory created for the palette temp file so we can
   // delete it recursively in the finally block (fixes the dir-leak that
@@ -152,6 +159,7 @@ class GifExportPipeline {
         metadata: sourceMetadata,
         videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
         fps: fps,
+        deviceFrameCatalog: deviceFrameCatalog,
       ));
 
       final pass1FilterComplex = buildGifPass1FilterComplex(
@@ -258,6 +266,7 @@ class GifExportPipeline {
         metadata: sourceMetadata,
         videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
         fps: fps,
+        deviceFrameCatalog: deviceFrameCatalog,
       ));
 
       final pass2FilterComplex = buildGifPass2FilterComplex(

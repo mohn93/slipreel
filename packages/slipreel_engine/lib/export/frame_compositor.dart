@@ -14,18 +14,28 @@ import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/export/camera_frame_source.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/models/device_frame.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/camera_frame_painter.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
+import 'package:slipreel_engine/rendering/device_frame_layout.dart';
+import 'package:slipreel_engine/rendering/device_frame_matcher.dart';
 import 'package:slipreel_engine/rendering/frame_painter.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
+
+/// Resolved geometry and asset for rendering a device frame in the compositor.
+class DeviceFrameRenderPlan {
+  final DeviceFrameOrientationAsset asset;
+  final DeviceFrameLayout layout;
+  const DeviceFrameRenderPlan({required this.asset, required this.layout});
+}
 
 /// Re-renders the same composition the preview canvas paints, but to
 /// raw RGBA bytes instead of a widget tree. Owns the same stateful
@@ -48,32 +58,11 @@ class FrameCompositor {
     this.cameraOriginalAspect = 1.0,
     this.cameraSrcWidth = 0,
     this.cameraSrcHeight = 0,
+    this.deviceFrameCatalog,
   }) : _framePainter = FramePainter(
          frame: projectState.windowFrame,
          videoSize: videoSize,
          aspect: projectState.outputAspect,
-       ),
-       totalSize = _evenSize(
-         OutputCanvasResolver.resolve(
-           videoSize: videoSize,
-           padding: projectState.windowFrame.padding,
-           aspect: projectState.outputAspect,
-         ).canvasSize,
-       ),
-       // Center the video inside the (even-rounded) canvas. The resolver
-       // already positions the video rect; after rounding the canvas to
-       // even pixel dimensions for yuv420p there can be up to 1px of
-       // slack per axis — _centeredVideoRect redistributes that slack
-       // symmetrically so the video stays centered.
-       _videoRect = _centeredVideoRect(
-         _evenSize(
-           OutputCanvasResolver.resolve(
-             videoSize: videoSize,
-             padding: projectState.windowFrame.padding,
-             aspect: projectState.outputAspect,
-           ).canvasSize,
-         ),
-         videoSize,
        );
 
   final EditorProjectState projectState;
@@ -105,12 +94,85 @@ class FrameCompositor {
   final int cameraSrcWidth;
   final int cameraSrcHeight;
 
+  /// Optional device-frame catalog. When non-null and the project's
+  /// [WindowFrame.deviceFrameId] resolves an entry, [deviceFramePlan] is set
+  /// and [compose] renders the device-frame path instead of the chrome path.
+  final DeviceFrameCatalog? deviceFrameCatalog;
+
+  /// Resolved device-frame plan (null when no device frame is active).
+  late final DeviceFrameRenderPlan? deviceFramePlan = _resolveDeviceFramePlan();
+
+  DeviceFrameRenderPlan? _resolveDeviceFramePlan() {
+    final id = projectState.windowFrame.deviceFrameId;
+    final catalog = deviceFrameCatalog;
+    if (id == null || catalog == null) return null;
+    final entry = catalog.entryById(id);
+    if (entry == null) return null;
+    final color = entry.colorById(projectState.windowFrame.deviceFrameColor ?? '')
+        ?? (entry.colors.isEmpty ? null : entry.colors.first);
+    if (color == null) return null;
+    final asset = recordingIsPortrait(videoSize) ? color.portrait : color.landscape;
+    final layout = resolveDeviceFrameLayout(
+      asset: asset,
+      recordingSize: videoSize,
+      padding: projectState.windowFrame.padding,
+      aspect: projectState.outputAspect,
+      adjustSize: projectState.windowFrame.deviceFrameAdjustSize,
+    );
+    return DeviceFrameRenderPlan(asset: asset, layout: layout);
+  }
+
+  /// Override the bezel image loader for testing. When null, the real
+  /// [rootBundle] is used to load bezel PNGs from the app bundle.
+  @visibleForTesting
+  Future<ui.Image> Function(String asset)? bezelImageLoaderOverride;
+
+  /// Cached bezel image for this export. Loaded once and reused across all
+  /// frames (like [_cachedWallpaperImage]). Disposed in [dispose].
+  ui.Image? _cachedBezelImage;
+
   /// Output canvas size — the framed totalSize, rounded to even
   /// pixels (yuv420p subsampling requires it).
-  final Size totalSize;
+  ///
+  /// When a device frame is active, this equals the device bezel canvas size.
+  /// When no device frame is active, equals the standard output canvas size.
+  late final Size totalSize = deviceFramePlan != null
+      ? _evenSize(deviceFramePlan!.layout.canvasSize)
+      : _evenSize(OutputCanvasResolver.resolve(
+          videoSize: videoSize,
+          padding: projectState.windowFrame.padding,
+          aspect: projectState.outputAspect,
+        ).canvasSize);
 
   final FramePainter _framePainter;
-  final Rect _videoRect;
+
+  /// Rect where the video is drawn (in canvas coordinates).
+  /// On the device path this is derived from the layout's videoRect, shifted
+  /// for even-canvas centering. On the standard path it is centered in the
+  /// even canvas just as before.
+  late final Rect _videoRect = deviceFramePlan != null
+      ? _shiftRect(deviceFramePlan!.layout.videoRect,
+          _evenCenteringDelta(deviceFramePlan!.layout.canvasSize))
+      : _centeredVideoRect(
+          _evenSize(OutputCanvasResolver.resolve(
+            videoSize: videoSize,
+            padding: projectState.windowFrame.padding,
+            aspect: projectState.outputAspect,
+          ).canvasSize),
+          videoSize);
+
+  /// Rect where the bezel PNG is drawn (in canvas coordinates).
+  /// Only meaningful when [deviceFramePlan] is non-null.
+  late final Rect _bezelRect = deviceFramePlan == null
+      ? Rect.zero
+      : _shiftRect(deviceFramePlan!.layout.bezelRect,
+          _evenCenteringDelta(deviceFramePlan!.layout.canvasSize));
+
+  /// Corner radius (canvas px) the video is clipped to so its square
+  /// corners don't show through the bezel's transparent rounded cutout.
+  /// 0 when no device frame. Unaffected by the even-centering translation.
+  late final double _videoCornerRadius =
+      deviceFramePlan?.layout.videoCornerRadius ?? 0;
 
   /// Shared scene-state production for preview and export. Owns the
   /// spring controllers and EMA filter; one source of truth means
@@ -218,6 +280,18 @@ class FrameCompositor {
       }
 
       final layerRect = Rect.fromLTWH(0, 0, totalSize.width, totalSize.height);
+
+      // Device-frame path: video inside screen cutout + bezel on top.
+      // No frame chrome, no cursor (device captures carry no tap data).
+      if (deviceFramePlan != null) {
+        return await _composeDeviceFrame(
+          videoImage: videoImage,
+          position: position,
+          sceneSignal: sceneSignal,
+          applyZoom: applyZoom,
+          layerRect: layerRect,
+        );
+      }
 
       // Foreground CONTENT (video + cursor) — the ONLY layer fed through the
       // scene-motion-blur smear. The frame chrome (shadow/ring/border) is
@@ -460,6 +534,172 @@ class FrameCompositor {
     );
     final frame = await codec.getNextFrame();
     return frame.image;
+  }
+
+  // --- device-frame helpers -----------------------------------------------
+
+  /// Loads and caches the bezel image for this export. Like the wallpaper
+  /// image, the bezel is constant for the lifetime of the compositor, so
+  /// it is rasterized once and reused for every frame.
+  Future<ui.Image?> _ensureBezelImage() async {
+    final plan = deviceFramePlan;
+    if (plan == null) return null;
+    final cached = _cachedBezelImage;
+    if (cached != null) return cached;
+    final loader = bezelImageLoaderOverride ?? _loadBezelFromBundle;
+    return _cachedBezelImage = await loader(plan.asset.asset);
+  }
+
+  Future<ui.Image> _loadBezelFromBundle(String assetPath) async {
+    final data = await rootBundle.load(assetPath);
+    final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+    try {
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } finally {
+      codec.dispose();
+    }
+  }
+
+  /// Device-frame composition path:
+  ///   wallpaper (sticky) → blurred video at [_videoRect] → crisp bezel at
+  ///   [_bezelRect] (both through [applyZoom]) → camera.
+  ///
+  /// No frame chrome is drawn. Device captures carry no cursor / tap data so
+  /// the foreground layer is the video alone.
+  Future<Uint8List> _composeDeviceFrame({
+    required ui.Image videoImage,
+    required Duration position,
+    required SceneMotionBlurSignal sceneSignal,
+    required void Function(ui.Canvas) applyZoom,
+    required Rect layerRect,
+  }) async {
+    // Foreground = video drawn into the screen cutout, motion-blurred.
+    final fgRecorder = ui.PictureRecorder();
+    final fgCanvas = ui.Canvas(fgRecorder, layerRect);
+    applyZoom(fgCanvas);
+    // Clip the recording to the device screen's rounded corners (matches the
+    // preview's ClipRRect) so square corners don't bleed through the bezel's
+    // transparent cutout.
+    if (_videoCornerRadius > 0) {
+      fgCanvas.save();
+      fgCanvas.clipRRect(ui.RRect.fromRectAndRadius(
+          _videoRect, ui.Radius.circular(_videoCornerRadius)));
+      paintImageRectToRect(fgCanvas, videoImage, _videoRect);
+      fgCanvas.restore();
+    } else {
+      paintImageRectToRect(fgCanvas, videoImage, _videoRect);
+    }
+    final fgPicture = fgRecorder.endRecording();
+
+    // Bezel = crisp PNG on top, through the same zoom transform.
+    final bezel = await _ensureBezelImage();
+    ui.Picture? bezelPicture;
+    if (bezel != null) {
+      final r = ui.PictureRecorder();
+      final c = ui.Canvas(r, layerRect);
+      applyZoom(c);
+      paintImageRectToRect(c, bezel, _bezelRect);
+      bezelPicture = r.endRecording();
+    }
+
+    try {
+      final fgImage = await fgPicture.toImage(
+          totalSize.width.toInt(), totalSize.height.toInt());
+      final ui.Image? bezelImg = bezelPicture == null
+          ? null
+          : await bezelPicture.toImage(
+              totalSize.width.toInt(), totalSize.height.toInt());
+      try {
+        final blurredFg = await _applySceneMotionBlur(fgImage, sceneSignal);
+        final fgToComposite = blurredFg ?? fgImage;
+        try {
+          final wallpaperImage = await _ensureWallpaperImage();
+          final composeRecorder = ui.PictureRecorder();
+          final composeCanvas = ui.Canvas(composeRecorder,
+              Rect.fromLTWH(0, 0, totalSize.width, totalSize.height));
+          if (wallpaperImage != null) {
+            composeCanvas.drawImage(wallpaperImage, Offset.zero, Paint());
+          }
+          composeCanvas.drawImage(fgToComposite, Offset.zero, Paint());
+          if (bezelImg != null) {
+            composeCanvas.drawImage(bezelImg, Offset.zero, Paint());
+          }
+          // Camera: drawn canvas-fixed (not zoom-transformed) on top, same
+          // as the standard path.
+          final cam = projectState.cameraSettings;
+          final camSource = cameraFrameSource;
+          if (cam.enabled && camSource != null) {
+            final render = CameraRenderResolver.renderAt(
+              position,
+              projectState.cameraRegions,
+            );
+            if (render != null) {
+              final bgra = await camSource.frameAt(position);
+              if (bgra != null && cameraSrcWidth > 0 && cameraSrcHeight > 0) {
+                final cameraImage = await _bgraToImage(
+                  bgra,
+                  cameraSrcWidth,
+                  cameraSrcHeight,
+                );
+                try {
+                  final cameraBox = cameraPixelBox(
+                    centerX: render.placement.centerX,
+                    centerY: render.placement.centerY,
+                    size: render.placement.size,
+                    canvasSize: totalSize,
+                    shapeAspect: cam.shape.pixelAspect(cameraOriginalAspect),
+                  );
+                  CameraFramePainter.paint(
+                    composeCanvas,
+                    image: cameraImage,
+                    pixelBox: cameraBox,
+                    settings: cam,
+                    opacity: cam.opacity,
+                    reveal: render.reveal,
+                  );
+                } finally {
+                  cameraImage.dispose();
+                }
+              }
+            }
+          }
+          final composePicture = composeRecorder.endRecording();
+          try {
+            final finalImage = await composePicture.toImage(
+                totalSize.width.toInt(), totalSize.height.toInt());
+            try {
+              final byteData =
+                  await finalImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+              if (byteData == null) {
+                throw StateError('toByteData returned null at $position');
+              }
+              return Uint8List.fromList(byteData.buffer.asUint8List());
+            } finally {
+              finalImage.dispose();
+            }
+          } finally {
+            composePicture.dispose();
+          }
+        } finally {
+          if (blurredFg != null) blurredFg.dispose();
+        }
+      } finally {
+        fgImage.dispose();
+        bezelImg?.dispose();
+      }
+    } finally {
+      fgPicture.dispose();
+      bezelPicture?.dispose();
+    }
+  }
+
+  /// Draws [image] (its full bounds) scaled to fit [dst].
+  static void paintImageRectToRect(ui.Canvas c, ui.Image image, Rect dst) {
+    final src = Rect.fromLTWH(
+        0, 0, image.width.toDouble(), image.height.toDouble());
+    c.drawImageRect(image, src, dst,
+        Paint()..filterQuality = FilterQuality.high);
   }
 
   // --- internals --------------------------------------------------------
@@ -813,6 +1053,16 @@ class FrameCompositor {
     return Rect.fromLTWH(dx, dy, videoSize.width, videoSize.height);
   }
 
+  /// The Offset by which device-frame layout rects must be shifted when the
+  /// raw [canvasSize] is rounded up to even dimensions. Distributes the ≤1px
+  /// slack symmetrically so the bezel stays centered inside the even canvas.
+  static Offset _evenCenteringDelta(Size raw) {
+    final even = _evenSize(raw);
+    return Offset((even.width - raw.width) / 2, (even.height - raw.height) / 2);
+  }
+
+  static Rect _shiftRect(Rect r, Offset d) => r.shift(d);
+
   /// Releases retained GPU resources. m10: the wallpaper is rasterized once and
   /// cached for the whole export (~8-10MB at 1440p); without this it survives
   /// until GC finalizes the handle. Call when the compositor is done (see
@@ -821,5 +1071,7 @@ class FrameCompositor {
     _cachedWallpaperImage?.dispose();
     _cachedWallpaperImage = null;
     _cachedWallpaperKey = null;
+    _cachedBezelImage?.dispose();
+    _cachedBezelImage = null;
   }
 }

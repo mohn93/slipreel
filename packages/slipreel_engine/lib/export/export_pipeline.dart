@@ -7,6 +7,7 @@ import 'dart:ui' show Size;
 import '../models/camera_sidecar_meta.dart';
 import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
+import '../models/device_frame.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
 import '../rendering/output_canvas_resolver.dart';
@@ -70,6 +71,12 @@ class ExportPipeline {
   /// Must have [ExportSettings.format] == [ExportFormat.mp4].
   final ExportSettings settings;
 
+  /// Optional device-frame catalog forwarded to [FrameCompositor]. When
+  /// non-null and the project's [WindowFrame.deviceFrameId] resolves an
+  /// entry, the compositor renders the device-frame shell instead of the
+  /// chrome path — matching the editor preview pixel-for-pixel.
+  final DeviceFrameCatalog? deviceFrameCatalog;
+
   // Cache for a single ffprobe result per pipeline instance.
   FfmpegProbeResult? _probeCache;
 
@@ -80,6 +87,7 @@ class ExportPipeline {
     required this.cursorRecording,
     required this.projectState,
     required this.settings,
+    this.deviceFrameCatalog,
   }) {
     if (settings.format != ExportFormat.mp4) {
       throw ArgumentError.value(
@@ -201,6 +209,7 @@ class ExportPipeline {
       cameraOriginalAspect: cameraOriginalAspect,
       cameraSrcWidth: cameraSrcWidth,
       cameraSrcHeight: cameraSrcHeight,
+      deviceFrameCatalog: deviceFrameCatalog,
     ));
 
     final decoder = FfmpegDecoder(

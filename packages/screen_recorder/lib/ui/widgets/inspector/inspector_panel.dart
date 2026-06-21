@@ -13,6 +13,7 @@ import 'package:screen_recorder/ui/widgets/inspector/tabs/animation_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/audio_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/background_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/camera_tab.dart';
+import 'package:screen_recorder/ui/widgets/inspector/tabs/device_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/captions_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/cursor_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/shortcuts_tab.dart';
@@ -161,26 +162,33 @@ class _InspectorPanelState extends State<InspectorPanel> {
   }
 
   Widget _formatMode() {
+    // The Device tab only applies to device captures; if it ended up selected
+    // for a non-device recording, fall back to Background.
+    final selected = (_selected == InspectorTab.device && !widget.isDevice)
+        ? InspectorTab.background
+        : _selected;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         TipAnchor(
           tipId: TipId.editorInspector,
           child: _Rail(
-            selected: _selected,
+            selected: selected,
+            isDevice: widget.isDevice,
             onSelect: (t) => setState(() => _selected = t),
           ),
         ),
-        Expanded(child: _formatContent()),
+        Expanded(child: _formatContent(selected)),
       ],
     );
   }
 
-  Widget _formatContent() {
+  Widget _formatContent(InspectorTab selected) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-      child: switch (_selected) {
+      child: switch (selected) {
         InspectorTab.background => const BackgroundTab(),
+        InspectorTab.device => DeviceTab(recordingSize: widget.videoSize),
         InspectorTab.cursor => CursorTab(
             canHideCursor: widget.canHideCursor,
             isDevice: widget.isDevice,
@@ -268,8 +276,13 @@ class _InspectorPanelState extends State<InspectorPanel> {
 }
 
 class _Rail extends StatelessWidget {
-  const _Rail({required this.selected, required this.onSelect});
+  const _Rail({
+    required this.selected,
+    required this.isDevice,
+    required this.onSelect,
+  });
   final InspectorTab selected;
+  final bool isDevice;
   final ValueChanged<InspectorTab> onSelect;
 
   @override
@@ -279,6 +292,10 @@ class _Rail extends StatelessWidget {
     const itemHeight = 40.0;
     const itemGap = 8.0;
 
+    // The Device tab is hidden for screen recordings.
+    final tabs = visibleInspectorTabs(isDevice: isDevice);
+    final selectedIndex = tabs.indexOf(selected);
+
     return SizedBox(
       width: railWidth,
       child: Padding(
@@ -286,8 +303,8 @@ class _Rail extends StatelessWidget {
         child: Stack(
           children: [
             AnimatedIndicatorBar(
-              selectedIndex: InspectorTab.values.indexOf(selected),
-              itemCount: InspectorTab.values.length,
+              selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
+              itemCount: tabs.length,
               itemHeight: itemHeight,
               itemGap: itemGap,
             ),
@@ -296,7 +313,7 @@ class _Rail extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  for (final t in InspectorTab.values) ...[
+                  for (final t in tabs) ...[
                     SpringyIconButton(
                       icon: t.icon,
                       tooltip:
@@ -306,8 +323,7 @@ class _Rail extends StatelessWidget {
                       onTap: () => onSelect(t),
                       size: itemHeight,
                     ),
-                    if (t != InspectorTab.values.last)
-                      const SizedBox(height: itemGap),
+                    if (t != tabs.last) const SizedBox(height: itemGap),
                   ],
                 ],
               ),

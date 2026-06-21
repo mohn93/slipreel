@@ -55,6 +55,20 @@ class WindowFrame {
   /// padding there's nowhere to draw it.
   final double inset;
 
+  /// Catalog id of the selected device frame, e.g. "iphone-16-pro".
+  /// Null means no device frame is drawn.
+  final String? deviceFrameId;
+
+  /// Selected color variant id within [deviceFrameId], e.g.
+  /// "black-titanium". Ignored when [deviceFrameId] is null.
+  final String? deviceFrameColor;
+
+  /// When true, the device mockup stretches so its screen cutout
+  /// matches the recording's aspect (video fills edge-to-edge). When
+  /// false, the device keeps true proportions and the video is
+  /// letterbox-fit inside the screen. Defaults to true.
+  final bool deviceFrameAdjustSize;
+
   const WindowFrame({
     required this.name,
     required this.padding,
@@ -69,6 +83,9 @@ class WindowFrame {
     this.wallpaperIndex = 0,
     this.backgroundBlur = 0,
     this.inset = 0,
+    this.deviceFrameId,
+    this.deviceFrameColor,
+    this.deviceFrameAdjustSize = true,
   });
 
   /// Creates a frame with no decorations (transparent, no padding or effects)
@@ -164,6 +181,10 @@ class WindowFrame {
     double? backgroundBlur,
     double? inset,
     bool clearWallpaper = false,
+    String? deviceFrameId,
+    String? deviceFrameColor,
+    bool? deviceFrameAdjustSize,
+    bool clearDeviceFrame = false,
   }) {
     return WindowFrame(
       name: name ?? this.name,
@@ -181,6 +202,12 @@ class WindowFrame {
       wallpaperIndex: wallpaperIndex ?? this.wallpaperIndex,
       backgroundBlur: backgroundBlur ?? this.backgroundBlur,
       inset: inset ?? this.inset,
+      deviceFrameId:
+          clearDeviceFrame ? null : (deviceFrameId ?? this.deviceFrameId),
+      deviceFrameColor:
+          clearDeviceFrame ? null : (deviceFrameColor ?? this.deviceFrameColor),
+      deviceFrameAdjustSize:
+          deviceFrameAdjustSize ?? this.deviceFrameAdjustSize,
     );
   }
 
@@ -208,6 +235,9 @@ class WindowFrame {
       'wallpaperIndex': wallpaperIndex,
       'backgroundBlur': backgroundBlur,
       'inset': inset,
+      'deviceFrameId': deviceFrameId,
+      'deviceFrameColor': deviceFrameColor,
+      'deviceFrameAdjustSize': deviceFrameAdjustSize,
     };
   }
 
@@ -243,6 +273,9 @@ class WindowFrame {
       backgroundBlur:
           (json['backgroundBlur'] as num?)?.toDouble() ?? 0,
       inset: (json['inset'] as num?)?.toDouble() ?? 0,
+      deviceFrameId: json['deviceFrameId'] as String?,
+      deviceFrameColor: json['deviceFrameColor'] as String?,
+      deviceFrameAdjustSize: json['deviceFrameAdjustSize'] as bool? ?? true,
     );
   }
 
@@ -263,7 +296,10 @@ class WindowFrame {
         other.wallpaperCategory == wallpaperCategory &&
         other.wallpaperIndex == wallpaperIndex &&
         other.backgroundBlur == backgroundBlur &&
-        other.inset == inset;
+        other.inset == inset &&
+        other.deviceFrameId == deviceFrameId &&
+        other.deviceFrameColor == deviceFrameColor &&
+        other.deviceFrameAdjustSize == deviceFrameAdjustSize;
   }
 
   @override
@@ -282,6 +318,9 @@ class WindowFrame {
       wallpaperIndex,
       backgroundBlur,
       inset,
+      deviceFrameId,
+      deviceFrameColor,
+      deviceFrameAdjustSize,
     );
   }
 

@@ -45,6 +45,10 @@ import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/camera_settings.dart';
 import 'package:screen_recorder/ui/widgets/camera/camera_bubble.dart';
 import 'package:screen_recorder/ui/widgets/zoom/preview_cursor_timing.dart';
+import 'package:slipreel_engine/models/device_frame.dart';
+import 'package:slipreel_engine/rendering/device_frame_layout.dart';
+import 'package:slipreel_engine/rendering/device_frame_matcher.dart';
+import 'package:screen_recorder/ui/widgets/zoom/device_frame_composition.dart';
 
 /// The composed playback canvas: wallpaper layer, framed video,
 /// cursor overlay, optional debug HUD, all wrapped in a zoom Transform
@@ -217,6 +221,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     this.onCameraSelectRequested,
     this.onCameraPlacementCommit,
     this.cameraDragOverride,
+    this.deviceFrameCatalog,
   });
 
   final VideoPlayerController controller;
@@ -418,6 +423,11 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// rebuilds itself when it changes.
   final ValueListenable<({int index, CameraPlacement placement})?>?
   cameraDragOverride;
+
+  /// When non-null, the canvas renders a device-frame bezel around the video
+  /// instead of the standard [FramePainter] path. The active device and color
+  /// are read from [frame.deviceFrameId] / [frame.deviceFrameColor].
+  final DeviceFrameCatalog? deviceFrameCatalog;
 
   @override
   ConsumerState<PlaybackCanvas> createState() => _PlaybackCanvasState();
@@ -690,6 +700,32 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     final videoOriginX = resolved.videoRect.left;
     final videoOriginY = resolved.videoRect.top;
 
+    // Resolve an optional device-frame layout. When active, the composition
+    // uses DeviceFrameComposition instead of FramePainter + ClipRRect video,
+    // and effTotalSize / effVideoOriginX/Y override the normal canvas geometry.
+    DeviceFrameLayout? deviceLayout;
+    DeviceFrameOrientationAsset? deviceAsset;
+    final dfId = currentFrame.deviceFrameId;
+    final dfCatalog = widget.deviceFrameCatalog;
+    if (dfId != null && dfCatalog != null) {
+      final entry = dfCatalog.entryById(dfId);
+      final color = entry?.colorById(currentFrame.deviceFrameColor ?? '')
+          ?? (entry != null && entry.colors.isNotEmpty ? entry.colors.first : null);
+      if (color != null) {
+        deviceAsset = recordingIsPortrait(videoSize) ? color.portrait : color.landscape;
+        deviceLayout = resolveDeviceFrameLayout(
+          asset: deviceAsset,
+          recordingSize: videoSize,
+          padding: currentFrame.padding,
+          aspect: widget.outputAspect,
+          adjustSize: currentFrame.deviceFrameAdjustSize,
+        );
+      }
+    }
+    final Size effTotalSize = deviceLayout?.canvasSize ?? totalSize;
+    final double effVideoOriginX = deviceLayout?.videoRect.left ?? videoOriginX;
+    final double effVideoOriginY = deviceLayout?.videoRect.top ?? videoOriginY;
+
     // Single AnimatedBuilder rebuilt per frame: drives the cursor
     // overlay (needs current playhead) AND the zoom Transform. The
     // VideoPlayer is held as `child` so its widget isn't reconstructed
@@ -702,8 +738,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     // the scaled-up tail inside the frame so it doesn't leak across
     // the editor backdrop.
     Widget framedVideo = SizedBox(
-      width: totalSize.width,
-      height: totalSize.height,
+      width: effTotalSize.width,
+      height: effTotalSize.height,
       child: ClipRect(
         child: AnimatedBuilder(
           animation: Listenable.merge([
@@ -866,8 +902,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               if (widget.cursorBlurMode == CursorBlurMode.accumulation) {
                 cursorOverlay = IgnorePointer(
                   child: SizedBox(
-                    width: totalSize.width,
-                    height: totalSize.height,
+                    width: effTotalSize.width,
+                    height: effTotalSize.height,
                     child: CustomPaint(
                       painter: AccumulationCursorPainter(
                         cursorRecording: widget.cursorRecording,
@@ -887,8 +923,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                         focalAt: widget.accumulationCameraFocalAt,
                         scaleAt: widget.accumulationCameraScaleAt,
                         videoRect: Rect.fromLTWH(
-                          videoOriginX,
-                          videoOriginY,
+                          effVideoOriginX,
+                          effVideoOriginY,
                           videoSize.width,
                           videoSize.height,
                         ),
@@ -906,13 +942,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               } else {
                 cursorOverlay = IgnorePointer(
                   child: SizedBox(
-                    width: totalSize.width,
-                    height: totalSize.height,
+                    width: effTotalSize.width,
+                    height: effTotalSize.height,
                     child: Stack(
                       children: [
                         Positioned(
-                          left: videoOriginX,
-                          top: videoOriginY,
+                          left: effVideoOriginX,
+                          top: effVideoOriginY,
                           child: SizedBox(
                             width: videoSize.width,
                             height: videoSize.height,
@@ -959,7 +995,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 position: pos,
                 keystrokeRecording: ksRecording,
                 settings: ksSettings,
-                canvasSize: totalSize,
+                canvasSize: effTotalSize,
               );
             }
 
@@ -1014,7 +1050,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                       : shownPlacement;
                   return AnimatedCameraBubble(
                     visible: placement != null,
-                    canvasSize: totalSize,
+                    canvasSize: effTotalSize,
                     placement: effectivePlacement,
                     settings: camSettings,
                     originalAspect: widget.cameraOriginalAspect,
@@ -1077,30 +1113,53 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                     blur: currentFrame.backgroundBlur,
                   );
 
+            // BEZEL-BLUR DIVERGENCE (accepted): DeviceFrameComposition renders
+            // both the video and the bezel PNG as a single widget subtree that
+            // is placed inside this Stack.  That Stack becomes the scene-blur
+            // capture target (RepaintBoundary below), so the bezel is captured
+            // by the scene-blur shader and smears during zoom ramps — just like
+            // the drop-shadow in the standard chrome path.  The export
+            // compositor (FrameCompositor._composeDeviceFrame) draws the bezel
+            // in a separate crisp layer AFTER the motion-blur pass, so the
+            // export bezel is always crisp.  This is the same accepted
+            // preview-only divergence as the drop-shadow smear; revisit if
+            // runtime testing shows it's objectionable.
             final composition = Stack(
               children: [
-                CustomPaint(
-                  size: totalSize,
-                  painter: FramePainter(
-                    frame: currentFrame,
-                    videoSize: videoSize,
-                    aspect: widget.outputAspect,
-                  ),
-                ),
-                Positioned(
-                  left: videoOriginX,
-                  top: videoOriginY,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(
-                      currentFrame.cornerRadius,
+                if (deviceLayout != null && deviceAsset != null)
+                  SizedBox(
+                    width: effTotalSize.width,
+                    height: effTotalSize.height,
+                    child: DeviceFrameComposition(
+                      layout: deviceLayout,
+                      video: videoPlayer!,
+                      bezel: AssetImage(deviceAsset.asset),
                     ),
-                    child: SizedBox(
-                      width: videoSize.width,
-                      height: videoSize.height,
-                      child: videoPlayer!,
+                  )
+                else ...[
+                  CustomPaint(
+                    size: totalSize,
+                    painter: FramePainter(
+                      frame: currentFrame,
+                      videoSize: videoSize,
+                      aspect: widget.outputAspect,
                     ),
                   ),
-                ),
+                  Positioned(
+                    left: videoOriginX,
+                    top: videoOriginY,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        currentFrame.cornerRadius,
+                      ),
+                      child: SizedBox(
+                        width: videoSize.width,
+                        height: videoSize.height,
+                        child: videoPlayer!,
+                      ),
+                    ),
+                  ),
+                ],
                 if (widget.showZoomDebug)
                   Positioned(
                     left: currentFrame.padding.left,
@@ -1187,7 +1246,11 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 cameraOverlayWidget: cameraOverlayWidget,
                 stickyBackground: stickyBackground,
                 position: pos,
-                totalSize: totalSize,
+                // effTotalSize is the composition's actual canvas (device
+                // canvas when a frame is active, else == totalSize). The pass's
+                // scene-blur capture size AND the zoom pivot it derives must
+                // match the composition center and export's device-canvas pivot.
+                totalSize: effTotalSize,
                 videoSize: videoSize,
                 currentTransform: Matrix4.identity(),
               );
@@ -1298,7 +1361,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   cameraOverlayWidget: cameraOverlayWidget,
                   stickyBackground: stickyBackground,
                   position: pos,
-                  totalSize: totalSize,
+                  // See note at the other call site: effTotalSize keeps the
+                  // scene-blur canvas + zoom pivot lock-step with the
+                  // composition center (device canvas when a frame is active).
+                  totalSize: effTotalSize,
                   videoSize: videoSize,
                   currentTransform: transform,
                 );
@@ -1310,7 +1376,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     );
 
     return AspectRatio(
-      aspectRatio: totalSize.width / totalSize.height,
+      aspectRatio: effTotalSize.width / effTotalSize.height,
       child: FittedBox(fit: BoxFit.contain, child: framedVideo),
     );
   }
