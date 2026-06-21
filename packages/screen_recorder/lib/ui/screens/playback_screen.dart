@@ -1546,6 +1546,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final region = _project.zoomRegions[idx];
     _zoomPreviewOverride.value = region.copyWith(
       rect: newRect,
+      // Dragging the placement box expresses manual intent — pin the focal to
+      // the rect so the canvas previews the chosen framing (and so device
+      // zooms, which can't follow a cursor, actually respond to placement).
+      followCursor: false,
       videoBounds: _metadata == null
           ? null
           : Size(_metadata!.widthPx.toDouble(), _metadata!.heightPx.toDouble()),
@@ -1560,6 +1564,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         idx,
         region.copyWith(
           rect: newRect,
+          // Committing a placement pins the focal to the rect (manual), so the
+          // saved zoom frames where the user dropped it — required for device
+          // recordings and correct for any manual placement.
+          followCursor: false,
           videoBounds: _metadata == null
               ? null
               : Size(
@@ -1593,6 +1601,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       duration: end - start,
       zoomLevel: 2.0,
       videoBounds: videoSize,
+      // Device (iPhone/iPad) recordings have no cursor to follow, so new
+      // zooms must be manual — otherwise the focal chases nonexistent cursor
+      // data and the placement rect (the only control we show) is ignored.
+      followCursor: _metadata?.isDeviceCapture != true,
     );
 
     _projectController.addZoom(zoomRegion);
