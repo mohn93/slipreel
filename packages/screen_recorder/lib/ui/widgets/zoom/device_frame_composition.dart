@@ -23,7 +23,15 @@ class DeviceFrameComposition extends StatelessWidget {
       children: [
         Positioned.fromRect(
           rect: layout.videoRect,
-          child: video,
+          // Clip the recording to the device screen's rounded corners so its
+          // square corners don't show through the bezel PNG's transparent
+          // (rounded) cutout. Apple's bezels intentionally leave the cutout
+          // corners transparent and expect the content to be rounded.
+          child: ClipRRect(
+            borderRadius:
+                BorderRadius.circular(layout.videoCornerRadius),
+            child: video,
+          ),
         ),
         Positioned.fromRect(
           rect: layout.bezelRect,

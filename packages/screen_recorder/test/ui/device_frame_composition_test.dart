@@ -45,8 +45,10 @@ void main() {
     );
     int indexOf(bool Function(Widget) test) =>
         stack.children.indexWhere(test);
+    // The video Positioned now wraps its child in a ClipRRect (rounded
+    // corners); the bezel Positioned's child is the Image.
     final videoIndex = indexOf(
-      (w) => w is Positioned && w.child.key == const Key('video'),
+      (w) => w is Positioned && w.child is ClipRRect,
     );
     final bezelIndex = indexOf(
       (w) => w is Positioned && w.child is Image,
@@ -58,6 +60,26 @@ void main() {
       greaterThan(videoIndex),
       reason: 'bezel Image must be after (on top of) the video in the Stack',
     );
+  });
+
+  testWidgets('clips the video to the screen corner radius', (tester) async {
+    const layout = DeviceFrameLayout(
+      canvasSize: Size(120, 240),
+      bezelRect: Rect.fromLTWH(0, 0, 120, 240),
+      screenRect: Rect.fromLTWH(10, 10, 100, 220),
+      videoRect: Rect.fromLTWH(10, 10, 100, 220),
+      videoCornerRadius: 24,
+    );
+    final image = await _img();
+    await tester.pumpWidget(MaterialApp(
+      home: DeviceFrameComposition(
+        layout: layout,
+        video: const ColoredBox(color: Color(0xFF00FF00), key: Key('video')),
+        bezel: _TestImageProvider(image),
+      ),
+    ));
+    final clip = tester.widget<ClipRRect>(find.byType(ClipRRect));
+    expect(clip.borderRadius, BorderRadius.circular(24));
   });
 }
 

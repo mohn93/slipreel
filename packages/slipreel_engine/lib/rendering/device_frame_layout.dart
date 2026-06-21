@@ -20,12 +20,18 @@ class DeviceFrameLayout {
     required this.bezelRect,
     required this.screenRect,
     required this.videoRect,
+    this.videoCornerRadius = 0,
   });
 
   final Size canvasSize;
   final Rect bezelRect;
   final Rect screenRect;
   final Rect videoRect;
+
+  /// Corner radius (canvas px) to clip the video to, matching the device
+  /// screen's rounded corners — so the recording's square corners don't show
+  /// through the bezel PNG's transparent rounded cutout. 0 = no clip.
+  final double videoCornerRadius;
 }
 
 /// Computes the device-frame layout. See [DeviceFrameLayout].
@@ -105,10 +111,24 @@ DeviceFrameLayout resolveDeviceFrameLayout({
     }
   }
 
+  // Screen corner radius at display scale (normalized to bezel width → px).
+  // Apple screen corners are CONTINUOUS (squircle); the extracted inset
+  // measures the squircle's extent, which is ~1.5× the equivalent CIRCULAR
+  // radius. A plain ClipRRect uses a circular radius, so clip at the
+  // circular-equivalent to avoid over-rounding. Clamp to half the video's
+  // smaller side so a small letterboxed video can't over-round.
+  const squircleExtentToCircular = 0.65;
+  final maxRadius = 0.5 *
+      (videoRect.width < videoRect.height ? videoRect.width : videoRect.height);
+  final videoCornerRadius =
+      (asset.screenCornerRadius * bezelRect.width * squircleExtentToCircular)
+          .clamp(0.0, maxRadius);
+
   return DeviceFrameLayout(
     canvasSize: canvasSize,
     bezelRect: bezelRect,
     screenRect: screenRect,
     videoRect: videoRect,
+    videoCornerRadius: videoCornerRadius,
   );
 }

@@ -26,11 +26,20 @@ class DeviceFrameOrientationAsset {
   final String asset;
   final int bezelWidth, bezelHeight;
   final DeviceScreenRect screenRect;
+
+  /// Corner radius of the screen cutout, normalized to the bezel WIDTH
+  /// (so it recovers the same pixel radius in either orientation:
+  /// `radiusPx = screenCornerRadius * bezelDisplayWidth`). The video is
+  /// clipped to this radius so its square corners don't show through the
+  /// bezel PNG's transparent rounded cutout. 0 = no rounding (legacy).
+  final double screenCornerRadius;
+
   const DeviceFrameOrientationAsset({
     required this.asset,
     required this.bezelWidth,
     required this.bezelHeight,
     required this.screenRect,
+    this.screenCornerRadius = 0,
   });
 
   factory DeviceFrameOrientationAsset.fromJson(Map<String, dynamic> j) {
@@ -40,6 +49,7 @@ class DeviceFrameOrientationAsset {
       bezelWidth: (bezel['w'] as num).toInt(),
       bezelHeight: (bezel['h'] as num).toInt(),
       screenRect: DeviceScreenRect.fromJson(j['screenRect'] as Map<String, dynamic>),
+      screenCornerRadius: (j['screenCornerRadius'] as num?)?.toDouble() ?? 0,
     );
   }
 }

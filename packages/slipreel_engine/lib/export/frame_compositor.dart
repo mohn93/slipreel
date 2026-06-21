@@ -168,6 +168,12 @@ class FrameCompositor {
       : _shiftRect(deviceFramePlan!.layout.bezelRect,
           _evenCenteringDelta(deviceFramePlan!.layout.canvasSize));
 
+  /// Corner radius (canvas px) the video is clipped to so its square
+  /// corners don't show through the bezel's transparent rounded cutout.
+  /// 0 when no device frame. Unaffected by the even-centering translation.
+  late final double _videoCornerRadius =
+      deviceFramePlan?.layout.videoCornerRadius ?? 0;
+
   /// Shared scene-state production for preview and export. Owns the
   /// spring controllers and EMA filter; one source of truth means
   /// preview and export cannot disagree on cursor velocity, focal
@@ -572,7 +578,18 @@ class FrameCompositor {
     final fgRecorder = ui.PictureRecorder();
     final fgCanvas = ui.Canvas(fgRecorder, layerRect);
     applyZoom(fgCanvas);
-    paintImageRectToRect(fgCanvas, videoImage, _videoRect);
+    // Clip the recording to the device screen's rounded corners (matches the
+    // preview's ClipRRect) so square corners don't bleed through the bezel's
+    // transparent cutout.
+    if (_videoCornerRadius > 0) {
+      fgCanvas.save();
+      fgCanvas.clipRRect(ui.RRect.fromRectAndRadius(
+          _videoRect, ui.Radius.circular(_videoCornerRadius)));
+      paintImageRectToRect(fgCanvas, videoImage, _videoRect);
+      fgCanvas.restore();
+    } else {
+      paintImageRectToRect(fgCanvas, videoImage, _videoRect);
+    }
     final fgPicture = fgRecorder.endRecording();
 
     // Bezel = crisp PNG on top, through the same zoom transform.

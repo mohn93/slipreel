@@ -84,4 +84,26 @@ void main() {
     expect(layout.screenRect.width, closeTo(layout.screenRect.height, 1e-2));
     expect(layout.videoRect, layout.screenRect);
   });
+
+  test('videoCornerRadius scales screenCornerRadius by bezel display width', () {
+    const roundedAsset = DeviceFrameOrientationAsset(
+      asset: 'x.png',
+      bezelWidth: 1350,
+      bezelHeight: 2760,
+      screenRect: DeviceScreenRect(l: 0.0533, t: 0.0250, r: 0.9467, b: 0.9750),
+      screenCornerRadius: 0.18, // normalized to bezel width
+    );
+    final layout = resolveDeviceFrameLayout(
+      asset: roundedAsset,
+      recordingSize: const Size(1206, 2622),
+      padding: EdgeInsets.zero,
+      aspect: OutputAspect.auto,
+      adjustSize: true,
+    );
+    expect(layout.videoCornerRadius, greaterThan(0));
+    // Clipped to the circular-equivalent, i.e. scaled BELOW the raw
+    // squircle-extent inset (so a ClipRRect doesn't over-round).
+    expect(layout.videoCornerRadius,
+        lessThan(0.18 * layout.bezelRect.width));
+  });
 }

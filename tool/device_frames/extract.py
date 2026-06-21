@@ -60,12 +60,48 @@ def screen_rect(png_path):
     if xs1 < 0:
         raise ValueError(f"no interior screen cutout in {png_path}")
     sw, sh = xs1 - xs0 + 1, ys1 - ys0 + 1
+
+    # Screen corner radius: inset of the rounded cutout corner (median of the
+    # four corners), normalized to bezel WIDTH. The video is clipped to this
+    # radius so its square corners don't bleed through the transparent cutout.
+    def first0_down(col):
+        for y in range(ys0, ys1 + 1):
+            if wpx[col, y] == 0:
+                return y
+        return ys0
+
+    def first0_right(row):
+        for x in range(xs0, xs1 + 1):
+            if wpx[x, row] == 0:
+                return x
+        return xs0
+
+    def last0_up(col):
+        for y in range(ys1, ys0 - 1, -1):
+            if wpx[col, y] == 0:
+                return y
+        return ys1
+
+    def last0_left(row):
+        for x in range(xs1, xs0 - 1, -1):
+            if wpx[x, row] == 0:
+                return x
+        return xs1
+
+    r_tl = ((first0_down(xs0) - ys0) + (first0_right(ys0) - xs0)) / 2
+    r_tr = ((first0_down(xs1) - ys0) + (xs1 - last0_left(ys0))) / 2
+    r_bl = ((ys1 - last0_up(xs0)) + (first0_right(ys1) - xs0)) / 2
+    r_br = ((ys1 - last0_up(xs1)) + (xs1 - last0_left(ys1))) / 2
+    radii = sorted([r_tl, r_tr, r_bl, r_br])
+    radius = (radii[1] + radii[2]) / 2  # median of 4
+
     return {
         "bezel_w": w, "bezel_h": h,
         "screen": {"w": sw, "h": sh, "x": xs0, "y": ys0},
         "screenRect": {
             "l": xs0 / w, "t": ys0 / h, "r": (xs1 + 1) / w, "b": (ys1 + 1) / h,
         },
+        "screenCornerRadius": round(radius / w, 5),
     }
 
 
@@ -140,6 +176,7 @@ def main():
                         "asset": asset,
                         "bezel": {"w": geom["bezel_w"], "h": geom["bezel_h"]},
                         "screenRect": geom["screenRect"],
+                        "screenCornerRadius": geom["screenCornerRadius"],
                     }
                     # Native portrait screen res defines the entry screen size.
                     if orient == "portrait":
