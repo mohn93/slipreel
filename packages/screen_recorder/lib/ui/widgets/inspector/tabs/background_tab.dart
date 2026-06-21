@@ -2,12 +2,9 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:slipreel_engine/models/device_frame.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
-import 'package:slipreel_engine/rendering/device_frame_matcher.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
-import 'package:screen_recorder/state/device_frame_catalog_provider.dart';
 import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
@@ -17,10 +14,7 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 /// `windowFrame` so the playback canvas re-renders live and the change
 /// persists via the per-clip sidecar.
 class BackgroundTab extends ConsumerStatefulWidget {
-  const BackgroundTab({super.key, this.isDevice = false, this.recordingSize = Size.zero});
-
-  final bool isDevice;
-  final Size recordingSize;
+  const BackgroundTab({super.key});
 
   @override
   ConsumerState<BackgroundTab> createState() => _BackgroundTabState();
@@ -33,10 +27,6 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
   /// first build so we can seed from the current project state.
   String? _selectedCategory;
 
-  /// Whether the device-frame picker shows flexible (all) vs perfect
-  /// (exact-match only) device entries. Local-only UI state.
-  bool _flexible = false;
-
   /// Apply a copyWith mutation to the project's current windowFrame and
   /// re-tag the result as 'Custom' — matches the legacy
   /// FrameSettingsProvider.updateXxx contract so the template chip
@@ -48,16 +38,6 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     if (next == current) return;
     notifier.setWindowFrame(next);
   }
-
-  void _setDeviceColor(String deviceId, String colorId) => _mutateFrame(
-        (f) => f.copyWith(deviceFrameId: deviceId, deviceFrameColor: colorId),
-      );
-
-  void _disableDeviceFrame() =>
-      _mutateFrame((f) => f.copyWith(clearDeviceFrame: true));
-
-  void _setAdjustSize(bool v) =>
-      _mutateFrame((f) => f.copyWith(deviceFrameAdjustSize: v));
 
   void _updatePadding(double padding) => _mutateFrame(
         (f) => f.copyWith(padding: EdgeInsets.all(padding), name: 'Custom'),
@@ -113,10 +93,6 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
       // Let hover lean/tilt overshoot paint past the panel edge.
       clipBehavior: Clip.none,
       children: [
-        if (widget.isDevice) ...[
-          _deviceFrameSection(frame),
-          const InspectorSectionDivider(),
-        ],
         _wallpaperHeader(),
         const SizedBox(height: 12),
         InspectorChipGroup<String>(
@@ -180,96 +156,6 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
         ),
         const SizedBox(height: 24),
       ],
-    );
-  }
-
-  Widget _deviceFrameSection(WindowFrame frame) {
-    final catalogAsync = ref.watch(deviceFrameCatalogProvider);
-    return catalogAsync.maybeWhen(
-      orElse: () => const SizedBox.shrink(),
-      data: (catalog) {
-        final enabled = frame.deviceFrameId != null;
-        final entries = _flexible
-            ? flexibleMatches(catalog, widget.recordingSize)
-            : perfectMatches(catalog, widget.recordingSize);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const InspectorSectionLabel('Device frame'),
-            const SizedBox(height: 8),
-            InspectorToggle(
-              label: 'Use device mockup',
-              subtitle: 'Wrap the recording in a device mockup.',
-              value: enabled,
-              onChanged: (v) {
-                if (!v) {
-                  _disableDeviceFrame();
-                } else {
-                  // Turn on by selecting the first available match.
-                  final list = entries.isNotEmpty
-                      ? entries
-                      : flexibleMatches(catalog, widget.recordingSize);
-                  if (list.isNotEmpty && list.first.colors.isNotEmpty) {
-                    _setDeviceColor(list.first.id, list.first.colors.first.id);
-                  }
-                }
-              },
-            ),
-            const SizedBox(height: 12),
-            if (enabled) ...[
-              InspectorToggle(
-                label: 'Adjust device size',
-                subtitle: 'Stretch or shrink the mockup to match the recording.',
-                value: frame.deviceFrameAdjustSize,
-                onChanged: _setAdjustSize,
-              ),
-              const SizedBox(height: 12),
-            ],
-            InspectorChipGroup<bool>(
-              items: const [false, true],
-              labelOf: (b) => b ? 'Flexible' : 'Perfect',
-              selected: _flexible,
-              onSelected: (b) => setState(() => _flexible = b),
-            ),
-            const SizedBox(height: 12),
-            for (final entry in entries) _deviceColorRow(frame, entry),
-            if (entries.isEmpty)
-              const Text(
-                'No matching device frames.',
-                style: TextStyle(color: kInspectorMuted, fontSize: 12),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _deviceColorRow(WindowFrame frame, DeviceFrameEntry entry) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            entry.family,
-            style: const TextStyle(color: kInspectorMuted, fontSize: 12),
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final c in entry.colors)
-                InspectorChip(
-                  label: c.name,
-                  selected: frame.deviceFrameId == entry.id &&
-                      frame.deviceFrameColor == c.id,
-                  onTap: () => _setDeviceColor(entry.id, c.id),
-                ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 
