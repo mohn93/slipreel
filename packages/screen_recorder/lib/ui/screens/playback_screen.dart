@@ -48,6 +48,8 @@ import 'package:screen_recorder/state/waveform_provider.dart';
 import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
 import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
+import 'package:slipreel_engine/models/device_frame.dart';
+import 'package:slipreel_engine/rendering/device_frame_matcher.dart';
 import 'package:slipreel_engine/editor/camera_seed.dart';
 import 'package:slipreel_engine/models/camera_sidecar_meta.dart';
 import 'package:screen_recorder/state/camera_playback_sync.dart';
@@ -324,6 +326,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       ref.read(editorProjectControllerProvider.notifier);
 
   RecordingMetadata? _metadata;
+  DeviceFrameCatalog? _deviceFrameCatalog;
   CursorRecording _cursorRecording = CursorRecording();
   KeystrokeRecording _keystrokeRecording = KeystrokeRecording();
   // Owns hover-scrub state: the user's intended (anchor) position —
@@ -630,6 +633,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       _controller = VideoPlayerController.file(File(widget.videoPath));
       await _controller.initialize();
       _metadata = await RecordingMetadata.loadForVideo(widget.videoPath);
+      _deviceFrameCatalog = await loadDeviceFrameCatalog();
       try {
         _cursorRecording = await CursorRecording.loadFromFile(
           '${widget.videoPath}.cursor.json',
@@ -730,6 +734,34 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         }
       } catch (e) {
         AppLogger.ui.w('Camera sidecar load failed; editor opens without camera: $e');
+      }
+      // Auto-select a device frame for device captures with no frame set
+      // yet, when a Perfect (exact-resolution) match exists. Persist so a
+      // later "off" sticks across opens (mirrors auto-zoom seeding).
+      try {
+        final catalog = _deviceFrameCatalog;
+        if (catalog != null &&
+            _metadata != null &&
+            _metadata!.isDeviceCapture &&
+            restored.windowFrame.deviceFrameId == null) {
+          final recording = Size(
+            _metadata!.widthPx.toDouble(),
+            _metadata!.heightPx.toDouble(),
+          );
+          final nextFrame = windowFrameWithAutoDeviceFrame(
+            current: restored.windowFrame,
+            catalog: catalog,
+            recording: recording,
+          );
+          if (nextFrame.deviceFrameId != restored.windowFrame.deviceFrameId) {
+            restored = restored.copyWith(windowFrame: nextFrame);
+            await _projectStore.save(restored);
+          }
+        }
+      } catch (e) {
+        AppLogger.ui.w(
+          'Auto device-frame selection failed; opening editor without device frame: $e',
+        );
       }
       // Push the loaded state into the Riverpod notifier — single
       // source of truth for everything the inspector edits. The
@@ -1890,6 +1922,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   cursorRecording: cursorRec,
                   projectState: _project,
                   settings: settings,
+                  deviceFrameCatalog: _deviceFrameCatalog,
                 ).run(onProgress: onProgress, cancelToken: cancelToken)
               : ExportPipeline(
                   sourcePath: widget.videoPath,
@@ -1898,6 +1931,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   cursorRecording: cursorRec,
                   projectState: _project,
                   settings: settings,
+                  deviceFrameCatalog: _deviceFrameCatalog,
                 ).run(onProgress: onProgress, cancelToken: cancelToken);
           // N-slice export for both formats: per-slice trim/speed/fade come
           // from state.timeline.clips. The B-era top-level TrimSelection is
@@ -2427,6 +2461,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           _selectedSliceIndex = null;
         });
       },
+      deviceFrameCatalog: _deviceFrameCatalog,
     );
 
     final videoSize = _controller.value.size;
