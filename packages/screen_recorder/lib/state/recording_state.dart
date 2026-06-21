@@ -336,6 +336,16 @@ class RecordingController extends StateNotifier<RecordingState> {
     }
 
     try {
+      // Flip to RecordingStatus.recording BEFORE the native start awaits below.
+      // This is the SAME status transition startRecording performs, and it is
+      // what drives the recording-indicator UI: the bar screen listens to
+      // RecordingState and morphs the window to the RecordingPill (with a Stop
+      // button) whenever status becomes `recording`/`processing`
+      // (see recording_bar_screen.dart). Keeping this identical to the screen
+      // path guarantees a device recording shows the same pill + Stop affordance
+      // instead of leaving the user with no visible recording UI. Do NOT move
+      // this after the native await, or the pill won't appear until (and unless)
+      // the native side returns.
       state = state.copyWith(
         status: RecordingStatus.recording,
         selectedSourceKind: RecordingSource.device,

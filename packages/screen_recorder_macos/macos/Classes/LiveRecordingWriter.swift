@@ -26,6 +26,7 @@ class LiveRecordingWriter {
   enum WriterError: LocalizedError {
     case alreadyStarted
     case notStarted
+    case noFramesWritten
     case assetWriterCreateFailed(Error)
     case cannotAddVideoInput
     case cannotAddAudioInput
@@ -36,6 +37,7 @@ class LiveRecordingWriter {
       switch self {
       case .alreadyStarted: return "LiveRecordingWriter is already started"
       case .notStarted: return "LiveRecordingWriter is not started"
+      case .noFramesWritten: return "No frames captured from device"
       case .assetWriterCreateFailed(let e): return "Failed to create AVAssetWriter: \(e.localizedDescription)"
       case .cannotAddVideoInput: return "AVAssetWriter would not accept the video input (even with sourceFormatHint)"
       case .cannotAddAudioInput: return "AVAssetWriter would not accept the audio input"
@@ -239,7 +241,7 @@ class LiveRecordingWriter {
     // finalize path the completion is invoked later by `finishWriting`.
     enum SyncResult {
       case notStarted
-      case nothingWritten(String)
+      case nothingWritten
       case finalizing
     }
 
@@ -258,9 +260,16 @@ class LiveRecordingWriter {
       audioInputs.values.forEach { $0.markAsFinished() }
 
       if !writerActive {
-        // Nothing was ever written; just clean up.
+        // Nothing was ever written: the lazy AVAssetWriter session never opened
+        // because no first video sample arrived (e.g. a muxed device that never
+        // delivered demuxed video frames — see DeviceCaptureManager's muxed
+        // note). Clean up and surface a clear error rather than returning a
+        // phantom success path that points at a missing/empty file (which the
+        // Dart side would then trip over when it stats the file). This path is
+        // FULLY synchronous — it always fires the completion below — so Stop can
+        // never wedge waiting on a finalize that has nothing to finish.
         isStarted = false
-        return .nothingWritten(outputURL.path)
+        return .nothingWritten
       }
 
       let outputPath = outputURL.path
@@ -282,8 +291,8 @@ class LiveRecordingWriter {
     switch syncResult {
     case .notStarted:
       completion(.failure(WriterError.notStarted))
-    case .nothingWritten(let path):
-      completion(.success(path))
+    case .nothingWritten:
+      completion(.failure(WriterError.noFramesWritten))
     case .finalizing:
       break
     }

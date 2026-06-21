@@ -1207,11 +1207,29 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         // Stop the USB-device capture source (if this was a device recording)
         // BEFORE finalizing the encoder/writer below, mirroring the screen-
         // capture teardown ordering so no frames arrive after finalize.
-        deviceManager?.onVideoFrame = nil
-        deviceManager?.onAudioSample = nil
-        deviceManager?.onDisconnect = nil
-        deviceManager?.stop()
-        deviceManager = nil
+        //
+        // ROBUSTNESS (#device-capture): A muxed iPhone screen device may deliver
+        // ZERO video frames (see DeviceCaptureManager's muxed-hypothesis note).
+        // In that case the writer's lazy AVAssetWriter session was never opened.
+        // We MUST still tear the device manager down and reach the writer.stop
+        // below, which already handles the never-started-session case gracefully
+        // (it returns `.nothingWritten` and calls back immediately instead of
+        // blocking on a finalize that has nothing to finish). Nil the callbacks
+        // FIRST, then stop() (which is itself re-entrancy-safe and re-nils the
+        // callbacks), so no frame can race in after this point.
+        if let dm = deviceManager {
+          let frames = dm.deliveredVideoFrameCount
+          if frames == 0 {
+            NSLog("[ScreenRecorderMacosPlugin] device capture produced ZERO video frames — writer session never opened; finalizing to whatever exists (#device-capture)")
+          } else {
+            NSLog("[ScreenRecorderMacosPlugin] device capture delivered %d video frames", frames)
+          }
+          dm.onVideoFrame = nil
+          dm.onAudioSample = nil
+          dm.onDisconnect = nil
+          dm.stop()
+          deviceManager = nil
+        }
 
         if let am = audioCaptureManager, am.isCaptureActive() {
           am.onSampleBufferReceived = nil
