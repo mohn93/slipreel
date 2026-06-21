@@ -340,7 +340,8 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   ConsumerState<PlaybackCanvas> createState() => _PlaybackCanvasState();
 }
 
-class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
+class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
+    with SingleTickerProviderStateMixin {
   /// Last non-null camera placement, kept so the bubble can animate OUT at the
   /// spot it left when the playhead crosses into a gap between regions.
   CameraPlacement? _lastCameraPlacement;
@@ -407,10 +408,34 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
       widget.zoomRegions.isNotEmpty &&
       _sceneBlurProgram != null;
 
+  // --- Badge zoom-LEVEL tween (preview-only) --------------------------------
+  // The rendered scale is gated by an animated "displayed" zoom level so that
+  // editing a region's level (inspector slider / reset button) GLIDES instead
+  // of snapping. This must NOT animate when playback crosses from one zoom
+  // region into an adjacent region with a DIFFERENT level — there the scale has
+  // to stay lock-step with the source-time pan ramp, so we SNAP on a
+  // region-identity change (handled in build via [_syncBadgeRegion]) and only
+  // run the controller on a same-region level edit (started in
+  // [didUpdateWidget]). Displayed level =
+  // lerp(_badgeBegin, _badgeEnd, badgeCurve(_badgeController.value)).
+  late final AnimationController _badgeController;
+  // startTime of the region the badge currently tracks; null when no zoom is
+  // active (forces a fresh snap on the next region the playhead enters).
+  Duration? _badgeRegionKey;
+  // Level the badge is settled/animating toward for [_badgeRegionKey].
+  double _badgeLevel = 1.0;
+  double _badgeBegin = 1.0;
+  double _badgeEnd = 1.0;
+
   @override
   void initState() {
     super.initState();
     _loadSceneBlurProgram();
+    _badgeController = AnimationController(
+      vsync: this,
+      duration: widget.screenAnimationConfig.badgeDuration,
+      value: 1.0,
+    );
     widget.zoomPreviewOverride?.addListener(_onPreviewChanged);
     // NOTE: cameraDragOverride is intentionally NOT wired to setState — the
     // camera overlay subscribes to it via a scoped ValueListenableBuilder so a
@@ -450,17 +475,72 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
         widget.cameraSettings?.enabled != true) {
       _lastCameraPlacement = null;
     }
+    // Same-region zoom-LEVEL edit → glide the rendered scale via the badge
+    // controller. (A region-IDENTITY change is handled by the snap in build;
+    // here we animate only when the level of the region the badge already
+    // tracks actually changed — e.g. dragging the inspector level slider or
+    // hitting reset.) didUpdateWidget is the safe place to drive the controller
+    // (outside build), matching how TweenAnimationBuilder restarts its own
+    // controller on a changed target.
+    final badgeKey = _badgeRegionKey;
+    if (badgeKey != null) {
+      ZoomRegion? tracked;
+      for (final z in widget.zoomRegions) {
+        if (z.startTime == badgeKey) {
+          tracked = z;
+          break;
+        }
+      }
+      if (tracked != null && tracked.zoomLevel != _badgeLevel) {
+        _badgeBegin = _displayedBadgeZoom;
+        _badgeEnd = tracked.zoomLevel;
+        _badgeLevel = tracked.zoomLevel;
+        _badgeController
+          ..duration = widget.screenAnimationConfig.badgeDuration
+          ..forward(from: 0.0);
+      }
+    }
   }
 
   @override
   void dispose() {
     widget.zoomPreviewOverride?.removeListener(_onPreviewChanged);
+    _badgeController.dispose();
     _disposeCapturedScene();
     super.dispose();
   }
 
   void _onPreviewChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// The zoom LEVEL currently displayed by the badge tween — the value fed as
+  /// `zoomLevel` into [ZoomTransformer.getTransform]. Interpolates the tween
+  /// endpoints by the eased controller value; equals [_badgeEnd] when settled
+  /// or snapped (begin == end).
+  double get _displayedBadgeZoom {
+    final t = widget.screenAnimationConfig.badgeCurve.transform(
+      _badgeController.value.clamp(0.0, 1.0),
+    );
+    return ui.lerpDouble(_badgeBegin, _badgeEnd, t) ?? _badgeEnd;
+  }
+
+  /// Snap the badge tween to [activeZoom] when the ACTIVE region identity
+  /// changes (playback crossing into a different region / selecting another
+  /// region). Setting begin == end makes the rendered level equal the region's
+  /// real [ZoomRegion.zoomLevel] regardless of the controller's value, so the
+  /// scale stays lock-step with the source-time pan ramp and any in-flight edit
+  /// tween is neutralized WITHOUT touching the controller (mutating it during
+  /// build is unsafe). A same-region level edit is animated separately in
+  /// [didUpdateWidget]. Plain-field write during build — mirrors the
+  /// `_lastCameraPlacement` bookkeeping in the same build closure.
+  void _syncBadgeRegion(ZoomRegion activeZoom) {
+    if (activeZoom.startTime != _badgeRegionKey) {
+      _badgeRegionKey = activeZoom.startTime;
+      _badgeLevel = activeZoom.zoomLevel;
+      _badgeBegin = activeZoom.zoomLevel;
+      _badgeEnd = activeZoom.zoomLevel;
+    }
   }
 
   Future<void> _loadSceneBlurProgram() async {
@@ -993,6 +1073,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             );
 
             if (focalUpdate == null) {
+              // No active zoom — drop the tracked region so re-entering any
+              // region snaps fresh (scale locked to its real level on the first
+              // enter-ramp frame).
+              _badgeRegionKey = null;
               return _buildSceneMotionBlurPass(
                 body: composition,
                 cursorOverlay: cursorOverlay,
@@ -1009,17 +1093,28 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
             final activeZoom = focalUpdate.zoom;
             final focalForFrame = effectiveFocal ?? focalUpdate.focal;
 
-            // Smoothly interpolate the rendered zoom level when the
-            // user changes it via the badge — otherwise stepping the
-            // level produces a visual snap.
-            return TweenAnimationBuilder<double>(
-              tween: Tween<double>(end: activeZoom.zoomLevel),
-              duration: widget.screenAnimationConfig.badgeDuration,
-              curve: widget.screenAnimationConfig.badgeCurve,
+            // Snap the badge tween's tracked region when the ACTIVE region
+            // changes (e.g. playback crossing from a 2x zoom into an adjacent
+            // 5x zoom): the rendered scale must use the new region's real level
+            // immediately to stay lock-step with the source-time pan ramp. The
+            // wall-clock badge tween is reserved for same-region level EDITS
+            // (started in didUpdateWidget).
+            _syncBadgeRegion(activeZoom);
+
+            // The rendered zoom LEVEL is gated by [_badgeController] so editing
+            // a region's level via the inspector glides instead of snapping.
+            // AnimatedBuilder (not TweenAnimationBuilder) so the controller is
+            // driven explicitly — it animates only on a same-region edit, and
+            // [_syncBadgeRegion] keeps it inert across region transitions.
+            // `child: composition` keeps the video-texture + scene-blur subtree
+            // at a stable slot (no remount → camera focal preserved).
+            return AnimatedBuilder(
+              animation: _badgeController,
               child: composition,
-              builder: (context, animatedZoom, transformChild) {
+              builder: (context, transformChild) {
+                final displayedZoom = _displayedBadgeZoom;
                 final tweenedRegion = activeZoom.copyWith(
-                  zoomLevel: animatedZoom,
+                  zoomLevel: displayedZoom,
                 );
                 final transform = _zoomTransformer.getTransform(
                   position: pos,
@@ -1057,7 +1152,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas> {
                       'play=${widget.controller.value.isPlaying} '
                       'zoom=${renderedZoom.toStringAsFixed(3)} '
                       'zoomEnd=${activeZoom.zoomLevel.toStringAsFixed(3)} '
-                      'animated=${animatedZoom.toStringAsFixed(3)} '
+                      'animated=${displayedZoom.toStringAsFixed(3)} '
                       '| ctrl=${fmt(focalUpdate.focal)} '
                       'effective=${fmt(focalForFrame)} '
                       'painted=${fmt(paintedFocal)} '
