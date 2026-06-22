@@ -40,12 +40,12 @@ class PlayheadPainter extends CustomPainter {
       final px = size.width * progress;
 
       // How far the hover is from the playhead in pixels. Within
-      // [_kHoverProximityPx] the ring slides down so its top never
+      // [kHoverProximityPx] the ring slides down so its top never
       // collides with the playhead knob.
       const ringRadius = _knobRadius - 0.5;
-      const _kHoverProximityPx = 24.0;
-      final dist = (hx - px).abs().clamp(0.0, _kHoverProximityPx);
-      final t = 1.0 - dist / _kHoverProximityPx; // 0 = far, 1 = same spot
+      const kHoverProximityPx = 24.0;
+      final dist = (hx - px).abs().clamp(0.0, kHoverProximityPx);
+      final t = 1.0 - dist / kHoverProximityPx; // 0 = far, 1 = same spot
       // Smooth-step so the ring eases in and out, not linear.
       final smooth = t * t * (3.0 - 2.0 * t);
       // Target y when fully overlapping: ring top == knob bottom.

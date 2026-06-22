@@ -88,6 +88,7 @@ class RecordingController extends StateNotifier<RecordingState> {
         super(const RecordingState());
 
   @visibleForTesting
+  @override
   set state(RecordingState value) => super.state = value;
 
   /// Whether a native capture session is currently live. Test hook for the
@@ -140,7 +141,9 @@ class RecordingController extends StateNotifier<RecordingState> {
   }) async {
     if (!state.canStartRecording ||
         state.selectedSourceId == null ||
-        state.selectedSourceKind == null) return;
+        state.selectedSourceKind == null) {
+      return;
+    }
 
     // Defense-in-depth: a prior recording whose stop failed could leave the
     // encoder active even though status==error is start-eligible. Never stack

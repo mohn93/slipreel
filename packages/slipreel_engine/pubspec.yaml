@@ -30,6 +30,9 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
   fake_async: ^1.3.0
+  # Imported directly by zoom_transformer_test; declare it instead of relying
+  # on transitive resolution (depend_on_referenced_packages).
+  vector_math: ^2.1.0
 
 flutter:
   shaders:

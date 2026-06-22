@@ -6,8 +6,6 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import 'recording_action_router.dart';
 import 'recording_state.dart';
 
-typedef _VoidCallback = void Function();
-
 /// Auto-pauses recording on macOS sleep and surfaces a callback for the
 /// on-wake modal. Tracks whether the current pause originated here so manual
 /// pauses don't trigger the wake modal.
@@ -26,7 +24,7 @@ class SleepObserver {
   final ScreenRecorderPlatform _platform;
   final RecordingActionRouter _router;
   final ProviderContainer _container;
-  final _VoidCallback? onWake;
+  final void Function()? onWake;
 
   StreamSubscription<Map<dynamic, dynamic>>? _sub;
   ProviderSubscription<RecordingState>? _stateSub;

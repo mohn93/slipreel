@@ -461,14 +461,14 @@ void main() {
 
     // A horizontal ramp the spring will lag behind. Samples every 16 ms
     // for 320 ms so there is room to observe steady-state lag.
-    CursorRecording _ramp() => _record([
+    CursorRecording ramp() => _record([
           for (int i = 0; i <= 20; i++)
             (micros: i * 16000, x: i * 50.0, y: 0, clicked: false),
         ]);
 
     test('playbackSpeed defaults to 1.0 → output identical to omitting it', () {
       const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
-      final rec = _ramp();
+      final rec = ramp();
       final timeline = [for (int i = 0; i <= 20; i++) i * 16000];
 
       final a = CursorMotionController();
@@ -495,7 +495,7 @@ void main() {
       // path — that extra source-lag is what plays back as preserved
       // wall-time softness.
       const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
-      final rec = _ramp();
+      final rec = ramp();
 
       final slow = CursorMotionController();
       CursorMotionUpdate? lastSlow;

@@ -35,8 +35,8 @@ class _FakePlatform extends ScreenRecorderPlatform
     required String outputPath,
   }) async {
     this.deviceId = deviceId;
-    this.deviceAudio = captureDeviceAudio;
-    this.mic = captureMic;
+    deviceAudio = captureDeviceAudio;
+    mic = captureMic;
     this.outputPath = outputPath;
   }
 

@@ -8,7 +8,6 @@ import 'package:logger/logger.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_macos/screen_recorder_macos.dart';
-import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/rendering/cursor_image_cache.dart';
 import 'package:slipreel_engine/rendering/cursor_overlay_painter.dart';
