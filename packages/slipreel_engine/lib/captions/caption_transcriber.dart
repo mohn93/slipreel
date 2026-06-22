@@ -53,6 +53,13 @@ class CaptionTranscriber {
   }) async {
     final base = outBase ??
         p.join(p.dirname(audioPath), 'caption_transcript');
+    final String bin;
+    try {
+      bin = Whisper.resolve();
+    } on WhisperNotFoundException {
+      throw Exception(
+          'whisper-cli not found. Install it with: brew install whisper-cpp');
+    }
     final args = <String>[
       '-m', modelPath,
       '-f', audioPath,
@@ -61,7 +68,7 @@ class CaptionTranscriber {
       '-of', base,
       '--no-prints',
     ];
-    final result = await Process.run(Whisper.resolve(), args);
+    final result = await Process.run(bin, args);
     if (result.exitCode != 0) {
       throw Exception('whisper-cli exited ${result.exitCode}: '
           '${(result.stderr as String?)?.trim() ?? ''}');

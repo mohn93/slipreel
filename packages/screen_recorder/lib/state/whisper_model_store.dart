@@ -10,12 +10,12 @@ const String kWhisperModelFileName = 'ggml-small.bin';
 const String kWhisperModelUrl =
     'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin';
 
-/// SHA-256 of the model above. Obtain it once with:
-///   `shasum -a 256 ggml-small.bin`
-/// (or read it from the HuggingFace file's "Copy download link" → LFS pointer)
-/// and paste the 64-hex-char digest here before shipping.
+/// SHA-256 of the model above (ggml-small.bin, 487 601 967 bytes).
+/// Source: HuggingFace LFS pointer for
+///   ggerganov/whisper.cpp @ ggml-small.bin (sha256 field).
+/// Verified: `shasum -a 256 ggml-small.bin`
 const String kWhisperModelSha256 =
-    '973bf6f8e3f3a2f7e1f3...REPLACE_WITH_REAL_DIGEST';
+    '1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b';
 
 /// Downloads [url] to [dest], reporting 0..1 progress. Pulled out as a seam so
 /// tests inject a fake and never hit the network.
