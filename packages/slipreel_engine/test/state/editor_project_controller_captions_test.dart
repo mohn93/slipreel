@@ -23,6 +23,13 @@ void main() {
     expect(c.state.captions[0].text, 'a');
   });
 
+  test('updateCaptionTimingAt partial update preserves the other bound', () {
+    c.replaceCaptionSegments(const [a]);
+    c.updateCaptionTimingAt(0, startMicros: 100);
+    expect(c.state.captions.single.startMicros, 100);
+    expect(c.state.captions.single.endMicros, 1000); // unchanged
+  });
+
   test('removeCaptionAt drops the segment', () {
     c.replaceCaptionSegments(const [a, b]);
     c.removeCaptionAt(0);
@@ -51,5 +58,10 @@ void main() {
   test('setCaptionStyle updates style', () {
     c.setCaptionStyle(const CaptionStyle(enabled: true));
     expect(c.state.captionStyle.enabled, isTrue);
+  });
+
+  test('setCaptionSource updates source', () {
+    c.setCaptionSource(CaptionAudioSource.mic);
+    expect(c.state.captionSource, CaptionAudioSource.mic);
   });
 }
