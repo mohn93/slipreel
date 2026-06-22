@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -555,7 +557,121 @@ void main() {
             'the phantom that flickers as the zoom settles',
       );
     });
+
+    test('_loadWallpaperPhoto disposes the codec after decoding the '
+        'frame', () async {
+      // Guards the codec leak fix: the success path must dispose the
+      // codec once a frame is decoded. A regression (dropping the
+      // dispose) leaves spy.disposed false.
+      final compositor = _wallpaperCompositor();
+      final image = await _make1x1Image();
+      final spy = _SpyCodec(image);
+      compositor.wallpaperCodecFactoryOverride =
+          (assetPath, targetWidth) async => spy;
+
+      final photo = await compositor.debugLoadWallpaperPhoto('macOS', 0);
+
+      expect(photo, isNotNull, reason: 'macOS is a photo category');
+      expect(spy.getNextFrameCalls, 1);
+      expect(
+        spy.disposed,
+        isTrue,
+        reason: 'codec must be disposed after a successful decode',
+      );
+      // `photo` is the same instance the spy frame returned; dispose once.
+      photo?.dispose();
+    });
+
+    test('_loadWallpaperPhoto disposes the codec even when decoding '
+        'throws', () async {
+      // The whole point of the try/finally: a throw from getNextFrame
+      // must still dispose the codec instead of leaking it.
+      final compositor = _wallpaperCompositor();
+      final spy = _SpyCodec.throwing();
+      compositor.wallpaperCodecFactoryOverride =
+          (assetPath, targetWidth) async => spy;
+
+      await expectLater(
+        compositor.debugLoadWallpaperPhoto('macOS', 0),
+        throwsA(isA<StateError>()),
+      );
+      expect(
+        spy.disposed,
+        isTrue,
+        reason: 'codec must be disposed via finally even when decode throws',
+      );
+    });
   });
+}
+
+/// Compositor with a "None" frame, used to exercise [debugLoadWallpaperPhoto]
+/// directly (the passed category drives the load, not the frame's wallpaper).
+FrameCompositor _wallpaperCompositor() => FrameCompositor(
+  projectState: EditorProjectState.defaults().copyWith(
+    windowFrame: const WindowFrame(
+      name: 'None',
+      padding: EdgeInsets.zero,
+      cornerRadius: 0,
+      shadowBlur: 0,
+      shadowOffset: Offset.zero,
+      shadowColor: Color(0x00000000),
+      borderWidth: 0,
+    ),
+  ),
+  cursorRecording: CursorRecording(),
+  metadata: _meta(),
+  videoSize: const Size(8, 4),
+  fps: 30,
+);
+
+Future<ui.Image> _make1x1Image() {
+  final completer = Completer<ui.Image>();
+  ui.decodeImageFromPixels(
+    Uint8List.fromList(const [0, 0, 0, 0xFF]),
+    1,
+    1,
+    ui.PixelFormat.rgba8888,
+    completer.complete,
+  );
+  return completer.future;
+}
+
+/// Fake [ui.Codec] that records dispose/decode calls so the wallpaper
+/// loader's resource-cleanup contract can be asserted.
+class _SpyCodec implements ui.Codec {
+  _SpyCodec(ui.Image image) : _image = image, _throwOnDecode = false;
+  _SpyCodec.throwing() : _image = null, _throwOnDecode = true;
+
+  final ui.Image? _image;
+  final bool _throwOnDecode;
+  bool disposed = false;
+  int getNextFrameCalls = 0;
+
+  @override
+  int get frameCount => 1;
+
+  @override
+  int get repetitionCount => 0;
+
+  @override
+  Future<ui.FrameInfo> getNextFrame() async {
+    getNextFrameCalls++;
+    if (_throwOnDecode) throw StateError('decode failed');
+    return _SpyFrameInfo(_image!);
+  }
+
+  @override
+  void dispose() => disposed = true;
+}
+
+class _SpyFrameInfo implements ui.FrameInfo {
+  _SpyFrameInfo(this.image);
+
+  @override
+  final ui.Image image;
+
+  @override
+  Duration get duration => Duration.zero;
 }
 
 RecordingMetadata _meta() => RecordingMetadata(

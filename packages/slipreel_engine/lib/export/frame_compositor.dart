@@ -127,6 +127,14 @@ class FrameCompositor {
   @visibleForTesting
   Future<ui.Image> Function(String asset)? bezelImageLoaderOverride;
 
+  /// Override how the wallpaper photo's image codec is created, for
+  /// testing the dispose-after-decode contract in [_loadWallpaperPhoto].
+  /// When null, the real [rootBundle] asset is decoded via
+  /// [ui.instantiateImageCodec]. The caller owns disposing the codec.
+  @visibleForTesting
+  Future<ui.Codec> Function(String assetPath, int targetWidth)?
+      wallpaperCodecFactoryOverride;
+
   /// Cached bezel image for this export. Loaded once and reused across all
   /// frames (like [_cachedWallpaperImage]). Disposed in [dispose].
   ui.Image? _cachedBezelImage;
@@ -527,14 +535,35 @@ class FrameCompositor {
   Future<ui.Image?> _loadWallpaperPhoto(String category, int index) async {
     final assetPath = photoWallpaperAsset(category, index);
     if (assetPath == null) return null;
-    final data = await rootBundle.load(assetPath);
-    final codec = await ui.instantiateImageCodec(
-      data.buffer.asUint8List(),
-      targetWidth: totalSize.width.toInt(),
-    );
-    final frame = await codec.getNextFrame();
-    return frame.image;
+    final codec = await _instantiateWallpaperCodec(assetPath);
+    try {
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } finally {
+      codec.dispose();
+    }
   }
+
+  /// Creates the image codec for the wallpaper [assetPath], honoring
+  /// [wallpaperCodecFactoryOverride] when set (tests). The caller owns
+  /// disposing the returned codec.
+  Future<ui.Codec> _instantiateWallpaperCodec(String assetPath) async {
+    final targetWidth = totalSize.width.toInt();
+    final override = wallpaperCodecFactoryOverride;
+    if (override != null) return override(assetPath, targetWidth);
+    final data = await rootBundle.load(assetPath);
+    return ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: targetWidth,
+    );
+  }
+
+  /// Test-only entry point to [_loadWallpaperPhoto] so the codec
+  /// dispose-after-decode contract can be verified without driving a full
+  /// [compose]. Pair with [wallpaperCodecFactoryOverride].
+  @visibleForTesting
+  Future<ui.Image?> debugLoadWallpaperPhoto(String category, int index) =>
+      _loadWallpaperPhoto(category, index);
 
   // --- device-frame helpers -----------------------------------------------
 
