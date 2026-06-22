@@ -23,6 +23,8 @@ final captionGenerationControllerProvider = StateNotifierProvider.autoDispose<
     editor: editor,
     ensureModel: (onP) => store.ensureModel(onProgress: onP),
     extractAudio: (video, source) => extractor.extract(video, source),
+    // `onP` is intentionally dropped: CaptionTranscriber doesn't expose
+    // transcription progress yet.
     transcribe: (audio, model, onP) =>
         transcriber.transcribe(audioPath: audio, modelPath: model),
   );
@@ -69,9 +71,12 @@ class _CaptionsTabState extends ConsumerState<CaptionsTab> {
                 body: 'This recording has no audio track to transcribe.',
               );
             }
-            final selected = _selected ??=
-                ref.read(editorProjectControllerProvider).captionSource ??
-                    sources.last;
+            final preferred = _selected ??
+                ref.read(editorProjectControllerProvider).captionSource;
+            final selected =
+                (preferred != null && sources.contains(preferred))
+                    ? preferred
+                    : sources.last;
             final busy = status is! CaptionIdle &&
                 status is! CaptionDone &&
                 status is! CaptionError;
