@@ -407,11 +407,18 @@ class FrameCompositor {
 
           try {
             final wallpaperImage = await _ensureWallpaperImage();
-            // No wallpaper, no chrome, AND no camera: the content IS the
-            // final image. Skip the composite step.
+            // No wallpaper, no chrome, no camera, AND no active caption:
+            // the content IS the final image. Skip the composite step.
+            final captionsActive = projectState.captionStyle.enabled &&
+                activeCaptionAt(
+                  projectState.captions,
+                  position.inMicroseconds,
+                ) !=
+                    null;
             if (wallpaperImage == null &&
                 chromeImage == null &&
-                cameraImage == null) {
+                cameraImage == null &&
+                !captionsActive) {
               final byteData = await fgToComposite.toByteData(
                 format: ui.ImageByteFormat.rawRgba,
               );

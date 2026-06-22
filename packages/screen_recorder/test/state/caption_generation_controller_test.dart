@@ -35,6 +35,7 @@ void main() {
     expect((c.state as CaptionDone).count, 1);
     expect(editor.state.captions.single.text, 'hi');
     expect(editor.state.captionSource, CaptionAudioSource.mic);
+    expect(editor.state.captionStyle.enabled, isTrue);
   });
 
   test('extractor returning null → CaptionError', () async {
