@@ -144,7 +144,6 @@ class CaptionTrack {
 /// fields will append to this class:
 ///
 ///   - `clips: List<Clip>` for trim+stitch multi-clip support
-///   - `captionTracks: List<CaptionTrack>` for burned-in subtitles
 ///   - `audioTracks: List<AudioTrack>` for narration + background music
 ///
 /// We deliberately don't introduce empty placeholder lists for those
