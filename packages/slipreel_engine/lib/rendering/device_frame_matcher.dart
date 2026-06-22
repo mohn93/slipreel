@@ -11,7 +11,8 @@ bool recordingIsPortrait(Size recording) => recording.height >= recording.width;
 enum RecordingFormFactor { phone, tablet }
 
 /// Landscape-aspect boundary separating tablet-like (≤) from phone-like (>)
-/// recordings. Every Apple iPad is ≤ 1.52; every iPhone is ≥ 1.78.
+/// recordings. Every Apple iPad is ≤ 1.52 (the mini; most are ≤ 1.45);
+/// every iPhone is ≥ 1.78. 1.6 leaves margin on both sides.
 const double kPhoneTabletAspectSplit = 1.6;
 
 /// Classifies [recording] as a phone or tablet by its landscape-normalised
