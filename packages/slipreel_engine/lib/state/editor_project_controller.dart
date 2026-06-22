@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:slipreel_engine/models/caption_segment.dart';
+import 'package:slipreel_engine/models/caption_style.dart';
 import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
@@ -231,6 +233,74 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     if (index < 0 || index >= regions.length) return;
     final next = List<CameraRegion>.from(regions)..removeAt(index);
     state = state.copyWith(timeline: _timelineWithActiveCameraRegions(next));
+  }
+
+  // ---- Captions ---------------------------------------------------------
+
+  void setCaptionStyle(CaptionStyle value) =>
+      state = state.copyWith(captionStyle: value);
+
+  void setCaptionSource(CaptionAudioSource source) =>
+      state = state.copyWith(captionSource: source);
+
+  void replaceCaptionSegments(List<CaptionSegment> segments) =>
+      state = state.copyWith(captionSegments: List.unmodifiable(segments));
+
+  void updateCaptionTextAt(int index, String text) {
+    final list = state.captions;
+    if (index < 0 || index >= list.length) return;
+    final next = List<CaptionSegment>.from(list);
+    next[index] = next[index].copyWith(text: text);
+    state = state.copyWith(captionSegments: next);
+  }
+
+  void updateCaptionTimingAt(int index, {int? startMicros, int? endMicros}) {
+    final list = state.captions;
+    if (index < 0 || index >= list.length) return;
+    final next = List<CaptionSegment>.from(list);
+    next[index] = next[index]
+        .copyWith(startMicros: startMicros, endMicros: endMicros);
+    state = state.copyWith(captionSegments: next);
+  }
+
+  void removeCaptionAt(int index) {
+    final list = state.captions;
+    if (index < 0 || index >= list.length) return;
+    final next = List<CaptionSegment>.from(list)..removeAt(index);
+    state = state.copyWith(captionSegments: next);
+  }
+
+  void splitCaptionAt(int index, int atMicros) {
+    final list = state.captions;
+    if (index < 0 || index >= list.length) return;
+    final seg = list[index];
+    if (atMicros <= seg.startMicros || atMicros >= seg.endMicros) return;
+    final next = List<CaptionSegment>.from(list);
+    next[index] = seg.copyWith(endMicros: atMicros);
+    next.insert(
+      index + 1,
+      CaptionSegment(
+        id: '${seg.id}.b${seg.endMicros}',
+        startMicros: atMicros,
+        endMicros: seg.endMicros,
+        text: '',
+      ),
+    );
+    state = state.copyWith(captionSegments: next);
+  }
+
+  void mergeCaptionWithNext(int index) {
+    final list = state.captions;
+    if (index < 0 || index + 1 >= list.length) return;
+    final a = list[index];
+    final b = list[index + 1];
+    final mergedText = [a.text, b.text]
+        .where((t) => t.isNotEmpty)
+        .join(' ');
+    final next = List<CaptionSegment>.from(list);
+    next[index] = a.copyWith(endMicros: b.endMicros, text: mergedText);
+    next.removeAt(index + 1);
+    state = state.copyWith(captionSegments: next);
   }
 
   // ---- slice mutators ---------------------------------------------------
