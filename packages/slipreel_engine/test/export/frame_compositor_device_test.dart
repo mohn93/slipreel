@@ -94,4 +94,30 @@ void main() {
     // Bezel ring (5px in from edge) -> red.
     expect(at(5, 120), 0xFF0000);
   });
+
+  test('device-frame plan is null when entry kind is incompatible '
+      'with the recording form factor', () {
+    // test-phone is a phone entry; a 200x150 (1.33 landscape) recording is
+    // tablet-shaped, so the persisted phone frame must not render.
+    final state = EditorProjectState.defaults().copyWith(
+      windowFrame: WindowFrame.none()
+          .copyWith(deviceFrameId: 'test-phone', deviceFrameColor: 'black'),
+    );
+    final comp = FrameCompositor(
+      projectState: state,
+      cursorRecording: CursorRecording(),
+      metadata: RecordingMetadata(
+        isPureSource: true,
+        recordedAt: DateTime.fromMillisecondsSinceEpoch(0),
+        widthPx: 200,
+        heightPx: 150,
+        fps: 60,
+        isDeviceCapture: true,
+      ),
+      videoSize: const Size(200, 150),
+      fps: 60,
+      deviceFrameCatalog: _catalog(),
+    );
+    expect(comp.deviceFramePlan, isNull);
+  });
 }

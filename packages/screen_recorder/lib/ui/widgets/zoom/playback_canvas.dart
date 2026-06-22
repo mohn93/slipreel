@@ -709,17 +709,19 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     final dfCatalog = widget.deviceFrameCatalog;
     if (dfId != null && dfCatalog != null) {
       final entry = dfCatalog.entryById(dfId);
-      final color = entry?.colorById(currentFrame.deviceFrameColor ?? '')
-          ?? (entry != null && entry.colors.isNotEmpty ? entry.colors.first : null);
-      if (color != null) {
-        deviceAsset = recordingIsPortrait(videoSize) ? color.portrait : color.landscape;
-        deviceLayout = resolveDeviceFrameLayout(
-          asset: deviceAsset,
-          recordingSize: videoSize,
-          padding: currentFrame.padding,
-          aspect: widget.outputAspect,
-          adjustSize: currentFrame.deviceFrameAdjustSize,
-        );
+      if (entry != null && deviceFrameCompatible(entry, videoSize)) {
+        final color = entry.colorById(currentFrame.deviceFrameColor ?? '')
+            ?? (entry.colors.isNotEmpty ? entry.colors.first : null);
+        if (color != null) {
+          deviceAsset = recordingIsPortrait(videoSize) ? color.portrait : color.landscape;
+          deviceLayout = resolveDeviceFrameLayout(
+            asset: deviceAsset,
+            recordingSize: videoSize,
+            padding: currentFrame.padding,
+            aspect: widget.outputAspect,
+            adjustSize: currentFrame.deviceFrameAdjustSize,
+          );
+        }
       }
     }
     final Size effTotalSize = deviceLayout?.canvasSize ?? totalSize;
