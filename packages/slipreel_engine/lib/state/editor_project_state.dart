@@ -1,5 +1,7 @@
 import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/camera_settings.dart';
+import 'package:slipreel_engine/models/caption_segment.dart';
+import 'package:slipreel_engine/models/caption_style.dart';
 import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
@@ -43,6 +45,7 @@ class EditorProjectState {
     this.pendingScaleAnchor,
     this.keystrokeOverlay = const KeystrokeOverlaySettings(),
     this.cameraSettings = const CameraSettings(),
+    this.captionStyle = const CaptionStyle(),
   });
 
   /// Sensible blank slate for a freshly-loaded recording with no saved
@@ -155,9 +158,20 @@ class EditorProjectState {
   /// [zoomRegions].
   List<CameraRegion> get cameraRegions => timeline.activeCameraRegions;
 
+  /// Per-project caption look (font/size/position/colors/background). The
+  /// caption SEGMENTS live on `timeline.captionTracks`; this is the style only,
+  /// mirroring the keystrokeOverlay/cameraSettings split.
+  final CaptionStyle captionStyle;
+
+  /// Segments on the active caption track, or empty. Mirrors [zoomRegions].
+  List<CaptionSegment> get captions => timeline.activeCaptions;
+
+  /// The audio source the active caption track was generated from, or null.
+  CaptionAudioSource? get captionSource => timeline.activeCaptionTrack?.source;
+
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 9;
+  static const int currentSchemaVersion = 10;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -188,6 +202,9 @@ class EditorProjectState {
     KeystrokeOverlaySettings? keystrokeOverlay,
     List<CameraRegion>? cameraRegions,
     CameraSettings? cameraSettings,
+    CaptionStyle? captionStyle,
+    List<CaptionSegment>? captionSegments,
+    CaptionAudioSource? captionSource,
   }) {
     // `zoomRegions:` and `cameraRegions:` are convenience overrides that
     // write through to the active (first) track on the timeline.
@@ -196,7 +213,10 @@ class EditorProjectState {
     final Timeline nextTimeline;
     if (timeline != null) {
       nextTimeline = timeline;
-    } else if (zoomRegions != null || cameraRegions != null) {
+    } else if (zoomRegions != null ||
+        cameraRegions != null ||
+        captionSegments != null ||
+        captionSource != null) {
       var t = this.timeline;
       if (zoomRegions != null) {
         final tracks = t.zoomTracks;
@@ -216,6 +236,24 @@ class EditorProjectState {
           final updated = List<CameraTrack>.from(tracks)
             ..[0] = tracks[0].copyWith(regions: cameraRegions);
           t = t.copyWith(cameraTracks: updated);
+        }
+      }
+      if (captionSegments != null || captionSource != null) {
+        final tracks = t.captionTracks;
+        if (tracks.isEmpty) {
+          t = t.copyWith(captionTracks: [
+            CaptionTrack(
+              segments: captionSegments ?? const <CaptionSegment>[],
+              source: captionSource ?? CaptionAudioSource.mixed,
+            ),
+          ]);
+        } else {
+          final updated = List<CaptionTrack>.from(tracks)
+            ..[0] = tracks[0].copyWith(
+              segments: captionSegments,
+              source: captionSource,
+            );
+          t = t.copyWith(captionTracks: updated);
         }
       }
       nextTimeline = t;
@@ -249,6 +287,7 @@ class EditorProjectState {
           : (pendingScaleAnchor ?? this.pendingScaleAnchor),
       keystrokeOverlay: keystrokeOverlay ?? this.keystrokeOverlay,
       cameraSettings: cameraSettings ?? this.cameraSettings,
+      captionStyle: captionStyle ?? this.captionStyle,
     );
   }
 
@@ -274,6 +313,7 @@ class EditorProjectState {
     'timelineScale': timelineScale,
     'keystrokeOverlay': keystrokeOverlay.toJson(),
     'cameraSettings': cameraSettings.toJson(),
+    'captionStyle': captionStyle.toJson(),
     // pendingScaleAnchor is transient; not serialized.
   };
 
@@ -377,6 +417,9 @@ class EditorProjectState {
           ? CameraSettings.fromJson(
               json['cameraSettings'] as Map<String, dynamic>)
           : const CameraSettings(),
+      captionStyle: json['captionStyle'] is Map<String, dynamic>
+          ? CaptionStyle.fromJson(json['captionStyle'] as Map<String, dynamic>)
+          : const CaptionStyle(),
       // pendingScaleAnchor is transient; always null after load.
     );
   }
@@ -428,7 +471,8 @@ class EditorProjectState {
         other.outputAspect == outputAspect &&
         other.timelineScale == timelineScale &&
         other.keystrokeOverlay == keystrokeOverlay &&
-        other.cameraSettings == cameraSettings;
+        other.cameraSettings == cameraSettings &&
+        other.captionStyle == captionStyle;
     // pendingScaleAnchor intentionally excluded.
   }
 
@@ -454,6 +498,7 @@ class EditorProjectState {
         timelineScale,
         keystrokeOverlay,
         cameraSettings,
+        captionStyle,
         // pendingScaleAnchor intentionally excluded.
       ]);
 }
@@ -586,6 +631,11 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
   // defaults and Timeline.fromJson fills an empty camera-track list when
   // the keys are absent, so the migration only bumps the version marker.
   (json, _) => {...json, 'schemaVersion': 9},
+  // v9 → v10: add the caption layer — top-level `captionStyle` and
+  // `timeline.captionTracks`. Additive: fromJson fills a default CaptionStyle
+  // and Timeline.fromJson fills an empty caption-track list when the keys are
+  // absent, so the migration only bumps the version marker.
+  (json, _) => {...json, 'schemaVersion': 10},
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its

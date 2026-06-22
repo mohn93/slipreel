@@ -3,7 +3,7 @@ import 'package:slipreel_engine/state/editor_project_state.dart';
 
 void main() {
   group('v7 -> v8 migration', () {
-    test('bumps schemaVersion to 9 (v8→v9 additive step runs immediately after)', () {
+    test('bumps schemaVersion to 10 (v8→v9 and v9→v10 additive steps run immediately after)', () {
       final v7 = {
         'schemaVersion': 7,
         'timeline': {
@@ -27,7 +27,7 @@ void main() {
       };
       final out = migrateEditorProjectJson(v7,
           videoDuration: const Duration(seconds: 12));
-      expect(out['schemaVersion'], 9);
+      expect(out['schemaVersion'], 10);
     });
 
     test('renames startMicros -> cutStartMicros and duplicates to trimStartMicros', () {
@@ -91,7 +91,7 @@ void main() {
       };
       final out = migrateEditorProjectJson(v7,
           videoDuration: const Duration(seconds: 12));
-      expect(out['schemaVersion'], 9);
+      expect(out['schemaVersion'], 10);
       final timeline = out['timeline'] as Map;
       // 'clips' may be missing or empty — both acceptable post-migration.
       final clips = timeline['clips'];

@@ -22,9 +22,9 @@ void main() {
       expect(s.cameraRegions, isEmpty);
     });
 
-    test('schemaVersion is 9', () {
-      expect(EditorProjectState.currentSchemaVersion, 9);
-      expect(EditorProjectState.defaults().toJson()['schemaVersion'], 9);
+    test('schemaVersion is 10', () {
+      expect(EditorProjectState.currentSchemaVersion, 10);
+      expect(EditorProjectState.defaults().toJson()['schemaVersion'], 10);
     });
 
     test('json round-trips cameraSettings + cameraRegions', () {
