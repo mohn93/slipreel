@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
-import 'package:slipreel_engine/timeline/edited_time.dart';
 
 import 'package:screen_recorder/ui/screens/playback_screen.dart';
 

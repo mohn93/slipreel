@@ -42,7 +42,6 @@ class AppAlertsController {
   final Map<Key, DateTime> _runningSince = <Key, DateTime>{};
 
   // ----- overlay mounting (used by AlertStackOverlay) ------------------
-  OverlayState? _overlay;
   OverlayEntry? _entry;
 
   /// Mounts (or re-mounts) the controller's OverlayEntry inside
@@ -60,7 +59,6 @@ class AppAlertsController {
     _disposeAllTimers();
     stack.value = const [];
 
-    _overlay = overlay;
     _entry = OverlayEntry(builder: builder);
     overlay.insert(_entry!);
   }

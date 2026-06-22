@@ -40,6 +40,26 @@ scripts:
         # video_player_avfoundation: vendored upstream plugin; don't run its suite.
         - "video_player_avfoundation"
 
+  # Platform-agnostic test subset for the non-macOS (Linux) CI job. The macOS
+  # job runs the full `test` script and gives complete coverage; Linux only
+  # needs to guard the packages that are *designed* to be portable:
+  #   - slipreel_engine: headless render/editor engine ("zero Flutter
+  #     widget-tree imports", drives CLI/cloud exports) — its portability is a
+  #     real invariant worth a non-macOS check.
+  #   - screen_recorder_platform_interface: pure-Dart plugin interface.
+  # The app shell (screen_recorder) is macOS-specific, and the native plugin
+  # packages (screen_recorder_macos/linux/windows) hit method channels with no
+  # mock — they can't be unit-tested without a real native runner, so they're
+  # intentionally out of scope here (this is why the Linux job used to fail:
+  # screen_recorder_linux's Linux branch calls an unregistered method channel).
+  test_portable:
+    exec: flutter test
+    description: Run tests in platform-agnostic packages (non-macOS CI)
+    packageFilters:
+      scope:
+        - slipreel_engine
+        - screen_recorder_platform_interface
+
   clean:
     exec: flutter clean
     description: Clean all packages

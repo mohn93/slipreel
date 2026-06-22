@@ -38,4 +38,8 @@ jobs:
           sudo apt-get install -y libpipewire-0.3-dev libx11-dev ffmpeg
       - run: dart pub global activate melos ^6.0.0
       - run: melos bootstrap
-      - run: melos run test --no-select
+      # Linux only runs the platform-agnostic packages (engine + platform
+      # interface). The app shell is macOS-specific and the native plugin
+      # packages can't be unit-tested without a real native runner — the full
+      # suite runs on the macOS job. See the `test_portable` script in melos.yaml.
+      - run: melos run test_portable --no-select
