@@ -71,6 +71,9 @@ dependencies:
   # Path manipulation — replaces inline _basename/_fileExtension helpers
   path: ^1.9.0
 
+  # SHA-256 verification for downloaded whisper model binary.
+  crypto: ^3.0.3
+
   # Injectable wall-clock so AppAlertsController's auto-dismiss timers stay
   # testable; imported directly in lib (depend_on_referenced_packages).
   clock: ^1.1.1
