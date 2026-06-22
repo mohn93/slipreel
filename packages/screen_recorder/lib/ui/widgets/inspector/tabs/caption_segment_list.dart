@@ -11,7 +11,7 @@ String _fmt(int micros) {
   return '$m:$s.$ms';
 }
 
-/// Scrollable, editable list of caption segments. Edits flow straight to the
+/// Editable list of caption segments. Edits flow straight to the
 /// editor controller. [onSeek] (when provided) jumps the preview to a segment.
 class CaptionSegmentList extends ConsumerWidget {
   const CaptionSegmentList({super.key, this.onSeek});
@@ -70,10 +70,11 @@ class _SegmentRowState extends State<_SegmentRow> {
   @override
   void didUpdateWidget(_SegmentRow old) {
     super.didUpdateWidget(old);
-    // Keep the field in sync when the segment changes identity (split/merge),
-    // but don't clobber the caret while the user is typing the same row.
-    if (old.segment.id != widget.segment.id &&
-        _text.text != widget.segment.text) {
+    // Keep the field in sync when the segment changes identity (split/merge).
+    // The ValueKey(segment.id) on the row means a typing rebuild never reaches
+    // here with the same id, so the id check alone is safe and won't clobber
+    // the caret while the user is typing.
+    if (old.segment.id != widget.segment.id) {
       _text.text = widget.segment.text;
     }
   }
