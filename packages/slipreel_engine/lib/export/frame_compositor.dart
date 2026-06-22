@@ -19,6 +19,7 @@ import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/camera_frame_painter.dart';
+import 'package:slipreel_engine/rendering/caption_renderer.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
 import 'package:slipreel_engine/rendering/device_frame_layout.dart';
@@ -437,6 +438,13 @@ class FrameCompositor {
             }
             composeCanvas.drawImage(fgToComposite, Offset.zero, Paint());
             paintCamera(composeCanvas);
+            CaptionRenderer.paint(
+              composeCanvas,
+              totalSize,
+              position,
+              projectState.captions,
+              projectState.captionStyle,
+            );
             final composePicture = composeRecorder.endRecording();
             try {
               final finalImage = await composePicture.toImage(
@@ -694,6 +702,13 @@ class FrameCompositor {
               }
             }
           }
+          CaptionRenderer.paint(
+            composeCanvas,
+            totalSize,
+            position,
+            projectState.captions,
+            projectState.captionStyle,
+          );
           final composePicture = composeRecorder.endRecording();
           try {
             final finalImage = await composePicture.toImage(
