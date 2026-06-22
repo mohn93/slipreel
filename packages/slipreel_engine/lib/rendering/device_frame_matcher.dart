@@ -6,6 +6,37 @@ import 'package:slipreel_engine/models/window_frame.dart';
 
 bool recordingIsPortrait(Size recording) => recording.height >= recording.width;
 
+/// Device form factor inferred from a recording's pixel size, by aspect
+/// ratio normalised to landscape (orientation-independent).
+enum RecordingFormFactor { phone, tablet }
+
+/// Landscape-aspect boundary separating tablet-like (≤) from phone-like (>)
+/// recordings. Every Apple iPad is ≤ 1.52; every iPhone is ≥ 1.78.
+const double kPhoneTabletAspectSplit = 1.6;
+
+/// Classifies [recording] as a phone or tablet by its landscape-normalised
+/// aspect ratio. Returns null for a degenerate (zero/negative) size so
+/// callers can choose not to filter before the size is known.
+RecordingFormFactor? recordingFormFactor(Size recording) {
+  final w = recording.width;
+  final h = recording.height;
+  if (w <= 0 || h <= 0) return null;
+  final landscapeAspect = w >= h ? w / h : h / w;
+  return landscapeAspect <= kPhoneTabletAspectSplit
+      ? RecordingFormFactor.tablet
+      : RecordingFormFactor.phone;
+}
+
+/// Whether [entry]'s kind matches the recording's inferred form factor.
+/// A degenerate [recording] size is treated as compatible (do not
+/// over-filter before the size is known).
+bool deviceFrameCompatible(DeviceFrameEntry entry, Size recording) {
+  final ff = recordingFormFactor(recording);
+  if (ff == null) return true;
+  final wantTablet = ff == RecordingFormFactor.tablet;
+  return (entry.kind == 'tablet') == wantTablet;
+}
+
 /// Exact, orientation-aware match between a device's native screen
 /// resolution and the recording's pixel size.
 bool deviceMatchesRecording(DeviceFrameEntry entry, Size recording) {
@@ -20,18 +51,15 @@ bool deviceMatchesRecording(DeviceFrameEntry entry, Size recording) {
 List<DeviceFrameEntry> perfectMatches(DeviceFrameCatalog c, Size recording) =>
     [for (final e in c.entries) if (deviceMatchesRecording(e, recording)) e];
 
-/// Returns ALL catalog entries, regardless of kind or orientation.
+/// Returns catalog entries whose form factor is compatible with the
+/// recording (see [deviceFrameCompatible]): phones for a phone-shaped
+/// recording, tablets for a tablet-shaped one. A degenerate [recording]
+/// size yields every entry (no filtering).
 ///
-/// This is the v1 "Flexible" picker behavior: show every device and let
-/// the renderer scale the bezel to fit the recording. No filtering is
-/// applied intentionally — the [recording] parameter is accepted for API
-/// symmetry with [perfectMatches] and may be used in a future revision.
-///
-/// TODO(device-frames): once the Flexible picker design is finalised,
-/// consider filtering by kind (phone/tablet) and orientation to reduce
-/// the list length; add a regression test if you do.
+/// This is the "Flexible" picker behavior: any same-kind device, scaled
+/// by the renderer to fit — as opposed to [perfectMatches]' exact match.
 List<DeviceFrameEntry> flexibleMatches(DeviceFrameCatalog c, Size recording) =>
-    List<DeviceFrameEntry>.from(c.entries);
+    [for (final e in c.entries) if (deviceFrameCompatible(e, recording)) e];
 
 DeviceFrameEntry? autoSelectDeviceFrame(DeviceFrameCatalog c, Size recording) {
   final matches = perfectMatches(c, recording);
