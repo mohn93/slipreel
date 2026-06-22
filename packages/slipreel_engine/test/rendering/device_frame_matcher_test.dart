@@ -45,15 +45,74 @@ void main() {
     expect(autoSelectDeviceFrame(_catalog, const Size(800, 600)), isNull);
   });
 
-  test('flexibleMatches returns all catalog entries (pass-through, no filter)', () {
-    // Pin the v1 behavior: flexibleMatches must return every entry in the
-    // catalog so the Flexible picker shows all device options. If a future
-    // kind/orientation filter is added, this test catches a regression to
-    // empty (e.g., filtering a phone recording against a tablet-only catalog).
-    final allIds = _catalog.entries.map((e) => e.id).toSet();
-    final result = flexibleMatches(_catalog, const Size(1206, 2622));
-    expect(result.map((e) => e.id).toSet(), equals(allIds));
-    expect(result.length, _catalog.entries.length);
+  group('recordingFormFactor', () {
+    test('iPhone resolutions classify as phone (both orientations)', () {
+      expect(recordingFormFactor(const Size(1206, 2622)),
+          RecordingFormFactor.phone); // 2.17
+      expect(recordingFormFactor(const Size(2622, 1206)),
+          RecordingFormFactor.phone); // landscape, same
+      expect(recordingFormFactor(const Size(1334, 750)),
+          RecordingFormFactor.phone); // 16:9 = 1.78
+    });
+
+    test('iPad resolutions classify as tablet (both orientations)', () {
+      expect(recordingFormFactor(const Size(1668, 2420)),
+          RecordingFormFactor.tablet); // 1.45
+      expect(recordingFormFactor(const Size(2048, 1536)),
+          RecordingFormFactor.tablet); // 1.33
+      expect(recordingFormFactor(const Size(1488, 2266)),
+          RecordingFormFactor.tablet); // iPad mini 1.52
+    });
+
+    test('split boundary at 1.6 is inclusive for tablet', () {
+      expect(recordingFormFactor(const Size(1600, 1000)),
+          RecordingFormFactor.tablet); // exactly 1.6
+      expect(recordingFormFactor(const Size(1601, 1000)),
+          RecordingFormFactor.phone); // just over 1.6
+    });
+
+    test('degenerate size returns null', () {
+      expect(recordingFormFactor(Size.zero), isNull);
+      expect(recordingFormFactor(const Size(100, 0)), isNull);
+    });
+  });
+
+  group('deviceFrameCompatible', () {
+    final phone = _catalog.entryById('iphone-16-pro')!;
+    final tablet = _catalog.entryById('ipad-pro-11')!;
+
+    test('phone entry matches phone recording only', () {
+      expect(deviceFrameCompatible(phone, const Size(1206, 2622)), isTrue);
+      expect(deviceFrameCompatible(phone, const Size(1668, 2420)), isFalse);
+    });
+
+    test('tablet entry matches tablet recording only', () {
+      expect(deviceFrameCompatible(tablet, const Size(1668, 2420)), isTrue);
+      expect(deviceFrameCompatible(tablet, const Size(1206, 2622)), isFalse);
+    });
+
+    test('degenerate size is compatible with anything', () {
+      expect(deviceFrameCompatible(phone, Size.zero), isTrue);
+      expect(deviceFrameCompatible(tablet, Size.zero), isTrue);
+    });
+  });
+
+  group('flexibleMatches (kind-filtered)', () {
+    test('phone recording yields only phone entries', () {
+      final r = flexibleMatches(_catalog, const Size(1206, 2622));
+      expect(r.map((e) => e.id), ['iphone-16-pro']);
+    });
+
+    test('iPad recording yields only tablet entries', () {
+      final r = flexibleMatches(_catalog, const Size(1668, 2420));
+      expect(r.map((e) => e.id), ['ipad-pro-11']);
+    });
+
+    test('degenerate size yields all entries (no filtering)', () {
+      final r = flexibleMatches(_catalog, Size.zero);
+      expect(r.map((e) => e.id).toSet(),
+          _catalog.entries.map((e) => e.id).toSet());
+    });
   });
 
   test('windowFrameWithAutoDeviceFrame sets id+color only when off and matched', () {

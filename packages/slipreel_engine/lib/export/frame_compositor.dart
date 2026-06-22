@@ -108,6 +108,7 @@ class FrameCompositor {
     if (id == null || catalog == null) return null;
     final entry = catalog.entryById(id);
     if (entry == null) return null;
+    if (!deviceFrameCompatible(entry, videoSize)) return null;
     final color = entry.colorById(projectState.windowFrame.deviceFrameColor ?? '')
         ?? (entry.colors.isEmpty ? null : entry.colors.first);
     if (color == null) return null;
