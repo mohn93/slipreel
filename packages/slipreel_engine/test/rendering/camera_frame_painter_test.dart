@@ -1,3 +1,9 @@
+// Golden pixels are host-specific (font hinting / AA differ across platforms),
+// and these references were generated on macOS — the app's only target. Run
+// them on the macOS job; the Linux (portable) CI job skips this file.
+@TestOn('mac-os')
+library;
+
 import 'dart:ui' as ui;
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
