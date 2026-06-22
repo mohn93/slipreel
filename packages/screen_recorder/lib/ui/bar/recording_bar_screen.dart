@@ -156,6 +156,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         final picked = await ScreenRecorderPlatform.instance.pickSource(kind);
         if (picked == null) return;
         controller.selectSource(kind: picked.kind, id: picked.id);
+        if (!mounted) return;
         await recordingActionRouterRef?.start(context);
       case BarSourceMode.area:
         final region = await ScreenRecorderPlatform.instance.selectRegion();
@@ -165,6 +166,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
           id: region.displayId,
           region: region,
         );
+        if (!mounted) return;
         await recordingActionRouterRef?.start(context);
       case BarSourceMode.device:
         final deviceId = await ScreenRecorderPlatform.instance.showDeviceMenu();

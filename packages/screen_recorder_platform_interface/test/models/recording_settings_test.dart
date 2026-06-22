@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
-import 'package:screen_recorder_platform_interface/src/models/system_audio_config.dart';
 
 void main() {
   group('RecordingSettings.microphone', () {

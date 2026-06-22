@@ -1,6 +1,8 @@
 // LOCAL DEV ONLY — see README.md in this folder.
 // Copy this file to `agent_wires_probe_binding.dart` (gitignored) and add the
 // dependency override described in the README to wire the real probe.
+// agent_wires_probe comes from that local override, not a declared dependency:
+// ignore: depend_on_referenced_packages
 import 'package:agent_wires_probe/agent_wires_probe.dart';
 import 'package:flutter/widgets.dart';
 

@@ -61,8 +61,8 @@ void main() {
       );
     })));
 
-    final centerYFor = (int i) => (_itemHeight + _itemGap) * i + _itemHeight / 2;
-    final topFor = (int i) => centerYFor(i) - (_itemHeight * 0.6) / 2;
+    double centerYFor(int i) => (_itemHeight + _itemGap) * i + _itemHeight / 2;
+    double topFor(int i) => centerYFor(i) - (_itemHeight * 0.6) / 2;
 
     final startTop = tester.widget<Positioned>(find.byType(Positioned)).top;
     expect(startTop, closeTo(topFor(1), 0.5));

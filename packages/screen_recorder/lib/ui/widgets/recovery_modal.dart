@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../state/recovery_service.dart';
@@ -62,7 +64,7 @@ class _RecoveryModalState extends State<RecoveryModal> {
       await widget.onDiscard(c);
     }
     setState(() => _remaining.clear());
-    if (mounted) Navigator.of(context).maybePop();
+    if (mounted) unawaited(Navigator.of(context).maybePop());
   }
 
   @override

@@ -127,14 +127,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       );
 
-  Widget _card({required Widget child, EdgeInsets? padding}) => Container(
-        width: double.infinity,
-        padding: padding ?? const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: context.palette.surfaceCard,
-          borderRadius: BorderRadius.circular(12),
+  // Use a Material (not a DecoratedBox/Container-with-color) as the card
+  // surface: cards host onTap ListTiles, and Flutter 3.44+ asserts when a
+  // ListTile's nearest Material ancestor is hidden behind an intermediate
+  // colored DecoratedBox (ink splashes / bg become invisible). The Material
+  // is the colored surface; the inner Container only sizes + pads.
+  Widget _card({required Widget child, EdgeInsets? padding}) => Material(
+        color: context.palette.surfaceCard,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          padding: padding ?? const EdgeInsets.all(16),
+          child: child,
         ),
-        child: child,
       );
 
   Widget _countdownPicker() {

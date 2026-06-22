@@ -175,6 +175,47 @@ class FfmpegEncoder {
   /// Test seam: the resolved ffmpeg arg list for [codec].
   List<String> argsForTesting(String codec) => _argsFor(codec);
 
+  /// Test seam: force the VideoToolbox capability probe to a fixed result
+  /// instead of spawning ffmpeg. `null` (the default) restores real probing.
+  static set videotoolboxProbeOverride(bool? value) =>
+      _videotoolboxProbeOverride = value;
+  static bool? _videotoolboxProbeOverride;
+
+  /// Cached result of the one-time VideoToolbox probe — hardware availability
+  /// is constant for the life of the process.
+  static bool? _videotoolboxUsable;
+
+  /// Whether `h264_videotoolbox` can actually *encode* on this host — not just
+  /// whether ffmpeg lists it. The Apple HW encoder is present on every Mac yet
+  /// fails to create a compression session in headless/VM environments (e.g.
+  /// CI runners), and is absent entirely off-Mac. ffmpeg surfaces both as a
+  /// non-zero exit *after* the process starts, so a throwaway 1-frame encode is
+  /// the only reliable probe. Runs once (cached). This lets [start] commit to a
+  /// codec that works *before* streaming — the streaming encoder can't retry
+  /// once source frames have been consumed.
+  static Future<bool> _videotoolboxCanEncode(String binary) async {
+    final override = _videotoolboxProbeOverride;
+    if (override != null) return override;
+    final cached = _videotoolboxUsable;
+    if (cached != null) return cached;
+    var ok = false;
+    try {
+      final result = await Process.run(binary, const [
+        '-hide_banner', '-loglevel', 'error', '-y',
+        '-f', 'lavfi', '-i', 'color=c=black:s=16x16:r=1:d=1',
+        '-frames:v', '1', '-c:v', 'h264_videotoolbox', //
+        '-f', 'null', '-',
+      ]);
+      ok = result.exitCode == 0;
+    } catch (_) {
+      // ffmpeg vanished between resolve() and probe, or the OS refused to
+      // spawn it — treat as "no HW encoder" and let the caller use libx264.
+      ok = false;
+    }
+    _videotoolboxUsable = ok;
+    return ok;
+  }
+
   Future<void> start() async {
     final binary = Ffmpeg.resolve();
 
@@ -190,7 +231,12 @@ class FfmpegEncoder {
       }
     }
 
-    if (await tryCodec('h264_videotoolbox')) {
+    // Probe first: Process.start succeeds even when h264_videotoolbox can't
+    // create a session, so committing on start() alone strands the streaming
+    // encode on a dead codec. Only attempt VT when it can actually encode;
+    // otherwise fall straight through to the portable libx264 software path.
+    final canUseHardware = await _videotoolboxCanEncode(binary);
+    if (canUseHardware && await tryCodec('h264_videotoolbox')) {
       _codecUsed = 'h264_videotoolbox';
     } else if (await tryCodec('libx264')) {
       _codecUsed = 'libx264';

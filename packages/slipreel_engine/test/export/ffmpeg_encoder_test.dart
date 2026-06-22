@@ -50,6 +50,46 @@ void main() {
 
       tmp.deleteSync(recursive: true);
     });
+
+    test('falls back to libx264 when VideoToolbox cannot encode', () async {
+      // Simulate a host where h264_videotoolbox can't create a session
+      // (headless CI macOS VM) or is absent (Linux) — start() must commit to
+      // the libx264 software path and still produce a valid MP4.
+      FfmpegEncoder.videotoolboxProbeOverride = false;
+      addTearDown(() => FfmpegEncoder.videotoolboxProbeOverride = null);
+
+      final tmp = Directory.systemTemp.createTempSync('phase9_enc_sw');
+      final outPath = '${tmp.path}/out.mp4';
+
+      final encoder = FfmpegEncoder(
+        outputPath: outPath,
+        width: 320,
+        height: 240,
+        fps: 30,
+        bitrateKbps: 1000,
+        sourceWidth: 320,
+        sourceHeight: 240,
+      );
+
+      final frame = Uint8List(320 * 240 * 4);
+      for (var i = 0; i < frame.length; i += 4) {
+        frame[i] = 0; frame[i + 1] = 0; frame[i + 2] = 255; frame[i + 3] = 255;
+      }
+
+      await encoder.start();
+      for (var i = 0; i < 30; i++) {
+        await encoder.writeFrame(frame);
+      }
+      await encoder.finish();
+
+      expect(encoder.codecUsed, 'libx264');
+      expect(encoder.usedHardware, isFalse);
+      final file = File(outPath);
+      expect(await file.exists(), isTrue);
+      expect(await file.length(), greaterThan(1000));
+
+      tmp.deleteSync(recursive: true);
+    });
   });
 
   group('FfmpegEncoder ffmpeg resolution', () {

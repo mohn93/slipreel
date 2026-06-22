@@ -71,6 +71,9 @@ void main() {
       final scheme = AppPalette.midnight.toColorScheme();
       expect(scheme.brightness, Brightness.dark);
       expect(scheme.primary, AppPalette.midnight.accent);
+      // toColorScheme() still maps appBackground -> the (deprecated) background
+      // slot, keeping it behind an ignore; assert the mapping the same way.
+      // ignore: deprecated_member_use
       expect(scheme.background, AppPalette.midnight.appBackground);
       expect(scheme.surface, AppPalette.midnight.surfaceElevated);
       expect(scheme.outlineVariant, AppPalette.midnight.dividerSubtle);

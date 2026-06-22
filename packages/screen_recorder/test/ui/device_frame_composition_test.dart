@@ -1,5 +1,4 @@
 // packages/screen_recorder/test/ui/device_frame_composition_test.dart
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
