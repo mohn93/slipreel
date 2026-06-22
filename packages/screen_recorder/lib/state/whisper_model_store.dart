@@ -102,12 +102,17 @@ class WhisperModelStore {
       final total = resp.contentLength;
       final sink = dest.openWrite();
       var received = 0;
-      await for (final chunk in resp) {
-        received += chunk.length;
-        sink.add(chunk);
-        if (total > 0) onProgress?.call(received / total);
+      try {
+        await for (final chunk in resp) {
+          received += chunk.length;
+          sink.add(chunk);
+          if (total > 0) onProgress?.call(received / total);
+        }
+        await sink.close();
+      } catch (_) {
+        await sink.close();
+        rethrow;
       }
-      await sink.close();
     } finally {
       client.close(force: true);
     }

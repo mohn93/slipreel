@@ -51,5 +51,6 @@ void main() {
     );
     await expectLater(store.ensureModel(), throwsA(isA<Exception>()));
     expect(File('${tmp.path}/$kWhisperModelFileName').existsSync(), isFalse);
+    expect(File('${tmp.path}/$kWhisperModelFileName.part').existsSync(), isFalse);
   });
 }
