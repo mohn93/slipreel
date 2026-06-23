@@ -34,6 +34,14 @@ class FfmpegDecoder {
 
   Process? _process;
 
+  /// Set when [kill] is called. A killed decoder exits with a signal code
+  /// (e.g. -9), which is an EXPECTED cooperative teardown — the encoder
+  /// satisfied its trim and the pipeline stopped the decoder — not a decode
+  /// failure. Used to suppress the non-zero-exit throw in [frames] for that
+  /// case while still surfacing genuine decode errors (non-zero exit we did
+  /// NOT cause).
+  bool _killed = false;
+
   FfmpegDecoder({
     required this.inputPath,
     required this.width,
@@ -91,7 +99,12 @@ class FfmpegDecoder {
       }
       final exit = await process.exitCode;
       await stderrDone;
-      if (exit != 0) {
+      // A non-zero exit is only a failure if WE didn't kill the process. The
+      // cooperative early-exit path (encoder satisfied its trim → pipeline
+      // calls decoder.kill()) terminates ffmpeg with a signal; that is a clean
+      // teardown, not a decode error. Without this guard the SIGKILL (-9)
+      // races the stream-cancel and intermittently fails the export.
+      if (exit != 0 && !_killed) {
         throw Exception('ffmpeg decode exited $exit: $stderrBuffer');
       }
     } finally {
@@ -103,6 +116,7 @@ class FfmpegDecoder {
   /// Terminates the ffmpeg subprocess if running. Safe before start / after
   /// exit. Used by the pipeline to avoid orphaning ffmpeg on error/cancel.
   void kill() {
+    _killed = true;
     _process?.kill(ProcessSignal.sigkill);
   }
 }
