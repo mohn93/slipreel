@@ -55,6 +55,36 @@ void main() {
     expect(seg.endMicros, 241000);
   });
 
+  test('offset 0 leaves caption timestamps unchanged', () async {
+    final c = build(audioOffset: () async => 0);
+    await c.generate(videoPath: '/v.mov', source: CaptionAudioSource.mic);
+    final seg = editor.state.captions.single;
+    expect(seg.startMicros, 0);
+    expect(seg.endMicros, 1000);
+  });
+
+  test('threads the generate() videoPath + source to the offset resolver',
+      () async {
+    String? seenVideo;
+    CaptionAudioSource? seenSource;
+    final c = CaptionGenerationController(
+      editor: editor,
+      ensureModel: (_) async => '/m.bin',
+      extractAudio: (_, __) async => '/a.wav',
+      transcribe: (_, __, ___) async => const [
+        CaptionSegment(id: 's', startMicros: 0, endMicros: 1000, text: 'hi'),
+      ],
+      audioOffset: (video, source) async {
+        seenVideo = video;
+        seenSource = source;
+        return 0;
+      },
+    );
+    await c.generate(videoPath: '/clip.mov', source: CaptionAudioSource.mixed);
+    expect(seenVideo, '/clip.mov');
+    expect(seenSource, CaptionAudioSource.mixed);
+  });
+
   test('extractor returning null → CaptionError', () async {
     final c = build(extract: () async => null);
     await c.generate(videoPath: '/v.mov', source: CaptionAudioSource.mic);

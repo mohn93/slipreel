@@ -107,4 +107,52 @@ void main() {
           200000);
     });
   });
+
+  // The offset MUST be read from the exact same stream the WAV was extracted
+  // from (buildCaptionAudioArgs), or captions land on the wrong time-base.
+  group('captionAudioOffsetMicros ⇔ buildCaptionAudioArgs contract', () {
+    AudioStreamInfo s(int idx, int ch, int startMicros) => AudioStreamInfo(
+        index: idx, channels: ch, codecName: 'aac', startMicros: startMicros);
+    // Distinct per-stream start_times so a wrong-stream lookup is caught.
+    final two = [s(0, 1, 111000), s(1, 2, 222000)];
+    final one = [s(0, 2, 111000)];
+
+    // The start_time of the single stream the extractor `-map`s (non-mixed).
+    int mappedStreamStart(CaptionAudioSource src, List<AudioStreamInfo> sl) {
+      final args = buildCaptionAudioArgs('in.mov', src, sl.length, 'o.wav');
+      final target = args[args.indexOf('-map') + 1]; // e.g. '0:a:1'
+      return sl[int.parse(target.split(':').last)].startMicros;
+    }
+
+    test('non-mixed sources read the start_time of the -map\'d stream', () {
+      for (final (src, streams) in [
+        (CaptionAudioSource.mic, two), // → 0:a:0
+        (CaptionAudioSource.system, two), // → 0:a:1
+        (CaptionAudioSource.system, one), // 1 stream → 0:a:0 fallback
+        (CaptionAudioSource.mixed, one), // 1 stream → 0:a:0 fallback
+      ]) {
+        expect(
+          captionAudioOffsetMicros(src, streams),
+          mappedStreamStart(src, streams),
+          reason: '$src (${streams.length} stream) must read its mapped stream',
+        );
+      }
+    });
+
+    test('mixed (2 streams) reads the EARLIER amix input — either side', () {
+      // amix aligns to its earliest input; min must pick whichever is earlier.
+      expect(
+        captionAudioOffsetMicros(
+            CaptionAudioSource.mixed, [s(0, 1, 111000), s(1, 2, 222000)]),
+        111000,
+        reason: 'stream 0 earlier',
+      );
+      expect(
+        captionAudioOffsetMicros(
+            CaptionAudioSource.mixed, [s(0, 1, 222000), s(1, 2, 111000)]),
+        111000,
+        reason: 'stream 1 earlier',
+      );
+    });
+  });
 }
