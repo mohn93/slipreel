@@ -26,6 +26,14 @@ final class RegionRecordingIndicator {
       win.backgroundColor = .clear
       win.ignoresMouseEvents = true
       win.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+      // Keep the indicator out of the capture. Its recorded-rect outline is a
+      // 2pt stroke centered on the rect, so the inner 1pt falls inside the
+      // area-capture sourceRect and was bleeding a sliver of the accent border
+      // into every frame. The window is created after startCapture() (so the
+      // SCStream's excludingWindows can't catch it), but sharingType .none is
+      // enforced by the window server regardless. Stays visible to the user;
+      // just invisible to capture. (Mirrors CameraSelfViewPanel.)
+      win.sharingType = .none
 
       let screenId = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
         as? CGDirectDisplayID) ?? 0
