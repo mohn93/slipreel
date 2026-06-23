@@ -43,7 +43,7 @@ class AudioStreamInfo {
 }
 
 /// Parses the JSON output of
-/// `ffprobe -select_streams a -show_entries stream=index,codec_name,channels,bit_rate -of json`.
+/// `ffprobe -select_streams a -show_entries stream=index,codec_name,channels,bit_rate,start_time -of json`.
 List<AudioStreamInfo> parseAudioStreams(String jsonString) {
   if (jsonString.trim().isEmpty) return const [];
   final decoded = jsonDecode(jsonString);

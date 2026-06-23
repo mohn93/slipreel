@@ -80,4 +80,20 @@ void main() {
     );
     expect(graph.filterComplex, contains('adelay=400:all=1'));
   });
+
+  test('multi-slice: the whole concatenated track is delayed exactly ONCE '
+      '(mid-slices need no separate adelay)', () {
+    // The per-slice atrim+asetpts+concat shifts the WHOLE track early by the
+    // head-of-timeline gap, so a single track-level adelay restores it — not
+    // one per slice. A regression that delayed per-slice would show 3 adelays.
+    final graph = buildExportFilterGraph(
+      state: _stateWith([_slice(), _slice(), _slice()]),
+      audioStreams: [_sys(240000)],
+    );
+    expect('adelay'.allMatches(graph.filterComplex).length, 1,
+        reason: 'one adelay on the concatenated track, not per-slice');
+    expect(graph.filterComplex, contains('adelay=240:all=1'));
+    expect(graph.filterComplex, contains('concat=n=3'),
+        reason: 'all 3 slices keep their concat slot');
+  });
 }
