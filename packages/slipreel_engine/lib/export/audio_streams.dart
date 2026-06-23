@@ -10,11 +10,22 @@ class AudioStreamInfo {
   final String codecName;
   final int? bitrateKbps;
 
+  /// The stream's `start_time` (its first sample's presentation time relative
+  /// to the container origin / video t=0), in microseconds. Clamped to >= 0.
+  ///
+  /// Captured separately, our system-audio track spins up after the video
+  /// stream, so it begins at a non-zero `start_time` — a leading gap. Both the
+  /// caption time-base and the export audio mux must compensate for this gap so
+  /// audio, video, and captions agree on movie-time (the preview already does,
+  /// because AVFoundation honours the gap).
+  final int startMicros;
+
   const AudioStreamInfo({
     required this.index,
     required this.channels,
     required this.codecName,
     this.bitrateKbps,
+    this.startMicros = 0,
   });
 
   @override
@@ -23,10 +34,12 @@ class AudioStreamInfo {
       other.index == index &&
       other.channels == channels &&
       other.codecName == codecName &&
-      other.bitrateKbps == bitrateKbps;
+      other.bitrateKbps == bitrateKbps &&
+      other.startMicros == startMicros;
 
   @override
-  int get hashCode => Object.hash(index, channels, codecName, bitrateKbps);
+  int get hashCode =>
+      Object.hash(index, channels, codecName, bitrateKbps, startMicros);
 }
 
 /// Parses the JSON output of
@@ -41,6 +54,11 @@ List<AudioStreamInfo> parseAudioStreams(String jsonString) {
     final (audioIdx, s) = entry;
     final m = s as Map<String, dynamic>;
     final br = int.tryParse('${m['bit_rate'] ?? ''}');
+    // start_time is a seconds string (e.g. "0.239625"); "N/A", absent, zero,
+    // and negatives all mean "no leading gap" → 0.
+    final st = double.tryParse('${m['start_time'] ?? ''}');
+    final startMicros =
+        (st == null || st.isNaN || st <= 0) ? 0 : (st * 1e6).round();
     // Use the position in the audio-only list as the stream index so that
     // filter-complex references like `[1:a:0]` / `[1:a:1]` are correct.
     // ffprobe reports the absolute stream index (e.g. 1 for the second stream
@@ -51,6 +69,7 @@ List<AudioStreamInfo> parseAudioStreams(String jsonString) {
       channels: (m['channels'] as num?)?.toInt() ?? 0,
       codecName: m['codec_name'] as String? ?? '',
       bitrateKbps: (br == null || br <= 0) ? null : (br / 1000).round(),
+      startMicros: startMicros,
     );
   }).toList();
 }

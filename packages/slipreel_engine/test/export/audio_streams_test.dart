@@ -37,6 +37,30 @@ void main() {
           '{"streams":[{"index":0,"codec_name":"aac","channels":1}]}');
       expect(s.single.bitrateKbps, isNull);
     });
+
+    test('parses start_time (seconds) into startMicros; absent → 0', () {
+      const json = '''
+      {"streams":[
+        {"index":0,"codec_name":"aac","channels":2,"start_time":"0.239625","bit_rate":"192000"},
+        {"index":1,"codec_name":"aac","channels":1}
+      ]}''';
+      final streams = parseAudioStreams(json);
+      expect(streams[0].startMicros, 239625);
+      expect(streams[1].startMicros, 0, reason: 'absent start_time defaults 0');
+    });
+
+    test('start_time "N/A", zero, and negative all clamp to 0', () {
+      const json = '''
+      {"streams":[
+        {"index":0,"codec_name":"aac","channels":2,"start_time":"N/A"},
+        {"index":1,"codec_name":"aac","channels":1,"start_time":"0.000000"},
+        {"index":2,"codec_name":"aac","channels":1,"start_time":"-0.01"}
+      ]}''';
+      final streams = parseAudioStreams(json);
+      expect(streams[0].startMicros, 0);
+      expect(streams[1].startMicros, 0);
+      expect(streams[2].startMicros, 0, reason: 'negatives never a leading gap');
+    });
   });
 
   group('inferAudioRoles', () {

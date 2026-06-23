@@ -89,6 +89,20 @@ NSliceFilterGraph buildExportFilterGraph({
   final micIdx = roles[AudioRole.microphone];
   final sysIdx = roles[AudioRole.system];
 
+  // Each audio track's per-slice `atrim` + `asetpts=PTS-STARTPTS` rebases the
+  // track to start at output t=0, which drops the recording's audio
+  // leading-gap (system audio spins up after video; see AudioStreamInfo
+  // .startMicros). That shifts the whole exported track earlier than the
+  // video by (gap − firstSliceTrimStart). We re-add exactly that with a
+  // per-track `adelay` so audio lands back on movie-time. A first slice
+  // trimmed past the gap is already aligned ⇒ delay clamps to 0.
+  final firstTrimStartMicros = clips.first.trimStart.inMicroseconds;
+  int delayMicrosFor(int? audioIdx) {
+    if (audioIdx == null) return 0;
+    final d = _startMicrosForIdx(audioStreams, audioIdx) - firstTrimStartMicros;
+    return d > 0 ? d : 0;
+  }
+
   final chains = <String>[];
 
   // Video: one chain per slice, then concat=n=N:v=1:a=0[outv].
@@ -115,6 +129,7 @@ NSliceFilterGraph buildExportFilterGraph({
       outLabel: '[mic_track]',
       gainOf: (c) => c.micGainPercent,
       mutedOf: (c) => c.micMuted,
+      delayMicros: delayMicrosFor(micIdx),
     ));
     chains.addAll(_trackChainBlock(
       clips: clips,
@@ -123,6 +138,7 @@ NSliceFilterGraph buildExportFilterGraph({
       outLabel: '[sys_track]',
       gainOf: (c) => c.systemGainPercent,
       mutedOf: (c) => c.systemMuted,
+      delayMicros: delayMicrosFor(sysIdx),
     ));
     chains.add('[mic_track][sys_track]amix=inputs=2:normalize=0[outa]');
     audioMapLabel = '[outa]';
@@ -134,6 +150,7 @@ NSliceFilterGraph buildExportFilterGraph({
       outLabel: '[outa]',
       gainOf: (c) => c.micGainPercent,
       mutedOf: (c) => c.micMuted,
+      delayMicros: delayMicrosFor(micIdx),
     ));
     audioMapLabel = '[outa]';
   } else if (hasSys) {
@@ -144,6 +161,7 @@ NSliceFilterGraph buildExportFilterGraph({
       outLabel: '[outa]',
       gainOf: (c) => c.systemGainPercent,
       mutedOf: (c) => c.systemMuted,
+      delayMicros: delayMicrosFor(sysIdx),
     ));
     audioMapLabel = '[outa]';
   }
@@ -176,6 +194,7 @@ List<String> _trackChainBlock({
   required String outLabel,
   required int Function(ClipSlice) gainOf,
   required bool Function(ClipSlice) mutedOf,
+  int delayMicros = 0,
 }) {
   final out = <String>[];
   for (var i = 0; i < clips.length; i++) {
@@ -187,9 +206,28 @@ List<String> _trackChainBlock({
       muted: mutedOf(clips[i]),
     ));
   }
-  out.add('${_labels(chainTag, clips.length)}'
-      'concat=n=${clips.length}:v=0:a=1$outLabel');
+  final delayMs = (delayMicros / 1000).round();
+  if (delayMicros > 0 && delayMs > 0) {
+    // Concat into an intermediate label, then adelay it onto movie-time.
+    // `all=1` applies the one delay value to every channel of the track.
+    out.add('${_labels(chainTag, clips.length)}'
+        'concat=n=${clips.length}:v=0:a=1[${chainTag}_cat]');
+    out.add('[${chainTag}_cat]adelay=$delayMs:all=1$outLabel');
+  } else {
+    out.add('${_labels(chainTag, clips.length)}'
+        'concat=n=${clips.length}:v=0:a=1$outLabel');
+  }
   return out;
+}
+
+/// The `start_time` (in micros) of the audio-relative stream [audioIdx], or 0
+/// when absent. Matches by [AudioStreamInfo.index] (the audio-relative position
+/// the `[1:a:K]` filter labels use).
+int _startMicrosForIdx(List<AudioStreamInfo> streams, int audioIdx) {
+  for (final s in streams) {
+    if (s.index == audioIdx) return s.startMicros;
+  }
+  return 0;
 }
 
 String _videoChainFor(ClipSlice s, int i) {

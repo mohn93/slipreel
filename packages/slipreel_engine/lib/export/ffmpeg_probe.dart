@@ -157,7 +157,7 @@ Future<List<AudioStreamInfo>> _probeAudioStreams(String path) async {
     final result = await Process.run(Ffmpeg.resolveProbe(), [
       '-v', 'error',
       '-select_streams', 'a',
-      '-show_entries', 'stream=index,codec_name,channels,bit_rate',
+      '-show_entries', 'stream=index,codec_name,channels,bit_rate,start_time',
       '-of', 'json',
       path,
     ]);
