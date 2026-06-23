@@ -194,7 +194,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
             isDevice: widget.isDevice,
           ),
         InspectorTab.camera => CameraTab(hasCamera: widget.hasCamera),
-        InspectorTab.captions => const CaptionsTab(),
+        InspectorTab.captions => CaptionsTab(videoPath: widget.videoPath),
         InspectorTab.audio => const AudioTab(),
         InspectorTab.shortcuts => ShortcutsTab(
             hasKeystrokeData: widget.hasKeystrokeData,

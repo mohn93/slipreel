@@ -7,7 +7,7 @@ enum InspectorTab {
   device(icon: Icons.devices, label: 'Device', isEnabled: true),
   cursor(icon: Icons.mouse, label: 'Cursor', isEnabled: true),
   camera(icon: Icons.account_box_outlined, label: 'Camera', isEnabled: true),
-  captions(icon: Icons.closed_caption_off, label: 'Captions', isEnabled: false),
+  captions(icon: Icons.closed_caption, label: 'Captions', isEnabled: true),
   audio(icon: Icons.volume_up_outlined, label: 'Audio', isEnabled: true),
   shortcuts(icon: Icons.keyboard_command_key, label: 'Shortcuts', isEnabled: true),
   animation(icon: Icons.timeline, label: 'Animation', isEnabled: true);

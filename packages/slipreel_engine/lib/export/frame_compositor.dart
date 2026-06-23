@@ -19,6 +19,7 @@ import 'package:slipreel_engine/models/recording_metadata.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/camera_frame_painter.dart';
+import 'package:slipreel_engine/rendering/caption_renderer.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
 import 'package:slipreel_engine/rendering/device_frame_layout.dart';
@@ -406,11 +407,18 @@ class FrameCompositor {
 
           try {
             final wallpaperImage = await _ensureWallpaperImage();
-            // No wallpaper, no chrome, AND no camera: the content IS the
-            // final image. Skip the composite step.
+            // No wallpaper, no chrome, no camera, AND no active caption:
+            // the content IS the final image. Skip the composite step.
+            final captionsActive = projectState.captionStyle.enabled &&
+                activeCaptionAt(
+                  projectState.captions,
+                  position.inMicroseconds,
+                ) !=
+                    null;
             if (wallpaperImage == null &&
                 chromeImage == null &&
-                cameraImage == null) {
+                cameraImage == null &&
+                !captionsActive) {
               final byteData = await fgToComposite.toByteData(
                 format: ui.ImageByteFormat.rawRgba,
               );
@@ -437,6 +445,13 @@ class FrameCompositor {
             }
             composeCanvas.drawImage(fgToComposite, Offset.zero, Paint());
             paintCamera(composeCanvas);
+            CaptionRenderer.paint(
+              composeCanvas,
+              totalSize,
+              position,
+              projectState.captions,
+              projectState.captionStyle,
+            );
             final composePicture = composeRecorder.endRecording();
             try {
               final finalImage = await composePicture.toImage(
@@ -694,6 +709,13 @@ class FrameCompositor {
               }
             }
           }
+          CaptionRenderer.paint(
+            composeCanvas,
+            totalSize,
+            position,
+            projectState.captions,
+            projectState.captionStyle,
+          );
           final composePicture = composeRecorder.endRecording();
           try {
             final finalImage = await composePicture.toImage(

@@ -1,4 +1,5 @@
 // packages/screen_recorder/test/export/ffmpeg_decoder_test.dart
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/export/ffmpeg_decoder.dart';
@@ -44,6 +45,27 @@ void main() {
         height: 240,
       );
       expect(decoder.frames().toList(), throwsException);
+    });
+
+    test('kill() ends the frame stream cleanly — no decode-error throw', () async {
+      // Cooperative early-exit: the pipeline kills the decoder mid-stream once
+      // the encoder satisfies its trim. The resulting signal exit (-9) is an
+      // intentional teardown and must NOT surface as a decode failure (the
+      // throw racing the stream-cancel is what intermittently failed exports).
+      final decoder = FfmpegDecoder(
+        inputPath: 'test/fixtures/sample_recording.mp4',
+        width: 320,
+        height: 240,
+      );
+      final it = StreamIterator(decoder.frames());
+      expect(await it.moveNext(), isTrue,
+          reason: 'a frame in hand ⇒ ffmpeg is running when we kill it');
+      decoder.kill();
+      // Draining the rest must COMPLETE (return false), never throw, despite
+      // the SIGKILL. Without the kill-aware guard this throws "exited -9".
+      await expectLater(() async {
+        while (await it.moveNext()) {}
+      }(), completes);
     });
   });
 

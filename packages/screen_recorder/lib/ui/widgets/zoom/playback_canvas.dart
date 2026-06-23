@@ -37,9 +37,12 @@ import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 import 'package:screen_recorder/ui/widgets/zoom/zoom_focal_debug_painter.dart';
 import 'package:screen_recorder/state/zoom_preview_override.dart';
+import 'package:slipreel_engine/models/caption_segment.dart';
+import 'package:slipreel_engine/models/caption_style.dart';
 import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/keystroke_recording.dart';
 import 'package:slipreel_engine/rendering/keystroke_overlay.dart';
+import 'caption_overlay.dart';
 import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/camera_settings.dart';
@@ -222,6 +225,8 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     this.onCameraPlacementCommit,
     this.cameraDragOverride,
     this.deviceFrameCatalog,
+    this.captionSegments = const <CaptionSegment>[],
+    this.captionStyle = const CaptionStyle(),
   });
 
   final VideoPlayerController controller;
@@ -428,6 +433,14 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// instead of the standard [FramePainter] path. The active device and color
   /// are read from [frame.deviceFrameId] / [frame.deviceFrameColor].
   final DeviceFrameCatalog? deviceFrameCatalog;
+
+  /// Caption segments to overlay on the canvas-fixed layer. Empty list →
+  /// no captions rendered (fast path: [captionStyle.enabled] is also checked).
+  final List<CaptionSegment> captionSegments;
+
+  /// Per-project caption look. Mirrors the export pipeline's style so the
+  /// preview matches the rendered video frame-for-frame.
+  final CaptionStyle captionStyle;
 
   @override
   ConsumerState<PlaybackCanvas> createState() => _PlaybackCanvasState();
@@ -1099,6 +1112,20 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               }
             }
 
+            // Caption overlay — canvas-fixed (NOT zoomed), outside the
+            // scene-blur boundary, drawn on top of camera + keystroke.
+            // Uses the shared CaptionRenderer so preview == export.
+            Widget? captionOverlayWidget;
+            if (widget.captionStyle.enabled &&
+                widget.captionSegments.isNotEmpty) {
+              captionOverlayWidget = CaptionOverlay(
+                position: pos,
+                canvasSize: effTotalSize,
+                segments: widget.captionSegments,
+                style: widget.captionStyle,
+              );
+            }
+
             // Wallpaper is rendered as a *sticky* layer behind the
             // composition: it never goes through the zoom Transform and
             // never enters the RepaintBoundary captured for scene blur.
@@ -1246,6 +1273,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 cursorOverlay: cursorOverlay,
                 keystrokeOverlayWidget: keystrokeOverlayWidget,
                 cameraOverlayWidget: cameraOverlayWidget,
+                captionOverlayWidget: captionOverlayWidget,
                 stickyBackground: stickyBackground,
                 position: pos,
                 // effTotalSize is the composition's actual canvas (device
@@ -1361,6 +1389,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   // to the canvas-space edges regardless of camera zoom.
                   keystrokeOverlayWidget: keystrokeOverlayWidget,
                   cameraOverlayWidget: cameraOverlayWidget,
+                  // Caption overlay is also canvas-fixed (NOT zoomed).
+                  captionOverlayWidget: captionOverlayWidget,
                   stickyBackground: stickyBackground,
                   position: pos,
                   // See note at the other call site: effTotalSize keeps the
@@ -1388,6 +1418,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     Widget? cursorOverlay,
     Widget? keystrokeOverlayWidget,
     Widget? cameraOverlayWidget,
+    Widget? captionOverlayWidget,
     Widget? stickyBackground,
     required Duration position,
     required Size totalSize,
@@ -1404,6 +1435,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
         if (cursorOverlay != null) cursorOverlay,
         if (keystrokeOverlayWidget != null) keystrokeOverlayWidget,
         if (cameraOverlayWidget != null) cameraOverlayWidget,
+        if (captionOverlayWidget != null) captionOverlayWidget,
       ];
       if (layers.length == 1) return layers.first;
       return Stack(fit: StackFit.expand, children: layers);
@@ -1515,6 +1547,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
         if (cursorOverlay != null) cursorOverlay,
         if (keystrokeOverlayWidget != null) keystrokeOverlayWidget,
         if (cameraOverlayWidget != null) cameraOverlayWidget,
+        if (captionOverlayWidget != null) captionOverlayWidget,
       ],
     );
   }

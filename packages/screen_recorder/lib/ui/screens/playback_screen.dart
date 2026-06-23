@@ -2424,6 +2424,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       zoomPreviewOverride: _zoomPreviewOverride,
       keystrokeRecording: _keystrokeRecording,
       keystrokeOverlaySettings: project.keystrokeOverlay,
+      captionSegments: project.captions,
+      captionStyle: project.captionStyle,
       cameraController: _cameraController,
       cameraSettings: _hasCamera ? project.cameraSettings : null,
       cameraRegions: _hasCamera ? project.cameraRegions : const [],
