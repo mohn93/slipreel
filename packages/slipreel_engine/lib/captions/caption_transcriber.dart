@@ -41,6 +41,26 @@ List<CaptionSegment> parseWhisperJson(String jsonText) {
   return out;
 }
 
+/// Returns [segments] with every timestamp shifted later by [offsetMicros].
+///
+/// whisper times are relative to the start of the extracted WAV, which drops
+/// the recording's audio leading-gap (see `captionAudioOffsetMicros`). Adding
+/// the gap maps them onto movie-time so captions line up with the audio in the
+/// preview and export. Returns the input unchanged when [offsetMicros] is 0.
+List<CaptionSegment> shiftCaptionSegments(
+  List<CaptionSegment> segments,
+  int offsetMicros,
+) {
+  if (offsetMicros == 0) return segments;
+  return [
+    for (final s in segments)
+      s.copyWith(
+        startMicros: s.startMicros + offsetMicros,
+        endMicros: s.endMicros + offsetMicros,
+      ),
+  ];
+}
+
 /// Runs `whisper-cli` on a WAV and returns the parsed caption segments.
 class CaptionTranscriber {
   const CaptionTranscriber();

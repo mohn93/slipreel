@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/captions/caption_transcriber.dart';
+import 'package:slipreel_engine/models/caption_segment.dart';
 
 const _fixture = '''
 {
@@ -42,6 +43,31 @@ void main() {
 ''';
       expect(() => parseWhisperJson(badJson), returnsNormally);
       expect(parseWhisperJson(badJson), isEmpty);
+    });
+  });
+
+  group('shiftCaptionSegments', () {
+    const segs = [
+      CaptionSegment(id: 'a', startMicros: 0, endMicros: 1000, text: 'x'),
+      CaptionSegment(id: 'b', startMicros: 4000, endMicros: 8000, text: 'y'),
+    ];
+
+    test('adds the offset to every start/end, preserving id/text', () {
+      final out = shiftCaptionSegments(segs, 240000);
+      expect(out[0].startMicros, 240000);
+      expect(out[0].endMicros, 241000);
+      expect(out[1].startMicros, 244000);
+      expect(out[1].endMicros, 248000);
+      expect(out[0].id, 'a');
+      expect(out[1].text, 'y');
+    });
+
+    test('offset 0 returns the input unchanged', () {
+      expect(shiftCaptionSegments(segs, 0), same(segs));
+    });
+
+    test('empty list stays empty', () {
+      expect(shiftCaptionSegments(const [], 240000), isEmpty);
     });
   });
 }

@@ -11,6 +11,7 @@ void main() {
     Future<String> Function()? ensureModel,
     Future<String?> Function()? extract,
     Future<List<CaptionSegment>> Function()? transcribe,
+    Future<int> Function()? audioOffset,
   }) =>
       CaptionGenerationController(
         editor: editor,
@@ -26,6 +27,8 @@ void main() {
                     id: 's', startMicros: 0, endMicros: 1000, text: 'hi'),
               ]
             : await transcribe(),
+        audioOffset: (video, source) async =>
+            audioOffset == null ? 0 : await audioOffset(),
       );
 
   test('happy path ends in CaptionDone and writes segments', () async {
@@ -36,6 +39,20 @@ void main() {
     expect(editor.state.captions.single.text, 'hi');
     expect(editor.state.captionSource, CaptionAudioSource.mic);
     expect(editor.state.captionStyle.enabled, isTrue);
+  });
+
+  test('shifts segment timestamps by the probed audio offset (movie-time)',
+      () async {
+    final c = build(
+      transcribe: () async => const [
+        CaptionSegment(id: 's', startMicros: 0, endMicros: 1000, text: 'hi'),
+      ],
+      audioOffset: () async => 240000,
+    );
+    await c.generate(videoPath: '/v.mov', source: CaptionAudioSource.system);
+    final seg = editor.state.captions.single;
+    expect(seg.startMicros, 240000, reason: 'whisper t=0 maps to the gap');
+    expect(seg.endMicros, 241000);
   });
 
   test('extractor returning null → CaptionError', () async {

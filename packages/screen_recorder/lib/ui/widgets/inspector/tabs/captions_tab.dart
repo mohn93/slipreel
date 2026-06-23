@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/captions/caption_audio_extractor.dart';
 import 'package:slipreel_engine/captions/caption_transcriber.dart';
+import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 
@@ -27,6 +28,16 @@ final captionGenerationControllerProvider = StateNotifierProvider.autoDispose<
     // transcription progress yet.
     transcribe: (audio, model, onP) =>
         transcriber.transcribe(audioPath: audio, modelPath: model),
+    // Probe the chosen source's audio start_time so whisper's WAV-relative
+    // times get shifted onto movie-time (the recording's audio leading-gap).
+    audioOffset: (video, source) async {
+      try {
+        final probe = await ffmpegProbe(path: video);
+        return captionAudioOffsetMicros(source, probe.audioStreams);
+      } catch (_) {
+        return 0;
+      }
+    },
   );
 });
 

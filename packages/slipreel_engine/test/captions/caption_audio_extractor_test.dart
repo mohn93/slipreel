@@ -1,6 +1,7 @@
 // packages/slipreel_engine/test/captions/caption_audio_extractor_test.dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/captions/caption_audio_extractor.dart';
+import 'package:slipreel_engine/export/audio_streams.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
 
 void main() {
@@ -58,6 +59,52 @@ void main() {
     });
     test('no streams → empty', () {
       expect(availableCaptionSources(0), isEmpty);
+    });
+  });
+
+  group('captionAudioOffsetMicros', () {
+    AudioStreamInfo s(int idx, int ch, int startMicros) => AudioStreamInfo(
+        index: idx, channels: ch, codecName: 'aac', startMicros: startMicros);
+
+    test('empty streams → 0', () {
+      expect(captionAudioOffsetMicros(CaptionAudioSource.mic, const []), 0);
+    });
+
+    test('mic uses stream 0 start_time', () {
+      expect(
+        captionAudioOffsetMicros(
+            CaptionAudioSource.mic, [s(0, 1, 200000), s(1, 2, 240000)]),
+        200000,
+      );
+    });
+
+    test('system (two streams) uses stream 1 start_time', () {
+      expect(
+        captionAudioOffsetMicros(
+            CaptionAudioSource.system, [s(0, 1, 200000), s(1, 2, 240000)]),
+        240000,
+      );
+    });
+
+    test('system with one stream falls back to stream 0 (matches extraction)',
+        () {
+      expect(
+          captionAudioOffsetMicros(CaptionAudioSource.system, [s(0, 2, 240000)]),
+          240000);
+    });
+
+    test('mixed uses the EARLIER stream start (amix aligns to earliest)', () {
+      expect(
+        captionAudioOffsetMicros(
+            CaptionAudioSource.mixed, [s(0, 1, 260000), s(1, 2, 240000)]),
+        240000,
+      );
+    });
+
+    test('mixed with one stream uses stream 0', () {
+      expect(
+          captionAudioOffsetMicros(CaptionAudioSource.mixed, [s(0, 1, 200000)]),
+          200000);
     });
   });
 }

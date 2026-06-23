@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/captions/caption_audio_extractor.dart';
+import 'package:slipreel_engine/captions/caption_transcriber.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
@@ -44,6 +45,11 @@ typedef Transcribe = Future<List<CaptionSegment>> Function(
     String audioPath, String modelPath,
     void Function(double progress)? onProgress);
 
+/// Resolves the microsecond offset to add to whisper timestamps so they land on
+/// movie-time (the recording's audio leading-gap). See `captionAudioOffsetMicros`.
+typedef AudioOffset = Future<int> Function(
+    String videoPath, CaptionAudioSource source);
+
 /// Orchestrates model → extract → transcribe → write into the editor, exposing
 /// step-by-step status for the Captions tab. All side-effecting deps are
 /// injected so the flow is unit-testable without network/ffmpeg/whisper.
@@ -53,16 +59,19 @@ class CaptionGenerationController extends StateNotifier<CaptionGenerationStatus>
     required EnsureModel ensureModel,
     required ExtractAudio extractAudio,
     required Transcribe transcribe,
+    required AudioOffset audioOffset,
   })  : _editor = editor,
         _ensureModel = ensureModel,
         _extractAudio = extractAudio,
         _transcribe = transcribe,
+        _audioOffset = audioOffset,
         super(const CaptionIdle());
 
   final EditorProjectController _editor;
   final EnsureModel _ensureModel;
   final ExtractAudio _extractAudio;
   final Transcribe _transcribe;
+  final AudioOffset _audioOffset;
 
   Future<void> generate({
     required String videoPath,
@@ -83,9 +92,14 @@ class CaptionGenerationController extends StateNotifier<CaptionGenerationStatus>
 
       state = const CaptionTranscribing();
       final segments = await _transcribe(audio, model, null);
+      // Map whisper's WAV-relative times onto movie-time by re-adding the
+      // recording's audio leading-gap, so captions line up with the audio in
+      // both the preview and the export.
+      final offsetMicros = await _audioOffset(videoPath, source);
+      final shifted = shiftCaptionSegments(segments, offsetMicros);
 
       _editor.setCaptionSource(source);
-      _editor.replaceCaptionSegments(segments);
+      _editor.replaceCaptionSegments(shifted);
       // Auto-enable captions so the user immediately sees the result.
       _editor.setCaptionStyle(
           _editor.state.captionStyle.copyWith(enabled: true));

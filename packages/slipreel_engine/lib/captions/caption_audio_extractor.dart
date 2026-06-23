@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:slipreel_engine/export/audio_streams.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/export/ffmpeg_resolver.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
@@ -59,6 +60,33 @@ List<String> buildCaptionAudioArgs(
     outPath,
   ]);
   return args;
+}
+
+/// The microsecond offset between whisper's timestamps (relative to the start
+/// of the extracted WAV, which drops any audio leading-gap) and the recording's
+/// movie-time — i.e. the `start_time` of the stream(s) [source] is extracted
+/// from. Adding it to a whisper timestamp maps the caption onto movie-time,
+/// where the video and the preview/export playhead live. Mirrors the
+/// source→stream mapping in [buildCaptionAudioArgs]; `mixed` uses the EARLIER
+/// of the two streams, since amix aligns to its earliest input.
+int captionAudioOffsetMicros(
+  CaptionAudioSource source,
+  List<AudioStreamInfo> streams,
+) {
+  if (streams.isEmpty) return 0;
+  final twoStreams = streams.length >= 2;
+  switch (source) {
+    case CaptionAudioSource.mixed when twoStreams:
+      final a = streams[0].startMicros;
+      final b = streams[1].startMicros;
+      return a < b ? a : b;
+    case CaptionAudioSource.system when twoStreams:
+      return streams[1].startMicros;
+    case CaptionAudioSource.mic:
+    case CaptionAudioSource.system:
+    case CaptionAudioSource.mixed:
+      return streams[0].startMicros;
+  }
 }
 
 /// Extracts a 16 kHz mono WAV for transcription. Returns the WAV path, or null

@@ -15,6 +15,7 @@ CaptionGenerationController _fakeController() => CaptionGenerationController(
       ensureModel: (_) async => '/fake/model.bin',
       extractAudio: (_, __) async => '/fake/audio.wav',
       transcribe: (_, __, ___) async => const [],
+      audioOffset: (_, __) async => 0,
     );
 
 void main() {
