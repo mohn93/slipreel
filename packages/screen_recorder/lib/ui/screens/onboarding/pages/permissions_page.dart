@@ -61,6 +61,12 @@ class PermissionsPage extends ConsumerWidget {
               label: _labels[kind]!,
               subtitle: _subtitles[kind]!,
               status: snap.byKind[kind] ?? PermissionStatus.unsupported,
+              // Screen Recording reads back as `denied` until granted (binary
+              // preflight), so let its row fire the request directly —
+              // CGRequestScreenCaptureAccess prompts and self-registers the app
+              // in the Screen Recording list. The optional permissions keep the
+              // passive Open-Settings path on a real denial.
+              canRequestWhenDenied: kind == PermissionKind.screenRecording,
               onGrant: () => ref
                   .read(permissionsControllerProvider.notifier)
                   .request(kind),

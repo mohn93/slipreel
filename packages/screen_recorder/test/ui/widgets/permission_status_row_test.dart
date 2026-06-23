@@ -63,4 +63,66 @@ void main() {
     await tester.tap(find.text('Open System Settings'));
     expect(opened, isTrue);
   });
+
+  testWidgets(
+      'denied + canRequestWhenDenied shows Enable and fires onGrant (not Settings)',
+      (tester) async {
+    // Screen Recording reads back as `denied` on first run (CGPreflight is
+    // binary — no notDetermined), but the app must still be able to FIRE the
+    // request so macOS registers it in the Screen Recording list. The row
+    // must offer Enable→onGrant here, not the passive Open-Settings path.
+    var granted = false;
+    var opened = false;
+    await tester.pumpWidget(_host(PermissionStatusRow(
+      kind: PermissionKind.screenRecording,
+      icon: Icons.desktop_windows_outlined,
+      label: 'Screen Recording',
+      subtitle: 'Required.',
+      status: PermissionStatus.denied,
+      canRequestWhenDenied: true,
+      onGrant: () => granted = true,
+      onOpenSettings: () => opened = true,
+    )));
+    expect(find.text('Open System Settings'), findsNothing);
+    await tester.tap(find.text('Enable'));
+    expect(granted, isTrue);
+    expect(opened, isFalse);
+  });
+
+  testWidgets(
+      'restricted + canRequestWhenDenied shows Enable (not Settings)',
+      (tester) async {
+    await tester.pumpWidget(_host(PermissionStatusRow(
+      kind: PermissionKind.screenRecording,
+      icon: Icons.desktop_windows_outlined,
+      label: 'Screen Recording',
+      subtitle: 'Required.',
+      status: PermissionStatus.restricted,
+      canRequestWhenDenied: true,
+      onGrant: () {},
+      onOpenSettings: () {},
+    )));
+    expect(find.text('Enable'), findsOneWidget);
+    expect(find.text('Open System Settings'), findsNothing);
+  });
+
+  testWidgets(
+      'denied without the flag keeps the Open System Settings path',
+      (tester) async {
+    // Camera/mic/accessibility behaviour is unchanged: a real denial still
+    // routes to System Settings.
+    var opened = false;
+    await tester.pumpWidget(_host(PermissionStatusRow(
+      kind: PermissionKind.camera,
+      icon: Icons.videocam_outlined,
+      label: 'Camera',
+      subtitle: 'Optional.',
+      status: PermissionStatus.denied,
+      onGrant: () {},
+      onOpenSettings: () => opened = true,
+    )));
+    expect(find.text('Enable'), findsNothing);
+    await tester.tap(find.text('Open System Settings'));
+    expect(opened, isTrue);
+  });
 }

@@ -194,6 +194,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               label: _permLabels[kind]!,
               subtitle: _permSubtitles[kind]!,
               status: snap.byKind[kind] ?? PermissionStatus.unsupported,
+              // See PermissionsPage: Screen Recording must fire the request
+              // even from a `denied` state so macOS registers the app.
+              canRequestWhenDenied: kind == PermissionKind.screenRecording,
               onGrant: () =>
                   ref.read(permissionsControllerProvider.notifier).request(kind),
               onOpenSettings: () => PermissionDeniedSheet.show(context, kind),

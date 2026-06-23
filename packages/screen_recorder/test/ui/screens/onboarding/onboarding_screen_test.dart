@@ -79,4 +79,22 @@ void main() {
     await pump(tester, _snap(mic: PermissionStatus.granted));
     expect(find.byIcon(Icons.check_circle), findsOneWidget);
   });
+
+  testWidgets(
+      'Screen Recording offers Enable on a denial; optional perms route to Settings',
+      (tester) async {
+    // Screen Recording reads back as `denied` until granted+relaunched
+    // (CGPreflight is binary), so its row must still fire the request — only it
+    // gets canRequestWhenDenied. The optional permissions keep Open-Settings.
+    await pump(
+        tester,
+        _snap(
+          screen: PermissionStatus.denied,
+          camera: PermissionStatus.denied,
+          mic: PermissionStatus.denied,
+          ax: PermissionStatus.denied,
+        ));
+    expect(find.text('Enable'), findsOneWidget);
+    expect(find.text('Open System Settings'), findsNWidgets(3));
+  });
 }
