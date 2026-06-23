@@ -7,6 +7,15 @@ import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/state/device_frame_catalog_provider.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
+/// Whether the device-frame picker shows flexible (all compatible) vs perfect
+/// (exact-match only) entries.
+///
+/// Session-scoped and deliberately NOT autoDispose: the inspector rebuilds
+/// [DeviceTab] from scratch on every tab switch (see `inspector_panel.dart`'s
+/// `switch`), so keeping this in widget State reset it to Perfect on every
+/// revisit. A keep-alive provider survives the rebuild.
+final deviceFramePickerFlexibleProvider = StateProvider<bool>((ref) => false);
+
 /// Device tab — wraps an iPhone/iPad recording in a realistic device mockup.
 ///
 /// Only shown in the inspector rail for device captures (see
@@ -24,10 +33,6 @@ class DeviceTab extends ConsumerStatefulWidget {
 }
 
 class _DeviceTabState extends ConsumerState<DeviceTab> {
-  /// Whether the picker shows flexible (all) vs perfect (exact-match only)
-  /// device entries. Local-only UI state.
-  bool _flexible = false;
-
   void _mutateFrame(WindowFrame Function(WindowFrame) update) {
     final notifier = ref.read(editorProjectControllerProvider.notifier);
     final current = notifier.current.windowFrame;
@@ -49,6 +54,7 @@ class _DeviceTabState extends ConsumerState<DeviceTab> {
   @override
   Widget build(BuildContext context) {
     final frame = ref.watch(editorProjectControllerProvider).windowFrame;
+    final flexible = ref.watch(deviceFramePickerFlexibleProvider);
     final catalogAsync = ref.watch(deviceFrameCatalogProvider);
     return ListView(
       padding: EdgeInsets.zero,
@@ -56,15 +62,16 @@ class _DeviceTabState extends ConsumerState<DeviceTab> {
       children: [
         catalogAsync.maybeWhen(
           orElse: () => const SizedBox.shrink(),
-          data: (catalog) => _deviceFrameSection(frame, catalog),
+          data: (catalog) => _deviceFrameSection(frame, catalog, flexible),
         ),
       ],
     );
   }
 
-  Widget _deviceFrameSection(WindowFrame frame, DeviceFrameCatalog catalog) {
+  Widget _deviceFrameSection(
+      WindowFrame frame, DeviceFrameCatalog catalog, bool flexible) {
     final enabled = frame.deviceFrameId != null;
-    final entries = _flexible
+    final entries = flexible
         ? flexibleMatches(catalog, widget.recordingSize)
         : perfectMatches(catalog, widget.recordingSize);
     return Column(
@@ -103,8 +110,9 @@ class _DeviceTabState extends ConsumerState<DeviceTab> {
         InspectorChipGroup<bool>(
           items: const [false, true],
           labelOf: (b) => b ? 'Flexible' : 'Perfect',
-          selected: _flexible,
-          onSelected: (b) => setState(() => _flexible = b),
+          selected: flexible,
+          onSelected: (b) =>
+              ref.read(deviceFramePickerFlexibleProvider.notifier).state = b,
         ),
         const SizedBox(height: 12),
         for (final entry in entries) _deviceColorRow(frame, entry),
