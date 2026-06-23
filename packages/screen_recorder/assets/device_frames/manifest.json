@@ -1,0 +1,1907 @@
+{
+  "entries": [
+    {
+      "id": "iphone-16",
+      "family": "iPhone 16",
+      "kind": "phone",
+      "screen": {
+        "w": 1179,
+        "h": 2556
+      },
+      "colors": [
+        {
+          "id": "black",
+          "name": "Black",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16/black-landscape.png",
+            "bezel": {
+              "w": 2736,
+              "h": 1359
+            },
+            "screenRect": {
+              "l": 0.03289473684210526,
+              "t": 0.06622516556291391,
+              "r": 0.9671052631578947,
+              "b": 0.9337748344370861
+            },
+            "screenCornerRadius": 0.07657
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16/black-portrait.png",
+            "bezel": {
+              "w": 1359,
+              "h": 2736
+            },
+            "screenRect": {
+              "l": 0.06622516556291391,
+              "t": 0.03289473684210526,
+              "r": 0.9337748344370861,
+              "b": 0.9671052631578947
+            },
+            "screenCornerRadius": 0.15416
+          }
+        },
+        {
+          "id": "pink",
+          "name": "Pink",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16/pink-landscape.png",
+            "bezel": {
+              "w": 2736,
+              "h": 1359
+            },
+            "screenRect": {
+              "l": 0.03289473684210526,
+              "t": 0.06622516556291391,
+              "r": 0.9671052631578947,
+              "b": 0.9337748344370861
+            },
+            "screenCornerRadius": 0.07657
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16/pink-portrait.png",
+            "bezel": {
+              "w": 1359,
+              "h": 2736
+            },
+            "screenRect": {
+              "l": 0.06622516556291391,
+              "t": 0.03289473684210526,
+              "r": 0.9337748344370861,
+              "b": 0.9671052631578947
+            },
+            "screenCornerRadius": 0.15416
+          }
+        },
+        {
+          "id": "teal",
+          "name": "Teal",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16/teal-landscape.png",
+            "bezel": {
+              "w": 2736,
+              "h": 1359
+            },
+            "screenRect": {
+              "l": 0.03289473684210526,
+              "t": 0.06622516556291391,
+              "r": 0.9671052631578947,
+              "b": 0.9337748344370861
+            },
+            "screenCornerRadius": 0.07657
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16/teal-portrait.png",
+            "bezel": {
+              "w": 1359,
+              "h": 2736
+            },
+            "screenRect": {
+              "l": 0.06622516556291391,
+              "t": 0.03289473684210526,
+              "r": 0.9337748344370861,
+              "b": 0.9671052631578947
+            },
+            "screenCornerRadius": 0.15416
+          }
+        },
+        {
+          "id": "ultramarine",
+          "name": "Ultramarine",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16/ultramarine-landscape.png",
+            "bezel": {
+              "w": 2736,
+              "h": 1359
+            },
+            "screenRect": {
+              "l": 0.03289473684210526,
+              "t": 0.06622516556291391,
+              "r": 0.9671052631578947,
+              "b": 0.9337748344370861
+            },
+            "screenCornerRadius": 0.07657
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16/ultramarine-portrait.png",
+            "bezel": {
+              "w": 1359,
+              "h": 2736
+            },
+            "screenRect": {
+              "l": 0.06622516556291391,
+              "t": 0.03289473684210526,
+              "r": 0.9337748344370861,
+              "b": 0.9671052631578947
+            },
+            "screenCornerRadius": 0.15416
+          }
+        },
+        {
+          "id": "white",
+          "name": "White",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16/white-landscape.png",
+            "bezel": {
+              "w": 2736,
+              "h": 1359
+            },
+            "screenRect": {
+              "l": 0.03289473684210526,
+              "t": 0.06622516556291391,
+              "r": 0.9671052631578947,
+              "b": 0.9337748344370861
+            },
+            "screenCornerRadius": 0.07657
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16/white-portrait.png",
+            "bezel": {
+              "w": 1359,
+              "h": 2736
+            },
+            "screenRect": {
+              "l": 0.06622516556291391,
+              "t": 0.03289473684210526,
+              "r": 0.9337748344370861,
+              "b": 0.9671052631578947
+            },
+            "screenCornerRadius": 0.15416
+          }
+        }
+      ]
+    },
+    {
+      "id": "iphone-16-plus",
+      "family": "iPhone 16 Plus",
+      "kind": "phone",
+      "screen": {
+        "w": 1290,
+        "h": 2796
+      },
+      "colors": [
+        {
+          "id": "black",
+          "name": "Black",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-plus/black-landscape.png",
+            "bezel": {
+              "w": 2970,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.029292929292929294,
+              "t": 0.061224489795918366,
+              "r": 0.9707070707070707,
+              "b": 0.9387755102040817
+            },
+            "screenCornerRadius": 0.07222
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-plus/black-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 2970
+            },
+            "screenRect": {
+              "l": 0.061224489795918366,
+              "t": 0.029292929292929294,
+              "r": 0.9387755102040817,
+              "b": 0.9707070707070707
+            },
+            "screenCornerRadius": 0.14592
+          }
+        },
+        {
+          "id": "pink",
+          "name": "Pink",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-plus/pink-landscape.png",
+            "bezel": {
+              "w": 2970,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.029292929292929294,
+              "t": 0.061224489795918366,
+              "r": 0.9707070707070707,
+              "b": 0.9387755102040817
+            },
+            "screenCornerRadius": 0.07222
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-plus/pink-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 2970
+            },
+            "screenRect": {
+              "l": 0.061224489795918366,
+              "t": 0.029292929292929294,
+              "r": 0.9387755102040817,
+              "b": 0.9707070707070707
+            },
+            "screenCornerRadius": 0.14592
+          }
+        },
+        {
+          "id": "teal",
+          "name": "Teal",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-plus/teal-landscape.png",
+            "bezel": {
+              "w": 2970,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.029292929292929294,
+              "t": 0.061224489795918366,
+              "r": 0.9707070707070707,
+              "b": 0.9387755102040817
+            },
+            "screenCornerRadius": 0.07222
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-plus/teal-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 2970
+            },
+            "screenRect": {
+              "l": 0.061224489795918366,
+              "t": 0.029292929292929294,
+              "r": 0.9387755102040817,
+              "b": 0.9707070707070707
+            },
+            "screenCornerRadius": 0.14592
+          }
+        },
+        {
+          "id": "ultramarine",
+          "name": "Ultramarine",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-plus/ultramarine-landscape.png",
+            "bezel": {
+              "w": 2970,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.029292929292929294,
+              "t": 0.061224489795918366,
+              "r": 0.9707070707070707,
+              "b": 0.9387755102040817
+            },
+            "screenCornerRadius": 0.07222
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-plus/ultramarine-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 2970
+            },
+            "screenRect": {
+              "l": 0.061224489795918366,
+              "t": 0.029292929292929294,
+              "r": 0.9387755102040817,
+              "b": 0.9707070707070707
+            },
+            "screenCornerRadius": 0.14592
+          }
+        },
+        {
+          "id": "white",
+          "name": "White",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-plus/white-landscape.png",
+            "bezel": {
+              "w": 2970,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.029292929292929294,
+              "t": 0.061224489795918366,
+              "r": 0.9707070707070707,
+              "b": 0.9387755102040817
+            },
+            "screenCornerRadius": 0.07222
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-plus/white-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 2970
+            },
+            "screenRect": {
+              "l": 0.061224489795918366,
+              "t": 0.029292929292929294,
+              "r": 0.9387755102040817,
+              "b": 0.9707070707070707
+            },
+            "screenCornerRadius": 0.14592
+          }
+        }
+      ]
+    },
+    {
+      "id": "iphone-16-pro",
+      "family": "iPhone 16 Pro",
+      "kind": "phone",
+      "screen": {
+        "w": 1206,
+        "h": 2622
+      },
+      "colors": [
+        {
+          "id": "black-titanium",
+          "name": "Black Titanium",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-pro/black-titanium-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08777
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-pro/black-titanium-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17944
+          }
+        },
+        {
+          "id": "desert-titanium",
+          "name": "Desert Titanium",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-pro/desert-titanium-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08777
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-pro/desert-titanium-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17944
+          }
+        },
+        {
+          "id": "natural-titanium",
+          "name": "Natural Titanium",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-pro/natural-titanium-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08777
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-pro/natural-titanium-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17944
+          }
+        },
+        {
+          "id": "white-titanium",
+          "name": "White Titanium",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-pro/white-titanium-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08777
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-pro/white-titanium-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17944
+          }
+        }
+      ]
+    },
+    {
+      "id": "iphone-16-pro-max",
+      "family": "iPhone 16 Pro Max",
+      "kind": "phone",
+      "screen": {
+        "w": 1320,
+        "h": 2868
+      },
+      "colors": [
+        {
+          "id": "black-titanium",
+          "name": "Black Titanium",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-pro-max/black-titanium-landscape.png",
+            "bezel": {
+              "w": 3000,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.022,
+              "t": 0.05102040816326531,
+              "r": 0.978,
+              "b": 0.9489795918367347
+            },
+            "screenCornerRadius": 0.07742
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-pro-max/black-titanium-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 3000
+            },
+            "screenRect": {
+              "l": 0.05102040816326531,
+              "t": 0.022,
+              "r": 0.9489795918367347,
+              "b": 0.978
+            },
+            "screenCornerRadius": 0.15799
+          }
+        },
+        {
+          "id": "desert-titanium",
+          "name": "Desert Titanium",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-pro-max/desert-titanium-landscape.png",
+            "bezel": {
+              "w": 3000,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.022,
+              "t": 0.05102040816326531,
+              "r": 0.978,
+              "b": 0.9489795918367347
+            },
+            "screenCornerRadius": 0.07742
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-pro-max/desert-titanium-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 3000
+            },
+            "screenRect": {
+              "l": 0.05102040816326531,
+              "t": 0.022,
+              "r": 0.9489795918367347,
+              "b": 0.978
+            },
+            "screenCornerRadius": 0.15799
+          }
+        },
+        {
+          "id": "natural-titanium",
+          "name": "Natural Titanium",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-pro-max/natural-titanium-landscape.png",
+            "bezel": {
+              "w": 3000,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.022,
+              "t": 0.05102040816326531,
+              "r": 0.978,
+              "b": 0.9489795918367347
+            },
+            "screenCornerRadius": 0.07742
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-pro-max/natural-titanium-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 3000
+            },
+            "screenRect": {
+              "l": 0.05102040816326531,
+              "t": 0.022,
+              "r": 0.9489795918367347,
+              "b": 0.978
+            },
+            "screenCornerRadius": 0.15799
+          }
+        },
+        {
+          "id": "white-titanium",
+          "name": "White Titanium",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-16-pro-max/white-titanium-landscape.png",
+            "bezel": {
+              "w": 3000,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.022,
+              "t": 0.05102040816326531,
+              "r": 0.978,
+              "b": 0.9489795918367347
+            },
+            "screenCornerRadius": 0.07742
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-16-pro-max/white-titanium-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 3000
+            },
+            "screenRect": {
+              "l": 0.05102040816326531,
+              "t": 0.022,
+              "r": 0.9489795918367347,
+              "b": 0.978
+            },
+            "screenCornerRadius": 0.15799
+          }
+        }
+      ]
+    },
+    {
+      "id": "iphone-17",
+      "family": "iPhone 17",
+      "kind": "phone",
+      "screen": {
+        "w": 1206,
+        "h": 2622
+      },
+      "colors": [
+        {
+          "id": "black",
+          "name": "Black",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17/black-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08786
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17/black-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17963
+          }
+        },
+        {
+          "id": "lavender",
+          "name": "Lavender",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17/lavender-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08786
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17/lavender-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17963
+          }
+        },
+        {
+          "id": "mist-blue",
+          "name": "Mist Blue",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17/mist-blue-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08786
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17/mist-blue-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17963
+          }
+        },
+        {
+          "id": "sage",
+          "name": "Sage",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17/sage-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08786
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17/sage-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17963
+          }
+        },
+        {
+          "id": "white",
+          "name": "White",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17/white-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08786
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17/white-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17963
+          }
+        }
+      ]
+    },
+    {
+      "id": "iphone-17-pro",
+      "family": "iPhone 17 Pro",
+      "kind": "phone",
+      "screen": {
+        "w": 1206,
+        "h": 2622
+      },
+      "colors": [
+        {
+          "id": "cosmic-orange",
+          "name": "Cosmic Orange",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17-pro/cosmic-orange-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08668
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17-pro/cosmic-orange-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17722
+          }
+        },
+        {
+          "id": "deep-blue",
+          "name": "Deep Blue",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17-pro/deep-blue-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08668
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17-pro/deep-blue-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17722
+          }
+        },
+        {
+          "id": "silver",
+          "name": "Silver",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17-pro/silver-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 1350
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.05333333333333334,
+              "r": 0.975,
+              "b": 0.9466666666666667
+            },
+            "screenCornerRadius": 0.08668
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17-pro/silver-portrait.png",
+            "bezel": {
+              "w": 1350,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.05333333333333334,
+              "t": 0.025,
+              "r": 0.9466666666666667,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17722
+          }
+        }
+      ]
+    },
+    {
+      "id": "iphone-17-pro-max",
+      "family": "iPhone 17 Pro Max",
+      "kind": "phone",
+      "screen": {
+        "w": 1320,
+        "h": 2868
+      },
+      "colors": [
+        {
+          "id": "cosmic-orange",
+          "name": "Cosmic Orange",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17-pro-max/cosmic-orange-landscape.png",
+            "bezel": {
+              "w": 3000,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.022,
+              "t": 0.05102040816326531,
+              "r": 0.978,
+              "b": 0.9489795918367347
+            },
+            "screenCornerRadius": 0.084
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17-pro-max/cosmic-orange-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 3000
+            },
+            "screenRect": {
+              "l": 0.05102040816326531,
+              "t": 0.022,
+              "r": 0.9489795918367347,
+              "b": 0.978
+            },
+            "screenCornerRadius": 0.17143
+          }
+        },
+        {
+          "id": "deep-blue",
+          "name": "Deep Blue",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17-pro-max/deep-blue-landscape.png",
+            "bezel": {
+              "w": 3000,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.022,
+              "t": 0.05102040816326531,
+              "r": 0.978,
+              "b": 0.9489795918367347
+            },
+            "screenCornerRadius": 0.084
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17-pro-max/deep-blue-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 3000
+            },
+            "screenRect": {
+              "l": 0.05102040816326531,
+              "t": 0.022,
+              "r": 0.9489795918367347,
+              "b": 0.978
+            },
+            "screenCornerRadius": 0.17143
+          }
+        },
+        {
+          "id": "silver",
+          "name": "Silver",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-17-pro-max/silver-landscape.png",
+            "bezel": {
+              "w": 3000,
+              "h": 1470
+            },
+            "screenRect": {
+              "l": 0.022,
+              "t": 0.05102040816326531,
+              "r": 0.978,
+              "b": 0.9489795918367347
+            },
+            "screenCornerRadius": 0.084
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-17-pro-max/silver-portrait.png",
+            "bezel": {
+              "w": 1470,
+              "h": 3000
+            },
+            "screenRect": {
+              "l": 0.05102040816326531,
+              "t": 0.022,
+              "r": 0.9489795918367347,
+              "b": 0.978
+            },
+            "screenCornerRadius": 0.17143
+          }
+        }
+      ]
+    },
+    {
+      "id": "iphone-air",
+      "family": "iPhone Air",
+      "kind": "phone",
+      "screen": {
+        "w": 1260,
+        "h": 2736
+      },
+      "colors": [
+        {
+          "id": "cloud-white",
+          "name": "Cloud White",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-air/cloud-white-landscape.png",
+            "bezel": {
+              "w": 2880,
+              "h": 1380
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.043478260869565216,
+              "r": 0.975,
+              "b": 0.9565217391304348
+            },
+            "screenCornerRadius": 0.08377
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-air/cloud-white-portrait.png",
+            "bezel": {
+              "w": 1380,
+              "h": 2880
+            },
+            "screenRect": {
+              "l": 0.043478260869565216,
+              "t": 0.025,
+              "r": 0.9565217391304348,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17482
+          }
+        },
+        {
+          "id": "light-gold",
+          "name": "Light Gold",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-air/light-gold-landscape.png",
+            "bezel": {
+              "w": 2880,
+              "h": 1380
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.043478260869565216,
+              "r": 0.975,
+              "b": 0.9565217391304348
+            },
+            "screenCornerRadius": 0.08377
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-air/light-gold-portrait.png",
+            "bezel": {
+              "w": 1380,
+              "h": 2880
+            },
+            "screenRect": {
+              "l": 0.043478260869565216,
+              "t": 0.025,
+              "r": 0.9565217391304348,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17482
+          }
+        },
+        {
+          "id": "sky-blue",
+          "name": "Sky Blue",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-air/sky-blue-landscape.png",
+            "bezel": {
+              "w": 2880,
+              "h": 1380
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.043478260869565216,
+              "r": 0.975,
+              "b": 0.9565217391304348
+            },
+            "screenCornerRadius": 0.08377
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-air/sky-blue-portrait.png",
+            "bezel": {
+              "w": 1380,
+              "h": 2880
+            },
+            "screenRect": {
+              "l": 0.043478260869565216,
+              "t": 0.025,
+              "r": 0.9565217391304348,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17482
+          }
+        },
+        {
+          "id": "space-black",
+          "name": "Space Black",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-air/space-black-landscape.png",
+            "bezel": {
+              "w": 2880,
+              "h": 1380
+            },
+            "screenRect": {
+              "l": 0.025,
+              "t": 0.043478260869565216,
+              "r": 0.975,
+              "b": 0.9565217391304348
+            },
+            "screenCornerRadius": 0.08377
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-air/space-black-portrait.png",
+            "bezel": {
+              "w": 1380,
+              "h": 2880
+            },
+            "screenRect": {
+              "l": 0.043478260869565216,
+              "t": 0.025,
+              "r": 0.9565217391304348,
+              "b": 0.975
+            },
+            "screenCornerRadius": 0.17482
+          }
+        }
+      ]
+    },
+    {
+      "id": "ipad-pro-m5-11",
+      "family": "iPad Pro (M5) 11\"",
+      "kind": "tablet",
+      "screen": {
+        "w": 1668,
+        "h": 2420
+      },
+      "colors": [
+        {
+          "id": "silver",
+          "name": "Silver",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-pro-m5-11/silver-landscape.png",
+            "bezel": {
+              "w": 2640,
+              "h": 1880
+            },
+            "screenRect": {
+              "l": 0.041666666666666664,
+              "t": 0.05638297872340425,
+              "r": 0.9583333333333334,
+              "b": 0.9436170212765957
+            },
+            "screenCornerRadius": 0.02595
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-pro-m5-11/silver-portrait.png",
+            "bezel": {
+              "w": 1880,
+              "h": 2640
+            },
+            "screenRect": {
+              "l": 0.05638297872340425,
+              "t": 0.041666666666666664,
+              "r": 0.9436170212765957,
+              "b": 0.9583333333333334
+            },
+            "screenCornerRadius": 0.03644
+          }
+        },
+        {
+          "id": "space-black",
+          "name": "Space Black",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-pro-m5-11/space-black-landscape.png",
+            "bezel": {
+              "w": 2640,
+              "h": 1880
+            },
+            "screenRect": {
+              "l": 0.041666666666666664,
+              "t": 0.05638297872340425,
+              "r": 0.9583333333333334,
+              "b": 0.9436170212765957
+            },
+            "screenCornerRadius": 0.02595
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-pro-m5-11/space-black-portrait.png",
+            "bezel": {
+              "w": 1880,
+              "h": 2640
+            },
+            "screenRect": {
+              "l": 0.05638297872340425,
+              "t": 0.041666666666666664,
+              "r": 0.9436170212765957,
+              "b": 0.9583333333333334
+            },
+            "screenCornerRadius": 0.03644
+          }
+        }
+      ]
+    },
+    {
+      "id": "ipad-pro-m5-13",
+      "family": "iPad Pro (M5) 13\"",
+      "kind": "tablet",
+      "screen": {
+        "w": 2064,
+        "h": 2752
+      },
+      "colors": [
+        {
+          "id": "silver",
+          "name": "Silver",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-pro-m5-13/silver-landscape.png",
+            "bezel": {
+              "w": 3000,
+              "h": 2300
+            },
+            "screenRect": {
+              "l": 0.04133333333333333,
+              "t": 0.051304347826086956,
+              "r": 0.9586666666666667,
+              "b": 0.948695652173913
+            },
+            "screenCornerRadius": 0.02167
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-pro-m5-13/silver-portrait.png",
+            "bezel": {
+              "w": 2300,
+              "h": 3000
+            },
+            "screenRect": {
+              "l": 0.051304347826086956,
+              "t": 0.04133333333333333,
+              "r": 0.948695652173913,
+              "b": 0.9586666666666667
+            },
+            "screenCornerRadius": 0.02826
+          }
+        },
+        {
+          "id": "space-black",
+          "name": "Space Black",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-pro-m5-13/space-black-landscape.png",
+            "bezel": {
+              "w": 3000,
+              "h": 2300
+            },
+            "screenRect": {
+              "l": 0.04133333333333333,
+              "t": 0.051304347826086956,
+              "r": 0.9586666666666667,
+              "b": 0.948695652173913
+            },
+            "screenCornerRadius": 0.02167
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-pro-m5-13/space-black-portrait.png",
+            "bezel": {
+              "w": 2300,
+              "h": 3000
+            },
+            "screenRect": {
+              "l": 0.051304347826086956,
+              "t": 0.04133333333333333,
+              "r": 0.948695652173913,
+              "b": 0.9586666666666667
+            },
+            "screenCornerRadius": 0.02826
+          }
+        }
+      ]
+    },
+    {
+      "id": "ipad-air-11-m4",
+      "family": "iPad Air 11\" (M4)",
+      "kind": "tablet",
+      "screen": {
+        "w": 1640,
+        "h": 2360
+      },
+      "colors": [
+        {
+          "id": "blue",
+          "name": "Blue",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-air-11-m4/blue-landscape.png",
+            "bezel": {
+              "w": 2620,
+              "h": 1900
+            },
+            "screenRect": {
+              "l": 0.04961832061068702,
+              "t": 0.06842105263157895,
+              "r": 0.950381679389313,
+              "b": 0.9315789473684211
+            },
+            "screenCornerRadius": 0.01613
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-air-11-m4/blue-portrait.png",
+            "bezel": {
+              "w": 1900,
+              "h": 2620
+            },
+            "screenRect": {
+              "l": 0.06842105263157895,
+              "t": 0.04961832061068702,
+              "r": 0.9315789473684211,
+              "b": 0.950381679389313
+            },
+            "screenCornerRadius": 0.02224
+          }
+        },
+        {
+          "id": "purple",
+          "name": "Purple",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-air-11-m4/purple-landscape.png",
+            "bezel": {
+              "w": 2620,
+              "h": 1900
+            },
+            "screenRect": {
+              "l": 0.04961832061068702,
+              "t": 0.06842105263157895,
+              "r": 0.950381679389313,
+              "b": 0.9315789473684211
+            },
+            "screenCornerRadius": 0.01613
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-air-11-m4/purple-portrait.png",
+            "bezel": {
+              "w": 1900,
+              "h": 2620
+            },
+            "screenRect": {
+              "l": 0.06842105263157895,
+              "t": 0.04961832061068702,
+              "r": 0.9315789473684211,
+              "b": 0.950381679389313
+            },
+            "screenCornerRadius": 0.02224
+          }
+        },
+        {
+          "id": "space-gray",
+          "name": "Space Gray",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-air-11-m4/space-gray-landscape.png",
+            "bezel": {
+              "w": 2620,
+              "h": 1900
+            },
+            "screenRect": {
+              "l": 0.04961832061068702,
+              "t": 0.06842105263157895,
+              "r": 0.950381679389313,
+              "b": 0.9315789473684211
+            },
+            "screenCornerRadius": 0.01613
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-air-11-m4/space-gray-portrait.png",
+            "bezel": {
+              "w": 1900,
+              "h": 2620
+            },
+            "screenRect": {
+              "l": 0.06842105263157895,
+              "t": 0.04961832061068702,
+              "r": 0.9315789473684211,
+              "b": 0.950381679389313
+            },
+            "screenCornerRadius": 0.02224
+          }
+        },
+        {
+          "id": "starlight",
+          "name": "Starlight",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-air-11-m4/starlight-landscape.png",
+            "bezel": {
+              "w": 2620,
+              "h": 1900
+            },
+            "screenRect": {
+              "l": 0.04961832061068702,
+              "t": 0.06842105263157895,
+              "r": 0.950381679389313,
+              "b": 0.9315789473684211
+            },
+            "screenCornerRadius": 0.01613
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-air-11-m4/starlight-portrait.png",
+            "bezel": {
+              "w": 1900,
+              "h": 2620
+            },
+            "screenRect": {
+              "l": 0.06842105263157895,
+              "t": 0.04961832061068702,
+              "r": 0.9315789473684211,
+              "b": 0.950381679389313
+            },
+            "screenCornerRadius": 0.02224
+          }
+        }
+      ]
+    },
+    {
+      "id": "ipad-air-13-m4",
+      "family": "iPad Air 13\" (M4)",
+      "kind": "tablet",
+      "screen": {
+        "w": 2048,
+        "h": 2732
+      },
+      "colors": [
+        {
+          "id": "blue",
+          "name": "Blue",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-air-13-m4/blue-landscape.png",
+            "bezel": {
+              "w": 2980,
+              "h": 2300
+            },
+            "screenRect": {
+              "l": 0.04161073825503356,
+              "t": 0.05478260869565217,
+              "r": 0.9583892617449664,
+              "b": 0.9452173913043478
+            },
+            "screenCornerRadius": 0.01225
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-air-13-m4/blue-portrait.png",
+            "bezel": {
+              "w": 2300,
+              "h": 2980
+            },
+            "screenRect": {
+              "l": 0.05478260869565217,
+              "t": 0.04161073825503356,
+              "r": 0.9452173913043478,
+              "b": 0.9583892617449664
+            },
+            "screenCornerRadius": 0.01587
+          }
+        },
+        {
+          "id": "purple",
+          "name": "Purple",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-air-13-m4/purple-landscape.png",
+            "bezel": {
+              "w": 2980,
+              "h": 2300
+            },
+            "screenRect": {
+              "l": 0.04161073825503356,
+              "t": 0.05478260869565217,
+              "r": 0.9583892617449664,
+              "b": 0.9452173913043478
+            },
+            "screenCornerRadius": 0.01225
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-air-13-m4/purple-portrait.png",
+            "bezel": {
+              "w": 2300,
+              "h": 2980
+            },
+            "screenRect": {
+              "l": 0.05478260869565217,
+              "t": 0.04161073825503356,
+              "r": 0.9452173913043478,
+              "b": 0.9583892617449664
+            },
+            "screenCornerRadius": 0.01587
+          }
+        },
+        {
+          "id": "space-gray",
+          "name": "Space Gray",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-air-13-m4/space-gray-landscape.png",
+            "bezel": {
+              "w": 2980,
+              "h": 2300
+            },
+            "screenRect": {
+              "l": 0.04161073825503356,
+              "t": 0.05478260869565217,
+              "r": 0.9583892617449664,
+              "b": 0.9452173913043478
+            },
+            "screenCornerRadius": 0.01225
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-air-13-m4/space-gray-portrait.png",
+            "bezel": {
+              "w": 2300,
+              "h": 2980
+            },
+            "screenRect": {
+              "l": 0.05478260869565217,
+              "t": 0.04161073825503356,
+              "r": 0.9452173913043478,
+              "b": 0.9583892617449664
+            },
+            "screenCornerRadius": 0.01587
+          }
+        },
+        {
+          "id": "starlight",
+          "name": "Starlight",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-air-13-m4/starlight-landscape.png",
+            "bezel": {
+              "w": 2980,
+              "h": 2300
+            },
+            "screenRect": {
+              "l": 0.04161073825503356,
+              "t": 0.05478260869565217,
+              "r": 0.9583892617449664,
+              "b": 0.9452173913043478
+            },
+            "screenCornerRadius": 0.01225
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-air-13-m4/starlight-portrait.png",
+            "bezel": {
+              "w": 2300,
+              "h": 2980
+            },
+            "screenRect": {
+              "l": 0.05478260869565217,
+              "t": 0.04161073825503356,
+              "r": 0.9452173913043478,
+              "b": 0.9583892617449664
+            },
+            "screenCornerRadius": 0.01587
+          }
+        }
+      ]
+    },
+    {
+      "id": "ipad-mini-a17-pro",
+      "family": "iPad mini (A17 Pro)",
+      "kind": "tablet",
+      "screen": {
+        "w": 1488,
+        "h": 2266
+      },
+      "colors": [
+        {
+          "id": "blue",
+          "name": "Blue",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-mini-a17-pro/blue-landscape.png",
+            "bezel": {
+              "w": 2550,
+              "h": 1780
+            },
+            "screenRect": {
+              "l": 0.05568627450980392,
+              "t": 0.08202247191011236,
+              "r": 0.9443137254901961,
+              "b": 0.9179775280898876
+            },
+            "screenCornerRadius": 0.01824
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-mini-a17-pro/blue-portrait.png",
+            "bezel": {
+              "w": 1780,
+              "h": 2550
+            },
+            "screenRect": {
+              "l": 0.08202247191011236,
+              "t": 0.05568627450980392,
+              "r": 0.9179775280898876,
+              "b": 0.9443137254901961
+            },
+            "screenCornerRadius": 0.02612
+          }
+        },
+        {
+          "id": "purple",
+          "name": "Purple",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-mini-a17-pro/purple-landscape.png",
+            "bezel": {
+              "w": 2550,
+              "h": 1780
+            },
+            "screenRect": {
+              "l": 0.05568627450980392,
+              "t": 0.08202247191011236,
+              "r": 0.9443137254901961,
+              "b": 0.9179775280898876
+            },
+            "screenCornerRadius": 0.01824
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-mini-a17-pro/purple-portrait.png",
+            "bezel": {
+              "w": 1780,
+              "h": 2550
+            },
+            "screenRect": {
+              "l": 0.08202247191011236,
+              "t": 0.05568627450980392,
+              "r": 0.9179775280898876,
+              "b": 0.9443137254901961
+            },
+            "screenCornerRadius": 0.02612
+          }
+        },
+        {
+          "id": "space-gray",
+          "name": "Space Gray",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-mini-a17-pro/space-gray-landscape.png",
+            "bezel": {
+              "w": 2550,
+              "h": 1780
+            },
+            "screenRect": {
+              "l": 0.05568627450980392,
+              "t": 0.08202247191011236,
+              "r": 0.9443137254901961,
+              "b": 0.9179775280898876
+            },
+            "screenCornerRadius": 0.01824
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-mini-a17-pro/space-gray-portrait.png",
+            "bezel": {
+              "w": 1780,
+              "h": 2550
+            },
+            "screenRect": {
+              "l": 0.08202247191011236,
+              "t": 0.05568627450980392,
+              "r": 0.9179775280898876,
+              "b": 0.9443137254901961
+            },
+            "screenCornerRadius": 0.02612
+          }
+        },
+        {
+          "id": "starlight",
+          "name": "Starlight",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-mini-a17-pro/starlight-landscape.png",
+            "bezel": {
+              "w": 2550,
+              "h": 1780
+            },
+            "screenRect": {
+              "l": 0.05568627450980392,
+              "t": 0.08202247191011236,
+              "r": 0.9443137254901961,
+              "b": 0.9179775280898876
+            },
+            "screenCornerRadius": 0.01824
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-mini-a17-pro/starlight-portrait.png",
+            "bezel": {
+              "w": 1780,
+              "h": 2550
+            },
+            "screenRect": {
+              "l": 0.08202247191011236,
+              "t": 0.05568627450980392,
+              "r": 0.9179775280898876,
+              "b": 0.9443137254901961
+            },
+            "screenCornerRadius": 0.02612
+          }
+        }
+      ]
+    },
+    {
+      "id": "ipad-a16",
+      "family": "iPad (A16)",
+      "kind": "tablet",
+      "screen": {
+        "w": 1639,
+        "h": 2360
+      },
+      "colors": [
+        {
+          "id": "blue",
+          "name": "Blue",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-a16/blue-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 2040
+            },
+            "screenRect": {
+              "l": 0.07246376811594203,
+              "t": 0.09803921568627451,
+              "r": 0.927536231884058,
+              "b": 0.9014705882352941
+            },
+            "screenCornerRadius": 0.01812
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-a16/blue-portrait.png",
+            "bezel": {
+              "w": 2040,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.09803921568627451,
+              "t": 0.07246376811594203,
+              "r": 0.9014705882352941,
+              "b": 0.927536231884058
+            },
+            "screenCornerRadius": 0.02451
+          }
+        },
+        {
+          "id": "pink",
+          "name": "Pink",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-a16/pink-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 2040
+            },
+            "screenRect": {
+              "l": 0.07246376811594203,
+              "t": 0.09803921568627451,
+              "r": 0.927536231884058,
+              "b": 0.9014705882352941
+            },
+            "screenCornerRadius": 0.01812
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-a16/pink-portrait.png",
+            "bezel": {
+              "w": 2040,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.09803921568627451,
+              "t": 0.07246376811594203,
+              "r": 0.9014705882352941,
+              "b": 0.927536231884058
+            },
+            "screenCornerRadius": 0.02451
+          }
+        },
+        {
+          "id": "silver",
+          "name": "Silver",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-a16/silver-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 2040
+            },
+            "screenRect": {
+              "l": 0.07246376811594203,
+              "t": 0.09803921568627451,
+              "r": 0.927536231884058,
+              "b": 0.9014705882352941
+            },
+            "screenCornerRadius": 0.01812
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-a16/silver-portrait.png",
+            "bezel": {
+              "w": 2040,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.09803921568627451,
+              "t": 0.07246376811594203,
+              "r": 0.9014705882352941,
+              "b": 0.927536231884058
+            },
+            "screenCornerRadius": 0.02451
+          }
+        },
+        {
+          "id": "yellow",
+          "name": "Yellow",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/ipad-a16/yellow-landscape.png",
+            "bezel": {
+              "w": 2760,
+              "h": 2040
+            },
+            "screenRect": {
+              "l": 0.07246376811594203,
+              "t": 0.09803921568627451,
+              "r": 0.927536231884058,
+              "b": 0.9014705882352941
+            },
+            "screenCornerRadius": 0.01812
+          },
+          "portrait": {
+            "asset": "assets/device_frames/ipad-a16/yellow-portrait.png",
+            "bezel": {
+              "w": 2040,
+              "h": 2760
+            },
+            "screenRect": {
+              "l": 0.09803921568627451,
+              "t": 0.07246376811594203,
+              "r": 0.9014705882352941,
+              "b": 0.927536231884058
+            },
+            "screenCornerRadius": 0.02451
+          }
+        }
+      ]
+    }
+  ]
+}
