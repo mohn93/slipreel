@@ -15,6 +15,7 @@ class PermissionStatusRow extends StatelessWidget {
     required this.status,
     required this.onGrant,
     required this.onOpenSettings,
+    this.canRequestWhenDenied = false,
   });
 
   final PermissionKind kind;
@@ -24,6 +25,16 @@ class PermissionStatusRow extends StatelessWidget {
   final PermissionStatus status;
   final VoidCallback onGrant;
   final VoidCallback onOpenSettings;
+
+  /// When true, a `denied`/`restricted` status still offers the active
+  /// "Enable" action (→ [onGrant]) instead of the passive "Open System
+  /// Settings" path. Needed for Screen Recording: `CGPreflightScreenCaptureAccess`
+  /// is binary (never reports `notDetermined`), so a never-granted app reads
+  /// back as `denied` on first run — yet it must be able to FIRE the request so
+  /// macOS prompts and registers the app in the Screen Recording list. Without
+  /// this, the user is dead-ended into a Settings pane the app was never added
+  /// to and has to `+`-add the bundle by hand.
+  final bool canRequestWhenDenied;
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +78,12 @@ class PermissionStatusRow extends StatelessWidget {
         return const Icon(Icons.check_circle, color: Colors.greenAccent);
       case PermissionStatus.denied:
       case PermissionStatus.restricted:
+        if (canRequestWhenDenied) {
+          return FilledButton.tonal(
+            onPressed: onGrant,
+            child: const Text('Enable'),
+          );
+        }
         return OutlinedButton(
           onPressed: onOpenSettings,
           child: const Text('Open System Settings'),

@@ -42,15 +42,25 @@ class ScreenCaptureManager: NSObject {
     return CGPreflightScreenCaptureAccess()
   }
 
-  /// Request screen recording permission
-  /// Note: On macOS, this requires user to grant permission in System Preferences
-  func requestPermission() async throws -> Bool {
-    // Attempting to get shareable content will trigger permission prompt
-    do {
-      _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-      return true
-    } catch {
-      throw ScreenCaptureError.permissionDenied
+  /// Request Screen Recording permission via `CGRequestScreenCaptureAccess()`
+  /// — the canonical request. On first determination it (a) registers the app
+  /// in System Settings → Privacy & Security → Screen Recording and (b) shows
+  /// the system consent prompt (which deep-links the user to that pane). That
+  /// registration is what makes the app appear in the list at all; without ever
+  /// calling it the user has to add the bundle by hand with the "+" button.
+  ///
+  /// Returns the CURRENT grant — `false` until the user enables the toggle AND
+  /// the process is relaunched (Screen Recording grants only take effect on the
+  /// next launch, which macOS prompts for). The passive `checkPermission()`
+  /// above intentionally stays on `CGPreflightScreenCaptureAccess()` so that
+  /// app-focus re-probes (`refreshAll()` on resume) never re-pop this prompt.
+  ///
+  /// Dispatched to the main thread: the consent prompt must be presented there.
+  func requestPermission() async -> Bool {
+    return await withCheckedContinuation { continuation in
+      DispatchQueue.main.async {
+        continuation.resume(returning: CGRequestScreenCaptureAccess())
+      }
     }
   }
 
