@@ -124,6 +124,23 @@ flutter:
     - assets/cursors/click_cursor.png
     - assets/wallpapers/macos/
     - assets/wallpapers/spring/
+    # Device-frame bezels (Apple Design Resources) — licensed for distribution
+    # (Apple sign-off received 2026-06-23).
+    - assets/device_frames/
+    - assets/device_frames/iphone-16/
+    - assets/device_frames/iphone-16-plus/
+    - assets/device_frames/iphone-16-pro/
+    - assets/device_frames/iphone-16-pro-max/
+    - assets/device_frames/iphone-17/
+    - assets/device_frames/iphone-17-pro/
+    - assets/device_frames/iphone-17-pro-max/
+    - assets/device_frames/iphone-air/
+    - assets/device_frames/ipad-pro-m5-11/
+    - assets/device_frames/ipad-pro-m5-13/
+    - assets/device_frames/ipad-air-11-m4/
+    - assets/device_frames/ipad-air-13-m4/
+    - assets/device_frames/ipad-mini-a17-pro/
+    - assets/device_frames/ipad-a16/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
