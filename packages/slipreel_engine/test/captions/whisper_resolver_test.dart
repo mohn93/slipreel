@@ -35,5 +35,22 @@ void main() {
         throwsA(isA<WhisperNotFoundException>()),
       );
     });
+
+    test('caches result — second resolve() does not re-scan', () {
+      var callCount = 0;
+      final r = WhisperResolver(
+        bundledPath: '/app/whisper-cli',
+        fileExists: (p) {
+          callCount++;
+          return p == '/app/whisper-cli';
+        },
+        pathEnv: '',
+      );
+      r.resolve();
+      final countAfterFirst = callCount;
+      r.resolve();
+      // The second call must not invoke fileExists again.
+      expect(callCount, countAfterFirst);
+    });
   });
 }

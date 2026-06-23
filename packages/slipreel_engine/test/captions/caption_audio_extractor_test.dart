@@ -38,6 +38,14 @@ void main() {
       expect(a, containsAllInOrder(['-map', '0:a:0']));
       expect(a, isNot(contains('-filter_complex')));
     });
+
+    test('system + 1 stream falls back to -map 0:a:0 without -filter_complex',
+        () {
+      final a = buildCaptionAudioArgs(
+          'in.mov', CaptionAudioSource.system, 1, 'out.wav');
+      expect(a, containsAllInOrder(['-map', '0:a:0']));
+      expect(a, isNot(contains('-filter_complex')));
+    });
   });
 
   group('availableCaptionSources', () {

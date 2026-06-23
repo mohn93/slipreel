@@ -29,5 +29,19 @@ void main() {
       expect(parseWhisperJson('not json'), isEmpty);
       expect(parseWhisperJson('{}'), isEmpty);
     });
+
+    test('skips entry with wrong-typed offsets/text without throwing', () {
+      // "from"/"to" are string-encoded numbers, "text" is an integer — all
+      // wrong types.  The parser must return [] (entry skipped), never throw.
+      const badJson = '''
+{
+  "transcription": [
+    {"offsets": {"from": "0", "to": "4000"}, "text": 42}
+  ]
+}
+''';
+      expect(() => parseWhisperJson(badJson), returnsNormally);
+      expect(parseWhisperJson(badJson), isEmpty);
+    });
   });
 }

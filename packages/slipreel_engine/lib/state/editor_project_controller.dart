@@ -280,7 +280,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     next.insert(
       index + 1,
       CaptionSegment(
-        id: '${seg.id}.b${seg.endMicros}',
+        id: '${seg.id}.s$atMicros',
         startMicros: atMicros,
         endMicros: seg.endMicros,
         text: '',

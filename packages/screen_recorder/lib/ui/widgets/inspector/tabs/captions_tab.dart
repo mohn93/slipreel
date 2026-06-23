@@ -148,7 +148,7 @@ class _StatusLine extends StatelessWidget {
         text,
         style: TextStyle(
           fontSize: 12,
-          color: isError ? Colors.redAccent : Colors.white70,
+          color: isError ? Colors.redAccent : kInspectorMuted,
         ),
       ),
     );

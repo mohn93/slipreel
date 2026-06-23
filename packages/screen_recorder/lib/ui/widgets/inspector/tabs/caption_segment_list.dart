@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 
+import '../inspector_widgets.dart';
+
 String _fmt(int micros) {
   final d = Duration(microseconds: micros);
   final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -99,7 +101,7 @@ class _SegmentRowState extends State<_SegmentRow> {
                 onTap: () => widget.onSeek?.call(seg.start),
                 child: Text(
                   '${_fmt(seg.startMicros)} – ${_fmt(seg.endMicros)}',
-                  style: const TextStyle(fontSize: 11, color: Colors.white54),
+                  style: const TextStyle(fontSize: 11, color: kInspectorMuted),
                 ),
               ),
               const Spacer(),

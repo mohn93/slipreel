@@ -27,9 +27,9 @@ List<CaptionSegment> parseWhisperJson(String jsonText) {
     if (item is! Map<String, dynamic>) continue;
     final offsets = item['offsets'];
     if (offsets is! Map<String, dynamic>) continue;
-    final fromMs = (offsets['from'] as num?)?.toInt();
-    final toMs = (offsets['to'] as num?)?.toInt();
-    final text = (item['text'] as String?)?.trim() ?? '';
+    final fromMs = offsets['from'] is num ? (offsets['from'] as num).toInt() : null;
+    final toMs = offsets['to'] is num ? (offsets['to'] as num).toInt() : null;
+    final text = item['text'] is String ? (item['text'] as String).trim() : '';
     if (fromMs == null || toMs == null || text.isEmpty) continue;
     out.add(CaptionSegment(
       id: 'seg_$i',

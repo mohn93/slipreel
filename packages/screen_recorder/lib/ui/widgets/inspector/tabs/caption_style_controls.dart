@@ -61,7 +61,7 @@ class CaptionStyleControls extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         const Text('Text color',
-            style: TextStyle(fontSize: 12, color: Colors.white70)),
+            style: TextStyle(fontSize: 12, color: kInspectorMuted)),
         const SizedBox(height: 6),
         Row(
           children: [
@@ -78,8 +78,8 @@ class CaptionStyleControls extends ConsumerWidget {
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: style.textColor == c
-                            ? Colors.white
-                            : Colors.white24,
+                            ? kInspectorAccent
+                            : kInspectorBorder,
                         width: style.textColor == c ? 3 : 1,
                       ),
                     ),
