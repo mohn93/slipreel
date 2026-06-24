@@ -194,7 +194,11 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
         if (category == 'Favorite') {
           if (favorites.isEmpty) return; // nothing to pick from yet
           final pick = favorites[Random().nextInt(favorites.length)];
-          _updateWallpaper(category: pick.category, index: pick.index);
+          if (pick.isColor) {
+            _updateSolidColor(pick.color!);
+          } else {
+            _updateWallpaper(category: pick.category, index: pick.index);
+          }
         } else {
           _updateWallpaper(
             category: category,

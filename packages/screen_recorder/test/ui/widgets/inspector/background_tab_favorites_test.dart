@@ -208,4 +208,40 @@ void main() {
     await tester.pump();
     expect(favs.state, contains(const WallpaperRef.color(Color(0xFF224466))));
   });
+
+  testWidgets('random-favorite applies a color favorite as its saved color',
+      (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+          (ref) => WallpaperFavoritesController(
+            store: store,
+            initial: const [WallpaperRef.color(Color(0xFF224466))])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Favorite'));
+    await tester.pumpAndSettle();
+
+    // Exactly one favorite → Random().nextInt(1) == 0 deterministically picks
+    // the color ref, which must apply its saved color (not the procedural
+    // Solid#0).
+    await tester.tap(find.text('Pick random wallpaper'));
+    await tester.pumpAndSettle();
+
+    expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
+    expect(editor.current.windowFrame.solidColor, const Color(0xFF224466));
+  });
 }
