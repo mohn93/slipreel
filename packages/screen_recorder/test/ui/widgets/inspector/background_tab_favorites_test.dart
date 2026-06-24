@@ -9,6 +9,7 @@ import 'package:screen_recorder/state/wallpaper_favorites_controller.dart';
 import 'package:screen_recorder/state/wallpaper_favorites_store.dart';
 import 'package:screen_recorder/state/wallpaper_ref.dart';
 import 'package:screen_recorder/ui/theme/app_palette.dart';
+import 'package:screen_recorder/ui/widgets/inspector/color_picker_field.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/background_tab.dart';
 
 Future<Widget> host({required List<WallpaperRef> initialFavorites}) async {
@@ -108,5 +109,38 @@ void main() {
     await tester.tap(find.text('Favorite'));
     await tester.pumpAndSettle();
     expect(find.byType(AnimatedSize), findsOneWidget);
+  });
+
+  testWidgets('Solid tab shows the color picker and writes solidColor',
+      (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+          (ref) => WallpaperFavoritesController(store: store, initial: const [])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Solid'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ColorPickerField), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '#224466');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
+    expect(editor.current.windowFrame.solidColor, const Color(0xFF224466));
   });
 }

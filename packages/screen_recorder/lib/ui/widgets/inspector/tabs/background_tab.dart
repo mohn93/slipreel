@@ -8,6 +8,7 @@ import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/state/wallpaper_favorites_controller.dart';
 import 'package:screen_recorder/state/wallpaper_ref.dart';
 import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
+import 'package:screen_recorder/ui/widgets/inspector/color_picker_field.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Decode width for the picker's photo thumbnails. The source wallpapers are
@@ -76,6 +77,14 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     });
   }
 
+  void _updateSolidColor(Color color) => _mutateFrame(
+        (f) => f.copyWith(
+          wallpaperCategory: 'Solid',
+          solidColor: color,
+          name: 'Custom',
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final frame = ref.watch(editorProjectControllerProvider).windowFrame;
@@ -88,7 +97,8 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     final liveCategory = frame.wallpaperCategory;
     if (liveCategory != null &&
         liveCategory != _selectedCategory &&
-        _selectedCategory != 'Favorite') {
+        _selectedCategory != 'Favorite' &&
+        _selectedCategory != 'Solid') {
       _selectedCategory = liveCategory;
     }
     final selectedCategory = _selectedCategory!;
@@ -227,7 +237,14 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     List<WallpaperRef> favorites,
   ) {
     final Widget content;
-    if (category == 'Favorite') {
+    if (category == 'Solid') {
+      final seed = frame.solidColor ??
+          (frame.wallpaperCategory != null
+              ? wallpaperRepresentativeColor(
+                  frame.wallpaperCategory!, frame.wallpaperIndex)
+              : const Color(0xFF5B6470));
+      content = ColorPickerField(color: seed, onChanged: _updateSolidColor);
+    } else if (category == 'Favorite') {
       content = favorites.isEmpty
           ? _favoritesEmptyState()
           : _favoritesGrid(frame, favorites);
