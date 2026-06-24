@@ -290,4 +290,69 @@ void main() {
     expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
     expect(editor.current.windowFrame.solidColor, const Color(0xFF224466));
   });
+
+  testWidgets('after picking a Solid color, the macOS chip still switches tabs',
+      (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+            (ref) => WallpaperFavoritesController(store: store, initial: const [])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+            extensions: const [AppPalette.midnight], useMaterial3: true),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Pick a custom Solid color (pins frame.wallpaperCategory == 'Solid').
+    await tester.tap(find.text('Solid'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '#224466');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
+
+    // Tapping the macOS chip must switch to the macOS grid — not bounce back
+    // to the Solid picker because the frame's category is still 'Solid'.
+    // (Entering the hex scrolled the picker into view; scroll back up so the
+    // chip row is hittable again.)
+    await tester.drag(find.byType(ListView), const Offset(0, 500));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('macOS'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('photo:macOS:0')), findsOneWidget);
+    expect(find.byType(ColorPickerField), findsNothing);
+  });
+
+  testWidgets('browsing to a different category chip is not bounced back',
+      (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+            (ref) => WallpaperFavoritesController(store: store, initial: const [])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+            extensions: const [AppPalette.midnight], useMaterial3: true),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Default frame is macOS; tapping Spring (a different chip, no tile applied
+    // yet) must show Spring tiles rather than snapping back to macOS.
+    await tester.tap(find.text('Spring'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('photo:Spring:0')), findsOneWidget);
+  });
 }

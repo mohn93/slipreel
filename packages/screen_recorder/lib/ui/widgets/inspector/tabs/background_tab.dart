@@ -36,6 +36,11 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
   /// first build so we can seed from the current project state.
   String? _selectedCategory;
 
+  /// The frame category we last synced the chip from. Used to follow only
+  /// an *external* change to the frame's category (an edge), so the auto-sync
+  /// doesn't fight the user's chip taps. See the note in [build].
+  String? _lastFrameCategory;
+
   /// Apply a copyWith mutation to the project's current windowFrame and
   /// re-tag the result as 'Custom' — matches the legacy
   /// FrameSettingsProvider.updateXxx contract so the template chip
@@ -91,18 +96,23 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
   Widget build(BuildContext context) {
     final frame = ref.watch(editorProjectControllerProvider).windowFrame;
     final favorites = ref.watch(wallpaperFavoritesProvider);
-    // Seed/auto-sync the local category. Mirrors the previous
-    // FrameSettingsProvider listener (which jumped the chip to the
-    // chosen wallpaper's category when an external write — e.g. the
-    // sidecar load — landed).
+    // Seed, then follow ONLY an external change to the frame's category
+    // (sidecar load, applying a wallpaper) — detected as an EDGE vs the last
+    // value we saw — not a mere difference from the user's current chip pick.
+    // Comparing against _selectedCategory (the old approach) fought chip taps:
+    // a tap changed _selectedCategory but not the frame, so the next rebuild
+    // snapped it back, and once a Solid color was picked
+    // (frame.wallpaperCategory == 'Solid') you could never leave the Solid
+    // tab. Sticky tabs (Favorite/Solid) still never auto-follow.
     _selectedCategory ??= frame.wallpaperCategory ?? 'macOS';
     final liveCategory = frame.wallpaperCategory;
     if (liveCategory != null &&
-        liveCategory != _selectedCategory &&
+        liveCategory != _lastFrameCategory &&
         _selectedCategory != 'Favorite' &&
         _selectedCategory != 'Solid') {
       _selectedCategory = liveCategory;
     }
+    _lastFrameCategory = liveCategory;
     final selectedCategory = _selectedCategory!;
 
     final padding = frame.padding.left;
