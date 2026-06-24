@@ -33,6 +33,8 @@ import 'state/app_palette_controller.dart';
 import 'state/app_palette_store.dart';
 import 'state/snap_preference_store.dart';
 import 'state/snap_preference_controller.dart';
+import 'state/wallpaper_favorites_store.dart';
+import 'state/wallpaper_favorites_controller.dart';
 import 'state/window_mode_controller.dart';
 import 'ui/app_alerts/alert_stack_overlay.dart';
 import 'ui/app_alerts/app_alerts.dart';
@@ -158,6 +160,10 @@ Future<void> main() async {
   final snapPreferenceStore = await SnapPreferenceStore.resolveDefault();
   final snapEnabledInitial = snapPreferenceStore.load();
 
+  final wallpaperFavoritesStore =
+      await WallpaperFavoritesStore.resolveDefault();
+  final initialFavorites = wallpaperFavoritesStore.load();
+
   if (kDebugMode || kProfileMode) {
     _registerSlipreelDebugExtensions(tipsController: tipsController);
   }
@@ -202,6 +208,12 @@ Future<void> main() async {
         (ref) => SnapPreferenceController(
           store: snapPreferenceStore,
           initial: snapEnabledInitial,
+        ),
+      ),
+      wallpaperFavoritesProvider.overrideWith(
+        (ref) => WallpaperFavoritesController(
+          store: wallpaperFavoritesStore,
+          initial: initialFavorites,
         ),
       ),
     ],
