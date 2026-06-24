@@ -1,4 +1,5 @@
 import 'package:flutter/painting.dart';
+import 'package:slipreel_engine/rendering/wallpaper.dart';
 
 /// A serializable reference to a single wallpaper in the picker.
 ///
@@ -40,7 +41,9 @@ class WallpaperRef {
         if (parts.length != 2 || parts[0].isEmpty) return null;
         final index = int.tryParse(parts[1]);
         if (index == null) return null;
-        return WallpaperRef.photo(parts[0], index);
+        // Canonicalize so a favorite saved under a since-renamed category
+        // (e.g. Radial→Abstract) still resolves to the renamed photos.
+        return WallpaperRef.photo(canonicalWallpaperCategory(parts[0]), index);
       case 'color':
         if (rest.length != 6) return null;
         final v = int.tryParse(rest, radix: 16);
