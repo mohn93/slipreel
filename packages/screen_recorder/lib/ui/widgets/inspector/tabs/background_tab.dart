@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
+import 'package:screen_recorder/state/wallpaper_favorites_controller.dart';
+import 'package:screen_recorder/state/wallpaper_ref.dart';
 import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
@@ -71,6 +73,7 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
   @override
   Widget build(BuildContext context) {
     final frame = ref.watch(editorProjectControllerProvider).windowFrame;
+    final favorites = ref.watch(wallpaperFavoritesProvider);
     // Seed/auto-sync the local category. Mirrors the previous
     // FrameSettingsProvider listener (which jumped the chip to the
     // chosen wallpaper's category when an external write — e.g. the
@@ -107,7 +110,7 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
         const SizedBox(height: 16),
         _randomButton(selectedCategory),
         const SizedBox(height: 16),
-        _wallpaperGrid(selectedCategory, selectedIndex),
+        _wallpaperGrid(selectedCategory, selectedIndex, favorites),
         const InspectorSectionDivider(),
         InspectorSlider(
           label: 'Background blur',
@@ -205,7 +208,11 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     );
   }
 
-  Widget _wallpaperGrid(String category, int selectedIndex) {
+  Widget _wallpaperGrid(
+    String category,
+    int selectedIndex,
+    List<WallpaperRef> favorites,
+  ) {
     return GridView.count(
       crossAxisCount: 7,
       shrinkWrap: true,
@@ -216,42 +223,116 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
       childAspectRatio: 1,
       children: [
         for (int i = 0; i < kWallpapersPerCategory; i++)
-          _WallpaperThumb(
-            decoration: wallpaperDecoration(category, i),
-            isSelected: i == selectedIndex,
-            onTap: () => _updateWallpaper(
-              category: category,
-              index: i,
-            ),
-          ),
+          _categoryThumb(category, i, selectedIndex, favorites),
       ],
+    );
+  }
+
+  Widget _categoryThumb(
+    String category,
+    int i,
+    int selectedIndex,
+    List<WallpaperRef> favorites,
+  ) {
+    final wref = WallpaperRef.photo(category, i);
+    return _WallpaperThumb(
+      key: ValueKey(wref.encode()),
+      decoration: wallpaperDecoration(category, i),
+      isSelected: i == selectedIndex,
+      isFavorite: favorites.contains(wref),
+      onTap: () => _updateWallpaper(category: category, index: i),
+      onToggleFavorite: () =>
+          ref.read(wallpaperFavoritesProvider.notifier).toggle(wref),
     );
   }
 }
 
 class _WallpaperThumb extends StatelessWidget {
   const _WallpaperThumb({
+    super.key,
     required this.decoration,
     required this.isSelected,
+    required this.isFavorite,
     required this.onTap,
+    required this.onToggleFavorite,
   });
 
   final BoxDecoration decoration;
   final bool isSelected;
+  final bool isFavorite;
   final VoidCallback onTap;
+  final VoidCallback onToggleFavorite;
+
+  Future<void> _showFavoriteMenu(BuildContext context, Offset globalPos) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final selected = await showMenu<bool>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        globalPos.dx,
+        globalPos.dy,
+        overlay.size.width - globalPos.dx,
+        overlay.size.height - globalPos.dy,
+      ),
+      color: kInspectorPanel,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: kInspectorBorder),
+      ),
+      items: [
+        PopupMenuItem<bool>(
+          value: true,
+          height: 36,
+          child: Row(
+            children: [
+              Icon(isFavorite ? Icons.star : Icons.star_border,
+                  size: 16, color: Colors.white),
+              const SizedBox(width: 10),
+              Text(
+                isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (selected == true) onToggleFavorite();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SpringHoverButton(
-      onTap: onTap,
-      borderRadius: 8,
-      child: Container(
-        decoration: decoration.copyWith(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? kInspectorAccent : Colors.transparent,
-            width: 2,
-          ),
+    return GestureDetector(
+      onSecondaryTapDown: (d) => _showFavoriteMenu(context, d.globalPosition),
+      child: SpringHoverButton(
+        onTap: onTap,
+        borderRadius: 8,
+        child: Stack(
+          children: [
+            Container(
+              decoration: decoration.copyWith(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isSelected ? kInspectorAccent : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+            ),
+            if (isFavorite)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.star, size: 12, color: Colors.white),
+                ),
+              ),
+          ],
         ),
       ),
     );
