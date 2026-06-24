@@ -80,16 +80,15 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     // sidecar load — landed).
     _selectedCategory ??= frame.wallpaperCategory ?? 'macOS';
     final liveCategory = frame.wallpaperCategory;
-    if (liveCategory != null && liveCategory != _selectedCategory) {
+    if (liveCategory != null &&
+        liveCategory != _selectedCategory &&
+        _selectedCategory != 'Favorite') {
       _selectedCategory = liveCategory;
     }
     final selectedCategory = _selectedCategory!;
 
     final padding = frame.padding.left;
     final cornerRadius = frame.cornerRadius;
-    final selectedIndex = frame.wallpaperCategory == selectedCategory
-        ? frame.wallpaperIndex
-        : -1;
 
     return ListView(
       padding: EdgeInsets.zero,
@@ -108,9 +107,9 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
           }),
         ),
         const SizedBox(height: 16),
-        _randomButton(selectedCategory),
+        _randomButton(selectedCategory, favorites),
         const SizedBox(height: 16),
-        _wallpaperGrid(selectedCategory, selectedIndex, favorites),
+        _gridRegion(selectedCategory, frame, favorites),
         const InspectorSectionDivider(),
         InspectorSlider(
           label: 'Background blur',
@@ -173,12 +172,20 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     );
   }
 
-  Widget _randomButton(String category) {
+  Widget _randomButton(String category, List<WallpaperRef> favorites) {
     return SpringHoverButton(
-      onTap: () => _updateWallpaper(
-        category: category,
-        index: Random().nextInt(kWallpapersPerCategory),
-      ),
+      onTap: () {
+        if (category == 'Favorite') {
+          if (favorites.isEmpty) return; // nothing to pick from yet
+          final pick = favorites[Random().nextInt(favorites.length)];
+          _updateWallpaper(category: pick.category, index: pick.index);
+        } else {
+          _updateWallpaper(
+            category: category,
+            index: Random().nextInt(kWallpapersPerCategory),
+          );
+        }
+      },
       borderRadius: 12,
       child: Container(
         width: double.infinity,
@@ -205,6 +212,58 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _gridRegion(
+    String category,
+    WindowFrame frame,
+    List<WallpaperRef> favorites,
+  ) {
+    if (category == 'Favorite') {
+      return favorites.isEmpty
+          ? _favoritesEmptyState()
+          : _favoritesGrid(frame, favorites);
+    }
+    final selectedIndex =
+        frame.wallpaperCategory == category ? frame.wallpaperIndex : -1;
+    return _wallpaperGrid(category, selectedIndex, favorites);
+  }
+
+  Widget _favoritesGrid(WindowFrame frame, List<WallpaperRef> favorites) {
+    final notifier = ref.read(wallpaperFavoritesProvider.notifier);
+    final current = (frame.wallpaperCategory != null)
+        ? WallpaperRef.photo(frame.wallpaperCategory!, frame.wallpaperIndex)
+        : null;
+    return GridView.count(
+      crossAxisCount: 7,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      childAspectRatio: 1,
+      children: [
+        for (final wref in favorites)
+          _WallpaperThumb(
+            key: ValueKey(wref.encode()),
+            decoration: wallpaperDecoration(wref.category, wref.index),
+            isSelected: wref == current,
+            isFavorite: true,
+            onTap: () =>
+                _updateWallpaper(category: wref.category, index: wref.index),
+            onToggleFavorite: () => notifier.toggle(wref),
+          ),
+      ],
+    );
+  }
+
+  Widget _favoritesEmptyState() {
+    return const InspectorPlaceholder(
+      icon: Icons.star_border,
+      title: 'No favorites yet',
+      body: 'Right-click any wallpaper and choose Add to Favorites '
+          'to save it here.',
     );
   }
 

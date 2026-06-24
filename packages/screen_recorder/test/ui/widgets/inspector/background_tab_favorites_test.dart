@@ -58,4 +58,41 @@ void main() {
     expect(find.text('Add to Favorites'), findsNothing); // menu dismissed
     expect(find.byIcon(Icons.star), findsOneWidget); // badge on the tile
   });
+
+  testWidgets('Favorite tab shows the empty state when there are none',
+      (tester) async {
+    await tester.pumpWidget(await host(initialFavorites: const []));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Favorite'));
+    await tester.pumpAndSettle();
+    expect(find.text('No favorites yet'), findsOneWidget);
+  });
+
+  testWidgets('Favorite tab renders saved wallpapers, applies, stays sticky',
+      (tester) async {
+    await tester.pumpWidget(
+      await host(initialFavorites: const [WallpaperRef.photo('Sunset', 4)]),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Favorite'));
+    await tester.pumpAndSettle();
+
+    final tile = find.byKey(const ValueKey('photo:Sunset:4'));
+    expect(tile, findsOneWidget);
+
+    // Apply it.
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+
+    final editor = ProviderScope.containerOf(
+      tester.element(find.byType(BackgroundTab)),
+    ).read(editorProjectControllerProvider.notifier);
+    expect(editor.current.windowFrame.wallpaperCategory, 'Sunset');
+    expect(editor.current.windowFrame.wallpaperIndex, 4);
+
+    // Sticky: still on the Favorite tab (the favorite is still shown).
+    expect(find.byKey(const ValueKey('photo:Sunset:4')), findsOneWidget);
+  });
 }
