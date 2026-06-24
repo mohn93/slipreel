@@ -244,8 +244,8 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
                   frame.wallpaperCategory!, frame.wallpaperIndex)
               : const Color(0xFF5B6470));
       final notifier = ref.read(wallpaperFavoritesProvider.notifier);
-      final isFav = frame.solidColor != null &&
-          favorites.contains(WallpaperRef.color(frame.solidColor!));
+      final effectiveColor = frame.solidColor ?? seed;
+      final isFav = favorites.contains(WallpaperRef.color(effectiveColor));
       content = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -255,8 +255,8 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
               key: const Key('favorite-current-color'),
-              onPressed: () => notifier.toggle(
-                  WallpaperRef.color(frame.solidColor ?? seed)),
+              onPressed: () =>
+                  notifier.toggle(WallpaperRef.color(effectiveColor)),
               icon: Icon(isFav ? Icons.star : Icons.star_border,
                   size: 16, color: Colors.white),
               label: Text(isFav ? 'Favorited' : 'Add to Favorites',
