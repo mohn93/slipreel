@@ -32,6 +32,10 @@ class WindowFrame {
   /// Border color (null for no border)
   final Color? borderColor;
 
+  /// Exact background color when [wallpaperCategory] == 'Solid'. Null falls
+  /// back to the procedural index-based solid (legacy projects).
+  final Color? solidColor;
+
   /// Wallpaper category selected in the inspector (e.g. "macOS",
   /// "Sunset"). Null means no wallpaper layer is drawn — the editor
   /// backdrop shows through.
@@ -79,6 +83,7 @@ class WindowFrame {
     this.backgroundColor,
     required this.borderWidth,
     this.borderColor,
+    this.solidColor,
     this.wallpaperCategory,
     this.wallpaperIndex = 0,
     this.backgroundBlur = 0,
@@ -176,6 +181,7 @@ class WindowFrame {
     Color? backgroundColor,
     double? borderWidth,
     Color? borderColor,
+    Color? solidColor,
     String? wallpaperCategory,
     int? wallpaperIndex,
     double? backgroundBlur,
@@ -196,6 +202,7 @@ class WindowFrame {
       backgroundColor: backgroundColor ?? this.backgroundColor,
       borderWidth: borderWidth ?? this.borderWidth,
       borderColor: borderColor ?? this.borderColor,
+      solidColor: solidColor ?? this.solidColor,
       wallpaperCategory: clearWallpaper
           ? null
           : (wallpaperCategory ?? this.wallpaperCategory),
@@ -231,6 +238,7 @@ class WindowFrame {
       'backgroundColor': backgroundColor?.toARGB32(),
       'borderWidth': borderWidth,
       'borderColor': borderColor?.toARGB32(),
+      'solidColor': solidColor?.toARGB32(),
       'wallpaperCategory': wallpaperCategory,
       'wallpaperIndex': wallpaperIndex,
       'backgroundBlur': backgroundBlur,
@@ -268,6 +276,9 @@ class WindowFrame {
       borderColor: json['borderColor'] != null
           ? Color(json['borderColor'] as int)
           : null,
+      solidColor: json['solidColor'] != null
+          ? Color(json['solidColor'] as int)
+          : null,
       wallpaperCategory: json['wallpaperCategory'] as String?,
       wallpaperIndex: (json['wallpaperIndex'] as num?)?.toInt() ?? 0,
       backgroundBlur:
@@ -293,6 +304,7 @@ class WindowFrame {
         other.backgroundColor == backgroundColor &&
         other.borderWidth == borderWidth &&
         other.borderColor == borderColor &&
+        other.solidColor == solidColor &&
         other.wallpaperCategory == wallpaperCategory &&
         other.wallpaperIndex == wallpaperIndex &&
         other.backgroundBlur == backgroundBlur &&
@@ -314,6 +326,7 @@ class WindowFrame {
       backgroundColor,
       borderWidth,
       borderColor,
+      solidColor,
       wallpaperCategory,
       wallpaperIndex,
       backgroundBlur,
