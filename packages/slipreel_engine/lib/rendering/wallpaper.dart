@@ -106,7 +106,11 @@ BoxDecoration wallpaperDecoration(
   String category,
   int index, {
   int? thumbCacheWidth,
+  Color? solidColor,
 }) {
+  if (category == 'Solid' && solidColor != null) {
+    return BoxDecoration(color: solidColor);
+  }
   final r = Random('$category.$index'.hashCode);
   if (isPhotoWallpaperCategory(category)) {
     return _photoDecoration(category, index, thumbCacheWidth);
@@ -231,7 +235,9 @@ const Map<String, List<Color>> _photoCategoryColors = {
 /// first stop (visually the "top" color); for photo-backed categories
 /// we use a hand-tuned palette; for solids the color itself. Falls
 /// back to neutral grey if the decoration shape is unknown.
-Color wallpaperRepresentativeColor(String category, int index) {
+Color wallpaperRepresentativeColor(String category, int index,
+    {Color? solidColor}) {
+  if (category == 'Solid' && solidColor != null) return solidColor;
   if (isPhotoWallpaperCategory(category)) {
     final key = category == 'Favorite' ? 'macOS' : category;
     final palette = _photoCategoryColors[key];

@@ -91,4 +91,34 @@ void main() {
       expect(dec.color, isNotNull);
     });
   });
+
+  group('Solid color override', () {
+    test('Solid + solidColor renders that exact color', () {
+      final dec = wallpaperDecoration('Solid', 0,
+          solidColor: const Color(0xFF123456));
+      expect(dec.color, const Color(0xFF123456));
+      expect(dec.gradient, isNull);
+    });
+
+    test('Solid without solidColor keeps the legacy procedural fill', () {
+      final dec = wallpaperDecoration('Solid', 0);
+      expect(dec.color, isNotNull);
+      expect(dec.color, isNot(const Color(0xFF123456)));
+    });
+
+    test('representative color returns the custom solidColor', () {
+      expect(
+        wallpaperRepresentativeColor('Solid', 0,
+            solidColor: const Color(0xFF777777)),
+        const Color(0xFF777777),
+      );
+    });
+
+    test('non-Solid categories ignore solidColor', () {
+      final dec = wallpaperDecoration('macOS', 0,
+          solidColor: const Color(0xFF123456));
+      expect(dec.image, isNotNull); // still a photo
+      expect(dec.color, isNull);
+    });
+  });
 }
