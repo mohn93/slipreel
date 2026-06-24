@@ -187,6 +187,7 @@ class WindowFrame {
     double? backgroundBlur,
     double? inset,
     bool clearWallpaper = false,
+    bool clearSolidColor = false,
     String? deviceFrameId,
     String? deviceFrameColor,
     bool? deviceFrameAdjustSize,
@@ -202,7 +203,7 @@ class WindowFrame {
       backgroundColor: backgroundColor ?? this.backgroundColor,
       borderWidth: borderWidth ?? this.borderWidth,
       borderColor: borderColor ?? this.borderColor,
-      solidColor: solidColor ?? this.solidColor,
+      solidColor: clearSolidColor ? null : (solidColor ?? this.solidColor),
       wallpaperCategory: clearWallpaper
           ? null
           : (wallpaperCategory ?? this.wallpaperCategory),

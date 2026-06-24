@@ -28,4 +28,10 @@ void main() {
     expect(a, b);
     expect(a == c, isFalse);
   });
+
+  test('copyWith clearSolidColor drops the color', () {
+    final f = WindowFrame.rounded().copyWith(solidColor: const Color(0xFF112233));
+    expect(f.solidColor, const Color(0xFF112233));
+    expect(f.copyWith(clearSolidColor: true).solidColor, isNull);
+  });
 }

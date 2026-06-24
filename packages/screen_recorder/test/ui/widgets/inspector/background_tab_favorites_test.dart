@@ -209,6 +209,52 @@ void main() {
     expect(favs.state, contains(const WallpaperRef.color(Color(0xFF224466))));
   });
 
+  testWidgets(
+      'applying a photo:Solid favorite clears a stale custom solidColor',
+      (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+          (ref) => WallpaperFavoritesController(
+              store: store,
+              initial: const [WallpaperRef.photo('Solid', 5)])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Pick a custom solid color first.
+    await tester.tap(find.text('Solid'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '#224466');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(editor.current.windowFrame.solidColor, const Color(0xFF224466));
+
+    // Now apply the legacy photo:Solid:5 favorite.
+    // Scroll back to top so the chip group (lazy ListView) is in viewport.
+    await tester.drag(find.byType(ListView), const Offset(0, 500));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Favorite'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('photo:Solid:5')));
+    await tester.pumpAndSettle();
+
+    expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
+    expect(editor.current.windowFrame.wallpaperIndex, 5);
+    expect(editor.current.windowFrame.solidColor, isNull); // stale color cleared
+  });
+
   testWidgets('random-favorite applies a color favorite as its saved color',
       (tester) async {
     final editor = EditorProjectController();

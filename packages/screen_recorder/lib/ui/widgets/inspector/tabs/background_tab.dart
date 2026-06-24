@@ -67,11 +67,13 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
   void _updateWallpaper({required String? category, int index = 0}) {
     _mutateFrame((f) {
       if (category == null) {
-        return f.copyWith(clearWallpaper: true, name: 'Custom');
+        return f.copyWith(
+            clearWallpaper: true, clearSolidColor: true, name: 'Custom');
       }
       return f.copyWith(
         wallpaperCategory: category,
         wallpaperIndex: index,
+        clearSolidColor: true,
         name: 'Custom',
       );
     });
