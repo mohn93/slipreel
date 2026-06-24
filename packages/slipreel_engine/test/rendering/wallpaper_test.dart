@@ -70,4 +70,25 @@ void main() {
       expect(photoWallpaperAsset('Favorite', 0), contains('assets/wallpapers/macos/'));
     });
   });
+
+  group('wallpaperDecoration thumbnail downsampling', () {
+    test('photo thumb decodes via ResizeImage at the requested width', () {
+      final dec = wallpaperDecoration('macOS', 0, thumbCacheWidth: 256);
+      final image = dec.image!.image;
+      expect(image, isA<ResizeImage>());
+      expect((image as ResizeImage).width, 256);
+      expect(image.imageProvider, isA<AssetImage>());
+    });
+
+    test('photo full-res (no thumbCacheWidth) stays a plain AssetImage', () {
+      final dec = wallpaperDecoration('macOS', 0);
+      expect(dec.image!.image, isA<AssetImage>());
+    });
+
+    test('procedural categories ignore thumbCacheWidth (no image)', () {
+      final dec = wallpaperDecoration('Solid', 0, thumbCacheWidth: 256);
+      expect(dec.image, isNull);
+      expect(dec.color, isNotNull);
+    });
+  });
 }

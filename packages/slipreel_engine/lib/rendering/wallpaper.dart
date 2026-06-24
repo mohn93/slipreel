@@ -97,10 +97,19 @@ String? photoWallpaperAsset(String category, int index) {
 /// "Favorite" shares the macOS palette today — there's no real
 /// favoriting yet; this keeps the chip non-empty so users can preview
 /// it.
-BoxDecoration wallpaperDecoration(String category, int index) {
+/// [thumbCacheWidth], when set (only the picker grid passes it), decodes
+/// photo wallpapers at that pixel width via [ResizeImage] instead of full
+/// resolution. The source JPEGs are ~2400px wide (~15 MB decoded each); a
+/// grid of 16 full-res decodes blows past Flutter's 100 MB image cache and
+/// stutters. The playback canvas/export pass no width and keep full res.
+BoxDecoration wallpaperDecoration(
+  String category,
+  int index, {
+  int? thumbCacheWidth,
+}) {
   final r = Random('$category.$index'.hashCode);
   if (isPhotoWallpaperCategory(category)) {
-    return _photoDecoration(category, index);
+    return _photoDecoration(category, index, thumbCacheWidth);
   }
   switch (category) {
     case 'Sunset':
@@ -110,15 +119,19 @@ BoxDecoration wallpaperDecoration(String category, int index) {
     case 'Solid':
       return _solid(r);
     default:
-      return _photoDecoration('macOS', index);
+      return _photoDecoration('macOS', index, thumbCacheWidth);
   }
 }
 
-BoxDecoration _photoDecoration(String category, int index) {
+BoxDecoration _photoDecoration(String category, int index,
+    [int? thumbCacheWidth]) {
   final path = photoWallpaperAsset(category, index)!;
+  final AssetImage asset = AssetImage(path);
   return BoxDecoration(
     image: DecorationImage(
-      image: AssetImage(path),
+      image: thumbCacheWidth == null
+          ? asset
+          : ResizeImage(asset, width: thumbCacheWidth),
       fit: BoxFit.cover,
       // Higher filter quality for the picker tiles — when scaled down
       // to thumbnail size the default linear filter looks soft.

@@ -161,25 +161,53 @@ class InspectorChipGroup<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      // Don't clip the chips' hover lean/tilt overshoot at the panel edge.
-      clipBehavior: Clip.none,
-      child: Row(
-        children: [
-          for (final item in items) ...[
-            InspectorChip(
-              label: labelOf(item),
-              icon: iconOf?.call(item),
-              selected: item == selected,
-              onTap: () => onSelected(item),
-            ),
-            const SizedBox(width: 8),
+    // Clip the horizontal scroll axis so chips scrolled off-screen don't paint
+    // over the rail/canvas, but extend the vertical axis past the strip so the
+    // spring-hover lean/scale/fly-off overshoot stays unclipped. The viewport's
+    // own `clipBehavior` is all-or-nothing, so it can't do one axis without the
+    // other — hence the dedicated clipper + `Clip.none` on the scroll view.
+    return ClipRect(
+      clipper: const _HorizontalBleedClipper(verticalOverflow: 48),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        child: Row(
+          children: [
+            for (final item in items) ...[
+              InspectorChip(
+                label: labelOf(item),
+                icon: iconOf?.call(item),
+                selected: item == selected,
+                onTap: () => onSelected(item),
+              ),
+              const SizedBox(width: 8),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
+}
+
+/// Clips a horizontally-scrolling viewport on its scroll (x) axis only,
+/// inflating the cross (y) axis by [verticalOverflow] so spring-hover
+/// overshoot above/below the strip is not clipped. See [InspectorChipGroup].
+class _HorizontalBleedClipper extends CustomClipper<Rect> {
+  const _HorizontalBleedClipper({required this.verticalOverflow});
+
+  final double verticalOverflow;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTRB(
+        0,
+        -verticalOverflow,
+        size.width,
+        size.height + verticalOverflow,
+      );
+
+  @override
+  bool shouldReclip(_HorizontalBleedClipper oldClipper) =>
+      oldClipper.verticalOverflow != verticalOverflow;
 }
 
 /// Horizontal row of square option tiles, used for cursor styles and
