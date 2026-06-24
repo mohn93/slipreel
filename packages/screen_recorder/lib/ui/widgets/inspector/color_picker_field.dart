@@ -56,7 +56,7 @@ class _ColorPickerFieldState extends State<ColorPickerField> {
   void didUpdateWidget(ColorPickerField old) {
     super.didUpdateWidget(old);
     if (widget.color.toARGB32() != _hsv.toColor().toARGB32()) {
-      _hsv = HSVColor.fromColor(widget.color);
+      setState(() => _hsv = HSVColor.fromColor(widget.color));
       _hex.text = formatHexColor(widget.color);
     }
   }
@@ -178,7 +178,11 @@ class _ColorPickerFieldState extends State<ColorPickerField> {
                       ),
                     ),
                   ),
-                  Positioned(left: (_hsv.hue / 360) * w - 7, top: 0, child: _thumb()),
+                  Positioned(
+                    left: ((_hsv.hue / 360) * w - 7).clamp(0.0, w - 14),
+                    top: 0,
+                    child: _thumb(),
+                  ),
                 ]),
               );
             },
@@ -200,7 +204,6 @@ class _ColorPickerFieldState extends State<ColorPickerField> {
             child: TextField(
               controller: _hex,
               onSubmitted: _applyHex,
-              onEditingComplete: () => _applyHex(_hex.text),
               style: const TextStyle(color: Colors.white, fontSize: 13),
               decoration: InputDecoration(
                 isDense: true,
