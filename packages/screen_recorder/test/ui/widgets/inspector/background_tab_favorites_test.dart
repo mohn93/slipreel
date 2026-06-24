@@ -95,4 +95,18 @@ void main() {
     // Sticky: still on the Favorite tab (the favorite is still shown).
     expect(find.byKey(const ValueKey('photo:Sunset:4')), findsOneWidget);
   });
+
+  testWidgets('grid region is wrapped in AnimatedSize and tab-switch is smooth',
+      (tester) async {
+    await tester.pumpWidget(
+      await host(initialFavorites: const [WallpaperRef.photo('Sunset', 4)]),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(AnimatedSize), findsOneWidget);
+
+    // Switching to a different-height tab must not throw.
+    await tester.tap(find.text('Favorite'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AnimatedSize), findsOneWidget);
+  });
 }

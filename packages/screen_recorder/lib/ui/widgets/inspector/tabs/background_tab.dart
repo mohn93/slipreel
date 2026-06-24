@@ -220,14 +220,22 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     WindowFrame frame,
     List<WallpaperRef> favorites,
   ) {
+    final Widget content;
     if (category == 'Favorite') {
-      return favorites.isEmpty
+      content = favorites.isEmpty
           ? _favoritesEmptyState()
           : _favoritesGrid(frame, favorites);
+    } else {
+      final selectedIndex =
+          frame.wallpaperCategory == category ? frame.wallpaperIndex : -1;
+      content = _wallpaperGrid(category, selectedIndex, favorites);
     }
-    final selectedIndex =
-        frame.wallpaperCategory == category ? frame.wallpaperIndex : -1;
-    return _wallpaperGrid(category, selectedIndex, favorites);
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: content,
+    );
   }
 
   Widget _favoritesGrid(WindowFrame frame, List<WallpaperRef> favorites) {
