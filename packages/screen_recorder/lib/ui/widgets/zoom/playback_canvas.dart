@@ -1140,6 +1140,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                     category: currentFrame.wallpaperCategory!,
                     index: currentFrame.wallpaperIndex,
                     blur: currentFrame.backgroundBlur,
+                    solidColor: currentFrame.solidColor,
                   );
 
             // BEZEL-BLUR DIVERGENCE (accepted): DeviceFrameComposition renders
@@ -1814,8 +1815,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     required String category,
     required int index,
     required double blur,
+    Color? solidColor,
   }) {
-    final fill = Container(decoration: wallpaperDecoration(category, index));
+    final fill = Container(
+        decoration: wallpaperDecoration(category, index, solidColor: solidColor));
     if (blur <= 0) return fill;
     // ClipRect prevents the gaussian tail from leaking outside the
     // frame's totalSize. ImageFiltered does a saveLayer internally,

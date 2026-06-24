@@ -8,6 +8,7 @@ import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/state/wallpaper_favorites_controller.dart';
 import 'package:screen_recorder/state/wallpaper_ref.dart';
 import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
+import 'package:screen_recorder/ui/widgets/inspector/color_picker_field.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 /// Decode width for the picker's photo thumbnails. The source wallpapers are
@@ -34,6 +35,11 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
   /// chip selection persists across rebuilds. Lazily initialized on
   /// first build so we can seed from the current project state.
   String? _selectedCategory;
+
+  /// The frame category we last synced the chip from. Used to follow only
+  /// an *external* change to the frame's category (an edge), so the auto-sync
+  /// doesn't fight the user's chip taps. See the note in [build].
+  String? _lastFrameCategory;
 
   /// Apply a copyWith mutation to the project's current windowFrame and
   /// re-tag the result as 'Custom' — matches the legacy
@@ -66,31 +72,47 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
   void _updateWallpaper({required String? category, int index = 0}) {
     _mutateFrame((f) {
       if (category == null) {
-        return f.copyWith(clearWallpaper: true, name: 'Custom');
+        return f.copyWith(
+            clearWallpaper: true, clearSolidColor: true, name: 'Custom');
       }
       return f.copyWith(
         wallpaperCategory: category,
         wallpaperIndex: index,
+        clearSolidColor: true,
         name: 'Custom',
       );
     });
   }
 
+  void _updateSolidColor(Color color) => _mutateFrame(
+        (f) => f.copyWith(
+          wallpaperCategory: 'Solid',
+          solidColor: color,
+          name: 'Custom',
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final frame = ref.watch(editorProjectControllerProvider).windowFrame;
     final favorites = ref.watch(wallpaperFavoritesProvider);
-    // Seed/auto-sync the local category. Mirrors the previous
-    // FrameSettingsProvider listener (which jumped the chip to the
-    // chosen wallpaper's category when an external write — e.g. the
-    // sidecar load — landed).
+    // Seed, then follow ONLY an external change to the frame's category
+    // (sidecar load, applying a wallpaper) — detected as an EDGE vs the last
+    // value we saw — not a mere difference from the user's current chip pick.
+    // Comparing against _selectedCategory (the old approach) fought chip taps:
+    // a tap changed _selectedCategory but not the frame, so the next rebuild
+    // snapped it back, and once a Solid color was picked
+    // (frame.wallpaperCategory == 'Solid') you could never leave the Solid
+    // tab. Sticky tabs (Favorite/Solid) still never auto-follow.
     _selectedCategory ??= frame.wallpaperCategory ?? 'macOS';
     final liveCategory = frame.wallpaperCategory;
     if (liveCategory != null &&
-        liveCategory != _selectedCategory &&
-        _selectedCategory != 'Favorite') {
+        liveCategory != _lastFrameCategory &&
+        _selectedCategory != 'Favorite' &&
+        _selectedCategory != 'Solid') {
       _selectedCategory = liveCategory;
     }
+    _lastFrameCategory = liveCategory;
     final selectedCategory = _selectedCategory!;
 
     final padding = frame.padding.left;
@@ -184,7 +206,11 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
         if (category == 'Favorite') {
           if (favorites.isEmpty) return; // nothing to pick from yet
           final pick = favorites[Random().nextInt(favorites.length)];
-          _updateWallpaper(category: pick.category, index: pick.index);
+          if (pick.isColor) {
+            _updateSolidColor(pick.color!);
+          } else {
+            _updateWallpaper(category: pick.category, index: pick.index);
+          }
         } else {
           _updateWallpaper(
             category: category,
@@ -227,7 +253,35 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     List<WallpaperRef> favorites,
   ) {
     final Widget content;
-    if (category == 'Favorite') {
+    if (category == 'Solid') {
+      final seed = frame.solidColor ??
+          (frame.wallpaperCategory != null
+              ? wallpaperRepresentativeColor(
+                  frame.wallpaperCategory!, frame.wallpaperIndex)
+              : const Color(0xFF5B6470));
+      final notifier = ref.read(wallpaperFavoritesProvider.notifier);
+      final effectiveColor = frame.solidColor ?? seed;
+      final isFav = favorites.contains(WallpaperRef.color(effectiveColor));
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ColorPickerField(color: seed, onChanged: _updateSolidColor),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const Key('favorite-current-color'),
+              onPressed: () =>
+                  notifier.toggle(WallpaperRef.color(effectiveColor)),
+              icon: Icon(isFav ? Icons.star : Icons.star_border,
+                  size: 16, color: Colors.white),
+              label: Text(isFav ? 'Favorited' : 'Add to Favorites',
+                  style: const TextStyle(color: Colors.white, fontSize: 13)),
+            ),
+          ),
+        ],
+      );
+    } else if (category == 'Favorite') {
       content = favorites.isEmpty
           ? _favoritesEmptyState()
           : _favoritesGrid(frame, favorites);
@@ -246,9 +300,14 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
 
   Widget _favoritesGrid(WindowFrame frame, List<WallpaperRef> favorites) {
     final notifier = ref.read(wallpaperFavoritesProvider.notifier);
-    final current = (frame.wallpaperCategory != null)
-        ? WallpaperRef.photo(frame.wallpaperCategory!, frame.wallpaperIndex)
-        : null;
+    final WallpaperRef? current;
+    if (frame.wallpaperCategory == 'Solid' && frame.solidColor != null) {
+      current = WallpaperRef.color(frame.solidColor!);
+    } else if (frame.wallpaperCategory != null) {
+      current = WallpaperRef.photo(frame.wallpaperCategory!, frame.wallpaperIndex);
+    } else {
+      current = null;
+    }
     return GridView.count(
       crossAxisCount: 7,
       shrinkWrap: true,
@@ -261,12 +320,15 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
         for (final wref in favorites)
           _WallpaperThumb(
             key: ValueKey(wref.encode()),
-            decoration: wallpaperDecoration(wref.category, wref.index,
-                thumbCacheWidth: _kWallpaperThumbCacheWidth),
+            decoration: wref.isColor
+                ? BoxDecoration(color: wref.color)
+                : wallpaperDecoration(wref.category, wref.index,
+                    thumbCacheWidth: _kWallpaperThumbCacheWidth),
             isSelected: wref == current,
             isFavorite: true,
-            onTap: () =>
-                _updateWallpaper(category: wref.category, index: wref.index),
+            onTap: () => wref.isColor
+                ? _updateSolidColor(wref.color!)
+                : _updateWallpaper(category: wref.category, index: wref.index),
             onToggleFavorite: () => notifier.toggle(wref),
           ),
       ],

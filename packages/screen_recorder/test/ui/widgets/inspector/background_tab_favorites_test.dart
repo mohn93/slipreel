@@ -9,6 +9,7 @@ import 'package:screen_recorder/state/wallpaper_favorites_controller.dart';
 import 'package:screen_recorder/state/wallpaper_favorites_store.dart';
 import 'package:screen_recorder/state/wallpaper_ref.dart';
 import 'package:screen_recorder/ui/theme/app_palette.dart';
+import 'package:screen_recorder/ui/widgets/inspector/color_picker_field.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/background_tab.dart';
 
 Future<Widget> host({required List<WallpaperRef> initialFavorites}) async {
@@ -108,5 +109,250 @@ void main() {
     await tester.tap(find.text('Favorite'));
     await tester.pumpAndSettle();
     expect(find.byType(AnimatedSize), findsOneWidget);
+  });
+
+  testWidgets('Solid tab shows the color picker and writes solidColor',
+      (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+          (ref) => WallpaperFavoritesController(store: store, initial: const [])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Solid'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ColorPickerField), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '#224466');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
+    expect(editor.current.windowFrame.solidColor, const Color(0xFF224466));
+  });
+
+  testWidgets('Favorite tab renders a color favorite and applies it', (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+          (ref) => WallpaperFavoritesController(
+            store: store,
+            initial: const [WallpaperRef.color(Color(0xFF224466))])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Favorite'));
+    await tester.pumpAndSettle();
+    final tile = find.byKey(const ValueKey('color:224466'));
+    expect(tile, findsOneWidget);
+
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
+    expect(editor.current.windowFrame.solidColor, const Color(0xFF224466));
+  });
+
+  testWidgets('the Solid picker can favorite the current color', (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    final favs = WallpaperFavoritesController(store: store, initial: const []);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith((ref) => favs),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Solid'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '#224466');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('favorite-current-color')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('favorite-current-color')));
+    await tester.pump();
+    expect(favs.state, contains(const WallpaperRef.color(Color(0xFF224466))));
+  });
+
+  testWidgets(
+      'applying a photo:Solid favorite clears a stale custom solidColor',
+      (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+          (ref) => WallpaperFavoritesController(
+              store: store,
+              initial: const [WallpaperRef.photo('Solid', 5)])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Pick a custom solid color first.
+    await tester.tap(find.text('Solid'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '#224466');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(editor.current.windowFrame.solidColor, const Color(0xFF224466));
+
+    // Now apply the legacy photo:Solid:5 favorite.
+    // Scroll back to top so the chip group (lazy ListView) is in viewport.
+    await tester.drag(find.byType(ListView), const Offset(0, 500));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Favorite'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('photo:Solid:5')));
+    await tester.pumpAndSettle();
+
+    expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
+    expect(editor.current.windowFrame.wallpaperIndex, 5);
+    expect(editor.current.windowFrame.solidColor, isNull); // stale color cleared
+  });
+
+  testWidgets('random-favorite applies a color favorite as its saved color',
+      (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+          (ref) => WallpaperFavoritesController(
+            store: store,
+            initial: const [WallpaperRef.color(Color(0xFF224466))])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Favorite'));
+    await tester.pumpAndSettle();
+
+    // Exactly one favorite → Random().nextInt(1) == 0 deterministically picks
+    // the color ref, which must apply its saved color (not the procedural
+    // Solid#0).
+    await tester.tap(find.text('Pick random wallpaper'));
+    await tester.pumpAndSettle();
+
+    expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
+    expect(editor.current.windowFrame.solidColor, const Color(0xFF224466));
+  });
+
+  testWidgets('after picking a Solid color, the macOS chip still switches tabs',
+      (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+            (ref) => WallpaperFavoritesController(store: store, initial: const [])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+            extensions: const [AppPalette.midnight], useMaterial3: true),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Pick a custom Solid color (pins frame.wallpaperCategory == 'Solid').
+    await tester.tap(find.text('Solid'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '#224466');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
+
+    // Tapping the macOS chip must switch to the macOS grid — not bounce back
+    // to the Solid picker because the frame's category is still 'Solid'.
+    // (Entering the hex scrolled the picker into view; scroll back up so the
+    // chip row is hittable again.)
+    await tester.drag(find.byType(ListView), const Offset(0, 500));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('macOS'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('photo:macOS:0')), findsOneWidget);
+    expect(find.byType(ColorPickerField), findsNothing);
+  });
+
+  testWidgets('browsing to a different category chip is not bounced back',
+      (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+            (ref) => WallpaperFavoritesController(store: store, initial: const [])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+            extensions: const [AppPalette.midnight], useMaterial3: true),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Default frame is macOS; tapping Spring (a different chip, no tile applied
+    // yet) must show Spring tiles rather than snapping back to macOS.
+    await tester.tap(find.text('Spring'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('photo:Spring:0')), findsOneWidget);
   });
 }
