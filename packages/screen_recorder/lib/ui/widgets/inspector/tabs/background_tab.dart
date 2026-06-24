@@ -10,6 +10,12 @@ import 'package:screen_recorder/state/wallpaper_ref.dart';
 import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
+/// Decode width for the picker's photo thumbnails. The source wallpapers are
+/// ~2400px wide (~15 MB decoded each); decoding 16 at full res to draw ~50px
+/// tiles overruns Flutter's image cache and stutters. ~256px is generously
+/// crisp for the tile (cover, up to 3× DPR) at a fraction of the memory.
+const int _kWallpaperThumbCacheWidth = 256;
+
 /// Background tab — wallpaper picker, blur, padding, corners, inset.
 ///
 /// All controls write through to [editorProjectControllerProvider]'s
@@ -255,7 +261,8 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
         for (final wref in favorites)
           _WallpaperThumb(
             key: ValueKey(wref.encode()),
-            decoration: wallpaperDecoration(wref.category, wref.index),
+            decoration: wallpaperDecoration(wref.category, wref.index,
+                thumbCacheWidth: _kWallpaperThumbCacheWidth),
             isSelected: wref == current,
             isFavorite: true,
             onTap: () =>
@@ -304,7 +311,8 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     final wref = WallpaperRef.photo(category, i);
     return _WallpaperThumb(
       key: ValueKey(wref.encode()),
-      decoration: wallpaperDecoration(category, i),
+      decoration: wallpaperDecoration(category, i,
+          thumbCacheWidth: _kWallpaperThumbCacheWidth),
       isSelected: i == selectedIndex,
       isFavorite: favorites.contains(wref),
       onTap: () => _updateWallpaper(category: category, index: i),
