@@ -243,7 +243,28 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
               ? wallpaperRepresentativeColor(
                   frame.wallpaperCategory!, frame.wallpaperIndex)
               : const Color(0xFF5B6470));
-      content = ColorPickerField(color: seed, onChanged: _updateSolidColor);
+      final notifier = ref.read(wallpaperFavoritesProvider.notifier);
+      final isFav = frame.solidColor != null &&
+          favorites.contains(WallpaperRef.color(frame.solidColor!));
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ColorPickerField(color: seed, onChanged: _updateSolidColor),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const Key('favorite-current-color'),
+              onPressed: () => notifier.toggle(
+                  WallpaperRef.color(frame.solidColor ?? seed)),
+              icon: Icon(isFav ? Icons.star : Icons.star_border,
+                  size: 16, color: Colors.white),
+              label: Text(isFav ? 'Favorited' : 'Add to Favorites',
+                  style: const TextStyle(color: Colors.white, fontSize: 13)),
+            ),
+          ),
+        ],
+      );
     } else if (category == 'Favorite') {
       content = favorites.isEmpty
           ? _favoritesEmptyState()
@@ -263,9 +284,14 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
 
   Widget _favoritesGrid(WindowFrame frame, List<WallpaperRef> favorites) {
     final notifier = ref.read(wallpaperFavoritesProvider.notifier);
-    final current = (frame.wallpaperCategory != null)
-        ? WallpaperRef.photo(frame.wallpaperCategory!, frame.wallpaperIndex)
-        : null;
+    final WallpaperRef? current;
+    if (frame.wallpaperCategory == 'Solid' && frame.solidColor != null) {
+      current = WallpaperRef.color(frame.solidColor!);
+    } else if (frame.wallpaperCategory != null) {
+      current = WallpaperRef.photo(frame.wallpaperCategory!, frame.wallpaperIndex);
+    } else {
+      current = null;
+    }
     return GridView.count(
       crossAxisCount: 7,
       shrinkWrap: true,
@@ -278,12 +304,15 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
         for (final wref in favorites)
           _WallpaperThumb(
             key: ValueKey(wref.encode()),
-            decoration: wallpaperDecoration(wref.category, wref.index,
-                thumbCacheWidth: _kWallpaperThumbCacheWidth),
+            decoration: wref.isColor
+                ? BoxDecoration(color: wref.color)
+                : wallpaperDecoration(wref.category, wref.index,
+                    thumbCacheWidth: _kWallpaperThumbCacheWidth),
             isSelected: wref == current,
             isFavorite: true,
-            onTap: () =>
-                _updateWallpaper(category: wref.category, index: wref.index),
+            onTap: () => wref.isColor
+                ? _updateSolidColor(wref.color!)
+                : _updateWallpaper(category: wref.category, index: wref.index),
             onToggleFavorite: () => notifier.toggle(wref),
           ),
       ],

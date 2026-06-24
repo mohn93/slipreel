@@ -143,4 +143,69 @@ void main() {
     expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
     expect(editor.current.windowFrame.solidColor, const Color(0xFF224466));
   });
+
+  testWidgets('Favorite tab renders a color favorite and applies it', (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith(
+          (ref) => WallpaperFavoritesController(
+            store: store,
+            initial: const [WallpaperRef.color(Color(0xFF224466))])),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Favorite'));
+    await tester.pumpAndSettle();
+    final tile = find.byKey(const ValueKey('color:224466'));
+    expect(tile, findsOneWidget);
+
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(editor.current.windowFrame.wallpaperCategory, 'Solid');
+    expect(editor.current.windowFrame.solidColor, const Color(0xFF224466));
+  });
+
+  testWidgets('the Solid picker can favorite the current color', (tester) async {
+    final editor = EditorProjectController();
+    SharedPreferences.setMockInitialValues({});
+    final store = await WallpaperFavoritesStore.resolveDefault();
+    final favs = WallpaperFavoritesController(store: store, initial: const []);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        editorProjectControllerProvider.overrideWith((ref) => editor),
+        wallpaperFavoritesProvider.overrideWith((ref) => favs),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+          extensions: const [AppPalette.midnight],
+          useMaterial3: true,
+        ),
+        home: const Scaffold(body: BackgroundTab()),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Solid'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '#224466');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('favorite-current-color')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('favorite-current-color')));
+    await tester.pump();
+    expect(favs.state, contains(const WallpaperRef.color(Color(0xFF224466))));
+  });
 }
