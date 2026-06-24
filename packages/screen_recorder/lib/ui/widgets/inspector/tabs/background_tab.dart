@@ -264,8 +264,9 @@ class _WallpaperThumb extends StatelessWidget {
   final VoidCallback onToggleFavorite;
 
   Future<void> _showFavoriteMenu(BuildContext context, Offset globalPos) async {
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final renderObject = Overlay.of(context).context.findRenderObject();
+    if (renderObject is! RenderBox) return;
+    final overlay = renderObject;
     final selected = await showMenu<bool>(
       context: context,
       position: RelativeRect.fromLTRB(

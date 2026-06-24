@@ -55,6 +55,7 @@ void main() {
     // Choose it → tile shows a filled-star badge.
     await tester.tap(find.text('Add to Favorites'));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.star), findsOneWidget);
+    expect(find.text('Add to Favorites'), findsNothing); // menu dismissed
+    expect(find.byIcon(Icons.star), findsOneWidget); // badge on the tile
   });
 }
