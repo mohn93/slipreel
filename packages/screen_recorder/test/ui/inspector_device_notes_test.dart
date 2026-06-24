@@ -37,4 +37,21 @@ void main() {
     // The real shortcuts controls are not rendered.
     expect(find.text('Show shortcuts'), findsNothing);
   });
+
+  testWidgets('InspectorPlaceholder centers both the title and the body',
+      (tester) async {
+    // The title wraps to two lines in the narrow inspector; it must be
+    // centre-aligned like the body, not left-aligned.
+    const title = 'Not available for iPhone/iPad recordings';
+    const body = 'Some explanatory text long enough to wrap onto a few lines '
+        'inside the inspector panel.';
+    await tester.pumpWidget(_host(const InspectorPlaceholder(
+      icon: Icons.keyboard_outlined,
+      title: title,
+      body: body,
+    )));
+
+    expect(tester.widget<Text>(find.text(title)).textAlign, TextAlign.center);
+    expect(tester.widget<Text>(find.text(body)).textAlign, TextAlign.center);
+  });
 }
