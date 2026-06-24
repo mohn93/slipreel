@@ -959,7 +959,8 @@ class FrameCompositor {
     }
 
     void drawProcedural() {
-      final decoration = wallpaperDecoration(category, _frame.wallpaperIndex);
+      final decoration = wallpaperDecoration(category, _frame.wallpaperIndex,
+          solidColor: _frame.solidColor);
       final boxPainter = decoration.createBoxPainter(() {});
       boxPainter.paint(
         canvas,
