@@ -1,4 +1,5 @@
 import 'package:flutter/painting.dart';
+import 'package:slipreel_engine/rendering/wallpaper.dart';
 
 /// Represents a frame style that can be applied to a window/screen recording.
 ///
@@ -280,7 +281,12 @@ class WindowFrame {
       solidColor: json['solidColor'] != null
           ? Color(json['solidColor'] as int)
           : null,
-      wallpaperCategory: json['wallpaperCategory'] as String?,
+      // Canonicalize so projects saved before a category rename
+      // (e.g. Radial→Abstract) load the renamed category.
+      wallpaperCategory: switch (json['wallpaperCategory']) {
+        final String c => canonicalWallpaperCategory(c),
+        _ => null,
+      },
       wallpaperIndex: (json['wallpaperIndex'] as num?)?.toInt() ?? 0,
       backgroundBlur:
           (json['backgroundBlur'] as num?)?.toDouble() ?? 0,

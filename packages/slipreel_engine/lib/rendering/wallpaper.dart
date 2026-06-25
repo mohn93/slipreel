@@ -9,12 +9,26 @@ const List<String> kWallpaperCategories = [
   'macOS',
   'Spring',
   'Sunset',
-  'Radial',
+  'Abstract',
   'Solid',
 ];
 
 /// How many tiles each category exposes in the picker grid.
 const int kWallpapersPerCategory = 16;
+
+/// Legacy category renames. Projects and favorites persisted before a
+/// category was renamed still carry the old string; [canonicalWallpaperCategory]
+/// rewrites it on the way in so old data renders the replacement. 'Radial'
+/// (a procedural gradient) became the photo-backed 'Abstract' set.
+const Map<String, String> _legacyCategoryAliases = {
+  'Radial': 'Abstract',
+};
+
+/// Canonicalizes a (possibly legacy) wallpaper category string. Pass any
+/// persisted/decoded category through this before using it so renamed
+/// categories keep resolving. Unknown strings pass through unchanged.
+String canonicalWallpaperCategory(String category) =>
+    _legacyCategoryAliases[category] ?? category;
 
 /// Photo-backed categories: file names live under
 /// `assets/wallpapers/<dir>/` and are declared in `pubspec.yaml`. The
@@ -58,6 +72,42 @@ const Map<String, List<String>> _photoCategoryFiles = {
     '15_dewy_meadow.jpg',
     '16_dew_macro.jpg',
   ],
+  'Sunset': [
+    '01_golden_sun_clouds.jpg',
+    '02_golden_cloudscape.jpg',
+    '03_sunrays_clouds.jpg',
+    '04_golden_hour_sea.jpg',
+    '05_orange_blue_sea.jpg',
+    '06_orange_cloud_silhouette.jpg',
+    '07_red_sun_horizon.jpg',
+    '08_calm_golden_sea.jpg',
+    '09_dramatic_horizon.jpg',
+    '10_golden_sea_pastel.jpg',
+    '11_pink_purple_sea.jpg',
+    '12_violet_pink_sky.jpg',
+    '13_pink_blue_clouds.jpg',
+    '14_violet_ocean.jpg',
+    '15_teal_seashore.jpg',
+    '16_twilight_clouds.jpg',
+  ],
+  'Abstract': [
+    '01_purple_glow.jpg',
+    '02_lavender_haze.jpg',
+    '03_blue_pink_mist.jpg',
+    '04_indigo_folds.jpg',
+    '05_indigo_waves.jpg',
+    '06_teal_marble.jpg',
+    '07_magenta_gradient.jpg',
+    '08_spectrum_gradient.jpg',
+    '09_warm_gradient.jpg',
+    '10_ember_glow.jpg',
+    '11_ribbon_waves.jpg',
+    '12_flame_waves.jpg',
+    '13_glossy_rings.jpg',
+    '14_chrome_swirl.jpg',
+    '15_violet_swirl.jpg',
+    '16_teal_orange_burst.jpg',
+  ],
 };
 
 /// Map of [_photoCategoryFiles] keys to their on-disk directory name
@@ -66,13 +116,16 @@ const Map<String, List<String>> _photoCategoryFiles = {
 const Map<String, String> _photoCategoryDirs = {
   'macOS': 'macos',
   'Spring': 'spring',
+  'Sunset': 'sunset',
+  'Abstract': 'abstract',
 };
 
-/// Whether [category] renders from bundled photos (vs. a procedural
-/// gradient). Favorite is treated as macOS for now.
+/// Whether [category] renders from bundled photos (vs. the procedural
+/// Solid fill). Favorite is treated as macOS for now.
 bool isPhotoWallpaperCategory(String category) {
-  if (category == 'Favorite') return true;
-  return _photoCategoryFiles.containsKey(category);
+  final c = canonicalWallpaperCategory(category);
+  if (c == 'Favorite') return true;
+  return _photoCategoryFiles.containsKey(c);
 }
 
 /// Asset path for a photo wallpaper at [category]/[index] (clamped to
@@ -81,8 +134,10 @@ bool isPhotoWallpaperCategory(String category) {
 /// going through the async `DecorationImage`/`BoxPainter` path.
 String? photoWallpaperAsset(String category, int index) {
   // Historic alias — Favorite shares the macOS pool until a real
-  // favoriting system lands.
-  final key = category == 'Favorite' ? 'macOS' : category;
+  // favoriting system lands. Renamed categories (e.g. Radial→Abstract)
+  // resolve through the canonical key.
+  final canonical = canonicalWallpaperCategory(category);
+  final key = canonical == 'Favorite' ? 'macOS' : canonical;
   final files = _photoCategoryFiles[key];
   final dir = _photoCategoryDirs[key];
   if (files == null || dir == null) return null;
@@ -108,23 +163,19 @@ BoxDecoration wallpaperDecoration(
   int? thumbCacheWidth,
   Color? solidColor,
 }) {
-  if (category == 'Solid' && solidColor != null) {
+  final canonical = canonicalWallpaperCategory(category);
+  if (canonical == 'Solid' && solidColor != null) {
     return BoxDecoration(color: solidColor);
   }
-  final r = Random('$category.$index'.hashCode);
-  if (isPhotoWallpaperCategory(category)) {
-    return _photoDecoration(category, index, thumbCacheWidth);
+  if (isPhotoWallpaperCategory(canonical)) {
+    return _photoDecoration(canonical, index, thumbCacheWidth);
   }
-  switch (category) {
-    case 'Sunset':
-      return _sunsetGradient(r);
-    case 'Radial':
-      return _radialGradient(r);
-    case 'Solid':
-      return _solid(r);
-    default:
-      return _photoDecoration('macOS', index, thumbCacheWidth);
+  // Only legacy procedural solids remain (Solid with no custom color);
+  // anything else falls back to the default macOS photo set.
+  if (canonical == 'Solid') {
+    return _solid(Random('$canonical.$index'.hashCode));
   }
+  return _photoDecoration('macOS', index, thumbCacheWidth);
 }
 
 BoxDecoration _photoDecoration(String category, int index,
@@ -140,41 +191,6 @@ BoxDecoration _photoDecoration(String category, int index,
       // Higher filter quality for the picker tiles — when scaled down
       // to thumbnail size the default linear filter looks soft.
       filterQuality: FilterQuality.medium,
-    ),
-  );
-}
-
-BoxDecoration _sunsetGradient(Random r) {
-  // Warm, orange→pink→purple sweep.
-  final hue1 = 5 + r.nextDouble() * 35; // 5–40 (red→orange)
-  final hue2 = 280 + r.nextDouble() * 40; // 280–320 (purple→magenta)
-  final hueMid = 320 + r.nextDouble() * 30; // 320–350 (pink)
-  final c1 = HSLColor.fromAHSL(1, hue1, 0.85, 0.55).toColor();
-  final c2 = HSLColor.fromAHSL(1, hueMid, 0.70, 0.50).toColor();
-  final c3 = HSLColor.fromAHSL(1, hue2, 0.55, 0.30).toColor();
-  return BoxDecoration(
-    gradient: LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [c1, c2, c3],
-      stops: const [0.0, 0.55, 1.0],
-    ),
-  );
-}
-
-BoxDecoration _radialGradient(Random r) {
-  final hue1 = r.nextDouble() * 360;
-  final hue2 = (hue1 + 140 + r.nextDouble() * 60) % 360;
-  final c1 = HSLColor.fromAHSL(1, hue1, 0.65, 0.55).toColor();
-  final c2 = HSLColor.fromAHSL(1, hue2, 0.55, 0.18).toColor();
-  return BoxDecoration(
-    gradient: RadialGradient(
-      center: Alignment(
-        (r.nextDouble() - 0.5) * 1.2,
-        (r.nextDouble() - 0.5) * 1.2,
-      ),
-      radius: 0.9 + r.nextDouble() * 0.4,
-      colors: [c1, c2],
     ),
   );
 }
@@ -228,31 +244,64 @@ const Map<String, List<Color>> _photoCategoryColors = {
     Color(0xFF6A8D5C), // 15 dewy_meadow
     Color(0xFF89AE76), // 16 dew_macro
   ],
+  // Sunset/Abstract are sampled from the photos themselves (Sunset from the
+  // upper "sky" band, Abstract from the whole-image dominant) rather than
+  // hand-tuned — see tools that generated assets/wallpapers/{sunset,abstract}.
+  'Sunset': [
+    Color(0xFFCE9D2A), // 01 golden_sun_clouds
+    Color(0xFF825328), // 02 golden_cloudscape
+    Color(0xFF85A5B0), // 03 sunrays_clouds
+    Color(0xFFA1410A), // 04 golden_hour_sea
+    Color(0xFF87888C), // 05 orange_blue_sea
+    Color(0xFFA2512B), // 06 orange_cloud_silhouette
+    Color(0xFF7C4138), // 07 red_sun_horizon
+    Color(0xFF6E4B71), // 08 calm_golden_sea
+    Color(0xFF194D55), // 09 dramatic_horizon
+    Color(0xFF68839A), // 10 golden_sea_pastel
+    Color(0xFF7483A5), // 11 pink_purple_sea
+    Color(0xFF52477F), // 12 violet_pink_sky
+    Color(0xFF0E4F8A), // 13 pink_blue_clouds
+    Color(0xFF7483BF), // 14 violet_ocean
+    Color(0xFF577BB7), // 15 teal_seashore
+    Color(0xFF86503D), // 16 twilight_clouds
+  ],
+  'Abstract': [
+    Color(0xFF51289B), // 01 purple_glow
+    Color(0xFF958BDC), // 02 lavender_haze
+    Color(0xFFA4A3C8), // 03 blue_pink_mist
+    Color(0xFF1C2990), // 04 indigo_folds
+    Color(0xFF2A0B66), // 05 indigo_waves
+    Color(0xFF5FB3CC), // 06 teal_marble
+    Color(0xFFDA82AB), // 07 magenta_gradient
+    Color(0xFFBFACC2), // 08 spectrum_gradient
+    Color(0xFFD33C56), // 09 warm_gradient
+    Color(0xFF69201E), // 10 ember_glow
+    Color(0xFF1F41A1), // 11 ribbon_waves
+    Color(0xFF6C2A82), // 12 flame_waves
+    Color(0xFF8680CF), // 13 glossy_rings
+    Color(0xFF6D629D), // 14 chrome_swirl
+    Color(0xFF98298E), // 15 violet_swirl
+    Color(0xFF334648), // 16 teal_orange_burst
+  ],
 };
 
 /// A single representative color for a wallpaper, used by the inset
-/// ring's color derivation. For gradient wallpapers we return the
-/// first stop (visually the "top" color); for photo-backed categories
-/// we use a hand-tuned palette; for solids the color itself. Falls
-/// back to neutral grey if the decoration shape is unknown.
+/// ring's color derivation. Photo-backed categories use a per-category
+/// palette; a custom or procedural solid hands back its fill color.
+/// Falls back to neutral grey if the decoration shape is unknown.
 Color wallpaperRepresentativeColor(String category, int index,
     {Color? solidColor}) {
-  if (category == 'Solid' && solidColor != null) return solidColor;
-  if (isPhotoWallpaperCategory(category)) {
-    final key = category == 'Favorite' ? 'macOS' : category;
+  final canonical = canonicalWallpaperCategory(category);
+  if (canonical == 'Solid' && solidColor != null) return solidColor;
+  if (isPhotoWallpaperCategory(canonical)) {
+    final key = canonical == 'Favorite' ? 'macOS' : canonical;
     final palette = _photoCategoryColors[key];
     if (palette != null && palette.isNotEmpty) {
       return palette[index.clamp(0, palette.length - 1)];
     }
   }
-  final dec = wallpaperDecoration(category, index);
-  final gradient = dec.gradient;
-  if (gradient is LinearGradient && gradient.colors.isNotEmpty) {
-    return gradient.colors.first;
-  }
-  if (gradient is RadialGradient && gradient.colors.isNotEmpty) {
-    return gradient.colors.first;
-  }
+  // The only non-photo decoration left is the procedural Solid fill.
+  final dec = wallpaperDecoration(canonical, index);
   if (dec.color != null) return dec.color!;
   return const Color(0xFF606070);
 }

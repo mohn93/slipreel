@@ -50,4 +50,12 @@ void main() {
     expect(const WallpaperRef.photo('Spring', 1),
         isNot(const WallpaperRef.photo('Spring', 2)));
   });
+
+  test('decode migrates a legacy Radial favorite to Abstract', () {
+    // Favorites saved before the Radial→Abstract rename carry the old
+    // category; decode canonicalizes so they resolve to the new photos.
+    final ref = WallpaperRef.decode('photo:Radial:3');
+    expect(ref, const WallpaperRef.photo('Abstract', 3));
+    expect(ref!.category, 'Abstract');
+  });
 }

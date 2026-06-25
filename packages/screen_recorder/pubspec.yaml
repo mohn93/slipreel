@@ -124,6 +124,8 @@ flutter:
     - assets/cursors/click_cursor.png
     - assets/wallpapers/macos/
     - assets/wallpapers/spring/
+    - assets/wallpapers/sunset/
+    - assets/wallpapers/abstract/
     # Device-frame bezels (Apple Design Resources) — licensed for distribution
     # (Apple sign-off received 2026-06-23).
     - assets/device_frames/

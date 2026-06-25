@@ -26,7 +26,7 @@ void main() {
             'macOS',
             'Spring',
             'Sunset',
-            'Radial',
+            'Abstract',
             'Solid',
           ],
           labelOf: (s) => s,

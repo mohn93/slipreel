@@ -516,12 +516,12 @@ class FrameCompositor {
     _cachedWallpaperImage = null;
     _cachedWallpaperKey = key;
 
-    // Photo-based macOS wallpapers need the asset image preloaded as
-    // a ui.Image before we can paint to the recorder canvas. `BoxPainter`
-    // would otherwise kick off an async ImageStream that doesn't
-    // resolve in time for our synchronous paint, and the export would
-    // ship a blank wallpaper. Procedural categories (gradients / solid)
-    // paint synchronously and use the BoxPainter path.
+    // Photo-based wallpapers (macOS/Spring/Sunset/Abstract) need the asset
+    // image preloaded as a ui.Image before we can paint to the recorder
+    // canvas. `BoxPainter` would otherwise kick off an async ImageStream
+    // that doesn't resolve in time for our synchronous paint, and the
+    // export would ship a blank wallpaper. The procedural Solid fill
+    // paints synchronously and uses the BoxPainter path.
     final photo = await _loadWallpaperPhoto(category, _frame.wallpaperIndex);
 
     final recorder = ui.PictureRecorder();

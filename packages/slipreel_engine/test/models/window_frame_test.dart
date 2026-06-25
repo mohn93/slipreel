@@ -307,5 +307,23 @@ void main() {
       final reloaded = WindowFrame.fromJson(json);
       expect(reloaded.inset, 0);
     });
+
+    test('legacy Radial wallpaperCategory migrates to Abstract on load', () {
+      // Projects saved before the Radial→Abstract rename should load with
+      // the renamed category so the wallpaper still resolves.
+      final json = WindowFrame.rounded().toJson();
+      json['wallpaperCategory'] = 'Radial';
+      json['wallpaperIndex'] = 4;
+      final reloaded = WindowFrame.fromJson(json);
+      expect(reloaded.wallpaperCategory, 'Abstract');
+      expect(reloaded.wallpaperIndex, 4);
+    });
+
+    test('null wallpaperCategory stays null on load', () {
+      final json = WindowFrame.rounded().toJson();
+      json['wallpaperCategory'] = null;
+      final reloaded = WindowFrame.fromJson(json);
+      expect(reloaded.wallpaperCategory, isNull);
+    });
   });
 }
