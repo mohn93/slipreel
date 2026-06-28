@@ -1902,6 +1902,644 @@
           }
         }
       ]
+    },
+    {
+      "id": "iphone-14",
+      "family": "iPhone 14",
+      "kind": "phone",
+      "screen": {
+        "w": 1170,
+        "h": 2532
+      },
+      "colors": [
+        {
+          "id": "blue",
+          "name": "Blue",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14/blue-landscape.png",
+            "bezel": {
+              "w": 2732,
+              "h": 1370
+            },
+            "screenRect": {
+              "l": 0.036603221083455345,
+              "t": 0.072992700729927,
+              "r": 0.9633967789165446,
+              "b": 0.927007299270073
+            },
+            "screenCornerRadius": 0.06726
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14/blue-portrait.png",
+            "bezel": {
+              "w": 1370,
+              "h": 2732
+            },
+            "screenRect": {
+              "l": 0.072992700729927,
+              "t": 0.036603221083455345,
+              "r": 0.927007299270073,
+              "b": 0.9633967789165446
+            },
+            "screenCornerRadius": 0.13412
+          }
+        },
+        {
+          "id": "midnight",
+          "name": "Midnight",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14/midnight-landscape.png",
+            "bezel": {
+              "w": 2732,
+              "h": 1370
+            },
+            "screenRect": {
+              "l": 0.036603221083455345,
+              "t": 0.072992700729927,
+              "r": 0.9633967789165446,
+              "b": 0.927007299270073
+            },
+            "screenCornerRadius": 0.06726
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14/midnight-portrait.png",
+            "bezel": {
+              "w": 1370,
+              "h": 2732
+            },
+            "screenRect": {
+              "l": 0.072992700729927,
+              "t": 0.036603221083455345,
+              "r": 0.927007299270073,
+              "b": 0.9633967789165446
+            },
+            "screenCornerRadius": 0.13412
+          }
+        },
+        {
+          "id": "purple",
+          "name": "Purple",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14/purple-landscape.png",
+            "bezel": {
+              "w": 2732,
+              "h": 1370
+            },
+            "screenRect": {
+              "l": 0.036603221083455345,
+              "t": 0.072992700729927,
+              "r": 0.9633967789165446,
+              "b": 0.927007299270073
+            },
+            "screenCornerRadius": 0.06726
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14/purple-portrait.png",
+            "bezel": {
+              "w": 1370,
+              "h": 2732
+            },
+            "screenRect": {
+              "l": 0.072992700729927,
+              "t": 0.036603221083455345,
+              "r": 0.927007299270073,
+              "b": 0.9633967789165446
+            },
+            "screenCornerRadius": 0.13412
+          }
+        },
+        {
+          "id": "red",
+          "name": "Red",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14/red-landscape.png",
+            "bezel": {
+              "w": 2732,
+              "h": 1370
+            },
+            "screenRect": {
+              "l": 0.036603221083455345,
+              "t": 0.072992700729927,
+              "r": 0.9633967789165446,
+              "b": 0.927007299270073
+            },
+            "screenCornerRadius": 0.06726
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14/red-portrait.png",
+            "bezel": {
+              "w": 1370,
+              "h": 2732
+            },
+            "screenRect": {
+              "l": 0.072992700729927,
+              "t": 0.036603221083455345,
+              "r": 0.927007299270073,
+              "b": 0.9633967789165446
+            },
+            "screenCornerRadius": 0.13412
+          }
+        },
+        {
+          "id": "starlight",
+          "name": "Starlight",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14/starlight-landscape.png",
+            "bezel": {
+              "w": 2732,
+              "h": 1370
+            },
+            "screenRect": {
+              "l": 0.036603221083455345,
+              "t": 0.072992700729927,
+              "r": 0.9633967789165446,
+              "b": 0.927007299270073
+            },
+            "screenCornerRadius": 0.06726
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14/starlight-portrait.png",
+            "bezel": {
+              "w": 1370,
+              "h": 2732
+            },
+            "screenRect": {
+              "l": 0.072992700729927,
+              "t": 0.036603221083455345,
+              "r": 0.927007299270073,
+              "b": 0.9633967789165446
+            },
+            "screenCornerRadius": 0.13412
+          }
+        }
+      ]
+    },
+    {
+      "id": "iphone-14-plus",
+      "family": "iPhone 14 Plus",
+      "kind": "phone",
+      "screen": {
+        "w": 1284,
+        "h": 2776
+      },
+      "colors": [
+        {
+          "id": "blue",
+          "name": "Blue",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-plus/blue-landscape.png",
+            "bezel": {
+              "w": 2978,
+              "h": 1464
+            },
+            "screenRect": {
+              "l": 0.033915379449294826,
+              "t": 0.06147540983606557,
+              "r": 0.9660846205507052,
+              "b": 0.9385245901639344
+            },
+            "screenCornerRadius": 0.06397
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-plus/blue-portrait.png",
+            "bezel": {
+              "w": 1464,
+              "h": 2978
+            },
+            "screenRect": {
+              "l": 0.06147540983606557,
+              "t": 0.033915379449294826,
+              "r": 0.9385245901639344,
+              "b": 0.9660846205507052
+            },
+            "screenCornerRadius": 0.13012
+          }
+        },
+        {
+          "id": "midnight",
+          "name": "Midnight",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-plus/midnight-landscape.png",
+            "bezel": {
+              "w": 2978,
+              "h": 1464
+            },
+            "screenRect": {
+              "l": 0.033915379449294826,
+              "t": 0.06147540983606557,
+              "r": 0.9660846205507052,
+              "b": 0.9385245901639344
+            },
+            "screenCornerRadius": 0.06397
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-plus/midnight-portrait.png",
+            "bezel": {
+              "w": 1464,
+              "h": 2978
+            },
+            "screenRect": {
+              "l": 0.06147540983606557,
+              "t": 0.033915379449294826,
+              "r": 0.9385245901639344,
+              "b": 0.9660846205507052
+            },
+            "screenCornerRadius": 0.13012
+          }
+        },
+        {
+          "id": "purple",
+          "name": "Purple",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-plus/purple-landscape.png",
+            "bezel": {
+              "w": 2978,
+              "h": 1464
+            },
+            "screenRect": {
+              "l": 0.033915379449294826,
+              "t": 0.06147540983606557,
+              "r": 0.9660846205507052,
+              "b": 0.9385245901639344
+            },
+            "screenCornerRadius": 0.06397
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-plus/purple-portrait.png",
+            "bezel": {
+              "w": 1464,
+              "h": 2978
+            },
+            "screenRect": {
+              "l": 0.06147540983606557,
+              "t": 0.033915379449294826,
+              "r": 0.9385245901639344,
+              "b": 0.9660846205507052
+            },
+            "screenCornerRadius": 0.13012
+          }
+        },
+        {
+          "id": "red",
+          "name": "Red",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-plus/red-landscape.png",
+            "bezel": {
+              "w": 2978,
+              "h": 1464
+            },
+            "screenRect": {
+              "l": 0.033915379449294826,
+              "t": 0.06147540983606557,
+              "r": 0.9660846205507052,
+              "b": 0.9385245901639344
+            },
+            "screenCornerRadius": 0.06397
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-plus/red-portrait.png",
+            "bezel": {
+              "w": 1464,
+              "h": 2978
+            },
+            "screenRect": {
+              "l": 0.06147540983606557,
+              "t": 0.033915379449294826,
+              "r": 0.9385245901639344,
+              "b": 0.9660846205507052
+            },
+            "screenCornerRadius": 0.13012
+          }
+        },
+        {
+          "id": "starlight",
+          "name": "Starlight",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-plus/starlight-landscape.png",
+            "bezel": {
+              "w": 2978,
+              "h": 1464
+            },
+            "screenRect": {
+              "l": 0.033915379449294826,
+              "t": 0.06147540983606557,
+              "r": 0.9660846205507052,
+              "b": 0.9385245901639344
+            },
+            "screenCornerRadius": 0.06397
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-plus/starlight-portrait.png",
+            "bezel": {
+              "w": 1464,
+              "h": 2978
+            },
+            "screenRect": {
+              "l": 0.06147540983606557,
+              "t": 0.033915379449294826,
+              "r": 0.9385245901639344,
+              "b": 0.9660846205507052
+            },
+            "screenCornerRadius": 0.12551
+          }
+        }
+      ]
+    },
+    {
+      "id": "iphone-14-pro",
+      "family": "iPhone 14 Pro",
+      "kind": "phone",
+      "screen": {
+        "w": 1179,
+        "h": 2556
+      },
+      "colors": [
+        {
+          "id": "deep-purple",
+          "name": "Deep Purple",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-pro/deep-purple-landscape.png",
+            "bezel": {
+              "w": 2716,
+              "h": 1339
+            },
+            "screenRect": {
+              "l": 0.029086892488954345,
+              "t": 0.05899925317401045,
+              "r": 0.9701767304860088,
+              "b": 0.9395070948469006
+            },
+            "screenCornerRadius": 0.07714
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-pro/deep-purple-portrait.png",
+            "bezel": {
+              "w": 1339,
+              "h": 2716
+            },
+            "screenRect": {
+              "l": 0.05974607916355489,
+              "t": 0.029455081001472753,
+              "r": 0.9402539208364451,
+              "b": 0.9705449189985272
+            },
+            "screenCornerRadius": 0.15646
+          }
+        },
+        {
+          "id": "gold",
+          "name": "Gold",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-pro/gold-landscape.png",
+            "bezel": {
+              "w": 2716,
+              "h": 1339
+            },
+            "screenRect": {
+              "l": 0.029086892488954345,
+              "t": 0.05899925317401045,
+              "r": 0.9701767304860088,
+              "b": 0.9395070948469006
+            },
+            "screenCornerRadius": 0.07714
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-pro/gold-portrait.png",
+            "bezel": {
+              "w": 1339,
+              "h": 2716
+            },
+            "screenRect": {
+              "l": 0.05974607916355489,
+              "t": 0.029455081001472753,
+              "r": 0.9402539208364451,
+              "b": 0.9705449189985272
+            },
+            "screenCornerRadius": 0.15646
+          }
+        },
+        {
+          "id": "silver",
+          "name": "Silver",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-pro/silver-landscape.png",
+            "bezel": {
+              "w": 2716,
+              "h": 1339
+            },
+            "screenRect": {
+              "l": 0.029086892488954345,
+              "t": 0.05899925317401045,
+              "r": 0.9701767304860088,
+              "b": 0.9395070948469006
+            },
+            "screenCornerRadius": 0.07714
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-pro/silver-portrait.png",
+            "bezel": {
+              "w": 1339,
+              "h": 2716
+            },
+            "screenRect": {
+              "l": 0.05974607916355489,
+              "t": 0.029455081001472753,
+              "r": 0.9402539208364451,
+              "b": 0.9705449189985272
+            },
+            "screenCornerRadius": 0.15646
+          }
+        },
+        {
+          "id": "space-black",
+          "name": "Space Black",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-pro/space-black-landscape.png",
+            "bezel": {
+              "w": 2716,
+              "h": 1339
+            },
+            "screenRect": {
+              "l": 0.029086892488954345,
+              "t": 0.05899925317401045,
+              "r": 0.9701767304860088,
+              "b": 0.9395070948469006
+            },
+            "screenCornerRadius": 0.07714
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-pro/space-black-portrait.png",
+            "bezel": {
+              "w": 1339,
+              "h": 2716
+            },
+            "screenRect": {
+              "l": 0.05974607916355489,
+              "t": 0.029455081001472753,
+              "r": 0.9402539208364451,
+              "b": 0.9705449189985272
+            },
+            "screenCornerRadius": 0.15646
+          }
+        }
+      ]
+    },
+    {
+      "id": "iphone-14-pro-max",
+      "family": "iPhone 14 Pro Max",
+      "kind": "phone",
+      "screen": {
+        "w": 1290,
+        "h": 2796
+      },
+      "colors": [
+        {
+          "id": "deep-purple",
+          "name": "Deep Purple",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-pro-max/deep-purple-landscape.png",
+            "bezel": {
+              "w": 2936,
+              "h": 1450
+            },
+            "screenRect": {
+              "l": 0.023841961852861037,
+              "t": 0.05517241379310345,
+              "r": 0.976158038147139,
+              "b": 0.9448275862068966
+            },
+            "screenCornerRadius": 0.07306
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-pro-max/deep-purple-portrait.png",
+            "bezel": {
+              "w": 1450,
+              "h": 2936
+            },
+            "screenRect": {
+              "l": 0.05517241379310345,
+              "t": 0.023841961852861037,
+              "r": 0.9448275862068966,
+              "b": 0.976158038147139
+            },
+            "screenCornerRadius": 0.14793
+          }
+        },
+        {
+          "id": "gold",
+          "name": "Gold",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-pro-max/gold-landscape.png",
+            "bezel": {
+              "w": 2936,
+              "h": 1450
+            },
+            "screenRect": {
+              "l": 0.023841961852861037,
+              "t": 0.05517241379310345,
+              "r": 0.976158038147139,
+              "b": 0.9448275862068966
+            },
+            "screenCornerRadius": 0.07306
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-pro-max/gold-portrait.png",
+            "bezel": {
+              "w": 1450,
+              "h": 2936
+            },
+            "screenRect": {
+              "l": 0.05517241379310345,
+              "t": 0.023841961852861037,
+              "r": 0.9448275862068966,
+              "b": 0.976158038147139
+            },
+            "screenCornerRadius": 0.14793
+          }
+        },
+        {
+          "id": "silver",
+          "name": "Silver",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-pro-max/silver-landscape.png",
+            "bezel": {
+              "w": 2936,
+              "h": 1450
+            },
+            "screenRect": {
+              "l": 0.023841961852861037,
+              "t": 0.05517241379310345,
+              "r": 0.976158038147139,
+              "b": 0.9448275862068966
+            },
+            "screenCornerRadius": 0.07306
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-pro-max/silver-portrait.png",
+            "bezel": {
+              "w": 1450,
+              "h": 2936
+            },
+            "screenRect": {
+              "l": 0.05517241379310345,
+              "t": 0.023841961852861037,
+              "r": 0.9448275862068966,
+              "b": 0.976158038147139
+            },
+            "screenCornerRadius": 0.14793
+          }
+        },
+        {
+          "id": "space-black",
+          "name": "Space Black",
+          "swatch": "#1d1d1f",
+          "landscape": {
+            "asset": "assets/device_frames/iphone-14-pro-max/space-black-landscape.png",
+            "bezel": {
+              "w": 2936,
+              "h": 1450
+            },
+            "screenRect": {
+              "l": 0.023841961852861037,
+              "t": 0.05517241379310345,
+              "r": 0.976158038147139,
+              "b": 0.9448275862068966
+            },
+            "screenCornerRadius": 0.07306
+          },
+          "portrait": {
+            "asset": "assets/device_frames/iphone-14-pro-max/space-black-portrait.png",
+            "bezel": {
+              "w": 1450,
+              "h": 2936
+            },
+            "screenRect": {
+              "l": 0.05517241379310345,
+              "t": 0.023841961852861037,
+              "r": 0.9448275862068966,
+              "b": 0.976158038147139
+            },
+            "screenCornerRadius": 0.14793
+          }
+        }
+      ]
     }
   ]
 }

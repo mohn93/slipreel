@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw
 DMG_URLS = [
     "https://devimages-cdn.apple.com/design/resources/download/Bezel-iPhone-16.dmg",
     "https://devimages-cdn.apple.com/design/resources/download/Bezel-iPhone-17.dmg",
+    "https://devimages-cdn.apple.com/design/resources/download/Bezel-iPhone-14.dmg",
     "https://devimages-cdn.apple.com/design/resources/download/Bezel-iPad-Pro-(M5).dmg",
     "https://devimages-cdn.apple.com/design/resources/download/Bezel-iPad-Air-(M4).dmg",
     "https://devimages-cdn.apple.com/design/resources/download/Bezel-iPad-mini-(A17-Pro).dmg",

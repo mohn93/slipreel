@@ -135,4 +135,46 @@ void main() {
             current: off, catalog: _catalog, recording: const Size(800, 600)),
         off), isTrue);
   });
+
+  group('iPhone 14 family (1170x2532)', () {
+    // In-memory catalog with iphone-16 (1179x2556) BEFORE iphone-14
+    // (1170x2532) to prove appending iphone-14 preserves existing
+    // auto-selections for already-shared resolutions.
+    final catalog = DeviceFrameCatalog.parse('''
+{"entries":[
+  {"id":"iphone-16","family":"iPhone 16","kind":"phone",
+   "screen":{"w":1179,"h":2556},
+   "colors":[{"id":"black","name":"Black","swatch":"#1d1d1f",
+     "portrait":{"asset":"a","bezel":{"w":1359,"h":2736},
+       "screenRect":{"l":0.06,"t":0.03,"r":0.94,"b":0.97},"screenCornerRadius":0.15},
+     "landscape":{"asset":"b","bezel":{"w":2736,"h":1359},
+       "screenRect":{"l":0.03,"t":0.06,"r":0.97,"b":0.94},"screenCornerRadius":0.07}}]},
+  {"id":"iphone-14","family":"iPhone 14","kind":"phone",
+   "screen":{"w":1170,"h":2532},
+   "colors":[{"id":"blue","name":"Blue","swatch":"#1d1d1f",
+     "portrait":{"asset":"c","bezel":{"w":1350,"h":2760},
+       "screenRect":{"l":0.05,"t":0.03,"r":0.95,"b":0.97},"screenCornerRadius":0.15},
+     "landscape":{"asset":"d","bezel":{"w":2760,"h":1350},
+       "screenRect":{"l":0.03,"t":0.05,"r":0.97,"b":0.95},"screenCornerRadius":0.07}}]}
+]}''');
+
+    test('1170x2532 perfect-matches and auto-selects iphone-14', () {
+      const rec = Size(1170, 2532);
+      final iphone14 = catalog.entryById('iphone-14')!;
+      expect(deviceMatchesRecording(iphone14, rec), isTrue);
+      expect(perfectMatches(catalog, rec).map((e) => e.id), ['iphone-14']);
+      expect(autoSelectDeviceFrame(catalog, rec)?.id, 'iphone-14');
+    });
+
+    test('1170x2532 is a phone form factor, compatible with iphone-14', () {
+      const rec = Size(1170, 2532);
+      expect(recordingFormFactor(rec), RecordingFormFactor.phone);
+      expect(deviceFrameCompatible(catalog.entryById('iphone-14')!, rec), isTrue);
+    });
+
+    test('appending iphone-14 does not steal 1179x2556 from iphone-16', () {
+      // Shared-resolution guard: the earlier catalog entry still wins.
+      expect(autoSelectDeviceFrame(catalog, const Size(1179, 2556))?.id, 'iphone-16');
+    });
+  });
 }
