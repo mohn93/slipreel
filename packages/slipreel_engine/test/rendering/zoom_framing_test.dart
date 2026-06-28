@@ -186,5 +186,57 @@ void main() {
         }
       }
     });
+
+    test('identity corner focals: viewport in bounds AND bound is tight', () {
+      // Identity framing: canvas == videoSize, so a corner focal IS at the
+      // canvas edge. This makes the magnify-in-place scaling exactly what
+      // keeps the viewport in bounds (no padding slack), so the test can
+      // discriminate the real formula from a zero-offset stub.
+      const canvasSize = Size(1920, 1080);
+      final f = ZoomFraming.identity(canvasSize);
+      final canvasCenter = Offset(canvasSize.width / 2, canvasSize.height / 2);
+      const epsilon = 1e-6;
+
+      for (final focal in [const Offset(0, 0), const Offset(1920, 1080)]) {
+        for (final z in [1.5, 2.0, 3.0, 5.0]) {
+          final offset = f.centerOffsetInPlace(focal, z);
+          final c = canvasCenter + offset;
+          final halfW = canvasSize.width / (2 * z);
+          final halfH = canvasSize.height / (2 * z);
+
+          final minX = c.dx - halfW;
+          final maxX = c.dx + halfW;
+          final minY = c.dy - halfH;
+          final maxY = c.dy + halfH;
+
+          // In-bounds.
+          expect(minX, greaterThanOrEqualTo(-epsilon),
+              reason: 'left edge out of bounds: focal=$focal, z=$z, minX=$minX');
+          expect(maxX, lessThanOrEqualTo(canvasSize.width + epsilon),
+              reason:
+                  'right edge out of bounds: focal=$focal, z=$z, maxX=$maxX');
+          expect(minY, greaterThanOrEqualTo(-epsilon),
+              reason: 'top edge out of bounds: focal=$focal, z=$z, minY=$minY');
+          expect(maxY, lessThanOrEqualTo(canvasSize.height + epsilon),
+              reason:
+                  'bottom edge out of bounds: focal=$focal, z=$z, maxY=$maxY');
+
+          // Tight bound: the viewport must hug the corner the focal sits at.
+          // A zero-offset stub would leave the near edge at w/2 - w/(2z) > 0,
+          // failing these. ~1px tolerance.
+          if (focal == const Offset(0, 0)) {
+            expect(minX, closeTo(0.0, 1.0),
+                reason: 'left edge not tight for (0,0): z=$z, minX=$minX');
+            expect(minY, closeTo(0.0, 1.0),
+                reason: 'top edge not tight for (0,0): z=$z, minY=$minY');
+          } else {
+            expect(maxX, closeTo(canvasSize.width, 1.0),
+                reason: 'right edge not tight for corner: z=$z, maxX=$maxX');
+            expect(maxY, closeTo(canvasSize.height, 1.0),
+                reason: 'bottom edge not tight for corner: z=$z, maxY=$maxY');
+          }
+        }
+      }
+    });
   });
 }
