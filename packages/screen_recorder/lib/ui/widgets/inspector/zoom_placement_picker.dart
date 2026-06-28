@@ -152,6 +152,12 @@ class _ZoomPlacementPickerState extends State<ZoomPlacementPicker> {
   Rect _focalForVc(Offset vc) {
     final z = widget.zoomLevel;
     final center = _framing.manualFocalForViewportCenter(vc, z);
+    // Only `center` is consumed downstream for manual placements — the manual
+    // render reads `rect.center` and derives the viewport size itself from
+    // `canvasSize / z`. The width/height here exist solely to give
+    // `ZoomRegion.rect` a shape (and to round-trip serialization); they are NOT
+    // used to size the viewport, so there is nothing to keep "in sync" with the
+    // zoom level beyond this convenience value.
     return Rect.fromCenter(
       center: center,
       width: widget.videoSize.width / z,
