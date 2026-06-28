@@ -742,16 +742,18 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     final double effVideoOriginX = deviceLayout?.videoRect.left ?? videoOriginX;
     final double effVideoOriginY = deviceLayout?.videoRect.top ?? videoOriginY;
 
-    // Device-bezel framing: routes all focal clamps through canvas geometry
-    // when a bezel is active so the zoom stays inside the padded canvas.
-    // Identity framing reproduces the legacy behavior for non-device recordings.
-    final ZoomFraming zoomFraming = deviceLayout != null
-        ? ZoomFraming.device(
-            videoSize: videoSize,
-            videoRect: deviceLayout.videoRect,
-            canvasSize: effTotalSize,
-          )
-        : ZoomFraming.identity(videoSize);
+    // Canvas-aware framing for ALL recordings: routes every focal clamp and
+    // matrix translation through the composed-canvas geometry (wallpaper +
+    // padding + bezel + screen). For a normal recording with zero padding and
+    // no device frame this reduces byte-for-byte to the legacy identity framing
+    // (videoRect == (0,0,W,H), canvas == videoSize), so behavior is unchanged
+    // there; with padding/wallpaper or a device bezel the zoom now frames the
+    // composed canvas instead of the bare video.
+    final ZoomFraming zoomFraming = ZoomFraming.device(
+      videoSize: videoSize,
+      videoRect: deviceLayout?.videoRect ?? resolved.videoRect,
+      canvasSize: effTotalSize,
+    );
 
     // Single AnimatedBuilder rebuilt per frame: drives the cursor
     // overlay (needs current playhead) AND the zoom Transform. The

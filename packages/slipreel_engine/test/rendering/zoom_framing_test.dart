@@ -35,6 +35,57 @@ void main() {
     });
   });
 
+  group('identity-reduction guard: device(videoRect=(0,0,W,H), canvas=(W,H)) '
+      '== identity', () {
+    // This is the safety property that makes "always device-style framing" safe:
+    // when there is no padding and no bezel (video fills the canvas 1:1), the
+    // device flavor must be byte-identical to the legacy identity flavor across
+    // every public method and every zoom level, for both a centered focal and an
+    // edge focal. If this ever drifts, zero-padding non-device recordings would
+    // silently change their zoom transform.
+    final identity = ZoomFraming.identity(videoSize);
+    final deviceReduced = ZoomFraming.device(
+      videoSize: videoSize,
+      videoRect: Rect.fromLTWH(0, 0, videoSize.width, videoSize.height),
+      canvasSize: videoSize,
+    );
+
+    const epsilon = 1e-9;
+    final focals = <(String, Offset)>[
+      ('centered', Offset(videoSize.width / 2, videoSize.height / 2)),
+      ('edge', const Offset(1170, 1266)),
+    ];
+
+    for (final (label, focal) in focals) {
+      for (final z in [1.5, 2.0, 3.0, 5.0]) {
+        test('clampFocal matches identity ($label focal, z=$z)', () {
+          final a = identity.clampFocal(focal, z);
+          final b = deviceReduced.clampFocal(focal, z);
+          expect(b.dx, closeTo(a.dx, epsilon));
+          expect(b.dy, closeTo(a.dy, epsilon));
+        });
+        test('clampFocalRadial matches identity ($label focal, z=$z)', () {
+          final a = identity.clampFocalRadial(focal, z);
+          final b = deviceReduced.clampFocalRadial(focal, z);
+          expect(b.dx, closeTo(a.dx, epsilon));
+          expect(b.dy, closeTo(a.dy, epsilon));
+        });
+        test('centerOffset matches identity ($label focal, z=$z)', () {
+          final a = identity.centerOffset(focal, z);
+          final b = deviceReduced.centerOffset(focal, z);
+          expect(b.dx, closeTo(a.dx, epsilon));
+          expect(b.dy, closeTo(a.dy, epsilon));
+        });
+        test('centerOffsetInPlace matches identity ($label focal, z=$z)', () {
+          final a = identity.centerOffsetInPlace(focal, z);
+          final b = deviceReduced.centerOffsetInPlace(focal, z);
+          expect(b.dx, closeTo(a.dx, epsilon));
+          expect(b.dy, closeTo(a.dy, epsilon));
+        });
+      }
+    }
+  });
+
   group('device framing maps + clamps in canvas space', () {
     // Video drawn into a cutout offset (100,120) and ~1:1 inside a larger
     // padded canvas (1400x2900). Cutout size 1200x2596 (slight scale).
