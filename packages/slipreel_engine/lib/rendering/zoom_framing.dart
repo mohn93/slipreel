@@ -71,13 +71,23 @@ class ZoomFraming {
   double get _sx => videoRect.width / videoSize.width;
   double get _sy => videoRect.height / videoSize.height;
 
-  Offset _toCanvas(Offset p) =>
+  /// Maps a SOURCE-VIDEO point to its CANVAS-pixel position (offset + scaled
+  /// into [videoRect] inside [canvasSize]).
+  Offset toCanvas(Offset p) =>
       Offset(videoRect.left + p.dx * _sx, videoRect.top + p.dy * _sy);
 
-  Offset _fromCanvas(Offset q) => Offset(
+  /// Inverse of [toCanvas]: maps a CANVAS-pixel point back to SOURCE-VIDEO
+  /// coordinates.
+  Offset fromCanvas(Offset q) => Offset(
         (q.dx - videoRect.left) / _sx,
         (q.dy - videoRect.top) / _sy,
       );
+
+  Offset _toCanvas(Offset p) => toCanvas(p);
+  Offset _fromCanvas(Offset q) => fromCanvas(q);
+
+  Offset get _canvasCenter =>
+      Offset(canvasSize.width / 2, canvasSize.height / 2);
 
   /// Per-axis reachable-bounds clamp, returned in source-video coordinates.
   Offset clampFocal(Offset focal, double z) {
@@ -116,12 +126,43 @@ class ZoomFraming {
   /// Formula: `(toCanvas(focal) - canvasCenter) * (1 - 1/z)`.
   Offset centerOffsetInPlace(Offset focal, double z) {
     final canvasFocal = _toCanvas(focal);
-    final center = Offset(canvasSize.width / 2, canvasSize.height / 2);
+    final center = _canvasCenter;
     final k = 1.0 - 1.0 / z;
     return (canvasFocal - center) * k;
   }
 
-  // Test-only accessors for the affine map.
-  Offset debugToCanvas(Offset p) => _toCanvas(p);
-  Offset debugFromCanvas(Offset q) => _fromCanvas(q);
+  /// The visible CANVAS region for a manual (magnify-in-place) zoom on [focal]
+  /// at level [z]. The matrix maps the screen-center pre-image to
+  /// [centerOffsetInPlace], so the visible-region center in absolute canvas
+  /// coords is `canvasCenter + centerOffsetInPlace`, with size `canvasSize / z`.
+  Rect manualViewportRect(Offset focal, double z) {
+    final center = _canvasCenter + centerOffsetInPlace(focal, z);
+    return Rect.fromCenter(
+      center: center,
+      width: canvasSize.width / z,
+      height: canvasSize.height / z,
+    );
+  }
+
+  /// Exact inverse of [manualViewportRect].center for the picker drag: given a
+  /// viewport-box center in canvas coords, returns the SOURCE-VIDEO focal that
+  /// produces it. Guards z≈1 (the `1 - 1/z` factor collapses) by returning the
+  /// canvas-center focal.
+  Offset manualFocalForViewportCenter(Offset viewportCenter, double z) {
+    final center = _canvasCenter;
+    final k = 1.0 - 1.0 / z;
+    if (k.abs() < 1e-6) return fromCanvas(center);
+    return fromCanvas(center + (viewportCenter - center) / k);
+  }
+
+  /// Clamps a viewport-box center (canvas coords) so the box of size
+  /// `canvasSize / z` stays fully inside the canvas.
+  Offset clampManualViewportCenter(Offset viewportCenter, double z) {
+    final halfW = canvasSize.width / (2 * z);
+    final halfH = canvasSize.height / (2 * z);
+    return Offset(
+      viewportCenter.dx.clamp(halfW, canvasSize.width - halfW),
+      viewportCenter.dy.clamp(halfH, canvasSize.height - halfH),
+    );
+  }
 }

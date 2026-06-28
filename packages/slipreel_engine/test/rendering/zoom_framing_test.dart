@@ -96,7 +96,7 @@ void main() {
 
     test('toCanvas/fromCanvas round-trip is identity', () {
       const p = Offset(300, 800);
-      final back = f.debugFromCanvas(f.debugToCanvas(p));
+      final back = f.fromCanvas(f.toCanvas(p));
       expect(back.dx, closeTo(p.dx, 1e-6));
       expect(back.dy, closeTo(p.dy, 1e-6));
     });
@@ -106,10 +106,10 @@ void main() {
       const edge = Offset(1170, 1266);
       const z = 2.0;
       // Canvas-space clamp: map -> clamp to canvasSize -> map back.
-      final canvasFocal = f.debugToCanvas(edge);
+      final canvasFocal = f.toCanvas(edge);
       final canvasClamped =
           ZoomTransformer.clampFocalToBounds(canvasFocal, canvasSize, z);
-      final expected = f.debugFromCanvas(canvasClamped);
+      final expected = f.fromCanvas(canvasClamped);
       final actual = f.clampFocal(edge, z);
       expect(actual.dx, closeTo(expected.dx, 1e-6));
       expect(actual.dy, closeTo(expected.dy, 1e-6));
@@ -121,7 +121,7 @@ void main() {
     test('centerOffset = toCanvas(canvasClamp(focal)) - canvasCenter', () {
       const p = Offset(900, 2000);
       const z = 2.5;
-      final canvasFocal = f.debugToCanvas(p);
+      final canvasFocal = f.toCanvas(p);
       final canvasClamped =
           ZoomTransformer.clampFocalToBounds(canvasFocal, canvasSize, z);
       final expected =
@@ -165,7 +165,7 @@ void main() {
         (const Offset(900, 2000), 5.0),
       ];
       for (final (focal, z) in testCases) {
-        final canvasFocal = f.debugToCanvas(focal);
+        final canvasFocal = f.toCanvas(focal);
         final canvasCenter = Offset(canvasSize.width / 2, canvasSize.height / 2);
         final expected = (canvasFocal - canvasCenter) * (1.0 - 1.0 / z);
         final actual = f.centerOffsetInPlace(focal, z);
@@ -288,6 +288,70 @@ void main() {
           }
         }
       }
+    });
+  });
+
+  group('manual viewport API (picker geometry)', () {
+    const canvasSize = Size(1400, 2900);
+    final videoRect = const Rect.fromLTWH(100, 120, 1200, 2596);
+    final f = ZoomFraming.device(
+        videoSize: videoSize, videoRect: videoRect, canvasSize: canvasSize);
+    final canvasCenter = Offset(canvasSize.width / 2, canvasSize.height / 2);
+
+    test('manualViewportRect center == canvasCenter + centerOffsetInPlace, '
+        'size == canvas / z', () {
+      const focal = Offset(900, 2000);
+      const z = 2.5;
+      final rect = f.manualViewportRect(focal, z);
+      final expectedCenter = canvasCenter + f.centerOffsetInPlace(focal, z);
+      expect(rect.center.dx, closeTo(expectedCenter.dx, 1e-6));
+      expect(rect.center.dy, closeTo(expectedCenter.dy, 1e-6));
+      expect(rect.width, closeTo(canvasSize.width / z, 1e-6));
+      expect(rect.height, closeTo(canvasSize.height / z, 1e-6));
+    });
+
+    test('manualFocalForViewportCenter inverts manualViewportRect.center', () {
+      // In-band focals (the inverse must round-trip exactly).
+      final focals = [
+        const Offset(585, 1266),
+        const Offset(300, 800),
+        const Offset(900, 2000),
+      ];
+      for (final focal in focals) {
+        for (final z in [1.5, 2.0, 3.0, 5.0]) {
+          final vc = f.manualViewportRect(focal, z).center;
+          final back = f.manualFocalForViewportCenter(vc, z);
+          expect(back.dx, closeTo(focal.dx, 1e-6),
+              reason: 'dx round-trip failed for focal=$focal, z=$z');
+          expect(back.dy, closeTo(focal.dy, 1e-6),
+              reason: 'dy round-trip failed for focal=$focal, z=$z');
+        }
+      }
+    });
+
+    test('clampManualViewportCenter keeps the box inside the canvas', () {
+      for (final z in [1.5, 2.0, 3.0, 5.0]) {
+        final halfW = canvasSize.width / (2 * z);
+        final halfH = canvasSize.height / (2 * z);
+        // Push far past the top-left corner.
+        final clamped =
+            f.clampManualViewportCenter(const Offset(-9999, -9999), z);
+        expect(clamped.dx, closeTo(halfW, 1e-6));
+        expect(clamped.dy, closeTo(halfH, 1e-6));
+        // Push far past the bottom-right corner.
+        final clamped2 =
+            f.clampManualViewportCenter(const Offset(99999, 99999), z);
+        expect(clamped2.dx, closeTo(canvasSize.width - halfW, 1e-6));
+        expect(clamped2.dy, closeTo(canvasSize.height - halfH, 1e-6));
+      }
+    });
+
+    test('z==1 guard: manualFocalForViewportCenter returns canvas-center focal',
+        () {
+      final back = f.manualFocalForViewportCenter(const Offset(10, 20), 1.0);
+      final expected = f.fromCanvas(canvasCenter);
+      expect(back.dx, closeTo(expected.dx, 1e-6));
+      expect(back.dy, closeTo(expected.dy, 1e-6));
     });
   });
 }

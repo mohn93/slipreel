@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/rendering/device_frame_layout.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
 import 'package:screen_recorder/ui/widgets/zoom/device_frame_composition.dart';
 
@@ -107,17 +108,15 @@ class _ZoomPlacementPickerState extends State<ZoomPlacementPicker> {
 
   Rect _currentRect() => _dragRect ?? widget.rect;
 
-  // --- Affine: video <-> canvas (per the videoRect placement). -----------
+  // --- Framing: the single source of truth for the magnify-in-place law.
+  // All viewport geometry (affine map, viewport box, drag inversion, clamp)
+  // is delegated to ZoomFraming so the picker can never drift from the live
+  // render / export math.
 
-  double get _sx => widget.videoRect.width / widget.videoSize.width;
-  double get _sy => widget.videoRect.height / widget.videoSize.height;
-
-  Offset _toCanvas(Offset p) => widget.videoRect.topLeft +
-      Offset(p.dx * _sx, p.dy * _sy);
-
-  Offset _fromCanvas(Offset q) => Offset(
-        (q.dx - widget.videoRect.left) / _sx,
-        (q.dy - widget.videoRect.top) / _sy,
+  ZoomFraming get _framing => ZoomFraming.device(
+        videoSize: widget.videoSize,
+        videoRect: widget.videoRect,
+        canvasSize: widget.canvasSize,
       );
 
   /// True when the zoom is effectively 1× → the viewport fills the whole
@@ -128,34 +127,31 @@ class _ZoomPlacementPickerState extends State<ZoomPlacementPicker> {
   /// The magnify-in-place viewport-box center in canvas coords for a given
   /// focal rect. Mirrors the render law for manual zooms.
   Offset _viewportCenter(Rect focalRect) {
-    final z = widget.zoomLevel;
-    final canvasCenter =
-        Offset(widget.canvasSize.width / 2, widget.canvasSize.height / 2);
-    if (_dragDisabled) return canvasCenter;
-    final canvasFocal = _toCanvas(focalRect.center);
-    return canvasCenter + (canvasFocal - canvasCenter) * (1.0 - 1.0 / z);
+    if (_dragDisabled) {
+      return Offset(widget.canvasSize.width / 2, widget.canvasSize.height / 2);
+    }
+    return _framing.manualViewportRect(focalRect.center, widget.zoomLevel)
+        .center;
   }
 
   /// The viewport box (canvas coords) for a given focal rect.
   Rect _viewportBox(Rect focalRect) {
-    final z = widget.zoomLevel;
-    final vc = _viewportCenter(focalRect);
-    return Rect.fromCenter(
-      center: vc,
-      width: widget.canvasSize.width / z,
-      height: widget.canvasSize.height / z,
-    );
+    if (_dragDisabled) {
+      return Rect.fromCenter(
+        center:
+            Offset(widget.canvasSize.width / 2, widget.canvasSize.height / 2),
+        width: widget.canvasSize.width / widget.zoomLevel,
+        height: widget.canvasSize.height / widget.zoomLevel,
+      );
+    }
+    return _framing.manualViewportRect(focalRect.center, widget.zoomLevel);
   }
 
   /// Invert a (clamped) viewport-box center back to a focal rect in video
   /// coords. The emitted rect's center may lie outside `[0, videoSize]`.
   Rect _focalForVc(Offset vc) {
     final z = widget.zoomLevel;
-    final canvasCenter =
-        Offset(widget.canvasSize.width / 2, widget.canvasSize.height / 2);
-    final canvasFocal =
-        canvasCenter + (vc - canvasCenter) / (1.0 - 1.0 / z);
-    final center = _fromCanvas(canvasFocal);
+    final center = _framing.manualFocalForViewportCenter(vc, z);
     return Rect.fromCenter(
       center: center,
       width: widget.videoSize.width / z,
@@ -164,15 +160,8 @@ class _ZoomPlacementPickerState extends State<ZoomPlacementPicker> {
   }
 
   /// Clamp a viewport-box center so the box stays fully inside the canvas.
-  Offset _clampVc(Offset vc) {
-    final z = widget.zoomLevel;
-    final halfW = widget.canvasSize.width / (2 * z);
-    final halfH = widget.canvasSize.height / (2 * z);
-    return Offset(
-      vc.dx.clamp(halfW, widget.canvasSize.width - halfW),
-      vc.dy.clamp(halfH, widget.canvasSize.height - halfH),
-    );
-  }
+  Offset _clampVc(Offset vc) =>
+      _framing.clampManualViewportCenter(vc, widget.zoomLevel);
 
   @override
   Widget build(BuildContext context) {

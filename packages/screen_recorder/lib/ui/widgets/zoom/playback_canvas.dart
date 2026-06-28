@@ -50,7 +50,7 @@ import 'package:screen_recorder/ui/widgets/camera/camera_bubble.dart';
 import 'package:screen_recorder/ui/widgets/zoom/preview_cursor_timing.dart';
 import 'package:slipreel_engine/models/device_frame.dart';
 import 'package:slipreel_engine/rendering/device_frame_layout.dart';
-import 'package:slipreel_engine/rendering/device_frame_matcher.dart';
+import 'package:screen_recorder/ui/widgets/zoom/composed_canvas.dart';
 import 'package:screen_recorder/ui/widgets/zoom/device_frame_composition.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
@@ -714,30 +714,19 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     final videoOriginX = resolved.videoRect.left;
     final videoOriginY = resolved.videoRect.top;
 
-    // Resolve an optional device-frame layout. When active, the composition
-    // uses DeviceFrameComposition instead of FramePainter + ClipRRect video,
-    // and effTotalSize / effVideoOriginX/Y override the normal canvas geometry.
-    DeviceFrameLayout? deviceLayout;
-    DeviceFrameOrientationAsset? deviceAsset;
-    final dfId = currentFrame.deviceFrameId;
-    final dfCatalog = widget.deviceFrameCatalog;
-    if (dfId != null && dfCatalog != null) {
-      final entry = dfCatalog.entryById(dfId);
-      if (entry != null && deviceFrameCompatible(entry, videoSize)) {
-        final color = entry.colorById(currentFrame.deviceFrameColor ?? '')
-            ?? (entry.colors.isNotEmpty ? entry.colors.first : null);
-        if (color != null) {
-          deviceAsset = recordingIsPortrait(videoSize) ? color.portrait : color.landscape;
-          deviceLayout = resolveDeviceFrameLayout(
-            asset: deviceAsset,
-            recordingSize: videoSize,
-            padding: currentFrame.padding,
-            aspect: widget.outputAspect,
-            adjustSize: currentFrame.deviceFrameAdjustSize,
-          );
-        }
-      }
-    }
+    // Resolve the composed-canvas geometry (shared with the placement picker
+    // and scene-blur framing). When a compatible device frame is active the
+    // composition uses DeviceFrameComposition instead of FramePainter +
+    // ClipRRect video, and effTotalSize / effVideoOriginX/Y override the normal
+    // canvas geometry.
+    final composed = resolveComposedCanvas(
+      videoSize: videoSize,
+      frame: currentFrame,
+      aspect: widget.outputAspect,
+      catalog: widget.deviceFrameCatalog,
+    );
+    final DeviceFrameLayout? deviceLayout = composed.deviceLayout;
+    final DeviceFrameOrientationAsset? deviceAsset = composed.deviceAsset;
     final Size effTotalSize = deviceLayout?.canvasSize ?? totalSize;
     final double effVideoOriginX = deviceLayout?.videoRect.left ?? videoOriginX;
     final double effVideoOriginY = deviceLayout?.videoRect.top ?? videoOriginY;
@@ -751,8 +740,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     // composed canvas instead of the bare video.
     final ZoomFraming zoomFraming = ZoomFraming.device(
       videoSize: videoSize,
-      videoRect: deviceLayout?.videoRect ?? resolved.videoRect,
-      canvasSize: effTotalSize,
+      videoRect: composed.videoRect,
+      canvasSize: composed.canvasSize,
     );
 
     // Single AnimatedBuilder rebuilt per frame: drives the cursor

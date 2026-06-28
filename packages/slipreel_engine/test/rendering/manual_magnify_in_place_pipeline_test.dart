@@ -113,7 +113,7 @@ void main() {
     // canvas-center-relative offset, transform it, and convert back.
     final canvasCenter =
         Offset(canvasSize.width / 2, canvasSize.height / 2);
-    final placedCanvas = framing.debugToCanvas(placementRect.center);
+    final placedCanvas = framing.toCanvas(placementRect.center);
     final rel = placedCanvas - canvasCenter;
     final v = matrix.transform3(Vector3(rel.dx, rel.dy, 0));
     return Offset(v.x, v.y) + canvasCenter;
@@ -240,7 +240,7 @@ void main() {
         framing: f,
       );
       final canvasCenter = Offset(canvas.width / 2, canvas.height / 2);
-      final placedCanvas = f.debugToCanvas(nPlacement.center);
+      final placedCanvas = f.toCanvas(nPlacement.center);
       final rel = placedCanvas - canvasCenter;
       final v = matrix.transform3(Vector3(rel.dx, rel.dy, 0));
       return Offset(v.x, v.y) + canvasCenter;
@@ -269,7 +269,7 @@ void main() {
         // * (1 - 1/z); on-screen it sits z*(focalCanvas - vc) from center.
         final canvasCenter =
             Offset(nCanvasSize.width / 2, nCanvasSize.height / 2);
-        final focalCanvas = nFraming.debugToCanvas(nPlacement.center);
+        final focalCanvas = nFraming.toCanvas(nPlacement.center);
         final vc = canvasCenter + (focalCanvas - canvasCenter) * (1 - 1 / z);
         final expectedScreen =
             canvasCenter + (focalCanvas - vc) * z;
