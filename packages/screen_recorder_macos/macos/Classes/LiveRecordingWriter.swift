@@ -256,21 +256,29 @@ class LiveRecordingWriter {
         pauseStart = nil
       }
 
-      videoInput?.markAsFinished()
-      audioInputs.values.forEach { $0.markAsFinished() }
-
       if !writerActive {
         // Nothing was ever written: the lazy AVAssetWriter session never opened
         // because no first video sample arrived (e.g. a muxed device that never
         // delivered demuxed video frames — see DeviceCaptureManager's muxed
-        // note). Clean up and surface a clear error rather than returning a
-        // phantom success path that points at a missing/empty file (which the
-        // Dart side would then trip over when it stats the file). This path is
-        // FULLY synchronous — it always fires the completion below — so Stop can
-        // never wedge waiting on a finalize that has nothing to finish.
+        // note; also reproduces when an iPhone/iPad source is recorded with its
+        // screen off so no frames are produced). Clean up and surface a clear
+        // error rather than returning a phantom success path that points at a
+        // missing/empty file (which the Dart side would then trip over when it
+        // stats the file). This path is FULLY synchronous — it always fires the
+        // completion below — so Stop can never wedge waiting on a finalize that
+        // has nothing to finish.
+        //
+        // CRITICAL: this guard must run BEFORE markAsFinished() below. Calling
+        // markAsFinished() on an input whose AVAssetWriter never left .unknown
+        // (startWriting()/startSession() deferred to the first video sample)
+        // throws an uncatchable Obj-C exception → SIGABRT.
         isStarted = false
         return .nothingWritten
       }
+
+      // Safe only now that writerActive == true (writer.status == .writing).
+      videoInput?.markAsFinished()
+      audioInputs.values.forEach { $0.markAsFinished() }
 
       let outputPath = outputURL.path
       writer.finishWriting {

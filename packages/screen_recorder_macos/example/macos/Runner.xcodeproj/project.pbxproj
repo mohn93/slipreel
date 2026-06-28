@@ -28,6 +28,7 @@
 		AA4G5H6I7J8K9L0M1N2O3P4Q /* RegionToolbarPositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4G5H6I7J8K9L0M1N2O3P4Q /* RegionToolbarPositionTests.swift */; };
 		CC5G5H6I7J8K9L0M1N2O3P4Q /* CursorCoordinateMapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD5G5H6I7J8K9L0M1N2O3P4Q /* CursorCoordinateMapperTests.swift */; };
 		EE6G5H6I7J8K9L0M1N2O3P4Q /* FirstFrameTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6G5H6I7J8K9L0M1N2O3P4Q /* FirstFrameTimingTests.swift */; };
+		A1B2LIVEWRITERSTOPSRC001 /* LiveRecordingWriterStopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2LIVEWRITERSTOPREF001 /* LiveRecordingWriterStopTests.swift */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
@@ -77,6 +78,7 @@
 		BB4G5H6I7J8K9L0M1N2O3P4Q /* RegionToolbarPositionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionToolbarPositionTests.swift; sourceTree = "<group>"; };
 		DD5G5H6I7J8K9L0M1N2O3P4Q /* CursorCoordinateMapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorCoordinateMapperTests.swift; sourceTree = "<group>"; };
 		FF6G5H6I7J8K9L0M1N2O3P4Q /* FirstFrameTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstFrameTimingTests.swift; sourceTree = "<group>"; };
+		A1B2LIVEWRITERSTOPREF001 /* LiveRecordingWriterStopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingWriterStopTests.swift; sourceTree = "<group>"; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
 		335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GeneratedPluginRegistrant.swift; sourceTree = "<group>"; };
 		33CC10ED2044A3C60003C045 /* screen_recorder_macos_example.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = screen_recorder_macos_example.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -132,6 +134,7 @@
 				BB4G5H6I7J8K9L0M1N2O3P4Q /* RegionToolbarPositionTests.swift */,
 				DD5G5H6I7J8K9L0M1N2O3P4Q /* CursorCoordinateMapperTests.swift */,
 				FF6G5H6I7J8K9L0M1N2O3P4Q /* FirstFrameTimingTests.swift */,
+				A1B2LIVEWRITERSTOPREF001 /* LiveRecordingWriterStopTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -454,6 +457,7 @@
 				AA4G5H6I7J8K9L0M1N2O3P4Q /* RegionToolbarPositionTests.swift in Sources */,
 				CC5G5H6I7J8K9L0M1N2O3P4Q /* CursorCoordinateMapperTests.swift in Sources */,
 				EE6G5H6I7J8K9L0M1N2O3P4Q /* FirstFrameTimingTests.swift in Sources */,
+				A1B2LIVEWRITERSTOPSRC001 /* LiveRecordingWriterStopTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
