@@ -137,6 +137,10 @@ flutter:
     - assets/device_frames/iphone-17-pro/
     - assets/device_frames/iphone-17-pro-max/
     - assets/device_frames/iphone-air/
+    - assets/device_frames/iphone-14/
+    - assets/device_frames/iphone-14-plus/
+    - assets/device_frames/iphone-14-pro/
+    - assets/device_frames/iphone-14-pro-max/
     - assets/device_frames/ipad-pro-m5-11/
     - assets/device_frames/ipad-pro-m5-13/
     - assets/device_frames/ipad-air-11-m4/
