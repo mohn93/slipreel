@@ -40,8 +40,10 @@ class ZoomPlacementGeometry {
   /// The video's rect within the composed canvas (canvas px).
   final Rect videoRect;
 
-  /// Wallpaper category for `wallpaperDecoration`.
-  final String wallpaperCategory;
+  /// Wallpaper category for `wallpaperDecoration`. Null when the project
+  /// has no wallpaper — the picker then shows a neutral backdrop, matching
+  /// the render (which draws no wallpaper layer in that case).
+  final String? wallpaperCategory;
 
   /// Wallpaper index for `wallpaperDecoration`.
   final int wallpaperIndex;
@@ -178,8 +180,10 @@ class ZoomContextInspector extends ConsumerWidget {
                   canvasSize: placementGeometry?.canvasSize ?? videoSize,
                   videoRect: placementGeometry?.videoRect ??
                       (Offset.zero & videoSize),
-                  wallpaperCategory:
-                      placementGeometry?.wallpaperCategory ?? 'macOS',
+                  // Null category ⇒ no wallpaper (render draws none); the
+                  // picker shows a neutral backdrop to match. The bare-video
+                  // fallback (no geometry yet) is also null → neutral.
+                  wallpaperCategory: placementGeometry?.wallpaperCategory,
                   wallpaperIndex: placementGeometry?.wallpaperIndex ?? 0,
                   wallpaperSolidColor: placementGeometry?.wallpaperSolidColor,
                   deviceLayout: placementGeometry?.deviceLayout,

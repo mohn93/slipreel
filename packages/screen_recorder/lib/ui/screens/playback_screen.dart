@@ -1676,11 +1676,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     return ZoomPlacementGeometry(
       canvasSize: canvasSize,
       videoRect: videoRect,
-      // The render draws no wallpaper layer when the category is null; the
-      // picker always needs a category, so fall back to the editor default
-      // ('macOS'/0). With null category the canvas backdrop shows through —
-      // a benign cosmetic divergence behind the box, the geometry matches.
-      wallpaperCategory: frame.wallpaperCategory ?? 'macOS',
+      // Thread the real null-ness through: the render draws no wallpaper
+      // layer when the category is null (the dark editor canvas shows
+      // through), so the picker shows a matching neutral backdrop rather
+      // than a macOS image. Geometry is wallpaper-independent and unchanged.
+      wallpaperCategory: frame.wallpaperCategory,
       wallpaperIndex: frame.wallpaperIndex,
       wallpaperSolidColor: frame.solidColor,
       deviceLayout: deviceLayout,

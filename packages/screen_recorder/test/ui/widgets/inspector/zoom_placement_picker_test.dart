@@ -445,6 +445,59 @@ void main() {
     });
   });
 
+  group('no wallpaper (category == null)', () {
+    const videoSize = Size(1920, 1080);
+    const canvasSize = Size(2200, 1300);
+    final videoRect = const Rect.fromLTWH(140, 110, 1920, 1080);
+    final focal = Rect.fromCenter(
+        center: const Offset(960, 540), width: 960, height: 540);
+
+    testWidgets('does NOT render a wallpaper layer; matches the render which '
+        'draws none', (tester) async {
+      await _pump(
+        tester,
+        ZoomPlacementPicker(
+          videoSize: videoSize,
+          canvasSize: canvasSize,
+          videoRect: videoRect,
+          wallpaperCategory: null,
+          wallpaperIndex: 0,
+          zoomLevel: 2.0,
+          rect: focal,
+          onPreview: (_) {},
+          onCommit: (_) {},
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      // The wallpaper layer is absent (the neutral mini-frame fill shows
+      // through), exactly like the render's null-wallpaper path.
+      expect(find.byKey(const Key('zoom-placement-wallpaper')), findsNothing);
+      // The mini-frame, box and spotlight still render.
+      expect(find.byKey(const Key('zoom-placement-mini-frame')),
+          findsOneWidget);
+      expect(find.byKey(const Key('zoom-placement-inner-rect')), findsOneWidget);
+    });
+
+    testWidgets('a non-null category DOES render a wallpaper layer',
+        (tester) async {
+      await _pump(
+        tester,
+        ZoomPlacementPicker(
+          videoSize: videoSize,
+          canvasSize: canvasSize,
+          videoRect: videoRect,
+          wallpaperCategory: 'macOS',
+          wallpaperIndex: 0,
+          zoomLevel: 2.0,
+          rect: focal,
+          onPreview: (_) {},
+          onCommit: (_) {},
+        ),
+      );
+      expect(find.byKey(const Key('zoom-placement-wallpaper')), findsOneWidget);
+    });
+  });
+
   testWidgets('mini-frame aspect matches canvasSize', (tester) async {
     const canvasSize = Size(2200, 1300);
     await _pump(

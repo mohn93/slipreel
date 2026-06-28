@@ -51,8 +51,11 @@ class ZoomPlacementPicker extends StatefulWidget {
   /// The video's rect within the composed canvas (canvas px).
   final Rect videoRect;
 
-  /// Wallpaper category for [wallpaperDecoration].
-  final String wallpaperCategory;
+  /// Wallpaper category for [wallpaperDecoration]. Null when the project
+  /// has no wallpaper — the render draws no wallpaper layer in that case
+  /// (the dark editor canvas shows through), so the picker matches by
+  /// showing a plain neutral backdrop instead of any wallpaper image.
+  final String? wallpaperCategory;
 
   /// Wallpaper index for [wallpaperDecoration].
   final int wallpaperIndex;
@@ -224,17 +227,23 @@ class _ZoomPlacementPickerState extends State<ZoomPlacementPicker> {
                 child: ClipRect(
                   child: Stack(
                     children: [
-                      // 1. Wallpaper fills the whole composed canvas.
-                      Positioned.fill(
-                        child: Container(
-                          key: const Key('zoom-placement-wallpaper'),
-                          decoration: wallpaperDecoration(
-                            widget.wallpaperCategory,
-                            widget.wallpaperIndex,
-                            solidColor: widget.wallpaperSolidColor,
+                      // 1. Backdrop fills the whole composed canvas. When the
+                      //    project has a wallpaper, draw it; when it has none
+                      //    (category == null) the render draws no wallpaper
+                      //    layer and the dark editor canvas shows through, so
+                      //    the picker shows a matching neutral backdrop (the
+                      //    mini-frame's own dark fill) instead of any image.
+                      if (widget.wallpaperCategory != null)
+                        Positioned.fill(
+                          child: Container(
+                            key: const Key('zoom-placement-wallpaper'),
+                            decoration: wallpaperDecoration(
+                              widget.wallpaperCategory!,
+                              widget.wallpaperIndex,
+                              solidColor: widget.wallpaperSolidColor,
+                            ),
                           ),
                         ),
-                      ),
                       // 2. The composition (device bezel + screen, or plain
                       //    screen frame in its video rect).
                       ..._buildComposition(miniScale, videoMini),

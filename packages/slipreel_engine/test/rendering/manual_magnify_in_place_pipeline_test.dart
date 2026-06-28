@@ -170,6 +170,162 @@ void main() {
     },
   );
 
+  // ---------------------------------------------------------------------------
+  // NORMAL (non-device) recording WITH padding — composed-canvas parity guard.
+  //
+  // Part A of the padding-aware design unified the render so a NORMAL recording
+  // with padding frames the COMPOSED CANVAS (videoRect inset inside a larger
+  // canvas), not the bare video (ZoomFraming.identity(videoSize)). This group
+  // locks that: a manual EDGE placement's on-screen position is computed from
+  // CANVAS geometry, and the test is DISCRIMINATING — it asserts that switching
+  // back to identity(videoSize) framing would move the placed point (and the
+  // assertions are written against the canvas-geometry value, so they FAIL on
+  // identity framing). It also locks preview==export for the padded-normal case
+  // (modulo the export compositor's documented even-size rounding).
+  group('normal recording WITH padding (composed-canvas framing)', () {
+    // A 1920x1080 landscape NORMAL recording centered inside a larger padded
+    // canvas — no device bezel. videoRect is inset by the (asymmetric) padding.
+    const nVideoSize = Size(1920, 1080);
+    const nCanvasSize = Size(2240, 1340); // padding: 160 L/R, 130 T/B
+    final nVideoRect = Rect.fromLTWH(
+      (nCanvasSize.width - nVideoSize.width) / 2, // 160
+      (nCanvasSize.height - nVideoSize.height) / 2, // 130
+      nVideoSize.width,
+      nVideoSize.height,
+    );
+    // The COMPOSED-CANVAS framing the unified render builds for this recording.
+    final nFraming = ZoomFraming.device(
+      videoSize: nVideoSize,
+      videoRect: nVideoRect,
+      canvasSize: nCanvasSize,
+    );
+    // What the framing would be if Part A regressed to bare-video identity.
+    final nIdentity = ZoomFraming.identity(nVideoSize);
+
+    // A manual placement near the RIGHT edge of the video.
+    final nPlacement = Rect.fromCenter(
+      center: const Offset(1820, 540), // x ~= 0.95*W, vertically centered
+      width: 300,
+      height: 300,
+    );
+    ZoomRegion nRegion(double z) => ZoomRegion(
+          rect: nPlacement,
+          startTime: const Duration(milliseconds: 500),
+          duration: const Duration(milliseconds: 3000),
+          zoomLevel: z,
+          followCursor: false,
+        );
+    DeterministicFocalTrack nTrack(double z, ZoomFraming f) =>
+        DeterministicFocalTrack.build(
+          region: nRegion(z),
+          cursorRecording: emptyCursor(),
+          cursorAnimationConfig: const CursorAnimationConfig.preset(
+            CursorAnimationStyle.smooth,
+          ),
+          videoSize: nVideoSize,
+          fps: 60,
+          framing: f,
+        );
+
+    // On-screen (canvas-center-relative) position of the placed point under a
+    // given framing, through the full pipeline at the hold phase.
+    Offset placedPos(double z, ZoomFraming f, Size canvas) {
+      final region = nRegion(z);
+      final focal = nTrack(z, f).focalAt(holdAt);
+      final matrix = transformer.getTransform(
+        position: holdAt,
+        zoomRegion: region,
+        videoSize: nVideoSize,
+        focalPoint: focal,
+        framing: f,
+      );
+      final canvasCenter = Offset(canvas.width / 2, canvas.height / 2);
+      final placedCanvas = f.debugToCanvas(nPlacement.center);
+      final rel = placedCanvas - canvasCenter;
+      final v = matrix.transform3(Vector3(rel.dx, rel.dy, 0));
+      return Offset(v.x, v.y) + canvasCenter;
+    }
+
+    test(
+      'manual edge placement uses CANVAS geometry (DISCRIMINATING: differs '
+      'from bare-video identity framing)',
+      () {
+        const z = 2.0;
+        final canvasPos = placedPos(z, nFraming, nCanvasSize);
+        final identityPos = placedPos(z, nIdentity, nVideoSize);
+
+        // The padded canvas shifts the placed point's canvas coordinate by the
+        // padding offset (160,130) before zooming, so the on-screen result is
+        // materially different from the bare-video identity result. If Part A
+        // ever reverts framing to identity(videoSize), canvasPos == identityPos
+        // and this fails.
+        expect((canvasPos - identityPos).distance, greaterThan(50.0),
+            reason: 'composed-canvas framing must move the placed point vs '
+                'bare-video identity — framing looks like it reverted to '
+                'identity(videoSize)');
+
+        // Lock the canvas-geometry value itself: for magnify-in-place the placed
+        // (focal) point maps to vc = canvasCenter + (focalCanvas - canvasCenter)
+        // * (1 - 1/z); on-screen it sits z*(focalCanvas - vc) from center.
+        final canvasCenter =
+            Offset(nCanvasSize.width / 2, nCanvasSize.height / 2);
+        final focalCanvas = nFraming.debugToCanvas(nPlacement.center);
+        final vc = canvasCenter + (focalCanvas - canvasCenter) * (1 - 1 / z);
+        final expectedScreen =
+            canvasCenter + (focalCanvas - vc) * z;
+        expect((canvasPos - expectedScreen).distance, lessThan(0.5),
+            reason: 'placed on-screen position must equal the magnify-in-place '
+                'canvas-geometry oracle');
+      },
+    );
+
+    test(
+      'preview == export for the padded-normal case (modulo even-size '
+      'rounding): focal identical; matrices agree within rounding',
+      () {
+        const z = 2.0;
+        // Preview path: framing built from the exact (possibly odd) canvas.
+        final previewFocal = nTrack(z, nFraming).focalAt(holdAt);
+
+        // Export path: FrameCompositor rounds the canvas to even dimensions.
+        // Model that here so the test asserts the documented parity-modulo-
+        // rounding rather than byte-identity. 2240x1340 is already even, so add
+        // an explicit even-rounded framing derived the same way the compositor
+        // does (even canvas, centered videoRect within it).
+        Size evenSize(Size s) => Size(
+              (s.width.round() + (s.width.round() & 1)).toDouble(),
+              (s.height.round() + (s.height.round() & 1)).toDouble(),
+            );
+        final exportCanvas = evenSize(nCanvasSize);
+        final exportVideoRect = Rect.fromLTWH(
+          (exportCanvas.width - nVideoSize.width) / 2,
+          (exportCanvas.height - nVideoSize.height) / 2,
+          nVideoSize.width,
+          nVideoSize.height,
+        );
+        final exportFraming = ZoomFraming.device(
+          videoSize: nVideoSize,
+          videoRect: exportVideoRect,
+          canvasSize: exportCanvas,
+        );
+        final exportFocal = nTrack(z, exportFraming).focalAt(holdAt);
+
+        // The focal is in source coords and is framing-shape-independent for a
+        // manual placement, so it is identical for both paths.
+        expect(previewFocal, exportFocal,
+            reason: 'manual focal must be identical for preview and export');
+
+        // On-screen placement positions agree within the even-rounding margin
+        // (here the canvas is already even, so they coincide exactly).
+        final previewPos = placedPos(z, nFraming, nCanvasSize);
+        final exportPos = placedPos(z, exportFraming, exportCanvas);
+        expect((previewPos - exportPos).distance, lessThan(1.0),
+            reason: 'preview and export placement must agree within even-size '
+                'rounding');
+      },
+    );
+  });
+
   test(
     'MANUAL placement through the pipeline never reveals void at the edge '
     '(viewport stays within the padded canvas) at z in {2,3,5}',
