@@ -70,8 +70,9 @@ class RecordingActionRouter {
           state.selectedSourceId != null) {
         await controller.startDeviceRecording(
           deviceId: state.selectedSourceId!,
-          captureDeviceAudio:
-              _container.read(deviceAudioEnabledProvider),
+          // A device recording inherently includes its own audio (carried over
+          // USB); there is no UI toggle — it is always captured.
+          captureDeviceAudio: true,
           microphone: micConfig,
           permissions: snapshot,
           onDenied: (kind) {
@@ -176,11 +177,6 @@ class RecordingActionRouter {
     }
   }
 }
-
-/// Whether device-audio capture is enabled for the next device recording
-/// (iPhone/iPad over USB). Driven by the bar's device-audio control; read by
-/// [RecordingActionRouter] when starting a device source. Defaults to true.
-final deviceAudioEnabledProvider = StateProvider<bool>((ref) => true);
 
 /// Throw-by-default provider. Set in main() so HotkeyController + SleepObserver
 /// can resolve it via Ref if needed.

@@ -34,16 +34,28 @@ class DeviceFrameLayout {
   final double videoCornerRadius;
 }
 
+/// Overscan applied to the video relative to the screen cutout, as a fraction
+/// of the cutout's shorter side. The video is scaled to cover the cutout PLUS
+/// this bleed on every side so its edges always tuck under the bezel — hiding
+/// both aspect-mismatch letterbox gaps and sub-pixel seams at the bezel's inner
+/// edge. Small enough that the cropped sliver is imperceptible.
+const double _kScreenBleedFraction = 0.006;
+
 /// Computes the device-frame layout. See [DeviceFrameLayout].
 ///
 /// [adjustSize] == true stretches the bezel height so the screen cutout
-/// matches the recording's aspect; the video then fills the cutout exactly.
-/// Because the bezel PNG is later drawn into the (stretched) [bezelRect] with
-/// `BoxFit.fill`, its transparent hole stretches with it and stays aligned
-/// with the video.
+/// matches the recording's aspect; the video then covers the cutout with only
+/// the bleed cropped. Because the bezel PNG is later drawn into the (stretched)
+/// [bezelRect] with `BoxFit.fill`, its transparent hole stretches with it and
+/// stays aligned with the video.
 ///
-/// [adjustSize] == false keeps the bezel's true proportions and letterbox-fits
-/// the video (aspect-preserved, centered) inside the native cutout.
+/// [adjustSize] == false keeps the bezel's true proportions; the video is
+/// cover-fit (aspect-preserved, centered) so it fully fills the native cutout,
+/// cropping the longer axis when the recording's aspect differs.
+///
+/// In both modes the video COVERS the cutout (never letterboxes) plus a small
+/// [_kScreenBleedFraction] overscan, so no canvas background can show through
+/// the transparent screen cutout.
 DeviceFrameLayout resolveDeviceFrameLayout({
   required DeviceFrameOrientationAsset asset,
   required Size recordingSize,
@@ -88,27 +100,31 @@ DeviceFrameLayout resolveDeviceFrameLayout({
     bezelRect.top + sr.b * bezelRect.height,
   );
 
+  // Always COVER the screen cutout (never letterbox): scale the recording to
+  // fill the cutout on both axes, plus a small bleed so the video's edges tuck
+  // under the bezel. This guarantees no canvas background shows through the
+  // transparent cutout — neither as an aspect-mismatch letterbox gap (when the
+  // recording has no exact-match device frame, e.g. an iPhone model that isn't
+  // in the catalog) nor as a sub-pixel seam at the bezel's inner edge. The
+  // bezel PNG (drawn on top) hides the overscan. With adjustSize the cutout
+  // aspect already matches the recording, so the only crop is the bleed.
   final Rect videoRect;
-  if (adjustSize) {
-    // Aspect already matches the screen rect by construction.
+  if (recordingSize.width <= 0 || recordingSize.height <= 0) {
     videoRect = screenRect;
   } else {
-    // Letterbox-fit (contain) the recording inside the native screen cutout.
-    if (recordingSize.width <= 0 || recordingSize.height <= 0) {
-      videoRect = screenRect;
-    } else {
-      final scaleW = screenRect.width / recordingSize.width;
-      final scaleH = screenRect.height / recordingSize.height;
-      final s = scaleW < scaleH ? scaleW : scaleH;
-      final w = recordingSize.width * s;
-      final h = recordingSize.height * s;
-      videoRect = Rect.fromLTWH(
-        screenRect.left + (screenRect.width - w) / 2,
-        screenRect.top + (screenRect.height - h) / 2,
-        w,
-        h,
-      );
-    }
+    final bleed = screenRect.shortestSide * _kScreenBleedFraction;
+    final target = screenRect.inflate(bleed);
+    final scaleW = target.width / recordingSize.width;
+    final scaleH = target.height / recordingSize.height;
+    final s = scaleW > scaleH ? scaleW : scaleH; // cover: fill both axes
+    final w = recordingSize.width * s;
+    final h = recordingSize.height * s;
+    videoRect = Rect.fromLTWH(
+      target.center.dx - w / 2,
+      target.center.dy - h / 2,
+      w,
+      h,
+    );
   }
 
   // Screen corner radius at display scale (normalized to bezel width → px).
