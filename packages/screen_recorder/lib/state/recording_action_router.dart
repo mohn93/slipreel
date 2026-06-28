@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/utils/app_logger.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 import 'countdown_controller.dart';
@@ -178,14 +179,15 @@ class RecordingActionRouter {
     }
     await perms.refreshAll();
     var status = _container.read(permissionsControllerProvider).screenRec;
-    debugPrint('[RecPerm] screenRec after refresh: $status');
     if (status == PermissionStatus.granted ||
         status == PermissionStatus.unsupported) {
       return true;
     }
     status = await perms.request(PermissionKind.screenRecording); // system prompt
-    debugPrint('[RecPerm] screenRec after request: $status');
     if (status == PermissionStatus.granted) return true;
+    AppLogger.permissions.w(
+        'Screen Recording not granted at record-start (status: $status); '
+        'showing deny panel');
     if (context.mounted) {
       await _showDeniedPanel(context, PermissionKind.screenRecording);
     }
