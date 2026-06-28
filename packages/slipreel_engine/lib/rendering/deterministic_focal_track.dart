@@ -7,6 +7,7 @@ import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 
@@ -37,6 +38,7 @@ class DeterministicFocalTrack {
     required this.videoSize,
     required this.fps,
     required this.clips,
+    required this.framing,
     required List<Offset> samples,
     required int startMicros,
   }) : _samples = List.unmodifiable(samples),
@@ -83,6 +85,11 @@ class DeterministicFocalTrack {
   /// to empty, which keeps existing callers/tests at speed 1.0.
   final List<ClipSlice> clips;
 
+  /// Device-bezel framing forwarded to each replayed [ScenePassBuilder]
+  /// step so clamps are resolved in canvas space. Null ⇒ identity framing
+  /// ⇒ byte-identical to the legacy no-device-frame behavior.
+  final ZoomFraming? framing;
+
   final List<Offset> _samples; // focal per fixed step from _startMicros
   final int _startMicros;
 
@@ -101,6 +108,7 @@ class DeterministicFocalTrack {
     Curve screenRampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
     List<ClipSlice> clips = const <ClipSlice>[],
+    ZoomFraming? framing,
   }) {
     final builder = ScenePassBuilder();
     final regions = <ZoomRegion>[region];
@@ -123,6 +131,7 @@ class DeterministicFocalTrack {
         screenRampCurve: screenRampCurve,
         rampDurationScale: rampDurationScale,
         clips: clips,
+        framing: framing,
       );
       final focal = pass.focalUpdate?.focal;
       // The loop only visits timestamps inside [startUs, endUs), where the
@@ -150,6 +159,7 @@ class DeterministicFocalTrack {
       videoSize: videoSize,
       fps: fps,
       clips: clips,
+      framing: framing,
       samples: samples,
       startMicros: startUs,
     );
@@ -196,7 +206,16 @@ class DeterministicFocalTrack {
     Curve screenRampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
     List<ClipSlice> clips = const <ClipSlice>[],
+    ZoomFraming? framing,
   }) {
+    bool sameFraming(ZoomFraming? a, ZoomFraming? b) {
+      if (a == null || b == null) return (a == null) == (b == null);
+      return a.isIdentity == b.isIdentity &&
+          a.videoSize == b.videoSize &&
+          a.videoRect == b.videoRect &&
+          a.canvasSize == b.canvasSize;
+    }
+
     return identical(this.cursorRecording, cursorRecording) &&
         this.cursorAnimationConfig == cursorAnimationConfig &&
         this.region == region &&
@@ -206,6 +225,7 @@ class DeterministicFocalTrack {
         this.rampDurationScale == rampDurationScale &&
         this.videoSize == videoSize &&
         this.fps == fps &&
-        listEquals(this.clips, clips);
+        listEquals(this.clips, clips) &&
+        sameFraming(this.framing, framing);
   }
 }

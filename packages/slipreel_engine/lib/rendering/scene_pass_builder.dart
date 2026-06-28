@@ -11,6 +11,7 @@ import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
 /// Per-frame "scene state": everything both the live preview and the
 /// export pipeline need to draw one frame. Produced by
@@ -149,6 +150,11 @@ class ScenePassBuilder {
     /// any other caller that wants to bypass timing-driven activation
     /// for one frame. Cleared by the caller when the preview ends.
     ZoomRegion? activeRegionOverride,
+
+    /// Device-bezel framing that routes all focal clamps through the
+    /// canvas geometry. Null ⇒ identity framing ⇒ byte-identical to
+    /// the legacy no-device-frame behavior.
+    ZoomFraming? framing,
   }) {
     // Resolve once, here in the shared builder, so preview and export —
     // the only two callers — cannot resolve slice speed differently.
@@ -221,6 +227,7 @@ class ScenePassBuilder {
       screenRampCurve: screenRampCurve,
       rampDurationScale: rampDurationScale,
       enterCursorTarget: enterCursorTarget,
+      framing: framing,
     );
 
     final filteredVelocity = bypassVelocityFilter
