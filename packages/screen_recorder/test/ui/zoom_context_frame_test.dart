@@ -60,6 +60,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('zoom-placement-frame')), findsOneWidget);
+    // The rebuilt picker renders the extracted frame as the screen layer
+    // (normal, non-device path) behind the viewport box.
+    expect(find.byKey(const Key('zoom-placement-screen')), findsOneWidget);
   });
 }
