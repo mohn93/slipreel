@@ -4,6 +4,7 @@ import 'dart:ui' show Offset, Size;
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
 /// Builds the per-frame zoom matrix used by the playback preview.
 ///
@@ -20,6 +21,9 @@ class ZoomTransformer {
   ///
   /// [rampCurve] shapes the zoom factor's enter/exit ramps. Defaults
   /// to easeInOutQuad to match the original hand-rolled curve.
+  ///
+  /// [framing] (optional) controls focal clamping and canvas translation.
+  /// When null, defaults to identity framing (legacy behavior).
   Matrix4 getTransform({
     required Duration position,
     required ZoomRegion zoomRegion,
@@ -27,6 +31,7 @@ class ZoomTransformer {
     Offset? focalPoint,
     Curve rampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
+    ZoomFraming? framing,
   }) {
     // Route the activation check through [ZoomRegion.activeAt] so the
     // closed end-edge frame (`position == endTime`) resolves consistently
@@ -43,9 +48,10 @@ class ZoomTransformer {
     if (z == 1.0) return Matrix4.identity();
 
     final focal = focalPoint ?? zoomRegion.rect.center;
-    final clamped = clampFocalToBounds(focal, videoSize, z);
-    final pCenterRel = clamped -
-        Offset(videoSize.width / 2, videoSize.height / 2);
+    final f = framing ?? ZoomFraming.identity(videoSize);
+    // pCenterRel is in canvas px; for identity framing it equals the legacy
+    // `clampFocalToBounds(focal, videoSize, z) - videoCenter`.
+    final pCenterRel = f.centerOffset(focal, z);
 
     // With `alignment: Alignment.center` the matrix operates in
     // center-relative coordinates. Scale by Z, then translate by -Z·pCr so
