@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
+import 'package:slipreel_engine/rendering/device_frame_layout.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/state/frame_extractor_provider.dart';
@@ -13,6 +14,48 @@ import 'package:screen_recorder/ui/widgets/inspector/curve_editor.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 import 'package:screen_recorder/ui/widgets/inspector/zoom_placement_picker.dart';
 import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
+
+/// The composed-canvas geometry (wallpaper + padding + bezel + screen)
+/// for the currently-edited frame, resolved by `playback_screen` the SAME
+/// way the live canvas renders it, and forwarded to [ZoomPlacementPicker]
+/// so the placement box matches the render pixel-for-pixel.
+///
+/// For a normal recording with zero padding and no device frame this
+/// degrades to `canvasSize == videoSize`, `videoRect == (0,0,W,H)`,
+/// `deviceLayout == null` — i.e. the bare-video behavior.
+class ZoomPlacementGeometry {
+  const ZoomPlacementGeometry({
+    required this.canvasSize,
+    required this.videoRect,
+    required this.wallpaperCategory,
+    required this.wallpaperIndex,
+    this.wallpaperSolidColor,
+    this.deviceLayout,
+    this.bezel,
+  });
+
+  /// Composed canvas size in pixels (wallpaper + padding + bezel + screen).
+  final Size canvasSize;
+
+  /// The video's rect within the composed canvas (canvas px).
+  final Rect videoRect;
+
+  /// Wallpaper category for `wallpaperDecoration`.
+  final String wallpaperCategory;
+
+  /// Wallpaper index for `wallpaperDecoration`.
+  final int wallpaperIndex;
+
+  /// Custom solid fill color (only for the "Solid" category).
+  final Color? wallpaperSolidColor;
+
+  /// Device-frame layout (canvas px). Null for normal recordings.
+  final DeviceFrameLayout? deviceLayout;
+
+  /// Device bezel image. Null for normal recordings; non-null whenever
+  /// [deviceLayout] is non-null.
+  final ImageProvider? bezel;
+}
 
 /// Properties view shown when a zoom pill is selected on the timeline.
 ///
@@ -31,6 +74,7 @@ class ZoomContextInspector extends ConsumerWidget {
     required this.curveLibrary,
     required this.onCurveOverrideChanged,
     required this.videoSize,
+    this.placementGeometry,
     this.onPlacementPreview,
     this.onPlacementCommit,
     this.isDevice = false,
@@ -49,6 +93,14 @@ class ZoomContextInspector extends ConsumerWidget {
   /// Video frame size; needed to drive the placement picker's
   /// coordinate model. Zero ⇒ video not yet measured ⇒ section hidden.
   final Size videoSize;
+
+  /// The composed-canvas geometry (wallpaper + padding + bezel + screen)
+  /// resolved by `playback_screen` exactly as the live canvas renders it.
+  /// When null (video not yet measured / catalog still loading) the picker
+  /// falls back to the bare-video canvas (canvas == video, no wallpaper
+  /// layer / device bezel), which the magnify-in-place box math degrades to
+  /// cleanly.
+  final ZoomPlacementGeometry? placementGeometry;
 
   /// Live placement preview: fires for every drag-update with the
   /// in-flight rect, so the canvas can live-preview the framing.
@@ -113,19 +165,25 @@ class ZoomContextInspector extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                // TEMPORARY adapter (real composed-canvas wiring is Task 3):
-                // until `playback_screen` resolves the canvas geometry,
-                // wallpaper, and device layout/bezel and threads them through
-                // this inspector, fall back to the bare-video canvas
-                // (canvasSize == videoSize, videoRect == full canvas). With
-                // these values the magnify-in-place box math degrades to the
-                // old bare-video behavior. Wallpaper defaults to macOS/0.
+                // Real composed-canvas wiring: the geometry, wallpaper and
+                // (optional) device layout/bezel come from `playback_screen`,
+                // resolved the SAME way the live canvas renders, so the picker
+                // box matches the render. When the geometry isn't ready yet
+                // (video not measured / catalog loading), degrade to the
+                // bare-video canvas (canvas == video, no wallpaper layer / no
+                // bezel) — the magnify-in-place box math reduces to the old
+                // bare-video behavior there.
                 ZoomPlacementPicker(
                   videoSize: videoSize,
-                  canvasSize: videoSize,
-                  videoRect: Offset.zero & videoSize,
-                  wallpaperCategory: 'macOS',
-                  wallpaperIndex: 0,
+                  canvasSize: placementGeometry?.canvasSize ?? videoSize,
+                  videoRect: placementGeometry?.videoRect ??
+                      (Offset.zero & videoSize),
+                  wallpaperCategory:
+                      placementGeometry?.wallpaperCategory ?? 'macOS',
+                  wallpaperIndex: placementGeometry?.wallpaperIndex ?? 0,
+                  wallpaperSolidColor: placementGeometry?.wallpaperSolidColor,
+                  deviceLayout: placementGeometry?.deviceLayout,
+                  bezel: placementGeometry?.bezel,
                   rect: zoom.rect,
                   zoomLevel: zoom.zoomLevel,
                   onPreview: (r) => onPlacementPreview?.call(r),
