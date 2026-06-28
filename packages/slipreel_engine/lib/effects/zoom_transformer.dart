@@ -49,9 +49,16 @@ class ZoomTransformer {
 
     final focal = focalPoint ?? zoomRegion.rect.center;
     final f = framing ?? ZoomFraming.identity(videoSize);
-    // pCenterRel is in canvas px; for identity framing it equals the legacy
-    // `clampFocalToBounds(focal, videoSize, z) - videoCenter`.
-    final pCenterRel = f.centerOffset(focal, z);
+    // pCenterRel is in canvas px. Follow-cursor zooms center-and-clamp (the
+    // moving cursor must be brought to the viewport center); for identity
+    // framing that equals the legacy `clampFocalToBounds(focal, videoSize, z)
+    // - videoCenter`. MANUAL placements magnify-in-place: the placed point
+    // stays at the same frame fraction at every zoom level (no clamp, no
+    // zoom-dependent re-frame), so the placement never lurches when its level
+    // changes. See ZoomFraming.centerOffsetInPlace.
+    final pCenterRel = zoomRegion.followCursor
+        ? f.centerOffset(focal, z) // center-and-clamp (unchanged)
+        : f.centerOffsetInPlace(focal, z); // magnify-in-place (new)
 
     // With `alignment: Alignment.center` the matrix operates in
     // center-relative coordinates. Scale by Z, then translate by -Z·pCr so
