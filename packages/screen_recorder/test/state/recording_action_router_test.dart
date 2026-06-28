@@ -16,6 +16,17 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 class _FakePlatform extends ScreenRecorderPlatform {
   int pauseCalls = 0, resumeCalls = 0;
   String? deviceStarted;
+
+  /// Live Screen Recording status returned by [getScreenRecordingPermission]
+  /// (what `refreshAll` reads). Configurable per-test.
+  PermissionStatus screenRec = PermissionStatus.granted;
+
+  /// Result of [requestScreenRecordingPermission] (the macOS prompt). Counts
+  /// calls so a test can assert the start path actually REQUESTS, not just
+  /// checks.
+  PermissionStatus requestScreenRecResult = PermissionStatus.denied;
+  int requestScreenRecCalls = 0;
+
   @override
   Future<void> pauseRecording() async => pauseCalls++;
   @override
@@ -29,14 +40,26 @@ class _FakePlatform extends ScreenRecorderPlatform {
   }) async {
     deviceStarted = deviceId;
   }
+
+  @override
+  Future<PermissionStatus> getScreenRecordingPermission() async => screenRec;
+  @override
+  Future<PermissionStatus> requestScreenRecordingPermission() async {
+    requestScreenRecCalls++;
+    return requestScreenRecResult;
+  }
 }
 
 /// A permissions controller pre-seeded with a fixed camera status, so the
 /// device pre-flight in [RecordingActionRouter.start] can be exercised without
 /// a live platform channel.
 class _SeededPermissions extends PermissionsController {
-  _SeededPermissions(super.platform, PermissionStatus camera) {
-    state = PermissionsSnapshot({PermissionKind.camera: camera});
+  _SeededPermissions(super.platform, PermissionStatus camera,
+      {PermissionStatus screenRecording = PermissionStatus.granted}) {
+    state = PermissionsSnapshot({
+      PermissionKind.camera: camera,
+      PermissionKind.screenRecording: screenRecording,
+    });
   }
 }
 
@@ -213,6 +236,150 @@ void main() {
 
     // Cancel the live countdown timer before the test ends — the pending-timer
     // invariant check runs before addTearDown disposes the container.
+    container.read(countdownControllerProvider.notifier).cancel();
+  });
+
+  testWidgets(
+      'start: screen source + screen-recording denied REQUESTS it, then shows '
+      'deny panel (skips countdown)', (tester) async {
+    int countdownRuns = 0;
+    final platform = _FakePlatform()
+      ..screenRec = PermissionStatus.denied
+      ..requestScreenRecResult = PermissionStatus.denied; // user declines / restart
+    ScreenRecorderPlatform.instance = platform;
+    final container = ProviderContainer(overrides: [
+      recordingSettingsControllerProvider.overrideWith((ref) =>
+          RecordingSettingsController(
+              store: RecordingSettingsStore(path: '/dev/null'),
+              initial: const RecordingSettings(countdownSeconds: 3))),
+      permissionsControllerProvider
+          .overrideWith((ref) => PermissionsController(platform)),
+      windowChromeProvider.overrideWithValue(_NoopChrome()),
+    ]);
+    addTearDown(container.dispose);
+    container.listen(countdownControllerProvider, (_, next) {
+      if (next.active) countdownRuns++;
+    });
+    container
+        .read(recordingControllerProvider.notifier)
+        .selectSource(kind: RecordingSource.screen, id: '1');
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: Builder(builder: (ctx) {
+          return Scaffold(
+              body: ElevatedButton(
+            onPressed: () => RecordingActionRouter(container).start(ctx),
+            child: const Text('go'),
+          ));
+        }),
+      ),
+    ));
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+
+    // The start path actively REQUESTED screen recording (not just checked)...
+    expect(platform.requestScreenRecCalls, greaterThanOrEqualTo(1));
+    // ...then showed the deny panel, before the countdown, and never recorded.
+    expect(find.byType(PermissionDeniedScreen), findsOneWidget);
+    expect(find.text('Screen Recording permission required'), findsOneWidget);
+    expect(countdownRuns, 0);
+    expect(
+        container.read(recordingControllerProvider).status, RecordingStatus.idle);
+  });
+
+  testWidgets(
+      'start: screen source + screen-recording granted clears the gate '
+      '(no panel, no request, countdown runs)', (tester) async {
+    int countdownRuns = 0;
+    final platform = _FakePlatform()..screenRec = PermissionStatus.granted;
+    ScreenRecorderPlatform.instance = platform;
+    final container = ProviderContainer(overrides: [
+      recordingSettingsControllerProvider.overrideWith((ref) =>
+          RecordingSettingsController(
+              store: RecordingSettingsStore(path: '/dev/null'),
+              initial: const RecordingSettings(countdownSeconds: 3))),
+      permissionsControllerProvider
+          .overrideWith((ref) => PermissionsController(platform)),
+      windowChromeProvider.overrideWithValue(_NoopChrome()),
+    ]);
+    addTearDown(container.dispose);
+    container.listen(countdownControllerProvider, (_, next) {
+      if (next.active) countdownRuns++;
+    });
+    container
+        .read(recordingControllerProvider.notifier)
+        .selectSource(kind: RecordingSource.screen, id: '1');
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: Builder(builder: (ctx) {
+          return Scaffold(
+              body: ElevatedButton(
+            onPressed: () => RecordingActionRouter(container).start(ctx),
+            child: const Text('go'),
+          ));
+        }),
+      ),
+    ));
+    await tester.tap(find.text('go'));
+    await tester.pump();
+
+    expect(find.byType(PermissionDeniedScreen), findsNothing);
+    expect(platform.requestScreenRecCalls, 0); // granted ⇒ never had to prompt
+    expect(countdownRuns, 1);
+    container.read(countdownControllerProvider.notifier).cancel();
+  });
+
+  testWidgets(
+      'start: stale cached snapshot says denied but LIVE re-check is granted ⇒ '
+      'proceeds (no panel)', (tester) async {
+    // Regression for "System Settings shows granted but the app denies": the
+    // cached snapshot is stale; the live refresh must win.
+    int countdownRuns = 0;
+    final platform = _FakePlatform()
+      ..screenRec = PermissionStatus.granted; // LIVE truth
+    ScreenRecorderPlatform.instance = platform;
+    final container = ProviderContainer(overrides: [
+      recordingSettingsControllerProvider.overrideWith((ref) =>
+          RecordingSettingsController(
+              store: RecordingSettingsStore(path: '/dev/null'),
+              initial: const RecordingSettings(countdownSeconds: 3))),
+      permissionsControllerProvider.overrideWith((ref) => _SeededPermissions(
+          platform, PermissionStatus.granted,
+          screenRecording: PermissionStatus.denied)), // STALE cache
+      windowChromeProvider.overrideWithValue(_NoopChrome()),
+    ]);
+    addTearDown(container.dispose);
+    container.listen(countdownControllerProvider, (_, next) {
+      if (next.active) countdownRuns++;
+    });
+    container
+        .read(recordingControllerProvider.notifier)
+        .selectSource(kind: RecordingSource.screen, id: '1');
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: Builder(builder: (ctx) {
+          return Scaffold(
+              body: ElevatedButton(
+            onPressed: () => RecordingActionRouter(container).start(ctx),
+            child: const Text('go'),
+          ));
+        }),
+      ),
+    ));
+    await tester.tap(find.text('go'));
+    await tester.pump();
+
+    // The live refresh overrode the stale "denied" cache ⇒ no panel, no prompt,
+    // countdown proceeds.
+    expect(find.byType(PermissionDeniedScreen), findsNothing);
+    expect(platform.requestScreenRecCalls, 0);
+    expect(countdownRuns, 1);
     container.read(countdownControllerProvider.notifier).cancel();
   });
 }

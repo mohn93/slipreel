@@ -34,6 +34,15 @@ class RecordingActionRouter {
     if (armed.selectedSourceKind == RecordingSource.device &&
         armed.selectedSourceId != null) {
       if (!await _ensureCameraForDevice(context)) return;
+    } else {
+      // Screen / window / area sources need Screen Recording. Check it BEFORE
+      // the countdown so we never run a 3-2-1 only to deny at the end, and —
+      // critically — re-probe the LIVE status and actively REQUEST it (system
+      // prompt + self-register) instead of trusting a possibly-stale cached
+      // snapshot. Without this, the start path denied even when the permission
+      // was granted in System Settings (stale snapshot) and could never
+      // re-prompt once the app's entry was removed.
+      if (!await _ensureScreenRecording(context)) return;
     }
 
     Future<void> doStart() async {
@@ -139,6 +148,46 @@ class RecordingActionRouter {
     }
     if (context.mounted) {
       await _showDeniedPanel(context, PermissionKind.camera);
+    }
+    return false;
+  }
+
+  /// Ensures Screen Recording permission for a screen/window/area source.
+  /// Returns true to proceed, false if denied (a deny panel was shown).
+  ///
+  /// Unlike the old flow (which trusted a cached snapshot and only ever pointed
+  /// the user at System Settings), this:
+  ///   1. re-probes the LIVE status (`refreshAll`) — fixes the "Settings shows
+  ///      granted but the app denies" stale-snapshot case;
+  ///   2. if still not granted, REQUESTS it (`CGRequestScreenCaptureAccess`),
+  ///      which shows the macOS system prompt AND re-registers the app in the
+  ///      Screen Recording list — so a fresh/rebuilt binary can self-recover.
+  ///
+  /// macOS applies a newly-granted Screen Recording permission only after the
+  /// app restarts, so the request may still report not-granted on this launch;
+  /// in that case the deny panel is shown (the user grants, then relaunches).
+  ///
+  /// If the permissions provider isn't wired (tests), treats recording as
+  /// ungated and returns true — matching the controller's own gate.
+  Future<bool> _ensureScreenRecording(BuildContext context) async {
+    final PermissionsController perms;
+    try {
+      perms = _container.read(permissionsControllerProvider.notifier);
+    } catch (_) {
+      return true;
+    }
+    await perms.refreshAll();
+    var status = _container.read(permissionsControllerProvider).screenRec;
+    debugPrint('[RecPerm] screenRec after refresh: $status');
+    if (status == PermissionStatus.granted ||
+        status == PermissionStatus.unsupported) {
+      return true;
+    }
+    status = await perms.request(PermissionKind.screenRecording); // system prompt
+    debugPrint('[RecPerm] screenRec after request: $status');
+    if (status == PermissionStatus.granted) return true;
+    if (context.mounted) {
+      await _showDeniedPanel(context, PermissionKind.screenRecording);
     }
     return false;
   }
