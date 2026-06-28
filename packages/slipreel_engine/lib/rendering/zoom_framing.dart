@@ -100,6 +100,16 @@ class ZoomFraming {
     return clamped - Offset(canvasSize.width / 2, canvasSize.height / 2);
   }
 
+  /// Unclamped version of [centerOffset]: returns the translation needed to
+  /// center the viewport on the focal point, without reachability constraints.
+  /// Formula: `(toCanvas(focal) - canvasCenter) * (1 - 1/z)`.
+  Offset centerOffsetInPlace(Offset focal, double z) {
+    final canvasFocal = _toCanvas(focal);
+    final center = Offset(canvasSize.width / 2, canvasSize.height / 2);
+    final k = 1.0 - 1.0 / z;
+    return (canvasFocal - center) * k;
+  }
+
   // Test-only accessors for the affine map.
   Offset debugToCanvas(Offset p) => _toCanvas(p);
   Offset debugFromCanvas(Offset q) => _fromCanvas(q);
