@@ -51,6 +51,7 @@ class InspectorPanel extends StatefulWidget {
     required this.curveLibrary,
     this.videoSize = Size.zero,
     this.videoPath = '',
+    this.placementGeometry,
     this.onPlacementPreview,
     this.onPlacementCommit,
     this.cameraRegions = const [],
@@ -120,6 +121,11 @@ class InspectorPanel extends StatefulWidget {
   /// Source video path; passed to `ZoomContextInspector` so the placement
   /// picker can show a screen-frame preview behind the box.
   final String videoPath;
+
+  /// The composed-canvas geometry (wallpaper + padding + bezel + screen) for
+  /// the current frame, resolved by `playback_screen`; forwarded to the zoom
+  /// placement picker so the box matches the live canvas.
+  final ZoomPlacementGeometry? placementGeometry;
 
   /// Live placement preview callback for the zoom context.
   final ValueChanged<Rect>? onPlacementPreview;
@@ -240,6 +246,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
         widget.onZoomChanged?.call(index, next);
       },
       videoSize: widget.videoSize,
+      placementGeometry: widget.placementGeometry,
       onPlacementPreview: widget.onPlacementPreview,
       onPlacementCommit: widget.onPlacementCommit,
       isDevice: widget.isDevice,

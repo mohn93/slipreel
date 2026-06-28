@@ -27,6 +27,8 @@ import 'package:screen_recorder/ui/widgets/cta_spinner.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_panel.dart';
+import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart'
+    show ZoomPlacementGeometry;
 import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
 import 'package:screen_recorder/ui/widgets/transport/transport_buttons.dart';
 import 'package:screen_recorder/ui/widgets/scene_blur_overlay.dart';
@@ -49,9 +51,9 @@ import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
 import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
 import 'package:slipreel_engine/models/device_frame.dart';
-import 'package:slipreel_engine/rendering/device_frame_layout.dart';
 import 'package:slipreel_engine/rendering/device_frame_matcher.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
+import 'package:screen_recorder/ui/widgets/zoom/composed_canvas.dart';
 import 'package:slipreel_engine/editor/camera_seed.dart';
 import 'package:slipreel_engine/models/camera_sidecar_meta.dart';
 import 'package:screen_recorder/state/camera_playback_sync.dart';
@@ -1584,9 +1586,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // the rect so the canvas previews the chosen framing (and so device
       // zooms, which can't follow a cursor, actually respond to placement).
       followCursor: false,
-      videoBounds: _metadata == null
-          ? null
-          : Size(_metadata!.widthPx.toDouble(), _metadata!.heightPx.toDouble()),
+      // No video clamp for a manual placement: the picker is the single clamp
+      // authority (it keeps the magnify-in-place viewport inside the composed
+      // canvas), so the focal may legitimately roam into the padding/bezel.
+      // Passing videoBounds: null leaves ZoomRegion._constrainRect untouched.
+      videoBounds: null,
     );
   }
 
@@ -1602,12 +1606,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           // saved zoom frames where the user dropped it — required for device
           // recordings and correct for any manual placement.
           followCursor: false,
-          videoBounds: _metadata == null
-              ? null
-              : Size(
-                  _metadata!.widthPx.toDouble(),
-                  _metadata!.heightPx.toDouble(),
-                ),
+          // No video clamp for a manual placement: the picker already
+          // constrains the focal so the viewport stays inside the composed
+          // canvas, which means the focal center may sit in the padding/bezel
+          // (outside [0, videoSize]). Clamping it back to video bounds here
+          // would undo that. videoBounds: null skips _constrainRect.
+          videoBounds: null,
         ),
       );
     }
@@ -1618,6 +1622,48 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final m = _metadata;
     if (m == null) return Size.zero;
     return Size(m.widthPx.toDouble(), m.heightPx.toDouble());
+  }
+
+  /// Resolves the composed-canvas geometry (wallpaper + padding + bezel +
+  /// screen) for the placement picker the SAME way `PlaybackCanvas` renders
+  /// it — so the picker box matches the live canvas pixel-for-pixel. Returns
+  /// null before the video is measured.
+  ///
+  /// Mirrors the device-frame resolution used for the live canvas and the
+  /// scene-blur framing: `OutputCanvasResolver` for the normal canvas, and
+  /// `resolveDeviceFrameLayout` (overriding canvasSize / videoRect) when a
+  /// compatible device frame is active. Wallpaper category/index/solidColor
+  /// come from the current frame, exactly like `_wallpaperLayer`.
+  ZoomPlacementGeometry? _placementGeometry(EditorProjectState project) {
+    final videoSize = _videoSize();
+    if (videoSize.isEmpty) return null;
+    final frame = project.windowFrame;
+    // Single source of truth for the composed-canvas geometry, shared with the
+    // live render (PlaybackCanvas) and the scene-blur framing.
+    final composed = resolveComposedCanvas(
+      videoSize: videoSize,
+      frame: frame,
+      aspect: project.outputAspect,
+      catalog: _deviceFrameCatalog,
+    );
+    final deviceLayout = composed.deviceLayout;
+    final deviceAsset = composed.deviceAsset;
+    final ImageProvider? bezel =
+        deviceAsset != null ? AssetImage(deviceAsset.asset) : null;
+
+    return ZoomPlacementGeometry(
+      canvasSize: composed.canvasSize,
+      videoRect: composed.videoRect,
+      // Thread the real null-ness through: the render draws no wallpaper
+      // layer when the category is null (the dark editor canvas shows
+      // through), so the picker shows a matching neutral backdrop rather
+      // than a macOS image. Geometry is wallpaper-independent and unchanged.
+      wallpaperCategory: frame.wallpaperCategory,
+      wallpaperIndex: frame.wallpaperIndex,
+      wallpaperSolidColor: frame.solidColor,
+      deviceLayout: deviceLayout,
+      bezel: bezel,
+    );
   }
 
   /// Click-to-add zoom from the timeline ghost. Spatial rect defaults
@@ -2307,6 +2353,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           },
                           videoSize: _videoSize(),
                           videoPath: widget.videoPath,
+                          // Only resolve the composed-canvas geometry (an
+                          // OutputCanvasResolver pass + device-catalog lookup)
+                          // when a zoom is actually selected and its placement
+                          // picker can be shown — skip the work on every
+                          // unrelated rebuild.
+                          placementGeometry: _selectedZoomIndex != null
+                              ? _placementGeometry(project)
+                              : null,
                           onPlacementPreview: _onPlacementPreview,
                           onPlacementCommit: _onPlacementCommit,
                         ),
@@ -2499,31 +2553,18 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // non-device path; behavior is byte-identical to the old code.
     ZoomFraming? sceneBlurFraming;
     {
-      final dfId = project.windowFrame.deviceFrameId;
-      final dfCatalog = _deviceFrameCatalog;
-      if (dfId != null && dfCatalog != null) {
-        final entry = dfCatalog.entryById(dfId);
-        if (entry != null && deviceFrameCompatible(entry, videoSize)) {
-          final color = entry.colorById(project.windowFrame.deviceFrameColor ?? '')
-              ?? (entry.colors.isNotEmpty ? entry.colors.first : null);
-          if (color != null) {
-            final deviceAsset = recordingIsPortrait(videoSize)
-                ? color.portrait
-                : color.landscape;
-            final deviceLayout = resolveDeviceFrameLayout(
-              asset: deviceAsset,
-              recordingSize: videoSize,
-              padding: project.windowFrame.padding,
-              aspect: project.outputAspect,
-              adjustSize: project.windowFrame.deviceFrameAdjustSize,
-            );
-            sceneBlurFraming = ZoomFraming.device(
-              videoSize: videoSize,
-              videoRect: deviceLayout.videoRect,
-              canvasSize: deviceLayout.canvasSize,
-            );
-          }
-        }
+      final composed = resolveComposedCanvas(
+        videoSize: videoSize,
+        frame: project.windowFrame,
+        aspect: project.outputAspect,
+        catalog: _deviceFrameCatalog,
+      );
+      if (composed.deviceLayout != null) {
+        sceneBlurFraming = ZoomFraming.device(
+          videoSize: videoSize,
+          videoRect: composed.videoRect,
+          canvasSize: composed.canvasSize,
+        );
       }
     }
     return SceneBlurOverlay(

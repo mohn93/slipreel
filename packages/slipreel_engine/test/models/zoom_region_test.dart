@@ -170,4 +170,83 @@ void main() {
       expect(z3.rampCurveOverride, isNull);
     });
   });
+
+  // Manual placement may position the focal over the composed canvas's
+  // padding/bezel — i.e. the focal center may legitimately fall OUTSIDE
+  // [0, videoSize]. The picker is the clamp authority (keeps the viewport
+  // in-canvas); manual commit/preview therefore build the region with
+  // `videoBounds: null` so `_constrainRect` does NOT pull the focal back
+  // onto the screen. Follow-cursor and other construction keep passing
+  // `videoBounds` and still clamp. These tests lock that contract.
+  group('manual-placement focal clamp relaxation', () {
+    const videoSize = Size(1920, 1080);
+    // A focal whose CENTER sits in the padding above-left of the video
+    // (negative coords) — only reachable when the zoom frames the padded
+    // composed canvas.
+    final paddingFocal = Rect.fromCenter(
+      center: const Offset(-160, -90),
+      width: videoSize.width / 2,
+      height: videoSize.height / 2,
+    );
+
+    test('manual placement with videoBounds: null keeps a padding focal', () {
+      final region = ZoomRegion(
+        rect: paddingFocal,
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2.0,
+        followCursor: false,
+        // No video clamp — the picker already constrained the viewport.
+        videoBounds: null,
+      );
+      // The focal center is preserved verbatim (not pulled to [0,0]).
+      expect(region.rect.center, const Offset(-160, -90));
+    });
+
+    test('copyWith for a manual commit (videoBounds: null) keeps the focal',
+        () {
+      final base = ZoomRegion(
+        rect: Rect.fromCenter(
+          center: const Offset(960, 540),
+          width: 100,
+          height: 100,
+        ),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2.0,
+        followCursor: false,
+        videoBounds: videoSize,
+      );
+      // Mirrors playback_screen's _onPlacementCommit: pin manual + no clamp.
+      final committed = base.copyWith(
+        rect: paddingFocal,
+        followCursor: false,
+        videoBounds: null,
+      );
+      expect(committed.rect.center, const Offset(-160, -90));
+      expect(committed.followCursor, isFalse);
+
+      // And the padding focal survives serialization unchanged.
+      final restored = ZoomRegion.fromJson(committed.toJson());
+      expect(restored.rect.center, const Offset(-160, -90));
+    });
+
+    test('follow-cursor construction still clamps the focal to video bounds',
+        () {
+      final region = ZoomRegion(
+        rect: paddingFocal,
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2.0,
+        followCursor: true,
+        // Other construction keeps passing videoBounds → _constrainRect pulls
+        // the rect back so it stays inside [0, videoSize].
+        videoBounds: videoSize,
+      );
+      expect(region.rect.left, greaterThanOrEqualTo(0));
+      expect(region.rect.top, greaterThanOrEqualTo(0));
+      expect(region.rect.right, lessThanOrEqualTo(videoSize.width));
+      expect(region.rect.bottom, lessThanOrEqualTo(videoSize.height));
+    });
+  });
 }

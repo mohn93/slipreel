@@ -186,20 +186,20 @@ class FrameCompositor {
       deviceFramePlan?.layout.videoCornerRadius ?? 0;
 
   /// Memoized framing that routes all focal clamps and matrix translations
-  /// through the correct canvas geometry. When a device bezel is active,
-  /// [ZoomFraming.device] maps source-video focal → canvas coordinates so
-  /// clamps stay inside the padded canvas (not just the video pixel bounds).
-  /// Identity framing reproduces the legacy behavior exactly for non-device
-  /// recordings. The translation now goes through [ZoomFraming.centerOffset]
-  /// (canvas-space) so the device path no longer relies on the
-  /// "video centered 1:1" assumption.
-  late final ZoomFraming _framing = deviceFramePlan != null
-      ? ZoomFraming.device(
-          videoSize: videoSize,
-          videoRect: _videoRect,
-          canvasSize: totalSize,
-        )
-      : ZoomFraming.identity(videoSize);
+  /// through the composed-canvas geometry for ALL recordings. [ZoomFraming.device]
+  /// maps source-video focal → canvas coordinates (using the even-rounded
+  /// [totalSize] and [_videoRect] that this compositor actually renders into) so
+  /// clamps stay inside the padded canvas, not just the video pixel bounds. For
+  /// a normal recording with zero padding and no device frame, [_videoRect] is
+  /// (0,0,W,H) and [totalSize] is the video size, so this reduces byte-for-byte
+  /// to the legacy identity framing. The translation goes through
+  /// [ZoomFraming.centerOffset] (canvas-space) so no path relies on the
+  /// "video centered 1:1" assumption, and preview/export share one framing.
+  late final ZoomFraming _framing = ZoomFraming.device(
+        videoSize: videoSize,
+        videoRect: _videoRect,
+        canvasSize: totalSize,
+      );
 
   /// Shared scene-state production for preview and export. Owns the
   /// spring controllers and EMA filter; one source of truth means

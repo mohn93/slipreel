@@ -50,7 +50,7 @@ import 'package:screen_recorder/ui/widgets/camera/camera_bubble.dart';
 import 'package:screen_recorder/ui/widgets/zoom/preview_cursor_timing.dart';
 import 'package:slipreel_engine/models/device_frame.dart';
 import 'package:slipreel_engine/rendering/device_frame_layout.dart';
-import 'package:slipreel_engine/rendering/device_frame_matcher.dart';
+import 'package:screen_recorder/ui/widgets/zoom/composed_canvas.dart';
 import 'package:screen_recorder/ui/widgets/zoom/device_frame_composition.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
@@ -714,44 +714,41 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     final videoOriginX = resolved.videoRect.left;
     final videoOriginY = resolved.videoRect.top;
 
-    // Resolve an optional device-frame layout. When active, the composition
-    // uses DeviceFrameComposition instead of FramePainter + ClipRRect video,
-    // and effTotalSize / effVideoOriginX/Y override the normal canvas geometry.
-    DeviceFrameLayout? deviceLayout;
-    DeviceFrameOrientationAsset? deviceAsset;
-    final dfId = currentFrame.deviceFrameId;
-    final dfCatalog = widget.deviceFrameCatalog;
-    if (dfId != null && dfCatalog != null) {
-      final entry = dfCatalog.entryById(dfId);
-      if (entry != null && deviceFrameCompatible(entry, videoSize)) {
-        final color = entry.colorById(currentFrame.deviceFrameColor ?? '')
-            ?? (entry.colors.isNotEmpty ? entry.colors.first : null);
-        if (color != null) {
-          deviceAsset = recordingIsPortrait(videoSize) ? color.portrait : color.landscape;
-          deviceLayout = resolveDeviceFrameLayout(
-            asset: deviceAsset,
-            recordingSize: videoSize,
-            padding: currentFrame.padding,
-            aspect: widget.outputAspect,
-            adjustSize: currentFrame.deviceFrameAdjustSize,
-          );
-        }
-      }
-    }
+    // Resolve the composed-canvas geometry (shared with the placement picker
+    // and scene-blur framing). When a compatible device frame is active the
+    // composition uses DeviceFrameComposition instead of FramePainter +
+    // ClipRRect video, and effTotalSize / effVideoOriginX/Y override the normal
+    // canvas geometry.
+    final composed = resolveComposedCanvas(
+      videoSize: videoSize,
+      frame: currentFrame,
+      aspect: widget.outputAspect,
+      catalog: widget.deviceFrameCatalog,
+    );
+    final DeviceFrameLayout? deviceLayout = composed.deviceLayout;
+    final DeviceFrameOrientationAsset? deviceAsset = composed.deviceAsset;
     final Size effTotalSize = deviceLayout?.canvasSize ?? totalSize;
     final double effVideoOriginX = deviceLayout?.videoRect.left ?? videoOriginX;
     final double effVideoOriginY = deviceLayout?.videoRect.top ?? videoOriginY;
 
-    // Device-bezel framing: routes all focal clamps through canvas geometry
-    // when a bezel is active so the zoom stays inside the padded canvas.
-    // Identity framing reproduces the legacy behavior for non-device recordings.
-    final ZoomFraming zoomFraming = deviceLayout != null
-        ? ZoomFraming.device(
-            videoSize: videoSize,
-            videoRect: deviceLayout.videoRect,
-            canvasSize: effTotalSize,
-          )
-        : ZoomFraming.identity(videoSize);
+    // Canvas-aware framing for ALL recordings: routes every focal clamp and
+    // matrix translation through the composed-canvas geometry (wallpaper +
+    // padding + bezel + screen). For a normal recording with zero padding and
+    // no device frame this reduces byte-for-byte to the legacy identity framing
+    // (videoRect == (0,0,W,H), canvas == videoSize), so behavior is unchanged
+    // there; with padding/wallpaper or a device bezel the zoom now frames the
+    // composed canvas instead of the bare video.
+    //
+    // Sub-pixel note: the export pipeline (frame_compositor.dart) snaps the
+    // composed canvas to EVEN dimensions for the video encoder, while preview
+    // uses the raw resolved dims here. So preview vs export framing can differ
+    // by <=0.5px at the focal — an accepted, pre-existing sub-pixel divergence,
+    // not a bug to chase (do not "fix" the rounding to match).
+    final ZoomFraming zoomFraming = ZoomFraming.device(
+      videoSize: videoSize,
+      videoRect: composed.videoRect,
+      canvasSize: composed.canvasSize,
+    );
 
     // Single AnimatedBuilder rebuilt per frame: drives the cursor
     // overlay (needs current playhead) AND the zoom Transform. The
@@ -1298,6 +1295,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 totalSize: effTotalSize,
                 videoSize: videoSize,
                 currentTransform: Matrix4.identity(),
+                framing: zoomFraming,
               );
             }
 
@@ -1415,6 +1413,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   totalSize: effTotalSize,
                   videoSize: videoSize,
                   currentTransform: transform,
+                  framing: zoomFraming,
                 );
               },
             );
@@ -1440,6 +1439,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     required Size totalSize,
     required Size videoSize,
     required Matrix4 currentTransform,
+    required ZoomFraming framing,
   }) {
     // Compose sticky-background + body + cursor overlay for the
     // early-return cases where the scene shader isn't applied. The
@@ -1488,7 +1488,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     // preview matches what export produces at the same playhead.
     final signal = SceneMotionBlurController.compute(
       position: position,
-      sampleAt: (t) => _approxSceneSampleAt(t, videoSize),
+      sampleAt: (t) => _approxSceneSampleAt(t, videoSize, framing),
       movementExposure: movementExposure,
       zoomExposure: zoomExposure,
       maxTranslation: _sceneBlurMaxTranslation,
@@ -1528,6 +1528,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
           currentTransform: currentTransform,
           totalSize: totalSize,
           videoSize: videoSize,
+          framing: framing,
         );
         if (deltas.length > 1) {
           blurOverlay = IgnorePointer(
@@ -1581,6 +1582,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     required Matrix4 currentTransform,
     required Size totalSize,
     required Size videoSize,
+    required ZoomFraming framing,
   }) {
     final n = widget.sceneAccumSampleCount;
     if (n <= 1) return const <Matrix4>[];
@@ -1612,7 +1614,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       final t = Duration(microseconds: position.inMicroseconds - i * dtUs);
       if (t.isNegative) break;
 
-      final mI = _subFrameTransformAt(t, videoSize);
+      final mI = _subFrameTransformAt(t, videoSize, framing);
       // delta_i = Translate(+c) × M_i × inv(M_current) × Translate(-c).
       final delta = Matrix4.identity()
         ..translateByDouble(cx, cy, 0, 1.0)
@@ -1671,7 +1673,11 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
   /// sample at the requested time (paused/scrubbed state). Same math
   /// the old playground prototype used so the blur output stays stable
   /// across the play→pause transition.
-  SceneCameraSample _approxSceneSampleAt(Duration t, Size videoSize) {
+  SceneCameraSample _approxSceneSampleAt(
+    Duration t,
+    Size videoSize,
+    ZoomFraming framing,
+  ) {
     if (t.isNegative) {
       return SceneCameraSample(
         position: t,
@@ -1720,11 +1726,17 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
             );
     }
 
+    // This inline scene-blur path is DISABLED in production (the production
+    // PlaybackCanvas is built with screenMovementBlur/screenZoomBlur == 0, so
+    // the signal has no motion and the pass returns early). It is kept
+    // framing-correct so that IF re-enabled it matches export, which feeds the
+    // same composed-canvas ZoomFraming into getTransform.
     final matrix = _zoomTransformer.getTransform(
       position: t,
       zoomRegion: active,
       videoSize: videoSize,
       focalPoint: focal,
+      framing: framing,
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
           widget.screenAnimationConfig.rampCurve,
@@ -1743,7 +1755,11 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
   /// approximation) but does NOT touch the smoothing controllers,
   /// so it can be called N times per frame without corrupting their
   /// state. Returns identity when no zoom region is active at [t].
-  Matrix4 _subFrameTransformAt(Duration t, Size videoSize) {
+  Matrix4 _subFrameTransformAt(
+    Duration t,
+    Size videoSize,
+    ZoomFraming framing,
+  ) {
     if (t.isNegative) return Matrix4.identity();
 
     // nit: use the same closed-interval lookup as the scene sample
@@ -1774,11 +1790,16 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
             );
     }
 
+    // Same disabled-but-framing-correct contract as _approxSceneSampleAt:
+    // this feeds the inline accumulation scene-blur path, which is dead in
+    // production (screen*Blur == 0). framing is threaded so it matches export
+    // if the path is ever re-enabled.
     return _zoomTransformer.getTransform(
       position: t,
       zoomRegion: active,
       videoSize: videoSize,
       focalPoint: focal,
+      framing: framing,
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
           widget.screenAnimationConfig.rampCurve,

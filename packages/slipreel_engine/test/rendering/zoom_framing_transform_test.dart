@@ -4,9 +4,12 @@
 // Proves two invariants for the device framing path:
 //
 //  1. The matrix produced by ZoomTransformer.getTransform(framing: device)
-//     translates by `-z * framing.centerOffset(edgeFocal, z)` (the canvas-
-//     space centering), confirming the device path routes through canvas
-//     space rather than raw video space.
+//     for a MANUAL placement translates by
+//     `-z * framing.centerOffsetInPlace(edgeFocal, z)` (the canvas-space
+//     magnify-in-place centering), confirming the device path routes through
+//     canvas space rather than raw video space. (Manual placements use
+//     centerOffsetInPlace, not the clamped centerOffset, so the placement
+//     never re-frames across zoom-level changes.)
 //
 //  2. The device clamp differs from the video-bounds clamp for an edge focal,
 //     i.e. framing.clampFocal(edge, z) != ZoomTransformer.clampFocalToBounds(
@@ -50,24 +53,25 @@ void main() {
   const probeTime = Duration(seconds: 5);
 
   group('ZoomFraming device-path transform parity', () {
-    test('getTransform translation equals -z * centerOffset for device framing',
-        () {
+    test('getTransform translation equals -z * centerOffsetInPlace for a '
+        'manual device placement', () {
       final transformer = ZoomTransformer();
       final matrix = transformer.getTransform(
         position: probeTime,
-        zoomRegion: region,
+        zoomRegion: region, // followCursor: false (manual placement)
         videoSize: videoSize,
         focalPoint: edgeFocal,
         framing: deviceFraming,
       );
 
-      // The zoom matrix is scale(z) * translate(-z*c) where c is the
-      // canvas-space center-offset of the clamped focal. Column-major
-      // Matrix4: translation is at indices [12], [13].
+      // The zoom matrix is scale(z) * translate(-z*c). For a MANUAL placement
+      // c is the canvas-space magnify-in-place offset (centerOffsetInPlace),
+      // NOT the clamped centerOffset. Column-major Matrix4: translation is at
+      // indices [12], [13].
       final tx = matrix.storage[12];
       final ty = matrix.storage[13];
 
-      final centerOff = deviceFraming.centerOffset(edgeFocal, zoomLevel);
+      final centerOff = deviceFraming.centerOffsetInPlace(edgeFocal, zoomLevel);
       final expectedTx = -zoomLevel * centerOff.dx;
       final expectedTy = -zoomLevel * centerOff.dy;
 
@@ -75,13 +79,15 @@ void main() {
         tx,
         closeTo(expectedTx, 0.5),
         reason:
-            'matrix tx must equal -z * centerOffset.dx for device framing',
+            'matrix tx must equal -z * centerOffsetInPlace.dx for a manual '
+            'device placement',
       );
       expect(
         ty,
         closeTo(expectedTy, 0.5),
         reason:
-            'matrix ty must equal -z * centerOffset.dy for device framing',
+            'matrix ty must equal -z * centerOffsetInPlace.dy for a manual '
+            'device placement',
       );
     });
 

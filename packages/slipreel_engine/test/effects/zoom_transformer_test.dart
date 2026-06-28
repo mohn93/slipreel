@@ -281,12 +281,107 @@ void main() {
       final framing = ZoomFraming.device(
           videoSize: videoSize, videoRect: videoRect, canvasSize: canvasSize);
       const focal = Offset(1170, 1266); // right edge
+      // `region` here is a follow-cursor region (followCursor defaults to
+      // true), so the transform still center-and-clamps via centerOffset.
       final m = t.getTransform(
           position: pos, zoomRegion: region, videoSize: videoSize,
           focalPoint: focal, framing: framing);
       final z = m.storage[0];
       final pcr = framing.centerOffset(focal, z);
       // matrix = translate(-z*pcr) * scale(z): storage[12]/[13] hold translation.
+      expect(m.storage[12], closeTo(-z * pcr.dx, 1e-6));
+      expect(m.storage[13], closeTo(-z * pcr.dy, 1e-6));
+    });
+  });
+
+  group('ZoomTransformer manual magnify-in-place', () {
+    final t = ZoomTransformer();
+    const videoSize = Size(1170, 2532);
+    final centre = Offset(videoSize.width / 2, videoSize.height / 2);
+
+    // A MANUAL placement (followCursor:false) with an edge-hugging rect.center.
+    ZoomRegion manualAt(Offset rectCenter, double zoomLevel) => ZoomRegion(
+          rect: Rect.fromCenter(center: rectCenter, width: 0, height: 0),
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 3),
+          zoomLevel: zoomLevel,
+          enterDuration: const Duration(milliseconds: 1),
+          exitDuration: const Duration(milliseconds: 1),
+          followCursor: false,
+        );
+
+    // Mid-hold so z == zoomLevel.
+    const hold = Duration(milliseconds: 1500);
+
+    // Map a source-video point through the transform into center-relative
+    // viewport coordinates (the space `alignment: Alignment.center` operates
+    // in). The transform consumes center-relative inputs, so subtract the
+    // center first.
+    Offset onScreen(Matrix4 m, Offset videoPoint) {
+      final rel = videoPoint - centre;
+      final v = m.transform3(vector.Vector3(rel.dx, rel.dy, 0));
+      return Offset(v.x, v.y);
+    }
+
+    test('CORE REGRESSION GUARD: an edge placement lands at the same '
+        'on-screen position for zoomLevel 5 and zoomLevel 2', () {
+      // ~6% from the top — the exact edge-placement case the spec measured as
+      // drifting hundreds of px between 5x and 2x under center-and-clamp.
+      const placement = Offset(585, 160); // horizontally centered, near top
+
+      final m5 = t.getTransform(
+        position: hold,
+        zoomRegion: manualAt(placement, 5.0),
+        videoSize: videoSize,
+        focalPoint: placement,
+      );
+      final m2 = t.getTransform(
+        position: hold,
+        zoomRegion: manualAt(placement, 2.0),
+        videoSize: videoSize,
+        focalPoint: placement,
+      );
+
+      final at5 = onScreen(m5, placement);
+      final at2 = onScreen(m2, placement);
+
+      // Magnify-in-place keeps the placed point at the exact SAME frame
+      // fraction at every zoom level. This assertion FAILS on main (where
+      // center-and-clamp re-frames the placement by a zoom-dependent margin).
+      expect(at2.dx, closeTo(at5.dx, 1e-6));
+      expect(at2.dy, closeTo(at5.dy, 1e-6));
+    });
+
+    test('a centered manual placement stays at the viewport center at all '
+        'zoom levels', () {
+      for (final z in <double>[1.5, 2.0, 3.0, 5.0]) {
+        final m = t.getTransform(
+          position: hold,
+          zoomRegion: manualAt(centre, z),
+          videoSize: videoSize,
+          focalPoint: centre,
+        );
+        final at = onScreen(m, centre);
+        expect(at.dx, closeTo(0, 1e-6),
+            reason: 'centered placement must stay centered at z=$z');
+        expect(at.dy, closeTo(0, 1e-6),
+            reason: 'centered placement must stay centered at z=$z');
+      }
+    });
+
+    test('manual placement translation matches centerOffsetInPlace (not the '
+        'clamped centerOffset)', () {
+      const placement = Offset(585, 160);
+      final framing = ZoomFraming.identity(videoSize);
+      final m = t.getTransform(
+        position: hold,
+        zoomRegion: manualAt(placement, 5.0),
+        videoSize: videoSize,
+        focalPoint: placement,
+        framing: framing,
+      );
+      final z = m.storage[0];
+      final pcr = framing.centerOffsetInPlace(placement, z);
       expect(m.storage[12], closeTo(-z * pcr.dx, 1e-6));
       expect(m.storage[13], closeTo(-z * pcr.dy, 1e-6));
     });
