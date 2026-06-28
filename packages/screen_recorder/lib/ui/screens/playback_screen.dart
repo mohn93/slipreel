@@ -49,7 +49,9 @@ import 'package:slipreel_engine/state/audio_mix.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
 import 'package:slipreel_engine/editor/camera_placement_resolver.dart';
 import 'package:slipreel_engine/models/device_frame.dart';
+import 'package:slipreel_engine/rendering/device_frame_layout.dart';
 import 'package:slipreel_engine/rendering/device_frame_matcher.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 import 'package:slipreel_engine/editor/camera_seed.dart';
 import 'package:slipreel_engine/models/camera_sidecar_meta.dart';
 import 'package:screen_recorder/state/camera_playback_sync.dart';
@@ -2491,6 +2493,39 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         project.screenMovementBlur;
     final screenZoomCurved =
         project.screenZoomBlur * project.screenZoomBlur * project.screenZoomBlur;
+    // Build the same device-frame framing that PlaybackCanvas uses so the
+    // scene-blur camera clamps in canvas space when a bezel is active.
+    // Identity framing (null → resolved inside SceneBlurOverlay) is the
+    // non-device path; behavior is byte-identical to the old code.
+    ZoomFraming? sceneBlurFraming;
+    {
+      final dfId = project.windowFrame.deviceFrameId;
+      final dfCatalog = _deviceFrameCatalog;
+      if (dfId != null && dfCatalog != null) {
+        final entry = dfCatalog.entryById(dfId);
+        if (entry != null && deviceFrameCompatible(entry, videoSize)) {
+          final color = entry.colorById(project.windowFrame.deviceFrameColor ?? '')
+              ?? (entry.colors.isNotEmpty ? entry.colors.first : null);
+          if (color != null) {
+            final deviceAsset = recordingIsPortrait(videoSize)
+                ? color.portrait
+                : color.landscape;
+            final deviceLayout = resolveDeviceFrameLayout(
+              asset: deviceAsset,
+              recordingSize: videoSize,
+              padding: project.windowFrame.padding,
+              aspect: project.outputAspect,
+              adjustSize: project.windowFrame.deviceFrameAdjustSize,
+            );
+            sceneBlurFraming = ZoomFraming.device(
+              videoSize: videoSize,
+              videoRect: deviceLayout.videoRect,
+              canvasSize: deviceLayout.canvasSize,
+            );
+          }
+        }
+      }
+    }
     return SceneBlurOverlay(
       controller: _controller,
       smoothPlayhead: _smoothPlayhead,
@@ -2506,6 +2541,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       videoSize: videoSize,
       fps: _metadata?.fps ?? 60,
       cursorPostProcess: project.cursorPostProcess,
+      framing: sceneBlurFraming,
       child: playbackCanvas,
     );
   }

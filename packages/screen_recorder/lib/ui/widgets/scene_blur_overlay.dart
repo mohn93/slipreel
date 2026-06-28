@@ -11,6 +11,7 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
@@ -88,6 +89,7 @@ class SceneBlurOverlay extends StatefulWidget {
     this.fps = 60,
     this.cursorPostProcess = CursorPostProcess.none,
     this.clips = const <ClipSlice>[],
+    this.framing,
   });
 
   /// The widget tree to apply the scene-blur smear to. Usually the
@@ -124,6 +126,13 @@ class SceneBlurOverlay extends StatefulWidget {
   /// [DeterministicFocalTrack] so the scene-blur camera trajectory
   /// follows the speed-aware cursor. Empty ⇒ speed 1.0 ⇒ unchanged.
   final List<ClipSlice> clips;
+
+  /// Device-bezel framing. When null the overlay resolves identity framing
+  /// from [videoSize], reproducing the legacy behavior byte-for-byte.
+  /// Pass a [ZoomFraming.device] instance (built the same way
+  /// [PlaybackCanvas] builds it) to route focal clamps through canvas
+  /// space so the scene-blur camera matches the export compositor.
+  final ZoomFraming? framing;
 
   @override
   State<SceneBlurOverlay> createState() => _SceneBlurOverlayState();
@@ -228,7 +237,8 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
         oldWidget.screenMovementBlur != widget.screenMovementBlur ||
         oldWidget.screenZoomBlur != widget.screenZoomBlur ||
         oldWidget.zoomRegions != widget.zoomRegions ||
-        oldWidget.clips != widget.clips) {
+        oldWidget.clips != widget.clips ||
+        oldWidget.framing != widget.framing) {
       _pendingCapturePaint = true;
     }
   }
@@ -443,7 +453,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
   /// Returns the [DeterministicFocalTrack] for [region], rebuilding it only
   /// when the region or any relevant configuration parameter has changed.
   /// Returns `null` when [region.followCursor] is false (static focal).
-  DeterministicFocalTrack? _trackFor(ZoomRegion region) {
+  DeterministicFocalTrack? _trackFor(ZoomRegion region, ZoomFraming framing) {
     if (!region.followCursor) return null;
     final cached = _focalTrack;
     if (cached != null &&
@@ -457,6 +467,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
           screenRampCurve: widget.screenAnimationConfig.rampCurve,
           rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
           clips: widget.clips,
+          framing: framing,
         )) {
       return cached;
     }
@@ -470,10 +481,14 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
       rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
       clips: widget.clips,
+      framing: framing,
     );
   }
 
   SceneCameraSample _approxSampleAt(Duration t) {
+    // Resolve framing once per sample — identity when caller doesn't pass one.
+    final framing = widget.framing ?? ZoomFraming.identity(widget.videoSize);
+
     if (t.isNegative) {
       return SceneCameraSample(
         position: t,
@@ -504,7 +519,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
-      final track = _trackFor(active);
+      final track = _trackFor(active, framing);
       if (track != null) {
         // Spring-camera focal (matches the visible camera), evaluated
         // deterministically so pause == play == export at this playhead.
@@ -533,21 +548,18 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
           active.rampCurveOverride?.toFlutterCurve() ??
           widget.screenAnimationConfig.rampCurve,
       rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
+      framing: framing,
     );
     final scale = matrix.storage[0];
     // Measure the VISIBLE camera, not the raw controller focal. getTransform
-    // clamps the focal so the zoomed viewport stays inside the video; for an
+    // clamps the focal so the zoomed viewport stays inside the canvas; for an
     // edge cursor the spring focal chases the raw cursor past that clamp once
     // the enter ramp ends, so smearing by the raw focal paints a phantom
     // trail over an image that is actually pinned at the edge — the "flicker
-    // as the zoom settles". Clamp to the same visible focal (kept in lock-step
-    // with FrameCompositor._sceneSampleAt so preview == export). Identity for
-    // in-bounds focals.
-    final visibleFocal = ZoomTransformer.clampFocalToBounds(
-      focal,
-      widget.videoSize,
-      scale,
-    );
+    // as the zoom settles". Clamp via framing (canvas-space for device frames,
+    // video-space for identity) — kept in lock-step with
+    // FrameCompositor._sceneSampleAt so preview == export.
+    final visibleFocal = framing.clampFocal(focal, scale);
     return SceneCameraSample(position: t, focal: visibleFocal, scale: scale);
   }
 

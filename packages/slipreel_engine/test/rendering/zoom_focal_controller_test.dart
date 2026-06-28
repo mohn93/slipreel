@@ -2480,7 +2480,12 @@ void main() {
     final target = framing.clampFocal(edgeCursor, region.zoomLevel);
     final centre = Offset(videoSize.width / 2, videoSize.height / 2);
     // mid focal.dx is between centre and target (inclusive), not beyond target.
+    // Upper bound: no overshoot past the canvas-clamped target.
     expect(mid.focal.dx, lessThanOrEqualTo(target.dx + 0.5));
-    expect(mid.focal.dx, greaterThanOrEqualTo(centre.dx - 0.5));
+    // Lower bound: the focal must have made real progress toward the target —
+    // strictly more than 1 px past the video center so we know the pan is
+    // actually in motion (the old greaterThanOrEqualTo(centre.dx - 0.5) was
+    // vacuous since the pan goes center→right, i.e. dx only increases).
+    expect(mid.focal.dx, greaterThan(centre.dx + 1.0));
   });
 }
