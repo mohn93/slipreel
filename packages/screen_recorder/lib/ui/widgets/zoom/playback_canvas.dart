@@ -52,6 +52,7 @@ import 'package:slipreel_engine/models/device_frame.dart';
 import 'package:slipreel_engine/rendering/device_frame_layout.dart';
 import 'package:slipreel_engine/rendering/device_frame_matcher.dart';
 import 'package:screen_recorder/ui/widgets/zoom/device_frame_composition.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
 /// The composed playback canvas: wallpaper layer, framed video,
 /// cursor overlay, optional debug HUD, all wrapped in a zoom Transform
@@ -741,6 +742,17 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     final double effVideoOriginX = deviceLayout?.videoRect.left ?? videoOriginX;
     final double effVideoOriginY = deviceLayout?.videoRect.top ?? videoOriginY;
 
+    // Device-bezel framing: routes all focal clamps through canvas geometry
+    // when a bezel is active so the zoom stays inside the padded canvas.
+    // Identity framing reproduces the legacy behavior for non-device recordings.
+    final ZoomFraming zoomFraming = deviceLayout != null
+        ? ZoomFraming.device(
+            videoSize: videoSize,
+            videoRect: deviceLayout.videoRect,
+            canvasSize: effTotalSize,
+          )
+        : ZoomFraming.identity(videoSize);
+
     // Single AnimatedBuilder rebuilt per frame: drives the cursor
     // overlay (needs current playhead) AND the zoom Transform. The
     // VideoPlayer is held as `child` so its widget isn't reconstructed
@@ -855,6 +867,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   widget.zoomPreviewOverride?.value != null,
               bypassVelocityFilter: widget.isHoverScrubbing,
               activeRegionOverride: widget.zoomPreviewOverride?.value,
+              framing: zoomFraming,
             );
             final motion = scenePass.motion;
             final focalUpdate = scenePass.focalUpdate;
@@ -878,6 +891,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 videoSize,
                 widget.metadata?.fps ?? 60,
                 cursorAnimationConfig,
+                zoomFraming,
               ).focalAt(pos);
             }
             final effectiveCursorBlur =
@@ -1323,6 +1337,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                       widget.screenAnimationConfig.rampCurve,
                   rampDurationScale:
                       widget.screenAnimationConfig.rampDurationScale,
+                  framing: zoomFraming,
                 );
                 assert(() {
                   if (cameraFocalTraceEnabled) {
@@ -1617,6 +1632,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     Size videoSize,
     int fps,
     CursorAnimationConfig cursorAnimationConfig,
+    ZoomFraming framing,
   ) {
     final cached = _focalTrack;
     if (cached != null &&
@@ -1631,6 +1647,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
           screenRampCurve: widget.screenAnimationConfig.rampCurve,
           rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
           clips: widget.clips,
+          framing: framing,
         )) {
       return cached;
     }
@@ -1645,6 +1662,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
       rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
       clips: widget.clips,
+      framing: framing,
     );
   }
 

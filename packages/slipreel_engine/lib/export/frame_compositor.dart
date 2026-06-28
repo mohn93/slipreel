@@ -29,6 +29,7 @@ import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/rendering/wallpaper.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 
 /// Resolved geometry and asset for rendering a device frame in the compositor.
@@ -184,6 +185,22 @@ class FrameCompositor {
   late final double _videoCornerRadius =
       deviceFramePlan?.layout.videoCornerRadius ?? 0;
 
+  /// Memoized framing that routes all focal clamps and matrix translations
+  /// through the correct canvas geometry. When a device bezel is active,
+  /// [ZoomFraming.device] maps source-video focal → canvas coordinates so
+  /// clamps stay inside the padded canvas (not just the video pixel bounds).
+  /// Identity framing reproduces the legacy behavior exactly for non-device
+  /// recordings. The translation now goes through [ZoomFraming.centerOffset]
+  /// (canvas-space) so the device path no longer relies on the
+  /// "video centered 1:1" assumption.
+  late final ZoomFraming _framing = deviceFramePlan != null
+      ? ZoomFraming.device(
+          videoSize: videoSize,
+          videoRect: _videoRect,
+          canvasSize: totalSize,
+        )
+      : ZoomFraming.identity(videoSize);
+
   /// Shared scene-state production for preview and export. Owns the
   /// spring controllers and EMA filter; one source of truth means
   /// preview and export cannot disagree on cursor velocity, focal
@@ -252,16 +269,16 @@ class FrameCompositor {
         screenRampCurve: projectState.screenAnimationConfig.rampCurve,
         rampDurationScale:
             projectState.screenAnimationConfig.rampDurationScale,
+        framing: _framing,
       );
       final motion = scenePass.motion;
       final focalUpdate = scenePass.focalUpdate;
 
       // Apply the zoom Transform around totalSize/2, matching the
       // preview's `Transform(alignment: Alignment.center, ...)`.
-      // The matrix's translation is built against videoSize/2; the
-      // arithmetic lands the focal at the alignment origin because
-      // _videoRect centers the video inside totalSize, so
-      // `_videoRect.left - totalSize.width/2 = -videoSize.width/2`.
+      // The matrix translation now goes through `_framing.centerOffset`
+      // (canvas-space), so the device path no longer relies on the
+      // "video centered 1:1" assumption.
       Matrix4 zoomTransform = Matrix4.identity();
       if (focalUpdate != null) {
         final ramp =
@@ -275,6 +292,7 @@ class FrameCompositor {
           rampCurve: ramp,
           rampDurationScale:
               projectState.screenAnimationConfig.rampDurationScale,
+          framing: _framing,
         );
       }
 
@@ -890,6 +908,7 @@ class FrameCompositor {
           projectState.screenAnimationConfig.rampCurve,
       rampDurationScale:
           projectState.screenAnimationConfig.rampDurationScale,
+      framing: _framing,
     );
     final scale = matrix.storage[0];
     // Measure the VISIBLE camera, not the raw controller focal. getTransform
@@ -899,11 +918,8 @@ class FrameCompositor {
     // trail over an image that is actually pinned at the edge — the "flicker
     // as the zoom settles". Clamp to the same visible focal so post-clamp
     // motion contributes no smear. Identity for in-bounds focals.
-    final visibleFocal = ZoomTransformer.clampFocalToBounds(
-      focal,
-      videoSize,
-      scale,
-    );
+    // Uses _framing so the device path clamps in canvas space (not video bounds).
+    final visibleFocal = _framing.clampFocal(focal, scale);
     return SceneCameraSample(position: t, focal: visibleFocal, scale: scale);
   }
 
