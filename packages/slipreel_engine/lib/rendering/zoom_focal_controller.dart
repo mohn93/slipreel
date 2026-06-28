@@ -680,6 +680,13 @@ class ZoomFocalController {
     }
     // Outside the enter window — clear the anchor + captured target so a
     // re-entry into an enter ramp re-captures from a fresh position.
+    //
+    // NOTE: this post-enter handoff block is follow-cursor-only. Manual
+    // placements return from the magnify-in-place branch near the top of
+    // update(), so they never reach here — the `activeZoom.followCursor`
+    // guards below (and the handoff hold at line ~691) are effectively
+    // always-true at runtime. They are kept explicit as a safety net /
+    // documentation; do not assume they ever gate out a manual region here.
     if (activeZoom.followCursor && _enterRampFocalTarget != null) {
       _postEnterHoldTarget ??= _enterRampFocalTarget;
     }
