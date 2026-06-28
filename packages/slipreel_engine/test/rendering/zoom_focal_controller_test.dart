@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
 const Size _videoSize = Size(1920, 1080);
 
@@ -2444,5 +2445,47 @@ void main() {
         );
       }
     });
+  });
+
+  test('device framing: edge cursor enter-pan is lock-step (no leading overshoot)',
+      () {
+    const videoSize = Size(1170, 2532);
+    final framing = ZoomFraming.device(
+      videoSize: videoSize,
+      videoRect: const Rect.fromLTWH(100, 120, 1200, 2596),
+      canvasSize: const Size(1400, 2900),
+    );
+    final region = ZoomRegion(
+      startTime: Duration.zero,
+      duration: const Duration(seconds: 3),
+      rect: const Rect.fromLTWH(0, 0, 1, 1),
+      zoomLevel: 2.0,
+      enterDuration: const Duration(milliseconds: 600),
+      exitDuration: const Duration(milliseconds: 600),
+      followCursor: true,
+    );
+    const edgeCursor = Offset(1160, 1266); // near right screen edge
+    final ctrl = ZoomFocalController();
+    // Prime (first frame parks the spring).
+    ctrl.update(position: Duration.zero, zoomRegions: [region],
+        cursor: edgeCursor, videoSize: videoSize, framing: framing);
+    // Halfway through the enter ramp.
+    final mid = ctrl.update(
+        position: const Duration(milliseconds: 300), zoomRegions: [region],
+        cursor: edgeCursor, videoSize: videoSize, framing: framing,
+        enterCursorTarget: edgeCursor)!;
+    // Lock-step (backload 1.0) means the focal at the eased-50% point sits
+    // BETWEEN the video center and the (canvas-)clamped target — it must NOT
+    // have overshot past the canvas-clamped target (which a leading pan does).
+    final target = framing.clampFocal(edgeCursor, region.zoomLevel);
+    final centre = Offset(videoSize.width / 2, videoSize.height / 2);
+    // mid focal.dx is between centre and target (inclusive), not beyond target.
+    // Upper bound: no overshoot past the canvas-clamped target.
+    expect(mid.focal.dx, lessThanOrEqualTo(target.dx + 0.5));
+    // Lower bound: the focal must have made real progress toward the target —
+    // strictly more than 1 px past the video center so we know the pan is
+    // actually in motion (the old greaterThanOrEqualTo(centre.dx - 0.5) was
+    // vacuous since the pan goes center→right, i.e. dx only increases).
+    expect(mid.focal.dx, greaterThan(centre.dx + 1.0));
   });
 }

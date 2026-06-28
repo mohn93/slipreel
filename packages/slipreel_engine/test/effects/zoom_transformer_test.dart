@@ -1,7 +1,11 @@
+import 'package:flutter/animation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
+import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 import 'package:vector_math/vector_math_64.dart' as vector;
 
 void main() {
@@ -243,6 +247,48 @@ void main() {
       expect(out.dy, closeTo(540, 1e-9));
       // x bound at z=1.5 is halfW = (W/2)(1-1/1.5) = 320 left of center.
       expect(out.dx, closeTo(960 - 320, 1e-6));
+    });
+  });
+
+  group('ZoomTransformer with ZoomFraming', () {
+    final t = ZoomTransformer();
+    final region = ZoomRegion(
+      startTime: Duration.zero,
+      duration: const Duration(seconds: 3),
+      rect: const Rect.fromLTWH(0.25, 0.25, 0.5, 0.5),
+      zoomLevel: 2.0,
+      enterDuration: const Duration(milliseconds: 1),
+      exitDuration: const Duration(milliseconds: 1),
+    );
+    const videoSize = Size(1170, 2532);
+    // Mid-hold so z == zoomLevel (2.0).
+    const pos = Duration(milliseconds: 1500);
+
+    test('framing:null is identical to legacy getTransform', () {
+      final a = t.getTransform(
+          position: pos, zoomRegion: region, videoSize: videoSize,
+          focalPoint: const Offset(900, 1800));
+      final b = t.getTransform(
+          position: pos, zoomRegion: region, videoSize: videoSize,
+          focalPoint: const Offset(900, 1800),
+          framing: ZoomFraming.identity(videoSize));
+      expect(a.storage, b.storage);
+    });
+
+    test('device framing translates by canvas centerOffset', () {
+      const canvasSize = Size(1400, 2900);
+      final videoRect = const Rect.fromLTWH(100, 120, 1200, 2596);
+      final framing = ZoomFraming.device(
+          videoSize: videoSize, videoRect: videoRect, canvasSize: canvasSize);
+      const focal = Offset(1170, 1266); // right edge
+      final m = t.getTransform(
+          position: pos, zoomRegion: region, videoSize: videoSize,
+          focalPoint: focal, framing: framing);
+      final z = m.storage[0];
+      final pcr = framing.centerOffset(focal, z);
+      // matrix = translate(-z*pcr) * scale(z): storage[12]/[13] hold translation.
+      expect(m.storage[12], closeTo(-z * pcr.dx, 1e-6));
+      expect(m.storage[13], closeTo(-z * pcr.dy, 1e-6));
     });
   });
 }

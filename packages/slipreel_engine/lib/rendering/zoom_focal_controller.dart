@@ -6,6 +6,7 @@ import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/follow_strategy.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
 /// Stateful controller for the cursor-follow zoom focal point.
 ///
@@ -307,6 +308,11 @@ class ZoomFocalController {
     /// (which read as "the zoom goes to the wrong spot then slides to the
     /// cursor"). Null ⇒ fall back to the live cursor / base focal.
     Offset? enterCursorTarget,
+
+    /// Device-bezel framing that routes all focal clamps through the canvas
+    /// geometry. Null ⇒ identity framing ⇒ byte-identical to the legacy
+    /// behavior (clamps stay inside the source-video bounds).
+    ZoomFraming? framing,
   }) {
     final activeZoom =
         activeRegionOverride ?? _activeZoomAt(position, zoomRegions);
@@ -325,6 +331,8 @@ class ZoomFocalController {
       _lastUpdatePosition = position;
       return null;
     }
+
+    final fr = framing ?? ZoomFraming.identity(videoSize);
 
     // Off-screen cursor freeze: on multi-monitor recordings the cursor moves
     // onto another display and is recorded out of the video frame (often
@@ -439,15 +447,13 @@ class ZoomFocalController {
         // full-zoom box, while the transformer paints the per-axis-clamped
         // point; capturing the painted point removes a one-frame hold->exit
         // jump.
-        _exitRampStartFocal ??= ZoomTransformer.clampFocalToBounds(
+        _exitRampStartFocal ??= fr.clampFocal(
           _smoothedFocal!,
-          videoSize,
           activeZoom.zoomLevel,
         );
         _exitRampStartReachable ??=
-            (ZoomTransformer.clampFocalToBounds(
+            (fr.clampFocal(
                       _smoothedFocal!,
-                      videoSize,
                       activeZoom.zoomLevel,
                     ) -
                     _smoothedFocal!)
@@ -477,9 +483,8 @@ class ZoomFocalController {
         // zoom-OUT doesn't ride the video edge before returning to center.
         final manualExitReachable =
             !activeZoom.followCursor &&
-            (ZoomTransformer.clampFocalToBounds(
+            (fr.clampFocal(
                           activeZoom.rect.center,
-                          videoSize,
                           activeZoom.zoomLevel,
                         ) -
                         activeZoom.rect.center)
@@ -504,9 +509,8 @@ class ZoomFocalController {
         // zoom-in progress runs 1 -> 0 across the exit, so z = 1 +
         // (zoomLevel-1)*(1 - eased).
         final z = 1.0 + (activeZoom.zoomLevel - 1.0) * (1.0 - eased);
-        _smoothedFocal = ZoomTransformer.clampFocalToBoundsRadial(
+        _smoothedFocal = fr.clampFocalRadial(
           lerped,
-          videoSize,
           z,
         );
         // Zero velocity AND in-flight state so a post-exit re-entry
@@ -606,9 +610,8 @@ class ZoomFocalController {
         // way, so the pan lands on the edge exactly as the zoom completes.
         // Pure function of (cursor/rect, videoSize, zoomLevel) — play ==
         // scrub == export stays byte-identical.
-        final entryTarget = ZoomTransformer.clampFocalToBounds(
+        final entryTarget = fr.clampFocal(
           rawTarget,
-          videoSize,
           activeZoom.zoomLevel,
         );
         _enterRampFocalTarget = entryTarget;
@@ -650,9 +653,8 @@ class ZoomFocalController {
         // no-op for these frames (exact on export/track; the preview badge
         // tween can transiently differ but only ever pulls further in-bounds).
         final z = 1.0 + (activeZoom.zoomLevel - 1.0) * eased;
-        final clampedFocal = ZoomTransformer.clampFocalToBoundsRadial(
+        final clampedFocal = fr.clampFocalRadial(
           newFocal,
-          videoSize,
           z,
         );
         _focalVx = 0;
@@ -674,9 +676,8 @@ class ZoomFocalController {
     if (handoffTarget != null && activeZoom.followCursor) {
       final cursorClamped = cursor == null
           ? null
-          : ZoomTransformer.clampFocalToBounds(
+          : fr.clampFocal(
               cursor,
-              videoSize,
               activeZoom.zoomLevel,
             );
       final cursorCaughtUp =
