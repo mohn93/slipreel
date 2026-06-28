@@ -113,13 +113,24 @@ class ZoomContextInspector extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
+                // TEMPORARY adapter (real composed-canvas wiring is Task 3):
+                // until `playback_screen` resolves the canvas geometry,
+                // wallpaper, and device layout/bezel and threads them through
+                // this inspector, fall back to the bare-video canvas
+                // (canvasSize == videoSize, videoRect == full canvas). With
+                // these values the magnify-in-place box math degrades to the
+                // old bare-video behavior. Wallpaper defaults to macOS/0.
                 ZoomPlacementPicker(
                   videoSize: videoSize,
+                  canvasSize: videoSize,
+                  videoRect: Offset.zero & videoSize,
+                  wallpaperCategory: 'macOS',
+                  wallpaperIndex: 0,
                   rect: zoom.rect,
                   zoomLevel: zoom.zoomLevel,
                   onPreview: (r) => onPlacementPreview?.call(r),
                   onCommit: (r) => onPlacementCommit?.call(r),
-                  backgroundImage: placementFrame,
+                  screenFrame: placementFrame,
                 ),
                 const InspectorSectionDivider(),
               ],
