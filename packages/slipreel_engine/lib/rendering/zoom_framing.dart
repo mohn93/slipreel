@@ -6,14 +6,25 @@ import 'package:slipreel_engine/effects/zoom_transformer.dart';
 /// viewport stay within" math for the zoom pipeline.
 ///
 /// All public focal arguments and results are in SOURCE-VIDEO coordinates (the
-/// space [ZoomFocalController] integrates in) EXCEPT [centerOffset], which
-/// returns the canvas-pixel translation the zoom matrix applies.
+/// space [ZoomFocalController] integrates in) EXCEPT [centerOffset] /
+/// [centerOffsetInPlace], which return the canvas-pixel translation the zoom
+/// matrix applies.
 ///
-/// [ZoomFraming.identity] reproduces the legacy behavior exactly: the video
-/// fills the canvas 1:1 and centered, and clamps stay inside the VIDEO bounds.
-/// [ZoomFraming.device] is for an active device bezel: the video is rendered
-/// into [videoRect] (offset + scaled) inside [canvasSize], and clamps stay
-/// inside the PADDED CANVAS so the bezel + selected padding are preserved.
+/// Two translation laws share this type, selected per zoom region by the
+/// caller: [centerOffset] (follow-cursor) centers the focal and clamps the
+/// viewport to the canvas; [centerOffsetInPlace] (manual placement) magnifies
+/// in place — `(toCanvas(focal) − canvasCenter)·(1 − 1/z)` — so the placed
+/// point holds its frame fraction across zoom levels and never needs clamping.
+///
+/// [ZoomFraming.device] frames the COMPOSED canvas: the video is rendered into
+/// [videoRect] (offset + scaled) inside [canvasSize], so clamps/centering stay
+/// inside the PADDED canvas and the surrounding padding, wallpaper, and any
+/// device bezel are preserved. It is used for ALL recordings whose composition
+/// has padding and/or a device frame — not only device bezels.
+/// [ZoomFraming.identity] is the degenerate case (video fills the canvas 1:1,
+/// centered; clamps stay inside the VIDEO bounds) and is exactly what
+/// [ZoomFraming.device] reduces to when `videoRect == (0,0,W,H)` and
+/// `canvasSize == videoSize` (zero padding, no bezel) — byte-identical.
 class ZoomFraming {
   const ZoomFraming._({
     required this.videoSize,

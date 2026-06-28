@@ -66,7 +66,14 @@ class ZoomRegion {
   ///
   /// When `false`, the focal stays pinned to [rect.center] for the
   /// entire region — useful for "show this UI element" zooms where
-  /// you don't want the camera moving with the user's mouse.
+  /// you don't want the camera moving with the user's mouse. The render
+  /// magnifies in place about that point (see [ZoomFraming.centerOffsetInPlace]).
+  ///
+  /// For a manual placement authored against the composed canvas (padding /
+  /// wallpaper / device bezel), [rect.center] MAY fall OUTSIDE `[0, videoSize]`
+  /// — i.e. the focal can sit in the padding. Such placements are constructed
+  /// with `videoBounds: null` so [rect] is not clamped back onto the screen;
+  /// the placement picker keeps the resulting viewport inside the canvas.
   final bool followCursor;
 
   /// How the camera follows the cursor — see [FollowMode]. Default

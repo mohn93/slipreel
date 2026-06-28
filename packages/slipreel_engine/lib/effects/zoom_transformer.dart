@@ -23,7 +23,10 @@ class ZoomTransformer {
   /// to easeInOutQuad to match the original hand-rolled curve.
   ///
   /// [framing] (optional) controls focal clamping and canvas translation.
-  /// When null, defaults to identity framing (legacy behavior).
+  /// When null, defaults to identity framing (legacy behavior). The translation
+  /// law is selected by [zoomRegion].followCursor: follow-cursor centers and
+  /// clamps the focal ([ZoomFraming.centerOffset]); a manual placement
+  /// magnifies in place ([ZoomFraming.centerOffsetInPlace]).
   Matrix4 getTransform({
     required Duration position,
     required ZoomRegion zoomRegion,
