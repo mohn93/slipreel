@@ -173,8 +173,11 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     return state.timeline.copyWith(zoomTracks: updated);
   }
 
-  void replaceZoomRegions(List<ZoomRegion> regions) =>
-      state = state.copyWith(timeline: _timelineWithActiveRegions(regions));
+  void replaceZoomRegions(List<ZoomRegion> regions,
+      {Size videoSize = Size.zero}) {
+    state = state.copyWith(timeline: _timelineWithActiveRegions(regions));
+    _enforce3DPaddingFloor(videoSize);
+  }
 
   void addZoom(ZoomRegion zoom, {Size videoSize = Size.zero}) {
     final next = List<ZoomRegion>.from(_activeRegions())..add(zoom);

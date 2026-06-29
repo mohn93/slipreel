@@ -96,4 +96,34 @@ void main() {
 
     expect(c.current.windowFrame.padding.left, _kExpectedFloor);
   });
+
+  // ---- replaceZoomRegions floor-gap fix ------------------------------------
+
+  test('replaceZoomRegions with 3D zoom and videoSize raises padding to floor',
+      () {
+    final c = _makeController(padding: 10);
+
+    c.replaceZoomRegions([_zoom3D()], videoSize: _kVideoSize);
+
+    expect(c.current.windowFrame.padding.left, _kExpectedFloor);
+  });
+
+  test('replaceZoomRegions with 2D-only list leaves padding unchanged', () {
+    final c = _makeController(padding: 10);
+
+    c.replaceZoomRegions([_zoom2D], videoSize: _kVideoSize);
+
+    expect(c.current.windowFrame.padding.left, 10);
+  });
+
+  test(
+      'replaceZoomRegions without videoSize (Size.zero default) does not change padding',
+      () {
+    final c = _makeController(padding: 10);
+
+    // No videoSize → floor is skipped → padding stays at 10.
+    c.replaceZoomRegions([_zoom3D()]);
+
+    expect(c.current.windowFrame.padding.left, 10);
+  });
 }

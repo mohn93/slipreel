@@ -1261,8 +1261,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 ),
                 videoDuration: _controller.value.duration,
               );
-              controller.replaceZoomRegions(detected);
+              final vs = _videoSize();
+              final paddingBefore =
+                  _projectController.current.windowFrame.padding.left;
+              controller.replaceZoomRegions(detected, videoSize: vs);
+              final paddingAfter =
+                  _projectController.current.windowFrame.padding.left;
               _setSelectedZoomIndex(null);
+              if (paddingAfter > paddingBefore) {
+                AppAlerts.info(
+                    '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+              }
               AppAlerts.success(
                 'Restored ${detected.length} zoom range${detected.length == 1 ? '' : 's'} from cursor activity',
               );
