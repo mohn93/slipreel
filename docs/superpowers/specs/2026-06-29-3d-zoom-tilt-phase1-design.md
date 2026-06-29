@@ -131,21 +131,32 @@ and out with the zoom (no pop at the region edges).
 
 ### Rendering modes (the layer split)
 
-Two composition modes, selected by whether the active zoom's tilt is flat:
+**The background/panel split already exists.** In both pipelines the wallpaper
+is already drawn *outside* the zoom transform (sticky background), and the
+transform already wraps the content panel:
 
-- **Flat / 2D (unchanged):** the whole composed canvas — wallpaper, device
-  frame, screen, cursor — transforms together exactly as today. The flat path
-  is left untouched to guarantee zero regression.
-- **3D (tilt active):** the composition splits into two layers:
-  - **Background** = wallpaper / solid color. Drawn **static** (no transform).
-  - **Content panel** = device frame + screen video + cursor. Gets the full 3D
-    matrix and floats in front.
+- Export (`frame_compositor.dart`): `applyZoom(canvas)` is applied per-layer; the
+  wallpaper draw is *not* wrapped, the foreground (video + cursor) and the
+  device bezel *are*.
+- Preview (`playback_canvas.dart`): the wallpaper layer sits outside the
+  `Transform`; the composition (frame chrome + video) and the cursor overlay are
+  each wrapped in `Transform(alignment: .center, transform: M)`.
 
-  - Export (`frame_compositor.dart`): the per-layer `applyZoom` closure skips
-    the wallpaper layer and applies the 3D matrix to the panel layers.
-  - Preview (`playback_screen.dart` / `composed_canvas.dart`): restructure so
-    the wallpaper sits **outside** the `Transform` and the panel **inside** it
-    (`Stack[ background, Transform(M)[ panel ], captions ]`).
+So "static background + transformed panel" is **today's layering**, not a new
+refactor. Phase 1 therefore does NOT restructure the layer tree — it changes
+what `M` is (2D → 3D) and ensures the whole panel tilts coherently:
+
+- **Flat / 2D:** `M` is today's scale+translate matrix; everything renders
+  byte-identically. Zero regression.
+- **3D (tilt active):** `M` carries rotation + perspective; the panel tilts over
+  the already-static wallpaper.
+- **Panel coherence under tilt:** the non-device **export** path currently keeps
+  the frame chrome (rounded-rect shadow/border) *un-zoomed/crisp* while the video
+  is zoomed (a long-standing preview/export divergence — preview tilts chrome +
+  video together). A flat, un-tilted shadow behind a 3D-tilted screen looks
+  broken, so **when tilt is active the export path must apply `M` to the frame
+  chrome too**, so chrome + video + cursor tilt as one panel (matching preview).
+  Flat keeps the existing crisp-chrome behavior untouched.
 
 - **Captions** remain a **flat top overlay** (untilted, readable) in both
   pipelines — not part of the tilting panel.
