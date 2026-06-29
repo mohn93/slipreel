@@ -111,7 +111,7 @@ Future<Uint8List> _renderHoldFrame({required Tilt3D tilt}) async {
   final frame = _solidBgra(
     _kVideoSize.width.toInt(),
     _kVideoSize.height.toInt(),
-    0xFF, 0x80, 0x00, // vivid orange to make pixel differences visible
+    0xFF, 0x80, 0x00, // vivid blue (BGRA order: B=0xFF, G=0x80, R=0x00) to make pixel differences visible
   );
   return compositor.compose(
     videoFrameBgra: frame,
@@ -165,6 +165,8 @@ void main() {
 
       // totalSize = videoSize + 2*padding = (96, 80).
       // The padding band occupies the first 16 rows (top padding).
+      // This is where the chrome shadow appears: a 3D tilt transforms the entire output canvas including its padding,
+      // so the shadow (which is painted on the chrome canvas before the zoom is applied) shifts spatially with the tilt.
       // Sample across the full top-padding strip and count differing pixels.
       final totalW =
           (_kVideoSize.width + _kPadding.left + _kPadding.right).round();
