@@ -10,16 +10,16 @@ import '../models/zoom_region.dart';
 /// per surviving click — centred on the click position, sized for `zoomLevel`,
 /// clamped to the video bounds, never extending past the recording's edges.
 ///
-/// Defaults: 1.5× zoom, 1.5 s isolation window, 400 ms lead-in + 1.8 s hold
-/// + 300 ms lead-out = 2.5 s total duration. `followCursor: false` — the zoom
+/// Defaults: 1.5× zoom, 1.5 s isolation window, 500 ms lead-in + 1.8 s hold
+/// + 500 ms lead-out = 2.8 s total duration. `followCursor: false` — the zoom
 /// stays anchored at the click; user can flip it on in the inspector.
 class AutoZoomDetector {
   const AutoZoomDetector({
     this.zoomLevel = 1.5,
     this.isolationWindow = const Duration(milliseconds: 1500),
-    this.leadIn = const Duration(milliseconds: 400),
+    this.leadIn = const Duration(milliseconds: 500),
     this.hold = const Duration(milliseconds: 1800),
-    this.leadOut = const Duration(milliseconds: 300),
+    this.leadOut = const Duration(milliseconds: 500),
   });
 
   final double zoomLevel;

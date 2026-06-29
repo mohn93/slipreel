@@ -80,10 +80,10 @@ void main() {
     );
     expect(out, hasLength(1));
     final r = out.first;
-    // startTime = 5000 - 400 leadIn = 4600 ms
-    expect(r.startTime, const Duration(milliseconds: 4600));
-    // duration = 400 + 1800 + 300 = 2500 ms
-    expect(r.duration, const Duration(milliseconds: 2500));
+    // startTime = 5000 - 500 leadIn = 4500 ms
+    expect(r.startTime, const Duration(milliseconds: 4500));
+    // duration = 500 + 1800 + 500 = 2800 ms
+    expect(r.duration, const Duration(milliseconds: 2800));
     expect(r.zoomLevel, 1.5);
     // rect.center == (800, 600) (no clamping needed for this position)
     expect(r.rect.center, const Offset(800, 600));
@@ -124,8 +124,8 @@ void main() {
   });
 
   test('two clicks 1.6 s apart → only the first survives (overlap drops second)', () {
-    // Both pass the 1.5 s isolation gate. But region1 = [1600, 4100] (start
-    // 1600, duration 2500); region2 = [3200, 5700]. They overlap → second
+    // Both pass the 1.5 s isolation gate. But region1 = [1500, 4300] (start
+    // 1500, duration 2800); region2 = [3100, 5900]. They overlap → second
     // dropped.
     // Positions within the non-clamped zone for 1.5× on 1920×1080:
     // cx ∈ [640, 1280], cy ∈ [360, 720].
@@ -170,9 +170,9 @@ void main() {
   });
 
   test('click near end of video clamps duration', () {
-    // Video is 30s; click at 29.0s. start = 29000-400 = 28600 ms.
-    // raw duration = 2500 → end = 31100 ms which exceeds 30000.
-    // Should clamp to 30000-28600 = 1400 ms.
+    // Video is 30s; click at 29.0s. start = 29000-500 = 28500 ms.
+    // raw duration = 2800 → end = 31300 ms which exceeds 30000.
+    // Should clamp to 30000-28500 = 1500 ms.
     final cursor = _rec(_clickAt(atMs: 29000, x: 800, y: 600));
     final out = detector.detect(
       cursor: cursor,
@@ -180,7 +180,7 @@ void main() {
       videoDuration: videoDuration,
     );
     expect(out, hasLength(1));
-    expect(out.first.startTime, const Duration(milliseconds: 28600));
-    expect(out.first.duration, const Duration(milliseconds: 1400));
+    expect(out.first.startTime, const Duration(milliseconds: 28500));
+    expect(out.first.duration, const Duration(milliseconds: 1500));
   });
 }

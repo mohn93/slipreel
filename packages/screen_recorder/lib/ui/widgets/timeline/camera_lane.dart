@@ -110,7 +110,7 @@ class _CameraLaneState extends State<CameraLane> {
     final gap = nextStart - prevEnd;
     if (gap < kGhostMinSpan) return null;
 
-    final span = gap < kGhostZoomSpan ? gap : kGhostZoomSpan;
+    final span = gap < kGhostCameraSpan ? gap : kGhostCameraSpan;
 
     // Mouse-x = ghost left edge; clamp so it doesn't bleed past neighbors.
     var start = hoverTime;
