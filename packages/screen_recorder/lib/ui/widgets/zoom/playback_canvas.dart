@@ -1382,9 +1382,19 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 }());
                 // Screen-pan tracker is now ticked in the AnimatedBuilder
                 // above (for combined velocity). Don't double-tick here.
+                // Under a 3D tilt the matrix carries perspective, so resolve
+                // the child (incl. the video's antialiased ClipRRect edge)
+                // into a layer and sample it smoothly. Without this, the clip
+                // edge is re-antialiased every frame as the tilt animates,
+                // leaving a shimmering dark fringe at the recording's edge
+                // ("blinking black line"). Null filterQuality for the flat 2D
+                // path keeps it byte-identical.
+                final tiltFilter =
+                    activeZoom.tilt.is3D ? FilterQuality.high : null;
                 final transformed = Transform(
                   transform: transform,
                   alignment: Alignment.center,
+                  filterQuality: tiltFilter,
                   child: transformChild,
                 );
                 // Cursor goes through the same zoom transform but is
@@ -1395,6 +1405,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                     : Transform(
                         transform: transform,
                         alignment: Alignment.center,
+                        filterQuality: tiltFilter,
                         child: cursorOverlay,
                       );
                 return _buildSceneMotionBlurPass(
