@@ -50,6 +50,7 @@ class AccumulationCursorPainter extends CustomPainter {
     this.postProcess = CursorPostProcess.none,
     this.clickEffect = CursorClickEffect.ripple,
     this.clickSpring = ClickSpring.snappy,
+    this.cursorShadow = 0,
   });
 
   final CursorRecording cursorRecording;
@@ -137,6 +138,12 @@ class AccumulationCursorPainter extends CustomPainter {
   /// plays through the motion trail rather than being lost the moment
   /// the recording sees a click. Defaults to [ClickSpring.snappy].
   final ClickSpring clickSpring;
+
+  /// Strength (0..1) of the soft drop shadow drawn under the live cursor
+  /// body. 0 disables it. Mirrors [CursorOverlayPainter]'s shadow so the
+  /// production accumulation path (preview + export) matches the legacy
+  /// shader path. Drawn once under the current cursor, not per stamp.
+  final double cursorShadow;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -273,6 +280,53 @@ class AccumulationCursorPainter extends CustomPainter {
             effect: clickEffect,
           );
         }
+      }
+    }
+
+    // Soft drop shadow under the LIVE cursor body — drawn on the main
+    // canvas (srcOver) BEFORE the accumulation layer so it sits beneath
+    // the cursor and its motion trail. A single shadow under the current
+    // cursor (not one per sub-frame stamp), mirroring
+    // [CursorOverlayPainter.paintCursorShadow] so the production
+    // accumulation path (preview + export) matches the legacy shader path.
+    if (cursorShadow > 0) {
+      final nowSample =
+          cursorAtFiltered(cursorRecording, position, postProcess);
+      if (nowSample != null) {
+        final Offset cursorVideoNow;
+        if (cameraAware) {
+          final fI = focalAt!(position);
+          final sI = scaleAt!(position);
+          final s = sNow == 0 ? 1.0 : sI / sNow;
+          cursorVideoNow = fNow +
+              Offset(
+                (nowSample.x - fI.dx) * s,
+                (nowSample.y - fI.dy) * s,
+              );
+        } else {
+          cursorVideoNow =
+              Offset(nowSample.x.toDouble(), nowSample.y.toDouble());
+        }
+        final shadowPos = Offset(
+          mapping.left + cursorVideoNow.dx * scaleX,
+          mapping.top + cursorVideoNow.dy * scaleY,
+        );
+        // Match the body's press-pulse so the shadow shrinks on click too.
+        final nowPulse = pressPulseMultiplier(
+          microsSinceClick:
+              microsSinceClick(cursorRecording, position.inMicroseconds),
+          microsSinceRelease:
+              microsSinceRelease(cursorRecording, position.inMicroseconds),
+          spring: clickSpring,
+        );
+        paintCursorShadow(
+          canvas,
+          position: shadowPos,
+          diameter: pxDiameter * nowPulse,
+          style: style,
+          state: cursorState,
+          intensity: cursorShadow,
+        );
       }
     }
 
@@ -419,7 +473,8 @@ class AccumulationCursorPainter extends CustomPainter {
         old.typeChangeBlurHalfWidthMs != typeChangeBlurHalfWidthMs ||
         old.postProcess != postProcess ||
         old.clickEffect != clickEffect ||
-        old.clickSpring != clickSpring;
+        old.clickSpring != clickSpring ||
+        old.cursorShadow != cursorShadow;
   }
 }
 

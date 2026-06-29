@@ -961,6 +961,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                         postProcess: widget.cursorPostProcess,
                         clickEffect: widget.cursorClickEffect,
                         clickSpring: widget.clickSpring,
+                        cursorShadow: widget.cursorShadow,
                       ),
                     ),
                   ),

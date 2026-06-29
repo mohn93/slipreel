@@ -1062,6 +1062,7 @@ class FrameCompositor {
       exposureMs: 150.0 * intensity,
       sampleCount: 8,
       sizeMultiplier: projectState.cursorSize,
+      cursorShadow: projectState.cursorShadow,
       style: projectState.cursorStyle,
       cursorState: state,
       // Export renders at the metadata's dpr; the painter sizes its
