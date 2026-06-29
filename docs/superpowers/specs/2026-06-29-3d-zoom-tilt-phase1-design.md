@@ -57,6 +57,7 @@ This is **Phase 1** of a two-phase feature:
 | Default style for new zooms | **3D / Subtle** (existing projects load as 2D/flat) |
 | Zoom types affected | **Both** follow-cursor and manual |
 | 2D vs 3D modeling | **One model, type toggle** — single `ZoomRegion` + `tilt` config; flat = 2D. One matrix path; UI exposes a 2D/3D toggle. |
+| Full-bleed / no-padding recordings | **Project-wide minimum padding floor** while 3D is in use, so the tilted panel always has a backdrop (no bare-background sliver). |
 
 ## Architecture
 
@@ -151,10 +152,9 @@ Two composition modes, selected by whether the active zoom's tilt is flat:
 - **Scene blur** (`SceneBlurOverlay` / compositor scene-motion blur) follows the
   **content panel** (the moving layer), using the same focal it does today; the
   static background is not blurred. Covered by an integration test.
-- **Full-bleed recordings** (no padding, no device frame — content fills the
-  canvas): a Subtle ≈4° tilt reveals a thin sliver of the **project background
-  color** at the two receding edges. Acceptable and documented; 3D is most
-  effective with padding. Not blocked.
+- **Minimum padding under 3D** (see dedicated section below): a 3D tilt always
+  has a wallpaper backdrop to reveal, because enabling 3D enforces a project
+  padding floor. So the "bare background sliver" case does not arise.
 
 ### Clamping / framing interaction
 
@@ -164,6 +164,28 @@ The 2D portion keeps its existing `ZoomFraming` behavior unchanged
 about the canvas center layered on top — with a static background behind, the
 panel may reveal background at its edges by design (the floating look), so the
 tilt adds no new clamp requirements.
+
+### Minimum padding under 3D
+
+A 3D tilt needs a backdrop to reveal as the panel's far edge recedes; with zero
+padding the receding edge would expose the bare project background color. To
+guarantee a backdrop, **enabling 3D enforces a project-wide padding floor.**
+
+- Padding in this app is a **single project-wide** uniform setting (from the
+  output-aspect / padding work), not per-zoom. The floor is therefore a
+  project-level rule, applied consistently to every frame — no per-frame size
+  change and no "pop" when a 3D zoom starts.
+- **Rule:** while the project contains **any** 3D zoom, the padding control
+  cannot go below `kMinPadding3D` (≈ **6%** of the canvas's short side,
+  tunable). If the current padding is below the floor at the moment a zoom is
+  switched to 3D, it is **raised to the floor** and the user is told via a
+  small, non-blocking note (e.g. an `AppAlerts.info`).
+- When the **last** 3D zoom is removed/switched back to 2D, the floor no longer
+  applies; the user's padding is **not** automatically lowered again (we don't
+  silently undo their composition — they can lower it manually).
+- The padding inspector reflects the active floor (slider min clamps to
+  `kMinPadding3D`) while 3D is in use, so the constraint is visible, not
+  mysterious.
 
 ## Data model
 
@@ -213,6 +235,9 @@ class Tilt3D {
 - **Serialization/migration tests:** old JSON (no `tilt`) → flat; round-trip of
   each style + manual angles; new-zoom construction defaults to subtle.
 - **Scene-blur integration test:** blur follows the panel, background unblurred.
+- **Padding-floor tests:** switching a zoom to 3D below the floor raises padding
+  to `kMinPadding3D` (with the info note); the padding slider min clamps while
+  3D is in use; removing the last 3D zoom leaves padding untouched.
 - **Flat regression guard:** a flat 3D-capable zoom renders byte-identically to
   the pre-change pipeline (golden).
 - Full `melos` analyze + test green; runtime verification on a dev-signed
@@ -235,5 +260,7 @@ class Tilt3D {
 ## Open tunables (set in spec, adjustable at review)
 
 - `subtle` = 4°, `dramatic` = 11°, `kPerspective` ≈ 1.6.
+- `kMinPadding3D` ≈ 6% of the canvas short side.
 - Captions stay flat (untilted).
 - Background fully static under tilt (no parallax drift this phase).
+- Removing the last 3D zoom does not auto-lower padding.
