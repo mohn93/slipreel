@@ -27,6 +27,9 @@ class ZoomTransformer {
   /// law is selected by [zoomRegion].followCursor: follow-cursor centers and
   /// clamps the focal ([ZoomFraming.centerOffset]); a manual placement
   /// magnifies in place ([ZoomFraming.centerOffsetInPlace]).
+  /// When the region's `tilt` is 3D, a perspective rotation is composed about
+  /// the canvas center on top of the 2D zoom; flat tilt returns the 2D matrix
+  /// unchanged.
   Matrix4 getTransform({
     required Duration position,
     required ZoomRegion zoomRegion,
@@ -63,12 +66,27 @@ class ZoomTransformer {
         ? f.centerOffset(focal, z) // center-and-clamp (unchanged)
         : f.centerOffsetInPlace(focal, z); // magnify-in-place (new)
 
-    // With `alignment: Alignment.center` the matrix operates in
-    // center-relative coordinates. Scale by Z, then translate by -Z·pCr so
-    // the focal point lands exactly at the origin (= viewport center).
-    return Matrix4.identity()
+    // The 2D zoom: scale by Z, then translate so the focal lands at the
+    // viewport center (operates in canvas-center-relative coords because both
+    // pipelines apply this with alignment == center).
+    final base = Matrix4.identity()
       ..translateByDouble(-z * pCenterRel.dx, -z * pCenterRel.dy, 0, 1.0)
       ..scaleByDouble(z, z, 1.0, 1.0);
+
+    // 2D / flat: return the legacy matrix unchanged (byte-identical).
+    if (!zoomRegion.tilt.is3D) return base;
+
+    // 3D: layer a perspective tilt about the canvas center on top of the 2D
+    // zoom. Direction is auto-derived from the focal's position in the composed
+    // frame; magnitude ramps with the zoom factor (0 at z==1, full at zoomLevel)
+    // so the tilt is always in lock-step with the scale.
+    final denom = zoomRegion.zoomLevel - 1.0;
+    final progress = denom <= 0 ? 0.0 : ((z - 1.0) / denom).clamp(0.0, 1.0);
+    final angles = zoomRegion.tilt.resolveAngles(
+      normalizedFocal: f.normalizedFocalOffset(focal),
+      progress: progress,
+    );
+    return f.perspectiveTilt(angles.xRad, angles.yRad).multiplied(base);
   }
 
   /// Clamp the focal point so the zoomed-in visible window stays entirely
