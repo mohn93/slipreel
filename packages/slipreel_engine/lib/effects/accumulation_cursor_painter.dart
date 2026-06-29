@@ -283,46 +283,57 @@ class AccumulationCursorPainter extends CustomPainter {
       }
     }
 
-    // Soft drop shadow under the LIVE cursor body — drawn on the main
-    // canvas (srcOver) BEFORE the accumulation layer so it sits beneath
-    // the cursor and its motion trail. A single shadow under the current
-    // cursor (not one per sub-frame stamp), mirroring
-    // [CursorOverlayPainter.paintCursorShadow] so the production
-    // accumulation path (preview + export) matches the legacy shader path.
+    // Soft drop shadow under the cursor — drawn on the main canvas
+    // (srcOver) BEFORE the accumulation layer so it sits beneath the
+    // cursor and its motion trail. ONE shadow, positioned at the AVERAGE
+    // of the same N sub-frame samples the body accumulates over. This is
+    // what stops the shadow shivering: the body is temporally averaged
+    // (smooth), so a shadow pinned to the single instantaneous sample
+    // would jitter against it; averaging over the identical window makes
+    // the shadow's smoothing match the body exactly (and self-adjusts —
+    // when blur is off the window collapses and this reduces to the
+    // current sample, sharp). Mirrors [CursorOverlayPainter]'s shadow for
+    // the legacy shader path. Position/pulse only — the blurred silhouette
+    // is drawn once, not accumulated.
     if (cursorShadow > 0) {
-      final nowSample =
-          cursorAtFiltered(cursorRecording, position, postProcess);
-      if (nowSample != null) {
-        final Offset cursorVideoNow;
-        if (cameraAware) {
-          final fI = focalAt!(position);
-          final sI = scaleAt!(position);
-          final s = sNow == 0 ? 1.0 : sI / sNow;
-          cursorVideoNow = fNow +
-              Offset(
-                (nowSample.x - fI.dx) * s,
-                (nowSample.y - fI.dy) * s,
-              );
-        } else {
-          cursorVideoNow =
-              Offset(nowSample.x.toDouble(), nowSample.y.toDouble());
-        }
-        final shadowPos = Offset(
-          mapping.left + cursorVideoNow.dx * scaleX,
-          mapping.top + cursorVideoNow.dy * scaleY,
+      var sumX = 0.0;
+      var sumY = 0.0;
+      var sumPulse = 0.0;
+      var count = 0;
+      for (var i = 0; i < sampleCount; i++) {
+        final t = position.inMicroseconds - i * dtMicros;
+        if (t < 0) continue;
+        final sample = cursorAtFiltered(
+          cursorRecording,
+          Duration(microseconds: t),
+          postProcess,
         );
-        // Match the body's press-pulse so the shadow shrinks on click too.
-        final nowPulse = pressPulseMultiplier(
-          microsSinceClick:
-              microsSinceClick(cursorRecording, position.inMicroseconds),
-          microsSinceRelease:
-              microsSinceRelease(cursorRecording, position.inMicroseconds),
+        if (sample == null) continue;
+        final Offset cv;
+        if (cameraAware) {
+          final ti = Duration(microseconds: t);
+          final fI = focalAt!(ti);
+          final sI = scaleAt!(ti);
+          final s = sNow == 0 ? 1.0 : sI / sNow;
+          cv = fNow +
+              Offset((sample.x - fI.dx) * s, (sample.y - fI.dy) * s);
+        } else {
+          cv = Offset(sample.x.toDouble(), sample.y.toDouble());
+        }
+        sumX += mapping.left + cv.dx * scaleX;
+        sumY += mapping.top + cv.dy * scaleY;
+        sumPulse += pressPulseMultiplier(
+          microsSinceClick: microsSinceClick(cursorRecording, t),
+          microsSinceRelease: microsSinceRelease(cursorRecording, t),
           spring: clickSpring,
         );
+        count++;
+      }
+      if (count > 0) {
         paintCursorShadow(
           canvas,
-          position: shadowPos,
-          diameter: pxDiameter * nowPulse,
+          position: Offset(sumX / count, sumY / count),
+          diameter: pxDiameter * (sumPulse / count),
           style: style,
           state: cursorState,
           intensity: cursorShadow,
