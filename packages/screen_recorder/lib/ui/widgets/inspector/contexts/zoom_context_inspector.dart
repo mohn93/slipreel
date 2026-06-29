@@ -562,21 +562,26 @@ class _ZoomInspectorScaffoldState extends State<_ZoomInspectorScaffold> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        widget.header,
-        // Subtle divider: hidden at the top, fades in once scrolled.
+        // Header content is inset; the divider below runs edge-to-edge.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: widget.header,
+        ),
+        // Breathing room between the header and the divider.
+        const SizedBox(height: 14),
+        // Edge-to-edge divider: hidden at the top, fades in once scrolled.
         AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           height: 1,
           color: _scrolled ? kInspectorBorder : Colors.transparent,
         ),
-        const SizedBox(height: 8),
         Expanded(
-          // Default (hard-edge) clipping keeps list content strictly below
-          // the header — no bleed-over. Right-side gutter keeps the
-          // curve-editor drag area clear of the macOS scrollbar hit zone.
+          // Inner padding so list items are inset while the header bar and
+          // divider above span the full panel width. Default (hard-edge)
+          // clipping keeps list content strictly below the header.
           child: ListView(
             controller: _controller,
-            padding: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
             children: widget.children,
           ),
         ),

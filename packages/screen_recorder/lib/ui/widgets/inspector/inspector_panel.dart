@@ -212,14 +212,19 @@ class _InspectorPanelState extends State<InspectorPanel> {
   }
 
   Widget _contextMode(TimelineSelection selection) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-      child: switch (selection) {
-        SliceSelected(:final index) => _sliceContext(index),
-        ZoomSelected(:final index) => _zoomContext(index),
-        CameraSelected(:final index) => _cameraContext(index),
-      },
-    );
+    return switch (selection) {
+      // Zoom manages its own insets so its header bar + scroll divider can run
+      // edge-to-edge across the full panel width.
+      ZoomSelected(:final index) => _zoomContext(index),
+      SliceSelected(:final index) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          child: _sliceContext(index),
+        ),
+      CameraSelected(:final index) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          child: _cameraContext(index),
+        ),
+    };
   }
 
   Widget _zoomContext(int index) {
