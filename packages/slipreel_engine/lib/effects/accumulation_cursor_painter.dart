@@ -324,19 +324,35 @@ class AccumulationCursorPainter extends CustomPainter {
         count++;
       }
       if (count > 0) {
-        // Constant diameter ON PURPOSE: the shadow does NOT ride the
-        // click press-pulse. The pulse spring rings after a click, and a
-        // ringing diameter scales the blur spread, which reads as the
-        // shadow blinking stronger/lighter. The body still presses; the
-        // ground shadow stays calm. Only the (averaged) position varies
-        // frame-to-frame, so the shadow is steady.
-        paintCursorShadow(
-          canvas,
-          position: Offset(sumX / count, sumY / count),
-          diameter: pxDiameter,
+        // Draw the shadow as a BAKED, cached image (not a live
+        // saveLayer+ImageFilter.blur). Under a 3D-tilt zoom the cursor
+        // layer is drawn through a per-frame-changing perspective
+        // transform; a live blurred layer's raster cache toggles on/off
+        // under perspective and the soft shadow pops/flickers ("blinking,
+        // only in 3D"). A pre-blurred image stamped via drawImageRect
+        // perspective-maps cleanly, exactly like the body sprite, so it
+        // stays steady. Constant diameter ON PURPOSE: the shadow does not
+        // ride the click press-pulse (a ringing diameter would breathe the
+        // blur). Only the (averaged) position varies frame-to-frame.
+        final shadowImage = _shadowSpriteCache.get(
+          pxDiameter: pxDiameter,
+          dpr: dpr,
           style: style,
           state: cursorState,
           intensity: cursorShadow,
+          bufferPx: spritePxSize,
+          bufferLogical: spriteBufferSize,
+          spriteCenter: spriteCenter,
+        );
+        canvas.drawImageRect(
+          shadowImage,
+          srcRect,
+          Rect.fromCenter(
+            center: Offset(sumX / count, sumY / count),
+            width: spriteBufferSize,
+            height: spriteBufferSize,
+          ),
+          Paint()..filterQuality = FilterQuality.high,
         );
       }
     }
@@ -572,6 +588,95 @@ class _SpriteKey {
 }
 
 final _spriteCache = _SpriteCache();
+
+/// Baked drop-shadow sprites. The shadow is a blurred black silhouette of
+/// the glyph. Baking it once (rather than running a live
+/// `saveLayer` + `ImageFilter.blur` every frame) is what keeps it steady
+/// when the cursor layer is drawn through a per-frame-changing 3D
+/// perspective transform: a live blurred layer flickers under perspective
+/// (its raster cache toggles), while a stamped image perspective-maps
+/// cleanly like the body sprite. Keyed by intensity too, since the
+/// silhouette's blur/offset/opacity all scale with it.
+class _ShadowSpriteCache {
+  static const int _capacity = 6;
+  final Map<_ShadowKey, ui.Image> _entries = <_ShadowKey, ui.Image>{};
+
+  ui.Image get({
+    required double pxDiameter,
+    required double dpr,
+    required CursorStyle style,
+    required CursorState state,
+    required double intensity,
+    required int bufferPx,
+    required double bufferLogical,
+    required Offset spriteCenter,
+  }) {
+    final key =
+        _ShadowKey(pxDiameter, dpr, style, state, intensity, bufferPx);
+    final hit = _entries.remove(key);
+    if (hit != null) {
+      _entries[key] = hit; // touch (move to end)
+      return hit;
+    }
+    final recorder = ui.PictureRecorder();
+    final c = Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, bufferPx.toDouble(), bufferPx.toDouble()),
+    );
+    c.scale(dpr);
+    paintCursorShadow(
+      c,
+      position: spriteCenter,
+      diameter: pxDiameter,
+      style: style,
+      state: state,
+      intensity: intensity,
+    );
+    final pic = recorder.endRecording();
+    final image = pic.toImageSync(bufferPx, bufferPx);
+    pic.dispose();
+    _entries[key] = image;
+    while (_entries.length > _capacity) {
+      final first = _entries.keys.first;
+      _entries.remove(first)?.dispose();
+    }
+    return image;
+  }
+}
+
+@immutable
+class _ShadowKey {
+  const _ShadowKey(
+    this.pxDiameter,
+    this.dpr,
+    this.style,
+    this.state,
+    this.intensity,
+    this.bufferPx,
+  );
+  final double pxDiameter;
+  final double dpr;
+  final CursorStyle style;
+  final CursorState state;
+  final double intensity;
+  final int bufferPx;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ShadowKey &&
+      other.pxDiameter == pxDiameter &&
+      other.dpr == dpr &&
+      other.style == style &&
+      other.state == state &&
+      other.intensity == intensity &&
+      other.bufferPx == bufferPx;
+
+  @override
+  int get hashCode =>
+      Object.hash(pxDiameter, dpr, style, state, intensity, bufferPx);
+}
+
+final _shadowSpriteCache = _ShadowSpriteCache();
 
 /// Which cursor motion-blur pipeline to use.
 enum CursorBlurMode {
