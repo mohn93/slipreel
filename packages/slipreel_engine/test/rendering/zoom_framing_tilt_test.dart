@@ -1,4 +1,4 @@
-import 'dart:ui' show Offset, Rect, Size;
+import 'dart:ui' show Offset, Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
