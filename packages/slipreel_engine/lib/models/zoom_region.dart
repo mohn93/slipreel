@@ -1,5 +1,6 @@
 import 'dart:ui' show Rect, Size;
 
+import 'package:slipreel_engine/models/tilt3d.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
 
 /// How the zoom camera tracks the cursor while a region is active.
@@ -102,6 +103,11 @@ class ZoomRegion {
   /// Zero or negative ⇒ snap.
   final Duration followDuration;
 
+  /// 3D perspective tilt for this zoom. [Tilt3D.flat] (the default) is a 2D
+  /// zoom — byte-identical to legacy behavior. Subtle/dramatic/manual add a
+  /// perspective tilt to the content panel (see [ZoomTransformer.getTransform]).
+  final Tilt3D tilt;
+
   ZoomRegion({
     required Rect rect,
     required this.startTime,
@@ -117,6 +123,7 @@ class ZoomRegion {
     double deadzoneRatio = 0.8,
     Duration? followDuration,
     Duration? predictiveWindow,
+    this.tilt = const Tilt3D(),
   })  : assert(duration > Duration.zero, 'Duration must be positive'),
         rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
         zoomLevel = zoomLevel.clamp(1.0, 5.0),
@@ -200,6 +207,7 @@ class ZoomRegion {
     double? deadzoneRatio,
     Duration? followDuration,
     Duration? predictiveWindow,
+    Tilt3D? tilt,
   }) {
     return ZoomRegion(
       rect: rect ?? this.rect,
@@ -220,6 +228,7 @@ class ZoomRegion {
       deadzoneRatio: deadzoneRatio ?? this.deadzoneRatio,
       followDuration: followDuration ?? this.followDuration,
       predictiveWindow: predictiveWindow ?? this.predictiveWindow,
+      tilt: tilt ?? this.tilt,
     );
   }
 
@@ -244,6 +253,7 @@ class ZoomRegion {
       'deadzoneRatio': deadzoneRatio,
       'followDurationMicros': followDuration.inMicroseconds,
       'predictiveWindowMicros': predictiveWindow.inMicroseconds,
+      'tilt': tilt.toJson(),
     };
   }
 
@@ -307,6 +317,10 @@ class ZoomRegion {
       deadzoneRatio: (json['deadzoneRatio'] as num?)?.toDouble() ?? 0.8,
       followDuration: optMicros('followDurationMicros'),
       predictiveWindow: optMicros('predictiveWindowMicros'),
+      tilt: json['tilt'] is Map
+          ? Tilt3D.fromJson(
+              (json['tilt'] as Map).cast<String, dynamic>())
+          : const Tilt3D(),
     );
   }
 
@@ -336,7 +350,8 @@ class ZoomRegion {
           followMode == other.followMode &&
           deadzoneRatio == other.deadzoneRatio &&
           followDuration == other.followDuration &&
-          predictiveWindow == other.predictiveWindow;
+          predictiveWindow == other.predictiveWindow &&
+          tilt == other.tilt;
 
   @override
   int get hashCode => Object.hash(
@@ -353,5 +368,6 @@ class ZoomRegion {
         deadzoneRatio,
         followDuration,
         predictiveWindow,
+        tilt,
       );
 }
