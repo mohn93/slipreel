@@ -128,25 +128,14 @@ class ZoomContextInspector extends ConsumerWidget {
         (isDevice || !zoom.followCursor) && !videoSize.isEmpty;
     final ui.Image? placementFrame =
         showPlacement ? _watchPlacementFrame(ref) : null;
-    return Stack(
-      fit: StackFit.expand,
+    return _ZoomInspectorScaffold(
+      header: _Header(
+        icon: Icons.zoom_in,
+        title: 'Zoom $zoomNumber',
+        subtitle: _rangeLabel(zoom),
+        onClose: onClose,
+      ),
       children: [
-        Padding(
-          // Pad the scroll content below the pinned header so it scrolls
-          // UNDER the opaque header rather than bleeding over it: the list
-          // uses Clip.none (for the placement picker's hover overshoot), so
-          // without this, content scrolled above the viewport top paints up
-          // into the header. The opaque header (added last in this Stack)
-          // then covers anything that reaches it.
-          padding: const EdgeInsets.only(top: _kZoomHeaderHeight),
-          child: ListView(
-            // Right-side gutter — the override section can host the
-            // curve editor whose drag area must not sit under the
-            // macOS Scrollbar's hit zone.
-            padding: const EdgeInsets.only(right: 12),
-            // Let hover lean/tilt overshoot paint past the panel edge.
-            clipBehavior: Clip.none,
-            children: [
               if (showPlacement) ...[
                 const Text(
                   'Placement',
@@ -473,28 +462,6 @@ class ZoomContextInspector extends ConsumerWidget {
               const InspectorSectionDivider(),
               _DeleteButton(onPressed: onDelete),
               const SizedBox(height: 24),
-            ],
-          ),
-        ),
-        // Opaque header pinned on top so scrolled list content slides under
-        // it instead of overlapping (the list is Clip.none — see above).
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: ColoredBox(
-            color: kInspectorBg,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _Header(
-                icon: Icons.zoom_in,
-                title: 'Zoom $zoomNumber',
-                subtitle: _rangeLabel(zoom),
-                onClose: onClose,
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -547,9 +514,76 @@ class ZoomContextInspector extends ConsumerWidget {
   }
 }
 
-/// Height reserved for the pinned [_Header] (40px icon row + 8px bottom gap),
-/// used to top-pad the scroll content so it sits just below the header.
-const double _kZoomHeaderHeight = 48;
+/// Scrollable zoom-inspector body with a solid header bar on top. The header
+/// is a normal [Column] child sitting ABOVE the scroll view, so list content
+/// can never paint over it (the previous Stack/Clip.none layout let scrolled
+/// content bleed up into the header, which read as a floating/transparent
+/// bar). A subtle divider fades in under the header once the list is scrolled
+/// away from the top, signalling there's more content above.
+class _ZoomInspectorScaffold extends StatefulWidget {
+  const _ZoomInspectorScaffold({
+    required this.header,
+    required this.children,
+  });
+
+  final Widget header;
+  final List<Widget> children;
+
+  @override
+  State<_ZoomInspectorScaffold> createState() => _ZoomInspectorScaffoldState();
+}
+
+class _ZoomInspectorScaffoldState extends State<_ZoomInspectorScaffold> {
+  final ScrollController _controller = ScrollController();
+  bool _scrolled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_handleScroll);
+  }
+
+  void _handleScroll() {
+    final scrolled = _controller.hasClients && _controller.offset > 1.0;
+    if (scrolled != _scrolled) {
+      setState(() => _scrolled = scrolled);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_handleScroll);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        widget.header,
+        // Subtle divider: hidden at the top, fades in once scrolled.
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 1,
+          color: _scrolled ? kInspectorBorder : Colors.transparent,
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          // Default (hard-edge) clipping keeps list content strictly below
+          // the header — no bleed-over. Right-side gutter keeps the
+          // curve-editor drag area clear of the macOS scrollbar hit zone.
+          child: ListView(
+            controller: _controller,
+            padding: const EdgeInsets.only(right: 12),
+            children: widget.children,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _Header extends StatelessWidget {
   const _Header({
