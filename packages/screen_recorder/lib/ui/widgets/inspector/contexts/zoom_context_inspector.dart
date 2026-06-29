@@ -128,17 +128,17 @@ class ZoomContextInspector extends ConsumerWidget {
         (isDevice || !zoom.followCursor) && !videoSize.isEmpty;
     final ui.Image? placementFrame =
         showPlacement ? _watchPlacementFrame(ref) : null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        _Header(
-          icon: Icons.zoom_in,
-          title: 'Zoom $zoomNumber',
-          subtitle: _rangeLabel(zoom),
-          onClose: onClose,
-        ),
-        const SizedBox(height: 8),
-        Expanded(
+        Padding(
+          // Pad the scroll content below the pinned header so it scrolls
+          // UNDER the opaque header rather than bleeding over it: the list
+          // uses Clip.none (for the placement picker's hover overshoot), so
+          // without this, content scrolled above the viewport top paints up
+          // into the header. The opaque header (added last in this Stack)
+          // then covers anything that reaches it.
+          padding: const EdgeInsets.only(top: _kZoomHeaderHeight),
           child: ListView(
             // Right-side gutter — the override section can host the
             // curve editor whose drag area must not sit under the
@@ -476,6 +476,25 @@ class ZoomContextInspector extends ConsumerWidget {
             ],
           ),
         ),
+        // Opaque header pinned on top so scrolled list content slides under
+        // it instead of overlapping (the list is Clip.none — see above).
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: ColoredBox(
+            color: kInspectorBg,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _Header(
+                icon: Icons.zoom_in,
+                title: 'Zoom $zoomNumber',
+                subtitle: _rangeLabel(zoom),
+                onClose: onClose,
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -527,6 +546,10 @@ class ZoomContextInspector extends ConsumerWidget {
     return 'zoom $z · back-load $n$src — $feel';
   }
 }
+
+/// Height reserved for the pinned [_Header] (40px icon row + 8px bottom gap),
+/// used to top-pad the scroll content so it sits just below the header.
+const double _kZoomHeaderHeight = 48;
 
 class _Header extends StatelessWidget {
   const _Header({
