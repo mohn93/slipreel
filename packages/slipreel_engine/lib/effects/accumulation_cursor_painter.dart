@@ -298,7 +298,6 @@ class AccumulationCursorPainter extends CustomPainter {
     if (cursorShadow > 0) {
       var sumX = 0.0;
       var sumY = 0.0;
-      var sumPulse = 0.0;
       var count = 0;
       for (var i = 0; i < sampleCount; i++) {
         final t = position.inMicroseconds - i * dtMicros;
@@ -322,18 +321,19 @@ class AccumulationCursorPainter extends CustomPainter {
         }
         sumX += mapping.left + cv.dx * scaleX;
         sumY += mapping.top + cv.dy * scaleY;
-        sumPulse += pressPulseMultiplier(
-          microsSinceClick: microsSinceClick(cursorRecording, t),
-          microsSinceRelease: microsSinceRelease(cursorRecording, t),
-          spring: clickSpring,
-        );
         count++;
       }
       if (count > 0) {
+        // Constant diameter ON PURPOSE: the shadow does NOT ride the
+        // click press-pulse. The pulse spring rings after a click, and a
+        // ringing diameter scales the blur spread, which reads as the
+        // shadow blinking stronger/lighter. The body still presses; the
+        // ground shadow stays calm. Only the (averaged) position varies
+        // frame-to-frame, so the shadow is steady.
         paintCursorShadow(
           canvas,
           position: Offset(sumX / count, sumY / count),
-          diameter: pxDiameter * (sumPulse / count),
+          diameter: pxDiameter,
           style: style,
           state: cursorState,
           intensity: cursorShadow,
