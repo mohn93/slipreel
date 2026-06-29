@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import '../models/cursor_recording.dart';
+import '../models/tilt3d.dart';
 import '../models/zoom_region.dart';
 
 /// Pure-function click→zoom detector. Walks a `CursorRecording`, finds
@@ -116,6 +117,7 @@ class AutoZoomDetector {
       exitDuration: leadOut,
       videoBounds: videoSize,
       followCursor: false,
+      tilt: const Tilt3D(style: ZoomTiltStyle.subtle),
     );
   }
 

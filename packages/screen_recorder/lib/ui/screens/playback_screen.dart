@@ -12,6 +12,7 @@ import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart' show C
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
+import 'package:slipreel_engine/models/tilt3d.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
@@ -1685,6 +1686,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // zooms must be manual — otherwise the focal chases nonexistent cursor
       // data and the placement rect (the only control we show) is ignored.
       followCursor: _metadata?.isDeviceCapture != true,
+      tilt: const Tilt3D(style: ZoomTiltStyle.subtle),
     );
 
     _projectController.addZoom(zoomRegion);
