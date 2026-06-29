@@ -7,6 +7,7 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/ui/theme/app_palette.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';
+import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 ZoomRegion _zoom({Tilt3D tilt = const Tilt3D()}) => ZoomRegion(
       rect: const Rect.fromLTWH(0, 0, 100, 100),
@@ -50,16 +51,22 @@ void main() {
   testWidgets('toggling 3D on sets subtle; off sets flat', (tester) async {
     ZoomRegion? out;
     await _pump(tester, _zoom(), (z) => out = z);
-    // Find the Switch adjacent to the '3D tilt' label.
+    // Find the Switch belonging to the '3D tilt' InspectorToggle row.
     expect(find.text('3D tilt'), findsOneWidget);
-    await tester.tap(find.byType(Switch).first);
+    await tester.tap(find.descendant(
+      of: find.widgetWithText(InspectorToggle, '3D tilt'),
+      matching: find.byType(Switch),
+    ));
     await tester.pump();
     expect(out!.tilt, const Tilt3D(style: ZoomTiltStyle.subtle));
 
     await _pump(tester, _zoom(tilt: const Tilt3D(style: ZoomTiltStyle.subtle)),
         (z) => out = z);
     expect(find.text('3D tilt'), findsOneWidget);
-    await tester.tap(find.byType(Switch).first);
+    await tester.tap(find.descendant(
+      of: find.widgetWithText(InspectorToggle, '3D tilt'),
+      matching: find.byType(Switch),
+    ));
     await tester.pump();
     expect(out!.tilt, const Tilt3D());
   });
