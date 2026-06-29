@@ -1,3 +1,6 @@
+import 'dart:ui' show Size;
+
+import 'package:flutter/painting.dart' show EdgeInsets;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:slipreel_engine/models/caption_segment.dart';
@@ -17,6 +20,14 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
+
+/// Minimum uniform padding (px) required while any 3D-tilt zoom is present:
+/// exactly 6% of the video's short side, rounded to the nearest pixel.
+///
+/// Exported top-level so [BackgroundTab] can use the same formula for its
+/// slider `min` without depending on the controller implementation.
+int minPadding3DFor(Size videoSize) =>
+    (0.06 * videoSize.shortestSide).round();
 
 /// Single source of truth for per-recording editor settings.
 ///
@@ -165,17 +176,39 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   void replaceZoomRegions(List<ZoomRegion> regions) =>
       state = state.copyWith(timeline: _timelineWithActiveRegions(regions));
 
-  void addZoom(ZoomRegion zoom) {
+  void addZoom(ZoomRegion zoom, {Size videoSize = Size.zero}) {
     final next = List<ZoomRegion>.from(_activeRegions())..add(zoom);
     state = state.copyWith(timeline: _timelineWithActiveRegions(next));
+    _enforce3DPaddingFloor(videoSize);
   }
 
-  void updateZoomAt(int index, ZoomRegion zoom) {
+  void updateZoomAt(int index, ZoomRegion zoom, {Size videoSize = Size.zero}) {
     final regions = _activeRegions();
     if (index < 0 || index >= regions.length) return;
     final next = List<ZoomRegion>.from(regions);
     next[index] = zoom;
     state = state.copyWith(timeline: _timelineWithActiveRegions(next));
+    _enforce3DPaddingFloor(videoSize);
+  }
+
+  /// Raises padding to the 6%-of-short-side floor when any zoom is 3D.
+  ///
+  /// Never lowers padding. No-ops when [videoSize] is empty (unknown) or
+  /// when no 3D zooms are present. The caller is responsible for emitting
+  /// a user-visible alert (e.g. [AppAlerts.info]) when the padding is
+  /// actually raised — this method stays in [slipreel_engine] which has
+  /// no dependency on the [screen_recorder] alert system.
+  void _enforce3DPaddingFloor(Size videoSize) {
+    if (videoSize.isEmpty) return;
+    final any3D = state.zoomRegions.any((z) => z.tilt.is3D);
+    if (!any3D) return;
+    final floor = minPadding3DFor(videoSize);
+    final current = state.windowFrame.padding.left;
+    if (current >= floor) return;
+    state = state.copyWith(
+      windowFrame: state.windowFrame
+          .copyWith(padding: EdgeInsets.all(floor.toDouble()), name: 'Custom'),
+    );
   }
 
   void removeZoomAt(int index) {

@@ -1614,6 +1614,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           // would undo that. videoBounds: null skips _constrainRect.
           videoBounds: null,
         ),
+        videoSize: _videoSize(),
       );
     }
     _zoomPreviewOverride.value = null;
@@ -1689,7 +1690,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       tilt: const Tilt3D(style: ZoomTiltStyle.subtle),
     );
 
-    _projectController.addZoom(zoomRegion);
+    final paddingBefore = _projectController.current.windowFrame.padding.left;
+    _projectController.addZoom(zoomRegion, videoSize: videoSize);
+    final paddingAfter = _projectController.current.windowFrame.padding.left;
+    if (paddingAfter > paddingBefore) {
+      AppAlerts.info(
+          '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+    }
     _zoomPreviewOverride.value = null;
     setState(() {
       // Auto-select the new zoom so the inspector opens on it.
@@ -2305,7 +2312,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           curveLibrary: _curveLibrary,
                           onZoomChanged: (i, next) {
                             _zoomPreviewOverride.value = null;
-                            _projectController.updateZoomAt(i, next);
+                            final vs = _videoSize();
+                            final paddingBefore = _projectController
+                                .current.windowFrame.padding.left;
+                            _projectController.updateZoomAt(i, next,
+                                videoSize: vs);
+                            final paddingAfter = _projectController
+                                .current.windowFrame.padding.left;
+                            if (paddingAfter > paddingBefore) {
+                              AppAlerts.info(
+                                  '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+                            }
                           },
                           onZoomDeleted: (index) {
                             _projectController.removeZoomAt(index);
@@ -2849,7 +2866,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 },
                 onZoomChanged: (i, next) {
                   _zoomPreviewOverride.value = null;
-                  _projectController.updateZoomAt(i, next);
+                  final vs = _videoSize();
+                  final paddingBefore =
+                      _projectController.current.windowFrame.padding.left;
+                  _projectController.updateZoomAt(i, next, videoSize: vs);
+                  final paddingAfter =
+                      _projectController.current.windowFrame.padding.left;
+                  if (paddingAfter > paddingBefore) {
+                    AppAlerts.info(
+                        '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+                  }
                 },
                 onZoomDeleted: (index) {
                   _projectController.removeZoomAt(index);

@@ -23,7 +23,12 @@ const int _kWallpaperThumbCacheWidth = 256;
 /// `windowFrame` so the playback canvas re-renders live and the change
 /// persists via the per-clip sidecar.
 class BackgroundTab extends ConsumerStatefulWidget {
-  const BackgroundTab({super.key});
+  const BackgroundTab({super.key, this.videoSize = Size.zero});
+
+  /// Source video size — used to compute the minimum padding floor when any
+  /// 3D-tilt zoom is active. Defaults to [Size.zero] (no-floor enforcement
+  /// until the size is known).
+  final Size videoSize;
 
   @override
   ConsumerState<BackgroundTab> createState() => _BackgroundTabState();
@@ -118,6 +123,13 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
     final padding = frame.padding.left;
     final cornerRadius = frame.cornerRadius;
 
+    // Minimum padding floor: 6% of video short side while any zoom is 3D.
+    final zoomRegions = ref.watch(editorProjectControllerProvider).zoomRegions;
+    final any3D = zoomRegions.any((z) => z.tilt.is3D);
+    final paddingFloor = (any3D && !widget.videoSize.isEmpty)
+        ? minPadding3DFor(widget.videoSize).toDouble()
+        : 0.0;
+
     return ListView(
       padding: EdgeInsets.zero,
       // Let hover lean/tilt overshoot paint past the panel edge.
@@ -155,7 +167,7 @@ class _BackgroundTabState extends ConsumerState<BackgroundTab> {
         InspectorSlider(
           label: 'Padding',
           value: padding,
-          min: 0,
+          min: paddingFloor,
           max: 200,
           onChanged: _updatePadding,
           onReset: () => _updatePadding(40),
