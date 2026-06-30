@@ -92,8 +92,8 @@ class ZoomRegion {
   /// Edge length of the deadzone as a fraction of the *visible
   /// viewport* (the region of source video framed by the current
   /// zoom). 0.3 = a centered box covering 30% of the viewport on
-  /// each axis. Only consulted when [followMode] is
-  /// [FollowMode.bounded].
+  /// each axis. Consulted by the deadzone follow modes
+  /// [FollowMode.bounded] and [FollowMode.predictive].
   final double deadzoneRatio;
 
   /// Predictive look-ahead lead time: how far ahead [FollowMode.predictive]

@@ -62,9 +62,8 @@ abstract class FollowStrategy {
 /// When `followCursor` is on but the cursor is unavailable, it falls back to
 /// video center so stale manual placement does not affect auto-follow.
 ///
-/// `predictive` mode reuses this same strategy — the differentiator
-/// is upstream (the scene builder passes the rolling-median cursor
-/// for predictive instead of the spring-smoothed sprite).
+/// `predictive` mode does NOT use this strategy — it is an anticipatory
+/// deadzone follow (see [PredictiveFollowStrategy]).
 class CenteredFollowStrategy extends FollowStrategy {
   @override
   FollowResolution resolve({
