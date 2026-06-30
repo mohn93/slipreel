@@ -118,20 +118,21 @@ real guarantee for the other modes and for fast flicks.
 - **`zoom_focal_controller.dart`:** add the keep-in-view post-clamp after the hold-phase spring
   step (after line ~787), as a pure helper on the framing geometry. No change to enter/exit ramps
   or manual placement.
-- **`motion_tuning.dart`:** add `cursorLeadTime` and `keepInViewEdgeMargin` (see Tuning),
-  including preset variants (snappy/cinematic).
+- **`motion_tuning.dart`:** add `keepInViewEdgeMargin` (see Tuning). The lead time is NOT a
+  `MotionTuning` constant — it reuses the per-region `predictiveWindow` field (see below), which
+  matches the existing per-region slider and avoids a rename cascade.
 - **`zoom_context_inspector.dart`:** relabel the Predictive slider from **"Lookahead window"** to
   **"Look-ahead time"**; change its range/subtitle/reset to lead-time semantics (see Tuning).
   Show the **"Deadzone size"** slider for `predictive` as well as `bounded`.
 
 ## Tuning
 
-New `MotionTuning` constants (defaults; tune during implementation against live preview):
+Defaults (tune during implementation against live preview):
 
-| Constant | Default | Range (UI) | Meaning |
-|---|---|---|---|
-| `cursorLeadTime` | ~150 ms | 80–250 ms | How far ahead Predictive aims (`cursor + v·leadTime`). |
-| `keepInViewEdgeMargin` | ~8–12% of short side | (constant) | Min gap kept between the live cursor and the viewport edge. |
+| Knob | Home | Default | Range | Meaning |
+|---|---|---|---|---|
+| Lead time | per-region `predictiveWindow` (repurposed) | 150 ms | 80–250 ms (UI slider) | How far ahead Predictive aims (`cursor + v·leadTime`). |
+| `keepInViewEdgeMargin` | `MotionTuning` | 0.1 (10% of short side) | (constant, no UI) | Min gap kept between the live cursor and the viewport edge. |
 
 Per-region (existing): `deadzoneRatio` (now applies to predictive too), `followDuration`
 (spring settle time). The deadzone must stay **smaller** than the keep-in-view safe area
@@ -144,10 +145,12 @@ breached first, leaving the clamp as a rarely-firing backstop.
   new anticipatory behavior instead of median dwell. This is the intended fix (median *is* the
   laggy/lost-cursor behavior). Accepted by the user.
 - **`predictiveWindow` field:** persisted regions carry an old value defaulting to 1500 ms, which
-  is nonsensical as a look-ahead time (1.5 s of lead would massively overshoot). On load,
-  **ignore stored `predictiveWindow` values and reset to the new look-ahead default** (clamp into
-  the 80–250 ms range), so legacy projects don't inherit a broken lead. The JSON key is retained
-  for forward/backward file compatibility; only its interpretation and clamp change.
+  is nonsensical as a look-ahead time (1.5 s of lead would massively overshoot). The constructor
+  **clamps `predictiveWindow` into `[80 ms, 250 ms]`** (and a missing key falls back to the new
+  150 ms default), so legacy values are pulled into a sane lead range deterministically — a stored
+  1500 ms becomes 250 ms. The JSON key (`predictiveWindowMicros`) and Dart field name are both
+  retained for compatibility and to avoid a rename cascade; only the interpretation, default, and
+  clamp change.
 
 ## Determinism
 
