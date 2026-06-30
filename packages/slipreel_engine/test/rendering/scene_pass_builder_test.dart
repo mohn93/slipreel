@@ -76,7 +76,6 @@ ZoomRegion _predictive({
   required Duration startTime,
   required Duration duration,
   Rect rect = const Rect.fromLTRB(0, 0, 0, 0),
-  Duration predictiveWindow = const Duration(milliseconds: 500),
 }) {
   return ZoomRegion(
     rect: rect,
@@ -87,7 +86,6 @@ ZoomRegion _predictive({
     exitDuration: Duration.zero,
     followCursor: true,
     followMode: FollowMode.predictive,
-    predictiveWindow: predictiveWindow,
     followDuration: const Duration(milliseconds: 400),
   );
 }
@@ -232,11 +230,10 @@ void main() {
       );
     });
 
-    test('uses median cursor for predictive follow mode', () {
-      // Predictive mode points the focal at the dwell location (median
-      // of recent samples), not the instantaneous cursor. With a
-      // straight-line moving cursor the median lags behind the sprite,
-      // so this is a visible, asserted divergence.
+    test('predictive follow mode focals on the sprite cursor (no median)', () {
+      // Predictive no longer diverges from the sprite at the scene-builder
+      // level — the look-ahead now lives in PredictiveFollowStrategy. So the
+      // focal cursor handed to the controller equals the sprite position.
       final builder = ScenePassBuilder();
       final project = _projectWith(
         zooms: [
@@ -244,7 +241,6 @@ void main() {
             startTime: Duration.zero,
             duration: const Duration(seconds: 2),
             rect: const Rect.fromLTWH(960, 540, 0, 0),
-            predictiveWindow: const Duration(milliseconds: 400),
           ),
         ],
       );
@@ -260,19 +256,12 @@ void main() {
 
       expect(pass.activeZoom, isNotNull);
       expect(pass.activeZoom!.followMode, FollowMode.predictive);
-      expect(
-        pass.motion,
-        isNotNull,
-        reason: 'Motion sample still computed for the cursor sprite',
-      );
-      // cursorForFocal != motion.screenPos in predictive mode.
+      expect(pass.motion, isNotNull);
       expect(pass.cursorForFocal, isNotNull);
       expect(
         (pass.cursorForFocal! - pass.motion!.screenPos).distance,
-        greaterThan(10),
-        reason:
-            'Predictive cursor (median over window) lags the spring-smoothed '
-            'sprite by at least a few pixels on a fast-moving cursor',
+        lessThan(0.001),
+        reason: 'predictive focal cursor == sprite once median is removed',
       );
     });
 
