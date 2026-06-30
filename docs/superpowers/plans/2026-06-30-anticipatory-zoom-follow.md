@@ -202,7 +202,7 @@ In `zoom_framing.dart`, add at the top with the other imports:
 import 'dart:math' as math;
 ```
 
-Add the method inside the class (e.g. after `clampFocalRadial`, ~line 111):
+Add the method inside the class, after the `clampFocalRadial` method (which ends ~line 117; the file also defines a `kPerspective` const and a `Matrix4` import at the top from the 3D-tilt work — neither conflicts):
 
 ```dart
   /// Pulls [focal] the minimum amount so the live [cursor] stays at least
@@ -870,7 +870,7 @@ git commit -m "feat(zoom): predictive follow = anticipatory deadzone (velocity l
 ### Task 7: Inspector UI — relabel slider, show deadzone + lead for predictive
 
 **Files:**
-- Modify: `packages/screen_recorder/lib/ui/widgets/inspector/contexts/zoom_context_inspector.dart` (~lines 260-302)
+- Modify: `packages/screen_recorder/lib/ui/widgets/inspector/contexts/zoom_context_inspector.dart` (~lines 327-370; match by content, not line number — the 3D-tilt work shifted this block down)
 
 **Interfaces:**
 - Consumes: `zoom.deadzoneRatio`, `zoom.predictiveWindow` (lead time), `ZoomRegion.copyWith`.
@@ -880,7 +880,7 @@ This task is UI-only (no unit test); verify by `flutter analyze` + manual run.
 
 - [ ] **Step 1: Show the deadzone slider for predictive too**
 
-Change the guard on line 260 from:
+Change the bounded-only guard (currently ~line 327) from:
 
 ```dart
                 if (zoom.followMode == FollowMode.bounded) ...[
@@ -895,7 +895,7 @@ to:
 
 - [ ] **Step 2: Relabel the predictive slider to lead-time semantics**
 
-Replace the predictive `InspectorSlider` block (lines 282-303) with:
+Replace the predictive `InspectorSlider` block (the `if (zoom.followMode == FollowMode.predictive) ...[` … `]` around lines 349-370) with:
 
 ```dart
                 if (zoom.followMode == FollowMode.predictive) ...[
