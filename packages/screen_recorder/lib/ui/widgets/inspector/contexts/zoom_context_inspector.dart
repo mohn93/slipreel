@@ -324,7 +324,8 @@ class ZoomContextInspector extends ConsumerWidget {
                   onChanged: (m) =>
                       onChanged(zoom.copyWith(followMode: m)),
                 ),
-                if (zoom.followMode == FollowMode.bounded) ...[
+                if (zoom.followMode == FollowMode.bounded ||
+                    zoom.followMode == FollowMode.predictive) ...[
                   const SizedBox(height: 16),
                   InspectorSlider(
                     label: 'Deadzone size',
