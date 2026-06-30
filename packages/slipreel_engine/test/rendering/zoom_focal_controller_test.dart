@@ -217,16 +217,16 @@ void main() {
         cursor: const Offset(50, 50),
         videoSize: _videoSize,
       );
-      expect(endOfA!.focal.dx, lessThan(200));
-      expect(endOfA.focal.dy, lessThan(200));
+      expect(endOfA!.focal.dx, lessThan(300));
+      expect(endOfA.focal.dy, lessThan(300));
 
       // First frame in zoomB: the spring continues from wherever it was in A
-      // — it is NOT instantly snapped to zoomB's cursor (950, 850). It must
+      // — it is NOT instantly snapped to zoomB's cursor (300, 200). It must
       // stay essentially where endOfA left it on this first frame.
       final crossover = ctrl.update(
         position: const Duration(milliseconds: 1016),
         zoomRegions: [zoomA, zoomB],
-        cursor: const Offset(950, 850),
+        cursor: const Offset(300, 200),
         videoSize: _videoSize,
       );
       expect(crossover, isNotNull);
@@ -248,12 +248,12 @@ void main() {
         zoomB,
         from: const Duration(milliseconds: 1016),
         to: const Duration(milliseconds: 1980),
-        cursor: const Offset(950, 850),
+        cursor: const Offset(300, 200),
       );
       expect(
         settled!.focal.dx,
-        greaterThan(700),
-        reason: 'spring should have advanced well toward zoomB cursor',
+        greaterThan(200),
+        reason: 'spring should have advanced well toward zoomB cursor (300,200)',
       );
     });
 

@@ -50,4 +50,15 @@ void main() {
     final out = fr.clampFocalKeepCursorInView(focal, cursor, 1.0, 0.1);
     expect(out, fr.clampFocal(focal, 1.0));
   });
+
+  test('off-center in-view focal is returned unchanged (not reachable-clamped)',
+      () {
+    // Focal (200,200) sits OUTSIDE the reachable range at z=2 (x>=480),
+    // but the cursor is at the same point => in view => no pull. The helper
+    // must return the focal verbatim, NOT pull it to the reachable bound.
+    const focal = Offset(200, 200);
+    final out = fr.clampFocalKeepCursorInView(focal, focal, 2.0, 0.1);
+    expect(out.dx, closeTo(200, 0.001));
+    expect(out.dy, closeTo(200, 0.001));
+  });
 }

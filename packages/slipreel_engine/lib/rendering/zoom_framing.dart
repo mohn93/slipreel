@@ -120,8 +120,13 @@ class ZoomFraming {
 
   /// Pulls [focal] the minimum amount so the live [cursor] stays at least
   /// [edgeMarginFraction] of the canvas short side inside the zoomed viewport
-  /// (size `canvasSize / z`), then re-imposes [clampFocal] so the viewport
-  /// never leaves the canvas. Near a true canvas edge the reachable clamp
+  /// (size `canvasSize / z`). When the cursor is already inside the margin on
+  /// both axes the focal is returned UNCHANGED — the controller's steady-state
+  /// focal is intentionally unclamped (the transformer applies the reachable
+  /// clamp at paint), so imposing [clampFocal] on an in-view focal would alter
+  /// spring state. Only when an axis IS pulled toward an out-of-view cursor
+  /// does this re-impose [clampFocal] on that axis (so the pull never pushes
+  /// the viewport off-canvas). Near a true canvas edge the reachable clamp
   /// wins and the cursor may approach the edge — graceful degradation.
   ///
   /// Pure function of (focal, cursor, z, margin) — identical for identity and
@@ -144,7 +149,21 @@ class ZoomFraming {
     final allowedY = math.max(0.0, halfH - marginPx);
     final nx = cf.dx.clamp(cc.dx - allowedX, cc.dx + allowedX);
     final ny = cf.dy.clamp(cc.dy - allowedY, cc.dy + allowedY);
-    return clampFocal(fromCanvas(Offset(nx, ny)), z);
+    final pulledX = nx != cf.dx;
+    final pulledY = ny != cf.dy;
+    // Cursor already inside the margin on both axes: leave the focal EXACTLY
+    // as-is. The controller's steady-state focal is intentionally unclamped
+    // (the transformer applies the reachable clamp at paint); imposing
+    // clampFocal here on an in-view focal would alter spring state and change
+    // bounded/centered behavior. Only when we pull the focal toward an
+    // out-of-view cursor do we re-impose the reachable clamp on the pulled
+    // axis (so the pull never pushes the viewport off-canvas).
+    if (!pulledX && !pulledY) return focal;
+    final clamped = clampFocal(fromCanvas(Offset(nx, ny)), z);
+    return Offset(
+      pulledX ? clamped.dx : focal.dx,
+      pulledY ? clamped.dy : focal.dy,
+    );
   }
 
   /// The `pCenterRel` the zoom matrix translates by, in CANVAS pixels:
