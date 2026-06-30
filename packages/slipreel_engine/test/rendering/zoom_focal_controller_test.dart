@@ -217,8 +217,8 @@ void main() {
         cursor: const Offset(50, 50),
         videoSize: _videoSize,
       );
-      expect(endOfA!.focal.dx, lessThan(300));
-      expect(endOfA.focal.dy, lessThan(300));
+      expect(endOfA!.focal.dx, lessThan(200));
+      expect(endOfA.focal.dy, lessThan(200));
 
       // First frame in zoomB: the spring continues from wherever it was in A
       // — it is NOT instantly snapped to zoomB's cursor (300, 200). It must

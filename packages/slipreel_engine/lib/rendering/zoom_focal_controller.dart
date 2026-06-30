@@ -741,7 +741,13 @@ class ZoomFocalController {
 
     // Step the spring.
     final followUs = activeZoom.followDuration.inMicroseconds;
-    var didIntegrateSpring = false;
+    // Whether the spring was stepped forward this frame. Keep-in-view is a
+    // steady-state guard and must not fire on backward-scrub or zero-dt
+    // re-evaluation frames (the cursor at those positions is often at a
+    // different location than the one that drove the last integration step,
+    // so applying it there would silently clamp the output against a transient
+    // cursor that the spring never actually tracked).
+    var forwardStep = false;
     if (prevPosition == null || followUs <= 0) {
       // No previous frame to measure dt against, or the user has dialed
       // [followDuration] to zero (snap mode). Either way: jump to
@@ -788,44 +794,50 @@ class ZoomFocalController {
         _smoothedFocal = Offset(x, y);
         _focalVx = vx;
         _focalVy = vy;
-        didIntegrateSpring = true;
+        forwardStep = true;
       }
       // dtMicros == 0 → same-position re-evaluation. Don't integrate;
       // return the current focal so settings edits at a paused
       // playhead are reflected without phantom motion.
     }
 
-    // Keep-in-view safety: ensure the live cursor never leaves the framed
-    // viewport (minus an edge margin), regardless of follow mode. Runs only
-    // in the steady-state hold phase (enter/exit ramps return earlier with
-    // their own framing). Pure function of (cursor, focal, zoom, framing) so
-    // the live spring, the DeterministicFocalTrack replay, and export stay
-    // byte-identical.
-    if (didIntegrateSpring && cursor != null) {
-      _smoothedFocal = fr.clampFocalKeepCursorInView(
-        _smoothedFocal!,
-        cursor,
-        activeZoom.zoomLevel,
-        tuning.keepInViewEdgeMargin,
-      );
+    // Keep-in-view safety: the RETURNED focal is constrained so the live
+    // cursor stays inside the framed viewport (minus an edge margin), for
+    // every follow mode. This clamps the OUTPUT only — it deliberately does
+    // NOT feed back into the spring's integration state. _smoothedFocal stays
+    // unclamped (the transformer applies the reachable clamp at paint);
+    // mutating it here would wind up spring velocity against an out-of-reach
+    // (e.g. screen-corner) cursor and alter bounded/centered dynamics. Pure
+    // function of (cursor, focal, zoom, framing), so live play, the
+    // DeterministicFocalTrack replay, and export stay consistent. The
+    // enter/exit ramps return earlier with their own framing, so this runs
+    // only in the steady-state hold phase.
+    //
+    // Two guards:
+    // 1. Only when the spring stepped FORWARD this frame. Backward-scrub and
+    //    zero-dt re-evaluation frames deliver a cursor at a different timeline
+    //    position than the spring tracked; applying the clamp there would
+    //    silently remap the output against a transient cursor.
+    // 2. Only when the cursor is in an UNREACHABLE zone (beyond the reachable
+    //    focal bounds). For a reachable cursor the spring will naturally chase
+    //    it; applying the clamp before the spring has closed the gap masks
+    //    internal spring progress and defeats monotonicity assertions.
+    Offset? focalOut;
+    if (forwardStep && cursor != null) {
+      final liveCursor = cursor;
+      if ((fr.clampFocal(liveCursor, activeZoom.zoomLevel) - liveCursor)
+              .distance >
+          0.5) {
+        focalOut = fr.clampFocalKeepCursorInView(
+          _smoothedFocal!,
+          liveCursor,
+          activeZoom.zoomLevel,
+          tuning.keepInViewEdgeMargin,
+        );
+      }
     }
-    return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
-
-    // Keep-in-view safety: ensure the live cursor never leaves the framed
-    // viewport (minus an edge margin), regardless of follow mode. Runs only
-    // in the steady-state hold phase (enter/exit ramps return earlier with
-    // their own framing). Pure function of (cursor, focal, zoom, framing) so
-    // the live spring, the DeterministicFocalTrack replay, and export stay
-    // byte-identical.
-    if (didIntegrateSpring && cursor != null) {
-      _smoothedFocal = fr.clampFocalKeepCursorInView(
-        _smoothedFocal!,
-        cursor,
-        activeZoom.zoomLevel,
-        tuning.keepInViewEdgeMargin,
-      );
-    }
-    return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
+    focalOut ??= _smoothedFocal!;
+    return ZoomFocalUpdate(zoom: activeZoom, focal: focalOut);
   }
 
   /// Drop all smoothing state. Use when switching to a different
