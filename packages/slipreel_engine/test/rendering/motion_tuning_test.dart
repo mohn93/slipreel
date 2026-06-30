@@ -141,8 +141,8 @@ void main() {
       expect(faster.dtCap, t.dtCap);
     });
 
-    test('keepInViewEdgeMargin defaults to 0.1', () {
-      expect(MotionTuning.defaults.keepInViewEdgeMargin, 0.1);
+    test('keepInViewEdgeMargin defaults to 0.04', () {
+      expect(MotionTuning.defaults.keepInViewEdgeMargin, 0.04);
     });
 
     test('keepInViewEdgeMargin round-trips through JSON', () {

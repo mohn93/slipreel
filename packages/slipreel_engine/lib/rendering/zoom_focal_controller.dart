@@ -813,30 +813,19 @@ class ZoomFocalController {
     // enter/exit ramps return earlier with their own framing, so this runs
     // only in the steady-state hold phase.
     //
-    // Two guards:
-    // 1. Only when the spring stepped FORWARD this frame. Backward-scrub and
-    //    zero-dt re-evaluation frames deliver a cursor at a different timeline
-    //    position than the spring tracked; applying the clamp there would
-    //    silently remap the output against a transient cursor.
-    // 2. Only when the cursor is in an UNREACHABLE zone (beyond the reachable
-    //    focal bounds). For a reachable cursor the spring will naturally chase
-    //    it; applying the clamp before the spring has closed the gap masks
-    //    internal spring progress and defeats monotonicity assertions.
-    Offset? focalOut;
-    if (forwardStep && cursor != null) {
-      final liveCursor = cursor;
-      if ((fr.clampFocal(liveCursor, activeZoom.zoomLevel) - liveCursor)
-              .distance >
-          0.5) {
-        focalOut = fr.clampFocalKeepCursorInView(
-          _smoothedFocal!,
-          liveCursor,
-          activeZoom.zoomLevel,
-          tuning.keepInViewEdgeMargin,
-        );
-      }
-    }
-    focalOut ??= _smoothedFocal!;
+    // Apply keep-in-view only on FORWARD steps. Backward-scrub and zero-dt
+    // re-evaluation frames intentionally freeze the spring; the deterministic
+    // focal track and export replay forward-only, so forward-gating keeps
+    // play == track == export consistent while leaving a live scrub's frozen
+    // focal untouched.
+    final focalOut = (forwardStep && cursor != null)
+        ? fr.clampFocalKeepCursorInView(
+            _smoothedFocal!,
+            cursor,
+            activeZoom.zoomLevel,
+            tuning.keepInViewEdgeMargin,
+          )
+        : _smoothedFocal!;
     return ZoomFocalUpdate(zoom: activeZoom, focal: focalOut);
   }
 

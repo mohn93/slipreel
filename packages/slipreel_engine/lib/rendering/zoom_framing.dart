@@ -119,19 +119,18 @@ class ZoomFraming {
   }
 
   /// Pulls [focal] the minimum amount so the live [cursor] stays at least
-  /// [edgeMarginFraction] of the canvas short side inside the zoomed viewport
-  /// (size `canvasSize / z`). When the cursor is already inside the margin on
-  /// both axes the focal is returned UNCHANGED — the controller's steady-state
-  /// focal is intentionally unclamped (the transformer applies the reachable
-  /// clamp at paint), so imposing [clampFocal] on an in-view focal would alter
-  /// spring state. Only when an axis IS pulled toward an out-of-view cursor
-  /// does this re-impose [clampFocal] on that axis (so the pull never pushes
-  /// the viewport off-canvas). Near a true canvas edge the reachable clamp
-  /// wins and the cursor may approach the edge — graceful degradation.
+  /// [edgeMarginFraction] of the VIEWPORT (`canvasDim / z`, per axis) inside the
+  /// zoomed viewport, then re-imposes [clampFocal] on the pulled axis so the
+  /// viewport never leaves the canvas (near a true edge the reachable clamp
+  /// wins — graceful degradation). When the cursor is already inside the safe
+  /// area on an axis, that axis is returned VERBATIM (the controller's focal is
+  /// intentionally unclamped; the transformer clamps at paint). At `z <= 1`
+  /// there is no viewport crop, so it delegates to [clampFocal].
   ///
-  /// Pure function of (focal, cursor, z, margin) — identical for identity and
-  /// device framing because the math runs in canvas space. Used by
-  /// [ZoomFocalController] as a per-frame safety after the spring step.
+  /// Pure function (focal, cursor, z, margin) — identical for identity and
+  /// device framing because the math runs in canvas space. The margin is
+  /// viewport-relative so the safety is zoom-invariant and stays outside the
+  /// deadzone.
   Offset clampFocalKeepCursorInView(
     Offset focal,
     Offset cursor,
@@ -141,23 +140,13 @@ class ZoomFraming {
     if (z <= 1.0) return clampFocal(focal, z);
     final cf = toCanvas(focal);
     final cc = toCanvas(cursor);
-    final halfW = canvasSize.width / (2 * z);
-    final halfH = canvasSize.height / (2 * z);
-    final marginPx = edgeMarginFraction.clamp(0.0, 0.49) *
-        math.min(canvasSize.width, canvasSize.height);
-    final allowedX = math.max(0.0, halfW - marginPx);
-    final allowedY = math.max(0.0, halfH - marginPx);
+    final m = edgeMarginFraction.clamp(0.0, 0.49);
+    final allowedX = math.max(0.0, (canvasSize.width / z) * (0.5 - m));
+    final allowedY = math.max(0.0, (canvasSize.height / z) * (0.5 - m));
     final nx = cf.dx.clamp(cc.dx - allowedX, cc.dx + allowedX);
     final ny = cf.dy.clamp(cc.dy - allowedY, cc.dy + allowedY);
     final pulledX = nx != cf.dx;
     final pulledY = ny != cf.dy;
-    // Cursor already inside the margin on both axes: leave the focal EXACTLY
-    // as-is. The controller's steady-state focal is intentionally unclamped
-    // (the transformer applies the reachable clamp at paint); imposing
-    // clampFocal here on an in-view focal would alter spring state and change
-    // bounded/centered behavior. Only when we pull the focal toward an
-    // out-of-view cursor do we re-impose the reachable clamp on the pulled
-    // axis (so the pull never pushes the viewport off-canvas).
     if (!pulledX && !pulledY) return focal;
     final clamped = clampFocal(fromCanvas(Offset(nx, ny)), z);
     return Offset(

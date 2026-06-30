@@ -26,7 +26,7 @@ class MotionTuning {
     this.cursorFeedforwardStrength = 0.5,
     this.cursorFeedforwardFadeStartPxPerSec = 200.0,
     this.cursorFeedforwardFullSpeedPxPerSec = 800.0,
-    this.keepInViewEdgeMargin = 0.1,
+    this.keepInViewEdgeMargin = 0.04,
     this.sceneBlurExposureMs = 16.0,
     this.sceneBlurMaxTranslation = 60.0,
     this.sceneBlurSampleCount = 48,
@@ -76,10 +76,12 @@ class MotionTuning {
   /// this speed [cursorFeedforwardStrength] applies in full.
   final double cursorFeedforwardFullSpeedPxPerSec;
 
-  /// Fraction of the canvas short side kept between the live cursor and the
-  /// zoomed viewport edge by the keep-in-view safety clamp. 0.1 = the cursor
-  /// is held at least 10% of the short side in from any edge (when geometry
-  /// allows). Applies to every follow mode.
+  /// Edge margin for the keep-in-view safety clamp, as a fraction of the
+  /// VISIBLE VIEWPORT on each axis (the viewport is `canvasDim / zoom`). 0.04 =
+  /// the live cursor is kept at least 4% of the viewport in from each edge.
+  /// Small by design: keep-in-view is a last-resort safety that must sit
+  /// OUTSIDE the deadzone (default 0.8) so it does not fight the deadzone/spring
+  /// during normal follow. Applies to every follow mode.
   final double keepInViewEdgeMargin;
 
   /// Base virtual-shutter window for the scene-blur shader before

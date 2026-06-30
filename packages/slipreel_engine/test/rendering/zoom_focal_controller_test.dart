@@ -3,6 +3,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
@@ -2088,70 +2089,65 @@ void main() {
   });
 
   group('keep-in-view safety', () {
-    test('steady-state focal keeps a far cursor inside the viewport margin',
-        () {
-      const videoSize = Size(1920, 1080);
-      final controller = ZoomFocalController(); // defaults: margin 0.1
-      final zoom = ZoomRegion(
-        rect: const Rect.fromLTRB(0, 0, 0, 0),
+    // Mirror of ZoomFraming's per-axis viewport-relative allowed distance.
+    double allowedX(double z) =>
+        _videoSize.width /
+        z *
+        (0.5 - MotionTuning.defaults.keepInViewEdgeMargin);
+
+    test('a far (reachable) cursor is kept within the viewport safe area', () {
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 4),
         zoomLevel: 2.0,
-        enterDuration: Duration.zero,
-        exitDuration: Duration.zero,
-        followCursor: true,
-        followMode: FollowMode.centered, // simplest: springs toward cursor
+        followMode: FollowMode.centered,
         followDuration: const Duration(milliseconds: 850),
       );
-
-      // Prime the spring at center, then jump the cursor far right and step
-      // a single small frame so the spring lags well behind the cursor.
-      controller.update(
+      ctrl.update(
         position: const Duration(milliseconds: 1000),
         zoomRegions: [zoom],
         cursor: const Offset(960, 540),
-        videoSize: videoSize,
+        videoSize: _videoSize,
       );
-      final out = controller.update(
+      final out = ctrl.update(
         position: const Duration(milliseconds: 1016),
         zoomRegions: [zoom],
         cursor: const Offset(1700, 540),
-        videoSize: videoSize,
+        videoSize: _videoSize,
       );
-
-      // Viewport half-width at z=2 is 480; margin 0.1*1080 = 108; allowed 372.
-      // The cursor must be within 372px of the returned focal on x.
       expect(out, isNotNull);
-      expect((1700 - out!.focal.dx).abs(), lessThanOrEqualTo(372 + 0.5),
-          reason: 'keep-in-view must pull the lagging focal toward the cursor');
+      expect(
+        (1700 - out!.focal.dx).abs(),
+        lessThanOrEqualTo(allowedX(2.0) + 0.5),
+        reason: 'keep-in-view pulls the lagging focal so the cursor stays in '
+            'the viewport safe area',
+      );
     });
 
-    test('cursor near canvas edge: focal pinned to reachable bound', () {
-      const videoSize = Size(1920, 1080);
-      final controller = ZoomFocalController();
-      final zoom = ZoomRegion(
-        rect: const Rect.fromLTRB(0, 0, 0, 0),
+    test('a cursor jammed against the canvas edge pins the focal to the '
+        'reachable bound', () {
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
         startTime: Duration.zero,
         duration: const Duration(seconds: 4),
         zoomLevel: 2.0,
-        enterDuration: Duration.zero,
-        exitDuration: Duration.zero,
-        followCursor: true,
         followMode: FollowMode.centered,
+        followDuration: const Duration(milliseconds: 850),
       );
-      controller.update(
+      ctrl.update(
         position: const Duration(milliseconds: 1000),
         zoomRegions: [zoom],
         cursor: const Offset(960, 540),
-        videoSize: videoSize,
+        videoSize: _videoSize,
       );
-      final out = controller.update(
+      final out = ctrl.update(
         position: const Duration(milliseconds: 1016),
         zoomRegions: [zoom],
         cursor: const Offset(1915, 540),
-        videoSize: videoSize,
+        videoSize: _videoSize,
       );
-      // Reachable focal max at z=2 == 1440; keep-in-view cannot exceed it.
+      // Reachable focal max at z=2 is 1440; keep-in-view cannot exceed it.
       expect(out!.focal.dx, lessThanOrEqualTo(1440 + 0.5));
     });
   });
