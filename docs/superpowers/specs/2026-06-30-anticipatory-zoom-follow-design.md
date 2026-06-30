@@ -80,25 +80,34 @@ move breaches the zone earlier (good); a slow nudge inside the zone never starts
 
 ### Layer 3 — Keep-in-view clamp (universal safety net)
 
-After the spring step produces `_smoothedFocal`, apply a **pure post-clamp** in
-`ZoomFocalController.update()`:
+After the spring step, constrain the **returned** focal in `ZoomFocalController.update()` (a pure
+helper `ZoomFraming.clampFocalKeepCursorInView`):
 
 - Project the **live** cursor into the current viewport. If it would fall outside the viewport
-  minus an `edgeMargin`, nudge the focal the **minimum** amount along each axis to bring the
-  cursor back inside the margin.
-- The nudge is itself clamped to the **reachable focal range** for the current zoom (the same
-  framing/`ZoomFraming` bounds the transformer uses), so the viewport never leaves the composed
-  canvas. Near the true canvas edges the guarantee therefore **degrades gracefully** — geometry
-  cannot keep a corner-cursor centered, but the cursor stays as in-view as physically possible.
+  minus a small `edgeMargin`, nudge the focal the **minimum** amount **per axis** to bring the
+  cursor back inside the margin. An axis whose cursor is already in view is returned **verbatim**.
+- The pulled axis is clamped to the **reachable focal range** for the current zoom (same
+  `ZoomFraming` bounds the transformer uses), so the viewport never leaves the composed canvas.
+  Near the true canvas edges the guarantee **degrades gracefully** — geometry cannot keep a
+  corner-cursor centered, but the cursor stays as in-view as physically possible.
 
-Applied to **every** follow mode (bounded, centered, predictive), since "cursor must stay in
-view" is a safety invariant, not a mode-specific behavior. This single change fixes symptom 1
-across the board.
+**Critical implementation properties (learned during implementation):**
 
-**Ordering per frame:** strategy resolves target (with lead + deadzone for predictive) → spring
-integrates toward target → keep-in-view clamp adjusts the settled focal. The clamp is a safety
-net that rarely fires for predictive (lead + deadzone usually keep the cursor well inside), and a
-real guarantee for the other modes and for fast flicks.
+1. **Output-only, never mutate the spring state.** The clamp constrains the *returned* focal but
+   does NOT write back into `_smoothedFocal`. The spring integrates freely (unclamped, as before —
+   the transformer clamps at paint). Mutating the spring state winds up velocity against an
+   out-of-reach (screen-corner) cursor and alters bounded/centered dynamics.
+2. **Small, viewport-relative, per-axis margin.** `edgeMargin` is a fraction of the *viewport*
+   (`canvasDim / z`) per axis — `allowed = (canvasDim/z)·(0.5 − margin)` — NOT a fraction of the
+   canvas short side. This makes the safe area zoom-invariant and keeps it strictly **outside** the
+   deadzone (default 0.8) so the safety never fights the deadzone/spring during normal follow.
+   Default margin **0.04** (4% of the viewport per side → safe area 92% > deadzone 80%).
+3. **Forward-step gated.** Applied only when the spring stepped forward this frame; backward-scrub
+   and zero-dt re-eval frames (which intentionally freeze the spring) are skipped. Determinism is
+   preserved because the `DeterministicFocalTrack` replay and export are forward-only.
+
+Applied to **every** follow mode. It is a true last-resort safety: lead + deadzone keep the cursor
+well inside during normal follow, so it fires only on genuine near-edge excursions / fast flicks.
 
 ## Architecture / changes
 
@@ -132,7 +141,7 @@ Defaults (tune during implementation against live preview):
 | Knob | Home | Default | Range | Meaning |
 |---|---|---|---|---|
 | Lead time | per-region `predictiveWindow` (repurposed) | 150 ms | 80–250 ms (UI slider) | How far ahead Predictive aims (`cursor + v·leadTime`). |
-| `keepInViewEdgeMargin` | `MotionTuning` | 0.1 (10% of short side) | (constant, no UI) | Min gap kept between the live cursor and the viewport edge. |
+| `keepInViewEdgeMargin` | `MotionTuning` | 0.04 (4% of the **viewport**, per axis) | (constant, no UI) | Min gap kept between the live cursor and the viewport edge. Viewport-relative so it stays outside the deadzone at every zoom. |
 
 Per-region (existing): `deadzoneRatio` (now applies to predictive too), `followDuration`
 (spring settle time). The deadzone must stay **smaller** than the keep-in-view safe area
