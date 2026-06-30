@@ -741,6 +741,7 @@ class ZoomFocalController {
 
     // Step the spring.
     final followUs = activeZoom.followDuration.inMicroseconds;
+    var didIntegrateSpring = false;
     if (prevPosition == null || followUs <= 0) {
       // No previous frame to measure dt against, or the user has dialed
       // [followDuration] to zero (snap mode). Either way: jump to
@@ -787,12 +788,43 @@ class ZoomFocalController {
         _smoothedFocal = Offset(x, y);
         _focalVx = vx;
         _focalVy = vy;
+        didIntegrateSpring = true;
       }
       // dtMicros == 0 → same-position re-evaluation. Don't integrate;
       // return the current focal so settings edits at a paused
       // playhead are reflected without phantom motion.
     }
 
+    // Keep-in-view safety: ensure the live cursor never leaves the framed
+    // viewport (minus an edge margin), regardless of follow mode. Runs only
+    // in the steady-state hold phase (enter/exit ramps return earlier with
+    // their own framing). Pure function of (cursor, focal, zoom, framing) so
+    // the live spring, the DeterministicFocalTrack replay, and export stay
+    // byte-identical.
+    if (didIntegrateSpring && cursor != null) {
+      _smoothedFocal = fr.clampFocalKeepCursorInView(
+        _smoothedFocal!,
+        cursor,
+        activeZoom.zoomLevel,
+        tuning.keepInViewEdgeMargin,
+      );
+    }
+    return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
+
+    // Keep-in-view safety: ensure the live cursor never leaves the framed
+    // viewport (minus an edge margin), regardless of follow mode. Runs only
+    // in the steady-state hold phase (enter/exit ramps return earlier with
+    // their own framing). Pure function of (cursor, focal, zoom, framing) so
+    // the live spring, the DeterministicFocalTrack replay, and export stay
+    // byte-identical.
+    if (didIntegrateSpring && cursor != null) {
+      _smoothedFocal = fr.clampFocalKeepCursorInView(
+        _smoothedFocal!,
+        cursor,
+        activeZoom.zoomLevel,
+        tuning.keepInViewEdgeMargin,
+      );
+    }
     return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
   }
 

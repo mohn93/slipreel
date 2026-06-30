@@ -2086,4 +2086,73 @@ void main() {
     // vacuous since the pan goes center→right, i.e. dx only increases).
     expect(mid.focal.dx, greaterThan(centre.dx + 1.0));
   });
+
+  group('keep-in-view safety', () {
+    test('steady-state focal keeps a far cursor inside the viewport margin',
+        () {
+      const videoSize = Size(1920, 1080);
+      final controller = ZoomFocalController(); // defaults: margin 0.1
+      final zoom = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 0, 0),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 4),
+        zoomLevel: 2.0,
+        enterDuration: Duration.zero,
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered, // simplest: springs toward cursor
+        followDuration: const Duration(milliseconds: 850),
+      );
+
+      // Prime the spring at center, then jump the cursor far right and step
+      // a single small frame so the spring lags well behind the cursor.
+      controller.update(
+        position: const Duration(milliseconds: 1000),
+        zoomRegions: [zoom],
+        cursor: const Offset(960, 540),
+        videoSize: videoSize,
+      );
+      final out = controller.update(
+        position: const Duration(milliseconds: 1016),
+        zoomRegions: [zoom],
+        cursor: const Offset(1700, 540),
+        videoSize: videoSize,
+      );
+
+      // Viewport half-width at z=2 is 480; margin 0.1*1080 = 108; allowed 372.
+      // The cursor must be within 372px of the returned focal on x.
+      expect(out, isNotNull);
+      expect((1700 - out!.focal.dx).abs(), lessThanOrEqualTo(372 + 0.5),
+          reason: 'keep-in-view must pull the lagging focal toward the cursor');
+    });
+
+    test('cursor near canvas edge: focal pinned to reachable bound', () {
+      const videoSize = Size(1920, 1080);
+      final controller = ZoomFocalController();
+      final zoom = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 0, 0),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 4),
+        zoomLevel: 2.0,
+        enterDuration: Duration.zero,
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered,
+      );
+      controller.update(
+        position: const Duration(milliseconds: 1000),
+        zoomRegions: [zoom],
+        cursor: const Offset(960, 540),
+        videoSize: videoSize,
+      );
+      final out = controller.update(
+        position: const Duration(milliseconds: 1016),
+        zoomRegions: [zoom],
+        cursor: const Offset(1915, 540),
+        videoSize: videoSize,
+      );
+      // Reachable focal max at z=2 == 1440; keep-in-view cannot exceed it.
+      expect(out!.focal.dx, lessThanOrEqualTo(1440 + 0.5));
+    });
+  });
 }
