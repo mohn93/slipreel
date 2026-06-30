@@ -140,5 +140,20 @@ void main() {
       expect(faster.cursorAtRestPxPerSec, t.cursorAtRestPxPerSec);
       expect(faster.dtCap, t.dtCap);
     });
+
+    test('keepInViewEdgeMargin defaults to 0.1', () {
+      expect(MotionTuning.defaults.keepInViewEdgeMargin, 0.1);
+    });
+
+    test('keepInViewEdgeMargin round-trips through JSON', () {
+      const t = MotionTuning(keepInViewEdgeMargin: 0.18);
+      final restored = MotionTuning.fromJson(t.toJson());
+      expect(restored.keepInViewEdgeMargin, 0.18);
+    });
+
+    test('copyWith overrides keepInViewEdgeMargin', () {
+      final t = MotionTuning.defaults.copyWith(keepInViewEdgeMargin: 0.2);
+      expect(t.keepInViewEdgeMargin, 0.2);
+    });
   });
 }

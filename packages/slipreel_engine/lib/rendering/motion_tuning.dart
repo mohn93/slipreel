@@ -26,6 +26,7 @@ class MotionTuning {
     this.cursorFeedforwardStrength = 0.5,
     this.cursorFeedforwardFadeStartPxPerSec = 200.0,
     this.cursorFeedforwardFullSpeedPxPerSec = 800.0,
+    this.keepInViewEdgeMargin = 0.1,
     this.sceneBlurExposureMs = 16.0,
     this.sceneBlurMaxTranslation = 60.0,
     this.sceneBlurSampleCount = 48,
@@ -74,6 +75,12 @@ class MotionTuning {
   /// Cursor speed (px/s) at which the feedforward is fully on. Above
   /// this speed [cursorFeedforwardStrength] applies in full.
   final double cursorFeedforwardFullSpeedPxPerSec;
+
+  /// Fraction of the canvas short side kept between the live cursor and the
+  /// zoomed viewport edge by the keep-in-view safety clamp. 0.1 = the cursor
+  /// is held at least 10% of the short side in from any edge (when geometry
+  /// allows). Applies to every follow mode.
+  final double keepInViewEdgeMargin;
 
   /// Base virtual-shutter window for the scene-blur shader before
   /// the user-facing motion-blur and sub-blur sliders modulate it.
@@ -141,6 +148,7 @@ class MotionTuning {
     double? cursorFeedforwardStrength,
     double? cursorFeedforwardFadeStartPxPerSec,
     double? cursorFeedforwardFullSpeedPxPerSec,
+    double? keepInViewEdgeMargin,
     double? sceneBlurExposureMs,
     double? sceneBlurMaxTranslation,
     int? sceneBlurSampleCount,
@@ -162,6 +170,8 @@ class MotionTuning {
           this.cursorFeedforwardFadeStartPxPerSec,
       cursorFeedforwardFullSpeedPxPerSec: cursorFeedforwardFullSpeedPxPerSec ??
           this.cursorFeedforwardFullSpeedPxPerSec,
+      keepInViewEdgeMargin:
+          keepInViewEdgeMargin ?? this.keepInViewEdgeMargin,
       sceneBlurExposureMs:
           sceneBlurExposureMs ?? this.sceneBlurExposureMs,
       sceneBlurMaxTranslation:
@@ -188,6 +198,7 @@ class MotionTuning {
             cursorFeedforwardFadeStartPxPerSec,
         'cursorFeedforwardFullSpeedPxPerSec':
             cursorFeedforwardFullSpeedPxPerSec,
+        'keepInViewEdgeMargin': keepInViewEdgeMargin,
         'sceneBlurExposureMs': sceneBlurExposureMs,
         'sceneBlurMaxTranslation': sceneBlurMaxTranslation,
         'sceneBlurSampleCount': sceneBlurSampleCount,
@@ -244,6 +255,8 @@ class MotionTuning {
         'cursorFeedforwardFullSpeedPxPerSec',
         d.cursorFeedforwardFullSpeedPxPerSec,
       ),
+      keepInViewEdgeMargin:
+          doubleOr('keepInViewEdgeMargin', d.keepInViewEdgeMargin),
       sceneBlurExposureMs:
           doubleOr('sceneBlurExposureMs', d.sceneBlurExposureMs),
       sceneBlurMaxTranslation: doubleOr(
