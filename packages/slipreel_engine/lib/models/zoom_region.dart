@@ -20,10 +20,10 @@ enum FollowMode {
   /// real-time tracking; no "rest zone".
   centered,
 
-  /// The camera aims at the *median* cursor position over a rolling
-  /// time window — i.e., the spot where the cursor has been
-  /// spending the most time recently. Brief excursions don't move
-  /// the camera; sustained dwell in a new region does, gradually.
+  /// The camera follows the cursor's *anticipated* position
+  /// (`cursor + velocity·leadTime`) through a deadzone gate — it holds steady
+  /// while the cursor works in a centered safe-zone and pans early, before the
+  /// cursor reaches an edge. See [predictiveWindow] for the lead time.
   predictive,
 }
 
@@ -47,8 +47,13 @@ class ZoomRegion {
   // linear — 850 ms rounds the corners into a smooth curve without the
   // camera visibly "swimming" behind the cursor.
   static const Duration _defaultFollow = Duration(milliseconds: 850);
-  static const Duration _defaultPredictiveWindow =
-      Duration(milliseconds: 1500);
+  // Predictive look-ahead lead time: how far ahead the predictive follow
+  // strategy aims (cursor + velocity·leadTime). 150 ms leads enough to cancel
+  // the spring's settle lag without overshooting on click landings (velocity
+  // ≈ 0 at rest ⇒ no lead). Clamped to [80, 250] ms.
+  static const Duration _defaultLeadTime = Duration(milliseconds: 150);
+  static const Duration _minLeadTime = Duration(milliseconds: 80);
+  static const Duration _maxLeadTime = Duration(milliseconds: 250);
 
   final Rect rect;
   final Duration startTime;
@@ -91,11 +96,9 @@ class ZoomRegion {
   /// [FollowMode.bounded].
   final double deadzoneRatio;
 
-  /// Length of the rolling window over which the predictive median
-  /// is computed. Only consulted when [followMode] is
-  /// [FollowMode.predictive]. Longer windows feel more "settled"
-  /// (camera ignores brief activity); shorter windows feel more
-  /// responsive.
+  /// Predictive look-ahead lead time: how far ahead [FollowMode.predictive]
+  /// aims along the cursor's velocity. Clamped to [80, 250] ms; default 150 ms.
+  /// (Field name retained for JSON back-compat — see `predictiveWindowMicros`.)
   final Duration predictiveWindow;
 
   /// How long the focal takes to catch up to a new target.
@@ -142,10 +145,7 @@ class ZoomRegion {
         followDuration = (followDuration ?? _defaultFollow).isNegative
             ? Duration.zero
             : (followDuration ?? _defaultFollow),
-        predictiveWindow =
-            (predictiveWindow ?? _defaultPredictiveWindow).isNegative
-                ? _defaultPredictiveWindow
-                : (predictiveWindow ?? _defaultPredictiveWindow);
+        predictiveWindow = _clampLeadTime(predictiveWindow ?? _defaultLeadTime);
 
   /// End time of zoom effect
   Duration get endTime => startTime + duration;
@@ -325,6 +325,12 @@ class ZoomRegion {
               (json['tilt'] as Map).cast<String, dynamic>())
           : const Tilt3D(),
     );
+  }
+
+  static Duration _clampLeadTime(Duration d) {
+    if (d < _minLeadTime) return _minLeadTime;
+    if (d > _maxLeadTime) return _maxLeadTime;
+    return d;
   }
 
   static Rect _constrainRect(Rect rect, Size bounds) {
