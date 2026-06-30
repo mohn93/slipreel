@@ -1,19 +1,22 @@
 import 'dart:ui' show Rect, Size;
 
+import 'package:slipreel_engine/models/tilt3d.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
 
 /// How the zoom camera tracks the cursor while a region is active.
 ///
-/// All three modes feed the same duration+curve catch-up tween — they
-/// only differ in what target the camera is aimed at each frame.
+/// All three modes feed the same critically-damped catch-up spring (see
+/// [ZoomFocalController]) — they only differ in what target the camera is
+/// aimed at each frame. [followDuration] is the spring's settle time; it also
+/// sets how much the spring smooths (rounds) the cursor's path into a curve.
 enum FollowMode {
   /// Default. The camera holds steady while the cursor sits inside a
   /// centered deadzone box; once the cursor leaves the deadzone the
-  /// camera tweens out to it. After the tween completes, a new
-  /// deadzone re-engages around the new focal.
+  /// camera springs out to it. After it settles, a new deadzone
+  /// re-engages around the new focal.
   bounded,
 
-  /// The camera tweens toward the cursor every frame. Smoothest
+  /// The camera springs toward the cursor every frame. Smoothest
   /// real-time tracking; no "rest zone".
   centered,
 
@@ -37,12 +40,13 @@ enum FollowMode {
 class ZoomRegion {
   static const Duration _defaultEnter = Duration(milliseconds: 500);
   static const Duration _defaultExit = Duration(milliseconds: 500);
-  // Catch-up tween duration. 400 ms was the original value; bumped to
-  // 700 ms because the shorter duration peaked the focal velocity in
-  // the middle of a tween (~2× average) high enough that fast cursor
-  // flicks read as a camera jolt. 700 ms keeps the camera responsive
-  // without amplifying the cursor's velocity into a visible jump.
-  static const Duration _defaultFollow = Duration(milliseconds: 700);
+  // Catch-up spring settle time (also the amount the spring smooths the
+  // cursor's path into a curve). History: 400 ms originally; 700 ms to stop
+  // fast flicks reading as a jolt; 850 ms because below ~750 ms the camera
+  // hugs the raw (straight) cursor path and the follow reads as rigidly
+  // linear — 850 ms rounds the corners into a smooth curve without the
+  // camera visibly "swimming" behind the cursor.
+  static const Duration _defaultFollow = Duration(milliseconds: 850);
   static const Duration _defaultPredictiveWindow =
       Duration(milliseconds: 1500);
 
@@ -102,6 +106,11 @@ class ZoomRegion {
   /// Zero or negative ⇒ snap.
   final Duration followDuration;
 
+  /// 3D perspective tilt for this zoom. [Tilt3D.flat] (the default) is a 2D
+  /// zoom — byte-identical to legacy behavior. Subtle/dramatic/manual add a
+  /// perspective tilt to the content panel (see [ZoomTransformer.getTransform]).
+  final Tilt3D tilt;
+
   ZoomRegion({
     required Rect rect,
     required this.startTime,
@@ -117,6 +126,7 @@ class ZoomRegion {
     double deadzoneRatio = 0.8,
     Duration? followDuration,
     Duration? predictiveWindow,
+    this.tilt = const Tilt3D(),
   })  : assert(duration > Duration.zero, 'Duration must be positive'),
         rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
         zoomLevel = zoomLevel.clamp(1.0, 5.0),
@@ -200,6 +210,7 @@ class ZoomRegion {
     double? deadzoneRatio,
     Duration? followDuration,
     Duration? predictiveWindow,
+    Tilt3D? tilt,
   }) {
     return ZoomRegion(
       rect: rect ?? this.rect,
@@ -220,6 +231,7 @@ class ZoomRegion {
       deadzoneRatio: deadzoneRatio ?? this.deadzoneRatio,
       followDuration: followDuration ?? this.followDuration,
       predictiveWindow: predictiveWindow ?? this.predictiveWindow,
+      tilt: tilt ?? this.tilt,
     );
   }
 
@@ -244,6 +256,7 @@ class ZoomRegion {
       'deadzoneRatio': deadzoneRatio,
       'followDurationMicros': followDuration.inMicroseconds,
       'predictiveWindowMicros': predictiveWindow.inMicroseconds,
+      'tilt': tilt.toJson(),
     };
   }
 
@@ -307,6 +320,10 @@ class ZoomRegion {
       deadzoneRatio: (json['deadzoneRatio'] as num?)?.toDouble() ?? 0.8,
       followDuration: optMicros('followDurationMicros'),
       predictiveWindow: optMicros('predictiveWindowMicros'),
+      tilt: json['tilt'] is Map
+          ? Tilt3D.fromJson(
+              (json['tilt'] as Map).cast<String, dynamic>())
+          : const Tilt3D(),
     );
   }
 
@@ -336,7 +353,8 @@ class ZoomRegion {
           followMode == other.followMode &&
           deadzoneRatio == other.deadzoneRatio &&
           followDuration == other.followDuration &&
-          predictiveWindow == other.predictiveWindow;
+          predictiveWindow == other.predictiveWindow &&
+          tilt == other.tilt;
 
   @override
   int get hashCode => Object.hash(
@@ -353,5 +371,6 @@ class ZoomRegion {
         deadzoneRatio,
         followDuration,
         predictiveWindow,
+        tilt,
       );
 }

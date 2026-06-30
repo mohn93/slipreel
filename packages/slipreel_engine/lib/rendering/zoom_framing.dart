@@ -1,6 +1,12 @@
 import 'package:flutter/painting.dart' show Offset, Rect, Size;
+import 'package:flutter/rendering.dart' show Matrix4;
 
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
+
+/// Perspective "focal length" multiplier: the camera distance used for the 3D
+/// tilt is `canvasHeight * kPerspective`. Derived from canvas height so the
+/// projection is resolution-independent (1080p preview == 4K export).
+const double kPerspective = 1.6;
 
 /// Owns the "where is the source video drawn, and what bounds must the zoomed
 /// viewport stay within" math for the zoom pipeline.
@@ -129,6 +135,29 @@ class ZoomFraming {
     final center = _canvasCenter;
     final k = 1.0 - 1.0 / z;
     return (canvasFocal - center) * k;
+  }
+
+  /// The focal's offset from the canvas center, normalized so each axis is in
+  /// `[-1, 1]` (clamped). Used to derive the auto 3D-tilt direction: a focal to
+  /// the right of center → `dx > 0`, below center → `dy > 0`.
+  Offset normalizedFocalOffset(Offset focal) {
+    final cf = toCanvas(focal);
+    final nx = ((cf.dx - canvasSize.width / 2) / (canvasSize.width / 2))
+        .clamp(-1.0, 1.0);
+    final ny = ((cf.dy - canvasSize.height / 2) / (canvasSize.height / 2))
+        .clamp(-1.0, 1.0);
+    return Offset(nx, ny);
+  }
+
+  /// The perspective + rotation matrix for a 3D tilt, in canvas-center-relative
+  /// coordinates (the space the zoom matrix already operates in). Composed by
+  /// [ZoomTransformer.getTransform] on top of the 2D scale+translate matrix.
+  /// Perspective strength scales with [canvasSize] height (see [kPerspective]).
+  Matrix4 perspectiveTilt(double axRad, double ayRad) {
+    return Matrix4.identity()
+      ..setEntry(3, 2, -1.0 / (canvasSize.height * kPerspective))
+      ..rotateX(axRad)
+      ..rotateY(ayRad);
   }
 
   /// The visible CANVAS region for a manual (magnify-in-place) zoom on [focal]

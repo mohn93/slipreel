@@ -23,7 +23,12 @@ const Color playheadTop = Color(0xFF4FC3FF);
 const Color playheadMid = Color(0xFF6F5BFF);
 const Color playheadBottom = Color(0xFF3D26AA);
 
-const Duration kGhostZoomSpan = Duration(seconds: 2);
+// Click-to-add zoom span. 2800 ms = 500 ms enter + 1800 ms hold + 500 ms exit
+// (matches the auto-detector shape; with ZoomRegion's default 500/500 ramps a
+// freshly added zoom holds for 1.8 s).
+const Duration kGhostZoomSpan = Duration(milliseconds: 2800);
+// Click-to-add camera (PiP) span — kept independent of the zoom span.
+const Duration kGhostCameraSpan = Duration(seconds: 2);
 const Duration kGhostMinSpan = Duration(milliseconds: 250);
 
 const double rulerHeight = 20;

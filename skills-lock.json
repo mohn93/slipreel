@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "competitor-analysis": {
+      "source": "browserbase/skills",
+      "sourceType": "github",
+      "skillPath": "skills/competitor-analysis/SKILL.md",
+      "computedHash": "405496abe6e3bd31a18b0291db15210d9c05236286665816a2b36b9cc2cc85ee"
+    }
+  }
+}

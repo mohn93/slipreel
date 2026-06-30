@@ -78,11 +78,10 @@ void main() {
       // from 1.0 → 1.5 — "the camera holds unless the cursor really
       // wanders" is the new out-of-the-box feel.
       expect(restored.deadzoneRatio, 0.8);
-      // Default bumped from 400 → 700 ms in the same release that
-      // softened the follow curve to easeInOutCubic — longer
-      // duration + symmetric easing keeps fast cursor flicks from
-      // reading as a camera jolt.
-      expect(restored.followDuration, const Duration(milliseconds: 700));
+      // Default catch-up spring settle time: 400 → 700 → 850 ms. Below
+      // ~750 ms the camera hugs the raw cursor path and the follow reads as
+      // rigidly linear; 850 ms smooths the corners into a curve.
+      expect(restored.followDuration, const Duration(milliseconds: 850));
       expect(restored.predictiveWindow, const Duration(milliseconds: 1500));
       expect(restored.followCursor, true);
     });

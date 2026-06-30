@@ -911,6 +911,7 @@ class FrameCompositor {
       framing: _framing,
     );
     final scale = matrix.storage[0];
+    // NOTE: Under a 3D tilt, storage[0] is cos(θy)·z rather than pure z; negligible (≈0.24% at 4°, ≈1.8% at 11°) and consistent between preview/export.
     // Measure the VISIBLE camera, not the raw controller focal. getTransform
     // clamps the focal so the zoomed viewport stays inside the video; for an
     // edge cursor the spring focal chases the raw cursor past that clamp once
@@ -1061,6 +1062,7 @@ class FrameCompositor {
       exposureMs: 150.0 * intensity,
       sampleCount: 8,
       sizeMultiplier: projectState.cursorSize,
+      cursorShadow: projectState.cursorShadow,
       style: projectState.cursorStyle,
       cursorState: state,
       // Export renders at the metadata's dpr; the painter sizes its

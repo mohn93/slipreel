@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:slipreel_engine/models/tilt3d.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:slipreel_engine/rendering/device_frame_layout.dart';
@@ -127,25 +128,14 @@ class ZoomContextInspector extends ConsumerWidget {
         (isDevice || !zoom.followCursor) && !videoSize.isEmpty;
     final ui.Image? placementFrame =
         showPlacement ? _watchPlacementFrame(ref) : null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _ZoomInspectorScaffold(
+      header: _Header(
+        icon: Icons.zoom_in,
+        title: 'Zoom $zoomNumber',
+        subtitle: _rangeLabel(zoom),
+        onClose: onClose,
+      ),
       children: [
-        _Header(
-          icon: Icons.zoom_in,
-          title: 'Zoom $zoomNumber',
-          subtitle: _rangeLabel(zoom),
-          onClose: onClose,
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: ListView(
-            // Right-side gutter — the override section can host the
-            // curve editor whose drag area must not sit under the
-            // macOS Scrollbar's hit zone.
-            padding: const EdgeInsets.only(right: 12),
-            // Let hover lean/tilt overshoot paint past the panel edge.
-            clipBehavior: Clip.none,
-            children: [
               if (showPlacement) ...[
                 const Text(
                   'Placement',
@@ -208,6 +198,83 @@ class ZoomContextInspector extends ConsumerWidget {
                 canReset: zoom.zoomLevel != 2.0,
                 subtitle: '${zoom.zoomLevel.toStringAsFixed(1)}×',
               ),
+              const InspectorSectionDivider(),
+              InspectorToggle(
+                label: '3D tilt',
+                subtitle: 'Perspective lean as the zoom plays',
+                value: zoom.tilt.is3D,
+                onChanged: (on) => onChanged(zoom.copyWith(
+                  tilt: on
+                      ? (zoom.tilt.is3D
+                          ? zoom.tilt
+                          : const Tilt3D(style: ZoomTiltStyle.subtle))
+                      : const Tilt3D(),
+                )),
+              ),
+              if (zoom.tilt.is3D) ...[
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final entry in const [
+                      (ZoomTiltStyle.subtle, 'Subtle'),
+                      (ZoomTiltStyle.dramatic, 'Dramatic'),
+                    ])
+                      InspectorChip(
+                        label: entry.$2,
+                        selected: zoom.tilt.style == entry.$1,
+                        dense: true,
+                        onTap: () => onChanged(
+                            zoom.copyWith(
+                                tilt: zoom.tilt.copyWith(style: entry.$1))),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                InspectorCollapsible(
+                  title: 'Advanced',
+                  child: Column(
+                    children: [
+                      InspectorSlider(
+                        label: 'Tilt X',
+                        value: zoom.tilt.manualAngleX ?? 0,
+                        min: -20,
+                        max: 20,
+                        onChanged: (v) => onChanged(
+                            zoom.copyWith(
+                                tilt: zoom.tilt.copyWith(manualAngleX: v))),
+                        onReset: () => onChanged(zoom.copyWith(
+                            tilt: Tilt3D(
+                                style: zoom.tilt.style,
+                                manualAngleY: zoom.tilt.manualAngleY))),
+                        canReset: zoom.tilt.manualAngleX != null,
+                        subtitle: zoom.tilt.manualAngleX == null
+                            ? 'Auto'
+                            : '${zoom.tilt.manualAngleX!.toStringAsFixed(0)}°',
+                      ),
+                      const SizedBox(height: 16),
+                      InspectorSlider(
+                        label: 'Tilt Y',
+                        value: zoom.tilt.manualAngleY ?? 0,
+                        min: -20,
+                        max: 20,
+                        onChanged: (v) => onChanged(
+                            zoom.copyWith(
+                                tilt: zoom.tilt.copyWith(manualAngleY: v))),
+                        onReset: () => onChanged(zoom.copyWith(
+                            tilt: Tilt3D(
+                                style: zoom.tilt.style,
+                                manualAngleX: zoom.tilt.manualAngleX))),
+                        canReset: zoom.tilt.manualAngleY != null,
+                        subtitle: zoom.tilt.manualAngleY == null
+                            ? 'Auto'
+                            : '${zoom.tilt.manualAngleY!.toStringAsFixed(0)}°',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const InspectorSectionDivider(),
               // Debug-only tuning knob for the manual-placement enter-pan
               // back-load. Per-zoom because the sweet spot depends on this
@@ -395,9 +462,6 @@ class ZoomContextInspector extends ConsumerWidget {
               const InspectorSectionDivider(),
               _DeleteButton(onPressed: onDelete),
               const SizedBox(height: 24),
-            ],
-          ),
-        ),
       ],
     );
   }
@@ -447,6 +511,82 @@ class ZoomContextInspector extends ConsumerWidget {
         : (effective < 1.0 ? 'pan leads' : 'pan lags');
     final src = v == null ? ' (auto)' : '';
     return 'zoom $z · back-load $n$src — $feel';
+  }
+}
+
+/// Scrollable zoom-inspector body with a solid header bar on top. The header
+/// is a normal [Column] child sitting ABOVE the scroll view, so list content
+/// can never paint over it (the previous Stack/Clip.none layout let scrolled
+/// content bleed up into the header, which read as a floating/transparent
+/// bar). A subtle divider fades in under the header once the list is scrolled
+/// away from the top, signalling there's more content above.
+class _ZoomInspectorScaffold extends StatefulWidget {
+  const _ZoomInspectorScaffold({
+    required this.header,
+    required this.children,
+  });
+
+  final Widget header;
+  final List<Widget> children;
+
+  @override
+  State<_ZoomInspectorScaffold> createState() => _ZoomInspectorScaffoldState();
+}
+
+class _ZoomInspectorScaffoldState extends State<_ZoomInspectorScaffold> {
+  final ScrollController _controller = ScrollController();
+  bool _scrolled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_handleScroll);
+  }
+
+  void _handleScroll() {
+    final scrolled = _controller.hasClients && _controller.offset > 1.0;
+    if (scrolled != _scrolled) {
+      setState(() => _scrolled = scrolled);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_handleScroll);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Header content is inset; the divider below runs edge-to-edge.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: widget.header,
+        ),
+        // Breathing room between the header and the divider.
+        const SizedBox(height: 14),
+        // Edge-to-edge divider: hidden at the top, fades in once scrolled.
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 1,
+          color: _scrolled ? kInspectorBorder : Colors.transparent,
+        ),
+        Expanded(
+          // Inner padding so list items are inset while the header bar and
+          // divider above span the full panel width. Default (hard-edge)
+          // clipping keeps list content strictly below the header.
+          child: ListView(
+            controller: _controller,
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            children: widget.children,
+          ),
+        ),
+      ],
+    );
   }
 }
 

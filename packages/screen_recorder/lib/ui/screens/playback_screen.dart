@@ -12,6 +12,7 @@ import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart' show C
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
+import 'package:slipreel_engine/models/tilt3d.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
@@ -1260,8 +1261,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 ),
                 videoDuration: _controller.value.duration,
               );
-              controller.replaceZoomRegions(detected);
+              final vs = _videoSize();
+              final paddingBefore =
+                  _projectController.current.windowFrame.padding.left;
+              controller.replaceZoomRegions(detected, videoSize: vs);
+              final paddingAfter =
+                  _projectController.current.windowFrame.padding.left;
               _setSelectedZoomIndex(null);
+              if (paddingAfter > paddingBefore) {
+                AppAlerts.info(
+                    '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+              }
               AppAlerts.success(
                 'Restored ${detected.length} zoom range${detected.length == 1 ? '' : 's'} from cursor activity',
               );
@@ -1613,6 +1623,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           // would undo that. videoBounds: null skips _constrainRect.
           videoBounds: null,
         ),
+        videoSize: _videoSize(),
       );
     }
     _zoomPreviewOverride.value = null;
@@ -1685,9 +1696,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // zooms must be manual — otherwise the focal chases nonexistent cursor
       // data and the placement rect (the only control we show) is ignored.
       followCursor: _metadata?.isDeviceCapture != true,
+      tilt: const Tilt3D(style: ZoomTiltStyle.subtle),
     );
 
-    _projectController.addZoom(zoomRegion);
+    final paddingBefore = _projectController.current.windowFrame.padding.left;
+    _projectController.addZoom(zoomRegion, videoSize: videoSize);
+    final paddingAfter = _projectController.current.windowFrame.padding.left;
+    if (paddingAfter > paddingBefore) {
+      AppAlerts.info(
+          '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+    }
     _zoomPreviewOverride.value = null;
     setState(() {
       // Auto-select the new zoom so the inspector opens on it.
@@ -2303,7 +2321,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           curveLibrary: _curveLibrary,
                           onZoomChanged: (i, next) {
                             _zoomPreviewOverride.value = null;
-                            _projectController.updateZoomAt(i, next);
+                            final vs = _videoSize();
+                            final paddingBefore = _projectController
+                                .current.windowFrame.padding.left;
+                            _projectController.updateZoomAt(i, next,
+                                videoSize: vs);
+                            final paddingAfter = _projectController
+                                .current.windowFrame.padding.left;
+                            if (paddingAfter > paddingBefore) {
+                              AppAlerts.info(
+                                  '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+                            }
                           },
                           onZoomDeleted: (index) {
                             _projectController.removeZoomAt(index);
@@ -2847,7 +2875,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 },
                 onZoomChanged: (i, next) {
                   _zoomPreviewOverride.value = null;
-                  _projectController.updateZoomAt(i, next);
+                  final vs = _videoSize();
+                  final paddingBefore =
+                      _projectController.current.windowFrame.padding.left;
+                  _projectController.updateZoomAt(i, next, videoSize: vs);
+                  final paddingAfter =
+                      _projectController.current.windowFrame.padding.left;
+                  if (paddingAfter > paddingBefore) {
+                    AppAlerts.info(
+                        '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+                  }
                 },
                 onZoomDeleted: (index) {
                   _projectController.removeZoomAt(index);

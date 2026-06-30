@@ -1,0 +1,9 @@
+[mcp_servers.flutter-qa]
+args = [
+    "run",
+    "--project",
+    "/Users/mohn93/Desktop/side_projects/screenflow_studio/packages/screen_recorder",
+    "-d",
+    "macos",
+]
+command = "agent_wires_mcp"
