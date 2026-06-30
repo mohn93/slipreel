@@ -85,20 +85,18 @@ class CenteredFollowStrategy extends FollowStrategy {
   }
 }
 
-/// Cursor-follow with a deadzone gate. The cursor pins the focal in
-/// place while inside the deadzone; crossing the boundary starts a
-/// chase that releases only when the cursor comes to rest inside the
-/// dz again.
+/// Cursor-follow with a deadzone gate, parameterized by the AIM point each
+/// subclass chooses (raw cursor for bounded; velocity-led cursor for
+/// predictive). The cursor pins the focal while the aim point is inside the
+/// deadzone; crossing the boundary starts a chase that releases only when the
+/// cursor comes to rest inside the dz again.
 ///
-/// **Engage-positional, release-velocity-aware.** Engagement is
-/// purely positional (cursor outside dz ⇒ chase) so hover jitter
-/// inside the dz never starts a chase from noise. Release requires
-/// BOTH the cursor inside the dz AND the cursor's intrinsic scene
-/// velocity below [MotionTuning.cursorAtRestPxPerSec] — without the
-/// velocity check, a continuously-moving cursor would gate-cycle as
-/// the spring's settled lag (`τ × v`) places the cursor inside the dz
-/// release area.
-class BoundedFollowStrategy extends FollowStrategy {
+/// **Engage-positional, release-velocity-aware.** Engagement is purely
+/// positional (aim outside dz ⇒ chase) so hover jitter inside the dz never
+/// starts a chase from noise. Release requires BOTH the aim inside the dz AND
+/// the cursor's intrinsic scene velocity below
+/// [MotionTuning.cursorAtRestPxPerSec].
+abstract class _DeadzoneFollowStrategy extends FollowStrategy {
   bool _inFlight = false;
 
   @override
@@ -109,6 +107,9 @@ class BoundedFollowStrategy extends FollowStrategy {
     _inFlight = false;
   }
 
+  /// The point the camera aims at this frame.
+  Offset aimPoint(ZoomRegion zoom, Offset cursor, Offset cursorVelocity);
+
   @override
   FollowResolution resolve({
     required ZoomRegion zoom,
@@ -118,10 +119,7 @@ class BoundedFollowStrategy extends FollowStrategy {
     required Size videoSize,
     required MotionTuning tuning,
   }) {
-    // Degenerate cases: no cursor, follow-off, no deadzone — behave
-    // like centered/no-follow.
-    final boundsActive =
-        zoom.followCursor &&
+    final boundsActive = zoom.followCursor &&
         cursor != null &&
         zoom.deadzoneRatio > 0 &&
         videoSize.width > 0 &&
@@ -137,38 +135,48 @@ class BoundedFollowStrategy extends FollowStrategy {
       return FollowResolution(target: cursor, isHolding: false);
     }
 
+    final aim = aimPoint(zoom, cursor, cursorVelocity);
     final z = zoom.zoomLevel;
     final dzW = (videoSize.width / z) * zoom.deadzoneRatio;
     final dzH = (videoSize.height / z) * zoom.deadzoneRatio;
     final dz = Rect.fromCenter(center: currentFocal, width: dzW, height: dzH);
 
     if (_inFlight) {
-      // Release condition: cursor inside dz AND at rest.
       final cursorAtRest =
           cursorVelocity.distance < tuning.cursorAtRestPxPerSec;
-      if (cursorAtRest && dz.contains(cursor)) {
+      if (cursorAtRest && dz.contains(aim)) {
         _inFlight = false;
         return FollowResolution(target: currentFocal, isHolding: true);
       }
-      // Still chasing.
-      return FollowResolution(target: cursor, isHolding: false);
+      return FollowResolution(target: aim, isHolding: false);
     }
 
-    // Not currently chasing. Engagement is strictly positional.
-    if (dz.contains(cursor)) {
+    if (dz.contains(aim)) {
       return FollowResolution(target: currentFocal, isHolding: true);
     }
     _inFlight = true;
-    return FollowResolution(target: cursor, isHolding: false);
+    return FollowResolution(target: aim, isHolding: false);
   }
 }
 
-/// Predictive follow: same target rule as centered (the caller passes
-/// the median-cursor in for `cursor`); no gate. Kept as a distinct
-/// type so the controller's strategy lookup is exhaustive on
-/// [FollowMode] and a future predictive-specific behavior has a
-/// natural home.
-class PredictiveFollowStrategy extends CenteredFollowStrategy {}
+/// Reactive deadzone follow: aims at the raw cursor (no look-ahead).
+class BoundedFollowStrategy extends _DeadzoneFollowStrategy {
+  @override
+  Offset aimPoint(ZoomRegion zoom, Offset cursor, Offset cursorVelocity) =>
+      cursor;
+}
+
+/// Anticipatory deadzone follow: aims at the velocity-led cursor
+/// (`cursor + velocity·leadTime`) so the camera starts panning before the
+/// cursor reaches the deadzone edge. Lead time is [ZoomRegion.predictiveWindow].
+/// At rest velocity ≈ 0 ⇒ aim ≈ cursor ⇒ no overshoot on click landings.
+class PredictiveFollowStrategy extends _DeadzoneFollowStrategy {
+  @override
+  Offset aimPoint(ZoomRegion zoom, Offset cursor, Offset cursorVelocity) {
+    final leadSec = zoom.predictiveWindow.inMicroseconds / 1e6;
+    return cursor + cursorVelocity * leadSec;
+  }
+}
 
 /// Pick the right strategy for a [FollowMode]. Called by the
 /// controller when the active zoom region changes; the result is

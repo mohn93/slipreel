@@ -23,6 +23,22 @@ ZoomRegion _bounded({
   );
 }
 
+ZoomRegion _predictive({
+  double deadzoneRatio = 0.4,
+  Duration lead = const Duration(milliseconds: 150),
+}) {
+  return ZoomRegion(
+    rect: const Rect.fromLTRB(0, 0, 0, 0),
+    startTime: Duration.zero,
+    duration: const Duration(seconds: 2),
+    zoomLevel: 2.0,
+    deadzoneRatio: deadzoneRatio,
+    followCursor: true,
+    followMode: FollowMode.predictive,
+    predictiveWindow: lead,
+  );
+}
+
 ZoomRegion _centered({bool followCursor = true}) {
   return ZoomRegion(
     rect: const Rect.fromLTRB(0, 0, 0, 0),
@@ -262,6 +278,60 @@ void main() {
             '"at rest"',
       );
       expect(s.inFlight, isFalse);
+    });
+  });
+
+  group('PredictiveFollowStrategy anticipation', () {
+    test('zero velocity behaves like bounded: inside dz holds', () {
+      final s = PredictiveFollowStrategy();
+      final focal = const Offset(960, 540);
+      // dz half-width = 1920/2 * 0.4 / 2 = 192; cursor +100 is inside.
+      final r = s.resolve(
+        zoom: _predictive(),
+        cursor: focal + const Offset(100, 0),
+        cursorVelocity: Offset.zero,
+        currentFocal: focal,
+        videoSize: _videoSize,
+        tuning: MotionTuning.defaults,
+      );
+      expect(r.isHolding, isTrue);
+      expect(s.inFlight, isFalse);
+    });
+
+    test('velocity lead engages the chase earlier than the raw cursor would',
+        () {
+      final s = PredictiveFollowStrategy();
+      final focal = const Offset(960, 540);
+      // Cursor still inside dz (+150 < 192 half-width) but moving fast right.
+      // Lead = 0.15s * 500px/s = +75 => aim at +225, outside the dz.
+      final r = s.resolve(
+        zoom: _predictive(),
+        cursor: focal + const Offset(150, 0),
+        cursorVelocity: const Offset(500, 0),
+        currentFocal: focal,
+        videoSize: _videoSize,
+        tuning: MotionTuning.defaults,
+      );
+      expect(r.isHolding, isFalse,
+          reason: 'anticipated position is past the deadzone edge');
+      expect(s.inFlight, isTrue);
+      expect(r.target.dx, closeTo(focal.dx + 225, 0.5),
+          reason: 'target is the velocity-led cursor');
+    });
+
+    test('bounded with the same cursor/velocity still holds (no lead)', () {
+      final s = BoundedFollowStrategy();
+      final focal = const Offset(960, 540);
+      final r = s.resolve(
+        zoom: _bounded(),
+        cursor: focal + const Offset(150, 0),
+        cursorVelocity: const Offset(500, 0),
+        currentFocal: focal,
+        videoSize: _videoSize,
+        tuning: MotionTuning.defaults,
+      );
+      expect(r.isHolding, isTrue,
+          reason: 'bounded aims at the raw cursor (+150, inside dz)');
     });
   });
 }
