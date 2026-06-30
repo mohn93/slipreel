@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/painting.dart' show Offset, Rect, Size;
 import 'package:flutter/rendering.dart' show Matrix4;
 
@@ -114,6 +116,35 @@ class ZoomFraming {
     final clamped = ZoomTransformer.clampFocalToBoundsRadial(
         _toCanvas(focal), canvasSize, z);
     return _fromCanvas(clamped);
+  }
+
+  /// Pulls [focal] the minimum amount so the live [cursor] stays at least
+  /// [edgeMarginFraction] of the canvas short side inside the zoomed viewport
+  /// (size `canvasSize / z`), then re-imposes [clampFocal] so the viewport
+  /// never leaves the canvas. Near a true canvas edge the reachable clamp
+  /// wins and the cursor may approach the edge — graceful degradation.
+  ///
+  /// Pure function of (focal, cursor, z, margin) — identical for identity and
+  /// device framing because the math runs in canvas space. Used by
+  /// [ZoomFocalController] as a per-frame safety after the spring step.
+  Offset clampFocalKeepCursorInView(
+    Offset focal,
+    Offset cursor,
+    double z,
+    double edgeMarginFraction,
+  ) {
+    if (z <= 1.0) return clampFocal(focal, z);
+    final cf = toCanvas(focal);
+    final cc = toCanvas(cursor);
+    final halfW = canvasSize.width / (2 * z);
+    final halfH = canvasSize.height / (2 * z);
+    final marginPx = edgeMarginFraction.clamp(0.0, 0.49) *
+        math.min(canvasSize.width, canvasSize.height);
+    final allowedX = math.max(0.0, halfW - marginPx);
+    final allowedY = math.max(0.0, halfH - marginPx);
+    final nx = cf.dx.clamp(cc.dx - allowedX, cc.dx + allowedX);
+    final ny = cf.dy.clamp(cc.dy - allowedY, cc.dy + allowedY);
+    return clampFocal(fromCanvas(Offset(nx, ny)), z);
   }
 
   /// The `pCenterRel` the zoom matrix translates by, in CANVAS pixels:
