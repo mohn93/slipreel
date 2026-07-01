@@ -497,7 +497,6 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
     }
 
     final zooms = _demoZooms();
-    final activeZoomForCursor = _activeZoomAt(zooms, position);
     final hasCursorData =
         (_metadata?.isPureSource ?? true) && _cursorRecording.count > 0;
     final motion = hasCursorData
@@ -511,14 +510,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
           )
         : null;
 
-    final cursorForFocal =
-        activeZoomForCursor?.followMode == FollowMode.predictive
-        ? medianCursorOver(
-            recording: _cursorRecording,
-            t: position,
-            window: activeZoomForCursor!.predictiveWindow,
-          )
-        : motion?.screenPos;
+    final cursorForFocal = motion?.screenPos;
 
     final focalUpdate = _sceneZoomFocalController.update(
       position: position,
@@ -1000,13 +992,6 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
         videoBounds: Size(w, h),
       ),
     ];
-  }
-
-  ZoomRegion? _activeZoomAt(List<ZoomRegion> zooms, Duration t) {
-    for (final zoom in zooms) {
-      if (zoom.isActive(t)) return zoom;
-    }
-    return null;
   }
 
   Widget _buildTransport() {

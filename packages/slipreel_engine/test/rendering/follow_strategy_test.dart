@@ -23,6 +23,22 @@ ZoomRegion _bounded({
   );
 }
 
+ZoomRegion _predictive({
+  double deadzoneRatio = 0.4,
+  Duration lead = const Duration(milliseconds: 150),
+}) {
+  return ZoomRegion(
+    rect: const Rect.fromLTRB(0, 0, 0, 0),
+    startTime: Duration.zero,
+    duration: const Duration(seconds: 2),
+    zoomLevel: 2.0,
+    deadzoneRatio: deadzoneRatio,
+    followCursor: true,
+    followMode: FollowMode.predictive,
+    predictiveWindow: lead,
+  );
+}
+
 ZoomRegion _centered({bool followCursor = true}) {
   return ZoomRegion(
     rect: const Rect.fromLTRB(0, 0, 0, 0),
@@ -213,6 +229,37 @@ void main() {
       expect(s.inFlight, isFalse);
     });
 
+    test('release hysteresis: an at-rest cursor in the OUTER ring (inside the '
+        'deadzone but outside the inner re-center zone) keeps chasing — it '
+        'does NOT release until re-centered', () {
+      final s = BoundedFollowStrategy();
+      final focal = const Offset(960, 540);
+      // Engage by leaving the deadzone (half-width 192).
+      s.resolve(
+        zoom: _bounded(),
+        cursor: focal + const Offset(400, 0),
+        cursorVelocity: Offset.zero,
+        currentFocal: focal,
+        videoSize: _videoSize,
+        tuning: MotionTuning.defaults,
+      );
+      // Cursor at rest at +150: inside the outer deadzone (192) but OUTSIDE
+      // the inner release zone (0.5 * 192 = 96). The old release-at-the-edge
+      // gate would have held here; the hysteretic gate keeps chasing so the
+      // pan decisively re-centers instead of creeping with small movements.
+      final r = s.resolve(
+        zoom: _bounded(),
+        cursor: focal + const Offset(150, 0),
+        cursorVelocity: const Offset(20, 0),
+        currentFocal: focal,
+        videoSize: _videoSize,
+        tuning: MotionTuning.defaults,
+      );
+      expect(r.isHolding, isFalse,
+          reason: 'aim is still outside the inner re-center zone');
+      expect(s.inFlight, isTrue);
+    });
+
     test('reset() clears the gate state', () {
       final s = BoundedFollowStrategy();
       final focal = const Offset(960, 540);
@@ -262,6 +309,82 @@ void main() {
             '"at rest"',
       );
       expect(s.inFlight, isFalse);
+    });
+  });
+
+  group('PredictiveFollowStrategy anticipation', () {
+    test('zero velocity behaves like bounded: inside dz holds', () {
+      final s = PredictiveFollowStrategy();
+      final focal = const Offset(960, 540);
+      // dz half-width = 1920/2 * 0.4 / 2 = 192; cursor +100 is inside.
+      final r = s.resolve(
+        zoom: _predictive(),
+        cursor: focal + const Offset(100, 0),
+        cursorVelocity: Offset.zero,
+        currentFocal: focal,
+        videoSize: _videoSize,
+        tuning: MotionTuning.defaults,
+      );
+      expect(r.isHolding, isTrue);
+      expect(s.inFlight, isFalse);
+    });
+
+    test('fast velocity lead engages the chase earlier than the raw cursor '
+        'would', () {
+      final s = PredictiveFollowStrategy();
+      final focal = const Offset(960, 540);
+      // Cursor still inside dz (+150 < 192 half-width) but moving fast right.
+      // At 1000 px/s the lead is fully faded in (band 200..900 px/s), so
+      // lead = 0.15s * 1000 = +150 => aim at +300, well outside the dz.
+      final r = s.resolve(
+        zoom: _predictive(),
+        cursor: focal + const Offset(150, 0),
+        cursorVelocity: const Offset(1000, 0),
+        currentFocal: focal,
+        videoSize: _videoSize,
+        tuning: MotionTuning.defaults,
+      );
+      expect(r.isHolding, isFalse,
+          reason: 'anticipated position is past the deadzone edge');
+      expect(s.inFlight, isTrue);
+      expect(r.target.dx, closeTo(focal.dx + 300, 0.5),
+          reason: 'target is the fully-led cursor at high speed');
+    });
+
+    test('lead fades out at low speed: a slow cursor does NOT get enough lead '
+        'to engage (no jitter amplification)', () {
+      final s = PredictiveFollowStrategy();
+      final focal = const Offset(960, 540);
+      // Cursor +150 (inside dz half 192). At 300 px/s the lead is faded to
+      // near zero (band 200..900 px/s), so aim stays inside the dz and holds.
+      // The UN-faded lead (0.15s*300 = +45 => aim +195) would have engaged —
+      // this fade is what stops slow/jittery motion from twitching the camera.
+      final r = s.resolve(
+        zoom: _predictive(),
+        cursor: focal + const Offset(150, 0),
+        cursorVelocity: const Offset(300, 0),
+        currentFocal: focal,
+        videoSize: _videoSize,
+        tuning: MotionTuning.defaults,
+      );
+      expect(r.isHolding, isTrue,
+          reason: 'faded lead keeps the slow cursor inside the deadzone');
+      expect(s.inFlight, isFalse);
+    });
+
+    test('bounded with the same cursor/velocity still holds (no lead)', () {
+      final s = BoundedFollowStrategy();
+      final focal = const Offset(960, 540);
+      final r = s.resolve(
+        zoom: _bounded(),
+        cursor: focal + const Offset(150, 0),
+        cursorVelocity: const Offset(500, 0),
+        currentFocal: focal,
+        videoSize: _videoSize,
+        tuning: MotionTuning.defaults,
+      );
+      expect(r.isHolding, isTrue,
+          reason: 'bounded aims at the raw cursor (+150, inside dz)');
     });
   });
 }

@@ -173,21 +173,12 @@ class ScenePassBuilder {
           )
         : null;
 
-    // Predictive follow targets the dwell location, not the
-    // instantaneous cursor — its whole purpose is to ignore brief
-    // excursions and frame whatever the user is looking at. Other
-    // modes track the spring sprite so the camera and the visible
-    // cursor never disagree.
     final activeZoom =
         activeRegionOverride ?? _activeZoomAt(position, zoomRegions);
-    final Offset? cursorForFocal =
-        activeZoom?.followMode == FollowMode.predictive
-        ? medianCursorOver(
-            recording: cursorRecording,
-            t: position,
-            window: activeZoom!.predictiveWindow,
-          )
-        : motionSample?.screenPos;
+    // Every follow mode (including predictive) tracks the spring-smoothed
+    // sprite cursor so the camera and the visible cursor never disagree.
+    // Predictive's look-ahead is applied inside PredictiveFollowStrategy.
+    final Offset? cursorForFocal = motionSample?.screenPos;
 
     final rawVelocity = motionSample?.velocityPxPerSec ?? Offset.zero;
 

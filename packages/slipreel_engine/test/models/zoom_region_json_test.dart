@@ -22,7 +22,7 @@ void main() {
         followMode: FollowMode.predictive,
         deadzoneRatio: 0.42,
         followDuration: const Duration(milliseconds: 600),
-        predictiveWindow: const Duration(milliseconds: 2200),
+        predictiveWindow: const Duration(milliseconds: 200),
       );
 
       final restored = ZoomRegion.fromJson(original.toJson());
@@ -82,7 +82,7 @@ void main() {
       // ~750 ms the camera hugs the raw cursor path and the follow reads as
       // rigidly linear; 850 ms smooths the corners into a curve.
       expect(restored.followDuration, const Duration(milliseconds: 850));
-      expect(restored.predictiveWindow, const Duration(milliseconds: 1500));
+      expect(restored.predictiveWindow, const Duration(milliseconds: 150));
       expect(restored.followCursor, true);
     });
 

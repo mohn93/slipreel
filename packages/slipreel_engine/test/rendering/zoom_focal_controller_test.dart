@@ -3,6 +3,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
@@ -221,12 +222,12 @@ void main() {
       expect(endOfA.focal.dy, lessThan(200));
 
       // First frame in zoomB: the spring continues from wherever it was in A
-      // — it is NOT instantly snapped to zoomB's cursor (950, 850). It must
+      // — it is NOT instantly snapped to zoomB's cursor (300, 200). It must
       // stay essentially where endOfA left it on this first frame.
       final crossover = ctrl.update(
         position: const Duration(milliseconds: 1016),
         zoomRegions: [zoomA, zoomB],
-        cursor: const Offset(950, 850),
+        cursor: const Offset(300, 200),
         videoSize: _videoSize,
       );
       expect(crossover, isNotNull);
@@ -248,12 +249,12 @@ void main() {
         zoomB,
         from: const Duration(milliseconds: 1016),
         to: const Duration(milliseconds: 1980),
-        cursor: const Offset(950, 850),
+        cursor: const Offset(300, 200),
       );
       expect(
         settled!.focal.dx,
-        greaterThan(700),
-        reason: 'spring should have advanced well toward zoomB cursor',
+        greaterThan(200),
+        reason: 'spring should have advanced well toward zoomB cursor (300,200)',
       );
     });
 
@@ -2085,5 +2086,69 @@ void main() {
     // actually in motion (the old greaterThanOrEqualTo(centre.dx - 0.5) was
     // vacuous since the pan goes center→right, i.e. dx only increases).
     expect(mid.focal.dx, greaterThan(centre.dx + 1.0));
+  });
+
+  group('keep-in-view safety', () {
+    // Mirror of ZoomFraming's per-axis viewport-relative allowed distance.
+    double allowedX(double z) =>
+        _videoSize.width /
+        z *
+        (0.5 - MotionTuning.defaults.keepInViewEdgeMargin);
+
+    test('a far (reachable) cursor is kept within the viewport safe area', () {
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 4),
+        zoomLevel: 2.0,
+        followMode: FollowMode.centered,
+        followDuration: const Duration(milliseconds: 850),
+      );
+      ctrl.update(
+        position: const Duration(milliseconds: 1000),
+        zoomRegions: [zoom],
+        cursor: const Offset(960, 540),
+        videoSize: _videoSize,
+      );
+      final out = ctrl.update(
+        position: const Duration(milliseconds: 1016),
+        zoomRegions: [zoom],
+        cursor: const Offset(1700, 540),
+        videoSize: _videoSize,
+      );
+      expect(out, isNotNull);
+      expect(
+        (1700 - out!.focal.dx).abs(),
+        lessThanOrEqualTo(allowedX(2.0) + 0.5),
+        reason: 'keep-in-view pulls the lagging focal so the cursor stays in '
+            'the viewport safe area',
+      );
+    });
+
+    test('a cursor jammed against the canvas edge pins the focal to the '
+        'reachable bound', () {
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 4),
+        zoomLevel: 2.0,
+        followMode: FollowMode.centered,
+        followDuration: const Duration(milliseconds: 850),
+      );
+      ctrl.update(
+        position: const Duration(milliseconds: 1000),
+        zoomRegions: [zoom],
+        cursor: const Offset(960, 540),
+        videoSize: _videoSize,
+      );
+      final out = ctrl.update(
+        position: const Duration(milliseconds: 1016),
+        zoomRegions: [zoom],
+        cursor: const Offset(1915, 540),
+        videoSize: _videoSize,
+      );
+      // Reachable focal max at z=2 is 1440; keep-in-view cannot exceed it.
+      expect(out!.focal.dx, lessThanOrEqualTo(1440 + 0.5));
+    });
   });
 }

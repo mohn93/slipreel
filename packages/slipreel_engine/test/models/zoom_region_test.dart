@@ -1,9 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
 
+ZoomRegion _z({Duration? predictiveWindow}) => ZoomRegion(
+      rect: const Rect.fromLTRB(0, 0, 0, 0),
+      startTime: Duration.zero,
+      duration: const Duration(seconds: 2),
+      zoomLevel: 2.0,
+      predictiveWindow: predictiveWindow,
+    );
+
 void main() {
+  group('predictiveWindow lead time clamp', () {
+    test('predictiveWindow (lead time) defaults to 150ms', () {
+      expect(_z().predictiveWindow, const Duration(milliseconds: 150));
+    });
+
+    test('predictiveWindow clamps above 250ms down to 250ms', () {
+      expect(
+        _z(predictiveWindow: const Duration(milliseconds: 1500)).predictiveWindow,
+        const Duration(milliseconds: 250),
+      );
+    });
+
+    test('predictiveWindow clamps below 80ms up to 80ms', () {
+      expect(
+        _z(predictiveWindow: const Duration(milliseconds: 10)).predictiveWindow,
+        const Duration(milliseconds: 80),
+      );
+    });
+
+    test('predictiveWindow in range is preserved', () {
+      expect(
+        _z(predictiveWindow: const Duration(milliseconds: 150)).predictiveWindow,
+        const Duration(milliseconds: 150),
+      );
+    });
+  });
+
+
   group('ZoomRegion', () {
     test('should create zoom region with valid rect and timing', () {
       final region = ZoomRegion(

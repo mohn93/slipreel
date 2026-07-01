@@ -869,12 +869,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
             final motion = scenePass.motion;
             final focalUpdate = scenePass.focalUpdate;
             // The rendered zoom focal must be a deterministic function of the
-            // playhead. The live spring (in `scenePass`) integrates frame-to-
-            // frame and is correct during forward playback, but when the user
-            // scrubs — especially backward — its retained state reflects the
-            // path taken, not time `pos`, so the camera centres on the wrong
-            // spot. In scrub/paused states replay the deterministic focal track
-            // instead (built with the same cursorDelay so it matches playback).
+            // playhead. The live spring (in `scenePass`) is STATEFUL (the
+            // deadzone gate carries an `_inFlight` flag), so its focal depends
+            // on the path the playhead took — a scrub resets the gate, so play
+            // after a scrub diverges from play-from-start and from export. For
+            // every follow-cursor state we render the deterministic focal track
+            // instead (built with the same cursorDelay so play == scrub ==
+            // export). See [shouldUseDeterministicFocal].
             Offset? effectiveFocal = focalUpdate?.focal;
             if (focalUpdate != null &&
                 shouldUseDeterministicFocal(

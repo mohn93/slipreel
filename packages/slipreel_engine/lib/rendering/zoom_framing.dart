@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/painting.dart' show Offset, Rect, Size;
 import 'package:flutter/rendering.dart' show Matrix4;
 
@@ -114,6 +116,43 @@ class ZoomFraming {
     final clamped = ZoomTransformer.clampFocalToBoundsRadial(
         _toCanvas(focal), canvasSize, z);
     return _fromCanvas(clamped);
+  }
+
+  /// Pulls [focal] the minimum amount so the live [cursor] stays at least
+  /// [edgeMarginFraction] of the VIEWPORT (`canvasDim / z`, per axis) inside the
+  /// zoomed viewport, then re-imposes [clampFocal] on the pulled axis so the
+  /// viewport never leaves the canvas (near a true edge the reachable clamp
+  /// wins — graceful degradation). When the cursor is already inside the safe
+  /// area on an axis, that axis is returned VERBATIM (the controller's focal is
+  /// intentionally unclamped; the transformer clamps at paint). At `z <= 1`
+  /// there is no viewport crop, so it delegates to [clampFocal].
+  ///
+  /// Pure function (focal, cursor, z, margin) — identical for identity and
+  /// device framing because the math runs in canvas space. The margin is
+  /// viewport-relative so the safety is zoom-invariant and stays outside the
+  /// deadzone.
+  Offset clampFocalKeepCursorInView(
+    Offset focal,
+    Offset cursor,
+    double z,
+    double edgeMarginFraction,
+  ) {
+    if (z <= 1.0) return clampFocal(focal, z);
+    final cf = toCanvas(focal);
+    final cc = toCanvas(cursor);
+    final m = edgeMarginFraction.clamp(0.0, 0.49);
+    final allowedX = math.max(0.0, (canvasSize.width / z) * (0.5 - m));
+    final allowedY = math.max(0.0, (canvasSize.height / z) * (0.5 - m));
+    final nx = cf.dx.clamp(cc.dx - allowedX, cc.dx + allowedX);
+    final ny = cf.dy.clamp(cc.dy - allowedY, cc.dy + allowedY);
+    final pulledX = nx != cf.dx;
+    final pulledY = ny != cf.dy;
+    if (!pulledX && !pulledY) return focal;
+    final clamped = clampFocal(fromCanvas(Offset(nx, ny)), z);
+    return Offset(
+      pulledX ? clamped.dx : focal.dx,
+      pulledY ? clamped.dy : focal.dy,
+    );
   }
 
   /// The `pCenterRel` the zoom matrix translates by, in CANVAS pixels:

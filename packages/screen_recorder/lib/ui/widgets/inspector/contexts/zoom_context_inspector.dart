@@ -324,7 +324,8 @@ class ZoomContextInspector extends ConsumerWidget {
                   onChanged: (m) =>
                       onChanged(zoom.copyWith(followMode: m)),
                 ),
-                if (zoom.followMode == FollowMode.bounded) ...[
+                if (zoom.followMode == FollowMode.bounded ||
+                    zoom.followMode == FollowMode.predictive) ...[
                   const SizedBox(height: 16),
                   InspectorSlider(
                     label: 'Deadzone size',
@@ -349,23 +350,23 @@ class ZoomContextInspector extends ConsumerWidget {
                 if (zoom.followMode == FollowMode.predictive) ...[
                   const SizedBox(height: 16),
                   InspectorSlider(
-                    label: 'Lookahead window',
+                    label: 'Lead time',
                     subtitle:
-                        '${zoom.predictiveWindow.inMilliseconds} ms of '
-                        'cursor history. Camera centers on the median '
-                        'dwell location over this window.',
+                        '${zoom.predictiveWindow.inMilliseconds} ms — '
+                        'how far ahead the camera aims along the cursor\'s '
+                        'velocity (anticipatory follow).',
                     value:
                         zoom.predictiveWindow.inMilliseconds.toDouble(),
-                    min: 300,
-                    max: 4000,
+                    min: 80,
+                    max: 250,
                     onChanged: (v) => onChanged(zoom.copyWith(
                         predictiveWindow:
                             Duration(milliseconds: v.toInt()))),
                     onReset: () => onChanged(zoom.copyWith(
                         predictiveWindow:
-                            const Duration(milliseconds: 1500))),
+                            const Duration(milliseconds: 150))),
                     canReset: zoom.predictiveWindow !=
-                        const Duration(milliseconds: 1500),
+                        const Duration(milliseconds: 150),
                   ),
                 ],
                 const SizedBox(height: 24),
