@@ -87,15 +87,26 @@ class CenteredFollowStrategy extends FollowStrategy {
 /// Cursor-follow with a deadzone gate, parameterized by the AIM point each
 /// subclass chooses (raw cursor for bounded; velocity-led cursor for
 /// predictive). The cursor pins the focal while the aim point is inside the
-/// deadzone; crossing the boundary starts a chase that releases only when the
-/// cursor comes to rest inside the dz again.
+/// deadzone; crossing the boundary starts a chase that re-centers the cursor
+/// and then holds.
 ///
-/// **Engage-positional, release-velocity-aware.** Engagement is purely
-/// positional (aim outside dz ⇒ chase) so hover jitter inside the dz never
-/// starts a chase from noise. Release requires BOTH the aim inside the dz AND
-/// the cursor's intrinsic scene velocity below
-/// [MotionTuning.cursorAtRestPxPerSec].
+/// **Engage-positional, release-hysteretic.** Engagement is purely positional
+/// (aim outside the deadzone ⇒ chase) so hover jitter inside the dz never
+/// starts a chase from noise. Release waits until the chase has re-centered the
+/// aim into an INNER zone ([_releaseInnerRatio] of the deadzone) AND the
+/// cursor's scene velocity is below [MotionTuning.cursorAtRestPxPerSec]. The
+/// inner/outer hysteresis means a breach pans DECISIVELY to re-center the
+/// cursor instead of releasing the instant it re-touches the outer edge —
+/// without it, a cursor parked at the deadzone boundary made the camera creep
+/// with every small movement.
 abstract class _DeadzoneFollowStrategy extends FollowStrategy {
+  /// Inner "release" zone as a fraction of the deadzone. Once engaged, the
+  /// chase continues until the aim is within `deadzone * _releaseInnerRatio`
+  /// of the focal (re-centered), then the gate may hold. Smaller = the camera
+  /// re-centers the cursor more before holding (bigger free-movement buffer
+  /// afterward); 1.0 reproduces the old release-at-the-edge behavior.
+  static const double _releaseInnerRatio = 0.5;
+
   bool _inFlight = false;
 
   @override
@@ -143,7 +154,16 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
     if (_inFlight) {
       final cursorAtRest =
           cursorVelocity.distance < tuning.cursorAtRestPxPerSec;
-      if (cursorAtRest && dz.contains(aim)) {
+      // Hold only once the chase has re-centered the aim into the inner zone
+      // (not merely back inside the outer deadzone edge). This decisive
+      // re-center is what stops small movements near the boundary from
+      // creeping the camera.
+      final innerDz = Rect.fromCenter(
+        center: currentFocal,
+        width: dzW * _releaseInnerRatio,
+        height: dzH * _releaseInnerRatio,
+      );
+      if (cursorAtRest && innerDz.contains(aim)) {
         _inFlight = false;
         return FollowResolution(target: currentFocal, isHolding: true);
       }
@@ -168,11 +188,24 @@ class BoundedFollowStrategy extends _DeadzoneFollowStrategy {
 /// Anticipatory deadzone follow: aims at the velocity-led cursor
 /// (`cursor + velocity·leadTime`) so the camera starts panning before the
 /// cursor reaches the deadzone edge. Lead time is [ZoomRegion.predictiveWindow].
-/// At rest velocity ≈ 0 ⇒ aim ≈ cursor ⇒ no overshoot on click landings.
+///
+/// The lead FADES IN with cursor speed (smoothstep between
+/// [_leadFadeStartPxPerSec] and [_leadFadeFullPxPerSec]) — mirroring the cursor
+/// sprite's feedforward fade. Slow / jittery motion gets ~no lead, so small
+/// movements don't get amplified past the deadzone into camera jitter; fast,
+/// deliberate motion gets the full anticipation. At rest the lead is zero ⇒
+/// aim == cursor ⇒ no overshoot on click landings.
 class PredictiveFollowStrategy extends _DeadzoneFollowStrategy {
+  static const double _leadFadeStartPxPerSec = 200.0;
+  static const double _leadFadeFullPxPerSec = 900.0;
+
   @override
   Offset aimPoint(ZoomRegion zoom, Offset cursor, Offset cursorVelocity) {
-    final leadSec = zoom.predictiveWindow.inMicroseconds / 1e6;
+    final speed = cursorVelocity.distance;
+    const range = _leadFadeFullPxPerSec - _leadFadeStartPxPerSec;
+    final t = ((speed - _leadFadeStartPxPerSec) / range).clamp(0.0, 1.0);
+    final fade = t * t * (3.0 - 2.0 * t); // smoothstep
+    final leadSec = (zoom.predictiveWindow.inMicroseconds / 1e6) * fade;
     return cursor + cursorVelocity * leadSec;
   }
 }
