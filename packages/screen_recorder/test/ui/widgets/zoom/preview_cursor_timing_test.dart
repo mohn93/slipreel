@@ -145,7 +145,8 @@ void main() {
       );
     });
 
-    test('forward playback → false (live spring is correct)', () {
+    test('forward playback → true (stateful gate makes the live spring '
+        'path-dependent; track keeps play == scrub == export)', () {
       expect(
         shouldUseDeterministicFocal(
           isHoverScrubbing: false,
@@ -153,7 +154,7 @@ void main() {
           hasOverride: false,
           followCursor: true,
         ),
-        isFalse,
+        isTrue,
       );
     });
 

@@ -68,11 +68,14 @@ const Duration kMaxPreviewLag = Duration(milliseconds: 250);
 /// [DeterministicFocalTrack] (a pure function of the playhead) instead of the
 /// live, path-dependent focal spring.
 ///
-/// The live spring integrates frame-to-frame in increasing-time order, so it is
-/// correct during forward playback but lands on the wrong spot when the user
-/// scrubs — especially backward — because its retained state reflects the path
-/// taken, not the destination time. In those states we replay the deterministic
-/// track instead.
+/// The follow strategies are STATEFUL (the bounded/predictive deadzone gate
+/// carries an `_inFlight` hysteresis flag), so the live spring's focal at a
+/// given time depends on the path the playhead took to get there — a scrub
+/// resets the gate, so "scrub to X then play" diverges from "play from the
+/// start", and from export (which renders the deterministic track). Rendering
+/// the deterministic track in every state makes preview-play == scrub ==
+/// export by construction, and removes the focal-source snap at a play/pause
+/// toggle.
 ///
 /// Returns false when a placement override is active (that intentionally drives
 /// the focal to a previewed rect) or for non-follow-cursor regions (whose focal
@@ -85,5 +88,5 @@ bool shouldUseDeterministicFocal({
 }) {
   if (hasOverride) return false;
   if (!followCursor) return false;
-  return isHoverScrubbing || !isPlaying;
+  return true;
 }
