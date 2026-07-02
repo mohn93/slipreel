@@ -127,3 +127,68 @@ existing preview==export story is untouched).
 - Existing suites re-run; expectations pinned to old constants updated.
 - **Live feel session before merge** (release build): user A/Bs all presets on
   a real recording; constants are taste calls and may be re-tuned in place.
+
+---
+
+## Addendum (2026-07-02, post live-feel session): geometric path smoothing for Smooth
+
+**Feedback:** the re-tuned Smooth still "wiggles with hand jitter" — the spring
+delays the raw path but reproduces its geometry (every micro-movement
+survives, just later). The user wants the *path itself* idealized.
+
+### Mechanism
+
+New pure sampler in `cursor_geometry.dart`:
+
+```dart
+CursorPosition? smoothedCursorAt(
+  CursorRecording recording,
+  Duration t,
+  CursorPostProcess cfg,
+  Duration sigma,
+)
+```
+
+Gaussian-weighted average of `cursorAtFiltered` over a symmetric time window:
+9 taps at `t + k·(σ/2)` for `k = −4..4`, weights `exp(−k²/8)` normalized.
+Only **x/y** are smoothed; `isClicked`/`state`/`timestampMicros` come from the
+center tap (raw click semantics preserved). Null taps are dropped and the
+weights renormalized; a null center returns null. `sigma == 0` returns the
+center tap unchanged (identity bypass). Properties:
+
+- **Pure function of position** → deterministic; scrub == play == export (the
+  focal track replays the same code).
+- **Symmetric window** → smooths geometry without adding phase lag (looks
+  ahead as much as behind) — unlike a softer spring.
+- **At-rest exact** → averaging a stationary segment returns the point;
+  click landings stay truthful.
+
+### Wiring
+
+`CursorAnimationStyle.pathSmoothingSigma`: Smooth **80ms**, Medium/Rapid/None
+`Duration.zero` (byte-identical bypass — Medium stays the reference). Exposed
+via `CursorAnimationConfig.pathSmoothingSigma`. In
+`CursorMotionController.update`, the chase target and the scene-velocity
+estimate sample `smoothedCursorAt` when sigma > 0, else `cursorAtFiltered`
+exactly as today. Snap mode (None) untouched.
+
+### Smooth preset recipe (amended)
+
+Geometry now carries the character, so the spring firms up from the
+heavy-trail 90/ζ0.8 to **`MotionSpring(stiffness: 180, damping: 0.85)`**
+(τ·(1−ff) ≈ 95ms — keeps the ≥40ms visible-lag gap to Medium; overshoot
+≈0.6%, a hint of float). Feedforward stays 0.25. All feel constants remain
+live-tunable.
+
+### Accepted trade-off
+
+A click during fast motion renders the sprite slightly inside a cut corner
+(same divergence class as spring lag; the velocity fade settles the sprite on
+the true spot for deliberate clicks).
+
+### Testing (addendum)
+
+Smoother: zigzag jitter attenuation (≥60% amplitude reduction), corner
+rounding bounded, at-rest identity, σ=0 identity, query-order determinism,
+null-edge handling. Controller: Smooth path variance on a jittery synthetic
+recording drops vs Medium; sigma=0 presets bypass to `cursorAtFiltered`.
