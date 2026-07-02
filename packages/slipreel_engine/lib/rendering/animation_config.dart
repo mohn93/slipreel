@@ -53,6 +53,7 @@ class CursorAnimationConfig {
   Duration get window => _preset!.fir.window;
   Curve get firCurve => _preset!.fir.curve;
   MotionSpring get motionSpring => _preset!.motionSpring;
+  double get feedforwardStrength => _preset!.feedforwardStrength;
 
   Map<String, dynamic> toJson() => {'preset': _preset!.name};
 

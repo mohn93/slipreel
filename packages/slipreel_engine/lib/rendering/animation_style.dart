@@ -70,9 +70,13 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
       };
 }
 
-/// How aggressively the cursor-follow zoom focal point chases the
-/// recorded cursor. Mapped to [ZoomFocalController.update]'s
-/// `smoothing` factor — values closer to 1.0 mean less lag.
+/// How the rendered cursor chases the recorded path. Each preset is a
+/// spring chase with its own character: stiffness (how hard it pulls),
+/// damping ratio (Smooth is slightly underdamped for a floaty, organic
+/// feel), and velocity-feedforward strength (how much of the spring's
+/// phase lag is cancelled while the cursor is moving — see
+/// [CursorMotionController]). The camera focal chases the rendered
+/// sprite, so the preset shapes the camera feel too.
 enum CursorAnimationStyle {
   smooth,
   medium,
@@ -88,27 +92,20 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
         CursorAnimationStyle.none => 'None',
       };
 
-  /// Lerp factor passed to [ZoomFocalController.update]. 1.0 = no
-  /// smoothing (focal snaps to the cursor every frame).
-  double get smoothing => switch (this) {
-        CursorAnimationStyle.smooth => 0.09,
-        CursorAnimationStyle.medium => 0.18,
-        CursorAnimationStyle.rapid => 0.40,
-        CursorAnimationStyle.none => 1.0,
-      };
-
-  /// Curve used for the picker's hover demo.
+  /// Curve used for the picker's hover demo. Smooth uses an overshooting
+  /// curve so the demo shows the underdamped float; Rapid reads as an
+  /// immediate lock.
   Curve get previewCurve => switch (this) {
-        CursorAnimationStyle.smooth => Curves.easeOutSine,
+        CursorAnimationStyle.smooth => Curves.easeOutBack,
         CursorAnimationStyle.medium => Curves.easeOutCubic,
         CursorAnimationStyle.rapid => Curves.easeOutQuint,
         CursorAnimationStyle.none => Curves.linear,
       };
 
   Duration get previewDuration => switch (this) {
-        CursorAnimationStyle.smooth => const Duration(milliseconds: 1400),
+        CursorAnimationStyle.smooth => const Duration(milliseconds: 1600),
         CursorAnimationStyle.medium => const Duration(milliseconds: 800),
-        CursorAnimationStyle.rapid => const Duration(milliseconds: 350),
+        CursorAnimationStyle.rapid => const Duration(milliseconds: 250),
         CursorAnimationStyle.none => const Duration(milliseconds: 80),
       };
 
@@ -126,21 +123,35 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
           (window: Duration.zero, curve: Curves.linear),
       };
 
-  /// Spring parameters that drive the cursor's motion chase. Stiffness
-  /// is tuned so each preset's perceived "settle time" is similar to
-  /// the legacy FIR's: Smooth chases lazily, Rapid is nearly instant,
-  /// None snaps. All presets default to critical damping (ratio = 1.0)
-  /// — no overshoot. Dragging the Springs section sliders in the
-  /// cursor tab switches the config to a custom spring that overrides
-  /// these.
+  /// Spring parameters that drive the cursor's motion chase. Each
+  /// preset has a distinct character, not just a different settle
+  /// time: Smooth is soft AND slightly underdamped (floaty arcs, a
+  /// whisper of overshoot at stops); Medium is the balanced critically-
+  /// damped reference; Rapid is a stiff, near-locked track; None
+  /// snaps to the raw recorded grid. Paired with [feedforwardStrength]
+  /// so the soft presets keep more of their natural trail.
   MotionSpring get motionSpring => switch (this) {
-        // Baked from the tuned Studio Soft feel (#7): a lazier chase.
         CursorAnimationStyle.smooth =>
-          const MotionSpring(stiffness: 160, damping: 1.0),
+          const MotionSpring(stiffness: 90, damping: 0.8),
         CursorAnimationStyle.medium =>
           const MotionSpring(stiffness: 380, damping: 1.0),
         CursorAnimationStyle.rapid =>
-          const MotionSpring(stiffness: 900, damping: 1.0),
+          const MotionSpring(stiffness: 1400, damping: 1.0),
         CursorAnimationStyle.none => MotionSpring.snap,
+      };
+
+  /// Fraction of the spring's analytical phase lag (τ = 2ζ/ωₙ) that the
+  /// velocity feedforward cancels while the cursor is moving (see
+  /// [CursorMotionController]). Per-preset so the presets stay
+  /// CONTRASTED: full-strength feedforward makes every spring sit on
+  /// the raw path during motion, erasing the differences between them.
+  /// Smooth keeps most of its lag (floaty trail); Rapid cancels almost
+  /// all of it (locked). None bypasses the spring entirely — 0.0 here
+  /// is never read, defined for completeness.
+  double get feedforwardStrength => switch (this) {
+        CursorAnimationStyle.smooth => 0.25,
+        CursorAnimationStyle.medium => 0.5,
+        CursorAnimationStyle.rapid => 0.85,
+        CursorAnimationStyle.none => 0.0,
       };
 }
