@@ -596,3 +596,480 @@ Invoke `superpowers:finishing-a-development-branch`: push, PR to `main` (title `
 **Placeholders:** none — every code step shows the code; the one flagged typo in a reason string carries its correction inline.
 
 **Type consistency:** `feedforwardStrength` (style extension + config delegate) used identically in Tasks 1-2; `MotionSpring(stiffness:, damping:)` matches `spring_config.dart`; screen getter names unchanged so no consumer edits.
+
+---
+
+## Addendum tasks (post live-feel session): geometric path smoothing for Smooth
+
+Feedback from the Task 4 feel session: Smooth still reproduces hand jitter
+(the spring delays the raw path but keeps its geometry). Per the spec
+addendum, add a pure Gaussian path smoother and hook it into the Smooth
+preset. Global Constraints above still bind; note Smooth's spring RECIPE
+changes here (90/0.8 → 180/0.85) — the guardrail tests must keep passing
+WITHOUT weakening (new numbers keep the ≥40ms gap: τ·(1−ff) ≈ 95ms vs
+Medium's ≈51ms).
+
+### Task 5: `smoothedCursorAt` sampler + `pathSmoothingSigma` preset API
+
+**Files:**
+- Modify: `packages/slipreel_engine/lib/rendering/cursor_geometry.dart` (add function after `cursorAtFiltered`)
+- Modify: `packages/slipreel_engine/lib/rendering/animation_style.dart` (add `pathSmoothingSigma` getter to `CursorAnimationStyleData`, after `feedforwardStrength`)
+- Modify: `packages/slipreel_engine/lib/rendering/animation_config.dart` (add delegate after `feedforwardStrength`)
+- Test: `packages/slipreel_engine/test/rendering/cursor_path_smoothing_test.dart` (create)
+
+**Interfaces:**
+- Consumes: `cursorAtFiltered(CursorRecording, Duration, CursorPostProcess)`, `CursorPosition{x, y, timestampMicros, isClicked, state}`.
+- Produces (Task 6 relies on these exact names):
+  - `CursorPosition? smoothedCursorAt(CursorRecording recording, Duration t, CursorPostProcess cfg, Duration sigma)` in `cursor_geometry.dart`
+  - `CursorAnimationStyleData.pathSmoothingSigma` → `Duration` (smooth 80ms, others zero)
+  - `CursorAnimationConfig.pathSmoothingSigma` → `Duration` (delegates to preset)
+
+- [ ] **Step 1: Write the failing test**
+
+Create `packages/slipreel_engine/test/rendering/cursor_path_smoothing_test.dart`:
+
+```dart
+import 'dart:math' as math;
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
+import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/rendering/animation_config.dart';
+import 'package:slipreel_engine/rendering/animation_style.dart';
+import 'package:slipreel_engine/rendering/cursor_geometry.dart';
+import 'package:slipreel_engine/state/cursor_post_process.dart';
+
+CursorRecording _record(
+    List<({int micros, double x, double y})> pts) {
+  return CursorRecording(
+    positions: [
+      for (final p in pts)
+        CursorPosition(
+          x: p.x,
+          y: p.y,
+          timestampMicros: p.micros,
+          isClicked: false,
+        ),
+    ],
+  );
+}
+
+void main() {
+  const none = CursorPostProcess.none;
+  const sigma = Duration(milliseconds: 80);
+
+  group('smoothedCursorAt', () {
+    test('sigma zero is the identity (returns cursorAtFiltered)', () {
+      final rec = _record([
+        (micros: 0, x: 0, y: 0),
+        (micros: 100000, x: 100, y: 50),
+        (micros: 200000, x: 200, y: 100),
+      ]);
+      const t = Duration(milliseconds: 150);
+      final smoothed = smoothedCursorAt(rec, t, none, Duration.zero);
+      final raw = cursorAtFiltered(rec, t, none);
+      expect(smoothed!.x, raw!.x);
+      expect(smoothed.y, raw.y);
+    });
+
+    test('a stationary segment is exact (at-rest identity)', () {
+      // Long hold at (300, 200): every tap in the window sees the same
+      // point, so the weighted mean IS the point — click landings stay
+      // truthful.
+      final rec = _record([
+        for (var i = 0; i <= 60; i++)
+          (micros: i * 16667, x: 300.0, y: 200.0),
+      ]);
+      final s = smoothedCursorAt(
+          rec, const Duration(milliseconds: 500), none, sigma);
+      expect(s!.x, closeTo(300.0, 1e-9));
+      expect(s.y, closeTo(200.0, 1e-9));
+    });
+
+    test('attenuates a 60 Hz-ish zigzag jitter by at least 60 %', () {
+      // ±12 px square-wave wiggle around y=100 while x sweeps — the
+      // hand-jitter shape the smoother exists to kill.
+      final rec = _record([
+        for (var i = 0; i <= 120; i++)
+          (
+            micros: i * 16667,
+            x: i * 8.0,
+            y: 100.0 + (i.isEven ? 12.0 : -12.0),
+          ),
+      ]);
+      // Peak deviation of the smoothed path from the centerline across
+      // the steady middle of the recording.
+      var maxDev = 0.0;
+      for (var ms = 500; ms <= 1500; ms += 10) {
+        final s =
+            smoothedCursorAt(rec, Duration(milliseconds: ms), none, sigma)!;
+        maxDev = math.max(maxDev, (s.y - 100.0).abs());
+      }
+      expect(maxDev, lessThan(12.0 * 0.4),
+          reason: 'Gaussian window must attenuate alternating-sample '
+              'jitter by ≥60% (got peak ${maxDev.toStringAsFixed(2)}px '
+              'of a 12px input wiggle)');
+    });
+
+    test('rounds a right-angle corner (cuts inside, bounded)', () {
+      // Path runs right along y=0 to (500, 0) then straight up. At the
+      // corner instant the smoothed point is pulled inside the corner
+      // (both arms contribute), but by less than the ±2σ arm reach.
+      final rec = _record([
+        for (var i = 0; i <= 30; i++) (micros: i * 16667, x: i * 16.7, y: 0.0),
+        for (var i = 1; i <= 30; i++)
+          (micros: (30 + i) * 16667, x: 500.0, y: i * 16.7),
+      ]);
+      final atCorner = smoothedCursorAt(
+          rec, const Duration(microseconds: 30 * 16667), none, sigma)!;
+      // Inside the corner means: x pulled back below 500 AND y pulled up
+      // above 0 simultaneously.
+      expect(atCorner.x, lessThan(500.0));
+      expect(atCorner.y, greaterThan(0.0));
+      // Bounded: within the reach of one window arm (2σ × path speed
+      // ≈ 160ms × 1000px/s = 160px), comfortably.
+      expect(500.0 - atCorner.x, lessThan(160.0));
+      expect(atCorner.y, lessThan(160.0));
+    });
+
+    test('is a pure function of position (query order irrelevant)', () {
+      final rec = _record([
+        for (var i = 0; i <= 60; i++)
+          (micros: i * 16667, x: i * 10.0, y: math.sin(i / 3) * 40),
+      ]);
+      Object sample(int ms) {
+        final s =
+            smoothedCursorAt(rec, Duration(milliseconds: ms), none, sigma)!;
+        return (s.x, s.y);
+      }
+
+      final fwd = [sample(200), sample(500), sample(800)];
+      final rev = [sample(800), sample(500), sample(200)];
+      expect(fwd[0], rev[2]);
+      expect(fwd[1], rev[1]);
+      expect(fwd[2], rev[0]);
+    });
+
+    test('empty recording returns null', () {
+      final rec = CursorRecording(positions: const []);
+      expect(
+          smoothedCursorAt(
+              rec, const Duration(milliseconds: 100), none, sigma),
+          isNull);
+    });
+
+    test('click/state come from the center tap, not the window', () {
+      final rec = CursorRecording(positions: [
+        for (var i = 0; i <= 60; i++)
+          CursorPosition(
+            x: i * 10.0,
+            y: 0,
+            timestampMicros: i * 16667,
+            isClicked: i == 30,
+          ),
+      ]);
+      // Query exactly at the clicked sample: isClicked must survive
+      // smoothing even though neighboring taps are unclicked.
+      final s = smoothedCursorAt(
+          rec, const Duration(microseconds: 30 * 16667), none, sigma)!;
+      expect(s.isClicked, isTrue);
+    });
+  });
+
+  group('pathSmoothingSigma preset wiring', () {
+    test('only Smooth smooths the path', () {
+      expect(CursorAnimationStyle.smooth.pathSmoothingSigma,
+          const Duration(milliseconds: 80));
+      expect(CursorAnimationStyle.medium.pathSmoothingSigma, Duration.zero);
+      expect(CursorAnimationStyle.rapid.pathSmoothingSigma, Duration.zero);
+      expect(CursorAnimationStyle.none.pathSmoothingSigma, Duration.zero);
+    });
+
+    test('config exposes the preset sigma', () {
+      const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      expect(cfg.pathSmoothingSigma,
+          CursorAnimationStyle.smooth.pathSmoothingSigma);
+    });
+  });
+}
+```
+
+NOTE for the implementer: check `CursorRecording`'s actual constructor and
+`CursorPosition`'s constructor (in the platform interface) — if field names
+differ (e.g. a required `state` parameter), adapt the test helpers minimally
+and say so in your report. The assertions themselves must stay as written.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd packages/slipreel_engine && fvm flutter test test/rendering/cursor_path_smoothing_test.dart`
+Expected: FAIL — `smoothedCursorAt` / `pathSmoothingSigma` undefined (compile error).
+
+- [ ] **Step 3: Implement**
+
+3a. In `packages/slipreel_engine/lib/rendering/cursor_geometry.dart`, add
+after `cursorAtFiltered` (import `dart:math` as needed):
+
+```dart
+/// [cursorAtFiltered] with GEOMETRIC path smoothing: a Gaussian-weighted
+/// average of the filtered path over a symmetric time window around [t].
+/// This is what makes the Smooth preset glide along an idealized version
+/// of the recorded path — hand jitter and jagged corners are rounded in
+/// SPACE, without adding phase lag in TIME (the window looks ahead as
+/// much as behind, unlike the spring chase).
+///
+/// Nine taps at `t + k·(σ/2)`, `k = −4..4` (±2σ reach), with weights
+/// `exp(−k²/8)` renormalized over the taps that resolved. Only x/y are
+/// averaged — `isClicked`/`state`/`timestampMicros` come from the CENTER
+/// tap so click semantics are exactly [cursorAtFiltered]'s. A stationary
+/// segment averages to the point itself, so rest positions (and click
+/// landings) are exact.
+///
+/// Pure function of ([recording], [t], [cfg], [sigma]) — no state — so
+/// scrub == play == export by construction. [sigma] == zero returns the
+/// center tap unchanged.
+CursorPosition? smoothedCursorAt(
+  CursorRecording recording,
+  Duration t,
+  CursorPostProcess cfg,
+  Duration sigma,
+) {
+  final center = cursorAtFiltered(recording, t, cfg);
+  if (center == null || sigma <= Duration.zero) return center;
+
+  final halfStepUs = sigma.inMicroseconds / 2.0;
+  var wSum = 0.0;
+  var xSum = 0.0;
+  var ySum = 0.0;
+  for (var k = -4; k <= 4; k++) {
+    final tapUs = t.inMicroseconds + (k * halfStepUs).round();
+    if (tapUs < 0) continue;
+    final tap = k == 0
+        ? center
+        : cursorAtFiltered(recording, Duration(microseconds: tapUs), cfg);
+    if (tap == null) continue;
+    final w = math.exp(-(k * k) / 8.0);
+    wSum += w;
+    xSum += tap.x * w;
+    ySum += tap.y * w;
+  }
+  if (wSum <= 0) return center;
+
+  return CursorPosition(
+    x: xSum / wSum,
+    y: ySum / wSum,
+    timestampMicros: center.timestampMicros,
+    isClicked: center.isClicked,
+    state: center.state,
+  );
+}
+```
+
+(Add `import 'dart:math' as math;` at the top of the file.)
+
+3b. In `packages/slipreel_engine/lib/rendering/animation_style.dart`, add to
+`CursorAnimationStyleData` after `feedforwardStrength`:
+
+```dart
+  /// Gaussian window (σ) for GEOMETRIC path smoothing — see
+  /// `smoothedCursorAt`. Non-zero only for Smooth: the preset's "buttery"
+  /// character comes from idealizing the path's geometry (jitter and
+  /// corners rounded in space), not from spring lag in time. Zero for
+  /// every other preset = identity bypass, byte-identical sampling.
+  Duration get pathSmoothingSigma => switch (this) {
+        CursorAnimationStyle.smooth => const Duration(milliseconds: 80),
+        CursorAnimationStyle.medium ||
+        CursorAnimationStyle.rapid ||
+        CursorAnimationStyle.none =>
+          Duration.zero,
+      };
+```
+
+3c. In `packages/slipreel_engine/lib/rendering/animation_config.dart`, add to
+`CursorAnimationConfig` after `feedforwardStrength`:
+
+```dart
+  Duration get pathSmoothingSigma => _preset!.pathSmoothingSigma;
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd packages/slipreel_engine && fvm flutter test test/rendering/cursor_path_smoothing_test.dart`
+Expected: PASS (9 tests).
+
+- [ ] **Step 5: Analyze + commit**
+
+Run: `cd packages/slipreel_engine && fvm flutter analyze --no-fatal-infos lib/rendering/cursor_geometry.dart lib/rendering/animation_style.dart lib/rendering/animation_config.dart test/rendering/cursor_path_smoothing_test.dart`
+Expected: no warnings/errors.
+
+```bash
+git add packages/slipreel_engine/lib/rendering/cursor_geometry.dart packages/slipreel_engine/lib/rendering/animation_style.dart packages/slipreel_engine/lib/rendering/animation_config.dart packages/slipreel_engine/test/rendering/cursor_path_smoothing_test.dart
+git commit -m "feat(animation): geometric path smoother + per-preset sigma (Smooth only)"
+```
+
+---
+
+### Task 6: Controller samples the smoothed path + Smooth spring recipe
+
+**Files:**
+- Modify: `packages/slipreel_engine/lib/rendering/cursor_motion_controller.dart` (target + velocity sampling)
+- Modify: `packages/slipreel_engine/lib/rendering/animation_style.dart` (Smooth spring 90/0.8 → 180/0.85)
+- Test: `packages/slipreel_engine/test/rendering/cursor_motion_controller_test.dart` (add jitter-variance test)
+
+**Interfaces:**
+- Consumes: `smoothedCursorAt(...)` and `CursorAnimationConfig.pathSmoothingSigma` (Task 5).
+- Produces: no API change; `update()` signature untouched.
+
+- [ ] **Step 1: Write the failing test**
+
+Add to the main group in `packages/slipreel_engine/test/rendering/cursor_motion_controller_test.dart`:
+
+```dart
+    test('Smooth kills hand jitter that Medium reproduces '
+        '(geometric path smoothing)', () {
+      // ±12 px alternating-sample wiggle around y=100 while x sweeps —
+      // the "wiggles with my hand jitter" complaint from the feel
+      // session. Medium chases the raw geometry (delayed but intact);
+      // Smooth samples the Gaussian-smoothed path, so its rendered
+      // y-deviation from the centerline must be a fraction of Medium's.
+      const dtPerFrameMicros = 16667;
+      final rec = _record([
+        for (var i = 0; i <= 120; i++)
+          (
+            micros: i * dtPerFrameMicros,
+            x: i * 8.0,
+            y: 100.0 + (i.isEven ? 12.0 : -12.0),
+            clicked: false,
+          ),
+      ]);
+      final timeline =
+          List.generate(120, (i) => i * dtPerFrameMicros);
+
+      double peakWiggleFor(CursorAnimationStyle style) {
+        final ctrl = CursorMotionController();
+        var peak = 0.0;
+        for (final micros in timeline) {
+          final u = ctrl.update(
+            position: Duration(microseconds: micros),
+            cursorRecording: rec,
+            config: CursorAnimationConfig.preset(style),
+            fps: 60,
+          );
+          // Skip the settle-in half second.
+          if (u != null && micros > 500000) {
+            final dev = (u.screenPos.dy - 100.0).abs();
+            if (dev > peak) peak = dev;
+          }
+        }
+        return peak;
+      }
+
+      final smoothPeak = peakWiggleFor(CursorAnimationStyle.smooth);
+      final mediumPeak = peakWiggleFor(CursorAnimationStyle.medium);
+      expect(smoothPeak, lessThan(mediumPeak * 0.5),
+          reason: 'Smooth samples the geometrically smoothed path — its '
+              'residual wiggle must be under half of Medium\'s. '
+              'smooth=${smoothPeak.toStringAsFixed(2)}px '
+              'medium=${mediumPeak.toStringAsFixed(2)}px');
+    });
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `cd packages/slipreel_engine && fvm flutter test test/rendering/cursor_motion_controller_test.dart`
+Expected: the new test FAILS (controller still samples `cursorAtFiltered` for every preset; Smooth's soft spring alone attenuates some wiggle but not enough to halve Medium's).
+If it unexpectedly PASSES, the spring alone is hiding the distinction — tighten the factor from `* 0.5` to `* 0.25` so the test discriminates the sampler hook, and note it in your report.
+
+- [ ] **Step 3: Implement**
+
+3a. In `packages/slipreel_engine/lib/rendering/cursor_motion_controller.dart`:
+
+Replace (line ~184):
+
+```dart
+    final raw = cursorAtFiltered(cursorRecording, queryPosition, postProcess);
+```
+
+with:
+
+```dart
+    // Smooth preset: chase the GEOMETRICALLY smoothed path (jitter and
+    // corners rounded in space, no added time lag) instead of the raw
+    // one. sigma == 0 for every other preset — identical to before.
+    final sigma = config.pathSmoothingSigma;
+    final raw = sigma <= Duration.zero
+        ? cursorAtFiltered(cursorRecording, queryPosition, postProcess)
+        : smoothedCursorAt(
+            cursorRecording, queryPosition, postProcess, sigma);
+```
+
+Then update `_computeSceneVelocity` to sample the same path the spring
+chases (otherwise the feedforward aims at raw-path velocity while the
+target is smoothed). Change its signature and the two lookups:
+
+```dart
+  Offset _computeSceneVelocity({
+    required Duration position,
+    required CursorRecording cursorRecording,
+    required CursorPostProcess postProcess,
+    required Duration sigma,
+  }) {
+    if (position < _velocityLookback) return Offset.zero;
+    CursorPosition? sampleAt(Duration p) => sigma <= Duration.zero
+        ? cursorAtFiltered(cursorRecording, p, postProcess)
+        : smoothedCursorAt(cursorRecording, p, postProcess, sigma);
+    final currentSample = sampleAt(position);
+    if (currentSample == null) return Offset.zero;
+    final prevSample = sampleAt(position - _velocityLookback);
+    if (prevSample == null) return Offset.zero;
+    final dxPx = currentSample.x - prevSample.x;
+    final dyPx = currentSample.y - prevSample.y;
+    final invDt = 1e6 / _velocityLookback.inMicroseconds;
+    return Offset(dxPx * invDt, dyPx * invDt);
+  }
+```
+
+and pass `sigma: sigma` at its call site in `update()` (the call currently
+reads `velocity = _computeSceneVelocity(position: queryPosition, ...)`;
+compute `final sigma = config.pathSmoothingSigma;` BEFORE that call so both
+uses share it). Keep the doc comment on `_computeSceneVelocity` but update
+its "Computed from RAW samples" sentence to say the velocity follows the
+same (possibly smoothed) path the spring chases, while motion-blur anchoring
+still reads raw velocity upstream if it needs to.
+
+NOTE: the snap-mode branch (`spring.isSnap`) stays on `cursorAtNearest` —
+None has sigma zero anyway.
+
+3b. In `packages/slipreel_engine/lib/rendering/animation_style.dart`, change
+Smooth's spring (geometry now carries the character; the heavy trail goes):
+
+```dart
+        CursorAnimationStyle.smooth =>
+          const MotionSpring(stiffness: 180, damping: 0.85),
+```
+
+Update the `motionSpring` doc comment's Smooth description to mention the
+path smoother (e.g. "Smooth pairs a soft, slightly underdamped spring with
+geometric path smoothing — see [pathSmoothingSigma]").
+
+- [ ] **Step 4: Run the controller + style suites**
+
+Run: `cd packages/slipreel_engine && fvm flutter test test/rendering/cursor_motion_controller_test.dart test/rendering/animation_style_test.dart test/rendering/cursor_path_smoothing_test.dart`
+Expected: ALL PASS. The animation_style guardrails must hold with the new
+Smooth spring — check the numbers yourself: τ = 2·0.85/√180 ≈ 126.7 ms,
+visible lag ≈ 95.0 ms, gap to Medium ≈ 43.7 ms ≥ 40 ✓. The Smooth-overshoot
+test (smoothOver > mediumOver, < 25px) should still pass at ζ=0.85; if it
+becomes marginal/flaky, do NOT weaken it — report the measured values.
+
+- [ ] **Step 5: Full engine suite + analyze**
+
+Run: `cd packages/slipreel_engine && fvm flutter test && fvm flutter analyze --no-fatal-infos lib/rendering/cursor_motion_controller.dart lib/rendering/animation_style.dart test/rendering/cursor_motion_controller_test.dart`
+Expected: full suite PASS; analyze clean.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/slipreel_engine/lib/rendering/cursor_motion_controller.dart packages/slipreel_engine/lib/rendering/animation_style.dart packages/slipreel_engine/test/rendering/cursor_motion_controller_test.dart
+git commit -m "feat(animation): Smooth chases the geometrically smoothed path"
+```
+
+Then re-run the Task 4 live feel session (rebuild release, user A/Bs Smooth).
