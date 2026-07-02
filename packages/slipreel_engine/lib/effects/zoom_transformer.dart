@@ -55,6 +55,36 @@ class ZoomTransformer {
 
     final focal = focalPoint ?? zoomRegion.rect.center;
     final f = framing ?? ZoomFraming.identity(videoSize);
+
+    // Ramp progress (0 at z==1, 1 at settled zoom) — drives BOTH the tilt
+    // magnitude and the movement fade, so movement is zero during the ramps
+    // and full only at the settled hold.
+    final denom = zoomRegion.zoomLevel - 1.0;
+    final rampGate = denom <= 0 ? 0.0 : ((z - 1.0) / denom).clamp(0.0, 1.0);
+
+    // Movement (Phase 2): a pure, position-parameterized additive sample folded
+    // on top of the settled 2D+tilt transform. None => identity sample => the
+    // math below collapses to the Phase 1 result.
+    final mv = zoomRegion.movement.resolveAt(
+      holdProgress: _holdProgress(position, zoomRegion),
+      rampGate: rampGate,
+      normalizedFocal: f.normalizedFocalOffset(focal),
+    );
+    final zEff = z * mv.scaleMul;
+    final focalEff = mv.focalDriftFrac == Offset.zero
+        ? focal
+        : Offset(
+            focal.dx + mv.focalDriftFrac.dx * videoSize.width,
+            focal.dy + mv.focalDriftFrac.dy * videoSize.height,
+          );
+    // Defensive: keep a drifted focal in-bounds for follow-cursor zooms (the UI
+    // never offers Drift there, but hand-edited JSON could). Manual placements
+    // magnify in place and are intentionally unclamped, so leave them.
+    final focalUsed =
+        (zoomRegion.followCursor && mv.focalDriftFrac != Offset.zero)
+            ? clampFocalToBounds(focalEff, videoSize, zEff)
+            : focalEff;
+
     // pCenterRel is in canvas px. Follow-cursor zooms center-and-clamp (the
     // moving cursor must be brought to the viewport center); for identity
     // framing that equals the legacy `clampFocalToBounds(focal, videoSize, z)
@@ -63,30 +93,26 @@ class ZoomTransformer {
     // zoom-dependent re-frame), so the placement never lurches when its level
     // changes. See ZoomFraming.centerOffsetInPlace.
     final pCenterRel = zoomRegion.followCursor
-        ? f.centerOffset(focal, z) // center-and-clamp (unchanged)
-        : f.centerOffsetInPlace(focal, z); // magnify-in-place (new)
+        ? f.centerOffset(focalUsed, zEff) // center-and-clamp (unchanged)
+        : f.centerOffsetInPlace(focalUsed, zEff); // magnify-in-place (new)
 
     // The 2D zoom: scale by Z, then translate so the focal lands at the
     // viewport center (operates in canvas-center-relative coords because both
     // pipelines apply this with alignment == center).
     final base = Matrix4.identity()
-      ..translateByDouble(-z * pCenterRel.dx, -z * pCenterRel.dy, 0, 1.0)
-      ..scaleByDouble(z, z, 1.0, 1.0);
+      ..translateByDouble(-zEff * pCenterRel.dx, -zEff * pCenterRel.dy, 0, 1.0)
+      ..scaleByDouble(zEff, zEff, 1.0, 1.0);
 
-    // 2D / flat: return the legacy matrix unchanged (byte-identical).
-    if (!zoomRegion.tilt.is3D) return base;
-
-    // 3D: layer a perspective tilt about the canvas center on top of the 2D
-    // zoom. Direction is auto-derived from the focal's position in the composed
-    // frame; magnitude ramps with the zoom factor (0 at z==1, full at zoomLevel)
-    // so the tilt is always in lock-step with the scale.
-    final denom = zoomRegion.zoomLevel - 1.0;
-    final progress = denom <= 0 ? 0.0 : ((z - 1.0) / denom).clamp(0.0, 1.0);
+    // 2D / flat AND no movement tilt => return the legacy 2D matrix. (Push-in /
+    // Drift add no tilt, so they fall through here with only base changed.)
     final angles = zoomRegion.tilt.resolveAngles(
-      normalizedFocal: f.normalizedFocalOffset(focal),
-      progress: progress,
+      normalizedFocal: f.normalizedFocalOffset(focalUsed),
+      progress: rampGate,
     );
-    return f.perspectiveTilt(angles.xRad, angles.yRad).multiplied(base);
+    final axRad = angles.xRad + mv.extraTiltXRad;
+    final ayRad = angles.yRad + mv.extraTiltYRad;
+    if (axRad == 0.0 && ayRad == 0.0) return base;
+    return f.perspectiveTilt(axRad, ayRad).multiplied(base);
   }
 
   /// Clamp the focal point so the zoomed-in visible window stays entirely
@@ -180,4 +206,17 @@ class ZoomTransformer {
     // Hold phase.
     return z.zoomLevel;
   }
+}
+
+/// Normalized position within a region's HOLD window (between the enter and
+/// exit ramps): 0 before the hold, 0→1 across it, 1 after. A degenerate hold
+/// (enter+exit consume the region) yields 0 until the very end, so movement
+/// contributes ~nothing and can't whip on tiny zooms.
+double _holdProgress(Duration position, ZoomRegion r) {
+  final holdStart = r.startTime + r.enterDuration;
+  final holdEnd = r.endTime - r.exitDuration;
+  final span = (holdEnd - holdStart).inMicroseconds;
+  if (span <= 0) return position >= holdEnd ? 1.0 : 0.0;
+  final e = (position - holdStart).inMicroseconds / span;
+  return e.clamp(0.0, 1.0);
 }

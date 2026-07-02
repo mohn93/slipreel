@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/tilt3d.dart';
+import 'package:slipreel_engine/models/zoom_movement.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
 import 'package:slipreel_engine/rendering/device_frame_layout.dart';
@@ -273,6 +274,51 @@ class ZoomContextInspector extends ConsumerWidget {
                       ),
                     ],
                   ),
+                ),
+              ],
+              const InspectorSectionDivider(),
+              const InspectorSectionLabel('Movement'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final entry in [
+                    (ZoomMovementKind.none, 'None'),
+                    (ZoomMovementKind.pushIn, 'Push-in'),
+                    (ZoomMovementKind.sweep, 'Sweep'),
+                    // Drift moves the focal — only meaningful for manual
+                    // (in-place) zooms; it would fight the cursor follow.
+                    if (!zoom.followCursor) (ZoomMovementKind.drift, 'Drift'),
+                  ])
+                    InspectorChip(
+                      label: entry.$2,
+                      selected: zoom.movement.kind == entry.$1,
+                      dense: true,
+                      onTap: () => onChanged(zoom.copyWith(
+                          movement: zoom.movement.copyWith(kind: entry.$1))),
+                    ),
+                ],
+              ),
+              if (zoom.movement.isActive) ...[
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final entry in const [
+                      (ZoomMovementIntensity.subtle, 'Subtle'),
+                      (ZoomMovementIntensity.dramatic, 'Dramatic'),
+                    ])
+                      InspectorChip(
+                        label: entry.$2,
+                        selected: zoom.movement.intensity == entry.$1,
+                        dense: true,
+                        onTap: () => onChanged(zoom.copyWith(
+                            movement:
+                                zoom.movement.copyWith(intensity: entry.$1))),
+                      ),
+                  ],
                 ),
               ],
               const InspectorSectionDivider(),

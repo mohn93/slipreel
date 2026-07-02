@@ -3,6 +3,8 @@ import 'dart:ui' show Rect, Size;
 import 'package:slipreel_engine/models/tilt3d.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
 
+import 'zoom_movement.dart';
+
 /// How the zoom camera tracks the cursor while a region is active.
 ///
 /// All three modes feed the same critically-damped catch-up spring (see
@@ -114,6 +116,11 @@ class ZoomRegion {
   /// perspective tilt to the content panel (see [ZoomTransformer.getTransform]).
   final Tilt3D tilt;
 
+  /// Camera movement (push-in / sweep / drift) layered on top of the
+  /// settled zoom hold. [ZoomMovement.none] (the default) is a static
+  /// hold — today's behavior, unchanged.
+  final ZoomMovement movement;
+
   ZoomRegion({
     required Rect rect,
     required this.startTime,
@@ -130,6 +137,7 @@ class ZoomRegion {
     Duration? followDuration,
     Duration? predictiveWindow,
     this.tilt = const Tilt3D(),
+    this.movement = const ZoomMovement(),
   })  : assert(duration > Duration.zero, 'Duration must be positive'),
         rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
         zoomLevel = zoomLevel.clamp(1.0, 5.0),
@@ -211,6 +219,7 @@ class ZoomRegion {
     Duration? followDuration,
     Duration? predictiveWindow,
     Tilt3D? tilt,
+    ZoomMovement? movement,
   }) {
     return ZoomRegion(
       rect: rect ?? this.rect,
@@ -232,6 +241,7 @@ class ZoomRegion {
       followDuration: followDuration ?? this.followDuration,
       predictiveWindow: predictiveWindow ?? this.predictiveWindow,
       tilt: tilt ?? this.tilt,
+      movement: movement ?? this.movement,
     );
   }
 
@@ -257,6 +267,7 @@ class ZoomRegion {
       'followDurationMicros': followDuration.inMicroseconds,
       'predictiveWindowMicros': predictiveWindow.inMicroseconds,
       'tilt': tilt.toJson(),
+      'movement': movement.toJson(),
     };
   }
 
@@ -324,6 +335,10 @@ class ZoomRegion {
           ? Tilt3D.fromJson(
               (json['tilt'] as Map).cast<String, dynamic>())
           : const Tilt3D(),
+      movement: json['movement'] is Map
+          ? ZoomMovement.fromJson(
+              (json['movement'] as Map).cast<String, dynamic>())
+          : const ZoomMovement(),
     );
   }
 
@@ -360,7 +375,8 @@ class ZoomRegion {
           deadzoneRatio == other.deadzoneRatio &&
           followDuration == other.followDuration &&
           predictiveWindow == other.predictiveWindow &&
-          tilt == other.tilt;
+          tilt == other.tilt &&
+          movement == other.movement;
 
   @override
   int get hashCode => Object.hash(
@@ -378,5 +394,6 @@ class ZoomRegion {
         followDuration,
         predictiveWindow,
         tilt,
+        movement,
       );
 }
