@@ -552,7 +552,16 @@ void main() {
       );
       expect(
         (paintedFocal - settleTarget).distance,
-        lessThan(5.0),
+        // Smooth now chases the geometrically-smoothed path (Task 6):
+        // the Gaussian window looks up to 2sigma (160ms) ahead, so it
+        // starts curving toward the post-jump parked position ~100ms
+        // before the raw cursor actually jumps there. That earlier
+        // curve-in is the intended "rounds a corner" behavior (see
+        // cursor_path_smoothing_test.dart), and it nudges this
+        // particular excursion from <5.0px to ~5.5px. Widened with a
+        // safety margin rather than tightened, so a genuine yank
+        // regression still fails this test.
+        lessThan(6.0),
         reason:
             'the runtime builder should not let the hold phase yank '
             'the camera toward the lagging smoothed cursor',

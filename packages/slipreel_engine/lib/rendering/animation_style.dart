@@ -124,10 +124,13 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
   /// whisper of overshoot at stops); Medium is the balanced critically-
   /// damped reference; Rapid is a stiff, near-locked track; None
   /// snaps to the raw recorded grid. Paired with [feedforwardStrength]
-  /// so the soft presets keep more of their natural trail.
+  /// so the soft presets keep more of their natural trail. Smooth pairs
+  /// a soft, slightly underdamped spring with geometric path smoothing
+  /// — see [pathSmoothingSigma] — so the spring alone no longer has to
+  /// carry the whole "buttery" character.
   MotionSpring get motionSpring => switch (this) {
         CursorAnimationStyle.smooth =>
-          const MotionSpring(stiffness: 90, damping: 0.8),
+          const MotionSpring(stiffness: 180, damping: 0.85),
         CursorAnimationStyle.medium =>
           const MotionSpring(stiffness: 380, damping: 1.0),
         CursorAnimationStyle.rapid =>

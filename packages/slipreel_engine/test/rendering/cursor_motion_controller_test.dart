@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
+import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
+import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 CursorRecording _record(
@@ -376,14 +378,22 @@ void main() {
       );
 
       // Scrub back to t=0. State must reset, so the rendered position
-      // equals the raw position (x=0) — no leftover velocity.
+      // equals the (sigma-aware) sample at t=0 — no leftover velocity
+      // from the prior high-speed chase. Smooth samples the
+      // geometrically-smoothed path (Task 6), so at the very start of
+      // the recording the Gaussian window only has forward taps to
+      // draw on and the "raw position" is that smoothed value, not the
+      // literal recorded x=0 — compute the same way production does.
+      final expected =
+          smoothedCursorAt(rec, Duration.zero, CursorPostProcess.none,
+              CursorAnimationStyle.smooth.pathSmoothingSigma)!;
       final scrubbed = ctrl.update(
         position: Duration.zero,
         cursorRecording: rec,
         config: const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
         fps: 60,
       );
-      expect(scrubbed!.screenPos.dx, closeTo(0, 1e-6));
+      expect(scrubbed!.screenPos.dx, closeTo(expected.x, 1e-6));
     });
 
     test('click + cursor state come from the rendered timestamp', () {
@@ -712,6 +722,59 @@ void main() {
       expect(contribution1x, closeTo(0, 1e-9));
       // Keying the fade off perceived speed turns it on at 2×.
       expect(contribution2x, greaterThan(1.0));
+    });
+
+    test('Smooth kills hand jitter that Medium reproduces '
+        '(geometric path smoothing)', () {
+      // ±12 px alternating-sample wiggle around y=100 while x sweeps —
+      // the "wiggles with my hand jitter" complaint from the feel
+      // session. Medium chases the raw geometry (delayed but intact);
+      // Smooth samples the Gaussian-smoothed path, so its rendered
+      // y-deviation from the centerline must be a fraction of Medium's.
+      const dtPerFrameMicros = 16667;
+      final rec = _record([
+        for (var i = 0; i <= 120; i++)
+          (
+            micros: i * dtPerFrameMicros,
+            x: i * 8.0,
+            y: 100.0 + (i.isEven ? 12.0 : -12.0),
+            clicked: false,
+          ),
+      ]);
+      final timeline =
+          List.generate(120, (i) => i * dtPerFrameMicros);
+
+      double peakWiggleFor(CursorAnimationStyle style) {
+        final ctrl = CursorMotionController();
+        var peak = 0.0;
+        for (final micros in timeline) {
+          final u = ctrl.update(
+            position: Duration(microseconds: micros),
+            cursorRecording: rec,
+            config: CursorAnimationConfig.preset(style),
+            fps: 60,
+          );
+          // Skip the settle-in half second AND the last ~200ms: the
+          // Gaussian window (±2σ = 160ms reach) runs out of forward taps
+          // near the recording's tail, so the smoothed path itself
+          // becomes asymmetric there (see cursor_path_smoothing_test.dart's
+          // own 500-1500ms measurement window on the same fixture shape).
+          // That boundary artifact isn't what this test is discriminating.
+          if (u != null && micros > 500000 && micros < 1800000) {
+            final dev = (u.screenPos.dy - 100.0).abs();
+            if (dev > peak) peak = dev;
+          }
+        }
+        return peak;
+      }
+
+      final smoothPeak = peakWiggleFor(CursorAnimationStyle.smooth);
+      final mediumPeak = peakWiggleFor(CursorAnimationStyle.medium);
+      expect(smoothPeak, lessThan(mediumPeak * 0.5),
+          reason: 'Smooth samples the geometrically smoothed path — its '
+              'residual wiggle must be under half of Medium\'s. '
+              'smooth=${smoothPeak.toStringAsFixed(2)}px '
+              'medium=${mediumPeak.toStringAsFixed(2)}px');
     });
   });
 }

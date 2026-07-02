@@ -166,7 +166,14 @@ class CursorMotionController {
         : Duration(
             microseconds:
                 position.inMicroseconds - cursorDelay.inMicroseconds);
-    final raw = cursorAtFiltered(cursorRecording, queryPosition, postProcess);
+    // Smooth preset: chase the GEOMETRICALLY smoothed path (jitter and
+    // corners rounded in space, no added time lag) instead of the raw
+    // one. sigma == 0 for every other preset — identical to before.
+    final sigma = config.pathSmoothingSigma;
+    final raw = sigma <= Duration.zero
+        ? cursorAtFiltered(cursorRecording, queryPosition, postProcess)
+        : smoothedCursorAt(
+            cursorRecording, queryPosition, postProcess, sigma);
     if (raw == null) {
       _cachedPosition = position;
       _cachedCursorDelay = cursorDelay;
@@ -180,6 +187,7 @@ class CursorMotionController {
       position: queryPosition,
       cursorRecording: cursorRecording,
       postProcess: postProcess,
+      sigma: sigma,
     );
 
     // Snap mode (None preset / explicit snap spring): land on the
@@ -359,24 +367,23 @@ class CursorMotionController {
   /// motion at that timestamp in the recording, regardless of how the
   /// playhead got there. Stateless and direction-agnostic — forward
   /// play, backward scrub, and hover-jumps all return the same value
-  /// at the same timestamp. Computed from RAW samples even though the
-  /// rendered cursor follows the spring; that keeps the motion-blur
-  /// trail anchored to where the cursor actually was, not where the
-  /// spring is currently chasing.
+  /// at the same timestamp. Samples the same (possibly geometrically
+  /// smoothed) path the spring chases — [sigma] mirrors the target
+  /// sampler above so the feedforward aims at the same path it's meant
+  /// to lead, not raw-path velocity while the target is smoothed.
   Offset _computeSceneVelocity({
     required Duration position,
     required CursorRecording cursorRecording,
     required CursorPostProcess postProcess,
+    required Duration sigma,
   }) {
     if (position < _velocityLookback) return Offset.zero;
-    final currentSample =
-        cursorAtFiltered(cursorRecording, position, postProcess);
+    CursorPosition? sampleAt(Duration p) => sigma <= Duration.zero
+        ? cursorAtFiltered(cursorRecording, p, postProcess)
+        : smoothedCursorAt(cursorRecording, p, postProcess, sigma);
+    final currentSample = sampleAt(position);
     if (currentSample == null) return Offset.zero;
-    final prevSample = cursorAtFiltered(
-      cursorRecording,
-      position - _velocityLookback,
-      postProcess,
-    );
+    final prevSample = sampleAt(position - _velocityLookback);
     if (prevSample == null) return Offset.zero;
     final dxPx = currentSample.x - prevSample.x;
     final dyPx = currentSample.y - prevSample.y;
