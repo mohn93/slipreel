@@ -27,8 +27,8 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
   /// Tween duration applied to live zoom-level changes (e.g., when the
   /// user nudges the badge). Focused snaps in faster; Smooth lingers.
   Duration get badgeDuration => switch (this) {
-        ScreenAnimationStyle.focused => const Duration(milliseconds: 150),
-        ScreenAnimationStyle.smooth => const Duration(milliseconds: 520),
+        ScreenAnimationStyle.focused => const Duration(milliseconds: 140),
+        ScreenAnimationStyle.smooth => const Duration(milliseconds: 600),
       };
 
   Curve get badgeCurve => switch (this) {
@@ -36,37 +36,32 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
         ScreenAnimationStyle.smooth => Curves.easeInOutCubic,
       };
 
-  /// Curve used for the zoom region's enter/exit ramps. Focused
-  /// front-loads the motion so the camera reaches the target quickly
-  /// and steadies; Smooth eases on both ends for a film-like push.
+  /// Curve used for the zoom region's enter/exit ramps. The two presets
+  /// have OPPOSITE shapes so they read differently at a glance:
+  /// Focused accelerates instantly and settles hard (snaps and locks);
+  /// Smooth is a pronounced ease-in-out — the camera visibly gathers
+  /// momentum, glides, and soft-lands (the film push).
   Curve get rampCurve => switch (this) {
-        // Focused = the quick, decisive Studio Snappy push (#7).
-        ScreenAnimationStyle.focused => const Cubic(0.4, 0.0, 0.2, 1.0),
-        // Smooth = the tuned Studio Soft feel (#7): ease-out — quick off
-        // the line, decelerating into the destination with a soft landing.
-        ScreenAnimationStyle.smooth => const Cubic(0.22, 0.61, 0.35, 1.0),
+        ScreenAnimationStyle.focused => const Cubic(0.2, 0.0, 0.0, 1.0),
+        ScreenAnimationStyle.smooth => const Cubic(0.65, 0.0, 0.35, 1.0),
       };
 
   /// Multiplier on a zoom region's enter/exit ramp DURATION. >1 = slower,
   /// more cinematic push; <1 = quicker snap. The feel's most perceptible
   /// lever on modest zooms (curve shape alone is nearly invisible).
   double get rampDurationScale => switch (this) {
-        // Focused = quick snap; Smooth = slow cinematic glide (#7).
-        ScreenAnimationStyle.focused => 0.55,
-        ScreenAnimationStyle.smooth => 1.4,
+        // ≥3× spread: ≈250 ms vs ≈850 ms on a default 500 ms ramp.
+        ScreenAnimationStyle.focused => 0.5,
+        ScreenAnimationStyle.smooth => 1.7,
       };
 
-  /// Curve used for the picker's hover-driven demo circle.
-  Curve get previewCurve => switch (this) {
-        ScreenAnimationStyle.focused => Curves.easeOutCubic,
-        ScreenAnimationStyle.smooth => Curves.easeOutCubic,
-      };
+  /// The picker's hover demo runs the REAL ramp curve so the tile
+  /// honestly previews the feel it selects.
+  Curve get previewCurve => rampCurve;
 
-  /// One forward-and-back cycle for the demo. Longer for Smooth so the
-  /// difference vs. Focused is visible.
   Duration get previewDuration => switch (this) {
-        ScreenAnimationStyle.focused => const Duration(milliseconds: 700),
-        ScreenAnimationStyle.smooth => const Duration(milliseconds: 1300),
+        ScreenAnimationStyle.focused => const Duration(milliseconds: 600),
+        ScreenAnimationStyle.smooth => const Duration(milliseconds: 1500),
       };
 }
 

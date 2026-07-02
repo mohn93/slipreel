@@ -63,4 +63,44 @@ void main() {
           CursorAnimationStyle.rapid.feedforwardStrength);
     });
   });
+
+  group('ScreenAnimationStyle presets', () {
+    test('ramp duration spread is ≥3× (Focused snaps, Smooth glides)', () {
+      final f = ScreenAnimationStyle.focused.rampDurationScale;
+      final s = ScreenAnimationStyle.smooth.rampDurationScale;
+      expect(s / f, greaterThanOrEqualTo(3.0));
+      expect(f, lessThan(1.0), reason: 'Focused quickens the ramp');
+      expect(s, greaterThan(1.0), reason: 'Smooth stretches the ramp');
+    });
+
+    test('curve shapes are opposite: Focused starts fast, Smooth winds up',
+        () {
+      // A quarter of the way through the ramp, Focused (fast-out) must be
+      // far ahead of Smooth (pronounced ease-in start). This is the
+      // perceptible signature of the two feels.
+      final focusedAtQuarter =
+          ScreenAnimationStyle.focused.rampCurve.transform(0.25);
+      final smoothAtQuarter =
+          ScreenAnimationStyle.smooth.rampCurve.transform(0.25);
+      expect(focusedAtQuarter, greaterThan(smoothAtQuarter + 0.15));
+    });
+
+    test('badge tween: Focused snaps (<200 ms), Smooth lingers (>500 ms)',
+        () {
+      expect(ScreenAnimationStyle.focused.badgeDuration.inMilliseconds,
+          lessThan(200));
+      expect(ScreenAnimationStyle.smooth.badgeDuration.inMilliseconds,
+          greaterThan(500));
+    });
+
+    test('picker demo mirrors the real ramp curve (honest preview)', () {
+      for (final s in ScreenAnimationStyle.values) {
+        expect(s.previewCurve, s.rampCurve);
+      }
+      expect(
+          ScreenAnimationStyle.smooth.previewDuration >
+              ScreenAnimationStyle.focused.previewDuration,
+          isTrue);
+    });
+  });
 }
