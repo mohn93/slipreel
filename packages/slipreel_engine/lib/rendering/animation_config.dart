@@ -54,6 +54,7 @@ class CursorAnimationConfig {
   Curve get firCurve => _preset!.fir.curve;
   MotionSpring get motionSpring => _preset!.motionSpring;
   double get feedforwardStrength => _preset!.feedforwardStrength;
+  Duration get pathSmoothingSigma => _preset!.pathSmoothingSigma;
 
   Map<String, dynamic> toJson() => {'preset': _preset!.name};
 

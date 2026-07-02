@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import '../models/cursor_recording.dart';
@@ -133,6 +134,59 @@ CursorPosition? cursorAtFiltered(
   }
 
   return result;
+}
+
+/// [cursorAtFiltered] with GEOMETRIC path smoothing: a Gaussian-weighted
+/// average of the filtered path over a symmetric time window around [t].
+/// This is what makes the Smooth preset glide along an idealized version
+/// of the recorded path — hand jitter and jagged corners are rounded in
+/// SPACE, without adding phase lag in TIME (the window looks ahead as
+/// much as behind, unlike the spring chase).
+///
+/// Nine taps at `t + k·(σ/2)`, `k = −4..4` (±2σ reach), with weights
+/// `exp(−k²/8)` renormalized over the taps that resolved. Only x/y are
+/// averaged — `isClicked`/`state`/`timestampMicros` come from the CENTER
+/// tap so click semantics are exactly [cursorAtFiltered]'s. A stationary
+/// segment averages to the point itself, so rest positions (and click
+/// landings) are exact.
+///
+/// Pure function of ([recording], [t], [cfg], [sigma]) — no state — so
+/// scrub == play == export by construction. [sigma] == zero returns the
+/// center tap unchanged.
+CursorPosition? smoothedCursorAt(
+  CursorRecording recording,
+  Duration t,
+  CursorPostProcess cfg,
+  Duration sigma,
+) {
+  final center = cursorAtFiltered(recording, t, cfg);
+  if (center == null || sigma <= Duration.zero) return center;
+
+  final halfStepUs = sigma.inMicroseconds / 2.0;
+  var wSum = 0.0;
+  var xSum = 0.0;
+  var ySum = 0.0;
+  for (var k = -4; k <= 4; k++) {
+    final tapUs = t.inMicroseconds + (k * halfStepUs).round();
+    if (tapUs < 0) continue;
+    final tap = k == 0
+        ? center
+        : cursorAtFiltered(recording, Duration(microseconds: tapUs), cfg);
+    if (tap == null) continue;
+    final w = math.exp(-(k * k) / 8.0);
+    wSum += w;
+    xSum += tap.x * w;
+    ySum += tap.y * w;
+  }
+  if (wSum <= 0) return center;
+
+  return CursorPosition(
+    x: xSum / wSum,
+    y: ySum / wSum,
+    timestampMicros: center.timestampMicros,
+    isClicked: center.isClicked,
+    state: center.state,
+  );
 }
 
 /// Returns the raw sample with x/y replaced by the 5-sample neighbourhood

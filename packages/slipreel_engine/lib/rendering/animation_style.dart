@@ -149,4 +149,17 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
         CursorAnimationStyle.rapid => 0.85,
         CursorAnimationStyle.none => 0.0,
       };
+
+  /// Gaussian window (σ) for GEOMETRIC path smoothing — see
+  /// `smoothedCursorAt`. Non-zero only for Smooth: the preset's "buttery"
+  /// character comes from idealizing the path's geometry (jitter and
+  /// corners rounded in space), not from spring lag in time. Zero for
+  /// every other preset = identity bypass, byte-identical sampling.
+  Duration get pathSmoothingSigma => switch (this) {
+        CursorAnimationStyle.smooth => const Duration(milliseconds: 80),
+        CursorAnimationStyle.medium ||
+        CursorAnimationStyle.rapid ||
+        CursorAnimationStyle.none =>
+          Duration.zero,
+      };
 }
