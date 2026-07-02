@@ -21,7 +21,7 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 ///
 /// **Why partial feedforward.** A causal spring chasing a moving
 /// target sits at `cursorAt(t − τ)`, where `τ = 2ζ/ωₙ` is its
-/// analytical settle time (≈149 ms at the Smooth defaults, ≈67 ms at
+/// analytical settle time (≈169 ms at the Smooth preset, ≈53 ms at
 /// Rapid). Targeting `raw + velocity × τ` cancels that lag *exactly*
 /// — but it also makes every preset look the same during continuous
 /// motion (Smooth, Medium, Rapid all sit on the raw path), erasing
