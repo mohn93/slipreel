@@ -38,9 +38,11 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 ///   state to the raw position so scrubbing never strands a stale
 ///   velocity that would shoot the cursor across the screen on the
 ///   next forward play.
-/// - **Click flag and cursor state come from `cursorAt(recording,
-///   position)` at the rendered timestamp** — independent of the
-///   spring's state, so a press/release fires at the recorded moment.
+/// - **Click flag and cursor state come from the sampled path's CENTER
+///   tap at the rendered timestamp** (`cursorAtFiltered`, or the center
+///   tap of `smoothedCursorAt` when the preset smooths the path — the
+///   Gaussian averages x/y only), independent of the spring's state, so
+///   a press/release fires at the recorded moment.
 class CursorMotionController {
   CursorMotionController({MotionTuning? tuning})
       : tuning = tuning ?? MotionTuning.defaults;

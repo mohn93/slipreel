@@ -754,12 +754,14 @@ void main() {
             config: CursorAnimationConfig.preset(style),
             fps: 60,
           );
-          // Skip the settle-in half second AND the last ~200ms: the
-          // Gaussian window (±2σ = 160ms reach) runs out of forward taps
-          // near the recording's tail, so the smoothed path itself
-          // becomes asymmetric there (see cursor_path_smoothing_test.dart's
-          // own 500-1500ms measurement window on the same fixture shape).
-          // That boundary artifact isn't what this test is discriminating.
+          // Skip the settle-in half second AND the last ~200ms: near the
+          // recording's tail the Gaussian window's (±2σ = 160ms) forward
+          // taps all clamp to the LAST sample (getPositionAt clamps, it
+          // never nulls), so that one duplicated value is over-weighted
+          // and biases the smoothed path (see cursor_path_smoothing_test
+          // .dart's own bounded measurement window on the same fixture
+          // shape). That boundary artifact isn't what this test is
+          // discriminating.
           if (u != null && micros > 500000 && micros < 1800000) {
             final dev = (u.screenPos.dy - 100.0).abs();
             if (dev > peak) peak = dev;
