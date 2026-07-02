@@ -26,12 +26,12 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 /// — but it also makes every preset look the same during continuous
 /// motion (Smooth, Medium, Rapid all sit on the raw path), erasing
 /// the differences between presets the user picked. The compromise:
-/// `raw + velocity × τ × [_feedforwardStrength]`, with the strength
-/// at 0.5. That halves the steady-state lag (≈75 px at the Smooth
-/// defaults vs. 149 px without compensation) while preserving the
-/// preset's character — Smooth still feels softer than Rapid, just
-/// not as draggy as a pure chase. Matches the half-shift the user
-/// settled on for the FIR before springs.
+/// `raw + velocity × τ × strength`, where the strength is PER-PRESET
+/// ([CursorAnimationConfig.feedforwardStrength]): Smooth keeps most of
+/// its natural trail (0.25), Medium halves its lag (0.5), Rapid cancels
+/// almost all of it (0.85). Full cancellation would make every preset
+/// sit on the raw path during motion — erasing exactly the contrast the
+/// presets exist to provide.
 ///
 /// Other invariants:
 /// - **Scrub-aware.** A backward step or a jump >100 ms resets the
@@ -97,21 +97,6 @@ class CursorMotionController {
 
   /// Back-look window for the scene-velocity finite difference.
   Duration get _velocityLookback => tuning.cursorVelocityLookback;
-
-  /// Fraction of the spring's analytical lag (τ) compensated by
-  /// velocity feedforward. 1.0 = full cancellation (rendered cursor
-  /// sits exactly on the recorded path, but presets all look the same
-  /// during steady motion); 0.0 = no compensation (vanilla spring
-  /// chase, ~149 px lag at Smooth defaults). 0.5 splits the difference:
-  /// half the lag of a pure chase, and the preset's stiffness still
-  /// changes the feel.
-  ///
-  /// This is the **peak** strength, applied only while the cursor is
-  /// moving above [_feedforwardFullSpeedPxPerSec]. Below that the
-  /// strength is faded toward zero so the target doesn't keep a lead
-  /// of `raw + V × τ × 0.5` when V is decaying to zero — see the
-  /// commentary on the smoothstep below for why this matters at clicks.
-  double get _feedforwardStrength => tuning.cursorFeedforwardStrength;
 
   /// Cursor speeds (px/s) at which the velocity feedforward is fully
   /// off vs. fully on. Between these speeds the strength is smooth-
@@ -298,10 +283,10 @@ class CursorMotionController {
     final desc = spring.toDescription();
 
     // Partial velocity feedforward — target a point ahead of the
-    // recorded position by half the spring's analytical phase lag
-    // (τ = 2ζ/ωₙ, multiplied by [_feedforwardStrength]). Halves the
-    // steady-state lag a pure chase would produce, while preserving
-    // each preset's distinctive feel.
+    // recorded position by the spring's analytical phase lag
+    // (τ = 2ζ/ωₙ, multiplied by the preset's
+    // [CursorAnimationConfig.feedforwardStrength]), preserving each
+    // preset's distinctive feel.
     //
     // The strength is scaled by a smoothstep on cursor SPEED so the
     // feedforward fades to zero before the cursor actually stops —
@@ -326,7 +311,8 @@ class CursorMotionController {
     // Under dt-scaling the spring's source-time lag is τ × speedFactor,
     // so the feedforward lead scales with it to keep the same wall-time
     // compensation as 1× (speedFactor == 1.0 ⇒ unchanged).
-    final leadSec = tauSec * speedFactor * _feedforwardStrength * fadeScale;
+    final leadSec =
+        tauSec * speedFactor * config.feedforwardStrength * fadeScale;
     final targetX = raw.x.toDouble() + velocity.dx * leadSec;
     final targetY = raw.y.toDouble() + velocity.dy * leadSec;
 

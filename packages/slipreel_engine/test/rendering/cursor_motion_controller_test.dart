@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
@@ -15,6 +17,18 @@ CursorRecording _record(
     ));
   }
   return r;
+}
+
+/// Test-only config that keeps a preset's spring character but pins
+/// [feedforwardStrength] to 0 — used to isolate the feedforward
+/// CONTRIBUTION (with vs. without) now that the strength comes from
+/// the config rather than [MotionTuning], so a tuning override alone
+/// can no longer disable it.
+class _ZeroFeedforwardConfig extends CursorAnimationConfig {
+  _ZeroFeedforwardConfig(super.preset) : super.preset();
+
+  @override
+  double get feedforwardStrength => 0.0;
 }
 
 /// Advance the controller through a sequence of playhead positions
@@ -207,17 +221,16 @@ void main() {
               'should be smaller than the smooth spring\'s.');
     });
 
-    test('constant-velocity motion: partial feedforward halves the '
+    test('constant-velocity motion: Medium\'s 50 % feedforward halves the '
         'spring\'s steady-state lag', () {
       // Cursor moves at 1000 px/s along the X-axis. A vanilla causal
-      // spring (no feedforward) would sit at cursorAt(t − τ), lagging
-      // by τ·v ≈ 149 px at the Smooth defaults. The controller's 50 %
-      // feedforward cancels half of that lag; the spring should settle
-      // ~75 px behind the recorded path.
+      // spring (no feedforward) sits at cursorAt(t − τ), lagging by
+      // τ·v ≈ 103 px at the Medium spring (k=380, ζ=1 → τ = 2/√380 s).
+      // Medium's 50 % feedforward cancels half of that: ≈ 51 px.
       const dtPerFrameMicros = 16667; // 60 fps
       const velocityPxPerSec = 1000.0;
-      const smoothTauSec = 2.0 / 13.4164; // 2ζ/√k for k=180, ζ=1
-      const expectedLag = smoothTauSec * velocityPxPerSec * 0.5; // ~75 px
+      final mediumTauSec = 2.0 / math.sqrt(380.0);
+      final expectedLag = mediumTauSec * velocityPxPerSec * 0.5; // ~51 px
 
       final rec = _record(List.generate(90, (i) {
         final tMicros = i * dtPerFrameMicros;
@@ -228,8 +241,8 @@ void main() {
           clicked: false,
         );
       }));
-      // Drive ~700 ms — long enough that 3τ ≈ 450 ms (Smooth) is done
-      // and the spring is in steady state.
+      // Drive ~750 ms — well past 3τ ≈ 308 ms, so the spring is in
+      // steady state.
       final timeline = List.generate(45, (i) => i * dtPerFrameMicros);
 
       final ctrl = CursorMotionController();
@@ -237,24 +250,106 @@ void main() {
         ctrl,
         rec: rec,
         config:
-            const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+            const CursorAnimationConfig.preset(CursorAnimationStyle.medium),
         microsTimeline: timeline,
       );
 
       final tMicros = timeline.last;
       final expectedPos = (tMicros / 1e6) * velocityPxPerSec;
       final actualLag = expectedPos - last!.screenPos.dx;
-      // 50 % feedforward → lag ≈ τ·v/2. Allow a ±20 px window around
-      // the analytical value to absorb the velocity-step transient
-      // from the lookback's hard cutoff at t = 33 ms.
+      // ±20 px window absorbs the velocity-lookback transient.
       expect(
         actualLag,
         closeTo(expectedLag, 20),
         reason:
-            'With _feedforwardStrength = 0.5 the steady-state lag should be '
-            'about half the vanilla spring chase\'s τ·v ≈ 149 px — i.e. '
+            'With Medium\'s feedforwardStrength = 0.5 the steady-state lag '
+            'should be about half the vanilla chase\'s τ·v ≈ 103 px — i.e. '
             '≈ ${expectedLag.toStringAsFixed(0)} px. Got ${actualLag.toStringAsFixed(1)} px.',
       );
+    });
+
+    test('presets are contrasted: Smooth trails ≥3× further than Rapid '
+        'at constant velocity', () {
+      const dtPerFrameMicros = 16667;
+      const velocityPxPerSec = 1000.0;
+      final rec = _record(List.generate(90, (i) {
+        final tMicros = i * dtPerFrameMicros;
+        return (
+          micros: tMicros,
+          x: (tMicros / 1e6) * velocityPxPerSec,
+          y: 0.0,
+          clicked: false,
+        );
+      }));
+      final timeline = List.generate(45, (i) => i * dtPerFrameMicros);
+
+      double lagFor(CursorAnimationStyle style) {
+        final ctrl = CursorMotionController();
+        final last = _drive(ctrl,
+            rec: rec,
+            config: CursorAnimationConfig.preset(style),
+            microsTimeline: timeline);
+        final expectedPos = (timeline.last / 1e6) * velocityPxPerSec;
+        return expectedPos - last!.screenPos.dx;
+      }
+
+      final smoothLag = lagFor(CursorAnimationStyle.smooth);
+      final rapidLag = lagFor(CursorAnimationStyle.rapid);
+      expect(smoothLag, greaterThan(rapidLag * 3),
+          reason: 'The whole point of the redesign: Smooth (soft spring, '
+              'weak feedforward) must visibly trail; Rapid (stiff, strong '
+              'feedforward) must track near-locked. '
+              'smooth=${smoothLag.toStringAsFixed(1)}px '
+              'rapid=${rapidLag.toStringAsFixed(1)}px');
+      expect(rapidLag.abs(), lessThan(20.0),
+          reason: 'Rapid should read as locked (precision of one cursor '
+              'width at 1000 px/s)');
+    });
+
+    test('Smooth\'s underdamped spring overshoots a stop; Medium\'s '
+        'critically-damped spring overshoots less', () {
+      // Constant motion at 1000 px/s that stops dead at x=500, t=500 ms.
+      // The underdamped Smooth spring carries momentum through the stop
+      // and drifts past the rest point before settling back; Medium
+      // (ζ=1) settles monotonically (any tiny excursion comes only from
+      // the feedforward-target transient, which its stronger fade-out
+      // keeps small). Assert Smooth's peak excursion past the stop
+      // exceeds Medium's, and that it stays bounded (a float, not a
+      // boomerang).
+      const dtPerFrameMicros = 16667;
+      final rec = _record(List.generate(120, (i) {
+        final tMicros = i * dtPerFrameMicros;
+        final tSec = tMicros / 1e6;
+        final x = tSec < 0.5 ? tSec * 1000.0 : 500.0;
+        return (micros: tMicros, x: x, y: 0.0, clicked: false);
+      }));
+      // Drive to ~1.9 s so even the soft spring fully settles.
+      final timeline = List.generate(115, (i) => i * dtPerFrameMicros);
+
+      double maxExcursionFor(CursorAnimationStyle style) {
+        final ctrl = CursorMotionController();
+        var maxX = double.negativeInfinity;
+        for (final micros in timeline) {
+          final u = ctrl.update(
+            position: Duration(microseconds: micros),
+            cursorRecording: rec,
+            config: CursorAnimationConfig.preset(style),
+            fps: 60,
+          );
+          if (u != null && u.screenPos.dx > maxX) maxX = u.screenPos.dx;
+        }
+        return maxX - 500.0;
+      }
+
+      final smoothOver = maxExcursionFor(CursorAnimationStyle.smooth);
+      final mediumOver = maxExcursionFor(CursorAnimationStyle.medium);
+      expect(smoothOver, greaterThan(mediumOver),
+          reason: 'Underdamped Smooth must drift past the stop point '
+              'further than critically-damped Medium. '
+              'smooth=${smoothOver.toStringAsFixed(2)}px '
+              'medium=${mediumOver.toStringAsFixed(2)}px');
+      expect(smoothOver, lessThan(25.0),
+          reason: 'The float must stay tasteful — a drift, not a boomerang.');
     });
 
     test('backwards scrub resets state so the next forward step has no velocity bleed',
@@ -528,7 +623,14 @@ void main() {
       // factor the lead is identical at both speeds, and since the 2×
       // run integrates less effective time per source position, its
       // contribution would NOT exceed the 1× contribution.)
+      //
+      // Strength now comes from the config (per-preset), not tuning, so
+      // "feedforward disabled" is a config whose feedforwardStrength is
+      // pinned to 0 while keeping Smooth's spring — see
+      // [_ZeroFeedforwardConfig] below.
       const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      final noFfCfg =
+          _ZeroFeedforwardConfig(CursorAnimationStyle.smooth);
       // Fast ramp (6250 px/s source) so the feedforward fade is fully on
       // for both speeds — isolates the `× speedFactor` lead factor.
       final rec = _record([
@@ -536,8 +638,9 @@ void main() {
           (micros: i * 16000, x: i * 100.0, y: 0, clicked: false),
       ]);
 
-      double driveTo({required double speed, required MotionTuning tuning}) {
-        final ctrl = CursorMotionController(tuning: tuning);
+      double driveTo(
+          {required double speed, required CursorAnimationConfig config}) {
+        final ctrl = CursorMotionController();
         // Step source time in `speed`-sized 16 ms increments so every run
         // reaches the same source position (480 ms), mirroring real
         // playback at that speed.
@@ -548,7 +651,7 @@ void main() {
           last = ctrl.update(
               position: Duration(microseconds: i * stepMicros),
               cursorRecording: rec,
-              config: cfg,
+              config: config,
               fps: 60,
               playbackSpeed: speed);
         }
@@ -556,11 +659,10 @@ void main() {
       }
 
       // Feedforward fully disabled → pure spring chase baseline.
-      const noFf = MotionTuning(cursorFeedforwardStrength: 0.0);
-      final contribution1x = driveTo(speed: 1.0, tuning: MotionTuning.defaults) -
-          driveTo(speed: 1.0, tuning: noFf);
-      final contribution2x = driveTo(speed: 2.0, tuning: MotionTuning.defaults) -
-          driveTo(speed: 2.0, tuning: noFf);
+      final contribution1x = driveTo(speed: 1.0, config: cfg) -
+          driveTo(speed: 1.0, config: noFfCfg);
+      final contribution2x = driveTo(speed: 2.0, config: cfg) -
+          driveTo(speed: 2.0, config: noFfCfg);
 
       // Feedforward pulls the sprite forward (toward the raw path)...
       expect(contribution1x, greaterThan(0));
@@ -577,14 +679,17 @@ void main() {
       // positive. (Under the old source-speed fade the 2× run would also
       // see 187.5 px/s and stay off, so this discriminates the change.)
       const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+      final noFfCfg =
+          _ZeroFeedforwardConfig(CursorAnimationStyle.smooth);
       // 3 px / 16 ms = 187.5 px/s source speed (< 200 px/s fade-start).
       final rec = _record([
         for (int i = 0; i <= 60; i++)
           (micros: i * 16000, x: i * 3.0, y: 0, clicked: false),
       ]);
 
-      double driveTo({required double speed, required MotionTuning tuning}) {
-        final ctrl = CursorMotionController(tuning: tuning);
+      double driveTo(
+          {required double speed, required CursorAnimationConfig config}) {
+        final ctrl = CursorMotionController();
         final stepMicros = (16000 * speed).round();
         final frames = 480000 ~/ stepMicros;
         CursorMotionUpdate? last;
@@ -592,18 +697,17 @@ void main() {
           last = ctrl.update(
               position: Duration(microseconds: i * stepMicros),
               cursorRecording: rec,
-              config: cfg,
+              config: config,
               fps: 60,
               playbackSpeed: speed);
         }
         return last!.screenPos.dx;
       }
 
-      const noFf = MotionTuning(cursorFeedforwardStrength: 0.0);
-      final contribution1x = driveTo(speed: 1.0, tuning: MotionTuning.defaults) -
-          driveTo(speed: 1.0, tuning: noFf);
-      final contribution2x = driveTo(speed: 2.0, tuning: MotionTuning.defaults) -
-          driveTo(speed: 2.0, tuning: noFf);
+      final contribution1x = driveTo(speed: 1.0, config: cfg) -
+          driveTo(speed: 1.0, config: noFfCfg);
+      final contribution2x = driveTo(speed: 2.0, config: cfg) -
+          driveTo(speed: 2.0, config: noFfCfg);
 
       // At 1× the sub-threshold source speed keeps the feedforward off.
       expect(contribution1x, closeTo(0, 1e-9));
