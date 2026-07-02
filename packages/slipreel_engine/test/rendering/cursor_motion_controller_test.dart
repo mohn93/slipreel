@@ -5,7 +5,6 @@ import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
-import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 CursorRecording _record(
@@ -22,7 +21,7 @@ CursorRecording _record(
 /// Test-only config that keeps a preset's spring character but pins
 /// [feedforwardStrength] to 0 — used to isolate the feedforward
 /// CONTRIBUTION (with vs. without) now that the strength comes from
-/// the config rather than [MotionTuning], so a tuning override alone
+/// the config rather than MotionTuning, so a tuning override alone
 /// can no longer disable it.
 class _ZeroFeedforwardConfig extends CursorAnimationConfig {
   _ZeroFeedforwardConfig(super.preset) : super.preset();
@@ -268,7 +267,7 @@ void main() {
       );
     });
 
-    test('presets are contrasted: Smooth trails ≥3× further than Rapid '
+    test('presets are contrasted: Smooth trails ≥8× further than Rapid '
         'at constant velocity', () {
       const dtPerFrameMicros = 16667;
       const velocityPxPerSec = 1000.0;
@@ -295,14 +294,14 @@ void main() {
 
       final smoothLag = lagFor(CursorAnimationStyle.smooth);
       final rapidLag = lagFor(CursorAnimationStyle.rapid);
-      expect(smoothLag, greaterThan(rapidLag * 3),
+      expect(smoothLag, greaterThan(rapidLag.abs() * 8),
           reason: 'The whole point of the redesign: Smooth (soft spring, '
               'weak feedforward) must visibly trail; Rapid (stiff, strong '
-              'feedforward) must track near-locked. '
+              'feedforward) must track near-locked. Smooth lag ≥8× Rapid. '
               'smooth=${smoothLag.toStringAsFixed(1)}px '
               'rapid=${rapidLag.toStringAsFixed(1)}px');
-      expect(rapidLag.abs(), lessThan(20.0),
-          reason: 'Rapid should read as locked (precision of one cursor '
+      expect(rapidLag.abs(), lessThan(5.0),
+          reason: 'Rapid should read as locked (<5px, precision of one cursor '
               'width at 1000 px/s)');
     });
 
