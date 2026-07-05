@@ -44,10 +44,14 @@ verify_system_dylibs_only() {
   # binary; keep only the tab-indented dependency lines (headers are not
   # indented) so a universal binary does not flag its own header path.
   # [[:space:]] not \t: BSD grep does not reliably expand \t.
-  local bad
-  bad="$(otool -L "$1" | grep -E '^[[:space:]]' | awk '{print $1}' \
-    | grep -v -E '^(/usr/lib/|/System/Library/)' || true)"
-  [[ -z "$bad" ]] || die "$1 links non-system libraries:\n$bad"
+  local deps bad
+  deps="$(otool -L "$1" | grep -E '^[[:space:]]' | awk '{print $1}')"
+  # Fail closed: every self-contained macOS binary links at least
+  # libSystem, so zero dependency lines means otool output we can't parse,
+  # not a clean binary. Do not conclude "clean" from an unreadable check.
+  [[ -n "$deps" ]] || die "$1: otool -L produced no parseable dependency lines"
+  bad="$(printf '%s\n' "$deps" | grep -v -E '^(/usr/lib/|/System/Library/)' || true)"
+  [[ -z "$bad" ]] || die "$(printf '%s links non-system libraries:\n%s' "$1" "$bad")"
 }
 
 verify_universal() {
