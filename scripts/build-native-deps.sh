@@ -155,10 +155,55 @@ build_ffmpeg() {
   echo "==> ffmpeg + ffprobe OK -> $BIN"
 }
 
-# --- whisper (implemented in Task 4) ----------------------------------------
+# --- whisper -----------------------------------------------------------------
+
+build_whisper_arch() {
+  local arch="$1"
+  local src="$WORK/whisper.cpp"
+  local builddir="$WORK/whisper-build-$arch"
+  local metal=(-DGGML_METAL=OFF)
+  if [[ "$arch" == arm64 ]]; then
+    # Embed the Metal shader library in the binary - no sidecar .metallib
+    # to bundle or sign.
+    metal=(-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON)
+  fi
+  rm -rf "$builddir"
+  cmake -S "$src" -B "$builddir" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_ARCHITECTURES="$arch" \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DGGML_NATIVE=OFF \
+    -DGGML_OPENMP=OFF \
+    -DWHISPER_BUILD_TESTS=OFF \
+    "${metal[@]}"
+  cmake --build "$builddir" --config Release -j "$JOBS" --target whisper-cli
+}
 
 build_whisper() {
-  die "whisper build not implemented yet (Task 4)"
+  require git "Needed to clone whisper.cpp."
+  require cmake "brew install cmake"
+  if [[ ! -d "$WORK/whisper.cpp" ]]; then
+    git clone --depth 1 --branch "$WHISPER_VERSION" \
+      https://github.com/ggml-org/whisper.cpp "$WORK/whisper.cpp"
+  fi
+
+  for arch in "${ARCHES[@]}"; do
+    echo "==> building whisper-cli $WHISPER_VERSION for $arch"
+    build_whisper_arch "$arch"
+  done
+
+  lipo -create \
+    "$WORK/whisper-build-arm64/bin/whisper-cli" \
+    "$WORK/whisper-build-x86_64/bin/whisper-cli" \
+    -output "$BIN/whisper-cli"
+  chmod +x "$BIN/whisper-cli"
+  verify_universal "$BIN/whisper-cli"
+  verify_system_dylibs_only "$BIN/whisper-cli"
+  smoke "$BIN/whisper-cli" --help
+
+  cp -f "$WORK/whisper.cpp/LICENSE" "$LIC/WHISPER-LICENSE-MIT"
+  echo "==> whisper-cli OK -> $BIN"
 }
 
 # --- build info --------------------------------------------------------------
