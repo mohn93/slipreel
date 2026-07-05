@@ -404,8 +404,12 @@ require() {
 # --- shared verification -----------------------------------------------------
 
 verify_system_dylibs_only() {
+  # otool -L prints a "<path> (architecture X):" header PER SLICE on a fat
+  # binary; keep only the tab-indented dependency lines (headers are not
+  # indented) so a universal binary does not flag its own header path.
+  # [[:space:]] not \t: BSD grep does not reliably expand \t.
   local bad
-  bad="$(otool -L "$1" | tail -n +2 | awk '{print $1}' \
+  bad="$(otool -L "$1" | grep -E '^[[:space:]]' | awk '{print $1}' \
     | grep -v -E '^(/usr/lib/|/System/Library/)' || true)"
   [[ -z "$bad" ]] || die "$1 links non-system libraries:\n$bad"
 }
