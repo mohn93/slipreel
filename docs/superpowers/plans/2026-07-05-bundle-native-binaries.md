@@ -538,7 +538,7 @@ write_build_info() {
     echo ""
     echo "whisper.cpp $WHISPER_VERSION (MIT)"
     echo "  source: https://github.com/ggml-org/whisper.cpp (tag $WHISPER_VERSION)"
-    echo "  cmake: -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF; arm64 adds -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON"
+    echo "  cmake: -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF; arm64 adds -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON"
   } > "$VENDOR/BUILD_INFO.txt"
 }
 
@@ -616,6 +616,7 @@ build_whisper_arch() {
     -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" \
     -DBUILD_SHARED_LIBS=OFF \
     -DGGML_NATIVE=OFF \
+    -DGGML_OPENMP=OFF \
     -DWHISPER_BUILD_TESTS=OFF \
     "${metal[@]}"
   cmake --build "$builddir" --config Release -j "$JOBS" --target whisper-cli
@@ -648,7 +649,7 @@ build_whisper() {
 }
 ```
 
-(`GGML_NATIVE=OFF` on BOTH arches — this is a distribution build; `-march=native`-style tuning to the build machine's CPU would crash or misbehave on end-user CPUs. If the `--target whisper-cli` name is rejected by the pinned tag, list targets with `cmake --build "$builddir" --target help` — older tags call it `main` — and copy the produced binary accordingly; do not silently build all targets.)
+(`GGML_NATIVE=OFF` on BOTH arches — this is a distribution build; `-march=native`-style tuning to the build machine's CPU would crash or misbehave on end-user CPUs. `GGML_OPENMP=OFF` on BOTH arches too: ggml's OpenMP backend defaults ON and auto-links Homebrew's `libomp.dylib` when present (fails `verify_system_dylibs_only`); disabling it falls back to ggml's built-in thread pool — same numerical output, no external dylib. If the `--target whisper-cli` name is rejected by the pinned tag, list targets with `cmake --build "$builddir" --target help` — older tags call it `main` — and copy the produced binary accordingly; do not silently build all targets.)
 
 - [ ] **Step 2: Run the whisper build**
 

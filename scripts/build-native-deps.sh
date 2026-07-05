@@ -219,7 +219,7 @@ write_build_info() {
     echo ""
     echo "whisper.cpp $WHISPER_VERSION (MIT)"
     echo "  source: https://github.com/ggml-org/whisper.cpp (tag $WHISPER_VERSION)"
-    echo "  cmake: -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF; arm64 adds -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON"
+    echo "  cmake: -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF; arm64 adds -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON"
   } > "$VENDOR/BUILD_INFO.txt"
 }
 
