@@ -451,8 +451,11 @@ build_ffmpeg_arch() {
     --disable-programs --enable-ffmpeg --enable-ffprobe --enable-videotoolbox"
   (
     cd "$builddir"
+    # ${arr[@]+"${arr[@]}"} instead of "${arr[@]}": macOS ships bash 3.2,
+    # where expanding an empty array under `set -u` aborts as unbound.
     "$src/configure" \
-      --arch="$arch" --target-os=darwin "${cross[@]}" "${x86asm[@]}" \
+      --arch="$arch" --target-os=darwin \
+      ${cross[@]+"${cross[@]}"} ${x86asm[@]+"${x86asm[@]}"} \
       --cc=clang \
       --extra-cflags="-arch $arch -mmacosx-version-min=$DEPLOYMENT_TARGET" \
       --extra-ldflags="-arch $arch -mmacosx-version-min=$DEPLOYMENT_TARGET" \
