@@ -68,6 +68,24 @@ else
   echo "warning: vendor/native/bin/whisper-cli not found; captions fall back to Homebrew/PATH (run scripts/build-native-deps.sh to bundle)"
 fi
 
+# Nested Mach-O executables must be signed before Xcode seals the outer
+# bundle (inside-out signing), or CodeSign fails "code object is not signed
+# at all". The x86_64 slice produced by lipo is unsigned (ld only auto-signs
+# the native arch), leaving the fat binary inconsistently signed. Re-sign
+# each with the build's identity so all slices are covered. Ad-hoc ("-") for
+# #19's local release builds; #1 supplies a Developer ID identity here (and
+# adds hardened-runtime options + notarization) via the same env.
+if [[ $copied -gt 0 && "${CODE_SIGNING_ALLOWED:-}" == "YES" ]]; then
+  sign_id="${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:--}}"
+  for b in ffmpeg ffprobe whisper-cli; do
+    [[ -f "$HELPERS/$b" ]] || continue
+    codesign --force --sign "$sign_id" "$HELPERS/$b" || {
+      echo "error: codesign failed for Helpers/$b (identity: $sign_id)" >&2
+      exit 1
+    }
+  done
+fi
+
 # License texts + build provenance ride along whenever anything was bundled.
 if [[ $copied -gt 0 && -d "$LIC" ]]; then
   mkdir -p "$APP/Resources/licenses"
