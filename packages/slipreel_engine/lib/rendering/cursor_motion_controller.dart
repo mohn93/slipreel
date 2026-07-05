@@ -21,26 +21,28 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 ///
 /// **Why partial feedforward.** A causal spring chasing a moving
 /// target sits at `cursorAt(t − τ)`, where `τ = 2ζ/ωₙ` is its
-/// analytical settle time (≈149 ms at the Smooth defaults, ≈67 ms at
+/// analytical settle time (≈169 ms at the Smooth preset, ≈53 ms at
 /// Rapid). Targeting `raw + velocity × τ` cancels that lag *exactly*
 /// — but it also makes every preset look the same during continuous
 /// motion (Smooth, Medium, Rapid all sit on the raw path), erasing
 /// the differences between presets the user picked. The compromise:
-/// `raw + velocity × τ × [_feedforwardStrength]`, with the strength
-/// at 0.5. That halves the steady-state lag (≈75 px at the Smooth
-/// defaults vs. 149 px without compensation) while preserving the
-/// preset's character — Smooth still feels softer than Rapid, just
-/// not as draggy as a pure chase. Matches the half-shift the user
-/// settled on for the FIR before springs.
+/// `raw + velocity × τ × strength`, where the strength is PER-PRESET
+/// ([CursorAnimationConfig.feedforwardStrength]): Smooth keeps most of
+/// its natural trail (0.25), Medium halves its lag (0.5), Rapid cancels
+/// almost all of it (0.85). Full cancellation would make every preset
+/// sit on the raw path during motion — erasing exactly the contrast the
+/// presets exist to provide.
 ///
 /// Other invariants:
 /// - **Scrub-aware.** A backward step or a jump >100 ms resets the
 ///   state to the raw position so scrubbing never strands a stale
 ///   velocity that would shoot the cursor across the screen on the
 ///   next forward play.
-/// - **Click flag and cursor state come from `cursorAt(recording,
-///   position)` at the rendered timestamp** — independent of the
-///   spring's state, so a press/release fires at the recorded moment.
+/// - **Click flag and cursor state come from the sampled path's CENTER
+///   tap at the rendered timestamp** (`cursorAtFiltered`, or the center
+///   tap of `smoothedCursorAt` when the preset smooths the path — the
+///   Gaussian averages x/y only), independent of the spring's state, so
+///   a press/release fires at the recorded moment.
 class CursorMotionController {
   CursorMotionController({MotionTuning? tuning})
       : tuning = tuning ?? MotionTuning.defaults;
@@ -97,21 +99,6 @@ class CursorMotionController {
 
   /// Back-look window for the scene-velocity finite difference.
   Duration get _velocityLookback => tuning.cursorVelocityLookback;
-
-  /// Fraction of the spring's analytical lag (τ) compensated by
-  /// velocity feedforward. 1.0 = full cancellation (rendered cursor
-  /// sits exactly on the recorded path, but presets all look the same
-  /// during steady motion); 0.0 = no compensation (vanilla spring
-  /// chase, ~149 px lag at Smooth defaults). 0.5 splits the difference:
-  /// half the lag of a pure chase, and the preset's stiffness still
-  /// changes the feel.
-  ///
-  /// This is the **peak** strength, applied only while the cursor is
-  /// moving above [_feedforwardFullSpeedPxPerSec]. Below that the
-  /// strength is faded toward zero so the target doesn't keep a lead
-  /// of `raw + V × τ × 0.5` when V is decaying to zero — see the
-  /// commentary on the smoothstep below for why this matters at clicks.
-  double get _feedforwardStrength => tuning.cursorFeedforwardStrength;
 
   /// Cursor speeds (px/s) at which the velocity feedforward is fully
   /// off vs. fully on. Between these speeds the strength is smooth-
@@ -181,7 +168,14 @@ class CursorMotionController {
         : Duration(
             microseconds:
                 position.inMicroseconds - cursorDelay.inMicroseconds);
-    final raw = cursorAtFiltered(cursorRecording, queryPosition, postProcess);
+    // Smooth preset: chase the GEOMETRICALLY smoothed path (jitter and
+    // corners rounded in space, no added time lag) instead of the raw
+    // one. sigma == 0 for every other preset — identical to before.
+    final sigma = config.pathSmoothingSigma;
+    final raw = sigma <= Duration.zero
+        ? cursorAtFiltered(cursorRecording, queryPosition, postProcess)
+        : smoothedCursorAt(
+            cursorRecording, queryPosition, postProcess, sigma);
     if (raw == null) {
       _cachedPosition = position;
       _cachedCursorDelay = cursorDelay;
@@ -195,6 +189,7 @@ class CursorMotionController {
       position: queryPosition,
       cursorRecording: cursorRecording,
       postProcess: postProcess,
+      sigma: sigma,
     );
 
     // Snap mode (None preset / explicit snap spring): land on the
@@ -298,10 +293,10 @@ class CursorMotionController {
     final desc = spring.toDescription();
 
     // Partial velocity feedforward — target a point ahead of the
-    // recorded position by half the spring's analytical phase lag
-    // (τ = 2ζ/ωₙ, multiplied by [_feedforwardStrength]). Halves the
-    // steady-state lag a pure chase would produce, while preserving
-    // each preset's distinctive feel.
+    // recorded position by the spring's analytical phase lag
+    // (τ = 2ζ/ωₙ, multiplied by the preset's
+    // [CursorAnimationConfig.feedforwardStrength]), preserving each
+    // preset's distinctive feel.
     //
     // The strength is scaled by a smoothstep on cursor SPEED so the
     // feedforward fades to zero before the cursor actually stops —
@@ -326,7 +321,8 @@ class CursorMotionController {
     // Under dt-scaling the spring's source-time lag is τ × speedFactor,
     // so the feedforward lead scales with it to keep the same wall-time
     // compensation as 1× (speedFactor == 1.0 ⇒ unchanged).
-    final leadSec = tauSec * speedFactor * _feedforwardStrength * fadeScale;
+    final leadSec =
+        tauSec * speedFactor * config.feedforwardStrength * fadeScale;
     final targetX = raw.x.toDouble() + velocity.dx * leadSec;
     final targetY = raw.y.toDouble() + velocity.dy * leadSec;
 
@@ -373,24 +369,23 @@ class CursorMotionController {
   /// motion at that timestamp in the recording, regardless of how the
   /// playhead got there. Stateless and direction-agnostic — forward
   /// play, backward scrub, and hover-jumps all return the same value
-  /// at the same timestamp. Computed from RAW samples even though the
-  /// rendered cursor follows the spring; that keeps the motion-blur
-  /// trail anchored to where the cursor actually was, not where the
-  /// spring is currently chasing.
+  /// at the same timestamp. Samples the same (possibly geometrically
+  /// smoothed) path the spring chases — [sigma] mirrors the target
+  /// sampler above so the feedforward aims at the same path it's meant
+  /// to lead, not raw-path velocity while the target is smoothed.
   Offset _computeSceneVelocity({
     required Duration position,
     required CursorRecording cursorRecording,
     required CursorPostProcess postProcess,
+    required Duration sigma,
   }) {
     if (position < _velocityLookback) return Offset.zero;
-    final currentSample =
-        cursorAtFiltered(cursorRecording, position, postProcess);
+    CursorPosition? sampleAt(Duration p) => sigma <= Duration.zero
+        ? cursorAtFiltered(cursorRecording, p, postProcess)
+        : smoothedCursorAt(cursorRecording, p, postProcess, sigma);
+    final currentSample = sampleAt(position);
     if (currentSample == null) return Offset.zero;
-    final prevSample = cursorAtFiltered(
-      cursorRecording,
-      position - _velocityLookback,
-      postProcess,
-    );
+    final prevSample = sampleAt(position - _velocityLookback);
     if (prevSample == null) return Offset.zero;
     final dxPx = currentSample.x - prevSample.x;
     final dyPx = currentSample.y - prevSample.y;

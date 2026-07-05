@@ -27,8 +27,8 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
   /// Tween duration applied to live zoom-level changes (e.g., when the
   /// user nudges the badge). Focused snaps in faster; Smooth lingers.
   Duration get badgeDuration => switch (this) {
-        ScreenAnimationStyle.focused => const Duration(milliseconds: 150),
-        ScreenAnimationStyle.smooth => const Duration(milliseconds: 520),
+        ScreenAnimationStyle.focused => const Duration(milliseconds: 140),
+        ScreenAnimationStyle.smooth => const Duration(milliseconds: 600),
       };
 
   Curve get badgeCurve => switch (this) {
@@ -36,43 +36,42 @@ extension ScreenAnimationStyleData on ScreenAnimationStyle {
         ScreenAnimationStyle.smooth => Curves.easeInOutCubic,
       };
 
-  /// Curve used for the zoom region's enter/exit ramps. Focused
-  /// front-loads the motion so the camera reaches the target quickly
-  /// and steadies; Smooth eases on both ends for a film-like push.
+  /// Curve used for the zoom region's enter/exit ramps. The two presets
+  /// have OPPOSITE shapes so they read differently at a glance:
+  /// Focused accelerates instantly and settles hard (snaps and locks);
+  /// Smooth is a pronounced ease-in-out — the camera visibly gathers
+  /// momentum, glides, and soft-lands (the film push).
   Curve get rampCurve => switch (this) {
-        // Focused = the quick, decisive Studio Snappy push (#7).
-        ScreenAnimationStyle.focused => const Cubic(0.4, 0.0, 0.2, 1.0),
-        // Smooth = the tuned Studio Soft feel (#7): ease-out — quick off
-        // the line, decelerating into the destination with a soft landing.
-        ScreenAnimationStyle.smooth => const Cubic(0.22, 0.61, 0.35, 1.0),
+        ScreenAnimationStyle.focused => const Cubic(0.2, 0.0, 0.0, 1.0),
+        ScreenAnimationStyle.smooth => const Cubic(0.65, 0.0, 0.35, 1.0),
       };
 
   /// Multiplier on a zoom region's enter/exit ramp DURATION. >1 = slower,
   /// more cinematic push; <1 = quicker snap. The feel's most perceptible
   /// lever on modest zooms (curve shape alone is nearly invisible).
   double get rampDurationScale => switch (this) {
-        // Focused = quick snap; Smooth = slow cinematic glide (#7).
-        ScreenAnimationStyle.focused => 0.55,
-        ScreenAnimationStyle.smooth => 1.4,
+        // ≥3× spread: ≈250 ms vs ≈850 ms on a default 500 ms ramp.
+        ScreenAnimationStyle.focused => 0.5,
+        ScreenAnimationStyle.smooth => 1.7,
       };
 
-  /// Curve used for the picker's hover-driven demo circle.
-  Curve get previewCurve => switch (this) {
-        ScreenAnimationStyle.focused => Curves.easeOutCubic,
-        ScreenAnimationStyle.smooth => Curves.easeOutCubic,
-      };
+  /// The picker's hover demo runs the REAL ramp curve so the tile
+  /// honestly previews the feel it selects.
+  Curve get previewCurve => rampCurve;
 
-  /// One forward-and-back cycle for the demo. Longer for Smooth so the
-  /// difference vs. Focused is visible.
   Duration get previewDuration => switch (this) {
-        ScreenAnimationStyle.focused => const Duration(milliseconds: 700),
-        ScreenAnimationStyle.smooth => const Duration(milliseconds: 1300),
+        ScreenAnimationStyle.focused => const Duration(milliseconds: 600),
+        ScreenAnimationStyle.smooth => const Duration(milliseconds: 1500),
       };
 }
 
-/// How aggressively the cursor-follow zoom focal point chases the
-/// recorded cursor. Mapped to [ZoomFocalController.update]'s
-/// `smoothing` factor — values closer to 1.0 mean less lag.
+/// How the rendered cursor chases the recorded path. Each preset is a
+/// spring chase with its own character: stiffness (how hard it pulls),
+/// damping ratio (Smooth is slightly underdamped for a floaty, organic
+/// feel), and velocity-feedforward strength (how much of the spring's
+/// phase lag is cancelled while the cursor is moving — see
+/// [CursorMotionController]). The camera focal chases the rendered
+/// sprite, so the preset shapes the camera feel too.
 enum CursorAnimationStyle {
   smooth,
   medium,
@@ -88,27 +87,20 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
         CursorAnimationStyle.none => 'None',
       };
 
-  /// Lerp factor passed to [ZoomFocalController.update]. 1.0 = no
-  /// smoothing (focal snaps to the cursor every frame).
-  double get smoothing => switch (this) {
-        CursorAnimationStyle.smooth => 0.09,
-        CursorAnimationStyle.medium => 0.18,
-        CursorAnimationStyle.rapid => 0.40,
-        CursorAnimationStyle.none => 1.0,
-      };
-
-  /// Curve used for the picker's hover demo.
+  /// Curve used for the picker's hover demo. Smooth uses an overshooting
+  /// curve so the demo shows the underdamped float; Rapid reads as an
+  /// immediate lock.
   Curve get previewCurve => switch (this) {
-        CursorAnimationStyle.smooth => Curves.easeOutSine,
+        CursorAnimationStyle.smooth => Curves.easeOutBack,
         CursorAnimationStyle.medium => Curves.easeOutCubic,
         CursorAnimationStyle.rapid => Curves.easeOutQuint,
         CursorAnimationStyle.none => Curves.linear,
       };
 
   Duration get previewDuration => switch (this) {
-        CursorAnimationStyle.smooth => const Duration(milliseconds: 1400),
+        CursorAnimationStyle.smooth => const Duration(milliseconds: 1600),
         CursorAnimationStyle.medium => const Duration(milliseconds: 800),
-        CursorAnimationStyle.rapid => const Duration(milliseconds: 350),
+        CursorAnimationStyle.rapid => const Duration(milliseconds: 250),
         CursorAnimationStyle.none => const Duration(milliseconds: 80),
       };
 
@@ -126,21 +118,51 @@ extension CursorAnimationStyleData on CursorAnimationStyle {
           (window: Duration.zero, curve: Curves.linear),
       };
 
-  /// Spring parameters that drive the cursor's motion chase. Stiffness
-  /// is tuned so each preset's perceived "settle time" is similar to
-  /// the legacy FIR's: Smooth chases lazily, Rapid is nearly instant,
-  /// None snaps. All presets default to critical damping (ratio = 1.0)
-  /// — no overshoot. Dragging the Springs section sliders in the
-  /// cursor tab switches the config to a custom spring that overrides
-  /// these.
+  /// Spring parameters that drive the cursor's motion chase. Each
+  /// preset has a distinct character, not just a different settle
+  /// time: Smooth is soft AND slightly underdamped (floaty arcs, a
+  /// whisper of overshoot at stops); Medium is the balanced critically-
+  /// damped reference; Rapid is a stiff, near-locked track; None
+  /// snaps to the raw recorded grid. Paired with [feedforwardStrength]
+  /// so the soft presets keep more of their natural trail. Smooth pairs
+  /// a soft, slightly underdamped spring with geometric path smoothing
+  /// — see [pathSmoothingSigma] — so the spring alone no longer has to
+  /// carry the whole "buttery" character.
   MotionSpring get motionSpring => switch (this) {
-        // Baked from the tuned Studio Soft feel (#7): a lazier chase.
         CursorAnimationStyle.smooth =>
-          const MotionSpring(stiffness: 160, damping: 1.0),
+          const MotionSpring(stiffness: 180, damping: 0.85),
         CursorAnimationStyle.medium =>
           const MotionSpring(stiffness: 380, damping: 1.0),
         CursorAnimationStyle.rapid =>
-          const MotionSpring(stiffness: 900, damping: 1.0),
+          const MotionSpring(stiffness: 1400, damping: 1.0),
         CursorAnimationStyle.none => MotionSpring.snap,
+      };
+
+  /// Fraction of the spring's analytical phase lag (τ = 2ζ/ωₙ) that the
+  /// velocity feedforward cancels while the cursor is moving (see
+  /// [CursorMotionController]). Per-preset so the presets stay
+  /// CONTRASTED: full-strength feedforward makes every spring sit on
+  /// the raw path during motion, erasing the differences between them.
+  /// Smooth keeps most of its lag (floaty trail); Rapid cancels almost
+  /// all of it (locked). None bypasses the spring entirely — 0.0 here
+  /// is never read, defined for completeness.
+  double get feedforwardStrength => switch (this) {
+        CursorAnimationStyle.smooth => 0.25,
+        CursorAnimationStyle.medium => 0.5,
+        CursorAnimationStyle.rapid => 0.85,
+        CursorAnimationStyle.none => 0.0,
+      };
+
+  /// Gaussian window (σ) for GEOMETRIC path smoothing — see
+  /// `smoothedCursorAt`. Non-zero only for Smooth: the preset's "buttery"
+  /// character comes from idealizing the path's geometry (jitter and
+  /// corners rounded in space), not from spring lag in time. Zero for
+  /// every other preset = identity bypass, byte-identical sampling.
+  Duration get pathSmoothingSigma => switch (this) {
+        CursorAnimationStyle.smooth => const Duration(milliseconds: 80),
+        CursorAnimationStyle.medium ||
+        CursorAnimationStyle.rapid ||
+        CursorAnimationStyle.none =>
+          Duration.zero,
       };
 }
