@@ -92,11 +92,18 @@ build_ffmpeg_arch() {
   FFMPEG_CONFIGURE_FLAGS="--arch=$arch --target-os=darwin \
     --cc=clang --extra-cflags=-arch $arch -mmacosx-version-min=$DEPLOYMENT_TARGET \
     --disable-autodetect --disable-network --disable-doc --disable-debug \
-    --disable-programs --enable-ffmpeg --enable-ffprobe --enable-videotoolbox"
+    --disable-programs --enable-ffmpeg --enable-ffprobe --enable-videotoolbox \
+    --enable-zlib"
   (
     cd "$builddir"
     # ${arr[@]+"${arr[@]}"} instead of "${arr[@]}": macOS ships bash 3.2,
     # where expanding an empty array under `set -u` aborts as unbound.
+    #
+    # --enable-zlib: autodetect is off, so external libs must be named
+    # explicitly. zlib is a system lib (/usr/lib/libz, permissive license =>
+    # LGPL-safe) and the png ENCODER depends on it; the app's GIF export
+    # writes its palette to palette.png, so without zlib the png encoder is
+    # absent and GIF export fails "Encoder not found" in the shipped app.
     "$src/configure" \
       --arch="$arch" --target-os=darwin \
       ${cross[@]+"${cross[@]}"} ${x86asm[@]+"${x86asm[@]}"} \
@@ -108,7 +115,8 @@ build_ffmpeg_arch() {
       --disable-doc \
       --disable-debug \
       --disable-programs --enable-ffmpeg --enable-ffprobe \
-      --enable-videotoolbox
+      --enable-videotoolbox \
+      --enable-zlib
     make -j"$JOBS" ffmpeg ffprobe
   )
 }
@@ -143,6 +151,10 @@ build_ffmpeg() {
     || die "bundled ffmpeg is missing the h264_videotoolbox encoder"
   "$BIN/ffmpeg" -hide_banner -encoders 2>/dev/null | grep -q ' aac ' \
     || die "bundled ffmpeg is missing the aac encoder"
+  # The GIF export writes its palette to palette.png (gif_export_pipeline),
+  # so the png encoder (zlib-dependent) must be present.
+  "$BIN/ffmpeg" -hide_banner -encoders 2>/dev/null | grep -q ' png ' \
+    || die "bundled ffmpeg is missing the png encoder (needs --enable-zlib) — GIF export writes palette.png"
   for f in amix adelay atempo palettegen paletteuse; do
     "$BIN/ffmpeg" -hide_banner -filters 2>/dev/null | grep -q "$f" \
       || die "bundled ffmpeg is missing the $f filter"

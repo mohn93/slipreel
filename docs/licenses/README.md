@@ -26,3 +26,10 @@ which rides in `Contents/Resources/licenses/WHISPER-LICENSE-MIT`.
 Bump the pinned version in `scripts/build-native-deps.sh`, re-run it
 (both binaries re-verify: universal, statically self-contained, smoke
 runs), rebuild the app. Binary updates reach users through app updates.
+
+Do a **clean** build (`flutter clean` first) after changing the vendored
+binaries. An incremental build can leave the app's code signature stale
+(`codesign --verify` reports the changed Helpers binaries as "modified")
+because Xcode's final signing step is up-to-date-skipped when only our
+copy phase's outputs changed. A clean build — the distribution path —
+always re-seals correctly.

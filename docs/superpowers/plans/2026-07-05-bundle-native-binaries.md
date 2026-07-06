@@ -490,9 +490,14 @@ build_ffmpeg_arch() {
       --disable-doc \
       --disable-debug \
       --disable-programs --enable-ffmpeg --enable-ffprobe \
-      --enable-videotoolbox
+      --enable-videotoolbox \
+      --enable-zlib
     make -j"$JOBS" ffmpeg ffprobe
   )
+  # --enable-zlib: autodetect is off, so external libs must be named
+  # explicitly. zlib is a system lib (/usr/lib/libz, permissive => LGPL-safe);
+  # the png encoder depends on it and the app's GIF export writes palette.png,
+  # so without zlib GIF export fails "Encoder not found" in the shipped app.
 }
 
 build_ffmpeg() {
@@ -525,6 +530,10 @@ build_ffmpeg() {
     || die "bundled ffmpeg is missing the h264_videotoolbox encoder"
   "$BIN/ffmpeg" -hide_banner -encoders 2>/dev/null | grep -q ' aac ' \
     || die "bundled ffmpeg is missing the aac encoder"
+  # The GIF export writes its palette to palette.png (gif_export_pipeline),
+  # so the png encoder (zlib-dependent) must be present.
+  "$BIN/ffmpeg" -hide_banner -encoders 2>/dev/null | grep -q ' png ' \
+    || die "bundled ffmpeg is missing the png encoder (needs --enable-zlib) — GIF export writes palette.png"
   for f in amix adelay atempo palettegen paletteuse; do
     "$BIN/ffmpeg" -hide_banner -filters 2>/dev/null | grep -q "$f" \
       || die "bundled ffmpeg is missing the $f filter"
