@@ -49,9 +49,11 @@ if [[ $copied -gt 0 && "${CODE_SIGNING_ALLOWED:-}" == "YES" ]]; then
 fi
 
 # License texts + build provenance ride along whenever anything was bundled.
+# find -exec (not `cp "$LIC"/*`): an empty licenses dir would expand the glob
+# literally and abort the build under `set -e`.
 if [[ $copied -gt 0 && -d "$LIC" ]]; then
   mkdir -p "$APP/Resources/licenses"
-  cp -f "$LIC"/* "$APP/Resources/licenses/"
+  find "$LIC" -type f -exec cp -f {} "$APP/Resources/licenses/" \;
   if [[ -f "$ROOT/vendor/native/BUILD_INFO.txt" ]]; then
     cp -f "$ROOT/vendor/native/BUILD_INFO.txt" "$APP/Resources/licenses/"
   fi
