@@ -16,6 +16,7 @@ import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/state/motion_tuning_store.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 import 'debug/debug_probe.dart';
+import 'platform/native_deps.dart';
 import 'platform/window_chrome_channel.dart';
 import 'onboarding/onboarding_store.dart';
 import 'onboarding/tips_controller.dart';
@@ -70,6 +71,10 @@ Future<void> main() async {
 
   // Initialize logging system
   AppLogger.initialize(level: Level.debug);
+
+  // Prefer the CLI binaries bundled in Contents/Helpers (release builds);
+  // dev builds without them keep resolving from Homebrew/PATH.
+  NativeDeps.wireBundledBinaries();
 
   // Register `ext.qa.*` VM-service extensions so the agent-wires MCP
   // server (running as a separate process) can introspect the live

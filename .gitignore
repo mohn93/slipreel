@@ -23,6 +23,9 @@ build/
 # macOS
 .DS_Store
 
+# Vendored native binaries (built locally by scripts/build-native-deps.sh)
+vendor/
+
 # Melos
 .melos_tool/
 

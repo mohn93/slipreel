@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart' show Size;
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
+import 'package:slipreel_engine/export/ffmpeg_resolver.dart';
 import 'package:slipreel_engine/export/frame_compositor.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
@@ -196,7 +197,7 @@ class RecordingThumbnailService {
       '-pix_fmt', 'bgra',
       '-',
     ];
-    final res = await Process.run('ffmpeg', args, stdoutEncoding: null);
+    final res = await Process.run(Ffmpeg.resolve(), args, stdoutEncoding: null);
     final out = res.stdout as List<int>;
     final frameSize = w * h * 4;
     if (out.length < frameSize) return null;
