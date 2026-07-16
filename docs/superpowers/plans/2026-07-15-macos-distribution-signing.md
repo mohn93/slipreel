@@ -409,7 +409,7 @@ git commit -m "build(macos): release-macos.sh build + Developer ID sign-verify s
 - Modify: `scripts/release-macos.sh` (append stages after the Task 4 verify stage)
 
 **Interfaces:**
-- Consumes: `$APP`, `$DIST`, `$VERSION`, `$SIGN_IDENTITY`, `notary_args`, `die`, `log` from Task 4.
+- Consumes: `$APP`, `$DIST`, `$VERSION`, `$SIGN_IDENTITY`, `NOTARY_ARGS`/`resolve_notary_args`, `notarize`, `die`, `log` from Task 4.
 - Produces: `dist/Slipreel-<version>.dmg` (signed, notarized, stapled) and the final Gatekeeper gate.
 
 - [ ] **Step 1: Replace the Task 4 trailer with the notarize/DMG stages**

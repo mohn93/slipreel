@@ -20,6 +20,15 @@ FLUTTER="${FLUTTER:-fvm flutter}"
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "==> $*"; }
 
+# Remove the DMG staging dir and the notarization zip on any exit, so a
+# failed create-dmg/notarize does not leak a ~100MB copy of the app.
+cleanup() {
+  [[ -n "${STAGE:-}" ]] && rm -rf "$STAGE"
+  [[ -n "${APP_ZIP:-}" ]] && rm -f "$APP_ZIP"
+  return 0
+}
+trap cleanup EXIT
+
 # notarytool auth resolved once into an array (never word-split): a local
 # keychain profile, or the CI API-key triple. Populated by preflight so a
 # missing-credentials `die` aborts the whole script, not just a subshell.
