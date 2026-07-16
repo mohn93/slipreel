@@ -57,6 +57,9 @@ jobs:
 
       - name: Release pipeline
         env:
+          # CI installs plain `flutter` (subosito), not fvm — override the
+          # script's `fvm flutter` default.
+          FLUTTER: flutter
           NOTARY_KEY: ${{ runner.temp }}/notary.p8
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
@@ -66,7 +69,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/Slipreel-*.dmg
-          tag_name: ${{ github.ref_name }}
+          # Reconstruct the tag from the resolved version so a manual
+          # workflow_dispatch tags v<version>, not the branch ref_name.
+          tag_name: v${{ steps.ver.outputs.version }}
           fail_on_unmatched_files: true
 
       - name: Clean up keychain + key

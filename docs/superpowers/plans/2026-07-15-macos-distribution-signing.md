@@ -92,7 +92,6 @@ Produces `dist/Slipreel-1.0.0.dmg` (signed, notarized, stapled).
 |---|---|
 | `MACOS_CERT_P12_BASE64` | `base64 -i DeveloperID.p12` — export the cert+key from Keychain Access as a `.p12`, then base64 it |
 | `MACOS_CERT_PASSWORD` | the password you set when exporting the `.p12` |
-| `APPLE_TEAM_ID` | your `<TEAMID>` |
 | `NOTARY_KEY_P8_BASE64` | `base64 -i AuthKey_<KEYID>.p8` |
 | `NOTARY_KEY_ID` | `<KEYID>` |
 | `NOTARY_ISSUER_ID` | `<ISSUER_ID>` |
@@ -563,6 +562,9 @@ jobs:
 
       - name: Release pipeline
         env:
+          # CI installs plain `flutter` (subosito), not fvm — override the
+          # script's `fvm flutter` default.
+          FLUTTER: flutter
           NOTARY_KEY: ${{ runner.temp }}/notary.p8
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
@@ -572,7 +574,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/Slipreel-*.dmg
-          tag_name: ${{ github.ref_name }}
+          # Reconstruct the tag from the resolved version so a manual
+          # workflow_dispatch tags v<version>, not the branch ref_name.
+          tag_name: v${{ steps.ver.outputs.version }}
           fail_on_unmatched_files: true
 
       - name: Clean up keychain + key

@@ -57,10 +57,12 @@ Produces `dist/Slipreel-1.0.0.dmg` (signed, notarized, stapled).
 |---|---|
 | `MACOS_CERT_P12_BASE64` | `base64 -i DeveloperID.p12` — export the cert+key from Keychain Access as a `.p12`, then base64 it |
 | `MACOS_CERT_PASSWORD` | the password you set when exporting the `.p12` |
-| `APPLE_TEAM_ID` | your `<TEAMID>` |
 | `NOTARY_KEY_P8_BASE64` | `base64 -i AuthKey_<KEYID>.p8` |
 | `NOTARY_KEY_ID` | `<KEYID>` |
 | `NOTARY_ISSUER_ID` | `<ISSUER_ID>` |
+
+(Your Team ID is not a secret — it's committed in the Xcode signing config,
+so it doesn't need to be added here.)
 
 To export the `.p12`: Keychain Access → login keychain → find **Developer ID
 Application: … (TEAMID)** → expand it, select **both** the certificate and
