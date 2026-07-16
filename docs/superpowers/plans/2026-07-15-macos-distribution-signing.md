@@ -315,12 +315,15 @@ FLUTTER="${FLUTTER:-fvm flutter}"
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "==> $*"; }
 
-# notarytool auth: local keychain profile, or the CI API-key triple.
-notary_args() {
+# notarytool auth resolved once into an array (never word-split): a local
+# keychain profile, or the CI API-key triple. Populated by preflight so a
+# missing-credentials `die` aborts the whole script, not just a subshell.
+NOTARY_ARGS=()
+resolve_notary_args() {
   if [[ -n "${NOTARY_PROFILE:-}" ]]; then
-    printf '%s\n' --keychain-profile "$NOTARY_PROFILE"
+    NOTARY_ARGS=(--keychain-profile "$NOTARY_PROFILE")
   elif [[ -n "${NOTARY_KEY:-}" && -n "${NOTARY_KEY_ID:-}" && -n "${NOTARY_ISSUER:-}" ]]; then
-    printf '%s\n' --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"
+    NOTARY_ARGS=(--key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
   else
     die "no notary credentials: set NOTARY_PROFILE, or NOTARY_KEY+NOTARY_KEY_ID+NOTARY_ISSUER (see docs/release/SETUP.md)"
   fi
@@ -330,12 +333,12 @@ notary_args() {
 # log (fetched by the submission id from the submit output) and abort.
 notarize() { # notarize <path-to-.zip-or-.dmg>
   local target="$1" out subid
-  if out="$(xcrun notarytool submit "$target" $(notary_args) --wait 2>&1)"; then
+  if out="$(xcrun notarytool submit "$target" "${NOTARY_ARGS[@]}" --wait 2>&1)"; then
     printf '%s\n' "$out"
   else
     printf '%s\n' "$out" >&2
     subid="$(printf '%s\n' "$out" | awk '/^ *id:/{print $2; exit}')"
-    [[ -n "$subid" ]] && xcrun notarytool log "$subid" $(notary_args) >&2 2>/dev/null || true
+    [[ -n "$subid" ]] && xcrun notarytool log "$subid" "${NOTARY_ARGS[@]}" >&2 2>/dev/null || true
     die "notarization failed for $target (see log above)"
   fi
 }
@@ -346,7 +349,7 @@ command -v xcrun >/dev/null || die "Xcode command line tools required"
 security find-identity -v -p codesigning | grep -q "Developer ID Application" \
   || die "no 'Developer ID Application' certificate in the keychain (see docs/release/SETUP.md)"
 command -v create-dmg >/dev/null || die "create-dmg not found: brew install create-dmg (build-machine only)"
-notary_args >/dev/null   # validates credentials are present before the long build
+resolve_notary_args   # validates credentials are present (populates NOTARY_ARGS) before the long build
 mkdir -p "$DIST"
 
 # --- stage 1: build ----------------------------------------------------------

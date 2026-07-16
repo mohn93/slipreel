@@ -20,12 +20,15 @@ FLUTTER="${FLUTTER:-fvm flutter}"
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "==> $*"; }
 
-# notarytool auth: local keychain profile, or the CI API-key triple.
-notary_args() {
+# notarytool auth resolved once into an array (never word-split): a local
+# keychain profile, or the CI API-key triple. Populated by preflight so a
+# missing-credentials `die` aborts the whole script, not just a subshell.
+NOTARY_ARGS=()
+resolve_notary_args() {
   if [[ -n "${NOTARY_PROFILE:-}" ]]; then
-    printf '%s\n' --keychain-profile "$NOTARY_PROFILE"
+    NOTARY_ARGS=(--keychain-profile "$NOTARY_PROFILE")
   elif [[ -n "${NOTARY_KEY:-}" && -n "${NOTARY_KEY_ID:-}" && -n "${NOTARY_ISSUER:-}" ]]; then
-    printf '%s\n' --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"
+    NOTARY_ARGS=(--key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
   else
     die "no notary credentials: set NOTARY_PROFILE, or NOTARY_KEY+NOTARY_KEY_ID+NOTARY_ISSUER (see docs/release/SETUP.md)"
   fi
@@ -35,12 +38,12 @@ notary_args() {
 # log (fetched by the submission id from the submit output) and abort.
 notarize() { # notarize <path-to-.zip-or-.dmg>
   local target="$1" out subid
-  if out="$(xcrun notarytool submit "$target" $(notary_args) --wait 2>&1)"; then
+  if out="$(xcrun notarytool submit "$target" "${NOTARY_ARGS[@]}" --wait 2>&1)"; then
     printf '%s\n' "$out"
   else
     printf '%s\n' "$out" >&2
     subid="$(printf '%s\n' "$out" | awk '/^ *id:/{print $2; exit}')"
-    [[ -n "$subid" ]] && xcrun notarytool log "$subid" $(notary_args) >&2 2>/dev/null || true
+    [[ -n "$subid" ]] && xcrun notarytool log "$subid" "${NOTARY_ARGS[@]}" >&2 2>/dev/null || true
     die "notarization failed for $target (see log above)"
   fi
 }
@@ -51,12 +54,13 @@ command -v xcrun >/dev/null || die "Xcode command line tools required"
 security find-identity -v -p codesigning | grep -q "Developer ID Application" \
   || die "no 'Developer ID Application' certificate in the keychain (see docs/release/SETUP.md)"
 command -v create-dmg >/dev/null || die "create-dmg not found: brew install create-dmg (build-machine only)"
-notary_args >/dev/null   # validates credentials are present before the long build
+resolve_notary_args   # validates credentials are present (populates NOTARY_ARGS) before the long build
 mkdir -p "$DIST"
 
 # --- stage 1: build ----------------------------------------------------------
 log "building Slipreel $VERSION (clean release)"
-( cd "$APP_PKG" && $FLUTTER clean >/dev/null && $FLUTTER build macos --release )
+( cd "$APP_PKG" && $FLUTTER clean >/dev/null && $FLUTTER build macos --release ) \
+  || die "flutter build macos --release failed"
 [[ -d "$APP" ]] || die "expected app not found at $APP"
 
 # --- stage 2: verify signature ----------------------------------------------
@@ -64,6 +68,7 @@ log "verifying Developer ID signature + hardened runtime"
 codesign --verify --deep --strict --verbose=2 "$APP" \
   || die "codesign verification failed for the app bundle"
 for b in ffmpeg ffprobe whisper-cli; do
+  [[ -f "$APP/Contents/Helpers/$b" ]] || die "Helpers/$b missing from the bundle"
   codesign --display --verbose=2 "$APP/Contents/Helpers/$b" 2>&1 | grep -q "flags=.*runtime" \
     || die "Helpers/$b is not signed with the hardened runtime"
 done
@@ -73,5 +78,47 @@ codesign --display --verbose=2 "$APP" 2>&1 | grep -q "Authority=Developer ID App
   || die "app is not signed by a Developer ID Application authority"
 log "signature + hardened runtime verified"
 
-# --- stages 3-7 added in Task 5 ---------------------------------------------
-log "sign+verify complete for $APP (notarize/DMG stages follow)"
+# --- stage 3: notarize the app ----------------------------------------------
+APP_ZIP="$DIST/Slipreel-$VERSION-app.zip"
+log "notarizing the app"
+ditto -c -k --keepParent "$APP" "$APP_ZIP"
+notarize "$APP_ZIP"
+rm -f "$APP_ZIP"
+
+# --- stage 4: staple the app ------------------------------------------------
+log "stapling the app"
+xcrun stapler staple "$APP"
+xcrun stapler validate "$APP" || die "stapler validate failed for the app"
+
+# --- stage 5: build the DMG -------------------------------------------------
+DMG="$DIST/Slipreel-$VERSION.dmg"
+log "building $DMG"
+rm -f "$DMG"
+STAGE="$(mktemp -d)"
+cp -R "$APP" "$STAGE/"
+create-dmg \
+  --volname "Slipreel $VERSION" \
+  --window-size 540 380 \
+  --icon-size 128 \
+  --icon "Slipreel.app" 140 190 \
+  --app-drop-link 400 190 \
+  --no-internet-enable \
+  "$DMG" "$STAGE/" \
+  || die "create-dmg failed"
+rm -rf "$STAGE"
+
+# --- stage 6: sign + notarize + staple the DMG ------------------------------
+log "signing the DMG"
+codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG" \
+  || die "codesign failed for the DMG"
+log "notarizing the DMG"
+notarize "$DMG"
+log "stapling the DMG"
+xcrun stapler staple "$DMG"
+xcrun stapler validate "$DMG" || die "stapler validate failed for the DMG"
+
+# --- stage 7: final Gatekeeper gate -----------------------------------------
+log "final Gatekeeper assessment"
+spctl -a -vvv --type open --context context:primary-signature "$DMG" 2>&1 \
+  | grep -q "accepted" || die "spctl did not accept the notarized DMG"
+log "DONE: $DMG ($(du -h "$DMG" | cut -f1))"
