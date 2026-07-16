@@ -18,8 +18,8 @@ command (`scripts/release-macos.sh`) or a tag push (CI).
    security find-identity -v -p codesigning
    ```
    You should see `Developer ID Application: <Your Name> (<TEAMID>)`. The
-   10-character `<TEAMID>` is your Apple Team ID — you'll commit it in the
-   Xcode config (Task 2) and add it as the `APPLE_TEAM_ID` secret.
+   10-character `<TEAMID>` is your Apple Team ID — it's committed in the Xcode
+   signing config (not a secret).
 
 ## 2. App Store Connect API key (for notarytool)
 
