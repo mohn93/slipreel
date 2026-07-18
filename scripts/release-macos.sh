@@ -137,6 +137,9 @@ xcrun stapler validate "$DMG" || die "stapler validate failed for the DMG"
 
 # --- stage 7: final Gatekeeper gate -----------------------------------------
 log "final Gatekeeper assessment"
-spctl -a -vvv --type open --context context:primary-signature "$DMG" 2>&1 \
-  | grep -q "accepted" || die "spctl did not accept the notarized DMG"
+# spctl exits non-zero when it REJECTS, so capture unconditionally then look
+# for "accepted" (a pipe under pipefail would conflate the two).
+assess="$(spctl -a -vvv --type open --context context:primary-signature "$DMG" 2>&1 || true)"
+grep -q "accepted" <<<"$assess" \
+  || die "spctl did not accept the notarized DMG:"$'\n'"$assess"
 log "DONE: $DMG ($(du -h "$DMG" | cut -f1))"
