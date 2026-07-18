@@ -78,8 +78,13 @@ codesign --verify --deep --strict --verbose=2 "$APP" \
   || die "codesign verification failed for the app bundle"
 for b in ffmpeg ffprobe whisper-cli; do
   [[ -f "$APP/Contents/Helpers/$b" ]] || die "Helpers/$b missing from the bundle"
-  codesign --display --verbose=2 "$APP/Contents/Helpers/$b" 2>&1 | grep -q "flags=.*runtime" \
-    || die "Helpers/$b is not signed with the hardened runtime"
+  # Capture then grep (not `codesign ... | grep -q`): under pipefail a transient
+  # codesign read failure on the fresh bundle would otherwise be misreported as
+  # "not hardened". Separate the two and surface the real flags on mismatch.
+  hdr="$(codesign --display --verbose=2 "$APP/Contents/Helpers/$b" 2>&1)" \
+    || die "codesign could not read Helpers/$b:"$'\n'"$hdr"
+  grep -q "flags=.*runtime" <<<"$hdr" \
+    || die "Helpers/$b is not hardened ($(grep -oE 'flags=[^ ]+' <<<"$hdr" || echo 'no flags line'))"
 done
 # Pre-notarization spctl may report "rejected (not notarized)"; that is expected
 # here and resolved after stapling. Just confirm the signing source is Developer ID.
