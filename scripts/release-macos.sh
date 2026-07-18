@@ -88,8 +88,12 @@ for b in ffmpeg ffprobe whisper-cli; do
 done
 # Pre-notarization spctl may report "rejected (not notarized)"; that is expected
 # here and resolved after stapling. Just confirm the signing source is Developer ID.
-codesign --display --verbose=2 "$APP" 2>&1 | grep -q "Authority=Developer ID Application" \
-  || die "app is not signed by a Developer ID Application authority"
+# Capture then grep (same rationale as the Helper loop: avoid a pipefail
+# false-negative from a transient codesign read on the fresh bundle).
+app_sig="$(codesign --display --verbose=2 "$APP" 2>&1)" \
+  || die "codesign could not read the app bundle:"$'\n'"$app_sig"
+grep -q "Authority=Developer ID Application" <<<"$app_sig" \
+  || die "app is not signed by a Developer ID Application authority (authorities: $(grep -oE 'Authority=[^)]*\)?' <<<"$app_sig" | tr '\n' ';' || echo none))"
 log "signature + hardened runtime verified"
 
 # --- stage 3: notarize the app ----------------------------------------------
