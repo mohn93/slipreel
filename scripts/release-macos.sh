@@ -47,13 +47,14 @@ resolve_notary_args() {
 # log (fetched by the submission id from the submit output) and abort.
 notarize() { # notarize <path-to-.zip-or-.dmg>
   local target="$1" out subid
-  if out="$(xcrun notarytool submit "$target" "${NOTARY_ARGS[@]}" --wait 2>&1)"; then
-    printf '%s\n' "$out"
-  else
-    printf '%s\n' "$out" >&2
-    subid="$(printf '%s\n' "$out" | awk '/^ *id:/{print $2; exit}')"
+  # notarytool 1.x can exit 0 even when the final status is Invalid, so do not
+  # trust the exit code — capture the output and require "status: Accepted".
+  out="$(xcrun notarytool submit "$target" "${NOTARY_ARGS[@]}" --wait 2>&1 || true)"
+  printf '%s\n' "$out"
+  subid="$(printf '%s\n' "$out" | awk '/^ *id:/{print $2; exit}')"
+  if ! grep -qE "status: Accepted" <<<"$out"; then
     [[ -n "$subid" ]] && xcrun notarytool log "$subid" "${NOTARY_ARGS[@]}" >&2 2>/dev/null || true
-    die "notarization failed for $target (see log above)"
+    die "notarization was NOT Accepted for $target (Apple notary log above)"
   fi
 }
 
