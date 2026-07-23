@@ -37,8 +37,8 @@ jobs:
       - run: dart pub global activate melos ^6.0.0
       - run: melos bootstrap
 
-      - name: Install create-dmg
-        run: brew install create-dmg
+      - name: Install create-dmg and sparkle
+        run: brew install create-dmg sparkle
 
       - name: Build native deps (ffmpeg + whisper-cli)
         run: scripts/build-native-deps.sh
@@ -72,7 +72,10 @@ jobs:
           NOTARY_KEY: ${{ runner.temp }}/notary.p8
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
-        run: scripts/release-macos.sh "${{ steps.ver.outputs.version }}"
+          SPARKLE_ED_KEY_FILE: ${{ runner.temp }}/sparkle_ed_priv
+        run: |
+          printf '%s' "${{ secrets.SPARKLE_ED_PRIVATE_KEY }}" > "$SPARKLE_ED_KEY_FILE"
+          scripts/release-macos.sh "${{ steps.ver.outputs.version }}"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -83,8 +86,29 @@ jobs:
           tag_name: v${{ steps.ver.outputs.version }}
           fail_on_unmatched_files: true
 
-      - name: Clean up keychain + key
+      - name: Build appcast against the published feed
+        env:
+          SPARKLE_ED_KEY_FILE: ${{ runner.temp }}/sparkle_ed_priv
+        run: |
+          source scripts/lib/version.sh
+          BUILD="$(derive_build_number "${{ steps.ver.outputs.version }}")"
+          DMG="$(ls dist/Slipreel-*.dmg)"
+          URL="https://github.com/${{ github.repository }}/releases/download/v${{ steps.ver.outputs.version }}/$(basename "$DMG")"
+          mkdir -p out
+          # Start from the currently-published feed so history accumulates;
+          # first release 404s and update-appcast.sh creates the skeleton.
+          curl -fsSL https://mohn93.github.io/slipreel/appcast.xml -o out/appcast.xml || true
+          scripts/update-appcast.sh "${{ steps.ver.outputs.version }}" "$BUILD" "$DMG" "$URL" out/appcast.xml
+
+      - name: Deploy appcast to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./out
+          keep_files: true
+
+      - name: Clean up keychain + keys
         if: always()
         run: |
-          rm -f "$RUNNER_TEMP/notary.p8"
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/sparkle_ed_priv"
           security delete-keychain "$RUNNER_TEMP/build.keychain" || true
