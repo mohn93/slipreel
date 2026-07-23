@@ -17,6 +17,11 @@ DIST="$ROOT/dist"
 SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application}"
 FLUTTER="${FLUTTER:-fvm flutter}"
 
+# shellcheck source=scripts/lib/version.sh
+source "$ROOT/scripts/lib/version.sh"
+BUILD_NUMBER="$(derive_build_number "$VERSION")" \
+  || die "invalid version '$VERSION' (need MAJOR.MINOR.PATCH, minor/patch < 1000)"
+
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "==> $*"; }
 
@@ -69,7 +74,10 @@ mkdir -p "$DIST"
 
 # --- stage 1: build ----------------------------------------------------------
 log "building Slipreel $VERSION (clean release)"
-( cd "$APP_PKG" && $FLUTTER clean >/dev/null && $FLUTTER build macos --release ) \
+log "release $VERSION -> CFBundleShortVersionString $VERSION, CFBundleVersion $BUILD_NUMBER"
+( cd "$APP_PKG" && $FLUTTER clean >/dev/null \
+    && $FLUTTER build macos --release \
+        --build-name="$VERSION" --build-number="$BUILD_NUMBER" ) \
   || die "flutter build macos --release failed"
 [[ -d "$APP" ]] || die "expected app not found at $APP"
 
@@ -87,6 +95,22 @@ for b in ffmpeg ffprobe whisper-cli; do
   grep -q "flags=.*runtime" <<<"$hdr" \
     || die "Helpers/$b is not hardened ($(grep -oE 'flags=[^ ]+' <<<"$hdr" || echo 'no flags line'))"
 done
+# Sparkle ships nested executables (Autoupdate, Updater.app, XPC services)
+# inside Sparkle.framework; each must be hardened or notarization rejects the
+# bundle. Xcode's deep-sign over use_frameworks! normally covers embedded
+# frameworks — assert it here (capture-then-grep, same rationale as the
+# Helpers loop) to fail before the notarization round-trip, not after. Only
+# Mach-O *executables* need the runtime flag; skip the Sparkle dylib itself.
+SPARKLE_FW="$APP/Contents/Frameworks/Sparkle.framework"
+[[ -d "$SPARKLE_FW" ]] || die "Sparkle.framework missing from the bundle (auto_updater not embedded?)"
+while IFS= read -r macho; do
+  [[ "$(file -b "$macho")" == *"Mach-O"*"executable"* ]] || continue
+  fhdr="$(codesign --display --verbose=2 "$macho" 2>&1)" \
+    || die "codesign could not read $macho:"$'\n'"$fhdr"
+  grep -q "flags=.*runtime" <<<"$fhdr" \
+    || die "Sparkle executable not hardened: $macho ($(grep -oE 'flags=[^ ]+' <<<"$fhdr" || echo 'no flags line'))"
+done < <(find "$SPARKLE_FW" -type f -perm -111)
+log "Sparkle.framework nested executables hardened"
 # Pre-notarization spctl may report "rejected (not notarized)"; that is expected
 # here and resolved after stapling. Just confirm the signing source is Developer ID.
 # Capture then grep (same rationale as the Helper loop: avoid a pipefail
@@ -144,3 +168,19 @@ assess="$(spctl -a -vvv --type open --context context:primary-signature "$DMG" 2
 grep -q "accepted" <<<"$assess" \
   || die "spctl did not accept the notarized DMG:"$'\n'"$assess"
 log "DONE: $DMG ($(du -h "$DMG" | cut -f1))"
+
+# --- stage 8: appcast entry (Sparkle auto-update) ---------------------------
+# The enclosure points at the GitHub Release asset the workflow publishes for
+# this tag; the URL is deterministic from the tag + DMG name. Written locally
+# for inspection/e2e; CI republishes the canonical accumulating feed to
+# gh-pages (honors APPCAST_PATH so CI can target its own copy).
+REPO_SLUG="${REPO_SLUG:-mohn93/slipreel}"
+ENCLOSURE_URL="https://github.com/$REPO_SLUG/releases/download/v$VERSION/$(basename "$DMG")"
+APPCAST_OUT="${APPCAST_PATH:-$DIST/appcast.xml}"
+if command -v sign_update >/dev/null; then
+  log "writing appcast entry -> $APPCAST_OUT"
+  "$ROOT/scripts/update-appcast.sh" "$VERSION" "$BUILD_NUMBER" "$DMG" "$ENCLOSURE_URL" "$APPCAST_OUT" \
+    || die "appcast generation failed"
+else
+  log "sparkle tools absent (brew install sparkle) — skipping appcast entry"
+fi
