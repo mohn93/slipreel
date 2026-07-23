@@ -172,6 +172,10 @@ grep -q "accepted" <<<"$assess" \
 log "DONE: $DMG ($(du -h "$DMG" | cut -f1))"
 
 # --- stage 8: appcast entry (Sparkle auto-update) ---------------------------
+# The Sparkle CLI (sign_update) ships inside the auto_updater pod, not on PATH
+# or Homebrew. `pod install` (run by the build above) populated it here.
+SPARKLE_BIN="$APP_PKG/macos/Pods/Sparkle/bin"
+[[ -d "$SPARKLE_BIN" ]] && export PATH="$SPARKLE_BIN:$PATH"
 # The enclosure points at the GitHub Release asset the workflow publishes for
 # this tag; the URL is deterministic from the tag + DMG name. Written locally
 # for inspection/e2e; CI republishes the canonical accumulating feed to

@@ -37,8 +37,8 @@ jobs:
       - run: dart pub global activate melos ^6.0.0
       - run: melos bootstrap
 
-      - name: Install create-dmg and sparkle
-        run: brew install create-dmg sparkle
+      - name: Install create-dmg
+        run: brew install create-dmg
 
       - name: Build native deps (ffmpeg + whisper-cli)
         run: scripts/build-native-deps.sh
@@ -90,6 +90,7 @@ jobs:
         env:
           SPARKLE_ED_KEY_FILE: ${{ runner.temp }}/sparkle_ed_priv
         run: |
+          export PATH="$PWD/packages/screen_recorder/macos/Pods/Sparkle/bin:$PATH"
           source scripts/lib/version.sh
           BUILD="$(derive_build_number "${{ steps.ver.outputs.version }}")"
           DMG="$(ls dist/Slipreel-*.dmg)"

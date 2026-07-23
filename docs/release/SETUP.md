@@ -85,10 +85,18 @@ the Apple Developer ID signature. Do this once.
 
 ### 1. Generate the EdDSA update keypair
 
-Install the Sparkle CLI tools and generate a keypair:
+The Sparkle CLI tools (`generate_keys`, `sign_update`) ship inside the
+auto_updater plugin's Sparkle CocoaPod — there is no Homebrew package for
+them (`brew install sparkle` installs an unrelated, deprecated GUI cask).
+They appear after a macOS build or `pod install`, at
+`packages/screen_recorder/macos/Pods/Sparkle/bin/`. If that directory
+doesn't exist yet, run one build first:
 
-    brew install sparkle
-    generate_keys
+    (cd packages/screen_recorder && fvm flutter build macos --release)
+
+Generate the keypair:
+
+    packages/screen_recorder/macos/Pods/Sparkle/bin/generate_keys
 
 `generate_keys` stores the PRIVATE key in your login keychain and prints the
 PUBLIC key (a base64 string). Copy the public key: it goes in
@@ -97,7 +105,7 @@ PUBLIC key (a base64 string). Copy the public key: it goes in
 
 Export the private key for CI (keep this file secret, do not commit it):
 
-    generate_keys -x sparkle_private_key
+    packages/screen_recorder/macos/Pods/Sparkle/bin/generate_keys -x sparkle_private_key
 
 ### 2. Add the CI secret
 
@@ -121,3 +129,6 @@ pushes to `gh-pages` on the first release; after that Pages serves
 For a local `scripts/release-macos.sh` run the DMG is signed with the private
 key in your login keychain automatically (no env needed). To sign with an
 explicit key file instead, set `SPARKLE_ED_KEY_FILE=/path/to/sparkle_private_key`.
+The script resolves `sign_update` from the pod bin
+(`packages/screen_recorder/macos/Pods/Sparkle/bin/`) itself — it does not
+need to be on your PATH.

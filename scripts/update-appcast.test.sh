@@ -43,4 +43,12 @@ if command -v xmllint >/dev/null; then
   xmllint --noout "$appcast" || fail "appcast is not well-formed XML"
 fi
 
+# a pre-existing empty/truncated appcast must be regenerated, not yield 0 bytes
+empty="$tmp/empty-appcast.xml"
+: > "$empty"
+"$here/update-appcast.sh" 1.0.0 1000000 "$tmp/Slipreel-1.0.0.dmg" \
+  "https://example.com/Slipreel-1.0.0.dmg" "$empty"
+[[ -s "$empty" ]] || fail "empty pre-existing appcast produced empty output"
+grep -q '<sparkle:version>1000000</sparkle:version>' "$empty" || fail "empty-file regen missing item"
+
 echo "update-appcast.test.sh: OK"
