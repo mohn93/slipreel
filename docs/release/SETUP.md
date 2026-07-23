@@ -77,3 +77,47 @@ so it doesn't need to be added here.)
 To export the `.p12`: Keychain Access → login keychain → find **Developer ID
 Application: … (TEAMID)** → expand it, select **both** the certificate and
 its private key → right-click → **Export 2 items** → `.p12` → set a password.
+
+## Sparkle auto-update (sub-project B)
+
+Auto-update signs each DMG with an EdDSA (ed25519) key that is separate from
+the Apple Developer ID signature. Do this once.
+
+### 1. Generate the EdDSA update keypair
+
+Install the Sparkle CLI tools and generate a keypair:
+
+    brew install sparkle
+    generate_keys
+
+`generate_keys` stores the PRIVATE key in your login keychain and prints the
+PUBLIC key (a base64 string). Copy the public key: it goes in
+`packages/screen_recorder/macos/Runner/Info.plist` as `SUPublicEDKey`
+(committed — the public key is not sensitive).
+
+Export the private key for CI (keep this file secret, do not commit it):
+
+    generate_keys -x sparkle_private_key
+
+### 2. Add the CI secret
+
+In GitHub → repo Settings → Secrets and variables → Actions, add:
+
+| Secret name             | Value                                            |
+| ----------------------- | ------------------------------------------------ |
+| `SPARKLE_ED_PRIVATE_KEY`| The full contents of the `sparkle_private_key` file from step 1 |
+
+(No public key secret — it is committed in Info.plist.)
+
+### 3. Enable GitHub Pages
+
+Repo Settings → Pages → Build and deployment → Source = "Deploy from a branch",
+Branch = `gh-pages`, folder = `/ (root)`. The release workflow creates and
+pushes to `gh-pages` on the first release; after that Pages serves
+`https://mohn93.github.io/slipreel/appcast.xml`.
+
+### Local releases
+
+For a local `scripts/release-macos.sh` run the DMG is signed with the private
+key in your login keychain automatically (no env needed). To sign with an
+explicit key file instead, set `SPARKLE_ED_KEY_FILE=/path/to/sparkle_private_key`.
