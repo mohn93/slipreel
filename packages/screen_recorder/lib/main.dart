@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -52,6 +53,8 @@ import 'ui/screens/playback_screen.dart';
 import 'ui/widgets/recovery_modal.dart';
 import 'ui/widgets/scene_blur_overlay.dart';
 import 'ui/widgets/zoom/playback_canvas.dart';
+import 'update/updater_backend.dart';
+import 'update/updater_service.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
 
 /// Navigator key used by the recording surface widgets (WakeModal,
@@ -173,6 +176,14 @@ Future<void> main() async {
     _registerSlipreelDebugExtensions(tipsController: tipsController);
   }
 
+  // Auto-update (macOS only). Construct once, wire Sparkle's feed + daily
+  // background check at startup, and share the same instance with the
+  // Settings "Check for updates" tile via the provider override below.
+  final updaterService = UpdaterService(SparkleUpdaterBackend());
+  if (Platform.isMacOS) {
+    unawaited(updaterService.init());
+  }
+
   runApp(ProviderScope(
     overrides: [
       motionTuningProvider.overrideWith(
@@ -221,6 +232,7 @@ Future<void> main() async {
           initial: initialFavorites,
         ),
       ),
+      updaterServiceProvider.overrideWithValue(updaterService),
     ],
     child: MyApp(
       onboardingDone: onboardingDone,
