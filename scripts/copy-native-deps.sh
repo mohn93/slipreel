@@ -39,9 +39,17 @@ fi
 # adds hardened-runtime options + notarization) via the same env.
 if [[ $copied -gt 0 && "${CODE_SIGNING_ALLOWED:-}" == "YES" ]]; then
   sign_id="${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:--}}"
+  # Notarization requires every nested executable to be hardened-signed with a
+  # secure timestamp. Apply those only for a real Developer ID identity; keep
+  # ad-hoc ("-") local builds byte-for-byte unchanged (no runtime opt, no
+  # network round-trip for a timestamp).
+  hardened_opts=()
+  if [[ "$sign_id" != "-" ]]; then
+    hardened_opts=(--options runtime --timestamp)
+  fi
   for b in ffmpeg ffprobe whisper-cli; do
     [[ -f "$HELPERS/$b" ]] || continue
-    codesign --force --sign "$sign_id" "$HELPERS/$b" || {
+    codesign --force ${hardened_opts[@]+"${hardened_opts[@]}"} --sign "$sign_id" "$HELPERS/$b" || {
       echo "error: codesign failed for Helpers/$b (identity: $sign_id)" >&2
       exit 1
     }

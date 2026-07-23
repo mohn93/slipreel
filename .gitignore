@@ -26,6 +26,9 @@ build/
 # Vendored native binaries (built locally by scripts/build-native-deps.sh)
 vendor/
 
+# Release artifacts (signed/notarized DMGs)
+dist/
+
 # Melos
 .melos_tool/
 
