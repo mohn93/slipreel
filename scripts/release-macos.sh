@@ -17,13 +17,15 @@ DIST="$ROOT/dist"
 SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application}"
 FLUTTER="${FLUTTER:-fvm flutter}"
 
+die() { echo "ERROR: $*" >&2; exit 1; }
+log() { echo "==> $*"; }
+
+# Derive the monotonic build number early (needs die()/log() defined above so a
+# malformed version prints the intended diagnostic, not "die: command not found").
 # shellcheck source=scripts/lib/version.sh
 source "$ROOT/scripts/lib/version.sh"
 BUILD_NUMBER="$(derive_build_number "$VERSION")" \
   || die "invalid version '$VERSION' (need MAJOR.MINOR.PATCH, minor/patch < 1000)"
-
-die() { echo "ERROR: $*" >&2; exit 1; }
-log() { echo "==> $*"; }
 
 # Remove the DMG staging dir and the notarization zip on any exit, so a
 # failed create-dmg/notarize does not leak a ~100MB copy of the app.
