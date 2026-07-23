@@ -50,6 +50,16 @@ NOTARY_PROFILE=slipreel-notary scripts/release-macos.sh 1.0.0
 ```
 Produces `dist/Slipreel-1.0.0.dmg` (signed, notarized, stapled).
 
+If your keychain has more than one **Developer ID Application** certificate
+(e.g. a renewal overlap or a second team), the bare `"Developer ID
+Application"` identity is ambiguous and `codesign` will fail. Pass the
+fully-qualified identity (from `security find-identity -v -p codesigning`)
+explicitly:
+```bash
+SIGN_IDENTITY="Developer ID Application: Becoming Ventures, LLC (UD7WB2694V)" \
+  NOTARY_PROFILE=slipreel-notary scripts/release-macos.sh 1.0.0
+```
+
 **Via CI:** push a tag `v1.0.0`. The workflow needs these repository
 **Secrets** (Settings → Secrets and variables → Actions):
 

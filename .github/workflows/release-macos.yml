@@ -9,6 +9,9 @@ on:
         description: "Version (e.g. 1.0.0)"
         required: true
 
+permissions:
+  contents: write   # softprops/action-gh-release needs this to publish the DMG
+
 jobs:
   release:
     runs-on: macos-latest
@@ -27,6 +30,12 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+
+      # Regenerate the gitignored pubspec_overrides.yaml so the build resolves
+      # the vendored/patched video_player_avfoundation (workspace path override)
+      # instead of the unpatched pub.dev copy. Mirrors the test CI.
+      - run: dart pub global activate melos ^6.0.0
+      - run: melos bootstrap
 
       - name: Install create-dmg
         run: brew install create-dmg

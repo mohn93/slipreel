@@ -73,16 +73,19 @@ CI setup is copy-paste when the user is ready.
 
 ### 1. Xcode Release signing config (committed)
 
-- New `Runner/Configs/Signing.xcconfig` holding non-secret signing settings,
-  included by the Release config:
+- Non-secret signing settings on the Runner target's Release build config
+  (as implemented: inlined directly into `project.pbxproj`, not a separate
+  xcconfig):
   - `DEVELOPMENT_TEAM = <TEAMID>` (committed — not sensitive)
   - `CODE_SIGN_STYLE = Manual`
   - `CODE_SIGN_IDENTITY = Developer ID Application`
   - `ENABLE_HARDENED_RUNTIME = YES`
   - `OTHER_CODE_SIGN_FLAGS = --timestamp` (secure timestamp on the app sign)
+  - `CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO` (Xcode otherwise injects
+    `com.apple.security.get-task-allow`, which notarization rejects)
 - `project.pbxproj` Release config for the Runner target: replace
-  `CODE_SIGN_IDENTITY = "-"` and reference the xcconfig. Debug/Profile stay
-  ad-hoc (unchanged) so local `flutter run`/tests are unaffected.
+  `CODE_SIGN_IDENTITY = "-"`. Debug/Profile stay ad-hoc (unchanged) so local
+  `flutter run`/tests are unaffected.
 - Rationale for Xcode-signs (not script-re-signs): Xcode knows the Flutter
   framework layout and deep-signs inside-out correctly; the script owns
   packaging + notarization, not re-signing frameworks.
@@ -156,8 +159,11 @@ The script never commits or uploads; it only produces the artifact. Output:
   `scripts/release-macos.sh $VERSION` → attach `dist/Slipreel-*.dmg` to a
   GitHub Release for the tag → delete the temp keychain.
 - **GitHub Secrets required** (documented in SETUP.md):
-  `MACOS_CERT_P12_BASE64`, `MACOS_CERT_PASSWORD`, `APPLE_TEAM_ID`,
-  `NOTARY_KEY_P8_BASE64`, `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID`.
+  `MACOS_CERT_P12_BASE64`, `MACOS_CERT_PASSWORD`, `NOTARY_KEY_P8_BASE64`,
+  `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID`. (Team ID is committed in the Xcode
+  config, not a secret.) The workflow also runs `melos bootstrap` before the
+  build so the vendored `video_player_avfoundation` override is present, and
+  declares `permissions: contents: write` to publish the release.
 - The workflow contains no signing logic itself — it sets up the environment
   and calls the script, so local and CI releases are byte-for-byte the same
   process.
