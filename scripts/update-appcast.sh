@@ -15,7 +15,7 @@ URL="${4:?enclosure url required}"
 APPCAST="${5:-dist/appcast.xml}"
 MIN_OS="13.0"
 FEED_TITLE="Slipreel"
-FEED_LINK="https://mohn93.github.io/slipreel/appcast.xml"
+FEED_LINK="https://slipreel.app/appcast.xml"
 
 command -v sign_update >/dev/null \
   || { echo "ERROR: sign_update not found: brew install sparkle (build-machine only)" >&2; exit 1; }

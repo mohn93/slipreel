@@ -176,12 +176,11 @@ log "DONE: $DMG ($(du -h "$DMG" | cut -f1))"
 # or Homebrew. `pod install` (run by the build above) populated it here.
 SPARKLE_BIN="$APP_PKG/macos/Pods/Sparkle/bin"
 [[ -d "$SPARKLE_BIN" ]] && export PATH="$SPARKLE_BIN:$PATH"
-# The enclosure points at the GitHub Release asset the workflow publishes for
-# this tag; the URL is deterministic from the tag + DMG name. Written locally
-# for inspection/e2e; CI republishes the canonical accumulating feed to
-# gh-pages (honors APPCAST_PATH so CI can target its own copy).
-REPO_SLUG="${REPO_SLUG:-mohn93/slipreel}"
-ENCLOSURE_URL="https://github.com/$REPO_SLUG/releases/download/v$VERSION/$(basename "$DMG")"
+# The enclosure points at the public download on slipreel.app where CI rsyncs
+# the DMG. Written locally for inspection/e2e; CI seeds from the live feed and
+# uploads the accumulating appcast (honors APPCAST_PATH so CI targets its copy).
+DOWNLOAD_BASE="${DOWNLOAD_BASE:-https://slipreel.app/download}"
+ENCLOSURE_URL="$DOWNLOAD_BASE/$(basename "$DMG")"
 APPCAST_OUT="${APPCAST_PATH:-$DIST/appcast.xml}"
 if command -v sign_update >/dev/null; then
   log "writing appcast entry -> $APPCAST_OUT"

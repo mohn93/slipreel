@@ -33,7 +33,7 @@ void main() {
     await service.init(); // second call must not re-configure
 
     expect(backend.feedUrl,
-        'https://mohn93.github.io/slipreel/appcast.xml');
+        'https://slipreel.app/appcast.xml');
     expect(backend.interval, 86400);
     expect(backend.calls.where((c) => c == 'setFeedURL').length, 1);
   });

@@ -35,7 +35,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Slipreel needs camera access to record your webcam alongside your screen.</string>
 	<key>SUFeedURL</key>
-	<string>https://mohn93.github.io/slipreel/appcast.xml</string>
+	<string>https://slipreel.app/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>BfOJEhSrpFvuU7xfWNiffUrGpBPzZddUL/54ikghH5M=</string>
 	<key>SUEnableAutomaticChecks</key>

@@ -107,22 +107,47 @@ Export the private key for CI (keep this file secret, do not commit it):
 
     packages/screen_recorder/macos/Pods/Sparkle/bin/generate_keys -x sparkle_private_key
 
-### 2. Add the CI secret
+### 2. Add the CI secrets
 
 In GitHub → repo Settings → Secrets and variables → Actions, add:
 
-| Secret name             | Value                                            |
-| ----------------------- | ------------------------------------------------ |
-| `SPARKLE_ED_PRIVATE_KEY`| The full contents of the `sparkle_private_key` file from step 1 |
+| Secret name               | Value                                                                    |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `SPARKLE_ED_PRIVATE_KEY`  | The full contents of the `sparkle_private_key` file from step 1          |
+| `SLIPREEL_DEPLOY_SSH_KEY` | The PRIVATE SSH key CI uses to rsync releases to the slipreel.app server (step 3) |
 
-(No public key secret — it is committed in Info.plist.)
+(No public-key secret — the Sparkle public key is committed in Info.plist.)
 
-### 3. Enable GitHub Pages
+### 3. Distribution hosting (slipreel.app)
 
-Repo Settings → Pages → Build and deployment → Source = "Deploy from a branch",
-Branch = `gh-pages`, folder = `/ (root)`. The release workflow creates and
-pushes to `gh-pages` on the first release; after that Pages serves
-`https://mohn93.github.io/slipreel/appcast.xml`.
+The appcast and the DMGs are served from `https://slipreel.app` — that is the
+`SUFeedURL` in Info.plist and the enclosure base (`DOWNLOAD_BASE`) in
+`release-macos.sh`. Hosting is a VPS running nginx, fronted by Cloudflare.
+
+One-time server setup (current box: VPS `94.156.144.73`, user `deploy`, webroot
+`/var/www/slipreel`; documented for reproducibility):
+
+- A `deploy` user whose `~/.ssh/authorized_keys` holds the PUBLIC half of the
+  `SLIPREEL_DEPLOY_SSH_KEY` keypair.
+- Webroot `/var/www/slipreel` (owned by `deploy`) with a `download/` subdir.
+- An nginx vhost for `slipreel.app` on :80 and :443. Behind Cloudflare in
+  "Full" SSL mode the :443 vhost uses a self-signed origin cert (clients get
+  Cloudflare's edge cert). `/appcast.xml` is served as `application/xml`,
+  `/download/` as `application/octet-stream`.
+- Cloudflare DNS: an A record for `@` → the VPS IP (proxied is fine).
+
+Generate and register the deploy keypair once:
+
+    ssh-keygen -t ed25519 -f slipreel_deploy -C github-actions-slipreel-deploy
+    # append slipreel_deploy.pub to  deploy@<vps>:~/.ssh/authorized_keys
+    # add the private key file (slipreel_deploy) as the SLIPREEL_DEPLOY_SSH_KEY secret
+
+The release workflow rsyncs the DMG to `/var/www/slipreel/download/` and the
+updated `appcast.xml` to `/var/www/slipreel/appcast.xml` (DMG first, so the
+feed never points at a missing file), pins the server's SSH host key, and
+prunes old DMGs (keeps the newest 3 — the disk is small and Sparkle only needs
+the current one). The deploy host and pinned host key live in
+`.github/workflows/release-macos.yml`; update both if the server changes.
 
 ### Local releases
 

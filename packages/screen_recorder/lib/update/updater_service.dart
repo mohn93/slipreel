@@ -14,7 +14,7 @@ class UpdaterService {
 
   /// GitHub-Pages-hosted appcast. Mirrors `SUFeedURL` in Info.plist.
   static const String feedUrl =
-      'https://mohn93.github.io/slipreel/appcast.xml';
+      'https://slipreel.app/appcast.xml';
 
   /// Daily background check (seconds). Sparkle's minimum honored value is 3600.
   static const int scheduledCheckInterval = 86400;
