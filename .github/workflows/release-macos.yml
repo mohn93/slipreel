@@ -72,7 +72,10 @@ jobs:
           NOTARY_KEY: ${{ runner.temp }}/notary.p8
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
-        run: scripts/release-macos.sh "${{ steps.ver.outputs.version }}"
+          SPARKLE_ED_KEY_FILE: ${{ runner.temp }}/sparkle_ed_priv
+        run: |
+          printf '%s' "${{ secrets.SPARKLE_ED_PRIVATE_KEY }}" > "$SPARKLE_ED_KEY_FILE"
+          scripts/release-macos.sh "${{ steps.ver.outputs.version }}"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -83,8 +86,48 @@ jobs:
           tag_name: v${{ steps.ver.outputs.version }}
           fail_on_unmatched_files: true
 
-      - name: Clean up keychain + key
+      - name: Build appcast against the published feed
+        env:
+          SPARKLE_ED_KEY_FILE: ${{ runner.temp }}/sparkle_ed_priv
+        run: |
+          export PATH="$PWD/packages/screen_recorder/macos/Pods/Sparkle/bin:$PATH"
+          source scripts/lib/version.sh
+          BUILD="$(derive_build_number "${{ steps.ver.outputs.version }}")"
+          DMG="$(ls dist/Slipreel-*.dmg)"
+          URL="https://slipreel.app/download/$(basename "$DMG")"
+          mkdir -p out
+          # Seed from the live feed so history accumulates; first release 404s
+          # (or returns the marker-less placeholder) and update-appcast.sh
+          # regenerates the skeleton.
+          curl -fsSL https://slipreel.app/appcast.xml -o out/appcast.xml || true
+          scripts/update-appcast.sh "${{ steps.ver.outputs.version }}" "$BUILD" "$DMG" "$URL" out/appcast.xml
+
+      - name: Deploy DMG + appcast to slipreel.app
+        env:
+          DEPLOY_HOST: 94.156.144.73
+          DEPLOY_USER: deploy
+          DEPLOY_ROOT: /var/www/slipreel
+          KEEP_DMGS: "3"
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SLIPREEL_DEPLOY_SSH_KEY }}" > ~/.ssh/slipreel_deploy
+          chmod 600 ~/.ssh/slipreel_deploy
+          # Pin the origin host key (no trust-on-first-use).
+          echo '94.156.144.73 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINgv/ZSk87k7WKXNKkCMZQu8oYm+rBZIDKNaere0Ch81' >> ~/.ssh/known_hosts
+          SSH="ssh -i $HOME/.ssh/slipreel_deploy -o IdentitiesOnly=yes"
+          DMG="$(ls dist/Slipreel-*.dmg)"
+          # DMG first, then the appcast that references it, so the live feed
+          # never points at a not-yet-uploaded file.
+          rsync -av -e "$SSH" "$DMG" "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/download/"
+          rsync -av -e "$SSH" out/appcast.xml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/appcast.xml"
+          # Disk is tight on the box: keep only the newest $KEEP_DMGS DMGs.
+          # Sparkle only needs the current one; older items stay in the feed.
+          $SSH "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_ROOT/download' && ls -1t Slipreel-*.dmg 2>/dev/null | tail -n +$((KEEP_DMGS+1)) | xargs -r rm -f; ls -1 Slipreel-*.dmg"
+          rm -f ~/.ssh/slipreel_deploy
+
+      - name: Clean up keychain + keys
         if: always()
         run: |
-          rm -f "$RUNNER_TEMP/notary.p8"
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/sparkle_ed_priv" "$HOME/.ssh/slipreel_deploy"
           security delete-keychain "$RUNNER_TEMP/build.keychain" || true

@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../state/global_preferences_controller.dart';
 import '../../state/permissions_controller.dart';
 import '../../state/recording_settings_controller.dart';
+import '../../update/updater_service.dart';
 import '../theme/app_palette_context.dart';
 import '../widgets/permission_denied_sheet.dart';
 import '../widgets/permission_status_row.dart';
@@ -305,12 +306,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.system_update_alt,
-                  color: context.palette.textSecondary),
+                  color: context.palette.textPrimary),
               title: Text('Check for updates',
-                  style: TextStyle(color: context.palette.textSecondary)),
-              subtitle: Text('Coming soon',
-                  style: TextStyle(color: context.palette.textSecondary)),
-              enabled: false,
+                  style: TextStyle(color: context.palette.textPrimary)),
+              trailing: Icon(Icons.chevron_right,
+                  size: 16, color: context.palette.textSecondary),
+              onTap: () async {
+                try {
+                  await ref.read(updaterServiceProvider).checkForUpdates();
+                } catch (_) {
+                  // Sparkle unavailable (non-macOS / test host) — nothing to do.
+                }
+              },
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
