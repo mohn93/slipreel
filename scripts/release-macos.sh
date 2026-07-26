@@ -83,6 +83,39 @@ log "release $VERSION -> CFBundleShortVersionString $VERSION, CFBundleVersion $B
   || die "flutter build macos --release failed"
 [[ -d "$APP" ]] || die "expected app not found at $APP"
 
+# --- stage 1.5: re-sign Sparkle's nested code (inside-out) -------------------
+# Xcode/CocoaPods embed Sparkle.framework but do NOT re-sign its nested helpers
+# (Autoupdate, Updater.app, XPCServices) with Developer ID + a secure timestamp,
+# so notarization rejects them ("not signed with a valid Developer ID
+# certificate" / "does not include a secure timestamp"). Sign them explicitly
+# inside-out, then re-seal the app so its signature covers the new signatures.
+SPARKLE_FW="$APP/Contents/Frameworks/Sparkle.framework"
+if [[ -d "$SPARKLE_FW" ]]; then
+  log "signing Sparkle.framework nested code (Developer ID + hardened + timestamp)"
+  # Innermost first (globs tolerate the version letter B/C/...): the XPC
+  # services and the Updater app (bundles), then the Autoupdate tool, then the
+  # framework itself, then the whole app.
+  sp_items=()
+  while IFS= read -r it; do [[ -n "$it" ]] && sp_items+=("$it"); done < <(
+    find "$SPARKLE_FW"/Versions/*/XPCServices -maxdepth 1 -name '*.xpc' 2>/dev/null
+    find "$SPARKLE_FW"/Versions/* -maxdepth 1 -name 'Updater.app' 2>/dev/null
+    find "$SPARKLE_FW"/Versions/* -maxdepth 1 -name 'Autoupdate' -type f 2>/dev/null
+  )
+  for it in ${sp_items[@]+"${sp_items[@]}"}; do
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$it" \
+      || die "failed to sign Sparkle component: $it"
+  done
+  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$SPARKLE_FW" \
+    || die "failed to sign Sparkle.framework"
+  # Re-seal the app (top level only; nested Helpers/Sparkle keep their now-valid
+  # signatures). Pass the same entitlements or they are stripped.
+  codesign --force --options runtime --timestamp \
+    --entitlements "$APP_PKG/macos/Runner/Release.entitlements" \
+    --sign "$SIGN_IDENTITY" "$APP" \
+    || die "failed to re-sign the app bundle after Sparkle re-sign"
+  log "Sparkle nested code signed + app re-sealed"
+fi
+
 # --- stage 2: verify signature ----------------------------------------------
 log "verifying Developer ID signature + hardened runtime"
 codesign --verify --deep --strict --verbose=2 "$APP" \
@@ -107,12 +140,17 @@ SPARKLE_FW="$APP/Contents/Frameworks/Sparkle.framework"
 [[ -d "$SPARKLE_FW" ]] || die "Sparkle.framework missing from the bundle (auto_updater not embedded?)"
 while IFS= read -r macho; do
   [[ "$(file -b "$macho")" == *"Mach-O"*"executable"* ]] || continue
-  fhdr="$(codesign --display --verbose=2 "$macho" 2>&1)" \
+  # verbose=4 surfaces both the hardened-runtime flag AND the signing Authority,
+  # so we catch "hardened but ad-hoc/Apple-Development-signed" (which notary
+  # rejects) — not just a missing runtime flag.
+  fhdr="$(codesign --display --verbose=4 "$macho" 2>&1)" \
     || die "codesign could not read $macho:"$'\n'"$fhdr"
   grep -q "flags=.*runtime" <<<"$fhdr" \
     || die "Sparkle executable not hardened: $macho ($(grep -oE 'flags=[^ ]+' <<<"$fhdr" || echo 'no flags line'))"
+  grep -q "Authority=Developer ID Application" <<<"$fhdr" \
+    || die "Sparkle executable not Developer ID signed: $macho (authorities: $(grep -oE 'Authority=[^)]*\)?' <<<"$fhdr" | tr '\n' ';' || echo none))"
 done < <(find "$SPARKLE_FW" -type f -perm -111)
-log "Sparkle.framework nested executables hardened"
+log "Sparkle.framework nested executables hardened + Developer ID signed"
 # Pre-notarization spctl may report "rejected (not notarized)"; that is expected
 # here and resolved after stapling. Just confirm the signing source is Developer ID.
 # Capture then grep (same rationale as the Helper loop: avoid a pipefail
