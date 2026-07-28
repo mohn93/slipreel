@@ -25,6 +25,7 @@
     18. FAQ
     19. Final CTA
     20. Footer
+    21. Accessibility utilities
    ========================================================================== */
 
 
@@ -1346,4 +1347,48 @@ a {
     order: 0;
     margin-left: auto;
   }
+}
+
+
+/* 21. Accessibility utilities ============================================
+   The skip link is the first focusable element in the document (see
+   index.html) so a keyboard or screen-reader visitor can jump straight past
+   the nav to #main. It is off-screen rather than display:none, so it still
+   receives focus; :focus-visible in section 4 supplies the ring.
+   `.visually-hidden` clips content to a single pixel without display:none,
+   for the same reason -- section headings and other assistive-tech-only
+   text still need to exist in the accessibility tree even when the visual
+   design has no room for them.
+   ------------------------------------------------------------------------ */
+
+.skip-link {
+  position: absolute;
+  top: -80px;
+  left: 16px;
+  z-index: 1000;
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  background-color: var(--bg-card);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: 580;
+  text-decoration: none;
+  box-shadow: var(--shadow-lift);
+  transition: top var(--dur-fast) var(--ease-out);
+}
+
+.skip-link:focus {
+  top: 16px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
