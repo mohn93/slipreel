@@ -16,6 +16,9 @@
      9. Motion
     10. Navigation
     11. Hero
+    12. Reveal class alias
+    13. Feature theater
+    14. Hero cursor trail
    ========================================================================== */
 
 
@@ -691,5 +694,213 @@ a {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+
+/* 12. Reveal class alias =================================================
+   Section 9 armed `.reveal` with the revealed state spelled `.is-visible`.
+   The reveal engine shipped in `site.js` spells it `.is-revealed`. Rather
+   than reach back into section 9 and rename a published hook, both spellings
+   are honoured here and mean exactly the same thing. Section 9's reduce block
+   already forces every `.reveal` visible regardless of which class is on it,
+   so the reduced-motion guarantee is unaffected.
+   ------------------------------------------------------------------------ */
+
+.js .reveal.is-revealed {
+  opacity: 1;
+  transform: none;
+}
+
+
+/* 13. Feature theater ====================================================
+   The centrepiece. On a wide screen, with JavaScript and with motion allowed,
+   one framed app window is pinned in the right-hand column while five copy
+   beats scroll past it on the left, and the pinned window cross-fades between
+   the five shots as each beat takes over.
+
+   Everywhere else -- narrow screens, JavaScript off, reduced motion -- the
+   section is a single plain column in which each beat's copy sits directly
+   above its own image. That fallback is the BASE state below; the pinned
+   layer is added by exactly one media query,
+   `(min-width: 900px) and (prefers-reduced-motion: no-preference)`, further
+   scoped to `.js`. So nothing has to be undone for the fallback to be right:
+   if any one of the three conditions is absent the pinned layer simply never
+   applies, and no `[data-beat]` or `[data-beat-img]` is ever hidden.
+
+   Stacking the copy with its own image needs the beat and the image to be
+   siblings, but the image lives inside `[data-theater-visual]`. Both wrappers
+   therefore take `display: contents` in the base state, which promotes every
+   beat and every image to a direct flex item of the grid so `order` can
+   interleave them. DOM order stays copy-first, so the reading order is the
+   five beats in sequence followed by the five illustrations.
+   ------------------------------------------------------------------------ */
+
+.theater__grid {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(44px, 7vw, 76px);
+}
+
+.theater__beats,
+.theater__visual {
+  display: contents;
+}
+
+/* Beat N then image N. Only ever consulted in the stacked base state. */
+.theater__beat[data-beat="0"] { order: 1; }
+.theater__img[data-beat-img="0"] { order: 2; }
+.theater__beat[data-beat="1"] { order: 3; }
+.theater__img[data-beat-img="1"] { order: 4; }
+.theater__beat[data-beat="2"] { order: 5; }
+.theater__img[data-beat-img="2"] { order: 6; }
+.theater__beat[data-beat="3"] { order: 7; }
+.theater__img[data-beat-img="3"] { order: 8; }
+.theater__beat[data-beat="4"] { order: 9; }
+.theater__img[data-beat-img="4"] { order: 10; }
+
+/* Copy. `position: relative` is here rather than in the pinned layer because
+   the progress rail is painted as this element's ::before. */
+.theater__beat {
+  position: relative;
+  max-width: 46ch;
+}
+
+.theater__step {
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 620;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  font-variant-numeric: tabular-nums;
+}
+
+.theater__beat h2 {
+  margin-top: 14px;
+  font-size: var(--fs-xl);
+  letter-spacing: -0.025em;
+}
+
+.theater__copy {
+  margin-top: 14px;
+  color: var(--ink-dim);
+  font-size: var(--fs-md);
+  line-height: 1.55;
+}
+
+/* The shots. In the stacked state each one is its own framed card. */
+.theater__img {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  box-shadow: inset 0 1px 0 0 var(--line-strong), var(--shadow-lift);
+}
+
+@media (min-width: 900px) and (prefers-reduced-motion: no-preference) {
+  .js .theater__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    column-gap: clamp(32px, 4vw, 64px);
+    /* Both wrappers occupy row 1, so the row is as tall as the beats column
+       and the pinned figure has that whole height to travel through. */
+    align-items: start;
+  }
+
+  .js .theater__beats {
+    display: block;
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .js .theater__visual {
+    display: block;
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    top: var(--nav-h);
+    /* The whole viewport below the nav, so the framed window can be centred
+       in it rather than clinging to the top edge. */
+    height: calc(100vh - var(--nav-h));
+  }
+
+  /* One screenful of scroll per beat, with the copy centred in its own
+     screenful -- which is exactly where the observer's -45%/-45% band sits,
+     so the image swaps as a beat reaches the middle of the viewport. */
+  .js .theater__beat {
+    display: grid;
+    align-content: center;
+    min-height: calc(100vh - var(--nav-h));
+    max-width: 44ch;
+    padding-left: 30px;
+  }
+
+  /* The thin progress rail. Each beat paints its own full-height segment, so
+     the five segments meet to form one unbroken line down the column and the
+     active segment lights up in place. */
+  .js .theater__beat::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 2px;
+    border-radius: 2px;
+    background-color: var(--line);
+    transition: background-color var(--dur-mid) var(--ease-out),
+      box-shadow var(--dur-mid) var(--ease-out);
+  }
+
+  .js .theater__beat.is-active::before {
+    background-color: var(--accent);
+    box-shadow: 0 0 18px 0 var(--accent-glow);
+  }
+
+  /* All five shots stacked in the pinned frame and centred in it. Absolute,
+     so a cross-fade can never shift the layout; height falls out of the
+     intrinsic ratio carried by the width/height attributes. */
+  .js .theater__img {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    opacity: 0;
+    transform: translateY(-50%) scale(1.018);
+    transition: opacity 450ms var(--ease-out), transform 450ms var(--ease-out);
+    box-shadow: inset 0 1px 0 0 var(--line-strong), var(--shadow-lift),
+      var(--shadow-bloom);
+  }
+
+  .js .theater__img.is-active {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+
+/* 14. Hero cursor trail ==================================================
+   Slipreel's own smoothed cursor, performed on the visitor. The canvas is
+   mounted onto [data-cursor-stage] (the hero) by `site.js`, which refuses to
+   create it at all under reduced motion or on a coarse pointer; the rule
+   below is the second lock on the reduced-motion half of that.
+   ------------------------------------------------------------------------ */
+
+.cursor-trail {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* The trail paints over the hero's whole box, so the hero copy has to be
+   lifted above it. Task 3 left .hero__inner unpositioned, which would leave
+   it painting below a positioned sibling at z-index 1. */
+.hero__inner {
+  position: relative;
+  z-index: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor-trail {
+    display: none;
   }
 }

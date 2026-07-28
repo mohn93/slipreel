@@ -70,6 +70,84 @@
   </div>
 </header>
 
+<!-- The theater. Copy first in the DOM, illustrations second, so the reading
+     order is the five beats in sequence. On a wide screen the figure is pinned
+     into the right-hand column and its five shots cross-fade; everywhere else
+     the whole thing collapses to one column in which each beat's copy sits
+     directly above its own shot. See stylesheet section 13. -->
+<section class="section" data-theater>
+  <div class="container theater__grid">
+    <div class="theater__beats">
+
+      <article class="theater__beat reveal" data-beat="0">
+        <p class="theater__step" aria-hidden="true">01</p>
+        <h2>Zooms that write themselves</h2>
+        <p class="theater__copy">
+          Slipreel finds every click and pushes in on it &mdash; anticipating where
+          your cursor is heading, not chasing it. Adjust any zoom on the timeline,
+          or add your own.
+        </p>
+      </article>
+
+      <article class="theater__beat reveal" data-beat="1">
+        <p class="theater__step" aria-hidden="true">02</p>
+        <h2>A cursor that moves like it's on rails</h2>
+        <p class="theater__copy">
+          Real cursors jitter. Slipreel smooths the path, adds motion blur, and
+          highlights clicks &mdash; while keeping the timing honest, even through
+          sped-up cuts.
+        </p>
+      </article>
+
+      <article class="theater__beat reveal" data-beat="2">
+        <p class="theater__step" aria-hidden="true">03</p>
+        <h2>Put it in a frame worth looking at</h2>
+        <p class="theater__copy">
+          Drop your recording into a real device bezel, pick a wallpaper, set any
+          aspect ratio. Preview matches export exactly.
+        </p>
+      </article>
+
+      <article class="theater__beat reveal" data-beat="3">
+        <p class="theater__step" aria-hidden="true">04</p>
+        <h2>Every keystroke, on the timeline</h2>
+        <p class="theater__copy">
+          Slipreel records what you typed and renders it as an overlay you can
+          edit &mdash; move it, trim it, delete the typo.
+        </p>
+      </article>
+
+      <article class="theater__beat reveal" data-beat="4">
+        <p class="theater__step" aria-hidden="true">05</p>
+        <h2>Captions, without the upload</h2>
+        <p class="theater__copy">
+          Transcription runs on your Mac with a bundled Whisper model. Nothing is
+          sent anywhere. Edit the text, burn it in on export.
+        </p>
+      </article>
+
+    </div>
+
+    <figure class="theater__visual" data-theater-visual>
+      <img class="theater__img" data-beat-img="0"
+           src="assets/img/beat-zoom.webp" width="1600" height="1000" decoding="async"
+           alt="The Slipreel editor with an automatic zoom pushed in on a click, and the zoom lane visible on the timeline.">
+      <img class="theater__img" data-beat-img="1"
+           src="assets/img/beat-cursor.webp" width="1600" height="1000" loading="lazy" decoding="async"
+           alt="A recording playing back with Slipreel's smoothed cursor path and a highlighted click.">
+      <img class="theater__img" data-beat-img="2"
+           src="assets/img/beat-frames.webp" width="1600" height="1000" loading="lazy" decoding="async"
+           alt="A recording placed in a MacBook bezel over a wallpaper, with the aspect ratio picker open.">
+      <img class="theater__img" data-beat-img="3"
+           src="assets/img/beat-keystrokes.webp" width="1600" height="1000" loading="lazy" decoding="async"
+           alt="The keystroke overlay drawn over a recording, with its editable lane on the timeline.">
+      <img class="theater__img" data-beat-img="4"
+           src="assets/img/beat-captions.webp" width="1600" height="1000" loading="lazy" decoding="async"
+           alt="Captions burned over a recording, with the caption text open for editing in the inspector.">
+    </figure>
+  </div>
+</section>
+
 <script type="module" src="assets/js/site.js"></script>
 </body>
 </html>
