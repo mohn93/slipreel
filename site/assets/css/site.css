@@ -16,9 +16,8 @@
      9. Motion
     10. Navigation
     11. Hero
-    12. Reveal class alias
-    13. Feature theater
-    14. Hero cursor trail
+    12. Feature theater
+    13. Hero cursor trail
    ========================================================================== */
 
 
@@ -395,7 +394,7 @@ a {
     transform var(--dur-slow) var(--ease-out);
 }
 
-.js .reveal.is-visible {
+.js .reveal.is-revealed {
   opacity: 1;
   transform: none;
 }
@@ -430,7 +429,7 @@ a {
 
   /* Nothing may be left hidden or offset. */
   .js .reveal,
-  .js .reveal.is-visible {
+  .js .reveal.is-revealed {
     opacity: 1 !important;
     transform: none !important;
   }
@@ -698,22 +697,7 @@ a {
 }
 
 
-/* 12. Reveal class alias =================================================
-   Section 9 armed `.reveal` with the revealed state spelled `.is-visible`.
-   The reveal engine shipped in `site.js` spells it `.is-revealed`. Rather
-   than reach back into section 9 and rename a published hook, both spellings
-   are honoured here and mean exactly the same thing. Section 9's reduce block
-   already forces every `.reveal` visible regardless of which class is on it,
-   so the reduced-motion guarantee is unaffected.
-   ------------------------------------------------------------------------ */
-
-.js .reveal.is-revealed {
-  opacity: 1;
-  transform: none;
-}
-
-
-/* 13. Feature theater ====================================================
+/* 12. Feature theater ====================================================
    The centrepiece. On a wide screen, with JavaScript and with motion allowed,
    one framed app window is pinned in the right-hand column while five copy
    beats scroll past it on the left, and the pinned window cross-fades between
@@ -857,12 +841,16 @@ a {
 
   /* All five shots stacked in the pinned frame and centred in it. Absolute,
      so a cross-fade can never shift the layout; height falls out of the
-     intrinsic ratio carried by the width/height attributes. */
+     intrinsic ratio carried by the width/height attributes. max-height caps
+     it to the sticky figure's own height (100vh - --nav-h, see
+     .js .theater__visual above), so a short, very wide viewport can't push
+     the 16:10 shot taller than the figure and spill it out. */
   .js .theater__img {
     position: absolute;
     top: 50%;
     left: 0;
     right: 0;
+    max-height: 100%;
     opacity: 0;
     transform: translateY(-50%) scale(1.018);
     transition: opacity 450ms var(--ease-out), transform 450ms var(--ease-out);
@@ -877,23 +865,33 @@ a {
 }
 
 
-/* 14. Hero cursor trail ==================================================
+/* 13. Hero cursor trail ==================================================
    Slipreel's own smoothed cursor, performed on the visitor. The canvas is
    mounted onto [data-cursor-stage] (the hero) by `site.js`, which refuses to
    create it at all under reduced motion or on a coarse pointer; the rule
    below is the second lock on the reduced-motion half of that.
    ------------------------------------------------------------------------ */
 
+/* z-index 3 puts the canvas above .hero__inner (z-index 2, below), which is
+   what lets it paint over .hero__stage -- the opaque product frame, and the
+   largest object in the hero. mix-blend-mode keeps it from reading as an
+   opaque layer sitting on top: it only ever adds light to what's already
+   painted beneath it in this stacking context (the copy and the stage), so
+   the effect reads as light spilling across the frame rather than a card
+   stacked over the page. */
 .cursor-trail {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 3;
   pointer-events: none;
+  mix-blend-mode: plus-lighter;
 }
 
-/* The trail paints over the hero's whole box, so the hero copy has to be
-   lifted above it. Task 3 left .hero__inner unpositioned, which would leave
-   it painting below a positioned sibling at z-index 1. */
+/* Task 3 left .hero__inner unpositioned, which would leave it painting below
+   a positioned sibling. Still needed even though the trail now paints above
+   it: without a stacking context of its own, .hero__inner's children would
+   otherwise interleave with the canvas by DOM order instead of painting as
+   one unit. */
 .hero__inner {
   position: relative;
   z-index: 2;

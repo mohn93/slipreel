@@ -34,7 +34,10 @@ hydrateDownload();
 
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-// Beat switching: the beat whose copy block is nearest the viewport middle wins.
+// Beat switching: the root band covers only the middle 10% of the viewport, so
+// a full-screenful beat never crosses the 0.5 or 1 thresholds -- in practice
+// the last beat whose edge entered that band wins, which stays monotonic with
+// scroll direction.
 function mountTheater() {
   const theater = document.querySelector('[data-theater]');
   if (!theater) return;
@@ -115,14 +118,50 @@ function mountCursorTrail() {
   // Critically damped follow, matching the app's spring feel.
   let px = 0, py = 0, has = false;
 
+  // Read --accent once at mount rather than hardcoding its RGB triplet a
+  // third time (the stylesheet already carries two, both noted as such).
+  const accentRGB = (() => {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;visibility:hidden;';
+    probe.style.color = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+    document.body.appendChild(probe);
+    const match = getComputedStyle(probe).color.match(/\d+/g);
+    probe.remove();
+    return match ? match.slice(0, 3).join(', ') : '108, 92, 231';
+  })();
+
+  // The loop only ever runs while there's something to draw and the stage is
+  // actually on screen; it is started on demand (pointermove, or the stage
+  // scrolling into view) and cancelled the moment neither holds, rather than
+  // running for the whole page lifetime.
+  let rafId = null;
+  let visible = false;
+
+  const startLoop = () => {
+    if (rafId !== null) return;
+    rafId = requestAnimationFrame(tick);
+  };
+  const stopLoop = () => {
+    if (rafId === null) return;
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  };
+
   stage.addEventListener('pointermove', (e) => {
     const r = stage.getBoundingClientRect();
     target = { x: e.clientX - r.left, y: e.clientY - r.top };
     if (!has) { px = target.x; py = target.y; has = true; }
+    startLoop();
   }, { passive: true });
-  stage.addEventListener('pointerleave', () => { target = null; }, { passive: true });
+  stage.addEventListener('pointerleave', () => { target = null; has = false; }, { passive: true });
 
-  const tick = () => {
+  const io = new IntersectionObserver((entries) => {
+    visible = entries[entries.length - 1].isIntersecting;
+    if (visible) startLoop(); else stopLoop();
+  });
+  io.observe(stage);
+
+  function tick() {
     ctx.clearRect(0, 0, w, h);
     if (target && has) {
       px += (target.x - px) * 0.18;
@@ -137,12 +176,15 @@ function mountCursorTrail() {
       const t = i / trail.length;
       ctx.beginPath();
       ctx.arc(p.x, p.y, 3 + t * 7, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(108, 92, 231, ${t * t * 0.32})`;
+      ctx.fillStyle = `rgba(${accentRGB}, ${t * t * 0.32})`;
       ctx.fill();
     }
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+    if (!visible || (!target && !trail.length)) {
+      rafId = null;
+      return;
+    }
+    rafId = requestAnimationFrame(tick);
+  }
 }
 
 mountTheater();
