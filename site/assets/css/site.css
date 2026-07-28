@@ -21,6 +21,10 @@
     14. Deep dives
     15. Feature grid
     16. Platform strip
+    17. Pricing
+    18. FAQ
+    19. Final CTA
+    20. Footer
    ========================================================================== */
 
 
@@ -1071,5 +1075,275 @@ a {
 @media (min-width: 1024px) {
   .platform-strip__list {
     grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+
+/* 17. Pricing ============================================================
+   Early-access banner (see the copy note in index.html -- this product has
+   no license enforcement yet, so nothing here may claim an instant key)
+   above two cards. The lifetime card is first in the DOM, which is what
+   keeps it first when the grid collapses to one column on mobile; the
+   two-column desktop layout below just lays that same order out side by
+   side, echoing the platform strip's bordered/--bg-card treatment.
+   ------------------------------------------------------------------------ */
+
+.pricing__banner {
+  max-width: 68ch;
+  margin-inline: auto;
+  padding: clamp(20px, 3vw, 28px) clamp(20px, 4vw, 32px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  box-shadow: inset 0 1px 0 0 var(--line-strong);
+  color: var(--ink-dim);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  text-align: center;
+}
+
+.pricing__banner strong {
+  color: var(--ink);
+}
+
+.pricing__cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  margin-top: clamp(28px, 4vw, 40px);
+}
+
+.pricing-card {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(28px, 4vw, 36px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+}
+
+.pricing-card--featured {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-accent);
+}
+
+.pricing-card__badge {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-bottom: 14px;
+  padding: 0.3em 0.85em;
+  border-radius: 999px;
+  background-image: linear-gradient(170deg, var(--accent), var(--accent-deep));
+  color: var(--on-accent);
+  font-size: var(--fs-xs);
+  font-weight: 580;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pricing-card__name {
+  font-size: var(--fs-xl);
+}
+
+.pricing-card__price {
+  margin-top: 10px;
+  color: var(--ink-dim);
+  font-size: var(--fs-sm);
+}
+
+.pricing-card__amount {
+  color: var(--ink);
+  font-size: var(--fs-2xl);
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+
+.pricing-card__features {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+  margin-bottom: 28px;
+  color: var(--ink-dim);
+  font-size: var(--fs-sm);
+}
+
+.pricing-card__features li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.pricing-card__features li::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent);
+}
+
+.pricing-card__cta {
+  margin-top: auto;
+  width: 100%;
+}
+
+.pricing__note {
+  margin-top: clamp(24px, 4vw, 32px);
+  color: var(--ink-dim);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+@media (min-width: 640px) {
+  .pricing__cards {
+    grid-template-columns: repeat(2, 1fr);
+    align-items: stretch;
+  }
+}
+
+
+/* 18. FAQ =================================================================
+   Native <details>/<summary>: opens and closes with the keyboard alone and
+   needs no script. The plus/cross indicator is two absolutely-positioned
+   bars on the summary itself so no extra markup is needed per question;
+   the vertical bar just rotates flat onto the horizontal one when open.
+   Its rotation is a transition, so it is already covered by section 9's
+   blanket `*, *::before, *::after` reduced-motion override.
+   ------------------------------------------------------------------------ */
+
+.faq__inner {
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+.faq__heading {
+  text-align: center;
+}
+
+.faq__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: clamp(32px, 5vw, 48px);
+}
+
+.faq__item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background-color: var(--bg-card);
+  overflow: hidden;
+}
+
+.faq__question {
+  position: relative;
+  padding: 20px 52px 20px 22px;
+  color: var(--ink);
+  font-size: var(--fs-md);
+  font-weight: 580;
+  cursor: pointer;
+  list-style: none;
+}
+
+.faq__question::marker,
+.faq__question::-webkit-details-marker {
+  display: none;
+}
+
+.faq__question::before,
+.faq__question::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 24px;
+  width: 14px;
+  height: 2px;
+  background-color: var(--accent);
+  transform: translateY(-50%);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.faq__question::after {
+  transform: translateY(-50%) rotate(90deg);
+}
+
+.faq__item[open] .faq__question::after {
+  transform: translateY(-50%) rotate(0deg);
+}
+
+.faq__answer {
+  margin: 0;
+  padding: 0 22px 22px;
+  max-width: 62ch;
+  color: var(--ink-dim);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+
+/* 19. Final CTA ===========================================================
+   Closing band: repeats the hero's headline promise next to a third
+   download button. Same bordered/--bg-card/--shadow-accent treatment as the
+   pricing cards, so the page's last beat still reads as the same system.
+   ------------------------------------------------------------------------ */
+
+.cta-band__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding: clamp(48px, 8vw, 96px) clamp(24px, 6vw, 64px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  box-shadow: inset 0 1px 0 0 var(--line-strong), var(--shadow-accent);
+  text-align: center;
+}
+
+.cta-band__heading {
+  max-width: 20ch;
+  font-size: var(--fs-2xl);
+}
+
+
+/* 20. Footer ==============================================================
+   Wordmark, contact, and copyright. No social links, no changelog link.
+   ------------------------------------------------------------------------ */
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  padding-block: clamp(28px, 4vw, 40px);
+}
+
+.site-footer__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.site-footer__wordmark {
+  color: var(--ink);
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+
+.site-footer__contact {
+  color: var(--ink-dim);
+}
+
+.site-footer__copyright {
+  flex-basis: 100%;
+  order: 1;
+  color: var(--ink-dim);
+  font-size: var(--fs-xs);
+}
+
+@media (min-width: 640px) {
+  .site-footer__copyright {
+    flex-basis: auto;
+    order: 0;
+    margin-left: auto;
   }
 }

@@ -289,6 +289,169 @@
   </div>
 </section>
 
+
+<!-- Pricing: early-access banner + two cards. Slipreel has no license
+     enforcement yet, so the banner and both cards must never imply an
+     instant key -- see the copy notes in the task brief. The recommended
+     (lifetime) card is first in the DOM so it also leads on the mobile
+     single-column stack; the two-column desktop layout keeps that order.
+     Carries #pricing for the nav link. -->
+<section class="section pricing" id="pricing">
+  <div class="container">
+    <div class="pricing__banner reveal">
+      <p>
+        <strong>Early access.</strong> Slipreel is shipping and updating
+        weekly. Buy now at founding pricing and your license key arrives the
+        moment licensing lands &mdash; the app is free to download and use in
+        the meantime.
+      </p>
+    </div>
+
+    <div class="pricing__cards">
+
+      <article class="pricing-card pricing-card--featured reveal">
+        <p class="pricing-card__badge">Recommended</p>
+        <h3 class="pricing-card__name">Lifetime</h3>
+        <p class="pricing-card__price">
+          <span class="pricing-card__amount">$149</span> once
+        </p>
+        <ul class="pricing-card__features">
+          <li>Yours permanently</li>
+          <li>One year of updates included</li>
+          <li>All features</li>
+          <li>macOS 13+</li>
+        </ul>
+        <!-- TODO: replace with the real Stripe payment link -->
+        <a class="btn btn--primary pricing-card__cta" href="#stripe-lifetime">Get Slipreel for life</a>
+      </article>
+
+      <article class="pricing-card reveal">
+        <h3 class="pricing-card__name">Yearly</h3>
+        <p class="pricing-card__price">
+          <span class="pricing-card__amount">$79</span>/year
+        </p>
+        <ul class="pricing-card__features">
+          <li>Every update while subscribed</li>
+          <li>All features</li>
+          <li>macOS 13+</li>
+          <li>Cancel anytime</li>
+        </ul>
+        <!-- TODO: replace with the real Stripe payment link -->
+        <a class="btn btn--ghost pricing-card__cta" href="#stripe-yearly">Get Slipreel yearly</a>
+      </article>
+
+    </div>
+
+    <p class="pricing__note reveal">
+      Prefer to try it first?
+      <a href="https://slipreel.app/download/Slipreel-1.0.1.dmg" data-download-link>Download Slipreel free</a>
+      &mdash; no account, no time limit.
+    </p>
+  </div>
+</section>
+
+<!-- FAQ: native details/summary, so it opens and closes with the keyboard
+     alone and needs zero JavaScript. Carries #faq for the nav link. -->
+<section class="section faq" id="faq">
+  <div class="container faq__inner">
+    <h2 class="faq__heading reveal">Questions</h2>
+
+    <div class="faq__list reveal">
+
+      <details class="faq__item">
+        <summary class="faq__question">What does "early access" mean?</summary>
+        <p class="faq__answer">
+          Slipreel is complete and in daily use, but license-key delivery is
+          not built yet. Buying now locks in founding pricing; your key
+          arrives when licensing ships. The app is free to download and
+          fully functional today.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">What happens after the first year on a lifetime license?</summary>
+        <p class="faq__answer">
+          The app keeps working forever, and every version released in your
+          first year stays yours. Updates after that are a separate,
+          optional renewal.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">What do I need to run it?</summary>
+        <p class="faq__answer">macOS 13 or later, on Apple Silicon or Intel.</p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Do my recordings get uploaded anywhere?</summary>
+        <p class="faq__answer">
+          No. Recording, editing, captions, and export all run on your Mac.
+          Slipreel has no account system and no server.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">How do captions work offline?</summary>
+        <p class="faq__answer">A Whisper speech model ships inside the app and runs locally.</p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Is it safe to install?</summary>
+        <p class="faq__answer">
+          Slipreel is signed with an Apple Developer ID and notarized by
+          Apple. Updates are cryptographically verified before they install.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Can I edit the automatic zooms?</summary>
+        <p class="faq__answer">
+          Yes. Every auto-detected zoom is a normal timeline region you can
+          move, resize, retime, or delete, and you can add your own.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does it record system audio?</summary>
+        <p class="faq__answer">
+          Yes, as its own track, separate from the microphone, so you can mix
+          them independently.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Can I get a refund?</summary>
+        <p class="faq__answer">
+          Email <a href="mailto:hello@slipreel.app">hello@slipreel.app</a>
+          within 14 days and you will get your money back.
+        </p>
+      </details>
+
+    </div>
+  </div>
+</section>
+
+<!-- Final CTA: closes the page by repeating the hero's headline promise
+     next to a third, independently-hydrated download button. -->
+<section class="section cta-band">
+  <div class="container">
+    <div class="cta-band__card reveal">
+      <h2 class="cta-band__heading">Screen recordings that look like they took a week.</h2>
+      <a class="btn btn--primary cta-band__button"
+         href="https://slipreel.app/download/Slipreel-1.0.1.dmg"
+         data-download-link>Download for macOS</a>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span class="site-footer__wordmark">Slipreel</span>
+    <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
+    <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
+  </div>
+</footer>
+
 <script type="module" src="assets/js/site.js"></script>
 </body>
 </html>
