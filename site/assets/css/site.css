@@ -18,6 +18,9 @@
     11. Hero
     12. Feature theater
     13. Hero cursor trail
+    14. Deep dives
+    15. Feature grid
+    16. Platform strip
    ========================================================================== */
 
 
@@ -900,5 +903,173 @@ a {
 @media (prefers-reduced-motion: reduce) {
   .cursor-trail {
     display: none;
+  }
+}
+
+
+/* 14. Deep dives ==========================================================
+   Four alternating image/copy pairs. In the markup, copy always comes first
+   and the figure second (see the comment in index.html); on narrow screens
+   that DOM order is overridden so the image leads, matching the theater's
+   "stacked base state, enhanced above a breakpoint" approach in section 12.
+
+   Alternation: article 1 and 3 (Timeline, Camera) show image-left/copy-right;
+   article 2 and 4 (Audio, Export) show image-right/copy-left, which is the
+   plain DOM order and needs no override. `:nth-child(odd)` picks out 1 and 3.
+   ------------------------------------------------------------------------ */
+
+.deep-dives__list {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(64px, 9vw, 112px);
+}
+
+.deep-dive {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: 28px;
+}
+
+/* Mobile/tablet base state: image always first, regardless of alternation. */
+.deep-dive__media {
+  order: -1;
+}
+
+.deep-dive__media img {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  box-shadow: inset 0 1px 0 0 var(--line-strong), var(--shadow-lift);
+}
+
+.deep-dive__copy .eyebrow {
+  margin-bottom: 10px;
+}
+
+.deep-dive__copy h2 {
+  font-size: var(--fs-2xl);
+}
+
+.deep-dive__copy p {
+  margin-top: 14px;
+  max-width: 46ch;
+  color: var(--ink-dim);
+  font-size: var(--fs-md);
+  line-height: 1.6;
+}
+
+@media (min-width: 900px) {
+  .deep-dive {
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(40px, 6vw, 96px);
+  }
+
+  /* Reset to plain DOM order (copy left, image right)... */
+  .deep-dive__media {
+    order: 0;
+  }
+
+  /* ...then flip the odd ones back to image-left. */
+  .deep-dive:nth-child(odd) .deep-dive__media {
+    order: -1;
+  }
+}
+
+
+/* 15. Feature grid ========================================================
+   Sixteen short, individually-shippable claims. Each item is one phrase, not
+   a label-plus-description pair, so this is a plain list rather than a
+   definition list. 1 column by default, 2 at tablet, 4 at desktop.
+   ------------------------------------------------------------------------ */
+
+.feature-grid__heading {
+  max-width: 34ch;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.feature-grid__list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: clamp(36px, 5vw, 56px);
+}
+
+.feature-grid__item {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background-color: var(--bg-card);
+  color: var(--ink-dim);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+@media (min-width: 640px) {
+  .feature-grid__list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .feature-grid__list {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+
+/* 16. Platform strip ======================================================
+   "Built like a Mac app": four trust signals in a bordered card, echoing the
+   hero stage / theater frame treatment (hairline border, --bg-card, inset
+   sheen) so it reads as part of the same system rather than a new one.
+   ------------------------------------------------------------------------ */
+
+.platform-strip {
+  padding: clamp(28px, 4vw, 40px) clamp(20px, 4vw, 44px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  box-shadow: inset 0 1px 0 0 var(--line-strong);
+}
+
+.platform-strip__heading {
+  text-align: center;
+}
+
+.platform-strip__list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  margin-top: clamp(28px, 4vw, 40px);
+}
+
+.platform-strip__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--ink-dim);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.platform-strip__icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 0.15em;
+  color: var(--accent);
+}
+
+@media (min-width: 720px) {
+  .platform-strip__list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .platform-strip__list {
+    grid-template-columns: repeat(4, 1fr);
   }
 }

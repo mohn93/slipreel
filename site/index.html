@@ -148,6 +148,147 @@
   </div>
 </section>
 
+<!-- Deep dives: four alternating image/copy pairs, one per major subsystem.
+     Copy sits first in the DOM in every pair (see stylesheet section 14), so
+     a screen reader always meets the heading and body before the screenshot
+     regardless of which side the image lands on visually. This section
+     carries #features: it's the first substantive features content after
+     the hero and theater, and is what the nav's "Features" link targets. -->
+<section class="section deep-dives" id="features">
+  <div class="container deep-dives__list">
+
+    <article class="deep-dive reveal">
+      <div class="deep-dive__copy">
+        <p class="eyebrow">Timeline</p>
+        <h2>Cut it like an editor, not a toy</h2>
+        <p>
+          Split at the playhead with Cmd+K. Every slice keeps its own trim
+          and speed, snapping to clicks and zoom edges as you cut. Waveforms
+          render right in the slice.
+        </p>
+      </div>
+      <figure class="deep-dive__media">
+        <img src="assets/img/deep-timeline.webp" width="1600" height="1000"
+             loading="lazy" decoding="async"
+             alt="The Slipreel editor with a clip split at the playhead, showing an independently trimmed slice with its waveform.">
+      </figure>
+    </article>
+
+    <article class="deep-dive reveal">
+      <div class="deep-dive__copy">
+        <p class="eyebrow">Audio</p>
+        <h2>Two tracks, mixed on your terms</h2>
+        <p>
+          Mic and system audio are captured as independent tracks. Set
+          volume per track, mute either one, and Slipreel mixes them down
+          on export.
+        </p>
+      </div>
+      <figure class="deep-dive__media">
+        <img src="assets/img/deep-audio.webp" width="1600" height="1000"
+             loading="lazy" decoding="async"
+             alt="The Slipreel editor with separate microphone and system audio tracks, each with its own volume and mute controls.">
+      </figure>
+    </article>
+
+    <article class="deep-dive reveal">
+      <div class="deep-dive__copy">
+        <p class="eyebrow">Camera</p>
+        <h2>Your face, in the corner, in sync</h2>
+        <p>
+          Record your webcam alongside the screen as its own track, kept
+          frame-accurate against the recording.
+        </p>
+      </div>
+      <figure class="deep-dive__media">
+        <img src="assets/img/deep-camera.webp" width="1600" height="1000"
+             loading="lazy" decoding="async"
+             alt="A recording with a webcam track composited in the corner, playing back in sync with the screen capture.">
+      </figure>
+    </article>
+
+    <article class="deep-dive reveal">
+      <div class="deep-dive__copy">
+        <p class="eyebrow">Export</p>
+        <h2>MP4 and GIF, exactly as previewed</h2>
+        <p>
+          The preview and the export run the same canvas math, so what you
+          approve is what ships. Pick an aspect ratio and go.
+        </p>
+      </div>
+      <figure class="deep-dive__media">
+        <img src="assets/img/deep-export.webp" width="1600" height="1000"
+             loading="lazy" decoding="async"
+             alt="The export panel with MP4 and GIF options and an aspect ratio picker, matching the editor preview.">
+      </figure>
+    </article>
+
+  </div>
+</section>
+
+<!-- Feature grid: the long tail of smaller, individually shippable things.
+     Marked up as a plain list -- each item is one short phrase, not a
+     label-plus-description pair, so a definition list would be the wrong
+     structure. -->
+<section class="section feature-grid">
+  <div class="container">
+    <h2 class="feature-grid__heading reveal">And the hundred small things.</h2>
+    <ul class="feature-grid__list reveal">
+      <li class="feature-grid__item">3-2-1 countdown</li>
+      <li class="feature-grid__item">Pause and resume</li>
+      <li class="feature-grid__item">Global hotkeys</li>
+      <li class="feature-grid__item">Full display, window, or region</li>
+      <li class="feature-grid__item">Auto-zoom detection</li>
+      <li class="feature-grid__item">Manual zoom placement</li>
+      <li class="feature-grid__item">3D tilt</li>
+      <li class="feature-grid__item">Zoom movements</li>
+      <li class="feature-grid__item">Device frames</li>
+      <li class="feature-grid__item">Wallpapers and solid colors</li>
+      <li class="feature-grid__item">Six aspect ratios</li>
+      <li class="feature-grid__item">Per-slice speed</li>
+      <li class="feature-grid__item">Cursor smoothing presets</li>
+      <li class="feature-grid__item">Crash recovery</li>
+      <li class="feature-grid__item">Duration warnings</li>
+      <li class="feature-grid__item">Automatic updates</li>
+    </ul>
+  </div>
+</section>
+
+<!-- Built like a Mac app: four platform trust signals. -->
+<section class="section">
+  <div class="container">
+    <div class="platform-strip reveal">
+      <h2 class="platform-strip__heading">Built like a Mac app</h2>
+      <ul class="platform-strip__list">
+        <li class="platform-strip__item">
+          <svg class="platform-strip__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <span>Native capture via ScreenCaptureKit &mdash; no screen-scraping hacks.</span>
+        </li>
+        <li class="platform-strip__item">
+          <svg class="platform-strip__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <span>Captions transcribe on-device. Your recordings never leave your Mac.</span>
+        </li>
+        <li class="platform-strip__item">
+          <svg class="platform-strip__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <span>Signed and notarized by Apple, distributed direct.</span>
+        </li>
+        <li class="platform-strip__item">
+          <svg class="platform-strip__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <span>Updates arrive in the app, signed and verified.</span>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
 <script type="module" src="assets/js/site.js"></script>
 </body>
 </html>
