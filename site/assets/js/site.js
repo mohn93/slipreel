@@ -113,6 +113,12 @@ function mountCursorTrail() {
   resize();
   window.addEventListener('resize', resize, { passive: true });
 
+  // A longer tail than the original 22, drawn with a near-linear falloff, so
+  // the effect reads as a trail rather than a bloom concentrated on the head.
+  const TRAIL_MAX = 36;
+  // Squared minimum spacing between trail points (0.5px).
+  const TRAIL_MIN_STEP_SQ = 0.25;
+
   const trail = [];
   let target = null;
   // Critically damped follow, matching the app's spring feel.
@@ -163,23 +169,37 @@ function mountCursorTrail() {
 
   function tick() {
     ctx.clearRect(0, 0, w, h);
+    let moved = false;
     if (target && has) {
       px += (target.x - px) * 0.18;
       py += (target.y - py) * 0.18;
+      const last = trail[trail.length - 1];
+      moved =
+        !last || (px - last.x) ** 2 + (py - last.y) ** 2 > TRAIL_MIN_STEP_SQ;
+    }
+    if (moved) {
       trail.push({ x: px, y: py });
-      if (trail.length > 22) trail.shift();
+      if (trail.length > TRAIL_MAX) trail.shift();
     } else if (trail.length) {
+      // Drain. `target` stays set until pointerleave, so a resting pointer
+      // used to keep pushing the same coordinate every frame: under
+      // mix-blend-mode: plus-lighter those alphas sum into a hard saturated
+      // dot, and the idle bail-out below could never fire while the pointer
+      // was anywhere in the hero. Draining empties the trail instead, which
+      // both fades the dot out and lets the loop actually stop.
       trail.shift();
     }
     for (let i = 0; i < trail.length; i++) {
       const p = trail[i];
-      const t = i / trail.length;
+      const t = (i + 1) / trail.length;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 3 + t * 7, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${accentRGB}, ${t * t * 0.32})`;
+      ctx.arc(p.x, p.y, 2.5 + t * 6.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${accentRGB}, ${0.02 + t * 0.14})`;
       ctx.fill();
     }
-    if (!visible || (!target && !trail.length)) {
+    // Nothing left to draw (or nothing on screen to draw onto): stop. The
+    // pointermove handler and the intersection observer restart the loop.
+    if (!visible || !trail.length) {
       rafId = null;
       return;
     }
@@ -187,6 +207,29 @@ function mountCursorTrail() {
   }
 }
 
-mountTheater();
-mountReveals();
-mountCursorTrail();
+// `js` on <html> is what arms `.js .reveal { opacity: 0 }` and the pinned
+// theater's `.js .theater__img { opacity: 0 }`. It is added unconditionally at
+// the top of this file, so an exception escaping any mount would leave that
+// hidden state armed with nothing to un-hide it — a blank page below the hero,
+// not merely a missing animation. Each mount therefore gets its own try/catch
+// (one failure must not skip the others), and the catch falls all the way back
+// to the no-JavaScript presentation: dropping `js` disarms every hidden state
+// at the root and restores the stacked, source-ordered layout, while the
+// explicit state classes cover anything that keys off them directly.
+function failSafeReveal() {
+  document.documentElement.classList.remove('js');
+  document.querySelectorAll('.reveal').forEach((el) => el.classList.add('is-revealed'));
+  document.querySelectorAll('.theater__img').forEach((el) => el.classList.add('is-active'));
+}
+
+function mount(fn) {
+  try {
+    fn();
+  } catch {
+    failSafeReveal();
+  }
+}
+
+mount(mountTheater);
+mount(mountReveals);
+mount(mountCursorTrail);

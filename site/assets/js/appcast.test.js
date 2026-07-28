@@ -31,6 +31,27 @@ test('pickLatestItem ignores items with no url or no build', () => {
   assert.equal(pickLatestItem(items).url, 'real.dmg');
 });
 
+test('pickLatestItem rejects a non-numeric build', () => {
+  const items = [
+    { url: 'junk.dmg', build: 'not-a-number' },
+    { url: 'real.dmg', build: '1000001' },
+  ];
+  assert.equal(pickLatestItem(items).url, 'real.dmg');
+  assert.equal(pickLatestItem([{ url: 'junk.dmg', build: 'not-a-number' }]), null);
+});
+
+test('pickLatestItem rejects an empty or whitespace-only build', () => {
+  // Number('') and Number('   ') are both 0, so these must be rejected before
+  // coercion or they would masquerade as build 0 (and win an all-junk feed).
+  assert.equal(pickLatestItem([{ url: 'empty.dmg', build: '' }]), null);
+  assert.equal(pickLatestItem([{ url: 'blank.dmg', build: '   ' }]), null);
+  const items = [
+    { url: 'empty.dmg', build: '' },
+    { url: 'real.dmg', build: '1000001' },
+  ];
+  assert.equal(pickLatestItem(items).url, 'real.dmg');
+});
+
 test('pickLatestItem returns null when nothing is usable', () => {
   assert.equal(pickLatestItem([]), null);
   assert.equal(pickLatestItem([{ url: null, build: null }]), null);

@@ -8,8 +8,12 @@ export function formatBytes(bytes) {
 }
 
 export function pickLatestItem(items) {
+  // Guard before coercing, not after: Number(null) and Number('') are both 0,
+  // so a missing or whitespace-only <sparkle:version> would otherwise be
+  // accepted as a legitimate build 0.
   const usable = (items || []).filter(
-    (i) => i && i.url && Number.isFinite(Number(i.build)) && i.build !== null,
+    (i) => i && i.url && i.build != null && String(i.build).trim() !== ''
+      && Number.isFinite(Number(i.build)),
   );
   if (usable.length === 0) return null;
   return usable.reduce((a, b) => (Number(b.build) > Number(a.build) ? b : a));
