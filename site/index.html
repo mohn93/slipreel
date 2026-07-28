@@ -11,6 +11,63 @@
 <body>
 <div class="aurora" aria-hidden="true"></div>
 <div class="grain" aria-hidden="true"></div>
-<h1>Slipreel</h1>
+
+<nav class="nav" aria-label="Primary">
+  <div class="container nav__inner">
+    <a class="nav__brand" href="#top">
+      <svg class="nav__mark" viewBox="0 0 512 512" width="28" height="28" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="slipreel-mark-fill" x1="0" y1="0" x2="0.85" y2="1">
+            <stop offset="0" stop-color="var(--accent)"></stop>
+            <stop offset="1" stop-color="var(--accent-deep)"></stop>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="114" fill="url(#slipreel-mark-fill)"></rect>
+        <g fill="var(--on-accent)">
+          <rect x="72" y="212" width="62" height="88" rx="31" opacity="0.20"></rect>
+          <rect x="118" y="212" width="74" height="88" rx="37" opacity="0.36"></rect>
+          <rect x="164" y="212" width="86" height="88" rx="43" opacity="0.58"></rect>
+          <rect x="208" y="212" width="98" height="88" rx="44" opacity="0.84"></rect>
+          <circle cx="316" cy="256" r="100"></circle>
+        </g>
+        <circle cx="316" cy="256" r="34" fill="none" stroke="var(--accent-deep)" stroke-width="24"></circle>
+      </svg>
+      <span class="nav__wordmark">Slipreel</span>
+    </a>
+
+    <ul class="nav__links">
+      <li><a class="nav__link" href="#features">Features</a></li>
+      <li><a class="nav__link" href="#pricing">Pricing</a></li>
+      <li><a class="nav__link" href="#faq">FAQ</a></li>
+    </ul>
+
+    <a class="btn btn--primary nav__cta"
+       href="https://slipreel.app/download/Slipreel-1.0.1.dmg"
+       data-download-link>Download</a>
+  </div>
+</nav>
+
+<header class="hero" id="top" data-cursor-stage>
+  <div class="container hero__inner">
+    <p class="eyebrow">For macOS 13+ &middot; Apple Silicon and Intel</p>
+    <h1 class="hero__title">Screen recordings that look like they took a week.</h1>
+    <p class="hero__sub">
+      Slipreel auto-zooms, smooths your cursor, frames your app, and captions it &mdash;
+      the moment you stop recording.
+    </p>
+    <div class="hero__cta">
+      <a class="btn btn--primary"
+         href="https://slipreel.app/download/Slipreel-1.0.1.dmg"
+         data-download-link>Download for macOS</a>
+      <a class="btn btn--ghost" href="#pricing">See pricing</a>
+    </div>
+    <p class="hero__meta"><span data-version-badge>Free download</span> &middot; Signed and notarized by Apple</p>
+    <figure class="hero__stage">
+      <img src="assets/img/hero-editor.webp" width="1600" height="1000"
+           alt="The Slipreel editor with a recording open, showing the zoom lane and audio waveform."
+           fetchpriority="high" decoding="async">
+    </figure>
+  </div>
+</header>
 </body>
 </html>
