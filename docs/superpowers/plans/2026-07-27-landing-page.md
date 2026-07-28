@@ -55,7 +55,7 @@ The riskiest thing about this project is deploying into a webroot that holds a l
 - Create: `scripts/deploy-site.sh`, `scripts/deploy-site.test.sh`
 
 **Interfaces:**
-- Produces: `scripts/deploy-site.sh`, honoring env `SITE_DIR` (default `<repo>/site`), `DEPLOY_TARGET` (default `trader-vps`), `DEPLOY_ROOT` (default `/var/www/slipreel`). Exits non-zero if `$SITE_DIR/index.html` is absent.
+- Produces: `scripts/deploy-site.sh`, honoring env `SITE_DIR` (default `<repo>/site`), `DEPLOY_TARGET` (default `deploy@94.156.144.73`), `DEPLOY_ROOT` (default `/var/www/slipreel`). Exits non-zero if `$SITE_DIR/index.html` is absent.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1189,3 +1189,22 @@ git commit -m "feat(site): metadata, accessibility pass, production deploy"
 **Known deviation.** Task 7 revises `hydrateDownload` from Task 4 (`querySelector` → `querySelectorAll`) because the final CTA introduces a second download button. The full replacement function is given inline rather than as a diff, since the implementer may read tasks out of order.
 
 **Deferred by design.** Real Stripe links, Cloudflare Email Routing for `hello@slipreel.app`, and licence-key delivery are all out of scope and flagged in the spec.
+
+---
+
+## Post-implementation correction (2026-07-28)
+
+The whole-branch review found that Task 1's `rsync -av` to the root-resolving
+`trader-vps` alias rewrote the shared webroot's ownership, locking the release
+pipeline's `deploy` user out of publishing `appcast.xml`. This had already
+happened on the live server and was repaired.
+
+Task 1's code blocks above are therefore **superseded** by the shipped
+`scripts/deploy-site.sh`:
+
+- rsync runs `-rltv --no-perms --no-owner --no-group`, never bare `-a`
+- `DEPLOY_TARGET` defaults to `deploy@94.156.144.73`, not `trader-vps`
+- `scripts/deploy-site.test.sh` additionally catches the `--del` and
+  `--remove-` aliases and asserts the ownership flags are present
+
+Read the scripts, not this plan, for the current deploy contract.
