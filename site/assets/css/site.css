@@ -1,0 +1,437 @@
+/* ==========================================================================
+   Slipreel landing page — design system
+   --------------------------------------------------------------------------
+   Dark only. No build step: this file is served exactly as committed.
+   Every motion effect is gated behind prefers-reduced-motion, and nothing is
+   hidden unless <html> carries the `js` class (see section 9).
+
+     1. Tokens
+     2. Derived tokens
+     3. Font
+     4. Reset
+     5. Typography
+     6. Layout
+     7. Components
+     8. Background layers
+     9. Motion
+   ========================================================================== */
+
+
+/* 1. Tokens ============================================================== */
+
+:root {
+  --bg: #08080C;
+  --bg-elev: #0E0E15;
+  --bg-card: #12121C;
+  --ink: #F5F5FA;
+  --ink-dim: #A3A3B8;
+  --ink-faint: #6E6E85;
+  --accent: #6C5CE7;
+  --accent-deep: #4A3FC7;
+  --accent-glow: rgba(108, 92, 231, 0.45);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --radius: 14px;
+  --radius-lg: 22px;
+  --maxw: 1200px;
+  --pad: clamp(20px, 5vw, 48px);
+}
+
+
+/* 2. Derived tokens ======================================================
+   Everything below is expressed in terms of section 1 where CSS allows it.
+   The three --aurora-* values are alpha variants of --accent / --accent-deep;
+   a custom property holding a hex cannot be given an alpha channel without
+   color-mix(), so they are spelled out here rather than outside :root. Keep
+   their RGB triplets in sync with --accent and --accent-deep.
+   ------------------------------------------------------------------------ */
+
+:root {
+  /* Type */
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --fs-xs: clamp(0.75rem, 0.72rem + 0.15vw, 0.8125rem);
+  --fs-sm: clamp(0.875rem, 0.85rem + 0.12vw, 0.9375rem);
+  --fs-base: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem);
+  --fs-md: clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem);
+  --fs-lg: clamp(1.25rem, 1.13rem + 0.6vw, 1.5rem);
+  --fs-xl: clamp(1.5rem, 1.3rem + 1vw, 2rem);
+  --fs-2xl: clamp(1.875rem, 1.55rem + 1.6vw, 2.75rem);
+  --fs-3xl: clamp(2.25rem, 1.7rem + 2.7vw, 3.75rem);
+  --fs-display: clamp(2.375rem, 1.6rem + 3.9vw, 5rem);
+
+  --lh-tight: 1.06;
+  --lh-snug: 1.18;
+  --lh-base: 1.6;
+
+  /* Rhythm */
+  --section-y: clamp(64px, 9vw, 128px);
+  --nav-h: 64px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur-fast: 160ms;
+  --dur-mid: 280ms;
+  --dur-slow: 620ms;
+
+  /* Ink that sits on top of --accent. Pure white clears WCAG AA (4.86:1)
+     against --accent; --ink does not (4.47:1). */
+  --on-accent: #FFFFFF;
+
+  /* Aurora blooms — see the note at the top of this section. */
+  --aurora-1: rgba(108, 92, 231, 0.30);
+  --aurora-2: rgba(74, 63, 199, 0.28);
+  --aurora-3: rgba(108, 92, 231, 0.14);
+
+  --shadow-accent: 0 12px 34px -14px var(--accent-glow);
+}
+
+/* Measured contrast against --bg (#08080C), and against the brightest point
+   of the aurora composite (#26214E, top centre of the viewport):
+
+                  on --bg   over aurora
+     --ink         18.40      13.69   AAA — body copy and headings
+     --ink-dim      8.08       6.01   AA at any size, AAA on --bg
+     --ink-faint    4.03       3.00   large text only (>=24px, or >=18.7px
+                                      bold); never for copy a reader needs
+     --accent       4.12       3.07   clears the 3:1 UI floor for focus rings
+                                      and borders everywhere on the page */
+
+
+/* 3. Font ================================================================
+   Inter Variable, latin subset, self-hosted. No third-party request.
+   Licence: SIL Open Font License 1.1 (assets/fonts/OFL.txt).
+   ------------------------------------------------------------------------ */
+
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../fonts/inter-variable.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+
+/* 4. Reset =============================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+  /* Anchors must clear the sticky nav. */
+  scroll-padding-top: calc(var(--nav-h) + 16px);
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* `clip`, not `hidden`: hidden would silently break position: sticky. */
+  overflow-x: clip;
+}
+
+img,
+picture,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+}
+
+ul[class],
+ol[class] {
+  list-style: none;
+  padding: 0;
+}
+
+/* The aurora sits at z-index 0, which paints above unpositioned in-flow
+   content. Every other direct child of <body> is therefore lifted above it.
+   Wrapped in :where() so it carries zero specificity: a later section can
+   still say `position: fixed` on a body child and win, and it keeps z-index 1
+   unless it deliberately sets its own. Nothing may reintroduce z-index: 0. */
+:where(body > :not(.aurora, .grain)) {
+  position: relative;
+  z-index: 1;
+}
+
+::selection {
+  background-color: var(--accent-glow);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+
+/* 5. Typography ========================================================== */
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 620;
+  line-height: var(--lh-snug);
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--fs-display);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.035em;
+}
+
+h2 {
+  font-size: var(--fs-3xl);
+  letter-spacing: -0.03em;
+}
+
+h3 {
+  font-size: var(--fs-xl);
+}
+
+h4 {
+  font-size: var(--fs-lg);
+}
+
+p {
+  text-wrap: pretty;
+}
+
+a {
+  color: inherit;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 0.22em;
+  transition: color var(--dur-fast) var(--ease-out),
+    text-decoration-color var(--dur-fast) var(--ease-out);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: var(--fs-xs);
+  font-weight: 580;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+
+/* 6. Layout ============================================================== */
+
+.container {
+  width: 100%;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: var(--pad);
+}
+
+.section {
+  padding-block: var(--section-y);
+}
+
+
+/* 7. Components ========================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55em;
+  min-height: 46px;
+  padding: 0.75em 1.5em;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: 580;
+  line-height: 1;
+  letter-spacing: -0.005em;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-mid) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn--primary {
+  background-image: linear-gradient(170deg, var(--accent), var(--accent-deep));
+  color: var(--on-accent);
+  box-shadow: 0 1px 0 0 var(--line-strong) inset, var(--shadow-accent);
+}
+
+.btn--ghost {
+  background-color: transparent;
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+@media (hover: hover) {
+  .btn--primary:hover {
+    box-shadow: 0 1px 0 0 var(--line-strong) inset,
+      0 16px 44px -12px var(--accent-glow);
+  }
+
+  .btn--ghost:hover {
+    background-color: var(--line);
+    border-color: var(--accent);
+  }
+
+  a:hover {
+    text-decoration-color: var(--accent);
+  }
+}
+
+
+/* 8. Background layers ===================================================
+   Both layers are inert: position: fixed, pointer-events: none, aria-hidden.
+   ------------------------------------------------------------------------ */
+
+/* Indigo aurora — the light the product floats in. The blooms are built from
+   soft radial-gradient stops rather than filter: blur(), which reads the same
+   and costs nothing to composite on a viewport-sized fixed layer. */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.aurora::before {
+  content: "";
+  position: absolute;
+  /* Oversized inside the clipped parent so the drift never reveals an edge.
+     The box is 150% of the viewport starting 25% above it, so a bloom meant
+     for viewport position P sits at (P + 25%) / 1.5 here. */
+  inset: -25%;
+  /* Radii are percentages, not lengths, so the composition is identical at
+     every viewport width instead of swamping narrow screens. */
+  background-image:
+    radial-gradient(43% 50% at 50% 21%, var(--aurora-1), transparent 70%),
+    radial-gradient(33% 41% at 25% 26%, var(--aurora-2), transparent 68%),
+    radial-gradient(30% 39% at 75% 33%, var(--aurora-3), transparent 66%);
+}
+
+/* Film grain — keeps the gradients from banding on wide displays. */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+
+/* 9. Motion ==============================================================
+   `.reveal` is visible by default. Task 5's script adds `js` to <html>; only
+   then does it start hidden and animate in. With JavaScript off, nothing on
+   the page is ever invisible.
+   ------------------------------------------------------------------------ */
+
+.reveal {
+  opacity: 1;
+  transform: none;
+}
+
+.js .reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out);
+}
+
+.js .reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  .aurora::before {
+    animation: aurora-drift 48s var(--ease-out) infinite alternate;
+  }
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(-1.5%, -1%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(1.5%, 1.5%, 0) scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Nothing may be left hidden or offset. */
+  .js .reveal,
+  .js .reveal.is-visible {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* Reserved hook: any element a later section parallaxes carries this. */
+  [data-parallax] {
+    transform: none !important;
+  }
+}
