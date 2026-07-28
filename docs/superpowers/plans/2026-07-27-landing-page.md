@@ -649,9 +649,12 @@ document.documentElement.classList.add('js');
 // The download button ships with a working href in the HTML. This only ever
 // upgrades it to the newest release; a failure leaves the fallback in place.
 async function hydrateDownload() {
-  const link = document.querySelector('[data-download-link]');
+  // Task 3 put a download button in BOTH the nav and the hero, so every
+  // match must be upgraded — hydrating only the first would leave the
+  // hero's primary CTA pinned to the hardcoded fallback.
+  const links = [...document.querySelectorAll('[data-download-link]')];
   const badge = document.querySelector('[data-version-badge]');
-  if (!link) return;
+  if (!links.length) return;
   try {
     const res = await fetch('/appcast.xml', { cache: 'no-cache' });
     if (!res.ok) return;
@@ -659,7 +662,7 @@ async function hydrateDownload() {
     if (doc.getElementsByTagName('parsererror').length) return;
     const latest = pickLatestItem(itemsFromDocument(doc));
     if (!latest) return;
-    link.href = latest.url;
+    links.forEach((link) => { link.href = latest.url; });
     if (badge) {
       const size = formatBytes(latest.length);
       badge.textContent = ['Free download', latest.version && `v${latest.version}`, size]
@@ -999,34 +1002,9 @@ Native `<details>`/`<summary>` — keyboard accessible with zero JS. Nine entrie
 
 - [ ] **Step 3: Build the final CTA and footer**
 
-Final CTA: a centered band repeating the headline promise with the download button (also carrying `data-download-link` — Task 4's hydration uses `querySelector`, so update `site.js` to `querySelectorAll` and set the href on every match).
+Final CTA: a centered band repeating the headline promise with the download button, also carrying `data-download-link` and the same hardcoded fallback href.
 
-Update the `hydrateDownload` function in `site/assets/js/site.js`:
-
-```js
-async function hydrateDownload() {
-  const links = [...document.querySelectorAll('[data-download-link]')];
-  const badge = document.querySelector('[data-version-badge]');
-  if (!links.length) return;
-  try {
-    const res = await fetch('/appcast.xml', { cache: 'no-cache' });
-    if (!res.ok) return;
-    const doc = new DOMParser().parseFromString(await res.text(), 'application/xml');
-    if (doc.getElementsByTagName('parsererror').length) return;
-    const latest = pickLatestItem(itemsFromDocument(doc));
-    if (!latest) return;
-    links.forEach((link) => { link.href = latest.url; });
-    if (badge) {
-      const size = formatBytes(latest.length);
-      badge.textContent = ['Free download', latest.version && `v${latest.version}`, size]
-        .filter(Boolean)
-        .join(' · ');
-    }
-  } catch {
-    /* keep the hardcoded fallback */
-  }
-}
-```
+No JavaScript change is needed — Task 4's `hydrateDownload` already iterates every `[data-download-link]` match, so this third button hydrates automatically. Verify that it does rather than assuming it.
 
 Footer: wordmark, `hello@slipreel.app` as a `mailto:` link, and `© 2026 Becoming Ventures, LLC`. No social links.
 
