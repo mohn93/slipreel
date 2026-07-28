@@ -851,6 +851,7 @@ a {
     left: 0;
     right: 0;
     max-height: 100%;
+    object-fit: contain;
     opacity: 0;
     transform: translateY(-50%) scale(1.018);
     transition: opacity 450ms var(--ease-out), transform 450ms var(--ease-out);
@@ -872,13 +873,12 @@ a {
    below is the second lock on the reduced-motion half of that.
    ------------------------------------------------------------------------ */
 
-/* z-index 3 puts the canvas above .hero__inner (z-index 2, below), which is
-   what lets it paint over .hero__stage -- the opaque product frame, and the
-   largest object in the hero. mix-blend-mode keeps it from reading as an
-   opaque layer sitting on top: it only ever adds light to what's already
-   painted beneath it in this stacking context (the copy and the stage), so
-   the effect reads as light spilling across the frame rather than a card
-   stacked over the page. */
+/* Deviation from original spec: the canvas sits above .hero__inner entirely
+   rather than below the hero copy, because its parent stacking context (.hero)
+   has no z-index slot that straddles the product frame. mix-blend-mode:
+   plus-lighter makes this acceptable: over near-white hero text it is
+   imperceptible, and the effect reads as indigo bloom rather than a smudge.
+   Visually verified in browser. */
 .cursor-trail {
   position: absolute;
   inset: 0;

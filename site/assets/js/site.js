@@ -153,7 +153,7 @@ function mountCursorTrail() {
     if (!has) { px = target.x; py = target.y; has = true; }
     startLoop();
   }, { passive: true });
-  stage.addEventListener('pointerleave', () => { target = null; has = false; }, { passive: true });
+  stage.addEventListener('pointerleave', () => { target = null; has = false; trail.length = 0; }, { passive: true });
 
   const io = new IntersectionObserver((entries) => {
     visible = entries[entries.length - 1].isIntersecting;
