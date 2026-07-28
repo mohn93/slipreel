@@ -593,7 +593,7 @@ test('itemsFromDocument tolerates a malformed item', () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `node --test site/assets/js/`
+Run: `node --test site/assets/js/*.test.js`
 Expected: FAIL — `Cannot find module .../appcast.js`.
 
 - [ ] **Step 3: Implement the parser**
@@ -634,7 +634,7 @@ export function itemsFromDocument(doc) {
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `node --test site/assets/js/`
+Run: `node --test site/assets/js/*.test.js`
 Expected: `pass 7`, `fail 0`.
 
 - [ ] **Step 5: Write the browser glue**
@@ -706,7 +706,7 @@ Expected: prints the 1.0.1 DMG URL and its byte length, confirming the feed shap
 - [ ] **Step 8: Run all tests and commit**
 
 ```bash
-node --test site/assets/js/ && bash scripts/site-lint.sh
+node --test site/assets/js/*.test.js && bash scripts/site-lint.sh
 git add site/assets/js/appcast.js site/assets/js/appcast.test.js site/assets/js/site.js site/index.html
 git commit -m "feat(site): drive download button and version badge from the appcast"
 ```
@@ -895,7 +895,7 @@ Then stop the server.
 - [ ] **Step 7: Run tests and commit**
 
 ```bash
-node --test site/assets/js/ && bash scripts/site-lint.sh
+node --test site/assets/js/*.test.js && bash scripts/site-lint.sh
 git add site/index.html site/assets/css/site.css site/assets/js/site.js site/assets/img/
 git commit -m "feat(site): pinned feature theater, reveal engine, cursor trail"
 ```
@@ -1011,7 +1011,7 @@ Footer: wordmark, `hello@slipreel.app` as a `mailto:` link, and `© 2026 Becomin
 - [ ] **Step 4: Verify**
 
 ```bash
-node --test site/assets/js/ && bash scripts/site-lint.sh
+node --test site/assets/js/*.test.js && bash scripts/site-lint.sh
 ```
 
 Acceptance criteria:
@@ -1140,7 +1140,7 @@ Walk the whole page and confirm:
 - [ ] **Step 5: Full verification**
 
 ```bash
-node --test site/assets/js/
+node --test site/assets/js/*.test.js
 bash scripts/site-lint.sh
 bash scripts/deploy-site.test.sh
 bash scripts/site-lint.test.sh
