@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Slipreel">
+  <!--
+    Purpose-drawn for small sizes. This is NOT a downscale of the macOS app
+    icon: that art carries Apple's ~10% icon-grid margin, which at 16px leaves
+    the mark rendering inside about 12px, and its five-step motion trail turns
+    to mud below 32px. Here the tile is full-bleed, the reel is larger, and the
+    trail is reduced to two chunky steps that still read at 16px.
+  -->
+  <defs>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7B6BF0"/>
+      <stop offset="1" stop-color="#4A3FC7"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="14" fill="url(#s)"/>
+
+  <!-- Motion trail: two steps, sized to survive a 16px render. -->
+  <rect x="4"  y="25" width="12" height="14" rx="7" fill="#FFFFFF" opacity="0.34"/>
+  <rect x="11" y="22" width="16" height="20" rx="10" fill="#FFFFFF" opacity="0.66"/>
+
+  <!-- Reel: solid disc with a punched-out hole, so the ring stays open at 16px.
+       Centred at x=37 rather than optically centred, so the trail balances it. -->
+  <path fill="#FFFFFF" fill-rule="evenodd"
+        d="M37 13a19 19 0 1 1 0 38 19 19 0 0 1 0-38Zm0 12a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z"/>
+</svg>
