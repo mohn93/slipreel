@@ -291,6 +291,25 @@ void main() {
     expect(out.single.kind, InteractionKind.textEntry);
   });
 
+  test('press-time state loses a tie against the pre-press sample', () {
+    // Exactly one pre-press sample inside the 50ms window, versus the
+    // press sample itself. With the press sample excluded the vote is
+    // unanimous for iBeam. If the press sample were counted the vote
+    // would tie and the contaminated arrow state would win, which is
+    // precisely the OS-swaps-cursor-on-click case the lookback exists
+    // to defend against.
+    final out = classifier.classify(
+      _rec([
+        _p(ms: 960, clicked: false, x: 500, y: 400, state: CursorState.iBeam),
+        _p(ms: 1000, clicked: true, x: 500, y: 400, state: CursorState.arrow),
+        _p(ms: 1050, clicked: true, x: 500, y: 400, state: CursorState.arrow),
+        _p(ms: 1066, clicked: false, x: 500, y: 400, state: CursorState.arrow),
+      ]),
+      videoSize,
+    );
+    expect(out.single.kind, InteractionKind.textEntry);
+  });
+
   test('legacy recording with no cursor state degrades to click and drag', () {
     // Recordings predating the state field load every sample as
     // CursorState.arrow, so textEntry and textSelection can never fire.

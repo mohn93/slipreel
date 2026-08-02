@@ -34,10 +34,11 @@ class InteractionClassifier {
   final double horizontalAxisRatio;
 
   /// Backward window before the press over which the pointer state is
-  /// sampled. Reading state at exactly the press sample is vulnerable to
-  /// the OS swapping the cursor *in response* to the click; sampling
-  /// just before captures what the pointer was over when the user
-  /// decided to click, which is the signal we want.
+  /// sampled, as a half-open interval `[press - stateLookback, press)`.
+  /// Reading state at exactly the press sample is vulnerable to the OS
+  /// swapping the cursor *in response* to the click; sampling just before
+  /// captures what the pointer was over when the user decided to click,
+  /// which is the signal we want.
   final Duration stateLookback;
 
   List<CursorInteraction> classify(CursorRecording cursor, Size videoSize) {
@@ -122,15 +123,15 @@ class InteractionClassifier {
     );
   }
 
-  /// Modal pointer state over `[press - stateLookback, press]`. Walking
+  /// Modal pointer state over `[press - stateLookback, press)`. Walking
   /// backwards means that on a count tie the state nearest the press
-  /// wins, because Dart maps iterate in insertion order and we insert
-  /// nearest-first.
+  /// (but before it) wins, because Dart maps iterate in insertion order
+  /// and we insert nearest-first.
   CursorState _stateBefore(List<CursorPosition> samples, int pressIndex) {
     final windowStart =
         samples[pressIndex].timestampMicros - stateLookback.inMicroseconds;
     final counts = <CursorState, int>{};
-    for (var i = pressIndex; i >= 0; i--) {
+    for (var i = pressIndex - 1; i >= 0; i--) {
       final s = samples[i];
       if (s.timestampMicros < windowStart) break;
       counts[s.state] = (counts[s.state] ?? 0) + 1;
