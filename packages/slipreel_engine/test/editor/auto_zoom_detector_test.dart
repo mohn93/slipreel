@@ -110,17 +110,26 @@ void main() {
     expect(out[1].rect.center, const Offset(1100, 600));
   });
 
-  test('two clicks 0.5 s apart → no regions (both fail isolation)', () {
+  test('two clicks 0.5 s apart → one region (isolation filter is gone)', () {
+    // Pre-2026-08 this returned zero regions: the isolation filter
+    // dropped both clicks for having a close neighbour, which is why
+    // click-dense recordings opened with an empty zoom lane. Both clicks
+    // now become interactions; Task 4 merges them into one cluster.
+    // See docs/superpowers/specs/2026-08-02-auto-zoom-interaction-classifier-design.md
+    //
+    // Coordinates sit in the non-clamped zone for 1.5× on 1920×1080
+    // (cx ∈ [640, 1280], cy ∈ [360, 720]), matching the convention the
+    // rest of this file already documents.
     final cursor = _rec([
-      ..._clickAt(atMs: 2000, x: 400, y: 300),
-      ..._clickAt(atMs: 2500, x: 800, y: 600),
+      ..._clickAt(atMs: 1000, x: 700, y: 450),
+      ..._clickAt(atMs: 1500, x: 740, y: 470),
     ]);
     final out = detector.detect(
       cursor: cursor,
       videoSize: videoSize,
       videoDuration: videoDuration,
     );
-    expect(out, isEmpty);
+    expect(out, hasLength(1));
   });
 
   test('two clicks 1.6 s apart → only the first survives (overlap drops second)', () {
