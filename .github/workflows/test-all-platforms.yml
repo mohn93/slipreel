@@ -22,6 +22,10 @@ jobs:
       - run: melos bootstrap
       - run: melos run analyze --no-select
       - run: melos run test --no-select
+      # Landing page (site/): unit tests + constraint lint + deploy guards.
+      # The deploy guard protects the webroot the release pipeline publishes
+      # appcast.xml into, so it has to run on every PR, not on request.
+      - run: melos run test_site --no-select
 
   test-linux:
     name: Test (Linux)

@@ -120,6 +120,13 @@ jobs:
           # never points at a not-yet-uploaded file.
           rsync -av -e "$SSH" "$DMG" "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/download/"
           rsync -av -e "$SSH" out/appcast.xml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/appcast.xml"
+          # Stable alias for the marketing site's no-JavaScript download link,
+          # which cannot know the current version. It MUST be named
+          # `latest.dmg` and NOT `Slipreel-latest.dmg`: the prune below globs
+          # `Slipreel-*.dmg`, so a matching alias would occupy one of the
+          # newest-$KEEP_DMGS slots and could get a real DMG deleted.
+          $SSH "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_ROOT/download' && ln -sfn '$(basename "$DMG")' latest.dmg"
           # Disk is tight on the box: keep only the newest $KEEP_DMGS DMGs.
           # Sparkle only needs the current one; older items stay in the feed.
           $SSH "$DEPLOY_USER@$DEPLOY_HOST" \

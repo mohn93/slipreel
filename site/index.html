@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Slipreel — screen recordings that look like they took a week</title>
+<meta name="description" content="Slipreel is a macOS screen recorder that auto-zooms, smooths your cursor, frames your app, and captions it — the moment you stop recording.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" sizes="48x48" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://slipreel.app/">
+<meta property="og:title" content="Slipreel — screen recordings that look like they took a week">
+<meta property="og:description" content="Auto-zoom, smoothed cursor, device frames, on-device captions. A macOS screen recorder and editor.">
+<meta property="og:image" content="https://slipreel.app/assets/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="assets/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Slipreel",
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "macOS 13.0 or later",
+  "url": "https://slipreel.app/",
+  "downloadUrl": "https://slipreel.app/download/latest.dmg",
+  "offers": [
+    { "@type": "Offer", "price": "79.00", "priceCurrency": "USD", "name": "Yearly" },
+    { "@type": "Offer", "price": "149.00", "priceCurrency": "USD", "name": "Lifetime" }
+  ],
+  "publisher": { "@type": "Organization", "name": "Becoming Ventures, LLC" }
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="aurora" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<nav class="nav" aria-label="Primary">
+  <div class="container nav__inner">
+    <a class="nav__brand" href="#top">
+      <svg class="nav__mark" viewBox="0 0 512 512" width="28" height="28" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="slipreel-mark-fill" x1="0" y1="0" x2="0.85" y2="1">
+            <stop offset="0" stop-color="var(--accent)"></stop>
+            <stop offset="1" stop-color="var(--accent-deep)"></stop>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="114" fill="url(#slipreel-mark-fill)"></rect>
+        <g fill="var(--on-accent)">
+          <rect x="72" y="212" width="62" height="88" rx="31" opacity="0.20"></rect>
+          <rect x="118" y="212" width="74" height="88" rx="37" opacity="0.36"></rect>
+          <rect x="164" y="212" width="86" height="88" rx="43" opacity="0.58"></rect>
+          <rect x="208" y="212" width="98" height="88" rx="44" opacity="0.84"></rect>
+          <circle cx="316" cy="256" r="100"></circle>
+        </g>
+        <circle cx="316" cy="256" r="34" fill="none" stroke="var(--accent-deep)" stroke-width="24"></circle>
+      </svg>
+      <span class="nav__wordmark">Slipreel</span>
+    </a>
+
+    <ul class="nav__links">
+      <li><a class="nav__link" href="#features">Features</a></li>
+      <li><a class="nav__link" href="#pricing">Pricing</a></li>
+      <li><a class="nav__link" href="#faq">FAQ</a></li>
+    </ul>
+
+    <a class="btn btn--primary nav__cta"
+       href="https://slipreel.app/download/latest.dmg"
+       data-download-link>Download</a>
+  </div>
+</nav>
+
+<main id="main">
+<header class="hero" id="top" data-cursor-stage>
+  <div class="container hero__inner">
+    <p class="eyebrow">For macOS 13+ &middot; Apple Silicon and Intel</p>
+    <h1 class="hero__title">Screen recordings that look like they took a week.</h1>
+    <p class="hero__sub">
+      Slipreel auto-zooms, smooths your cursor, frames your app, and captions it &mdash;
+      the moment you stop recording.
+    </p>
+    <div class="hero__cta">
+      <a class="btn btn--primary"
+         href="https://slipreel.app/download/latest.dmg"
+         data-download-link>Download for macOS</a>
+      <a class="btn btn--ghost" href="#pricing">See pricing</a>
+    </div>
+    <p class="hero__meta"><span data-version-badge>Free download</span> &middot; Signed and notarized by Apple</p>
+    <figure class="hero__stage">
+      <img src="assets/img/hero-editor.webp" width="1600" height="1000"
+           alt="The Slipreel editor with a recording open, showing the zoom lane and audio waveform."
+           fetchpriority="high" decoding="async">
+    </figure>
+  </div>
+</header>
+
+<!-- The theater. Copy first in the DOM, illustrations second, so the reading
+     order is the five beats in sequence. On a wide screen the figure is pinned
+     into the right-hand column and its five shots cross-fade; everywhere else
+     the whole thing collapses to one column in which each beat's copy sits
+     directly above its own shot. See stylesheet section 13. -->
+<section class="section" data-theater>
+  <div class="container theater__grid">
+    <div class="theater__beats">
+
+      <article class="theater__beat reveal" data-beat="0">
+        <p class="theater__step" aria-hidden="true">01</p>
+        <h2>Zooms that write themselves</h2>
+        <p class="theater__copy">
+          Slipreel finds every click and pushes in on it &mdash; anticipating where
+          your cursor is heading, not chasing it. Adjust any zoom on the timeline,
+          or add your own.
+        </p>
+      </article>
+
+      <article class="theater__beat reveal" data-beat="1">
+        <p class="theater__step" aria-hidden="true">02</p>
+        <h2>A cursor that moves like it's on rails</h2>
+        <p class="theater__copy">
+          Real cursors jitter. Slipreel smooths the path, adds motion blur, and
+          highlights clicks &mdash; while keeping the timing honest, even through
+          sped-up cuts.
+        </p>
+      </article>
+
+      <article class="theater__beat reveal" data-beat="2">
+        <p class="theater__step" aria-hidden="true">03</p>
+        <h2>Put it in a frame worth looking at</h2>
+        <p class="theater__copy">
+          Drop your recording into a real device bezel, pick a wallpaper, set any
+          aspect ratio. Preview matches export exactly.
+        </p>
+      </article>
+
+      <article class="theater__beat reveal" data-beat="3">
+        <p class="theater__step" aria-hidden="true">04</p>
+        <h2>Every keystroke, on the timeline</h2>
+        <p class="theater__copy">
+          Slipreel records what you typed and renders it as an overlay on its
+          own timeline lane &mdash; mute any keystroke you'd rather not show.
+        </p>
+      </article>
+
+      <article class="theater__beat reveal" data-beat="4">
+        <p class="theater__step" aria-hidden="true">05</p>
+        <h2>Captions, without the upload</h2>
+        <p class="theater__copy">
+          The transcription engine ships in the app; the speech model downloads
+          once on first use, then stays cached. Your recording never leaves your
+          Mac. Edit the text, burn it in on export.
+        </p>
+      </article>
+
+    </div>
+
+    <figure class="theater__visual" data-theater-visual>
+      <img class="theater__img" data-beat-img="0"
+           src="assets/img/beat-zoom.webp" width="1600" height="1000" decoding="async"
+           alt="The Slipreel editor with an automatic zoom pushed in on a click, and the zoom lane visible on the timeline.">
+      <img class="theater__img" data-beat-img="1"
+           src="assets/img/beat-cursor.webp" width="1600" height="1000" loading="lazy" decoding="async"
+           alt="A recording playing back with Slipreel's smoothed cursor path and a highlighted click.">
+      <img class="theater__img" data-beat-img="2"
+           src="assets/img/beat-frames.webp" width="1600" height="1000" loading="lazy" decoding="async"
+           alt="A recording placed in a MacBook bezel over a wallpaper, with the aspect ratio picker open.">
+      <img class="theater__img" data-beat-img="3"
+           src="assets/img/beat-keystrokes.webp" width="1600" height="1000" loading="lazy" decoding="async"
+           alt="The keystroke overlay drawn over a recording, with its editable lane on the timeline.">
+      <img class="theater__img" data-beat-img="4"
+           src="assets/img/beat-captions.webp" width="1600" height="1000" loading="lazy" decoding="async"
+           alt="Captions burned over a recording, with the caption text open for editing in the inspector.">
+    </figure>
+  </div>
+</section>
+
+<!-- Deep dives: four alternating image/copy pairs, one per major subsystem.
+     Copy sits first in the DOM in every pair (see stylesheet section 14), so
+     a screen reader always meets the heading and body before the screenshot
+     regardless of which side the image lands on visually. This section
+     carries #features: it's the first substantive features content after
+     the hero and theater, and is what the nav's "Features" link targets. -->
+<section class="section deep-dives" id="features">
+  <div class="container deep-dives__list">
+
+    <article class="deep-dive reveal">
+      <div class="deep-dive__copy">
+        <p class="eyebrow">Timeline</p>
+        <h2>Cut it like an editor, not a toy</h2>
+        <p>
+          Split at the playhead with Cmd+K. Every slice keeps its own trim
+          and speed, snapping to clicks and zoom edges as you cut. Waveforms
+          render right in the slice.
+        </p>
+      </div>
+      <figure class="deep-dive__media">
+        <img src="assets/img/deep-timeline.webp" width="1600" height="1000"
+             loading="lazy" decoding="async"
+             alt="The Slipreel editor with a clip split at the playhead, showing an independently trimmed slice with its waveform.">
+      </figure>
+    </article>
+
+    <article class="deep-dive reveal">
+      <div class="deep-dive__copy">
+        <p class="eyebrow">Audio</p>
+        <h2>Two tracks, mixed on your terms</h2>
+        <p>
+          Mic and system audio are captured as independent tracks. Set
+          volume per track, mute either one, and Slipreel mixes them down
+          on export.
+        </p>
+      </div>
+      <figure class="deep-dive__media">
+        <img src="assets/img/deep-audio.webp" width="1600" height="1000"
+             loading="lazy" decoding="async"
+             alt="The Slipreel editor with separate microphone and system audio tracks, each with its own volume and mute controls.">
+      </figure>
+    </article>
+
+    <article class="deep-dive reveal">
+      <div class="deep-dive__copy">
+        <p class="eyebrow">Camera</p>
+        <h2>Your face, in the corner, in sync</h2>
+        <p>
+          Record your webcam alongside the screen as its own track, kept
+          frame-accurate against the recording.
+        </p>
+      </div>
+      <figure class="deep-dive__media">
+        <img src="assets/img/deep-camera.webp" width="1600" height="1000"
+             loading="lazy" decoding="async"
+             alt="A recording with a webcam track composited in the corner, playing back in sync with the screen capture.">
+      </figure>
+    </article>
+
+    <article class="deep-dive reveal">
+      <div class="deep-dive__copy">
+        <p class="eyebrow">Export</p>
+        <h2>MP4 and GIF, exactly as previewed</h2>
+        <p>
+          The preview and the export run the same canvas math, so what you
+          approve is what ships. Pick an aspect ratio and go.
+        </p>
+      </div>
+      <figure class="deep-dive__media">
+        <img src="assets/img/deep-export.webp" width="1600" height="1000"
+             loading="lazy" decoding="async"
+             alt="The export panel with MP4 and GIF options and an aspect ratio picker, matching the editor preview.">
+      </figure>
+    </article>
+
+  </div>
+</section>
+
+<!-- Feature grid: the long tail of smaller, individually shippable things.
+     Marked up as a plain list -- each item is one short phrase, not a
+     label-plus-description pair, so a definition list would be the wrong
+     structure. -->
+<section class="section feature-grid">
+  <div class="container">
+    <h2 class="feature-grid__heading reveal">And the hundred small things.</h2>
+    <ul class="feature-grid__list reveal">
+      <li class="feature-grid__item">3-2-1 countdown</li>
+      <li class="feature-grid__item">Pause and resume</li>
+      <li class="feature-grid__item">Global hotkeys</li>
+      <li class="feature-grid__item">Full display, window, or region</li>
+      <li class="feature-grid__item">Auto-zoom detection</li>
+      <li class="feature-grid__item">Manual zoom placement</li>
+      <li class="feature-grid__item">3D tilt</li>
+      <li class="feature-grid__item">Zoom movements</li>
+      <li class="feature-grid__item">Device frames</li>
+      <li class="feature-grid__item">Wallpapers and solid colors</li>
+      <li class="feature-grid__item">Six aspect ratios</li>
+      <li class="feature-grid__item">Per-slice speed</li>
+      <li class="feature-grid__item">Cursor smoothing presets</li>
+      <li class="feature-grid__item">Crash recovery</li>
+      <li class="feature-grid__item">Duration warnings</li>
+      <li class="feature-grid__item">Automatic updates</li>
+    </ul>
+  </div>
+</section>
+
+<!-- Built like a Mac app: four platform trust signals. -->
+<section class="section">
+  <div class="container">
+    <div class="platform-strip reveal">
+      <h2 class="platform-strip__heading">Built like a Mac app</h2>
+      <ul class="platform-strip__list">
+        <li class="platform-strip__item">
+          <svg class="platform-strip__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <span>Native capture via ScreenCaptureKit &mdash; no screen-scraping hacks.</span>
+        </li>
+        <li class="platform-strip__item">
+          <svg class="platform-strip__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <span>Captions transcribe on-device. Your recordings never leave your Mac.</span>
+        </li>
+        <li class="platform-strip__item">
+          <svg class="platform-strip__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <span>Signed and notarized by Apple, distributed direct.</span>
+        </li>
+        <li class="platform-strip__item">
+          <svg class="platform-strip__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <span>Updates arrive in the app, signed and verified.</span>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+
+<!-- Pricing: early-access banner + two cards. Slipreel has no license
+     enforcement yet, so the banner and both cards must never imply an
+     instant key -- see the copy notes in the task brief. The recommended
+     (lifetime) card is first in the DOM so it also leads on the mobile
+     single-column stack; the two-column desktop layout keeps that order.
+     Carries #pricing for the nav link. -->
+<section class="section pricing" id="pricing">
+  <div class="container">
+    <h2 class="visually-hidden">Pricing</h2>
+    <div class="pricing__banner reveal">
+      <p>
+        <strong>Early access.</strong> Slipreel ships and is actively
+        developed. Buy now at founding pricing and your license key arrives the
+        moment licensing lands &mdash; the app is free to download and use in
+        the meantime.
+      </p>
+    </div>
+
+    <div class="pricing__cards">
+
+      <article class="pricing-card pricing-card--featured reveal">
+        <p class="pricing-card__badge">Recommended</p>
+        <h3 class="pricing-card__name">Lifetime</h3>
+        <p class="pricing-card__price">
+          <span class="pricing-card__amount">$149</span> once
+        </p>
+        <ul class="pricing-card__features">
+          <li>Yours permanently</li>
+          <li>One year of updates included</li>
+          <li>All features</li>
+          <li>macOS 13+</li>
+        </ul>
+        <!-- TODO: replace with the real Stripe payment link -->
+        <a class="btn btn--primary pricing-card__cta" href="#stripe-lifetime">Get Slipreel for life</a>
+      </article>
+
+      <article class="pricing-card reveal">
+        <h3 class="pricing-card__name">Yearly</h3>
+        <p class="pricing-card__price">
+          <span class="pricing-card__amount">$79</span>/year
+        </p>
+        <ul class="pricing-card__features">
+          <li>Every update while subscribed</li>
+          <li>All features</li>
+          <li>macOS 13+</li>
+          <li>Cancel anytime</li>
+        </ul>
+        <!-- TODO: replace with the real Stripe payment link -->
+        <a class="btn btn--ghost pricing-card__cta" href="#stripe-yearly">Get Slipreel yearly</a>
+      </article>
+
+    </div>
+
+    <p class="pricing__note reveal">
+      Prefer to try it first?
+      <a href="https://slipreel.app/download/latest.dmg" data-download-link>Download Slipreel free</a>
+      &mdash; no account, no time limit.
+    </p>
+  </div>
+</section>
+
+<!-- FAQ: native details/summary, so it opens and closes with the keyboard
+     alone and needs zero JavaScript. Carries #faq for the nav link. -->
+<section class="section faq" id="faq">
+  <div class="container faq__inner">
+    <h2 class="faq__heading reveal">Questions</h2>
+
+    <div class="faq__list reveal">
+
+      <details class="faq__item">
+        <summary class="faq__question">What does "early access" mean?</summary>
+        <p class="faq__answer">
+          Slipreel is complete and in daily use, but license-key delivery is
+          not built yet. Buying now locks in founding pricing; your key
+          arrives when licensing ships. The app is free to download and
+          fully functional today.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">What happens after the first year on a lifetime license?</summary>
+        <p class="faq__answer">
+          The app keeps working forever, and every version released in your
+          first year stays yours. Updates after that are a separate,
+          optional renewal.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">What do I need to run it?</summary>
+        <p class="faq__answer">macOS 13 or later, on Apple Silicon or Intel.</p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Do my recordings get uploaded anywhere?</summary>
+        <p class="faq__answer">
+          No. Recording, editing, captions, and export all run on your Mac.
+          Slipreel has no account system and no server.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">How do captions work offline?</summary>
+        <p class="faq__answer">
+          The Whisper transcription engine ships inside the app and runs on your
+          Mac. The speech model itself is downloaded once on first use and
+          cached; after that, captions work with no network at all, and your
+          recording is never uploaded.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Is it safe to install?</summary>
+        <p class="faq__answer">
+          Slipreel is signed with an Apple Developer ID and notarized by
+          Apple. Updates are cryptographically verified before they install.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Can I edit the automatic zooms?</summary>
+        <p class="faq__answer">
+          Yes. Every auto-detected zoom is a normal timeline region you can
+          move, resize, retime, or delete, and you can add your own.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does it record system audio?</summary>
+        <p class="faq__answer">
+          Yes, as its own track, separate from the microphone, so you can mix
+          them independently.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Can I get a refund?</summary>
+        <p class="faq__answer">
+          Email <a href="mailto:hello@slipreel.app">hello@slipreel.app</a>
+          within 14 days and you will get your money back.
+        </p>
+      </details>
+
+    </div>
+  </div>
+</section>
+
+<!-- Final CTA: closes the page by repeating the hero's headline promise
+     next to a third, independently-hydrated download button. -->
+<section class="section cta-band">
+  <div class="container">
+    <div class="cta-band__card reveal">
+      <h2 class="cta-band__heading">Screen recordings that look like they took a week.</h2>
+      <a class="btn btn--primary cta-band__button"
+         href="https://slipreel.app/download/latest.dmg"
+         data-download-link>Download for macOS</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <span class="site-footer__wordmark">Slipreel</span>
+    <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
+    <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
+  </div>
+</footer>
+
+<script type="module" src="assets/js/site.js"></script>
+</body>
+</html>

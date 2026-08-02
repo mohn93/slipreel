@@ -60,6 +60,22 @@ scripts:
         - slipreel_engine
         - screen_recorder_platform_interface
 
+  # The marketing site in site/ is a hand-written static page with no build
+  # step, so it has no Dart package and none of the filters above reach it.
+  # Its guards therefore have to be invoked directly. They must run in CI: the
+  # deploy guard exists to protect the shared webroot that also publishes the
+  # Sparkle appcast, and a guard nobody runs is not a guard.
+  # `node --test site/assets/js/*.test.js` — the bare-directory form of
+  # --test fails with MODULE_NOT_FOUND on the Node builds we use, so the glob
+  # is deliberate.
+  test_site:
+    run: |
+      node --test site/assets/js/*.test.js && \
+      bash scripts/site-lint.sh && \
+      bash scripts/site-lint.test.sh && \
+      bash scripts/deploy-site.test.sh
+    description: Run the landing page unit tests, constraint lint and deploy guards
+
   clean:
     exec: flutter clean
     description: Clean all packages
