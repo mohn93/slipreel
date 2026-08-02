@@ -584,15 +584,15 @@ class InteractionClassifier {
     );
   }
 
-  /// Modal pointer state over `[press - stateLookback, press]`. Walking
-  /// backwards means that on a count tie the state nearest the press
-  /// wins, because Dart maps iterate in insertion order and we insert
-  /// nearest-first.
+  /// Modal pointer state over `[press - stateLookback, press)` — half-open,
+  /// so the press sample itself never votes. Walking backwards means that
+  /// on a count tie the pre-press state nearest the press wins, because
+  /// Dart maps iterate in insertion order and we insert nearest-first.
   CursorState _stateBefore(List<CursorPosition> samples, int pressIndex) {
     final windowStart =
         samples[pressIndex].timestampMicros - stateLookback.inMicroseconds;
     final counts = <CursorState, int>{};
-    for (var i = pressIndex; i >= 0; i--) {
+    for (var i = pressIndex - 1; i >= 0; i--) {
       final s = samples[i];
       if (s.timestampMicros < windowStart) break;
       counts[s.state] = (counts[s.state] ?? 0) + 1;

@@ -139,12 +139,19 @@ unterminated press at end-of-recording takes the last sample as its release. Per
 - `dwell` = release − press
 - `displacement` = |pos(release) − pos(press)|
 - `sweptBounds` = bbox of all samples in [press, release]
-- `state` = modal `CursorState` over [press − 50 ms, press]
+- `state` = modal `CursorState` over [press − 50 ms, press) — **half-open: the press
+  sample itself is excluded**
 
 The 50 ms backward window is deliberate. Reading state at exactly the press sample is
 vulnerable to the OS swapping the cursor *in response* to the click; sampling just
 before captures what the cursor was over when the user decided to click, which is the
 signal we want.
+
+The exclusion is load-bearing, not a detail. An earlier draft of this spec wrote the
+interval closed, which let the press sample into the modal vote — and on a tie it won,
+because the vote breaks ties toward the sample nearest the press. That is exactly the
+contaminated reading the window exists to discard. If no sample falls inside the
+half-open window, the press sample's own state is the fallback.
 
 ### Decision order
 
