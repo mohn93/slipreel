@@ -145,9 +145,11 @@ void main() {
   });
 
   test('two clicks 1.6 s apart → only the first survives (overlap drops second)', () {
-    // Both pass the 1.5 s isolation gate. But region1 = [1500, 4300] (start
-    // 1500, duration 2800); region2 = [3100, 5900]. They overlap → second
-    // dropped.
+    // The first click's last clicked sample is 2050 and the second presses
+    // at 3600, a 1550ms idle gap — above the 1200ms clusterGap — so they
+    // form two separate clusters rather than merging. But region1 =
+    // [1500, 4300] (start 1500, duration 2800); region2 = [3100, 5900].
+    // They overlap → second dropped.
     // Positions within the non-clamped zone for 1.5× on 1920×1080:
     // cx ∈ [640, 1280], cy ∈ [360, 720].
     final cursor = _rec([

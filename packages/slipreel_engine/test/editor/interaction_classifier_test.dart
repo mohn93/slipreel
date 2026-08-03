@@ -207,13 +207,15 @@ void main() {
   });
 
   test('axis ratio below 1.8 is drag, above is textSelection', () {
-    // dx = 300, dy = 200 -> ratio 1.5, below threshold
+    // Brackets the 1.8 threshold tightly from both sides, so a threshold
+    // that drifts even 0.1 in either direction fails this test.
+    // dx = 340, dy = 200 -> ratio 1.7, just below threshold
     final shallow = classifier.classify(
       _rec(_gesture(
         atMs: 1000,
         fromX: 300,
         fromY: 300,
-        toX: 600,
+        toX: 640,
         toY: 500,
         durationMs: 400,
         state: CursorState.iBeam,
@@ -222,14 +224,14 @@ void main() {
     );
     expect(shallow.single.kind, InteractionKind.drag);
 
-    // dx = 400, dy = 100 -> ratio 4.0, above threshold
+    // dx = 380, dy = 200 -> ratio 1.9, just above threshold
     final flat = classifier.classify(
       _rec(_gesture(
         atMs: 1000,
         fromX: 300,
         fromY: 300,
-        toX: 700,
-        toY: 400,
+        toX: 680,
+        toY: 500,
         durationMs: 400,
         state: CursorState.iBeam,
       )),

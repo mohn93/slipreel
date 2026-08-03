@@ -41,9 +41,12 @@ class CursorInteraction {
   /// Press time (isClicked rising edge), in source time.
   final Duration start;
 
-  /// Release time (falling edge). Equal to [start] for a gesture that
-  /// begins and ends within one sample; equal to the recording's last
-  /// sample time for a press that never releases.
+  /// Time of the LAST sample at which the button was still down — not
+  /// the first unclicked sample after it. That keeps [end] consistent
+  /// with [sweptBounds], which is also computed over the clicked samples
+  /// only. Equal to [start] for a gesture that begins and ends within
+  /// one sample; equal to the recording's last sample time for a press
+  /// that never releases.
   final Duration end;
 
   /// Cursor position at the press.

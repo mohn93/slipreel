@@ -32,6 +32,10 @@ class AutoZoomDetector {
   /// Overrides for the `click` shape, preserved from the historic
   /// constructor so a solitary unclassified click is byte-identical to
   /// the pre-classifier detector's output.
+  ///
+  /// [zoomLevel] must stay at or above [minClusterZoom]: the emission
+  /// floor in [_buildRegion] rejects anything shallower, so setting it
+  /// below would silently produce zero regions for every plain click.
   final double zoomLevel;
   final Duration leadIn;
   final Duration hold;
@@ -44,6 +48,11 @@ class AutoZoomDetector {
   /// A cluster may only absorb another gesture while the union of their
   /// swept bounds still fits at this magnification. Below it, the merged
   /// region would be so wide it isn't a zoom, so the cluster closes.
+  ///
+  /// It is also the *universal emission floor*: the guard at the end of
+  /// [_buildRegion] returns null for any region — clustered or solitary —
+  /// that can only be framed below this magnification, so nothing
+  /// shallower than this is ever emitted at all.
   final double minClusterZoom;
 
   final InteractionClassifier classifier;
