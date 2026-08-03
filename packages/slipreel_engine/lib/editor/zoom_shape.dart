@@ -56,6 +56,12 @@ class ZoomShape {
 /// solitary unclassified click produces a byte-identical region to the
 /// pre-classifier detector.
 const Map<InteractionKind, ZoomShape> kZoomShapes = {
+  // NOTE: `AutoZoomDetector` does NOT read this row in production — it
+  // rebuilds the click shape from its own `zoomLevel`/`leadIn`/`hold`/
+  // `leadOut` constructor parameters (see `_shapeFor`), which exist to
+  // preserve the historic defaults. Editing this row alone changes
+  // nothing; change the detector's defaults too. The two are pinned
+  // together by `auto_zoom_detector_shape_test.dart`.
   InteractionKind.click: ZoomShape(
     zoomLevel: 1.5,
     leadIn: Duration(milliseconds: 500),

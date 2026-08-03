@@ -3,6 +3,8 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
+import 'package:slipreel_engine/editor/cursor_interaction.dart';
+import 'package:slipreel_engine/editor/zoom_shape.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/tilt3d.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -73,6 +75,38 @@ void main() {
     expect(r.startTime, const Duration(milliseconds: 4500));
     expect(r.followCursor, isFalse);
     expect(r.rect.center, const Offset(900, 500));
+  });
+
+  test('detector click defaults stay in step with the click shape row', () {
+    // `_shapeFor` short-circuits InteractionKind.click and rebuilds the
+    // shape from the detector's constructor fields, so kZoomShapes' click
+    // row is never read in production. Without this test someone could
+    // retune that row and see no behaviour change and no failure. Every
+    // expectation below is derived from the table, so the two drift apart
+    // only over a red suite.
+    const gestureMs = 50;
+    final shape = kZoomShapes[InteractionKind.click]!;
+    final out = detector.detect(
+      cursor: _rec(_gesture(
+        atMs: 5000,
+        fromX: 900,
+        fromY: 500,
+        durationMs: gestureMs,
+      )),
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    final r = out.single;
+    expect(r.zoomLevel, shape.zoomLevel);
+    expect(r.enterDuration, shape.leadIn);
+    expect(r.exitDuration, shape.leadOut);
+    expect(
+      r.duration,
+      shape.leadIn +
+          shape.effectiveHold(const Duration(milliseconds: gestureMs)) +
+          shape.leadOut,
+    );
   });
 
   test('iBeam click produces a tighter, longer, anchored region', () {
