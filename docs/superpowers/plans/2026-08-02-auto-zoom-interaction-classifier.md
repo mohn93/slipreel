@@ -1533,11 +1533,13 @@ void main() {
     // region's span, so _dropOverlaps discards it.
     expect(out, hasLength(1));
     // The surviving region spans clicks 1-2 only: first press 2000, last
-    // release 2450 => span 450, total 500 + 450 + 500 = 1450, so it runs
-    // [1500, 2950]. Had all three merged, it would end at 3350 instead.
+    // release 2450 => raw span 450, floored to the click shape's 1800ms
+    // hold, total 500 + 1800 + 500 = 2800, so it runs [1500, 4300]. Had
+    // all three merged, the raw span would be 2850 — above the floor —
+    // and it would end at 5350 instead.
     expect(out.single.startTime, const Duration(milliseconds: 1500));
     expect(out.single.startTime + out.single.duration,
-        const Duration(milliseconds: 2950));
+        const Duration(milliseconds: 4300));
   });
 
   test('a single interaction still keeps its own follow policy', () {
@@ -1599,10 +1601,12 @@ the count. Add the merge assertion so it proves clustering rather than overlap-d
     final r = out.single;
     // Starts 500ms before the first press and outlives the second click,
     // i.e. it spans the pair rather than being one region plus a drop.
-    // First press 1000, last release 1550 => span 550;
-    // total 500 + 550 + 500 = 1550, so it ends at 2050.
+    // First press 1000, last release 1550 => raw span 550, which is below
+    // the click shape's 1800ms hold, so the cluster floor raises it to
+    // 1800. Total 500 + 1800 + 500 = 2800, so it ends at 3300. Without
+    // that floor the merged region would be SHORTER than a lone click's.
     expect(r.startTime, const Duration(milliseconds: 500));
-    expect(r.startTime + r.duration, const Duration(milliseconds: 2050));
+    expect(r.startTime + r.duration, const Duration(milliseconds: 3300));
     // Framed on the union of both clicks (720, 460), not on the first.
     expect(r.rect.center.dx, closeTo(720, 1.0));
     expect(r.rect.center.dy, closeTo(460, 1.0));

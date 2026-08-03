@@ -204,6 +204,15 @@ Two rules on top of the table:
 1. **`textSelection` zoom is capped to fit its sweep:**
    `zoom = min(1.7, videoW/sweptW, videoH/sweptH)`. Without this, a long selection
    produces a region whose own content does not fit the viewport it requests.
+   Swept bounds are clipped to the video frame before fitting, because only the
+   press anchor is bounds-checked — a selection dragged onto a second monitor would
+   otherwise drive the fit below 1.0.
+1a. **Every region has a zoom floor of `minClusterZoom` (1.25); below it, no region
+   is emitted at all.** A sweep too wide to frame yields ~1.01×, which renders as a
+   lane entry that visibly does nothing — and because `_dropOverlaps` is greedy and
+   start-ordered, that no-op can shadow a genuine zoom starting inside its window.
+   `ZoomRegion` silently clamps `zoomLevel` to 1.0, so nothing would have flagged
+   it. No zoom beats a fake zoom.
 2. **Follow regions inherit existing defaults** — `followMode: bounded`,
    `deadzoneRatio: 0.8`. No new tuning surface; they ride the stack that is already
    tuned.
@@ -254,6 +263,14 @@ Emission depends on cluster size:
     framing governs.
   - `start = firstPress − clickLeadIn` (500 ms), `end = lastRelease + clickLeadOut`
     (500 ms), using the `click` shape's lead values rather than any member's.
+  - **The held span is floored at the `click` shape's hold (1800 ms).** Without the
+    floor, two clicks 500 ms apart merge into a region *shorter* than either would
+    have produced alone — it starts ramping out ~50 ms after the second release —
+    so the merge actively degrades the click-dense case this design exists to fix.
+    There is deliberately no ceiling: a cluster spanning a long time means the user
+    genuinely worked in one small area that long, and the fit rule already bounds
+    how wide the region can get. (Contrast a single 30 s drag, which *is* capped —
+    that is one gesture, not sustained activity.)
 
 Single gestures may follow; merged clusters stay anchored and widen instead. This is
 the deliberate split: following *between* form fields reads as busy, while following
