@@ -107,6 +107,10 @@ void main() {
           shape.effectiveHold(const Duration(milliseconds: gestureMs)) +
           shape.leadOut,
     );
+    expect(r.followCursor, shape.followCursor);
+    // fitToSweptBounds is false for click, so the region's centre must be
+    // the click anchor, not a swept-bounds centre.
+    expect(r.rect.center, const Offset(900, 500));
   });
 
   test('iBeam click produces a tighter, longer, anchored region', () {

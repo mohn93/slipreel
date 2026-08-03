@@ -283,6 +283,14 @@ class AutoZoomDetector {
         continue;
       }
       final trimmed = r.startTime - prev.startTime;
+      // This guard compares against unscaled ramp durations. The renderer
+      // multiplies both enterDuration and exitDuration by rampDurationScale
+      // (e.g., 1.7 for the "Smooth" animation preset), so a region truncated
+      // to between 1000ms and 1700ms at this stage will have its ramps
+      // proportionally compressed during playback and may not reach full zoom.
+      // The detector cannot know the project's animation preset at detect()
+      // time (it only receives cursor, videoSize, and videoDuration), so this
+      // shallow-truncation limitation is inherent and not addressable here.
       if (trimmed >= prev.enterDuration + prev.exitDuration) {
         out[out.length - 1] = prev.copyWith(duration: trimmed);
         out.add(r);

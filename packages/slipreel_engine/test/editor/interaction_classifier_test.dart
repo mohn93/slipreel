@@ -207,8 +207,10 @@ void main() {
   });
 
   test('axis ratio below 1.8 is drag, above is textSelection', () {
-    // Brackets the 1.8 threshold tightly from both sides, so a threshold
-    // that drifts even 0.1 in either direction fails this test.
+    // Brackets the 1.8 threshold tightly from both sides. The predicate is
+    // `dx > horizontalAxisRatio * dy` (strict greater-than): the lower case
+    // pins drift strictly below 1.7 (not caught at exactly 1.7), and the
+    // upper case pins drift strictly above 1.8.
     // dx = 340, dy = 200 -> ratio 1.7, just below threshold
     final shallow = classifier.classify(
       _rec(_gesture(
