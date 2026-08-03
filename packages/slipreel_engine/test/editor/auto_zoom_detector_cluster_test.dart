@@ -87,7 +87,8 @@ void main() {
     expect(out.single.rect.center, const Offset(800, 500));
   });
 
-  test('spatially scattered clicks at the same cadence do not merge', () {
+  test('scattered clicks do not merge, and the overlap falls back to a drop',
+      () {
     // Same 800ms cadence as the form fill, but far apart: merging them
     // would breach the 1.25x floor, so each stands alone.
     final rec = _rec([
@@ -100,12 +101,17 @@ void main() {
       videoDuration: videoDuration,
     );
     // Two separate clusters; the second region starts inside the first
-    // region's span (region 1 = [1500, 4300], region 2 starts 2300), so
-    // _dropOverlaps discards it. Assert on startTime rather than the
-    // centre: the first click sits outside the non-clamped zone, so its
-    // rect centre is pulled to the clamp and says nothing useful.
+    // region's span (region 1 = [1500, 4300], region 2 starts 2300).
+    // Truncating region 1 there would leave it 2300 - 1500 = 800ms — less
+    // than its 500 + 500 = 1000ms of ramps — so _resolveOverlaps takes the
+    // fallback: region 1 keeps its full 2800ms and region 2 is dropped.
+    // Assert on startTime rather than the centre: the first click sits
+    // outside the non-clamped zone, so its rect centre is pulled to the
+    // clamp and says nothing useful.
     expect(out, hasLength(1));
     expect(out.single.startTime, const Duration(milliseconds: 1500));
+    expect(out.single.duration, const Duration(milliseconds: 2800),
+        reason: 'the survivor is kept whole, not truncated');
   });
 
   test('clicks further apart than the cluster gap do not merge', () {
@@ -138,7 +144,9 @@ void main() {
       videoDuration: videoDuration,
     );
     // The third click starts a second cluster at 2300, inside the first
-    // region's span, so _dropOverlaps discards it.
+    // region's span. Truncating the first there would leave it 800ms,
+    // under its 1000ms of ramps, so _resolveOverlaps takes the fallback
+    // and drops the second region rather than truncating.
     expect(out, hasLength(1));
     // The surviving region spans clicks 1-2 only: first press 2000, last
     // release 2450 => raw span 450, floored to the click shape's 1800ms

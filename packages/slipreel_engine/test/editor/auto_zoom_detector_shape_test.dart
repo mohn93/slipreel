@@ -177,7 +177,7 @@ void main() {
   test('a sweep too wide to frame is dropped rather than faked', () {
     // 1720px sweep fits at only 1920/1720 = 1.116x, below the 1.25x floor.
     // A region that shallow renders as a no-op and can shadow a real
-    // neighbour via _dropOverlaps, so no region is the right answer.
+    // neighbour via _resolveOverlaps, so no region is the right answer.
     final out = detector.detect(
       cursor: _rec(_gesture(
         atMs: 5000,

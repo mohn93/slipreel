@@ -12,7 +12,7 @@ import 'zoom_shape.dart';
 ///
 /// Pipeline: classify gestures ([InteractionClassifier]) → merge nearby
 /// gestures into clusters → shape each group into a `ZoomRegion` via
-/// [kZoomShapes] → drop overlaps.
+/// [kZoomShapes] → resolve overlaps.
 ///
 /// Replaces the pre-2026-08 click-only detector, whose isolation filter
 /// dropped every click within 1.5 s of a neighbour and so emitted
@@ -72,7 +72,7 @@ class AutoZoomDetector {
       final region = _buildRegion(group, videoSize, videoDuration);
       if (region != null) regions.add(region);
     }
-    return _dropOverlaps(regions);
+    return _resolveOverlaps(regions);
   }
 
   /// Skip gestures that happened off the captured display. On
@@ -221,7 +221,8 @@ class AutoZoomDetector {
 
     // A region that can only be framed at less than minClusterZoom is not a
     // zoom — it would render as a no-op lane entry, and because
-    // _dropOverlaps is greedy it could shadow a genuine zoom starting inside
+    // _resolveOverlaps is greedy it could truncate — or, if the trim would
+    // not fit both ramps, shadow entirely — a genuine zoom starting inside
     // its window. No zoom is better than a fake one.
     if (regionZoom < minClusterZoom) return null;
 
@@ -254,16 +255,41 @@ class AutoZoomDetector {
     return Rect.fromCenter(center: Offset(cx, cy), width: w, height: h);
   }
 
-  List<ZoomRegion> _dropOverlaps(List<ZoomRegion> regions) {
+  /// Removes overlap between regions by TRUNCATING the earlier one to end
+  /// exactly where the next begins, so both interactions stay represented.
+  ///
+  /// This branch made regions substantially longer — a drag can run 6.95 s
+  /// and a cluster longer still — so the historic "keep the first, discard
+  /// the later" rule now silently suppresses far more than it used to.
+  ///
+  /// Truncation only applies while the shortened region can still render
+  /// as a zoom: its remaining duration must fit both ramps
+  /// (`enterDuration + exitDuration`). When it cannot, we fall back to the
+  /// historic rule — the earlier region keeps its full length and the
+  /// later one is discarded.
+  List<ZoomRegion> _resolveOverlaps(List<ZoomRegion> regions) {
     if (regions.isEmpty) return const [];
     final sorted = [...regions]
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
     final out = <ZoomRegion>[];
     for (final r in sorted) {
-      if (out.isEmpty ||
-          r.startTime >= out.last.startTime + out.last.duration) {
+      if (out.isEmpty) {
+        out.add(r);
+        continue;
+      }
+      final prev = out.last;
+      if (r.startTime >= prev.startTime + prev.duration) {
+        out.add(r);
+        continue;
+      }
+      final trimmed = r.startTime - prev.startTime;
+      if (trimmed >= prev.enterDuration + prev.exitDuration) {
+        out[out.length - 1] = prev.copyWith(duration: trimmed);
         out.add(r);
       }
+      // Otherwise `prev` survives at full length and `r` is dropped: a
+      // region shorter than its own ramps has no hold left to read as a
+      // zoom, so half a region each is worse than one whole one.
     }
     return out;
   }

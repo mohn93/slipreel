@@ -144,12 +144,14 @@ void main() {
     expect(r.rect.center.dy, closeTo(460, 1.0));
   });
 
-  test('two clicks 1.6 s apart → only the first survives (overlap drops second)', () {
+  test('two clicks 1.6 s apart → the first is truncated, both survive', () {
     // The first click's last clicked sample is 2050 and the second presses
     // at 3600, a 1550ms idle gap — above the 1200ms clusterGap — so they
-    // form two separate clusters rather than merging. But region1 =
+    // form two separate clusters rather than merging. region1 =
     // [1500, 4300] (start 1500, duration 2800); region2 = [3100, 5900].
-    // They overlap → second dropped.
+    // They overlap, and the trim leaves region1 3100 - 1500 = 1600ms,
+    // which clears its 500 + 500 = 1000ms of ramps — so region1 is
+    // shortened to end exactly at 3100 instead of region2 being dropped.
     // Positions within the non-clamped zone for 1.5× on 1920×1080:
     // cx ∈ [640, 1280], cy ∈ [360, 720].
     final cursor = _rec([
@@ -161,8 +163,16 @@ void main() {
       videoSize: videoSize,
       videoDuration: videoDuration,
     );
-    expect(out, hasLength(1));
-    expect(out.first.rect.center, const Offset(700, 450));
+    expect(out, hasLength(2));
+    expect(out[0].rect.center, const Offset(700, 450));
+    expect(out[1].rect.center, const Offset(1100, 600));
+    // The truncation itself: region1 is 1600ms, not its natural 2800ms,
+    // and ends exactly where region2 begins.
+    expect(out[0].duration, const Duration(milliseconds: 1600));
+    expect(out[0].startTime + out[0].duration, out[1].startTime);
+    // region2 keeps its full natural length.
+    expect(out[1].startTime, const Duration(milliseconds: 3100));
+    expect(out[1].duration, const Duration(milliseconds: 2800));
   });
 
   test('click at t=100 ms clamps region start to zero', () {
