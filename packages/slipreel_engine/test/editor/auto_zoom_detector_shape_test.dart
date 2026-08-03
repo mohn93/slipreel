@@ -165,7 +165,11 @@ void main() {
       videoDuration: videoDuration,
     );
     final r = out.single;
-    expect(r.followCursor, isTrue);
+    // Anchored, so the fitted centre below is load-bearing: an anchored
+    // region holds rect.center for its whole life. Were this a follow
+    // region the controller would ignore rect.center outright and the
+    // fit would be computed and thrown away.
+    expect(r.followCursor, isFalse);
     // Swept centre is x=700, not the press point x=400.
     expect(r.rect.center.dx, closeTo(700, 0.001));
   });

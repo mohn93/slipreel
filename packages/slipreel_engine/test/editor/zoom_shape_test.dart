@@ -36,9 +36,11 @@ void main() {
     expect(drag.holdTracksGesture, isTrue);
   });
 
-  test('textSelection follows and fits to the swept bounds', () {
+  test('textSelection frames the swept bounds without following', () {
     final sel = kZoomShapes[InteractionKind.textSelection]!;
-    expect(sel.followCursor, isTrue);
+    // Anchored on purpose: the fitted centre is only honoured when the
+    // camera is not chasing the cursor.
+    expect(sel.followCursor, isFalse);
     expect(sel.fitToSweptBounds, isTrue);
     expect(sel.holdTracksGesture, isTrue);
   });

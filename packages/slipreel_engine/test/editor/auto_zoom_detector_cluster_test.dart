@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
+import 'package:slipreel_engine/editor/zoom_shape.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 
 CursorPosition _p({
@@ -147,6 +148,36 @@ void main() {
     expect(out.single.startTime, const Duration(milliseconds: 1500));
     expect(out.single.startTime + out.single.duration,
         const Duration(milliseconds: 4300));
+  });
+
+  test('a long click-dense run splits instead of one endless region', () {
+    // 40 clicks a second apart in one small area, spanning ~40s. Every
+    // 950ms idle gap is under the 1200ms clusterGap and the union stays
+    // tiny, so neither the time gate nor the zoom floor can separate
+    // them — only the ZoomShape.maxHold span ceiling can. Without it this
+    // is a single ~40s "zoom", which is the click-dense case this branch
+    // exists to improve.
+    final rec = _rec([
+      for (var i = 0; i < 40; i++)
+        ..._clickAt(
+          atMs: 2000 + i * 1000,
+          x: 800 + (i % 5) * 8,
+          y: 400 + (i % 5) * 8,
+        ),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+
+    expect(out.length, greaterThan(1),
+        reason: 'the run must break into several regions');
+    final maxRegion = detector.leadIn + ZoomShape.maxHold + detector.leadOut;
+    for (final r in out) {
+      expect(r.duration, lessThanOrEqualTo(maxRegion),
+          reason: 'region at ${r.startTime} exceeds the span ceiling');
+    }
   });
 
   test('a single interaction still keeps its own follow policy', () {

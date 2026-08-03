@@ -116,8 +116,17 @@ class AutoZoomDetector {
     for (var i = 1; i < sorted.length; i++) {
       final next = sorted[i];
       final merged = union.expandToInclude(next.sweptBounds);
+      // Third gate: a cluster's span is capped, so a click-a-second demo
+      // inside one app window splits into a run of regions rather than
+      // merging into a single minutes-long zoom. minClusterZoom of 1.25
+      // tolerates a union covering ~80% of the frame, so the spatial gate
+      // alone will not stop that. Like the other two gates, breaching it
+      // closes the cluster and starts a new one at `next` — the span is
+      // never truncated mid-gesture.
+      final prospectiveSpan = next.end - current.first.start;
       final joins = (next.start - lastEnd) < clusterGap &&
-          _fitZoom(merged, videoSize) >= minClusterZoom;
+          _fitZoom(merged, videoSize) >= minClusterZoom &&
+          prospectiveSpan <= ZoomShape.maxHold;
 
       if (joins) {
         current.add(next);
@@ -202,7 +211,9 @@ class AutoZoomDetector {
       // A merged cluster must never hold for less time than a lone click
       // would: the raw gesture span (e.g. two clicks 500ms apart) can be
       // far shorter than a single click's hold, which would make merging
-      // worse than not merging at all.
+      // worse than not merging at all. Together with the ZoomShape.maxHold
+      // ceiling enforced in _cluster, a cluster's span is bounded on both
+      // sides: [hold, ZoomShape.maxHold] = [1800ms, 6000ms] at defaults.
       final rawSpan = lastEnd - group.first.start;
       span = rawSpan < hold ? hold : rawSpan;
       follow = false;

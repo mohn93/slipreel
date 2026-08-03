@@ -94,12 +94,20 @@ const Map<InteractionKind, ZoomShape> kZoomShapes = {
     holdTracksGesture: true,
     fitToSweptBounds: false,
   ),
+  // A selection is FRAMED, not followed. [fitToSweptBounds] exists to
+  // compute a centre that holds the whole swept range in shot, and the
+  // zoom is capped so that range fits — so there is nothing left for a
+  // follow camera to chase. Worse, `ZoomFocalController` ignores
+  // `rect.center` entirely once `followCursor` is true (it parks at the
+  // video centre and chases the cursor instead), which threw the fitted
+  // centre away. Anchored is the only setting under which the fit means
+  // anything.
   InteractionKind.textSelection: ZoomShape(
     zoomLevel: 1.7,
     leadIn: Duration(milliseconds: 450),
     hold: Duration(milliseconds: 700),
     leadOut: Duration(milliseconds: 500),
-    followCursor: true,
+    followCursor: false,
     holdTracksGesture: true,
     fitToSweptBounds: true,
   ),
