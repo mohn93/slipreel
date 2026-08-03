@@ -375,6 +375,61 @@ void main() {
     expect(out.single.state, CursorState.arrow);
   });
 
+  test('duplicate timestamps do not stall the state lookback', () {
+    // The backward state walk's only natural exit is the
+    // `timestampMicros < windowStart` break, which assumes timestamps
+    // strictly decrease going backwards. Duplicates (or out-of-order data —
+    // nothing in the load path validates monotonicity) never trip it, so the
+    // walk ran to index 0 for every press: measurably O(n²). A hard cap on
+    // samples examined bounds it without changing well-formed results.
+    const pressMs = 1000;
+    CursorPosition sample({required int ms, required bool clicked}) => _p(
+          ms: ms,
+          clicked: clicked,
+          x: 500,
+          y: 400,
+          state: CursorState.iBeam,
+        );
+
+    // Every sample stamped at the same instant, alternating pressed and
+    // released. Each press sits inside every earlier sample's lookback
+    // window, so the walk never breaks and its cost grows with the press's
+    // index — quadratic across the 10000 presses. Measured unbounded:
+    // 162 / 593 / 2598 / 14316 ms at n = 5k / 10k / 20k / 40k. Bounded, the
+    // same inputs run in 16 / 13 / 24 / 34 ms.
+    const n = 20000;
+    final degenerate = _rec([
+      for (var i = 0; i < n; i++) sample(ms: pressMs, clicked: i.isOdd),
+    ]);
+    final wellFormed = _rec([
+      sample(ms: pressMs - 16, clicked: false),
+      sample(ms: pressMs, clicked: true),
+      sample(ms: pressMs + 16, clicked: false),
+    ]);
+
+    final sw = Stopwatch()..start();
+    final out = classifier.classify(degenerate, videoSize);
+    sw.stop();
+
+    final reference = classifier.classify(wellFormed, videoSize).single;
+    expect(out, hasLength(n ~/ 2));
+    // Same classification the well-formed equivalent yields: the cap only
+    // shortens the modal-state sample, it does not change the answer.
+    expect(out.every((i) => i.kind == reference.kind), isTrue);
+    expect(out.every((i) => i.state == reference.state), isTrue);
+    expect(out.every((i) => i.anchor == reference.anchor), isTrue);
+    expect(out.every((i) => i.sweptBounds == reference.sweptBounds), isTrue);
+
+    // Generous: the bounded walk runs in ~25 ms here, the unbounded one in
+    // ~2.6 s. The 40x margin is for slow CI, not room for a regression to
+    // hide in — a quadratic walk over 20k samples cannot fit under this.
+    expect(
+      sw.elapsedMilliseconds,
+      lessThan(1000),
+      reason: 'the state lookback must not degrade to O(n^2)',
+    );
+  });
+
   test('a held-from-start press that travels is still a drag', () {
     final out = classifier.classify(
       _rec([

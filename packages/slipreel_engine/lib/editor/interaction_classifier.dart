@@ -41,6 +41,22 @@ class InteractionClassifier {
   /// which is the signal we want.
   final Duration stateLookback;
 
+  /// Hard cap on samples examined by [_stateBefore]'s backward walk.
+  ///
+  /// The walk's only natural exit is the `timestampMicros < windowStart`
+  /// break. That assumes timestamps strictly decrease going backwards —
+  /// which duplicate or out-of-order timestamps violate, and nothing in the
+  /// load path validates monotonicity. Without a cap such a recording walks
+  /// to index 0 for every press, making classify O(n²): measured at
+  /// 23/88/351/1403 ms for n = 2000/4000/8000/16000.
+  ///
+  /// Cannot affect a well-formed recording: at the 60Hz capture rate the
+  /// default 50ms [stateLookback] spans about 3 samples, so 64 leaves an
+  /// order of magnitude of headroom — the timestamp break always fires
+  /// first. It only truncates input that was already degenerate, where a
+  /// 64-sample sample of the modal state is as good an answer as any.
+  static const int _maxStateLookbackSamples = 64;
+
   List<CursorInteraction> classify(CursorRecording cursor, Size videoSize) {
     final samples = cursor.positions;
     if (samples.length < 2) return const [];
@@ -142,7 +158,8 @@ class InteractionClassifier {
     final windowStart =
         samples[pressIndex].timestampMicros - stateLookback.inMicroseconds;
     final counts = <CursorState, int>{};
-    for (var i = pressIndex - 1; i >= 0; i--) {
+    final stopIndex = math.max(0, pressIndex - _maxStateLookbackSamples);
+    for (var i = pressIndex - 1; i >= stopIndex; i--) {
       final s = samples[i];
       if (s.timestampMicros < windowStart) break;
       counts[s.state] = (counts[s.state] ?? 0) + 1;
