@@ -510,10 +510,25 @@ class _ZoomPillState extends State<_ZoomPill> {
   @override
   Widget build(BuildContext context) {
     final left = _startX;
-    final pillWidth = (_endX - _startX).clamp(
-      handleHitWidth * 2,
-      double.infinity,
-    );
+    // A very short region is floored to a grabbable width, but the floor must
+    // never push the pill past the next region's left edge. Pills are added to
+    // the lane's Stack in ascending order, so an inflated pill paints UNDER
+    // its neighbour and the neighbour's opaque gesture detector swallows this
+    // pill's right-edge resize handle and delete button (both positioned off
+    // the inflated box). Overlap resolution makes regions abut exactly, so
+    // once a second maps to under 32px — roughly 30s of recording at 1x —
+    // that inflation would be the norm, not an edge case. Reuses the same
+    // neighbour info the drag clamp reads.
+    final naturalWidth = _endX - _startX;
+    final nextStart = widget.neighbors.nextStart;
+    final gapToNext = nextStart == null
+        ? double.infinity
+        : (timeToX(_sourceToEdited(nextStart), widget.pixelsPerSecond) - left)
+              .clamp(0.0, double.infinity);
+    final widthFloor = gapToNext < handleHitWidth * 2
+        ? gapToNext
+        : handleHitWidth * 2;
+    final pillWidth = naturalWidth > widthFloor ? naturalWidth : widthFloor;
     final pillBodyHeight = laneHeight - zoomPillInset * 2;
     final fillTop = widget.isSelected ? zoomFillSelected : zoomFillTop;
     final fill = widget.isSelected ? zoomFillSelected : zoomFill;
