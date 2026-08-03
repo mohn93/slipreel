@@ -185,14 +185,9 @@ class ZoomTransformer {
     final regionUs = z.duration.inMicroseconds;
     if (regionUs <= 0) return 1.0;
 
-    var enterUs = (z.enterDuration.inMicroseconds * rampDurationScale).round();
-    var exitUs = (z.exitDuration.inMicroseconds * rampDurationScale).round();
-    final totalRamp = enterUs + exitUs;
-    if (totalRamp > regionUs && totalRamp > 0) {
-      final scale = regionUs / totalRamp;
-      enterUs = (enterUs * scale).round();
-      exitUs = (exitUs * scale).round();
-    }
+    final ramps = z.resolvedRampsUs(rampDurationScale);
+    final enterUs = ramps.enterUs;
+    final exitUs = ramps.exitUs;
 
     if (tIntoRegionUs < enterUs) {
       final t = enterUs == 0 ? 1.0 : tIntoRegionUs / enterUs;

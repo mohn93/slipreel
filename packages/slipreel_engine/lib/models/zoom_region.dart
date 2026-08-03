@@ -158,6 +158,34 @@ class ZoomRegion {
   /// End time of zoom effect
   Duration get endTime => startTime + duration;
 
+  /// Resolved enter/exit ramp lengths in microseconds: [enterDuration] and
+  /// [exitDuration] scaled by [rampDurationScale] (the animation preset's
+  /// feel scale), then proportionally squeezed to fit when their sum
+  /// exceeds this region's [duration].
+  ///
+  /// SINGLE SOURCE OF TRUTH for ramp geometry. [ZoomTransformer]'s zoom
+  /// factor, [ZoomFocalController]'s enter/exit ramp windows and
+  /// [ScenePassBuilder]'s enter-settle cursor sampling must all agree on
+  /// where the ramps end: if one of them omits the squeeze it samples the
+  /// camera target at an instant the zoom never reaches, and on a short
+  /// followCursor region (which has no hold to correct in) the whole zoom
+  /// aims somewhere the cursor never was.
+  ///
+  /// Callers handle the degenerate zero/negative-[duration] case themselves
+  /// before calling; this returns zero-length ramps for it.
+  ({int enterUs, int exitUs}) resolvedRampsUs(double rampDurationScale) {
+    var enterUs = (enterDuration.inMicroseconds * rampDurationScale).round();
+    var exitUs = (exitDuration.inMicroseconds * rampDurationScale).round();
+    final regionUs = duration.inMicroseconds;
+    final totalRamp = enterUs + exitUs;
+    if (totalRamp > regionUs && totalRamp > 0) {
+      final scale = regionUs / totalRamp;
+      enterUs = (enterUs * scale).round();
+      exitUs = (exitUs * scale).round();
+    }
+    return (enterUs: enterUs, exitUs: exitUs);
+  }
+
   /// Check if position is within the zoom region.
   ///
   /// Half-open interval `[startTime, endTime)`: active at the start edge,

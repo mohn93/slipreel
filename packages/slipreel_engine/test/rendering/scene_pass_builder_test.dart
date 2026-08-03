@@ -567,5 +567,62 @@ void main() {
             'the camera toward the lagging smoothed cursor',
       );
     });
+
+    test('enter settle target is sampled at the SQUEEZED enter-ramp end', () {
+      // A followCursor region shorter than its own feel-scaled ramps gets a
+      // proportional squeeze (ZoomRegion.resolvedRampsUs) in the transform
+      // and focal math. The settle-target sampling must use the SAME
+      // squeezed end, or it aims the camera at a cursor position the zoom
+      // never reaches — and a squeezed region has no hold in which the
+      // spring could correct.
+      //
+      // 500ms enter + 500ms exit at the Smooth preset's 1.7x feel scale is
+      // 850ms + 850ms = 1700ms of ramp in a 950ms region, so both are
+      // squeezed by 950/1700: the enter ramp truly ends at 475ms, not 850ms.
+      const rampDurationScale = 1.7; // ScreenAnimationStyle.smooth
+      final region = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: Duration.zero,
+        duration: const Duration(milliseconds: 950),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: const Duration(milliseconds: 500),
+        followCursor: true,
+      );
+      expect(region.resolvedRampsUs(rampDurationScale).enterUs, 475000);
+
+      // Cursor runs east at 600 px/s from x=100, so the two candidate
+      // sample times are 225px apart and cannot be confused.
+      final recording = _eastBoundRecording(
+        durationMs: 1500,
+        start: const Offset(100, 540),
+      );
+      const squeezedX = 100 + 600 * 0.475; // 385
+      const unsqueezedX = 100 + 600 * 0.850; // 610
+
+      final pass = ScenePassBuilder().build(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [region],
+        cursorAnimationConfig:
+            const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+        rampDurationScale: rampDurationScale,
+      );
+
+      expect(pass.enterCursorTarget, isNotNull);
+      expect(
+        pass.enterCursorTarget!.dx,
+        closeTo(squeezedX, 1.0),
+        reason: 'settle target must be sampled at the squeezed ramp end',
+      );
+      expect(
+        (pass.enterCursorTarget!.dx - unsqueezedX).abs(),
+        greaterThan(100.0),
+        reason: 'sampling the unsqueezed ramp end mis-aims the whole zoom',
+      );
+    });
   });
 }
