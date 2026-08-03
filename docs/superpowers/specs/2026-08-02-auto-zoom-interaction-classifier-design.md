@@ -207,13 +207,13 @@ Two rules on top of the table:
    Swept bounds are clipped to the video frame before fitting, because only the
    press anchor is bounds-checked — a selection dragged onto a second monitor would
    otherwise drive the fit below 1.0.
-1a. **Every region has a zoom floor of `minClusterZoom` (1.25); below it, no region
+2. **Every region has a zoom floor of `minClusterZoom` (1.25); below it, no region
    is emitted at all.** A sweep too wide to frame yields ~1.01×, which renders as a
    lane entry that visibly does nothing — and because `_dropOverlaps` is greedy and
    start-ordered, that no-op can shadow a genuine zoom starting inside its window.
    `ZoomRegion` silently clamps `zoomLevel` to 1.0, so nothing would have flagged
    it. No zoom beats a fake zoom.
-2. **Follow regions inherit existing defaults** — `followMode: bounded`,
+3. **Follow regions inherit existing defaults** — `followMode: bounded`,
    `deadzoneRatio: 0.8`. No new tuning surface; they ride the stack that is already
    tuned.
 
