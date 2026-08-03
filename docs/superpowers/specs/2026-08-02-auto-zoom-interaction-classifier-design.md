@@ -126,7 +126,7 @@ CursorRecording
   → classify()      → List<CursorInteraction>
   → cluster()       → List<InteractionGroup>
   → shape()         → List<ZoomRegion>
-  → _dropOverlaps() → List<ZoomRegion>
+  → resolveOverlaps() → List<ZoomRegion>
 ```
 
 ## Classification rules
@@ -188,7 +188,14 @@ correct output anyway.
 | `click` | 1.5× | 500 ms | 1800 ms | 500 ms | off | centred on anchor |
 | `textEntry` | 1.8× | 500 ms | 2600 ms | 600 ms | off | centred on anchor |
 | `drag` | 1.4× | 450 ms | gesture + 800 ms | 500 ms | bounded | centred on anchor |
-| `textSelection` | ≤1.7× | 450 ms | gesture + 700 ms | 500 ms | bounded | fitted to `sweptBounds` |
+| `textSelection` | ≤1.7× | 450 ms | gesture + 700 ms | 500 ms | off | fitted to `sweptBounds` |
+
+`textSelection` is **framed, not followed**, and that combination is not optional:
+`ZoomFocalController` reads `rect.center` only when `followCursor` is false (it must
+ignore a stale manual rect on a following zoom). A selection with follow on would
+therefore compute the fitted centre and discard it, which is what an earlier draft of
+this spec specified. The zoom cap already guarantees the whole sweep fits in frame,
+so there is nothing for a follow camera to chase.
 
 `gesture` in the hold column means `end − start` for that interaction (zero for an
 instantaneous click).
@@ -209,7 +216,7 @@ Two rules on top of the table:
    otherwise drive the fit below 1.0.
 2. **Every region has a zoom floor of `minClusterZoom` (1.25); below it, no region
    is emitted at all.** A sweep too wide to frame yields ~1.01×, which renders as a
-   lane entry that visibly does nothing — and because `_dropOverlaps` is greedy and
+   lane entry that visibly does nothing — and because overlap resolution is greedy and
    start-ordered, that no-op can shadow a genuine zoom starting inside its window.
    `ZoomRegion` silently clamps `zoomLevel` to 1.0, so nothing would have flagged
    it. No zoom beats a fake zoom.
@@ -267,16 +274,32 @@ Emission depends on cluster size:
     floor, two clicks 500 ms apart merge into a region *shorter* than either would
     have produced alone — it starts ramping out ~50 ms after the second release —
     so the merge actively degrades the click-dense case this design exists to fix.
-    There is deliberately no ceiling: a cluster spanning a long time means the user
-    genuinely worked in one small area that long, and the fit rule already bounds
-    how wide the region can get. (Contrast a single 30 s drag, which *is* capped —
-    that is one gesture, not sustained activity.)
+  - **The held span is also capped at `ZoomShape.maxHold` (6 s), by splitting into a
+    new cluster rather than truncating.** An earlier draft argued for no ceiling, on
+    the grounds that "a long cluster means the user worked in one small area that
+    long, and the fit rule already bounds how wide the region gets." That reasoning
+    was wrong: `minClusterZoom` of 1.25 tolerates a union covering roughly 80% of the
+    frame, which is not a small area. Without the cap, a 60 s demo with about one
+    click per second inside an app window merged into a *single 60 s region* — the
+    whole video cropped to one fixed frame. Splitting rather than truncating avoids
+    leaving the tail of a long working session unzoomed.
+
+    Cluster span is therefore bounded on both sides: `[1800 ms, 6000 ms]`.
 
 Single gestures may follow; merged clusters stay anchored and widen instead. This is
 the deliberate split: following *between* form fields reads as busy, while following
 *along* one drag reads as intentional.
 
-`_dropOverlaps` survives unchanged as the final safety net.
+**Overlap resolution truncates rather than discards.** When region *n* overlaps
+region *n+1*, *n* is shortened to end exactly at *n+1*'s start, so both interactions
+stay represented. The exception is when truncating would leave *n* too short for its
+own ramps (`enterDuration + exitDuration`); there the old behaviour applies — keep *n*
+whole and drop *n+1*.
+
+This changed because regions got substantially longer in this design: a drag can run
+6.95 s and a cluster up to 7 s, where the pre-classifier detector emitted a uniform
+2.8 s. Discarding the later region unchanged would have suppressed far more genuine
+interactions than it used to.
 
 ## Edge cases
 
@@ -326,6 +349,8 @@ the new expectation and a comment pointing at this spec.
 region A's focal to region B's over 1000 ms on a `cubicBezier(0.1, 0, 0.2, 1)` when the
 two are within 1500 ms, instead of zooming out and back in
 (`src/components/video-editor/videoPlayback/zoomRegionUtils.ts`). We have no
-equivalent — `_dropOverlaps` simply discards the second region. It is a genuine gap,
+equivalent — overlap resolution truncates the first region so the second can start,
+which keeps both interactions but still cuts out and back in between them rather than
+panning. It is a genuine gap,
 but it is a camera-path feature rather than a detection one, and folding it in would
 double this spec. Worth its own sub-project.
