@@ -165,6 +165,84 @@ void main() {
     );
   });
 
+  test('a padded project renders the focal framed the way the preview frames '
+      'it', () {
+    // The preview builds its track with the project's ZoomFraming
+    // (playback_canvas passes `framing:`). If export builds its track
+    // without one, the two clamp the focal in different spaces and the
+    // paths diverge again — invisibly, because a zero-padding fixture
+    // cannot tell the two apart.
+    const fps = 30;
+    const padded = WindowFrame(
+      name: 'Padded',
+      padding: EdgeInsets.all(120),
+      cornerRadius: 12,
+      shadowBlur: 0,
+      shadowOffset: Offset.zero,
+      shadowColor: Color(0x00000000),
+      borderWidth: 0,
+    );
+
+    final state = EditorProjectState.defaults().copyWith(
+      windowFrame: padded,
+      zoomRegions: <ZoomRegion>[followRegion],
+      cursorAnimationConfig: const CursorAnimationConfig.preset(
+        CursorAnimationStyle.smooth,
+      ),
+    );
+    final compositor = FrameCompositor(
+      projectState: state,
+      cursorRecording: sweep(),
+      metadata: RecordingMetadata(
+        isPureSource: true,
+        recordedAt: DateTime.utc(2026, 1, 1),
+        widthPx: 1728,
+        heightPx: 1117,
+        fps: fps,
+      ),
+      videoSize: videoSize,
+      fps: fps,
+    );
+
+    // What the preview would render: the same track, built with the same
+    // framing the compositor composes against.
+    final previewTrack = DeterministicFocalTrack.build(
+      region: followRegion,
+      cursorRecording: sweep(),
+      cursorAnimationConfig: state.cursorAnimationConfig,
+      cursorPostProcess: state.cursorPostProcess,
+      videoSize: videoSize,
+      fps: fps,
+      screenRampCurve: state.screenAnimationConfig.rampCurve,
+      rampDurationScale: state.screenAnimationConfig.rampDurationScale,
+      clips: state.timeline.clips,
+      framing: compositor.framing,
+    );
+
+    var worst = 0.0;
+    Duration worstAt = Duration.zero;
+    for (final p in samplePoints) {
+      final rendered = compositor.renderFocalFor(
+        zoom: followRegion,
+        liveFocal: const Offset(10, 10),
+        position: p,
+      );
+      final d = (rendered - previewTrack.focalAt(p)).distance;
+      if (d > worst) {
+        worst = d;
+        worstAt = p;
+      }
+    }
+
+    expect(
+      worst,
+      lessThan(0.001),
+      reason: 'with padding, the exported focal differs from the previewed '
+          'focal by ${worst.toStringAsFixed(3)}px at '
+          '${worstAt.inMilliseconds}ms',
+    );
+  });
+
   test('an anchored region still renders the live focal', () {
     // Non-follow regions carry no accumulated spring state, so there is
     // nothing to diverge and nothing to replace. Guards against the fix

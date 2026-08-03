@@ -804,9 +804,15 @@ class FrameCompositor {
           rampDurationScale:
               projectState.screenAnimationConfig.rampDurationScale,
           clips: projectState.timeline.clips,
+          framing: _framing,
         )) {
       return cached;
     }
+    // `framing` is not optional in practice: the preview builds its track
+    // with the project's ZoomFraming, so omitting it here clamps the focal
+    // in a different space and re-opens the very preview/export gap this
+    // track exists to close. A zero-padding project cannot tell the two
+    // apart, which is why the omission survived — any real padding can.
     return _focalTrack = DeterministicFocalTrack.build(
       region: region,
       cursorRecording: cursorRecording,
@@ -818,6 +824,7 @@ class FrameCompositor {
       rampDurationScale:
           projectState.screenAnimationConfig.rampDurationScale,
       clips: projectState.timeline.clips,
+      framing: _framing,
     );
   }
 
@@ -827,6 +834,12 @@ class FrameCompositor {
   @visibleForTesting
   SceneMotionBlurSignal sceneMotionSignalAt(Duration position) =>
       _computeSceneMotionSignal(position: position);
+
+  /// The canvas-space framing this export composes against. Exposed so
+  /// tests can build the track the PREVIEW would build and compare focals
+  /// without reaching into private state.
+  @visibleForTesting
+  ZoomFraming get framing => _framing;
 
   /// Exposes [_renderFocal] for unit tests, for the same reason as
   /// [sceneMotionSignalAt] — the focal choice is what the exported frame
