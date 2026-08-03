@@ -114,7 +114,8 @@ void main() {
     // Pre-2026-08 this returned zero regions: the isolation filter
     // dropped both clicks for having a close neighbour, which is why
     // click-dense recordings opened with an empty zoom lane. Both clicks
-    // now become interactions; Task 4 merges them into one cluster.
+    // now become interactions and are merged into one cluster by
+    // clusterGap.
     // See docs/superpowers/specs/2026-08-02-auto-zoom-interaction-classifier-design.md
     //
     // Coordinates sit in the non-clamped zone for 1.5× on 1920×1080

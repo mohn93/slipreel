@@ -137,6 +137,12 @@ class AutoZoomDetector {
     return math.min(fx, fy);
   }
 
+  /// Swept bounds can extend past the captured display on multi-monitor
+  /// setups — only the press anchor is bounds-checked. Clip before fitting
+  /// so an off-display sweep cannot drive the fit below 1.0.
+  Rect _clipToVideo(Rect r, Size videoSize) =>
+      r.intersect(Rect.fromLTWH(0, 0, videoSize.width, videoSize.height));
+
   ZoomRegion? _buildRegion(
     List<CursorInteraction> group,
     Size videoSize,
@@ -157,9 +163,10 @@ class AutoZoomDetector {
       span = shape.effectiveHold(it.gesture);
       follow = shape.followCursor;
       if (shape.fitToSweptBounds) {
+        final clippedBounds = _clipToVideo(it.sweptBounds, videoSize);
         regionZoom =
-            math.min(shape.zoomLevel, _fitZoom(it.sweptBounds, videoSize));
-        center = it.sweptBounds.center;
+            math.min(shape.zoomLevel, _fitZoom(clippedBounds, videoSize));
+        center = clippedBounds.center;
       } else {
         regionZoom = shape.zoomLevel;
         center = it.anchor;
@@ -178,13 +185,25 @@ class AutoZoomDetector {
         if (z < widest) widest = z;
         if (it.end > lastEnd) lastEnd = it.end;
       }
-      regionZoom = math.min(widest, _fitZoom(union, videoSize));
-      center = union.center;
+      final clippedUnion = _clipToVideo(union, videoSize);
+      regionZoom = math.min(widest, _fitZoom(clippedUnion, videoSize));
+      center = clippedUnion.center;
       enter = leadIn;
       exit = leadOut;
-      span = lastEnd - group.first.start;
+      // A merged cluster must never hold for less time than a lone click
+      // would: the raw gesture span (e.g. two clicks 500ms apart) can be
+      // far shorter than a single click's hold, which would make merging
+      // worse than not merging at all.
+      final rawSpan = lastEnd - group.first.start;
+      span = rawSpan < hold ? hold : rawSpan;
       follow = false;
     }
+
+    // A region that can only be framed at less than minClusterZoom is not a
+    // zoom — it would render as a no-op lane entry, and because
+    // _dropOverlaps is greedy it could shadow a genuine zoom starting inside
+    // its window. No zoom is better than a fake one.
+    if (regionZoom < minClusterZoom) return null;
 
     final rawStart = group.first.start - enter;
     final start = rawStart.isNegative ? Duration.zero : rawStart;

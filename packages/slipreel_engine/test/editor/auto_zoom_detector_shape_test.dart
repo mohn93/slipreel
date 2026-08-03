@@ -136,7 +136,10 @@ void main() {
     expect(r.rect.center.dx, closeTo(700, 0.001));
   });
 
-  test('wide text selection caps zoom so the sweep fits', () {
+  test('a sweep too wide to frame is dropped rather than faked', () {
+    // 1720px sweep fits at only 1920/1720 = 1.116x, below the 1.25x floor.
+    // A region that shallow renders as a no-op and can shadow a real
+    // neighbour via _dropOverlaps, so no region is the right answer.
     final out = detector.detect(
       cursor: _rec(_gesture(
         atMs: 5000,
@@ -150,8 +153,27 @@ void main() {
       videoSize: videoSize,
       videoDuration: videoDuration,
     );
-    // Sweep is 1720px wide; 1920/1720 ≈ 1.116, below the 1.7 preference.
-    expect(out.single.zoomLevel, closeTo(1920 / 1720, 0.01));
+    expect(out, isEmpty);
+  });
+
+  test('a framable selection caps zoom to fit its sweep', () {
+    // 1400px sweep fits at 1920/1400 = 1.371x — below the 1.7x preference,
+    // so the cap engages, but above the 1.25x floor so the region survives.
+    final out = detector.detect(
+      cursor: _rec(_gesture(
+        atMs: 5000,
+        fromX: 260,
+        fromY: 500,
+        toX: 1660,
+        toY: 510,
+        durationMs: 500,
+        state: CursorState.iBeam,
+      )),
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out.single.zoomLevel, closeTo(1920 / 1400, 0.01));
+    expect(out.single.rect.center.dx, closeTo(960, 1.0));
   });
 
   test('very long drag caps hold at 6s', () {
