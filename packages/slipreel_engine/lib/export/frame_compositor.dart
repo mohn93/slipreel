@@ -253,8 +253,14 @@ class FrameCompositor {
     );
     try {
       // Single source of truth shared with PlaybackCanvas: same spring
-      // controllers, same gate semantics, same EMA filter. Anything
-      // computed here is exactly what the preview sees.
+      // controllers, same gate semantics, same EMA filter.
+      //
+      // One deliberate exception: on FOLLOW-CURSOR regions the preview
+      // does not render this pass's focal either — it renders the
+      // deterministic track, because the live spring's gate is stateful
+      // and therefore path-dependent. See [_renderFocal], which applies
+      // the same substitution here. Everything else this pass computes is
+      // what the preview shows.
       final scenePass = _scenePassBuilder.build(
         position: position,
         zoomRegions: projectState.zoomRegions,
@@ -284,11 +290,16 @@ class FrameCompositor {
         final ramp =
             focalUpdate.zoom.rampCurveOverride?.toFlutterCurve() ??
             projectState.screenAnimationConfig.rampCurve;
+        final renderFocal = _renderFocal(
+          zoom: focalUpdate.zoom,
+          liveFocal: focalUpdate.focal,
+          position: position,
+        );
         zoomTransform = _zoomTransformer.getTransform(
           position: position,
           zoomRegion: focalUpdate.zoom,
           videoSize: videoSize,
-          focalPoint: focalUpdate.focal,
+          focalPoint: renderFocal,
           rampCurve: ramp,
           rampDurationScale:
               projectState.screenAnimationConfig.rampDurationScale,
@@ -793,9 +804,15 @@ class FrameCompositor {
           rampDurationScale:
               projectState.screenAnimationConfig.rampDurationScale,
           clips: projectState.timeline.clips,
+          framing: _framing,
         )) {
       return cached;
     }
+    // `framing` is not optional in practice: the preview builds its track
+    // with the project's ZoomFraming, so omitting it here clamps the focal
+    // in a different space and re-opens the very preview/export gap this
+    // track exists to close. A zero-padding project cannot tell the two
+    // apart, which is why the omission survived — any real padding can.
     return _focalTrack = DeterministicFocalTrack.build(
       region: region,
       cursorRecording: cursorRecording,
@@ -807,6 +824,7 @@ class FrameCompositor {
       rampDurationScale:
           projectState.screenAnimationConfig.rampDurationScale,
       clips: projectState.timeline.clips,
+      framing: _framing,
     );
   }
 
@@ -816,6 +834,41 @@ class FrameCompositor {
   @visibleForTesting
   SceneMotionBlurSignal sceneMotionSignalAt(Duration position) =>
       _computeSceneMotionSignal(position: position);
+
+  /// The canvas-space framing this export composes against. Exposed so
+  /// tests can build the track the PREVIEW would build and compare focals
+  /// without reaching into private state.
+  @visibleForTesting
+  ZoomFraming get framing => _framing;
+
+  /// Exposes [_renderFocal] for unit tests, for the same reason as
+  /// [sceneMotionSignalAt] — the focal choice is what the exported frame
+  /// is built around, but [compose] needs a real decoded frame to run.
+  @visibleForTesting
+  Offset renderFocalFor({
+    required ZoomRegion zoom,
+    required Offset liveFocal,
+    required Duration position,
+  }) => _renderFocal(zoom: zoom, liveFocal: liveFocal, position: position);
+
+  /// The focal the exported frame is built around.
+  ///
+  /// Follow-cursor regions render the DETERMINISTIC focal, matching what
+  /// the preview draws (`shouldUseDeterministicFocal` in the app shell).
+  /// The live spring is integrated at 1/[fps] here but at a fixed 16 ms
+  /// inside the track, so the bounded gate's hysteresis latches on
+  /// different frames and the two paths separate for the rest of a chase.
+  /// Rendering the spring here drifted the exported camera away from the
+  /// previewed one and made the export depend on the chosen output fps.
+  ///
+  /// [_trackFor] returns null for non-follow regions, so those keep using
+  /// the spring focal exactly as before — their focal is the region's own
+  /// rect centre and carries no accumulated state to diverge.
+  Offset _renderFocal({
+    required ZoomRegion zoom,
+    required Offset liveFocal,
+    required Duration position,
+  }) => _trackFor(zoom)?.focalAt(position) ?? liveFocal;
 
   SceneMotionBlurSignal _computeSceneMotionSignal({
     required Duration position,
