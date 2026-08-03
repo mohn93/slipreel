@@ -352,4 +352,40 @@ void main() {
     expect(out[0].anchor, const Offset(300, 300));
     expect(out[1].anchor, const Offset(800, 600));
   });
+
+  test('a press already held at the first sample is still captured', () {
+    // Recording starts mid-press. Seeding prevClicked from samples.first
+    // meant no rising edge was ever seen, so the release failed the
+    // pressIndex guard and the gesture vanished silently.
+    final out = classifier.classify(
+      _rec([
+        _p(ms: 0, clicked: true, x: 640, y: 480),
+        _p(ms: 50, clicked: true, x: 640, y: 480),
+        _p(ms: 66, clicked: false, x: 640, y: 480),
+      ]),
+      videoSize,
+    );
+    expect(out, hasLength(1));
+    expect(out.single.kind, InteractionKind.click);
+    expect(out.single.anchor, const Offset(640, 480));
+    expect(out.single.start, Duration.zero);
+    expect(out.single.end, const Duration(milliseconds: 50));
+    // pressIndex == 0 has no lookback window; state falls back to the
+    // press sample's own state.
+    expect(out.single.state, CursorState.arrow);
+  });
+
+  test('a held-from-start press that travels is still a drag', () {
+    final out = classifier.classify(
+      _rec([
+        _p(ms: 0, clicked: true, x: 300, y: 400, state: CursorState.iBeam),
+        _p(ms: 300, clicked: true, x: 800, y: 410, state: CursorState.iBeam),
+        _p(ms: 316, clicked: false, x: 800, y: 410, state: CursorState.iBeam),
+      ]),
+      videoSize,
+    );
+    expect(out, hasLength(1));
+    expect(out.single.kind, InteractionKind.textSelection);
+    expect(out.single.anchor, const Offset(300, 400));
+  });
 }

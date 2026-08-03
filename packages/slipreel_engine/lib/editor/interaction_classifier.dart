@@ -51,9 +51,16 @@ class InteractionClassifier {
 
     final out = <CursorInteraction>[];
     var pressIndex = -1;
-    var prevClicked = samples.first.isClicked;
+    // Seeded false (not from samples.first) and the walk starts at 0, so a
+    // recording that begins mid-press registers a rising edge at sample 0.
+    // Seeding from the first sample made that press invisible: no rising
+    // edge was ever seen, so the release failed the `pressIndex >= 0` guard
+    // and the whole gesture was dropped without a trace. For a recording
+    // that starts unclicked this is a no-op — at i = 0 both `clicked` and
+    // `prevClicked` are false, so neither branch fires.
+    var prevClicked = false;
 
-    for (var i = 1; i < samples.length; i++) {
+    for (var i = 0; i < samples.length; i++) {
       final clicked = samples[i].isClicked;
       if (clicked && !prevClicked) {
         pressIndex = i;
@@ -127,6 +134,10 @@ class InteractionClassifier {
   /// backwards means that on a count tie the state nearest the press
   /// (but before it) wins, because Dart maps iterate in insertion order
   /// and we insert nearest-first.
+  ///
+  /// `pressIndex == 0` (a recording that begins mid-press) has no window to
+  /// sample: the walk body never runs, and the empty-counts fallback returns
+  /// the press sample's own state.
   CursorState _stateBefore(List<CursorPosition> samples, int pressIndex) {
     final windowStart =
         samples[pressIndex].timestampMicros - stateLookback.inMicroseconds;
