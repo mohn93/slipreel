@@ -110,17 +110,16 @@ void main() {
     expect(out[1].rect.center, const Offset(1100, 600));
   });
 
-  test('two clicks 0.5 s apart → one region (isolation filter is gone)', () {
+  test('two clicks 0.5 s apart → one merged region spanning both', () {
     // Pre-2026-08 this returned zero regions: the isolation filter
     // dropped both clicks for having a close neighbour, which is why
-    // click-dense recordings opened with an empty zoom lane. Both clicks
-    // now become interactions and are merged into one cluster by
-    // clusterGap.
+    // click-dense recordings opened with an empty zoom lane. They now
+    // merge into a single sustained region.
     // See docs/superpowers/specs/2026-08-02-auto-zoom-interaction-classifier-design.md
     //
     // Coordinates sit in the non-clamped zone for 1.5× on 1920×1080
-    // (cx ∈ [640, 1280], cy ∈ [360, 720]), matching the convention the
-    // rest of this file already documents.
+    // (cx ∈ [640, 1280], cy ∈ [360, 720]) so the centre assertion below
+    // measures the union, not the clamp.
     final cursor = _rec([
       ..._clickAt(atMs: 1000, x: 700, y: 450),
       ..._clickAt(atMs: 1500, x: 740, y: 470),
@@ -131,6 +130,18 @@ void main() {
       videoDuration: videoDuration,
     );
     expect(out, hasLength(1));
+    final r = out.single;
+    // Starts 500ms before the first press and outlives the second click,
+    // i.e. it spans the pair rather than being one region plus a drop.
+    // First press 1000, last release 1550 => raw span 550, which is below
+    // the click shape's 1800ms hold, so the cluster floor raises it to
+    // 1800. Total 500 + 1800 + 500 = 2800, so it ends at 3300. Without
+    // that floor the merged region would be SHORTER than a lone click's.
+    expect(r.startTime, const Duration(milliseconds: 500));
+    expect(r.startTime + r.duration, const Duration(milliseconds: 3300));
+    // Framed on the union of both clicks (720, 460), not on the first.
+    expect(r.rect.center.dx, closeTo(720, 1.0));
+    expect(r.rect.center.dy, closeTo(460, 1.0));
   });
 
   test('two clicks 1.6 s apart → only the first survives (overlap drops second)', () {
