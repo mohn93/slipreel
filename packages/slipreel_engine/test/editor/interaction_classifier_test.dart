@@ -401,17 +401,54 @@ void main() {
     final degenerate = _rec([
       for (var i = 0; i < n; i++) sample(ms: pressMs, clicked: i.isOdd),
     ]);
+
+    // Control: same sample count and press/release pattern as the
+    // degenerate recording above, but with strictly increasing timestamps
+    // 16ms apart (a plausible 60Hz capture rate). This is the well-formed
+    // case the cap is documented not to affect — the
+    // `timestampMicros < windowStart` break always fires first, so the walk
+    // only ever looks back ~3 samples regardless of n.
     final wellFormed = _rec([
-      sample(ms: pressMs - 16, clicked: false),
-      sample(ms: pressMs, clicked: true),
-      sample(ms: pressMs + 16, clicked: false),
+      for (var i = 0; i < n; i++) sample(ms: 16 * i, clicked: i.isOdd),
     ]);
 
-    final sw = Stopwatch()..start();
-    final out = classifier.classify(degenerate, videoSize);
-    sw.stop();
+    // We deliberately do not assert an absolute wall-clock bound here: this
+    // repo's CI tracks the latest Flutter on shared runners, where a loaded
+    // box can be far slower than any dev machine, so a fixed millisecond
+    // threshold is a flake risk. Instead we classify a well-formed
+    // recording of the *same size* as a self-calibrating control and assert
+    // the pathological recording's time is only a small multiple of it.
+    // With the cap in place both walks do O(1) work per press, so the two
+    // totals should land in the same ballpark; without the cap the
+    // degenerate case was ~100x the well-formed one (measured: 2598ms vs
+    // ~25ms at n=20000), so there's a wide gap for the multiple below to
+    // sit in while still catching a regression.
+    //
+    // Guard against a degenerate control measurement: a single run can be
+    // sub-millisecond, where timer noise would make the ratio meaningless.
+    // Repeat the control until its cumulative time clears a floor, then
+    // average, so the denominator is stable.
+    const controlFloorMicros = 5000;
+    final controlSw = Stopwatch();
+    var controlRuns = 0;
+    var controlMicros = 0;
+    var controlOut = const <CursorInteraction>[];
+    while (controlMicros < controlFloorMicros) {
+      controlSw
+        ..reset()
+        ..start();
+      controlOut = classifier.classify(wellFormed, videoSize);
+      controlSw.stop();
+      controlMicros += controlSw.elapsedMicroseconds;
+      controlRuns++;
+    }
+    final controlAvgMicros = controlMicros / controlRuns;
 
-    final reference = classifier.classify(wellFormed, videoSize).single;
+    final degenerateSw = Stopwatch()..start();
+    final out = classifier.classify(degenerate, videoSize);
+    degenerateSw.stop();
+
+    final reference = controlOut.first;
     expect(out, hasLength(n ~/ 2));
     // Same classification the well-formed equivalent yields: the cap only
     // shortens the modal-state sample, it does not change the answer.
@@ -420,13 +457,17 @@ void main() {
     expect(out.every((i) => i.anchor == reference.anchor), isTrue);
     expect(out.every((i) => i.sweptBounds == reference.sweptBounds), isTrue);
 
-    // Generous: the bounded walk runs in ~25 ms here, the unbounded one in
-    // ~2.6 s. The 40x margin is for slow CI, not room for a regression to
-    // hide in — a quadratic walk over 20k samples cannot fit under this.
+    // 10x the well-formed control: generous headroom over the roughly
+    // comparable times the cap should produce, but decisively short of the
+    // ~100x an unbounded (quadratic) walk would take.
+    const maxMultiple = 10;
     expect(
-      sw.elapsedMilliseconds,
-      lessThan(1000),
-      reason: 'the state lookback must not degrade to O(n^2)',
+      degenerateSw.elapsedMicroseconds,
+      lessThan(controlAvgMicros * maxMultiple),
+      reason: 'the state lookback must not degrade to O(n^2) relative to a '
+          'well-formed recording of the same size (degenerate='
+          '${degenerateSw.elapsedMicroseconds}us, control avg='
+          '${controlAvgMicros}us)',
     );
   });
 
