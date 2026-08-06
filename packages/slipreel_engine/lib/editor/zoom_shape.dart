@@ -52,9 +52,9 @@ class ZoomShape {
   }
 }
 
-/// Per-kind shapes. `click` mirrors the historic auto-zoom defaults, so a
-/// solitary unclassified click produces a byte-identical region to the
-/// pre-classifier detector.
+/// Per-kind shapes. `click` preserves the envelope from the pre-classifier
+/// detector (1.5×, 500ms lead-in, 1800ms hold, 500ms lead-out), but now
+/// follows the cursor, where the historic detector was anchored.
 const Map<InteractionKind, ZoomShape> kZoomShapes = {
   // NOTE: `AutoZoomDetector` does NOT read this row in production — it
   // rebuilds the click shape from its own `zoomLevel`/`leadIn`/`hold`/
