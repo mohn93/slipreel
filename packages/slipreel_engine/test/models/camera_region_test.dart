@@ -52,5 +52,14 @@ void main() {
       expect(region().hashCode, region().hashCode);
       expect(region() == region().copyWith(size: 0.3), isFalse);
     });
+
+    test('transient id: unique per construction, preserved by copyWith, '
+        'excluded from == and json', () {
+      final r = region();
+      expect(r.id, isNot(region().id));
+      expect(r.copyWith(size: 0.3).id, r.id);
+      expect(region(), region()); // fresh ids don't break value equality
+      expect(r.toJson().containsKey('id'), isFalse);
+    });
   });
 }

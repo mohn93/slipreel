@@ -245,9 +245,14 @@ class _ZoomLaneState extends State<ZoomLane> {
               end: ghost.end,
               pixelsPerSecond: widget.pixelsPerSecond,
             ),
+          // Keyed by the region's stable identity, NOT the list index: with
+          // index keys, deleting region k re-bound every later pill element
+          // to its right neighbour's data and each pill's AnimatedPositioned
+          // tweened from the old geometry — the survivors visibly slid
+          // across the lane on every delete.
           for (var i = 0; i < widget.zoomRegions.length; i++)
             _ZoomPill(
-              key: ValueKey(i),
+              key: ValueKey(widget.zoomRegions[i].id),
               index: i,
               zoom: widget.zoomRegions[i],
               isSelected: widget.selectedIndex == i,
