@@ -97,9 +97,13 @@ void main() {
     expect(r.followCursor, isTrue);
   });
 
-  test('two clicks 3 s apart → two regions', () {
-    // Positions chosen within the non-clamped zone for 1.5× zoom on
-    // 1920×1080: cx ∈ [640, 1280], cy ∈ [360, 720].
+  test('two clicks 3 s apart → one merged region', () {
+    // Regions run from click−500 to click+2300, so two clicks 3000ms apart
+    // leave a 200ms seam — far under the 1000ms of ramps that crossing it
+    // would cost, so they merge. The general form: any two clicks less than
+    // 3800ms apart merge. This test previously asserted two regions, which
+    // was true only under the pre-merge truncation rule.
+    // See docs/superpowers/specs/2026-08-06-auto-zoom-merge-and-follow-design.md
     final cursor = _rec([
       ..._clickAt(atMs: 2000, x: 700, y: 450),
       ..._clickAt(atMs: 5000, x: 1100, y: 600),
@@ -109,9 +113,11 @@ void main() {
       videoSize: videoSize,
       videoDuration: videoDuration,
     );
-    expect(out, hasLength(2));
-    expect(out[0].rect.center, const Offset(700, 450));
-    expect(out[1].rect.center, const Offset(1100, 600));
+    expect(out, hasLength(1));
+    expect(out.single.startTime, const Duration(milliseconds: 1500));
+    expect(out.single.startTime + out.single.duration,
+        const Duration(milliseconds: 7300));
+    expect(out.single.followCursor, isTrue);
   });
 
   test('two clicks 0.5 s apart → one merged region spanning both', () {
@@ -148,16 +154,13 @@ void main() {
     expect(r.rect.center.dy, closeTo(460, 1.0));
   });
 
-  test('two clicks 1.6 s apart → the first is truncated, both survive', () {
-    // The first click's last clicked sample is 2050 and the second presses
-    // at 3600, a 1550ms idle gap — above the 1200ms clusterGap — so they
-    // form two separate clusters rather than merging. region1 =
-    // [1500, 4300] (start 1500, duration 2800); region2 = [3100, 5900].
-    // They overlap, and the trim leaves region1 3100 - 1500 = 1600ms,
-    // which clears its 500 + 500 = 1000ms of ramps — so region1 is
-    // shortened to end exactly at 3100 instead of region2 being dropped.
-    // Positions within the non-clamped zone for 1.5× on 1920×1080:
-    // cx ∈ [640, 1280], cy ∈ [360, 720].
+  test('two clicks 1.6 s apart → one merged region spanning both', () {
+    // The press gap is 1600ms — above the 1200ms cluster gap, so these are
+    // two clusters. What decides the outcome is the REGION gap: [1500,4300]
+    // and [3100,5900] overlap by 1200ms, which is below the 1000ms of ramps
+    // that crossing the seam would cost, so they merge into one following
+    // region. The press gap this test is named for was never what decided
+    // it. See docs/superpowers/specs/2026-08-06-auto-zoom-merge-and-follow-design.md
     final cursor = _rec([
       ..._clickAt(atMs: 2000, x: 700, y: 450),
       ..._clickAt(atMs: 3600, x: 1100, y: 600),
@@ -167,16 +170,11 @@ void main() {
       videoSize: videoSize,
       videoDuration: videoDuration,
     );
-    expect(out, hasLength(2));
-    expect(out[0].rect.center, const Offset(700, 450));
-    expect(out[1].rect.center, const Offset(1100, 600));
-    // The truncation itself: region1 is 1600ms, not its natural 2800ms,
-    // and ends exactly where region2 begins.
-    expect(out[0].duration, const Duration(milliseconds: 1600));
-    expect(out[0].startTime + out[0].duration, out[1].startTime);
-    // region2 keeps its full natural length.
-    expect(out[1].startTime, const Duration(milliseconds: 3100));
-    expect(out[1].duration, const Duration(milliseconds: 2800));
+    expect(out, hasLength(1));
+    expect(out.single.startTime, const Duration(milliseconds: 1500));
+    expect(out.single.startTime + out.single.duration,
+        const Duration(milliseconds: 5900));
+    expect(out.single.followCursor, isTrue);
   });
 
   test('click at t=100 ms clamps region start to zero', () {

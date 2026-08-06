@@ -87,10 +87,12 @@ void main() {
     expect(out.single.rect.center, const Offset(800, 500));
   });
 
-  test('scattered clicks do not merge, and the overlap falls back to a drop',
-      () {
-    // Same 800ms cadence as the form fill, but far apart: merging them
-    // would breach the 1.25x floor, so each stands alone.
+  test('scattered clicks form separate clusters but their regions merge', () {
+    // The two clicks are far enough apart that the union would not fit at
+    // 1.25x, so CLUSTERING correctly refuses to group them. Their regions
+    // still overlap, though, and an overlap is always below the merge
+    // threshold — so the region pass joins them and the camera pans
+    // between the two corners rather than cutting out and back in.
     final rec = _rec([
       ..._clickAt(atMs: 2000, x: 60, y: 60),
       ..._clickAt(atMs: 2800, x: 1860, y: 1020),
@@ -100,18 +102,11 @@ void main() {
       videoSize: videoSize,
       videoDuration: videoDuration,
     );
-    // Two separate clusters; the second region starts inside the first
-    // region's span (region 1 = [1500, 4300], region 2 starts 2300).
-    // Truncating region 1 there would leave it 2300 - 1500 = 800ms — less
-    // than its 500 + 500 = 1000ms of ramps — so _resolveOverlaps takes the
-    // fallback: region 1 keeps its full 2800ms and region 2 is dropped.
-    // Assert on startTime rather than the centre: the first click sits
-    // outside the non-clamped zone, so its rect centre is pulled to the
-    // clamp and says nothing useful.
     expect(out, hasLength(1));
     expect(out.single.startTime, const Duration(milliseconds: 1500));
-    expect(out.single.duration, const Duration(milliseconds: 2800),
-        reason: 'the survivor is kept whole, not truncated');
+    expect(out.single.startTime + out.single.duration,
+        const Duration(milliseconds: 5100));
+    expect(out.single.followCursor, isTrue);
   });
 
   test('clicks further apart than the cluster gap do not merge', () {
@@ -127,12 +122,12 @@ void main() {
     expect(out, hasLength(2));
   });
 
-  test('a cluster splits when the next click would breach the zoom floor', () {
-    // Three clicks 400ms apart — all within the 1200ms cluster gap, so
-    // only the zoom floor can separate them. Clicks 1-2 are close
-    // together; adding click 3 would make the union 1600x750, which fits
-    // at only min(1920/1600, 1080/750) = 1.2x — below the 1.25x floor —
-    // so the cluster closes before it.
+  test('a cluster splits at the zoom floor, then the regions merge', () {
+    // Clicks 1-2 cluster; adding click 3 would make the union 1600x750,
+    // which fits at only 1.2x — below the 1.25x floor — so CLUSTERING
+    // closes before it. The two resulting regions overlap, so the region
+    // pass merges them. The split still happened: without it the union
+    // would have framed all three at once instead of the camera panning.
     final rec = _rec([
       ..._clickAt(atMs: 2000, x: 300, y: 300),
       ..._clickAt(atMs: 2400, x: 340, y: 320),
@@ -143,19 +138,11 @@ void main() {
       videoSize: videoSize,
       videoDuration: videoDuration,
     );
-    // The third click starts a second cluster at 2300, inside the first
-    // region's span. Truncating the first there would leave it 800ms,
-    // under its 1000ms of ramps, so _resolveOverlaps takes the fallback
-    // and drops the second region rather than truncating.
     expect(out, hasLength(1));
-    // The surviving region spans clicks 1-2 only: first press 2000, last
-    // release 2450 => raw span 450, floored to the click shape's 1800ms
-    // hold, total 500 + 1800 + 500 = 2800, so it runs [1500, 4300]. Had
-    // all three merged, the raw span would be 2850 — above the floor —
-    // and it would end at 5350 instead.
     expect(out.single.startTime, const Duration(milliseconds: 1500));
     expect(out.single.startTime + out.single.duration,
-        const Duration(milliseconds: 4300));
+        const Duration(milliseconds: 5100));
+    expect(out.single.followCursor, isTrue);
   });
 
   test('a long click-dense run becomes one following tracking shot', () {
@@ -299,5 +286,92 @@ void main() {
     );
     expect(out, hasLength(1));
     expect(out.single.followCursor, isTrue);
-  }, skip: 'depends on Task 3 merge pass');
+  });
+
+  test('regions separated by less than their ramps merge and follow', () {
+    // Two clicks far enough apart to be separate clusters (gap well over
+    // the 1200ms cluster gap) but whose 2800ms regions still collide.
+    // Region 1 = [1500, 4300], region 2 = [3100, 5900]: the regions
+    // overlap by 1200ms, which is below the 1000ms of ramps that crossing
+    // the seam would cost, so they merge rather than the first being
+    // truncated.
+    final rec = _rec([
+      ..._clickAt(atMs: 2000, x: 700, y: 450),
+      ..._clickAt(atMs: 3600, x: 1100, y: 600),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    final r = out.single;
+    expect(r.startTime, const Duration(milliseconds: 1500));
+    expect(r.startTime + r.duration, const Duration(milliseconds: 5900));
+    expect(r.followCursor, isTrue,
+        reason: 'merging exists so the camera can pan across the seam');
+  });
+
+  test('regions further apart than their ramps stay separate', () {
+    // Same shape, but the second click is late enough that the regions
+    // are 1400ms apart — above the 1000ms of ramps — so there is genuine
+    // room to return to full frame between them.
+    final rec = _rec([
+      ..._clickAt(atMs: 2000, x: 700, y: 450),
+      ..._clickAt(atMs: 6200, x: 1100, y: 600),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(2));
+    expect(out[0].startTime + out[0].duration,
+        const Duration(milliseconds: 4300));
+    expect(out[1].startTime, const Duration(milliseconds: 5700));
+  });
+
+  test('a merged region follows even when both members were anchored', () {
+    // Two iBeam clicks 1600ms apart: above the cluster gap, so they form
+    // separate textEntry clusters, and textEntry is an ANCHORED shape.
+    // Their regions ([1500,5200] and [3100,6800] at textEntry's 500/2600/600
+    // envelope) still overlap, so they merge — and a merged region follows
+    // regardless of what its members were, because a seam means two
+    // framings to travel between.
+    final rec = _rec([
+      ..._clickAt(atMs: 2000, x: 700, y: 450, state: CursorState.iBeam),
+      ..._clickAt(atMs: 3600, x: 1100, y: 600, state: CursorState.iBeam),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    expect(out.single.followCursor, isTrue);
+    expect(out.single.startTime, const Duration(milliseconds: 1500));
+    expect(out.single.startTime + out.single.duration,
+        const Duration(milliseconds: 6800));
+  });
+
+  test('a chain of three collapses into one span, not two', () {
+    // Each region is within the merge threshold of the next. Greedy
+    // left-to-right merging must carry the accumulated region forward, so
+    // the run becomes a single span rather than a merged pair plus a
+    // straggler.
+    final rec = _rec([
+      ..._clickAt(atMs: 2000, x: 700, y: 450),
+      ..._clickAt(atMs: 4200, x: 800, y: 500),
+      ..._clickAt(atMs: 6400, x: 900, y: 550),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    expect(out.single.startTime, const Duration(milliseconds: 1500));
+    expect(out.single.startTime + out.single.duration,
+        const Duration(milliseconds: 8700));
+  });
 }

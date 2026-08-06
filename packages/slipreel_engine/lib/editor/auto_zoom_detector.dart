@@ -72,7 +72,7 @@ class AutoZoomDetector {
       final region = _buildRegion(group, videoSize, videoDuration);
       if (region != null) regions.add(region);
     }
-    return _resolveOverlaps(regions);
+    return _mergeAdjacent(regions, videoSize);
   }
 
   /// Skip gestures that happened off the captured display. On
@@ -266,22 +266,34 @@ class AutoZoomDetector {
     return Rect.fromCenter(center: Offset(cx, cy), width: w, height: h);
   }
 
-  /// Removes overlap between regions by TRUNCATING the earlier one to end
-  /// exactly where the next begins, so both interactions stay represented.
+  /// Collapses regions whose seam is not worth rendering into one following
+  /// region, so the camera pans across instead of ramping out to 1.0x and
+  /// straight back in.
   ///
-  /// This branch made regions substantially longer — a drag can run 6.95 s
-  /// and a cluster longer still — so the historic "keep the first, discard
-  /// the later" rule now silently suppresses far more than it used to.
+  /// Two consecutive regions merge when the gap between them is smaller
+  /// than the ramps that crossing it would cost:
   ///
-  /// Truncation only applies while the shortened region can still render
-  /// as a zoom: its remaining duration must fit both ramps
-  /// (`enterDuration + exitDuration`). When it cannot, we fall back to the
-  /// historic rule — the earlier region keeps its full length and the
-  /// later one is discarded.
-  List<ZoomRegion> _resolveOverlaps(List<ZoomRegion> regions) {
+  ///     gap = next.startTime - (prev.startTime + prev.duration)
+  ///     merge when gap < prev.exitDuration + next.enterDuration
+  ///
+  /// `gap` is NEGATIVE when the regions overlap, which is the common case —
+  /// a 2.8 s region frequently starts before its predecessor ends — so every
+  /// overlap merges. Above the threshold there is genuine room to return to
+  /// full frame, and the regions are left alone.
+  ///
+  /// Merging replaces the previous truncate-the-earlier-region rule
+  /// entirely; output is non-overlapping by construction because a merge
+  /// consumes both inputs. The pass is greedy left to right, comparing the
+  /// accumulated region (and therefore its last member's exit ramp) against
+  /// the next one, so a run of three or more collapses into one span.
+  ///
+  /// A merged region always follows: merging exists so the camera can pan
+  /// across the seam, and following is the mechanism that pans.
+  List<ZoomRegion> _mergeAdjacent(List<ZoomRegion> regions, Size videoSize) {
     if (regions.isEmpty) return const [];
     final sorted = [...regions]
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
+
     final out = <ZoomRegion>[];
     for (final r in sorted) {
       if (out.isEmpty) {
@@ -289,26 +301,29 @@ class AutoZoomDetector {
         continue;
       }
       final prev = out.last;
-      if (r.startTime >= prev.startTime + prev.duration) {
+      final prevEnd = prev.startTime + prev.duration;
+      final gap = r.startTime - prevEnd;
+      if (gap >= prev.exitDuration + r.enterDuration) {
         out.add(r);
         continue;
       }
-      final trimmed = r.startTime - prev.startTime;
-      // This guard compares against unscaled ramp durations. The renderer
-      // multiplies both enterDuration and exitDuration by rampDurationScale
-      // (e.g., 1.7 for the "Smooth" animation preset), so a region truncated
-      // to between 1000ms and 1700ms at this stage will have its ramps
-      // proportionally compressed during playback and may not reach full zoom.
-      // The detector cannot know the project's animation preset at detect()
-      // time (it only receives cursor, videoSize, and videoDuration), so this
-      // shallow-truncation limitation is inherent and not addressable here.
-      if (trimmed >= prev.enterDuration + prev.exitDuration) {
-        out[out.length - 1] = prev.copyWith(duration: trimmed);
-        out.add(r);
-      }
-      // Otherwise `prev` survives at full length and `r` is dropped: a
-      // region shorter than its own ramps has no hold left to read as a
-      // zoom, so half a region each is worse than one whole one.
+
+      final end = (r.startTime + r.duration) > prevEnd
+          ? r.startTime + r.duration
+          : prevEnd;
+      // Widest of the two, matching the cluster rule: no tie-break needed
+      // and it errs in the safe direction when one region has to cover both.
+      final zoom = prev.zoomLevel < r.zoomLevel ? prev.zoomLevel : r.zoomLevel;
+      final union = prev.rect.expandToInclude(r.rect);
+      out[out.length - 1] = prev.copyWith(
+        duration: end - prev.startTime,
+        exitDuration: r.exitDuration,
+        zoomLevel: zoom,
+        followCursor: true,
+        // Unused while following, but it must stay valid and consistent
+        // with `zoom` in case the flag is ever turned off.
+        rect: _rectFor(union.center, zoom, videoSize),
+      );
     }
     return out;
   }
