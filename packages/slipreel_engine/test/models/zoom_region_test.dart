@@ -286,4 +286,27 @@ void main() {
       expect(region.rect.bottom, lessThanOrEqualTo(videoSize.height));
     });
   });
+
+  group('transient identity (id)', () {
+    test('each constructed region gets a unique id', () {
+      expect(_z().id, isNot(_z().id));
+    });
+
+    test('copyWith preserves the id so edits keep the pill identity', () {
+      final region = _z();
+      final edited = region.copyWith(zoomLevel: 3.0);
+      expect(edited.id, region.id);
+    });
+
+    test('id is identity, not value: excluded from == and hashCode', () {
+      final a = _z();
+      final b = _z();
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+    });
+
+    test('id is not serialized', () {
+      expect(_z().toJson().containsKey('id'), isFalse);
+    });
+  });
 }

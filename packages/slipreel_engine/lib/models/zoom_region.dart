@@ -57,6 +57,20 @@ class ZoomRegion {
   static const Duration _minLeadTime = Duration(milliseconds: 80);
   static const Duration _maxLeadTime = Duration(milliseconds: 250);
 
+  static int _idCounter = 0;
+  static int _nextId() => _idCounter++;
+
+  /// Transient per-session identity: unique per constructed region,
+  /// preserved through [copyWith] so a region keeps its identity across
+  /// edits (drag, resize, level change). The timeline lanes key their pill
+  /// widgets on it — index-based keys made deleting a region re-bind every
+  /// later pill element to its neighbour's data, and the pills' implicit
+  /// position tweens then slid the survivors across the lane.
+  ///
+  /// Deliberately EXCLUDED from [==]/[hashCode] (identity, not value) and
+  /// from JSON (regions get fresh ids on load).
+  final int id;
+
   final Rect rect;
   final Duration startTime;
   final Duration duration;
@@ -138,7 +152,9 @@ class ZoomRegion {
     Duration? predictiveWindow,
     this.tilt = const Tilt3D(),
     this.movement = const ZoomMovement(),
+    int? id,
   })  : assert(duration > Duration.zero, 'Duration must be positive'),
+        id = id ?? _nextId(),
         rect = videoBounds != null ? _constrainRect(rect, videoBounds) : rect,
         zoomLevel = zoomLevel.clamp(1.0, 5.0),
         enterDuration =
@@ -242,6 +258,7 @@ class ZoomRegion {
       predictiveWindow: predictiveWindow ?? this.predictiveWindow,
       tilt: tilt ?? this.tilt,
       movement: movement ?? this.movement,
+      id: id,
     );
   }
 

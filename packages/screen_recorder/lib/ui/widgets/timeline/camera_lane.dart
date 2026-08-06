@@ -188,10 +188,13 @@ class _CameraLaneState extends State<CameraLane> {
               end: ghost.end,
               pixelsPerSecond: widget.pixelsPerSecond,
             ),
-          // Camera pills.
+          // Camera pills. Keyed by the region's stable identity, NOT the
+          // list index — index keys made deleting a region re-bind every
+          // later pill element to its neighbour's data, and the pills'
+          // AnimatedPositioned tweens slid the survivors across the lane.
           for (var i = 0; i < widget.cameraRegions.length; i++)
             _CameraPill(
-              key: ValueKey(i),
+              key: ValueKey(widget.cameraRegions[i].id),
               index: i,
               region: widget.cameraRegions[i],
               isSelected: widget.selectedIndex == i,
