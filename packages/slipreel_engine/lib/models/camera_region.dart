@@ -10,6 +10,16 @@
 /// Time mirrors `ZoomRegion`: [startTime] + [duration], half-open
 /// `[startTime, endTime)`.
 class CameraRegion {
+  static int _idCounter = 0;
+  static int _nextId() => _idCounter++;
+
+  /// Transient per-session identity: unique per constructed region and
+  /// preserved through [copyWith]. Mirrors `ZoomRegion.id` — the camera
+  /// lane keys its pill widgets on it so deleting a region doesn't re-bind
+  /// the surviving pills' elements (and their position tweens) to a
+  /// neighbour's data. Excluded from [==]/[hashCode] and JSON.
+  final int id;
+
   final Duration startTime;
   final Duration duration;
   final double centerX;
@@ -22,7 +32,9 @@ class CameraRegion {
     required double centerX,
     required double centerY,
     required double size,
+    int? id,
   })  : assert(duration > Duration.zero, 'duration must be positive'),
+        id = id ?? _nextId(),
         centerX = centerX.clamp(0.0, 1.0),
         centerY = centerY.clamp(0.0, 1.0),
         // A zero/negative size would render an invisible bubble the user
@@ -49,6 +61,7 @@ class CameraRegion {
         centerX: centerX ?? this.centerX,
         centerY: centerY ?? this.centerY,
         size: size ?? this.size,
+        id: id,
       );
 
   Map<String, dynamic> toJson() => {
