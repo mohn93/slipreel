@@ -4,6 +4,8 @@
 **Branch:** `feat/auto-zoom-interaction-classifier`
 **Status:** Approved design, pending implementation plan
 
+**Superseded in part by:** docs/superpowers/specs/2026-08-06-auto-zoom-merge-and-follow-design.md
+
 ## Problem
 
 `AutoZoomDetector` pre-populates the editor's zoom lane on first open. It walks
@@ -185,7 +187,7 @@ correct output anyway.
 
 | kind | zoom | lead-in | hold | lead-out | follow | rect |
 |---|---|---|---|---|---|---|
-| `click` | 1.5× | 500 ms | 1800 ms | 500 ms | off | centred on anchor |
+| `click` | 1.5× | 500 ms | 1800 ms | 500 ms | off *(Superseded — see the 2026-08-06 spec.)* | centred on anchor |
 | `textEntry` | 1.8× | 500 ms | 2600 ms | 600 ms | off | centred on anchor |
 | `drag` | 1.4× | 450 ms | gesture + 800 ms | 500 ms | bounded | centred on anchor |
 | `textSelection` | ≤1.7× | 450 ms | gesture + 700 ms | 500 ms | off | fitted to `sweptBounds` |
@@ -230,7 +232,9 @@ Two rules on top of the table:
 
 `zoomLevel`, `leadIn`, `hold`, and `leadOut` survive as constructor parameters and now
 define the `click` shape, so a **solitary unclassified click produces a byte-identical
-region to today**.
+region to today**. *(Superseded — see the 2026-08-06 spec.)* `followCursor` flipped on
+for `click` on that branch, so the region's shape (zoom/timing) is preserved but the
+output is no longer byte-identical.
 
 `isolationWindow` is **removed**, not repurposed. Its semantics invert under this
 design — it was a rejection window (drop clicks with close neighbours) and the nearest
@@ -262,7 +266,8 @@ interaction would drop the fit below 1.25×, the cluster closes and a new one st
 Emission depends on cluster size:
 
 - **Size 1** — shape table above, follow policy included.
-- **Size ≥2** — anchored (never follow), rect fitted to the union of swept bounds, with:
+- **Size ≥2** — anchored (never follow) *(Superseded — see the 2026-08-06 spec.)*,
+  rect fitted to the union of swept bounds, with:
   - `zoom = min(widestMemberZoom, fitZoom)` where `widestMemberZoom` is the **lowest**
     zoom level among the member kinds and `fitZoom = min(videoW/unionW, videoH/unionH)`.
     Taking the lowest rather than a "dominant kind" removes a tie-breaking rule and is
@@ -286,11 +291,13 @@ Emission depends on cluster size:
 
     Cluster span is therefore bounded on both sides: `[1800 ms, 6000 ms]`.
 
-Single gestures may follow; merged clusters stay anchored and widen instead. This is
-the deliberate split: following *between* form fields reads as busy, while following
-*along* one drag reads as intentional.
+Single gestures may follow; merged clusters stay anchored and widen instead.
+*(Superseded — see the 2026-08-06 spec.)* This is the deliberate split: following
+*between* form fields reads as busy, while following *along* one drag reads as
+intentional.
 
-**Overlap resolution truncates rather than discards.** When region *n* overlaps
+**Overlap resolution truncates rather than discards.** *(Superseded — see the
+2026-08-06 spec: truncation was replaced by merging.)* When region *n* overlaps
 region *n+1*, *n* is shortened to end exactly at *n+1*'s start, so both interactions
 stay represented. The exception is when truncating would leave *n* too short for its
 own ramps (`enterDuration + exitDuration`); there the old behaviour applies — keep *n*

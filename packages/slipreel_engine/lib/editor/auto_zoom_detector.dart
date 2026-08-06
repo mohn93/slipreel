@@ -30,8 +30,11 @@ class AutoZoomDetector {
   });
 
   /// Overrides for the `click` shape, preserved from the historic
-  /// constructor so a solitary unclassified click is byte-identical to
-  /// the pre-classifier detector's output.
+  /// constructor so a solitary unclassified click keeps the historic
+  /// envelope — 1.5×, 500ms lead-in, 1800ms hold, 500ms lead-out. The
+  /// output is no longer byte-identical: `followCursor` flipped on for
+  /// `click` on this branch, where the pre-classifier detector was
+  /// anchored.
   ///
   /// [zoomLevel] must stay at or above [minClusterZoom]: the emission
   /// floor in [_buildRegion] rejects anything shallower, so setting it

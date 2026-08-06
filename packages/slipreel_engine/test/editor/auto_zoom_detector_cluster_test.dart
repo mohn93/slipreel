@@ -69,7 +69,8 @@ void main() {
     expect(r.startTime, const Duration(milliseconds: 1500));
     // Last release is 5200+50 = 5250ms; +500ms lead-out => ends 5750ms.
     expect(r.startTime + r.duration, const Duration(milliseconds: 5750));
-    expect(r.followCursor, isFalse, reason: 'clusters stay anchored');
+    expect(r.followCursor, isFalse,
+        reason: 'textEntry is an anchored shape and no member follows');
   });
 
   test('cluster frames every member, not just the first', () {

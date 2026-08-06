@@ -39,8 +39,10 @@ because each is 2.8 s long.
 
 ## Non-goals
 
-- No change to classification. The kinds, thresholds, and cluster gates are
-  untouched.
+- Classification is untouched; the span gate becomes anchored-only (rule 5
+  below). The kinds, thresholds, and cluster gates that decide what a
+  gesture *is* do not change — only whether the 6s ceiling applies to the
+  resulting region.
 - No new UI.
 - No attempt to beat the viewport clamp. A click near a corner cannot be centred at
   1.5×; following changes what happens *after* the click, not the framing at it.

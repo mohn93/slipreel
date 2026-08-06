@@ -520,10 +520,14 @@ class _ZoomPillState extends State<_ZoomPill> {
     // the lane's Stack in ascending order, so an inflated pill paints UNDER
     // its neighbour and the neighbour's opaque gesture detector swallows this
     // pill's right-edge resize handle and delete button (both positioned off
-    // the inflated box). Overlap resolution makes regions abut exactly, so
-    // once a second maps to under 32px — roughly 30s of recording at 1x —
-    // that inflation would be the norm, not an edge case. Reuses the same
-    // neighbour info the drag clamp reads.
+    // the inflated box). Auto-detected regions no longer abut exactly — the
+    // detector now merges any seam a truncate would have created, rather
+    // than truncating — but manual regions can still be dragged to sit
+    // exactly edge to edge, and short regions still exist, so this floor
+    // still needs the clamp: once a second maps to under 32px — roughly 30s
+    // of recording at 1x — an unclamped floor would inflate past a
+    // neighbouring pill. Reuses the same neighbour info the drag clamp
+    // reads.
     final naturalWidth = _endX - _startX;
     final nextStart = widget.neighbors.nextStart;
     final gapToNext = nextStart == null

@@ -10,11 +10,15 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 /// Regression guard for short zoom pills swallowing their neighbour.
 ///
 /// The pill's rendered width was floored at `handleHitWidth * 2` (32px)
-/// unconditionally. Auto-detected regions abut exactly (overlap resolution
-/// truncates the earlier one to end where the later one starts), so once a
-/// second maps to fewer than 32px — roughly 30s of recording at 1x — the
-/// earlier pill rendered wider than its own duration and spilled over its
-/// neighbour. Pills are stacked in ascending order, so the later pill paints
+/// unconditionally. Regions that abut exactly still occur — manual
+/// placement can drag one region flush against the next, and the fixture
+/// below constructs the case directly — so once a second maps to fewer
+/// than 32px — roughly 30s of recording at 1x — the earlier pill rendered
+/// wider than its own duration and spilled over its neighbour. (Auto
+/// detection no longer produces exact abutment itself: it now merges any
+/// seam a truncate would have created rather than truncating, so this is
+/// a manual-placement and short-region guard rather than an auto-detection
+/// one.) Pills are stacked in ascending order, so the later pill paints
 /// on top and its opaque gesture detector intercepts events: the earlier
 /// region's right-edge resize handle and delete button, both positioned off
 /// the inflated box, land inside the neighbour and become unreachable.
