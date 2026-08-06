@@ -21,7 +21,7 @@
 
 **Test commands:**
 - Single file: `cd packages/slipreel_engine && flutter test test/editor/<file>.dart`
-- Package suite: `cd packages/slipreel_engine && flutter test` (baseline **1268** tests)
+- Package suite: `cd packages/slipreel_engine && flutter test` (baseline **1273** tests — measured at the branch head before Task 1; an earlier draft of this plan said 1268, which predated the `main` merge that brought in the export-parity tests)
 - Workspace: `melos run test --no-select` then `melos run analyze --no-select` from the repo root (note: bare `melos test` prompts interactively and fails in a non-TTY)
 
 **A note on expected test fallout.** Each task below lists tests I expect to change. Those are predictions from reading the code, not measurements — earlier rounds of this project proved such predictions wrong more than once. Run the suite, compare against the list, and **if anything moves that is not on the list, stop and report rather than adjusting it.**
@@ -729,7 +729,7 @@ Then:
 melos run analyze --no-select
 ```
 
-Expected: SUCCESS for both. Engine suite should be 1268 + 6 new tests = **1274** (2 from Task 2, 3 from Task 3, 1 from Task 4); the tests updated in place do not change the count. Report the actual number and account for any difference.
+Expected: SUCCESS for both. Engine suite should be 1273 + 9 new tests = **1282** — 4 from Task 2 (two in its Step 1, two in its Step 5), 4 from Task 3 (Step 1), 1 from Task 4. Tests updated in place do not change the count, and Task 1 added none. Report the actual number and account for any difference.
 
 - [ ] **Step 4: Confirm no formatter damage**
 
