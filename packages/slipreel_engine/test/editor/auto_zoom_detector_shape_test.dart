@@ -62,7 +62,7 @@ void main() {
   const videoSize = Size(1920, 1080);
   const videoDuration = Duration(seconds: 60);
 
-  test('arrow click keeps the historic 1.5x / 2.8s anchored shape', () {
+  test('arrow click keeps the historic 1.5x / 2.8s shape and follows', () {
     final out = detector.detect(
       cursor: _rec(_gesture(atMs: 5000, fromX: 900, fromY: 500)),
       videoSize: videoSize,
@@ -73,7 +73,7 @@ void main() {
     expect(r.zoomLevel, 1.5);
     expect(r.duration, const Duration(milliseconds: 2800));
     expect(r.startTime, const Duration(milliseconds: 4500));
-    expect(r.followCursor, isFalse);
+    expect(r.followCursor, isTrue);
     expect(r.rect.center, const Offset(900, 500));
   });
 

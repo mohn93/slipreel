@@ -15,7 +15,11 @@ void main() {
     expect(shape.leadIn, const Duration(milliseconds: 500));
     expect(shape.hold, const Duration(milliseconds: 1800));
     expect(shape.leadOut, const Duration(milliseconds: 500));
-    expect(shape.followCursor, isFalse);
+    // Click zooms follow as of 2026-08-06: the camera tracks the cursor
+    // after the click instead of sitting on a clamped box centre. Bounded
+    // follow holds until the cursor leaves 80% of the viewport, so a click
+    // where the pointer stays put still produces no motion.
+    expect(shape.followCursor, isTrue);
     expect(shape.holdTracksGesture, isFalse);
     expect(shape.fitToSweptBounds, isFalse);
   });

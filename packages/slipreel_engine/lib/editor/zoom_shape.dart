@@ -67,7 +67,7 @@ const Map<InteractionKind, ZoomShape> kZoomShapes = {
     leadIn: Duration(milliseconds: 500),
     hold: Duration(milliseconds: 1800),
     leadOut: Duration(milliseconds: 500),
-    followCursor: false,
+    followCursor: true,
     holdTracksGesture: false,
     fitToSweptBounds: false,
   ),

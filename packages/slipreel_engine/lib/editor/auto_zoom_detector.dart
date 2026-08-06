@@ -93,7 +93,7 @@ class AutoZoomDetector {
         leadIn: leadIn,
         hold: hold,
         leadOut: leadOut,
-        followCursor: false,
+        followCursor: true,
         holdTracksGesture: false,
         fitToSweptBounds: false,
       );

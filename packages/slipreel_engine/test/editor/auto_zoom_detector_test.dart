@@ -90,7 +90,11 @@ void main() {
     // rect dims = videoSize / zoom
     expect(r.rect.width, closeTo(1920 / 1.5, 0.001));
     expect(r.rect.height, closeTo(1080 / 1.5, 0.001));
-    expect(r.followCursor, isFalse);
+    // Click zooms follow as of 2026-08-06 — the camera tracks the cursor
+    // after the click. The rect assertions above still hold: the rect is
+    // computed the same way, it is simply unused by the renderer while
+    // following.
+    expect(r.followCursor, isTrue);
   });
 
   test('two clicks 3 s apart → two regions', () {
