@@ -262,6 +262,31 @@ Note: this second test depends on Task 3's merge pass and will not pass until Ta
 lands. Write it now, mark it `skip: 'depends on Task 3 merge pass'`, and remove the
 skip in Task 3 Step 7.
 
+- [ ] **Step 5b: Invert the long click-dense run test**
+
+*Added during execution — this step was missing from the first draft of the plan, though the spec's "tests that invert deliberately" section called for it.*
+
+`auto_zoom_detector_cluster_test.dart` contains `a long click-dense run splits instead of one endless region`, which builds 40 plain clicks and asserts the span ceiling splits them. Clicks follow as of Task 1, so that cluster now follows and the ceiling does not apply — the run becomes one region. That is the rule working, not a regression.
+
+Keep the existing 40-click fixture exactly as-is. Change only the name, comment and assertions:
+
+```dart
+  test('a long click-dense run becomes one following tracking shot', () {
+    // Clicks follow, so this cluster follows, so the span ceiling does not
+    // apply to it — the ceiling exists to stop a wide ANCHORED union from
+    // cropping the whole video, and a following region has no union to
+    // frame. The run therefore becomes one sustained tracking shot rather
+    // than a series of capped regions.
+    //
+    // Rewritten from an earlier version that asserted the ceiling split
+    // this run. See the "tests that invert deliberately" section of
+    // docs/superpowers/specs/2026-08-06-auto-zoom-merge-and-follow-design.md
+```
+
+Then keep the fixture and `detect()` call, and assert: exactly one region; `followCursor` is `true`; and its duration exceeds `leadIn + ZoomShape.maxHold + leadOut`, derived from the constants rather than hardcoded.
+
+Also update the now-stale comment above the `joins` predicate in `_cluster`, which says a click-a-second demo "splits into a run of regions" — reword it to say the ceiling guards anchored clusters specifically, and why a following cluster does not need it.
+
 - [ ] **Step 6: Run the file to verify the new tests pass**
 
 Run: `cd packages/slipreel_engine && flutter test test/editor/auto_zoom_detector_cluster_test.dart`
