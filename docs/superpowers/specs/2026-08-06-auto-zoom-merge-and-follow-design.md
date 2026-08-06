@@ -142,6 +142,26 @@ The ceiling therefore applies to **anchored regions only**. Under rule 3 that me
 `textEntry`-only clusters keep it; click clusters and every merged region, all of
 which follow, do not.
 
+**What the ceiling actually does now — corrected during planning.** An earlier draft
+of this rule claimed a capped anchored run splits into separate anchored pieces. It
+does not. The pieces the ceiling creates are contiguous by construction: piece 1's
+region ends at `lastEnd + leadOut` and piece 2's begins at `nextStart − leadIn`, so
+the gap between them is `interactionGap − 1000 ms`. A cluster split by the *ceiling*
+rather than by the gap gate necessarily has `interactionGap < clusterGap` (1200 ms),
+so that gap is under 200 ms — always below the merge threshold. **Every split the
+ceiling causes is immediately re-merged, and merged regions follow.**
+
+So the ceiling's real effect on a long `textEntry` run is not "split into capped
+anchored pieces" but "stop being one wide anchored crop, and become one following
+region instead." That is the accepted behaviour: the camera tracks the user through a
+long form rather than framing a wide static box around all of it. The ceiling still
+earns its place — without it, that run would form a single anchored cluster framing a
+union that can cover ~80% of the frame.
+
+The consequence for testing is that the ceiling has **no directly observable effect on
+region count** through `detect()`; what is observable is that a long anchored run comes
+out following rather than anchored.
+
 **Accepted consequence:** a dense recording can become one long tracking shot. The
 merges in the observed recording are already 7.7 s and 7.8 s, both over the old cap;
 capping them would re-create the exact seams this design removes.
@@ -183,8 +203,12 @@ recording containing a click, rather than only to manually-added follow zooms.
   spanning region, not two.
 - **Merged policy:** a merged region reports `followCursor: true` even when built
   from members that were anchored.
-- **Anchored path preserved:** a `textEntry`-only cluster still gets the `maxHold`
-  ceiling and the `minClusterZoom` fit floor.
+- **Anchored path preserved:** a short `textEntry`-only cluster (one that never
+  reaches the ceiling) stays anchored and keeps the `minClusterZoom` fit floor.
+- **Long anchored run:** a `textEntry` run past the ceiling comes out as a single
+  following region, per rule 5's correction — not as multiple anchored pieces. Do not
+  write a test asserting the region count here; the count is not what the ceiling
+  affects.
 - **Real-recording guard:** the fixture from the observed recording yields 4 regions
   with the spans in the table above.
 
