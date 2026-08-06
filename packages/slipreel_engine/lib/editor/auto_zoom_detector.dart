@@ -116,17 +116,27 @@ class AutoZoomDetector {
     for (var i = 1; i < sorted.length; i++) {
       final next = sorted[i];
       final merged = union.expandToInclude(next.sweptBounds);
-      // Third gate: a cluster's span is capped, so a click-a-second demo
-      // inside one app window splits into a run of regions rather than
+      // Third gate: a cluster's span is capped, so an anchored click-a-second
+      // demo inside one app window splits into a run of regions rather than
       // merging into a single minutes-long zoom. minClusterZoom of 1.25
       // tolerates a union covering ~80% of the frame, so the spatial gate
       // alone will not stop that. Like the other two gates, breaching it
       // closes the cluster and starts a new one at `next` — the span is
       // never truncated mid-gesture.
+      //
+      // The ceiling is a property of ANCHORED clusters only, though: it
+      // exists because a wide anchored union is a crop of the whole video
+      // rather than a zoom. A following cluster has no union to frame — it
+      // tracks the cursor — so a long one is a sustained tracking shot,
+      // which is the intended result of merging, and the ceiling does not
+      // apply to it.
+      final prospectiveMembers = <CursorInteraction>[...current, next];
+      final wouldFollow = prospectiveMembers
+          .any((m) => _shapeFor(m.kind).followCursor);
       final prospectiveSpan = next.end - current.first.start;
       final joins = (next.start - lastEnd) < clusterGap &&
           _fitZoom(merged, videoSize) >= minClusterZoom &&
-          prospectiveSpan <= ZoomShape.maxHold;
+          (wouldFollow || prospectiveSpan <= ZoomShape.maxHold);
 
       if (joins) {
         current.add(next);
@@ -190,10 +200,11 @@ class AutoZoomDetector {
         center = it.anchor;
       }
     } else {
-      // Merged cluster: anchored, framed over every member. Zoom takes
-      // the LOWEST member preference rather than a "dominant kind" —
-      // no tie-breaking rule needed, and it errs wide, which is the safe
-      // direction when one region has to cover them all.
+      // Merged cluster: framed over every member when it does not follow
+      // (see `follow` below). Zoom takes the LOWEST member preference
+      // rather than a "dominant kind" — no tie-breaking rule needed, and
+      // it errs wide, which is the safe direction when one region has to
+      // cover them all.
       var union = group.first.sweptBounds;
       var widest = _shapeFor(group.first.kind).zoomLevel;
       var lastEnd = group.first.end;
@@ -216,7 +227,7 @@ class AutoZoomDetector {
       // sides: [hold, ZoomShape.maxHold] = [1800ms, 6000ms] at defaults.
       final rawSpan = lastEnd - group.first.start;
       span = rawSpan < hold ? hold : rawSpan;
-      follow = false;
+      follow = group.any((it) => _shapeFor(it.kind).followCursor);
     }
 
     // A region that can only be framed at less than minClusterZoom is not a

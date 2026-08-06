@@ -158,13 +158,16 @@ void main() {
         const Duration(milliseconds: 4300));
   });
 
-  test('a long click-dense run splits instead of one endless region', () {
-    // 40 clicks a second apart in one small area, spanning ~40s. Every
-    // 950ms idle gap is under the 1200ms clusterGap and the union stays
-    // tiny, so neither the time gate nor the zoom floor can separate
-    // them — only the ZoomShape.maxHold span ceiling can. Without it this
-    // is a single ~40s "zoom", which is the click-dense case this branch
-    // exists to improve.
+  test('a long click-dense run becomes one following tracking shot', () {
+    // Clicks follow, so this cluster follows, so the span ceiling does not
+    // apply to it — the ceiling exists to stop a wide ANCHORED union from
+    // cropping the whole video, and a following region has no union to
+    // frame. The run therefore becomes one sustained tracking shot rather
+    // than a series of capped regions.
+    //
+    // Rewritten from an earlier version that asserted the ceiling split
+    // this run. See the "tests that invert deliberately" section of
+    // docs/superpowers/specs/2026-08-06-auto-zoom-merge-and-follow-design.md
     final rec = _rec([
       for (var i = 0; i < 40; i++)
         ..._clickAt(
@@ -179,13 +182,15 @@ void main() {
       videoDuration: videoDuration,
     );
 
-    expect(out.length, greaterThan(1),
-        reason: 'the run must break into several regions');
+    expect(out, hasLength(1));
+    expect(out.single.followCursor, isTrue);
     final maxRegion = detector.leadIn + ZoomShape.maxHold + detector.leadOut;
-    for (final r in out) {
-      expect(r.duration, lessThanOrEqualTo(maxRegion),
-          reason: 'region at ${r.startTime} exceeds the span ceiling');
-    }
+    expect(
+      out.single.duration,
+      greaterThan(maxRegion),
+      reason: 'a following cluster must not be capped at leadIn + maxHold '
+          '+ leadOut',
+    );
   });
 
   test('a single interaction still keeps its own follow policy', () {
@@ -204,4 +209,95 @@ void main() {
     );
     expect(out.single.followCursor, isTrue);
   });
+
+  test('a cluster of clicks follows, because the click shape follows', () {
+    // Two clicks close in time and space form one cluster. Since clicks
+    // follow as of 2026-08-06, the cluster follows too — the previous
+    // "clusters of 2+ are always anchored" rule was decided when clicks
+    // did not follow, and keeping it would make two clicks 300ms apart
+    // behave differently from two clicks 1500ms apart for no reason the
+    // user could observe.
+    final rec = _rec([
+      ..._clickAt(atMs: 2000, x: 700, y: 400),
+      ..._clickAt(atMs: 2400, x: 740, y: 420),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    expect(out.single.followCursor, isTrue);
+  });
+
+  test('a long click cluster is not capped, because it follows', () {
+    // 12 clicks a second apart in a small area. Every gap is under the
+    // 1200ms cluster gap and the union stays tiny, so only the span
+    // ceiling could split this run — and the ceiling no longer applies to
+    // a following cluster. The result is one continuous tracking shot
+    // longer than ZoomShape.maxHold.
+    final rec = _rec([
+      for (var i = 0; i < 12; i++)
+        ..._clickAt(atMs: 2000 + i * 1000, x: 800 + i.toDouble(), y: 400),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: const Duration(seconds: 60),
+    );
+    expect(out, hasLength(1));
+    expect(out.single.followCursor, isTrue);
+    expect(
+      out.single.duration,
+      greaterThan(const Duration(milliseconds: 7000)),
+      reason: 'a following cluster must not be capped at leadIn + maxHold '
+          '+ leadOut',
+    );
+  });
+
+  test('a short textEntry cluster stays anchored', () {
+    // textEntry is an anchored shape and this run never reaches the span
+    // ceiling, so the cluster keeps the anchored path: fitted union centre
+    // and the minClusterZoom floor.
+    final rec = _rec([
+      for (var i = 0; i < 3; i++)
+        ..._clickAt(
+          atMs: 2000 + i * 700,
+          x: 800,
+          y: 400 + i * 30.0,
+          state: CursorState.iBeam,
+        ),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    expect(out.single.followCursor, isFalse);
+  });
+
+  test('a long textEntry run comes out following, not anchored', () {
+    // Past the span ceiling the cluster closes, but the piece it starts is
+    // contiguous with the previous one, so Task 3's merge pass rejoins them
+    // — and merged regions follow. The ceiling's real effect is therefore
+    // that a long anchored run stops being one wide anchored crop and
+    // becomes a tracking shot. Region COUNT is not what it changes.
+    final rec = _rec([
+      for (var i = 0; i < 12; i++)
+        ..._clickAt(
+          atMs: 2000 + i * 1000,
+          x: 800,
+          y: 400 + i.toDouble(),
+          state: CursorState.iBeam,
+        ),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: const Duration(seconds: 60),
+    );
+    expect(out, hasLength(1));
+    expect(out.single.followCursor, isTrue);
+  }, skip: 'depends on Task 3 merge pass');
 }
