@@ -200,25 +200,38 @@ class AutoZoomDetector {
         center = it.anchor;
       }
     } else {
-      // Merged cluster: framed over every member when it does not follow
-      // (see `follow` below). Zoom takes the LOWEST member preference
-      // rather than a "dominant kind" — no tie-breaking rule needed, and
-      // it errs wide, which is the safe direction when one region has to
-      // cover them all.
+      // `center` is the fitted union centre either way: load-bearing when
+      // the region is anchored, unused (but still computed — harmless) when
+      // it follows.
       var union = group.first.sweptBounds;
-      var widest = _shapeFor(group.first.kind).zoomLevel;
+      var lowestMemberZoom = _shapeFor(group.first.kind).zoomLevel;
+      var highestMemberZoom = lowestMemberZoom;
       var lastEnd = group.first.end;
       for (final it in group.skip(1)) {
         union = union.expandToInclude(it.sweptBounds);
         final z = _shapeFor(it.kind).zoomLevel;
-        if (z < widest) widest = z;
+        if (z < lowestMemberZoom) lowestMemberZoom = z;
+        if (z > highestMemberZoom) highestMemberZoom = z;
         if (it.end > lastEnd) lastEnd = it.end;
       }
       final clippedUnion = _clipToVideo(union, videoSize);
-      regionZoom = math.min(widest, _fitZoom(clippedUnion, videoSize));
       center = clippedUnion.center;
       enter = leadIn;
       exit = leadOut;
+      follow = group.any((it) => _shapeFor(it.kind).followCursor);
+      // Framing decisions that protect a union — "the widest member wins,
+      // capped by what the union can fit" — apply only to ANCHORED regions:
+      // an anchored region frames a static box that must contain every
+      // member, so the widest member's requirement governs and the fit caps
+      // it further. A following region has no union to frame — it tracks
+      // the cursor — so there is nothing for that rule to protect, and it
+      // takes the TIGHTEST member zoom instead. Using the widest-member rule
+      // here would mean a single wide member (e.g. a drag) flattens every
+      // other member's framing, including a deliberately tight one like
+      // textEntry's, whenever the two end up in the same following region.
+      regionZoom = follow
+          ? highestMemberZoom
+          : math.min(lowestMemberZoom, _fitZoom(clippedUnion, videoSize));
       // A merged cluster must never hold for less time than a lone click
       // would: the raw gesture span (e.g. two clicks 500ms apart) can be
       // far shorter than a single click's hold, which would make merging
@@ -227,7 +240,6 @@ class AutoZoomDetector {
       // sides: [hold, ZoomShape.maxHold] = [1800ms, 6000ms] at defaults.
       final rawSpan = lastEnd - group.first.start;
       span = rawSpan < hold ? hold : rawSpan;
-      follow = group.any((it) => _shapeFor(it.kind).followCursor);
     }
 
     // A region that can only be framed at less than minClusterZoom is not a
@@ -312,9 +324,13 @@ class AutoZoomDetector {
       final end = (r.startTime + r.duration) > prevEnd
           ? r.startTime + r.duration
           : prevEnd;
-      // Widest of the two, matching the cluster rule: no tie-break needed
-      // and it errs in the safe direction when one region has to cover both.
-      final zoom = prev.zoomLevel < r.zoomLevel ? prev.zoomLevel : r.zoomLevel;
+      // A merged region always follows (see the class doc above), so it has
+      // no union to frame — it tracks the cursor. The "widest member wins"
+      // rule only protects a static union, which makes it anchored-only;
+      // here it would just mean one wide member flattens a tighter one
+      // (e.g. textEntry's) for no reason a follow camera needs. Take the
+      // TIGHTER of the two zooms instead.
+      final zoom = prev.zoomLevel > r.zoomLevel ? prev.zoomLevel : r.zoomLevel;
       final union = prev.rect.expandToInclude(r.rect);
       out[out.length - 1] = prev.copyWith(
         duration: end - prev.startTime,

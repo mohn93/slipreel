@@ -375,7 +375,7 @@ void main() {
         const Duration(milliseconds: 8700));
   });
 
-  test('a merged region takes the lower zoom, the later exit, and a '
+  test('a merged region takes the tighter zoom, the later exit, and a '
       'matching rect', () {
     // An arrow click (click shape: 1.5x, 500/1800/500) and an iBeam click
     // (textEntry shape: 1.8x, 500/2600/600) 1600ms apart. They are separate
@@ -383,7 +383,7 @@ void main() {
     // so they merge.
     //
     // This is the only test where the two members DIFFER in zoom and exit
-    // ramp. Without it, swapping the merge's `min` for `max` on zoomLevel,
+    // ramp. Without it, swapping the merge's `max` for `min` on zoomLevel,
     // or taking the earlier member's exitDuration, leaves the suite green.
     final rec = _rec([
       ..._clickAt(atMs: 2000, x: 700, y: 450),
@@ -398,14 +398,38 @@ void main() {
     final r = out.single;
     expect(r.startTime, const Duration(milliseconds: 1500));
     expect(r.startTime + r.duration, const Duration(milliseconds: 6800));
-    // Lower of 1.5 and 1.8 — the widest framing, so the merged span can
-    // cover what both members wanted.
-    expect(r.zoomLevel, 1.5);
+    // Higher of 1.5 and 1.8 — a merged region always follows and has no
+    // union to protect, so it takes the TIGHTER framing rather than the
+    // wider one.
+    expect(r.zoomLevel, 1.8);
     // The LATER member's exit ramp, not the earlier one's 500ms.
     expect(r.exitDuration, const Duration(milliseconds: 600));
     // Rect dimensions must follow the merged zoom, not either member's.
-    expect(r.rect.width, closeTo(1920 / 1.5, 0.001));
-    expect(r.rect.height, closeTo(1080 / 1.5, 0.001));
+    expect(r.rect.width, closeTo(1920 / 1.8, 0.001));
+    expect(r.rect.height, closeTo(1080 / 1.8, 0.001));
+  });
+
+  test('a following merge keeps the tighter member zoom', () {
+    // An arrow click (1.5x) and an iBeam click (textEntry, 1.8x) 1600ms
+    // apart merge into one following region. It takes the TIGHTER 1.8x:
+    // a following region tracks the cursor and never frames a union, so
+    // there is nothing for the wider framing to protect. Taking the lower
+    // zoom here would mean textEntry's tighter framing — the whole reason
+    // the kind exists — is lost whenever an ordinary click happens within
+    // ~4.2s, which on a form-fill demo is almost always.
+    final rec = _rec([
+      ..._clickAt(atMs: 2000, x: 700, y: 450),
+      ..._clickAt(atMs: 3600, x: 1100, y: 600, state: CursorState.iBeam),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    expect(out.single.followCursor, isTrue);
+    expect(out.single.zoomLevel, 1.8);
+    expect(out.single.rect.width, closeTo(1920 / 1.8, 0.001));
   });
 
   test('regions exactly at the threshold do not merge', () {
