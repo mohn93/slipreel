@@ -116,11 +116,30 @@ definition, two framings to get between.
 
 Merged region fields:
 
-- `start` = first member's start, `end` = last member's end
-- `enterDuration` = first member's, `exitDuration` = last member's
-- `zoomLevel` = the **lowest** among members (widest framing), matching the existing
-  cluster rule — no tie-break needed, and it errs in the safe direction
+- `start` = first member's start, `end` = the **later-ending** member's end
+- `enterDuration` = first member's, `exitDuration` = the **later-ending** member's
+- `zoomLevel` = the **highest** among members (tightest framing), and the union-fit
+  cap does not apply
 - `rect` = union of member rects. Unused while following, but must be valid.
+
+**Corrected during the final review.** An earlier draft of this rule said `zoomLevel`
+takes the *lowest* member zoom capped by the union fit, "matching the existing cluster
+rule — it errs in the safe direction when one region has to cover both." That reasoning
+is sound only for an **anchored** region, which frames a static union and must contain
+every member. A merged region always follows (see above): it has no union to frame, it
+tracks the cursor, so there is nothing for the wider framing to protect.
+
+This was the third instance of the same mistake on this branch — `ZoomShape.maxHold`
+and `fitToSweptBounds` were both anchored-only logic applied to following regions, and
+both were corrected earlier. Left in place it would have meant a single wide gesture
+flattening every later region in a chain, and `textEntry`'s tighter 1.8× surviving a
+merge only when no ordinary click fell within ~4.2 s — on a form-fill demo, almost
+never. Anchored regions keep lowest-plus-fit, where it remains correct.
+
+The `end` and `exitDuration` rules say *later-ending* rather than *last* for a related
+reason: a region can be fully contained inside the accumulated one, in which case the
+last-**starting** member is not the one that finishes last. Taking its ramp would end
+the merged region at one member's time with another member's ramp.
 
 ### 4. Overlap resolution is replaced, not extended
 
