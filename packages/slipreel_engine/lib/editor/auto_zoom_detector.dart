@@ -12,7 +12,7 @@ import 'zoom_shape.dart';
 ///
 /// Pipeline: classify gestures ([InteractionClassifier]) → merge nearby
 /// gestures into clusters → shape each group into a `ZoomRegion` via
-/// [kZoomShapes] → resolve overlaps.
+/// [kZoomShapes] → merge adjacent regions.
 ///
 /// Replaces the pre-2026-08 click-only detector, whose isolation filter
 /// dropped every click within 1.5 s of a neighbour and so emitted
@@ -232,9 +232,10 @@ class AutoZoomDetector {
 
     // A region that can only be framed at less than minClusterZoom is not a
     // zoom — it would render as a no-op lane entry, and because
-    // _resolveOverlaps is greedy it could truncate — or, if the trim would
-    // not fit both ramps, shadow entirely — a genuine zoom starting inside
-    // its window. No zoom is better than a fake one.
+    // _mergeAdjacent merges any region whose seam undercuts the ramps, it
+    // would be merged into a genuine neighbour and widen it into a
+    // following span covering both, which is worse than simply not
+    // emitting it. No zoom is better than a fake one.
     if (regionZoom < minClusterZoom) return null;
 
     final rawStart = group.first.start - enter;

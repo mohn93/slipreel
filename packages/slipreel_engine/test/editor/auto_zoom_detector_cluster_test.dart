@@ -374,4 +374,57 @@ void main() {
     expect(out.single.startTime + out.single.duration,
         const Duration(milliseconds: 8700));
   });
+
+  test('a merged region takes the lower zoom, the later exit, and a '
+      'matching rect', () {
+    // An arrow click (click shape: 1.5x, 500/1800/500) and an iBeam click
+    // (textEntry shape: 1.8x, 500/2600/600) 1600ms apart. They are separate
+    // clusters, but their regions — [1500,4300] and [3100,6800] — overlap,
+    // so they merge.
+    //
+    // This is the only test where the two members DIFFER in zoom and exit
+    // ramp. Without it, swapping the merge's `min` for `max` on zoomLevel,
+    // or taking the earlier member's exitDuration, leaves the suite green.
+    final rec = _rec([
+      ..._clickAt(atMs: 2000, x: 700, y: 450),
+      ..._clickAt(atMs: 3600, x: 1100, y: 600, state: CursorState.iBeam),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(1));
+    final r = out.single;
+    expect(r.startTime, const Duration(milliseconds: 1500));
+    expect(r.startTime + r.duration, const Duration(milliseconds: 6800));
+    // Lower of 1.5 and 1.8 — the widest framing, so the merged span can
+    // cover what both members wanted.
+    expect(r.zoomLevel, 1.5);
+    // The LATER member's exit ramp, not the earlier one's 500ms.
+    expect(r.exitDuration, const Duration(milliseconds: 600));
+    // Rect dimensions must follow the merged zoom, not either member's.
+    expect(r.rect.width, closeTo(1920 / 1.5, 0.001));
+    expect(r.rect.height, closeTo(1080 / 1.5, 0.001));
+  });
+
+  test('regions exactly at the threshold do not merge', () {
+    // Regions run click−500 to click+2300, so clicks 3800ms apart leave a
+    // gap of exactly 1000ms — equal to the 500+500 ramp cost. The rule
+    // merges on a STRICTLY smaller gap, so this pair stays separate. One
+    // millisecond closer and they would merge.
+    final rec = _rec([
+      ..._clickAt(atMs: 2000, x: 700, y: 450),
+      ..._clickAt(atMs: 5800, x: 1100, y: 600),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+    expect(out, hasLength(2));
+    expect(out[0].startTime + out[0].duration,
+        const Duration(milliseconds: 4300));
+    expect(out[1].startTime, const Duration(milliseconds: 5300));
+  });
 }
