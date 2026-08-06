@@ -432,6 +432,54 @@ void main() {
     expect(out.single.rect.width, closeTo(1920 / 1.8, 0.001));
   });
 
+  test('a region fully contained inside another keeps the container\'s exit '
+      'ramp', () {
+    // Region A: a lone textEntry click (iBeam) at 2000ms, far corner
+    // (100,100). textEntry's hold (2600ms) is fixed rather than
+    // gesture-tracked, so its region envelope is [1500,5200]:
+    //   start = 2000 - leadIn(500) = 1500
+    //   duration = leadIn(500) + hold(2600) + leadOut(600) = 3700
+    //   end = 1500 + 3700 = 5200
+    //
+    // Region B: a lone plain click (arrow) at 2200ms, opposite corner
+    // (1800,950) so the two interactions' swept-bounds union (1700x850)
+    // fits at only ~1.13x — under minClusterZoom (1.25x) — which keeps
+    // them in separate clusters regardless of the time gap between them.
+    // (The 200ms gap from A's press is also deliberate: it clears the
+    // 50ms `stateLookback` window InteractionClassifier samples before
+    // each press, so B's own arrow state isn't outvoted by A's lingering
+    // iBeam samples — a 100ms gap once produced a false textEntry read
+    // here.) Click's envelope is [1700,4500]:
+    //   start = 2200 - leadIn(500) = 1700
+    //   duration = leadIn(500) + hold(1800) + leadOut(500) = 2800
+    //   end = 1700 + 2800 = 4500
+    //
+    // B starts (1700) and ends (4500) strictly inside A's span
+    // (1500-5200) — genuine containment, not just a trailing overlap.
+    // The merge threshold is trivially cleared (gap is deeply negative),
+    // so the two collapse into one region. The container (A) ends later,
+    // so the merged region must end at A's end (5200) and carry A's exit
+    // ramp (600ms) — not B's (500ms), even though B is `r` in the merge
+    // loop.
+    final rec = _rec([
+      ..._clickAt(atMs: 2000, x: 100, y: 100, state: CursorState.iBeam),
+      ..._clickAt(atMs: 2200, x: 1800, y: 950),
+    ]);
+    final out = detector.detect(
+      cursor: rec,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+    );
+
+    expect(out, hasLength(1));
+    final r = out.single;
+    expect(r.startTime + r.duration, const Duration(milliseconds: 5200),
+        reason: "merge must not shrink the containing region's span");
+    expect(r.exitDuration, const Duration(milliseconds: 600),
+        reason: "the exit ramp belongs to the later-ending member (A's "
+            "textEntry ramp), not the contained one (B's click ramp)");
+  });
+
   test('regions exactly at the threshold do not merge', () {
     // Regions run click−500 to click+2300, so clicks 3800ms apart leave a
     // gap of exactly 1000ms — equal to the 500+500 ramp cost. The rule

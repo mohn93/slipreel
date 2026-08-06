@@ -321,9 +321,15 @@ class AutoZoomDetector {
         continue;
       }
 
-      final end = (r.startTime + r.duration) > prevEnd
-          ? r.startTime + r.duration
-          : prevEnd;
+      final rEnd = r.startTime + r.duration;
+      // `r` can end before `prev` does when it is fully contained inside
+      // the accumulated region (a short region starting and ending within
+      // a long one). `end` and `exitDuration` must come from whichever
+      // region actually ends later — the exit ramp belongs to the member
+      // that finishes last, not to whichever member happens to be `r`.
+      final prevEndsLater = prevEnd >= rEnd;
+      final end = prevEndsLater ? prevEnd : rEnd;
+      final exitDuration = prevEndsLater ? prev.exitDuration : r.exitDuration;
       // A merged region always follows (see the class doc above), so it has
       // no union to frame — it tracks the cursor. The "widest member wins"
       // rule only protects a static union, which makes it anchored-only;
@@ -334,7 +340,7 @@ class AutoZoomDetector {
       final union = prev.rect.expandToInclude(r.rect);
       out[out.length - 1] = prev.copyWith(
         duration: end - prev.startTime,
-        exitDuration: r.exitDuration,
+        exitDuration: exitDuration,
         zoomLevel: zoom,
         followCursor: true,
         // Unused while following, but it must stay valid and consistent
