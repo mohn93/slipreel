@@ -11,6 +11,7 @@ import '../models/device_frame.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
 import '../rendering/output_canvas_resolver.dart';
+import '../rendering/motion_tuning.dart';
 import '../state/clip_slice.dart';
 import '../state/editor_project_state.dart';
 import '../utils/app_logger.dart';
@@ -52,6 +53,7 @@ class GifExportPipeline {
     required this.projectState,
     required this.settings,
     this.deviceFrameCatalog,
+    this.motionTuning = MotionTuning.defaults,
   }) {
     if (settings.format != ExportFormat.gif) {
       throw ArgumentError.value(
@@ -73,6 +75,7 @@ class GifExportPipeline {
   /// instances (pass 1 + pass 2). Ensures the GIF output matches the
   /// editor preview when a device frame is active.
   final DeviceFrameCatalog? deviceFrameCatalog;
+  final MotionTuning motionTuning;
 
   // Holds the directory created for the palette temp file so we can
   // delete it recursively in the finally block (fixes the dir-leak that
@@ -147,254 +150,291 @@ class GifExportPipeline {
 
     try {
       try {
-      final compositeSw1 = Stopwatch();
-      var pass1Frames = 0;
+        final compositeSw1 = Stopwatch();
+        var pass1Frames = 0;
 
-      // Pass 1: decode + compose → ffmpeg palettegen → palette.png.
-      // The compositor renders each frame at its full framed size; ffmpeg
-      // then scales and generates the optimum palette from all frames.
-      final compositor1 = InProcessExportCompositor(FrameCompositor(
-        projectState: projectState,
-        cursorRecording: cursorRecording,
-        metadata: sourceMetadata,
-        videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
-        fps: fps,
-        deviceFrameCatalog: deviceFrameCatalog,
-      ));
+        // Pass 1: decode + compose → ffmpeg palettegen → palette.png.
+        // The compositor renders each frame at its full framed size; ffmpeg
+        // then scales and generates the optimum palette from all frames.
+        final compositor1 = InProcessExportCompositor(
+          FrameCompositor(
+            projectState: projectState,
+            cursorRecording: cursorRecording,
+            metadata: sourceMetadata,
+            videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
+            fps: fps,
+            deviceFrameCatalog: deviceFrameCatalog,
+            motionTuning: motionTuning,
+          ),
+        );
 
-      final pass1FilterComplex = buildGifPass1FilterComplex(
-        videoGraph: graph,
-        outWidth: outWidth,
-        outHeight: outHeight,
-        paletteSettings: paletteSettings,
-      );
-      final pass1Args = [
-        '-loglevel', 'error',
-        '-y',
-        '-f', 'rawvideo',
-        '-pix_fmt', 'rgba',
-        '-s', '${compositor1.totalSize.width.toInt()}x${compositor1.totalSize.height.toInt()}',
-        '-r', '$fps',
-        '-i', '-',
-        '-filter_complex', pass1FilterComplex,
-        '-map', '[outpal]',
-        palettePath,
-      ];
-      AppLogger.ffmpeg.d('gif pass1: $ffmpegBin ${pass1Args.join(" ")}');
+        final pass1FilterComplex = buildGifPass1FilterComplex(
+          videoGraph: graph,
+          outWidth: outWidth,
+          outHeight: outHeight,
+          paletteSettings: paletteSettings,
+        );
+        final pass1Args = [
+          '-loglevel',
+          'error',
+          '-y',
+          '-f',
+          'rawvideo',
+          '-pix_fmt',
+          'rgba',
+          '-s',
+          '${compositor1.totalSize.width.toInt()}x${compositor1.totalSize.height.toInt()}',
+          '-r',
+          '$fps',
+          '-i',
+          '-',
+          '-filter_complex',
+          pass1FilterComplex,
+          '-map',
+          '[outpal]',
+          palettePath,
+        ];
+        AppLogger.ffmpeg.d('gif pass1: $ffmpegBin ${pass1Args.join(" ")}');
 
-      final proc1 = await Process.start(ffmpegBin, pass1Args);
-      _activeProc = proc1;
-      final stderr1Buffer = StringBuffer();
-      final stderr1Done = proc1.stderr
-          .transform(const SystemEncoding().decoder)
-          .forEach(stderr1Buffer.write)
-          .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
+        final proc1 = await Process.start(ffmpegBin, pass1Args);
+        _activeProc = proc1;
+        final stderr1Buffer = StringBuffer();
+        final stderr1Done = proc1.stderr
+            .transform(const SystemEncoding().decoder)
+            .forEach(stderr1Buffer.write)
+            .catchError(
+              (_) {},
+            ); // stderr is diagnostic only; never let it go unhandled
 
-      final decoder1 = FfmpegDecoder(
-        inputPath: sourcePath,
-        width: srcWidth,
-        height: srcHeight,
-        cfrFps: fps,
-      );
-      _activeDecoder = decoder1;
+        final decoder1 = FfmpegDecoder(
+          inputPath: sourcePath,
+          width: srcWidth,
+          height: srcHeight,
+          cfrFps: fps,
+        );
+        _activeDecoder = decoder1;
 
-      var pass1StdinClosed = false;
-      try {
-        var index = 0;
-        await for (final raw in decoder1.frames()) {
-          if (cancelToken?.isCancelled ?? false) {
-            throw const ExportCancelledException();
-          }
-          // Decoder emits all source frames at source-time; per-slice
-          // trimming happens inside the filter_complex via per-slice
-          // `trim=trimStart:trimEnd` nodes built by the N-slice helper.
-          final tsMicros = (1000000 * index) ~/ fps;
-          index++;
-          compositeSw1.start();
-          final composed = await compositor1.compose(
-            bgra: raw,
-            position: Duration(microseconds: tsMicros),
-          );
-          compositeSw1.stop();
-          if (pass1StdinClosed) continue;
-          try {
-            proc1.stdin.add(composed);
-            await proc1.stdin.flush();
-          } on SocketException {
-            // ffmpeg closed stdin (filter trim satisfied, palettegen done).
-            // Same cooperative-exit logic as ExportPipeline. Stop pushing
-            // frames but keep the loop alive so the decoder drains.
-            pass1StdinClosed = true;
-            decoder1.kill();
-            continue;
-          } on FileSystemException {
-            pass1StdinClosed = true;
-            decoder1.kill();
-            continue;
-          }
-          pass1Frames++;
-          if (onProgress != null && expectedFrames != null && expectedFrames > 0) {
-            onProgress((pass1Frames / expectedFrames * 0.5).clamp(0.0, 0.5));
-          }
-        }
-      } finally {
-        await compositor1.dispose();
-        if (!pass1StdinClosed) {
-          try {
-            await proc1.stdin.close();
-          } catch (_) {
-            // ffmpeg already closed its end; nothing to do.
-          }
-        }
-      }
-
-      final exit1 = await proc1.exitCode;
-      await stderr1Done;
-      if (exit1 != 0) {
-        throw Exception('GIF pass 1 (palettegen) exited $exit1: $stderr1Buffer');
-      }
-
-      // Pass 2: decode + compose → ffmpeg paletteuse → output.gif.
-      // A fresh compositor is required so animation controllers start from
-      // t=0 and produce the exact same frames that pass 1 sent to palettegen.
-      final compositeSw2 = Stopwatch();
-      var pass2Frames = 0;
-
-      final compositor2 = InProcessExportCompositor(FrameCompositor(
-        projectState: projectState,
-        cursorRecording: cursorRecording,
-        metadata: sourceMetadata,
-        videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
-        fps: fps,
-        deviceFrameCatalog: deviceFrameCatalog,
-      ));
-
-      final pass2FilterComplex = buildGifPass2FilterComplex(
-        videoGraph: graph,
-        outWidth: outWidth,
-        outHeight: outHeight,
-        paletteSettings: paletteSettings,
-      );
-      final pass2Args = [
-        '-loglevel', 'error',
-        '-y',
-        '-f', 'rawvideo',
-        '-pix_fmt', 'rgba',
-        '-s', '${compositor2.totalSize.width.toInt()}x${compositor2.totalSize.height.toInt()}',
-        '-r', '$fps',
-        '-i', '-',
-        '-i', palettePath,
-        '-filter_complex', pass2FilterComplex,
-        '-map', '[gifout]',
-        '-loop', '0',
-        outputPath,
-      ];
-      AppLogger.ffmpeg.d('gif pass2: $ffmpegBin ${pass2Args.join(" ")}');
-
-      final proc2 = await Process.start(ffmpegBin, pass2Args);
-      _activeProc = proc2;
-      final stderr2Buffer = StringBuffer();
-      final stderr2Done = proc2.stderr
-          .transform(const SystemEncoding().decoder)
-          .forEach(stderr2Buffer.write)
-          .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
-
-      final decoder2 = FfmpegDecoder(
-        inputPath: sourcePath,
-        width: srcWidth,
-        height: srcHeight,
-        cfrFps: fps,
-      );
-      _activeDecoder = decoder2;
-
-      var pass2StdinClosed = false;
-      try {
+        var pass1StdinClosed = false;
         try {
           var index = 0;
-          await for (final raw in decoder2.frames()) {
+          await for (final raw in decoder1.frames()) {
             if (cancelToken?.isCancelled ?? false) {
               throw const ExportCancelledException();
             }
+            // Decoder emits all source frames at source-time; per-slice
+            // trimming happens inside the filter_complex via per-slice
+            // `trim=trimStart:trimEnd` nodes built by the N-slice helper.
             final tsMicros = (1000000 * index) ~/ fps;
             index++;
-            compositeSw2.start();
-            final composed = await compositor2.compose(
+            compositeSw1.start();
+            final composed = await compositor1.compose(
               bgra: raw,
               position: Duration(microseconds: tsMicros),
             );
-            compositeSw2.stop();
-            if (pass2StdinClosed) continue;
+            compositeSw1.stop();
+            if (pass1StdinClosed) continue;
             try {
-              proc2.stdin.add(composed);
-              await proc2.stdin.flush();
+              proc1.stdin.add(composed);
+              await proc1.stdin.flush();
             } on SocketException {
-              pass2StdinClosed = true;
-              decoder2.kill();
+              // ffmpeg closed stdin (filter trim satisfied, palettegen done).
+              // Same cooperative-exit logic as ExportPipeline. Stop pushing
+              // frames but keep the loop alive so the decoder drains.
+              pass1StdinClosed = true;
+              decoder1.kill();
               continue;
             } on FileSystemException {
-              pass2StdinClosed = true;
-              decoder2.kill();
+              pass1StdinClosed = true;
+              decoder1.kill();
               continue;
             }
-            pass2Frames++;
-            if (onProgress != null && expectedFrames != null && expectedFrames > 0) {
-              onProgress(
-                  (0.5 + pass2Frames / expectedFrames * 0.5).clamp(0.5, 1.0));
+            pass1Frames++;
+            if (onProgress != null &&
+                expectedFrames != null &&
+                expectedFrames > 0) {
+              onProgress((pass1Frames / expectedFrames * 0.5).clamp(0.0, 0.5));
             }
           }
         } finally {
-          await compositor2.dispose();
-          if (!pass2StdinClosed) {
+          await compositor1.dispose();
+          if (!pass1StdinClosed) {
             try {
-              await proc2.stdin.close();
+              await proc1.stdin.close();
             } catch (_) {
               // ffmpeg already closed its end; nothing to do.
             }
           }
         }
 
-        final exit2 = await proc2.exitCode;
-        await stderr2Done;
-        if (exit2 != 0) {
-          throw Exception('GIF pass 2 (paletteuse) exited $exit2: $stderr2Buffer');
+        final exit1 = await proc1.exitCode;
+        await stderr1Done;
+        if (exit1 != 0) {
+          throw Exception(
+            'GIF pass 1 (palettegen) exited $exit1: $stderr1Buffer',
+          );
         }
-      } catch (e) {
-        // Pass 2 failed: remove the partial output so callers cannot
-        // mistake an incomplete file for a successful export.
-        if (await File(outputPath).exists()) {
+
+        // Pass 2: decode + compose → ffmpeg paletteuse → output.gif.
+        // A fresh compositor is required so animation controllers start from
+        // t=0 and produce the exact same frames that pass 1 sent to palettegen.
+        final compositeSw2 = Stopwatch();
+        var pass2Frames = 0;
+
+        final compositor2 = InProcessExportCompositor(
+          FrameCompositor(
+            projectState: projectState,
+            cursorRecording: cursorRecording,
+            metadata: sourceMetadata,
+            videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
+            fps: fps,
+            deviceFrameCatalog: deviceFrameCatalog,
+            motionTuning: motionTuning,
+          ),
+        );
+
+        final pass2FilterComplex = buildGifPass2FilterComplex(
+          videoGraph: graph,
+          outWidth: outWidth,
+          outHeight: outHeight,
+          paletteSettings: paletteSettings,
+        );
+        final pass2Args = [
+          '-loglevel',
+          'error',
+          '-y',
+          '-f',
+          'rawvideo',
+          '-pix_fmt',
+          'rgba',
+          '-s',
+          '${compositor2.totalSize.width.toInt()}x${compositor2.totalSize.height.toInt()}',
+          '-r',
+          '$fps',
+          '-i',
+          '-',
+          '-i',
+          palettePath,
+          '-filter_complex',
+          pass2FilterComplex,
+          '-map',
+          '[gifout]',
+          '-loop',
+          '0',
+          outputPath,
+        ];
+        AppLogger.ffmpeg.d('gif pass2: $ffmpegBin ${pass2Args.join(" ")}');
+
+        final proc2 = await Process.start(ffmpegBin, pass2Args);
+        _activeProc = proc2;
+        final stderr2Buffer = StringBuffer();
+        final stderr2Done = proc2.stderr
+            .transform(const SystemEncoding().decoder)
+            .forEach(stderr2Buffer.write)
+            .catchError(
+              (_) {},
+            ); // stderr is diagnostic only; never let it go unhandled
+
+        final decoder2 = FfmpegDecoder(
+          inputPath: sourcePath,
+          width: srcWidth,
+          height: srcHeight,
+          cfrFps: fps,
+        );
+        _activeDecoder = decoder2;
+
+        var pass2StdinClosed = false;
+        try {
           try {
-            await File(outputPath).delete();
-          } catch (_) {}
+            var index = 0;
+            await for (final raw in decoder2.frames()) {
+              if (cancelToken?.isCancelled ?? false) {
+                throw const ExportCancelledException();
+              }
+              final tsMicros = (1000000 * index) ~/ fps;
+              index++;
+              compositeSw2.start();
+              final composed = await compositor2.compose(
+                bgra: raw,
+                position: Duration(microseconds: tsMicros),
+              );
+              compositeSw2.stop();
+              if (pass2StdinClosed) continue;
+              try {
+                proc2.stdin.add(composed);
+                await proc2.stdin.flush();
+              } on SocketException {
+                pass2StdinClosed = true;
+                decoder2.kill();
+                continue;
+              } on FileSystemException {
+                pass2StdinClosed = true;
+                decoder2.kill();
+                continue;
+              }
+              pass2Frames++;
+              if (onProgress != null &&
+                  expectedFrames != null &&
+                  expectedFrames > 0) {
+                onProgress(
+                  (0.5 + pass2Frames / expectedFrames * 0.5).clamp(0.5, 1.0),
+                );
+              }
+            }
+          } finally {
+            await compositor2.dispose();
+            if (!pass2StdinClosed) {
+              try {
+                await proc2.stdin.close();
+              } catch (_) {
+                // ffmpeg already closed its end; nothing to do.
+              }
+            }
+          }
+
+          final exit2 = await proc2.exitCode;
+          await stderr2Done;
+          if (exit2 != 0) {
+            throw Exception(
+              'GIF pass 2 (paletteuse) exited $exit2: $stderr2Buffer',
+            );
+          }
+        } catch (e) {
+          // Pass 2 failed: remove the partial output so callers cannot
+          // mistake an incomplete file for a successful export.
+          if (await File(outputPath).exists()) {
+            try {
+              await File(outputPath).delete();
+            } catch (_) {}
+          }
+          rethrow;
         }
-        rethrow;
-      }
 
-      if (onProgress != null) onProgress(1.0);
+        if (onProgress != null) onProgress(1.0);
 
-      wallSw.stop();
-      final wallSec = wallSw.elapsedMilliseconds / 1000.0;
-      final totalFrames = pass2Frames;
-      final inputDuration = totalFrames > 0 ? totalFrames / fps : 0.0;
-      final outputBytes = await _fileLength(outputPath);
+        wallSw.stop();
+        final wallSec = wallSw.elapsedMilliseconds / 1000.0;
+        final totalFrames = pass2Frames;
+        final inputDuration = totalFrames > 0 ? totalFrames / fps : 0.0;
+        final outputBytes = await _fileLength(outputPath);
 
-      final compositeMsPerFrame = totalFrames > 0
-          ? (compositeSw1.elapsedMilliseconds +
-                  compositeSw2.elapsedMilliseconds) /
-              (totalFrames * 2)
-          : 0.0;
+        final compositeMsPerFrame = totalFrames > 0
+            ? (compositeSw1.elapsedMilliseconds +
+                      compositeSw2.elapsedMilliseconds) /
+                  (totalFrames * 2)
+            : 0.0;
 
-      final summary = ExportPerfSummary(
-        inputDurationSeconds: inputDuration,
-        wallTimeSeconds: wallSec,
-        decodeMsPerFrame: 0,
-        compositeMsPerFrame: compositeMsPerFrame,
-        encodeMsPerFrame: 0,
-        outputBytes: outputBytes,
-        outputCodec: 'gif',
-        usedHardwareEncoder: false,
-      );
-      AppLogger.ffmpeg.i(summary.format());
-      return summary;
+        final summary = ExportPerfSummary(
+          inputDurationSeconds: inputDuration,
+          wallTimeSeconds: wallSec,
+          decodeMsPerFrame: 0,
+          compositeMsPerFrame: compositeMsPerFrame,
+          encodeMsPerFrame: 0,
+          outputBytes: outputBytes,
+          outputCodec: 'gif',
+          usedHardwareEncoder: false,
+        );
+        AppLogger.ffmpeg.i(summary.format());
+        return summary;
       } catch (_) {
         // Best-effort: remove any partial output so a cancelled/failed GIF
         // isn't mistaken for a real export.
@@ -465,9 +505,7 @@ EditorProjectState _ensureSlices(
       : const Duration(milliseconds: 1);
   return state.copyWith(
     timeline: state.timeline.copyWith(
-      clips: [
-        ClipSlice(cutStart: Duration.zero, cutEnd: span),
-      ],
+      clips: [ClipSlice(cutStart: Duration.zero, cutEnd: span)],
     ),
   );
 }

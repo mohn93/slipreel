@@ -9,16 +9,16 @@ ClipSlice _slice({
   int? ts,
   int? te,
   double speed = 1.0,
-}) =>
-    ClipSlice(
-      cutStart: Duration(seconds: cs),
-      cutEnd: Duration(seconds: ce),
-      trimStart: ts == null ? null : Duration(seconds: ts),
-      trimEnd: te == null ? null : Duration(seconds: te),
-      playbackSpeed: speed,
-    );
+}) => ClipSlice(
+  cutStart: Duration(seconds: cs),
+  cutEnd: Duration(seconds: ce),
+  trimStart: ts == null ? null : Duration(seconds: ts),
+  trimEnd: te == null ? null : Duration(seconds: te),
+  playbackSpeed: speed,
+);
 
 Duration _s(int s) => Duration(seconds: s);
+Duration _ms(int ms) => Duration(milliseconds: ms);
 
 void main() {
   group('totalEditedDuration', () {
@@ -31,31 +31,25 @@ void main() {
     });
 
     test('single trimmed slice -> trim span only', () {
-      expect(
-        totalEditedDuration([_slice(cs: 0, ce: 10, ts: 2, te: 8)]),
-        _s(6),
-      );
+      expect(totalEditedDuration([_slice(cs: 0, ce: 10, ts: 2, te: 8)]), _s(6));
     });
 
     test('two adjacent slices, no trimming -> sum', () {
       expect(
-        totalEditedDuration([
-          _slice(cs: 0, ce: 5),
-          _slice(cs: 5, ce: 12),
-        ]),
+        totalEditedDuration([_slice(cs: 0, ce: 5), _slice(cs: 5, ce: 12)]),
         _s(12),
       );
     });
 
-    test('two slices with a gap in source time -> sum of trims, gap is removed', () {
-      expect(
-        totalEditedDuration([
-          _slice(cs: 0, ce: 5),
-          _slice(cs: 8, ce: 12),
-        ]),
-        _s(9), // 5 + 4
-      );
-    });
+    test(
+      'two slices with a gap in source time -> sum of trims, gap is removed',
+      () {
+        expect(
+          totalEditedDuration([_slice(cs: 0, ce: 5), _slice(cs: 8, ce: 12)]),
+          _s(9), // 5 + 4
+        );
+      },
+    );
   });
 
   group('editedToSource', () {
@@ -74,10 +68,7 @@ void main() {
       // Slice A spans source [0,5], slice B spans source [8,12].
       // Edited time 5s == end of A. Edited time 5.000001s is inside B
       // at source 8.000001s. We test the exact-boundary case as A's end.
-      final clips = [
-        _slice(cs: 0, ce: 5),
-        _slice(cs: 8, ce: 12),
-      ];
+      final clips = [_slice(cs: 0, ce: 5), _slice(cs: 8, ce: 12)];
       expect(editedToSource(clips, _s(5)), _s(5)); // end of A
       expect(editedToSource(clips, _s(6)), _s(9)); // 1s into B
     });
@@ -110,17 +101,17 @@ void main() {
       expect(sourceToEdited(clips, _s(5)), _s(3));
     });
 
-    test('source-position inside removed-left-trim collapses to slice start in edited', () {
-      final clips = [_slice(cs: 0, ce: 10, ts: 3, te: 8)];
-      // source 1s is in the trimmed-away left region -> maps to 0 (start of slice in edited).
-      expect(sourceToEdited(clips, _s(1)), Duration.zero);
-    });
+    test(
+      'source-position inside removed-left-trim collapses to slice start in edited',
+      () {
+        final clips = [_slice(cs: 0, ce: 10, ts: 3, te: 8)];
+        // source 1s is in the trimmed-away left region -> maps to 0 (start of slice in edited).
+        expect(sourceToEdited(clips, _s(1)), Duration.zero);
+      },
+    );
 
     test('after all slices -> total edited duration', () {
-      final clips = [
-        _slice(cs: 0, ce: 5),
-        _slice(cs: 8, ce: 12),
-      ];
+      final clips = [_slice(cs: 0, ce: 5), _slice(cs: 8, ce: 12)];
       expect(sourceToEdited(clips, _s(20)), _s(9));
     });
   });
@@ -156,22 +147,16 @@ void main() {
 
   group('speed-aware helpers', () {
     test('totalEditedDuration halves at 2x speed', () {
-      expect(
-        totalEditedDuration([_slice(cs: 0, ce: 10, speed: 2.0)]),
-        _s(5),
-      );
+      expect(totalEditedDuration([_slice(cs: 0, ce: 10, speed: 2.0)]), _s(5));
     });
 
     test('totalEditedDuration doubles at 0.5x speed', () {
-      expect(
-        totalEditedDuration([_slice(cs: 0, ce: 10, speed: 0.5)]),
-        _s(20),
-      );
+      expect(totalEditedDuration([_slice(cs: 0, ce: 10, speed: 0.5)]), _s(20));
     });
 
     test('totalEditedDuration sums mixed speeds', () {
       final clips = [
-        _slice(cs: 0, ce: 10, speed: 2.0),  // -> 5s edited
+        _slice(cs: 0, ce: 10, speed: 2.0), // -> 5s edited
         _slice(cs: 10, ce: 16, speed: 0.5), // -> 12s edited
       ];
       expect(totalEditedDuration(clips), _s(17));
@@ -187,7 +172,7 @@ void main() {
 
     test('editedToSource walks across speed-adjusted boundary', () {
       final clips = [
-        _slice(cs: 0, ce: 10, speed: 2.0),  // 5s edited
+        _slice(cs: 0, ce: 10, speed: 2.0), // 5s edited
         _slice(cs: 10, ce: 14, speed: 1.0), // 4s edited
       ];
       // Edited 6s = 1s into slice 1 at 1x = source 11s.
@@ -205,6 +190,38 @@ void main() {
       final clips = [_slice(cs: 0, ce: 9, speed: 1.5)]; // 6s edited
       final s = editedToSource(clips, _s(3));
       expect(sourceToEdited(clips, s), _s(3));
+    });
+
+    test('wall lookback traverses contiguous slices at each slice speed', () {
+      final clips = [_slice(cs: 0, ce: 1), _slice(cs: 1, ce: 2, speed: 2.0)];
+
+      expect(
+        sourceTimeBeforeWallDuration(clips, _ms(1050), _ms(100)),
+        _ms(925),
+      );
+    });
+
+    test('wall lookback stops at a hard source cut', () {
+      final clips = [_slice(cs: 0, ce: 1), _slice(cs: 2, ce: 3, speed: 2.0)];
+
+      expect(sourceTimeBeforeWallDuration(clips, _ms(2050), _ms(100)), _s(2));
+    });
+
+    test('contiguous run bounds span splits but stop at source gaps', () {
+      final clips = [
+        _slice(cs: 0, ce: 1),
+        _slice(cs: 1, ce: 2),
+        _slice(cs: 3, ce: 4),
+      ];
+
+      expect(contiguousClipRunBounds(clips, _ms(1500)), (
+        start: Duration.zero,
+        end: _s(2),
+      ));
+      expect(contiguousClipRunBounds(clips, _ms(3500)), (
+        start: _s(3),
+        end: _s(4),
+      ));
     });
   });
 }

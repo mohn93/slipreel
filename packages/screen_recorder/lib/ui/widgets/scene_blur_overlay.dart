@@ -11,9 +11,11 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
+import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 
 /// Wraps a [child] (typically a [PlaybackCanvas]) and renders the
@@ -71,6 +73,38 @@ Widget buildSceneBlurTree({required Widget framedChild, Widget? smearOverlay}) {
   );
 }
 
+/// Production track factory exposed for behavior-level delay parity tests.
+@visibleForTesting
+DeterministicFocalTrack buildSceneBlurFocalTrack({
+  required ZoomRegion region,
+  required CursorRecording cursorRecording,
+  required CursorAnimationConfig cursorAnimationConfig,
+  required CursorPostProcess cursorPostProcess,
+  required Duration cursorDelay,
+  required Size videoSize,
+  required int fps,
+  required Curve screenRampCurve,
+  required double rampDurationScale,
+  required MotionTuning tuning,
+  required List<ClipSlice> clips,
+  required ZoomFraming framing,
+}) {
+  return DeterministicFocalTrack.build(
+    region: region,
+    cursorRecording: cursorRecording,
+    cursorAnimationConfig: cursorAnimationConfig,
+    cursorPostProcess: cursorPostProcess,
+    cursorDelay: cursorDelay,
+    videoSize: videoSize,
+    fps: fps,
+    screenRampCurve: screenRampCurve,
+    rampDurationScale: rampDurationScale,
+    tuning: tuning,
+    clips: clips,
+    framing: framing,
+  );
+}
+
 class SceneBlurOverlay extends StatefulWidget {
   const SceneBlurOverlay({
     super.key,
@@ -88,8 +122,10 @@ class SceneBlurOverlay extends StatefulWidget {
     required this.videoSize,
     this.fps = 60,
     this.cursorPostProcess = CursorPostProcess.none,
+    this.cursorDelay = Duration.zero,
     this.clips = const <ClipSlice>[],
     this.framing,
+    this.motionTuning = MotionTuning.defaults,
   });
 
   /// The widget tree to apply the scene-blur smear to. Usually the
@@ -116,11 +152,20 @@ class SceneBlurOverlay extends StatefulWidget {
   /// [CursorMotionController]. Defaults to 60 fps to match the editor.
   final int fps;
 
+  /// Motion constants used by the deterministic camera replay. This must match
+  /// the inner PlaybackCanvas or the blur signal measures a different camera
+  /// trajectory than the one actually rendered.
+  final MotionTuning motionTuning;
+
   /// Per-project cursor filters. Forwarded to the fallback `cursorAt`
   /// lookup inside this overlay (used for the scene-blur focal at
   /// arbitrary sub-frame times) so the camera doesn't track shakes or
   /// the freeze-zone past the cap.
   final CursorPostProcess cursorPostProcess;
+
+  /// Delay applied to the rendered cursor track. The scene-blur camera replay
+  /// must use the same shifted trajectory as the inner PlaybackCanvas.
+  final Duration cursorDelay;
 
   /// Clip slices for the current timeline. Forwarded to the
   /// [DeterministicFocalTrack] so the scene-blur camera trajectory
@@ -367,7 +412,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
   }
 
   SceneMotionBlurSignal _computeSignal(Duration pos) {
-    final movementExposure = Duration(
+    final movementWallExposure = Duration(
       microseconds:
           (_baseExposureMs *
                   widget.motionBlur *
@@ -375,12 +420,17 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
                   1000)
               .round(),
     );
-    final zoomExposure = Duration(
+    final zoomWallExposure = Duration(
       microseconds:
           (_baseExposureMs * widget.motionBlur * widget.screenZoomBlur * 1000)
               .round(),
     );
 
+    Duration sourceExposure(Duration wallExposure) => widget.clips.isEmpty
+        ? wallExposure
+        : pos - sourceTimeBeforeWallDuration(widget.clips, pos, wallExposure);
+    final movementExposure = sourceExposure(movementWallExposure);
+    final zoomExposure = sourceExposure(zoomWallExposure);
     final signal = SceneMotionBlurController.compute(
       position: pos,
       sampleAt: _approxSampleAt,
@@ -462,24 +512,28 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
           cursorRecording: widget.cursorRecording,
           cursorAnimationConfig: widget.cursorAnimationConfig,
           cursorPostProcess: widget.cursorPostProcess,
+          cursorDelay: widget.cursorDelay,
           videoSize: widget.videoSize,
           fps: widget.fps,
           screenRampCurve: widget.screenAnimationConfig.rampCurve,
           rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
+          tuning: widget.motionTuning,
           clips: widget.clips,
           framing: framing,
         )) {
       return cached;
     }
-    return _focalTrack = DeterministicFocalTrack.build(
+    return _focalTrack = buildSceneBlurFocalTrack(
       region: region,
       cursorRecording: widget.cursorRecording,
       cursorAnimationConfig: widget.cursorAnimationConfig,
       cursorPostProcess: widget.cursorPostProcess,
+      cursorDelay: widget.cursorDelay,
       videoSize: widget.videoSize,
       fps: widget.fps,
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
       rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
+      tuning: widget.motionTuning,
       clips: widget.clips,
       framing: framing,
     );
@@ -527,7 +581,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
       } else {
         final s = cursorAtFiltered(
           widget.cursorRecording,
-          t,
+          t - widget.cursorDelay,
           widget.cursorPostProcess,
         );
         focal = s == null

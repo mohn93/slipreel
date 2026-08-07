@@ -76,12 +76,12 @@ class MotionTuning {
   /// this speed [cursorFeedforwardStrength] applies in full.
   final double cursorFeedforwardFullSpeedPxPerSec;
 
-  /// Edge margin for the keep-in-view safety clamp, as a fraction of the
+  /// Edge margin for the keep-in-view safety barrier, as a fraction of the
   /// VISIBLE VIEWPORT on each axis (the viewport is `canvasDim / zoom`). 0.04 =
   /// the live cursor is kept at least 4% of the viewport in from each edge.
-  /// Small by design: keep-in-view is a last-resort safety that must sit
-  /// OUTSIDE the deadzone (default 0.8) so it does not fight the deadzone/spring
-  /// during normal follow. Applies to every follow mode.
+  /// Small by design: keep-in-view is a last-resort signal that smoothly
+  /// strengthens the same spring. It sits OUTSIDE the deadzone (default 0.8)
+  /// so normal follow motion is unaffected. Applies to every follow mode.
   final double keepInViewEdgeMargin;
 
   /// Base virtual-shutter window for the scene-blur shader before
@@ -162,24 +162,22 @@ class MotionTuning {
       reverseScrubFloor: reverseScrubFloor ?? this.reverseScrubFloor,
       subStepCapMicros: subStepCapMicros ?? this.subStepCapMicros,
       dtCap: dtCap ?? this.dtCap,
-      cursorAtRestPxPerSec:
-          cursorAtRestPxPerSec ?? this.cursorAtRestPxPerSec,
+      cursorAtRestPxPerSec: cursorAtRestPxPerSec ?? this.cursorAtRestPxPerSec,
       cursorVelocityLookback:
           cursorVelocityLookback ?? this.cursorVelocityLookback,
       cursorFeedforwardStrength:
           cursorFeedforwardStrength ?? this.cursorFeedforwardStrength,
-      cursorFeedforwardFadeStartPxPerSec: cursorFeedforwardFadeStartPxPerSec ??
+      cursorFeedforwardFadeStartPxPerSec:
+          cursorFeedforwardFadeStartPxPerSec ??
           this.cursorFeedforwardFadeStartPxPerSec,
-      cursorFeedforwardFullSpeedPxPerSec: cursorFeedforwardFullSpeedPxPerSec ??
+      cursorFeedforwardFullSpeedPxPerSec:
+          cursorFeedforwardFullSpeedPxPerSec ??
           this.cursorFeedforwardFullSpeedPxPerSec,
-      keepInViewEdgeMargin:
-          keepInViewEdgeMargin ?? this.keepInViewEdgeMargin,
-      sceneBlurExposureMs:
-          sceneBlurExposureMs ?? this.sceneBlurExposureMs,
+      keepInViewEdgeMargin: keepInViewEdgeMargin ?? this.keepInViewEdgeMargin,
+      sceneBlurExposureMs: sceneBlurExposureMs ?? this.sceneBlurExposureMs,
       sceneBlurMaxTranslation:
           sceneBlurMaxTranslation ?? this.sceneBlurMaxTranslation,
-      sceneBlurSampleCount:
-          sceneBlurSampleCount ?? this.sceneBlurSampleCount,
+      sceneBlurSampleCount: sceneBlurSampleCount ?? this.sceneBlurSampleCount,
       sceneBlurSpeedCurveExp:
           sceneBlurSpeedCurveExp ?? this.sceneBlurSpeedCurveExp,
       sceneBlurSpeedCurveRefPx:
@@ -190,24 +188,22 @@ class MotionTuning {
   }
 
   Map<String, dynamic> toJson() => {
-        'reverseScrubFloorMs': reverseScrubFloor.inMilliseconds,
-        'subStepCapMicros': subStepCapMicros.inMicroseconds,
-        'dtCapMs': dtCap.inMilliseconds,
-        'cursorAtRestPxPerSec': cursorAtRestPxPerSec,
-        'cursorVelocityLookbackMs': cursorVelocityLookback.inMilliseconds,
-        'cursorFeedforwardStrength': cursorFeedforwardStrength,
-        'cursorFeedforwardFadeStartPxPerSec':
-            cursorFeedforwardFadeStartPxPerSec,
-        'cursorFeedforwardFullSpeedPxPerSec':
-            cursorFeedforwardFullSpeedPxPerSec,
-        'keepInViewEdgeMargin': keepInViewEdgeMargin,
-        'sceneBlurExposureMs': sceneBlurExposureMs,
-        'sceneBlurMaxTranslation': sceneBlurMaxTranslation,
-        'sceneBlurSampleCount': sceneBlurSampleCount,
-        'sceneBlurSpeedCurveExp': sceneBlurSpeedCurveExp,
-        'sceneBlurSpeedCurveRefPx': sceneBlurSpeedCurveRefPx,
-        'pauseStabilizeThresholdMs': pauseStabilizeThreshold.inMilliseconds,
-      };
+    'reverseScrubFloorMs': reverseScrubFloor.inMilliseconds,
+    'subStepCapMicros': subStepCapMicros.inMicroseconds,
+    'dtCapMs': dtCap.inMilliseconds,
+    'cursorAtRestPxPerSec': cursorAtRestPxPerSec,
+    'cursorVelocityLookbackMs': cursorVelocityLookback.inMilliseconds,
+    'cursorFeedforwardStrength': cursorFeedforwardStrength,
+    'cursorFeedforwardFadeStartPxPerSec': cursorFeedforwardFadeStartPxPerSec,
+    'cursorFeedforwardFullSpeedPxPerSec': cursorFeedforwardFullSpeedPxPerSec,
+    'keepInViewEdgeMargin': keepInViewEdgeMargin,
+    'sceneBlurExposureMs': sceneBlurExposureMs,
+    'sceneBlurMaxTranslation': sceneBlurMaxTranslation,
+    'sceneBlurSampleCount': sceneBlurSampleCount,
+    'sceneBlurSpeedCurveExp': sceneBlurSpeedCurveExp,
+    'sceneBlurSpeedCurveRefPx': sceneBlurSpeedCurveRefPx,
+    'pauseStabilizeThresholdMs': pauseStabilizeThreshold.inMilliseconds,
+  };
 
   factory MotionTuning.fromJson(Map<String, dynamic> json) {
     const d = MotionTuning.defaults;
@@ -234,13 +230,19 @@ class MotionTuning {
     }
 
     return MotionTuning(
-      reverseScrubFloor:
-          durationFromMs('reverseScrubFloorMs', d.reverseScrubFloor),
-      subStepCapMicros:
-          durationFromMicros('subStepCapMicros', d.subStepCapMicros),
+      reverseScrubFloor: durationFromMs(
+        'reverseScrubFloorMs',
+        d.reverseScrubFloor,
+      ),
+      subStepCapMicros: durationFromMicros(
+        'subStepCapMicros',
+        d.subStepCapMicros,
+      ),
       dtCap: durationFromMs('dtCapMs', d.dtCap),
-      cursorAtRestPxPerSec:
-          doubleOr('cursorAtRestPxPerSec', d.cursorAtRestPxPerSec),
+      cursorAtRestPxPerSec: doubleOr(
+        'cursorAtRestPxPerSec',
+        d.cursorAtRestPxPerSec,
+      ),
       cursorVelocityLookback: durationFromMs(
         'cursorVelocityLookbackMs',
         d.cursorVelocityLookback,
@@ -257,16 +259,22 @@ class MotionTuning {
         'cursorFeedforwardFullSpeedPxPerSec',
         d.cursorFeedforwardFullSpeedPxPerSec,
       ),
-      keepInViewEdgeMargin:
-          doubleOr('keepInViewEdgeMargin', d.keepInViewEdgeMargin),
-      sceneBlurExposureMs:
-          doubleOr('sceneBlurExposureMs', d.sceneBlurExposureMs),
+      keepInViewEdgeMargin: doubleOr(
+        'keepInViewEdgeMargin',
+        d.keepInViewEdgeMargin,
+      ),
+      sceneBlurExposureMs: doubleOr(
+        'sceneBlurExposureMs',
+        d.sceneBlurExposureMs,
+      ),
       sceneBlurMaxTranslation: doubleOr(
         'sceneBlurMaxTranslation',
         d.sceneBlurMaxTranslation,
       ),
-      sceneBlurSampleCount:
-          intOr('sceneBlurSampleCount', d.sceneBlurSampleCount),
+      sceneBlurSampleCount: intOr(
+        'sceneBlurSampleCount',
+        d.sceneBlurSampleCount,
+      ),
       sceneBlurSpeedCurveExp: doubleOr(
         'sceneBlurSpeedCurveExp',
         d.sceneBlurSpeedCurveExp,

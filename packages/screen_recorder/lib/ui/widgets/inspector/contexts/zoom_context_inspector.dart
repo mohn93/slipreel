@@ -86,6 +86,7 @@ class ZoomContextInspector extends ConsumerWidget {
   });
 
   final ZoomRegion zoom;
+
   /// 1-based label, e.g. "Zoom 1" / "Zoom 2".
   final int zoomNumber;
   final ValueChanged<ZoomRegion> onChanged;
@@ -127,8 +128,9 @@ class ZoomContextInspector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final showPlacement =
         (isDevice || !zoom.followCursor) && !videoSize.isEmpty;
-    final ui.Image? placementFrame =
-        showPlacement ? _watchPlacementFrame(ref) : null;
+    final ui.Image? placementFrame = showPlacement
+        ? _watchPlacementFrame(ref)
+        : null;
     return _ZoomInspectorScaffold(
       header: _Header(
         icon: Icons.zoom_in,
@@ -137,378 +139,385 @@ class ZoomContextInspector extends ConsumerWidget {
         onClose: onClose,
       ),
       children: [
-              if (showPlacement) ...[
-                const Text(
-                  'Placement',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+        if (showPlacement) ...[
+          const Text(
+            'Placement',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isDevice
+                ? 'Auto-zoom and cursor-follow are not available for '
+                      'iPhone/iPad recordings — position the zoom manually.'
+                : 'Drag to set the zoom focal.',
+            style: const TextStyle(color: kInspectorMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          // Real composed-canvas wiring: the geometry, wallpaper and
+          // (optional) device layout/bezel come from `playback_screen`,
+          // resolved the SAME way the live canvas renders, so the picker
+          // box matches the render. When the geometry isn't ready yet
+          // (video not measured / catalog loading), degrade to the
+          // bare-video canvas (canvas == video, no wallpaper layer / no
+          // bezel) — the magnify-in-place box math reduces to the old
+          // bare-video behavior there.
+          ZoomPlacementPicker(
+            videoSize: videoSize,
+            canvasSize: placementGeometry?.canvasSize ?? videoSize,
+            videoRect:
+                placementGeometry?.videoRect ?? (Offset.zero & videoSize),
+            // Null category ⇒ no wallpaper (render draws none); the
+            // picker shows a neutral backdrop to match. The bare-video
+            // fallback (no geometry yet) is also null → neutral.
+            wallpaperCategory: placementGeometry?.wallpaperCategory,
+            wallpaperIndex: placementGeometry?.wallpaperIndex ?? 0,
+            wallpaperSolidColor: placementGeometry?.wallpaperSolidColor,
+            deviceLayout: placementGeometry?.deviceLayout,
+            bezel: placementGeometry?.bezel,
+            rect: zoom.rect,
+            zoomLevel: zoom.zoomLevel,
+            onPreview: (r) => onPlacementPreview?.call(r),
+            onCommit: (r) => onPlacementCommit?.call(r),
+            screenFrame: placementFrame,
+          ),
+          const InspectorSectionDivider(),
+        ],
+        InspectorSlider(
+          label: 'Zoom level',
+          value: zoom.zoomLevel,
+          min: 1,
+          max: 5,
+          onChanged: (v) => onChanged(zoom.copyWith(zoomLevel: v)),
+          onReset: () => onChanged(zoom.copyWith(zoomLevel: 2.0)),
+          canReset: zoom.zoomLevel != 2.0,
+          subtitle: '${zoom.zoomLevel.toStringAsFixed(1)}×',
+        ),
+        const InspectorSectionDivider(),
+        InspectorToggle(
+          label: '3D tilt',
+          subtitle: 'Perspective lean as the zoom plays',
+          value: zoom.tilt.is3D,
+          onChanged: (on) => onChanged(
+            zoom.copyWith(
+              tilt: on
+                  ? (zoom.tilt.is3D
+                        ? zoom.tilt
+                        : const Tilt3D(style: ZoomTiltStyle.subtle))
+                  : const Tilt3D(),
+            ),
+          ),
+        ),
+        if (zoom.tilt.is3D) ...[
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final entry in const [
+                (ZoomTiltStyle.subtle, 'Subtle'),
+                (ZoomTiltStyle.dramatic, 'Dramatic'),
+              ])
+                InspectorChip(
+                  label: entry.$2,
+                  selected: zoom.tilt.style == entry.$1,
+                  dense: true,
+                  onTap: () => onChanged(
+                    zoom.copyWith(tilt: zoom.tilt.copyWith(style: entry.$1)),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  isDevice
-                      ? 'Auto-zoom and cursor-follow are not available for '
-                          'iPhone/iPad recordings — position the zoom manually.'
-                      : 'Drag to set the zoom focal.',
-                  style: const TextStyle(
-                    color: kInspectorMuted,
-                    fontSize: 12,
+            ],
+          ),
+          const SizedBox(height: 16),
+          InspectorCollapsible(
+            title: 'Advanced',
+            child: Column(
+              children: [
+                InspectorSlider(
+                  label: 'Tilt X',
+                  value: zoom.tilt.manualAngleX ?? 0,
+                  min: -20,
+                  max: 20,
+                  onChanged: (v) => onChanged(
+                    zoom.copyWith(tilt: zoom.tilt.copyWith(manualAngleX: v)),
                   ),
-                ),
-                const SizedBox(height: 10),
-                // Real composed-canvas wiring: the geometry, wallpaper and
-                // (optional) device layout/bezel come from `playback_screen`,
-                // resolved the SAME way the live canvas renders, so the picker
-                // box matches the render. When the geometry isn't ready yet
-                // (video not measured / catalog loading), degrade to the
-                // bare-video canvas (canvas == video, no wallpaper layer / no
-                // bezel) — the magnify-in-place box math reduces to the old
-                // bare-video behavior there.
-                ZoomPlacementPicker(
-                  videoSize: videoSize,
-                  canvasSize: placementGeometry?.canvasSize ?? videoSize,
-                  videoRect: placementGeometry?.videoRect ??
-                      (Offset.zero & videoSize),
-                  // Null category ⇒ no wallpaper (render draws none); the
-                  // picker shows a neutral backdrop to match. The bare-video
-                  // fallback (no geometry yet) is also null → neutral.
-                  wallpaperCategory: placementGeometry?.wallpaperCategory,
-                  wallpaperIndex: placementGeometry?.wallpaperIndex ?? 0,
-                  wallpaperSolidColor: placementGeometry?.wallpaperSolidColor,
-                  deviceLayout: placementGeometry?.deviceLayout,
-                  bezel: placementGeometry?.bezel,
-                  rect: zoom.rect,
-                  zoomLevel: zoom.zoomLevel,
-                  onPreview: (r) => onPlacementPreview?.call(r),
-                  onCommit: (r) => onPlacementCommit?.call(r),
-                  screenFrame: placementFrame,
-                ),
-                const InspectorSectionDivider(),
-              ],
-              InspectorSlider(
-                label: 'Zoom level',
-                value: zoom.zoomLevel,
-                min: 1,
-                max: 5,
-                onChanged: (v) =>
-                    onChanged(zoom.copyWith(zoomLevel: v)),
-                onReset: () =>
-                    onChanged(zoom.copyWith(zoomLevel: 2.0)),
-                canReset: zoom.zoomLevel != 2.0,
-                subtitle: '${zoom.zoomLevel.toStringAsFixed(1)}×',
-              ),
-              const InspectorSectionDivider(),
-              InspectorToggle(
-                label: '3D tilt',
-                subtitle: 'Perspective lean as the zoom plays',
-                value: zoom.tilt.is3D,
-                onChanged: (on) => onChanged(zoom.copyWith(
-                  tilt: on
-                      ? (zoom.tilt.is3D
-                          ? zoom.tilt
-                          : const Tilt3D(style: ZoomTiltStyle.subtle))
-                      : const Tilt3D(),
-                )),
-              ),
-              if (zoom.tilt.is3D) ...[
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final entry in const [
-                      (ZoomTiltStyle.subtle, 'Subtle'),
-                      (ZoomTiltStyle.dramatic, 'Dramatic'),
-                    ])
-                      InspectorChip(
-                        label: entry.$2,
-                        selected: zoom.tilt.style == entry.$1,
-                        dense: true,
-                        onTap: () => onChanged(
-                            zoom.copyWith(
-                                tilt: zoom.tilt.copyWith(style: entry.$1))),
+                  onReset: () => onChanged(
+                    zoom.copyWith(
+                      tilt: Tilt3D(
+                        style: zoom.tilt.style,
+                        manualAngleY: zoom.tilt.manualAngleY,
                       ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                InspectorCollapsible(
-                  title: 'Advanced',
-                  child: Column(
-                    children: [
-                      InspectorSlider(
-                        label: 'Tilt X',
-                        value: zoom.tilt.manualAngleX ?? 0,
-                        min: -20,
-                        max: 20,
-                        onChanged: (v) => onChanged(
-                            zoom.copyWith(
-                                tilt: zoom.tilt.copyWith(manualAngleX: v))),
-                        onReset: () => onChanged(zoom.copyWith(
-                            tilt: Tilt3D(
-                                style: zoom.tilt.style,
-                                manualAngleY: zoom.tilt.manualAngleY))),
-                        canReset: zoom.tilt.manualAngleX != null,
-                        subtitle: zoom.tilt.manualAngleX == null
-                            ? 'Auto'
-                            : '${zoom.tilt.manualAngleX!.toStringAsFixed(0)}°',
-                      ),
-                      const SizedBox(height: 16),
-                      InspectorSlider(
-                        label: 'Tilt Y',
-                        value: zoom.tilt.manualAngleY ?? 0,
-                        min: -20,
-                        max: 20,
-                        onChanged: (v) => onChanged(
-                            zoom.copyWith(
-                                tilt: zoom.tilt.copyWith(manualAngleY: v))),
-                        onReset: () => onChanged(zoom.copyWith(
-                            tilt: Tilt3D(
-                                style: zoom.tilt.style,
-                                manualAngleX: zoom.tilt.manualAngleX))),
-                        canReset: zoom.tilt.manualAngleY != null,
-                        subtitle: zoom.tilt.manualAngleY == null
-                            ? 'Auto'
-                            : '${zoom.tilt.manualAngleY!.toStringAsFixed(0)}°',
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              const InspectorSectionDivider(),
-              const InspectorSectionLabel('Movement'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final entry in [
-                    (ZoomMovementKind.none, 'None'),
-                    (ZoomMovementKind.pushIn, 'Push-in'),
-                    (ZoomMovementKind.sweep, 'Sweep'),
-                    // Drift moves the focal — only meaningful for manual
-                    // (in-place) zooms; it would fight the cursor follow.
-                    if (!zoom.followCursor) (ZoomMovementKind.drift, 'Drift'),
-                  ])
-                    InspectorChip(
-                      label: entry.$2,
-                      selected: zoom.movement.kind == entry.$1,
-                      dense: true,
-                      onTap: () => onChanged(zoom.copyWith(
-                          movement: zoom.movement.copyWith(kind: entry.$1))),
                     ),
-                ],
-              ),
-              if (zoom.movement.isActive) ...[
+                  ),
+                  canReset: zoom.tilt.manualAngleX != null,
+                  subtitle: zoom.tilt.manualAngleX == null
+                      ? 'Auto'
+                      : '${zoom.tilt.manualAngleX!.toStringAsFixed(0)}°',
+                ),
                 const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final entry in const [
-                      (ZoomMovementIntensity.subtle, 'Subtle'),
-                      (ZoomMovementIntensity.dramatic, 'Dramatic'),
-                    ])
-                      InspectorChip(
-                        label: entry.$2,
-                        selected: zoom.movement.intensity == entry.$1,
-                        dense: true,
-                        onTap: () => onChanged(zoom.copyWith(
-                            movement:
-                                zoom.movement.copyWith(intensity: entry.$1))),
+                InspectorSlider(
+                  label: 'Tilt Y',
+                  value: zoom.tilt.manualAngleY ?? 0,
+                  min: -20,
+                  max: 20,
+                  onChanged: (v) => onChanged(
+                    zoom.copyWith(tilt: zoom.tilt.copyWith(manualAngleY: v)),
+                  ),
+                  onReset: () => onChanged(
+                    zoom.copyWith(
+                      tilt: Tilt3D(
+                        style: zoom.tilt.style,
+                        manualAngleX: zoom.tilt.manualAngleX,
                       ),
-                  ],
+                    ),
+                  ),
+                  canReset: zoom.tilt.manualAngleY != null,
+                  subtitle: zoom.tilt.manualAngleY == null
+                      ? 'Auto'
+                      : '${zoom.tilt.manualAngleY!.toStringAsFixed(0)}°',
                 ),
               ],
-              const InspectorSectionDivider(),
-              // Debug-only tuning knob for the manual-placement enter-pan
-              // back-load. Per-zoom because the sweet spot depends on this
-              // region's zoom level; the subtitle reads out the
-              // (zoomLevel, backload) pair so the curve can be fit. Only
-              // meaningful for manual placements (followCursor off).
-              if (kDebugMode && !zoom.followCursor) ...[
-                InspectorSlider(
-                  label: 'Pan back-load (debug)',
-                  subtitle: _panBackloadSubtitle(
-                      zoom.zoomLevel, zoom.manualPanBackload),
-                  value: zoom.manualPanBackload ?? 1.0,
-                  min: 0.0,
-                  max: 3.0,
-                  onChanged: (v) =>
-                      onChanged(zoom.copyWith(manualPanBackload: v)),
-                  onReset: () =>
-                      onChanged(zoom.copyWith(clearManualPanBackload: true)),
-                  canReset: zoom.manualPanBackload != null,
-                ),
-                const InspectorSectionDivider(),
-              ],
-              if (!isDevice)
-                InspectorToggle(
-                  label: 'Auto-zoom on cursor',
-                  subtitle:
-                      'Camera follows the recorded cursor through the '
-                      'zoom region. Off pins the focal to the zoom\'s '
-                      'rect center.',
-                  value: zoom.followCursor,
-                  onChanged: (v) =>
-                      onChanged(zoom.copyWith(followCursor: v)),
-                ),
-              if (!isDevice && zoom.followCursor) ...[
-                const SizedBox(height: 16),
-                const Text(
-                  'Follow style',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        const InspectorSectionDivider(),
+        const InspectorSectionLabel('Movement'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final entry in [
+              (ZoomMovementKind.none, 'None'),
+              (ZoomMovementKind.pushIn, 'Push-in'),
+              (ZoomMovementKind.sweep, 'Sweep'),
+              // Drift moves the focal — only meaningful for manual
+              // (in-place) zooms; it would fight the cursor follow.
+              if (!zoom.followCursor) (ZoomMovementKind.drift, 'Drift'),
+            ])
+              InspectorChip(
+                label: entry.$2,
+                selected: zoom.movement.kind == entry.$1,
+                dense: true,
+                onTap: () => onChanged(
+                  zoom.copyWith(
+                    movement: zoom.movement.copyWith(kind: entry.$1),
                   ),
                 ),
-                const SizedBox(height: 8),
-                _FollowModeSegmented(
-                  mode: zoom.followMode,
-                  onChanged: (m) =>
-                      onChanged(zoom.copyWith(followMode: m)),
-                ),
-                if (zoom.followMode == FollowMode.bounded ||
-                    zoom.followMode == FollowMode.predictive) ...[
-                  const SizedBox(height: 16),
-                  InspectorSlider(
-                    label: 'Deadzone size',
-                    subtitle:
-                        '${(zoom.deadzoneRatio * 100).round()}% of '
-                        'the visible viewport. Cursor stays inside → '
-                        'camera holds; outside → camera re-centers. '
-                        'At 100% the deadzone fills the framed area; '
-                        'past 100% it extends beyond the viewport, so '
-                        'the cursor has to wander past the framed area '
-                        'before the camera reacts.',
-                    value: zoom.deadzoneRatio,
-                    min: 0.1,
-                    max: 1.5,
-                    onChanged: (v) =>
-                        onChanged(zoom.copyWith(deadzoneRatio: v)),
-                    onReset: () =>
-                        onChanged(zoom.copyWith(deadzoneRatio: 0.8)),
-                    canReset: (zoom.deadzoneRatio - 0.8).abs() > 1e-6,
-                  ),
-                ],
-                if (zoom.followMode == FollowMode.predictive) ...[
-                  const SizedBox(height: 16),
-                  InspectorSlider(
-                    label: 'Lead time',
-                    subtitle:
-                        '${zoom.predictiveWindow.inMilliseconds} ms — '
-                        'how far ahead the camera aims along the cursor\'s '
-                        'velocity (anticipatory follow).',
-                    value:
-                        zoom.predictiveWindow.inMilliseconds.toDouble(),
-                    min: 80,
-                    max: 250,
-                    onChanged: (v) => onChanged(zoom.copyWith(
-                        predictiveWindow:
-                            Duration(milliseconds: v.toInt()))),
-                    onReset: () => onChanged(zoom.copyWith(
-                        predictiveWindow:
-                            const Duration(milliseconds: 150))),
-                    canReset: zoom.predictiveWindow !=
-                        const Duration(milliseconds: 150),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                InspectorSlider(
-                  label: 'Follow duration',
-                  subtitle:
-                      '${zoom.followDuration.inMilliseconds} ms for the '
-                      'camera to settle on a new target',
-                  value:
-                      zoom.followDuration.inMilliseconds.toDouble(),
-                  min: 100,
-                  max: 1500,
-                  onChanged: (v) => onChanged(zoom.copyWith(
-                      followDuration:
-                          Duration(milliseconds: v.toInt()))),
-                  onReset: () => onChanged(zoom.copyWith(
-                      followDuration: const Duration(milliseconds: 700))),
-                  canReset: zoom.followDuration !=
-                      const Duration(milliseconds: 700),
-                ),
-              ],
-              // Enter / Exit ramp tuning is a developer-only knob now:
-              // the on-pill divider handles are gone, ramps scale
-              // proportionally with the pill's width, and stored
-              // values are only ever overridden manually when tuning
-              // the animation feel. Production users never see these
-              // sliders. The whole block (including its surrounding
-              // dividers) is stripped at release-build tree-shake via
-              // `kDebugMode`.
-              if (kDebugMode) ...[
-                const InspectorSectionDivider(),
-                InspectorSlider(
-                  label: 'Enter duration (debug)',
-                  subtitle:
-                      '${zoom.enterDuration.inMilliseconds} ms ramp-in',
-                  value:
-                      zoom.enterDuration.inMilliseconds.toDouble(),
-                  min: 0,
-                  max: 1500,
-                  onChanged: (v) => onChanged(zoom.copyWith(
-                      enterDuration:
-                          Duration(milliseconds: v.toInt()))),
-                  onReset: () => onChanged(zoom.copyWith(
-                      enterDuration: const Duration(milliseconds: 500))),
-                  canReset:
-                      zoom.enterDuration != const Duration(milliseconds: 500),
-                ),
-                const SizedBox(height: 24),
-                InspectorSlider(
-                  label: 'Exit duration (debug)',
-                  subtitle:
-                      '${zoom.exitDuration.inMilliseconds} ms ramp-out',
-                  value:
-                      zoom.exitDuration.inMilliseconds.toDouble(),
-                  min: 0,
-                  max: 1500,
-                  onChanged: (v) => onChanged(zoom.copyWith(
-                      exitDuration:
-                          Duration(milliseconds: v.toInt()))),
-                  onReset: () => onChanged(zoom.copyWith(
-                      exitDuration: const Duration(milliseconds: 500))),
-                  canReset:
-                      zoom.exitDuration != const Duration(milliseconds: 500),
-                ),
-              ],
-              const InspectorSectionDivider(),
-              InspectorToggle(
-                label: 'Animation override',
-                subtitle: 'Use a custom curve for this region\'s ramp.',
-                value: zoom.rampCurveOverride != null,
-                onChanged: (v) {
-                  if (v) {
-                    onCurveOverrideChanged(
-                      const CubicBezierCurve(
-                          x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0),
-                    );
-                  } else {
-                    onCurveOverrideChanged(null);
-                  }
-                },
               ),
-              if (zoom.rampCurveOverride != null)
-                CurveEditor(
-                  curve: zoom.rampCurveOverride!,
-                  duration: Duration.zero, // unused — slider hidden
-                  durationLabel: '',
-                  durationMin: Duration.zero,
-                  durationMax: Duration.zero,
-                  onCurveChanged: onCurveOverrideChanged,
-                  onDurationChanged: (_) {},
-                  library: curveLibrary,
-                  showDurationSlider: false,
+          ],
+        ),
+        if (zoom.movement.isActive) ...[
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final entry in const [
+                (ZoomMovementIntensity.subtle, 'Subtle'),
+                (ZoomMovementIntensity.dramatic, 'Dramatic'),
+              ])
+                InspectorChip(
+                  label: entry.$2,
+                  selected: zoom.movement.intensity == entry.$1,
+                  dense: true,
+                  onTap: () => onChanged(
+                    zoom.copyWith(
+                      movement: zoom.movement.copyWith(intensity: entry.$1),
+                    ),
+                  ),
                 ),
-              const InspectorSectionDivider(),
-              _DeleteButton(onPressed: onDelete),
-              const SizedBox(height: 24),
+            ],
+          ),
+        ],
+        const InspectorSectionDivider(),
+        // Debug-only tuning knob for the manual-placement enter-pan
+        // back-load. Per-zoom because the sweet spot depends on this
+        // region's zoom level; the subtitle reads out the
+        // (zoomLevel, backload) pair so the curve can be fit. Only
+        // meaningful for manual placements (followCursor off).
+        if (kDebugMode && !zoom.followCursor) ...[
+          InspectorSlider(
+            label: 'Pan back-load (debug)',
+            subtitle: _panBackloadSubtitle(
+              zoom.zoomLevel,
+              zoom.manualPanBackload,
+            ),
+            value: zoom.manualPanBackload ?? 1.0,
+            min: 0.0,
+            max: 3.0,
+            onChanged: (v) => onChanged(zoom.copyWith(manualPanBackload: v)),
+            onReset: () =>
+                onChanged(zoom.copyWith(clearManualPanBackload: true)),
+            canReset: zoom.manualPanBackload != null,
+          ),
+          const InspectorSectionDivider(),
+        ],
+        if (!isDevice)
+          InspectorToggle(
+            label: 'Auto-zoom on cursor',
+            subtitle:
+                'Camera follows the recorded cursor through the '
+                'zoom region. Off pins the focal to the zoom\'s '
+                'rect center.',
+            value: zoom.followCursor,
+            onChanged: (v) => onChanged(zoom.copyWith(followCursor: v)),
+          ),
+        if (!isDevice && zoom.followCursor) ...[
+          const SizedBox(height: 16),
+          const Text(
+            'Follow style',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _FollowModeSegmented(
+            mode: zoom.followMode,
+            onChanged: (m) => onChanged(zoom.copyWith(followMode: m)),
+          ),
+          if (zoom.followMode == FollowMode.bounded ||
+              zoom.followMode == FollowMode.predictive) ...[
+            const SizedBox(height: 16),
+            InspectorSlider(
+              label: 'Deadzone size',
+              subtitle:
+                  '${(zoom.deadzoneRatio * 100).round()}% of '
+                  'the visible viewport. Cursor stays inside → '
+                  'camera holds; outside → camera re-centers. '
+                  'At 100% the deadzone fills the framed area; '
+                  'past 100% it extends beyond the viewport, so '
+                  'the cursor has to wander past the framed area '
+                  'before the camera reacts.',
+              value: zoom.deadzoneRatio,
+              min: 0.1,
+              max: 1.5,
+              onChanged: (v) => onChanged(zoom.copyWith(deadzoneRatio: v)),
+              onReset: () => onChanged(zoom.copyWith(deadzoneRatio: 0.8)),
+              canReset: (zoom.deadzoneRatio - 0.8).abs() > 1e-6,
+            ),
+          ],
+          if (zoom.followMode == FollowMode.predictive) ...[
+            const SizedBox(height: 16),
+            InspectorSlider(
+              label: 'Lead time',
+              subtitle:
+                  '${zoom.predictiveWindow.inMilliseconds} ms — '
+                  'how far ahead the camera aims along the cursor\'s '
+                  'velocity (anticipatory follow).',
+              value: zoom.predictiveWindow.inMilliseconds.toDouble(),
+              min: 80,
+              max: 250,
+              onChanged: (v) => onChanged(
+                zoom.copyWith(
+                  predictiveWindow: Duration(milliseconds: v.toInt()),
+                ),
+              ),
+              onReset: () => onChanged(
+                zoom.copyWith(
+                  predictiveWindow: const Duration(milliseconds: 150),
+                ),
+              ),
+              canReset:
+                  zoom.predictiveWindow != const Duration(milliseconds: 150),
+            ),
+          ],
+          const SizedBox(height: 24),
+          InspectorSlider(
+            label: 'Follow duration',
+            subtitle:
+                '${zoom.followDuration.inMilliseconds} ms for the '
+                'camera to settle on a new target',
+            value: zoom.followDuration.inMilliseconds.toDouble(),
+            min: 100,
+            // Migrated projects can legitimately exceed the previous 1500ms
+            // ceiling: preserving the legacy ω=2/T camera feel maps the old
+            // maximum to ~3558ms under truthful T95 semantics.
+            max: 4000,
+            onChanged: (v) => onChanged(
+              zoom.copyWith(followDuration: Duration(milliseconds: v.toInt())),
+            ),
+            onReset: () => onChanged(
+              zoom.copyWith(followDuration: const Duration(milliseconds: 850)),
+            ),
+            canReset: zoom.followDuration != const Duration(milliseconds: 850),
+          ),
+        ],
+        // Enter / Exit ramp tuning is a developer-only knob now:
+        // the on-pill divider handles are gone, ramps scale
+        // proportionally with the pill's width, and stored
+        // values are only ever overridden manually when tuning
+        // the animation feel. Production users never see these
+        // sliders. The whole block (including its surrounding
+        // dividers) is stripped at release-build tree-shake via
+        // `kDebugMode`.
+        if (kDebugMode) ...[
+          const InspectorSectionDivider(),
+          InspectorSlider(
+            label: 'Enter duration (debug)',
+            subtitle: '${zoom.enterDuration.inMilliseconds} ms ramp-in',
+            value: zoom.enterDuration.inMilliseconds.toDouble(),
+            min: 0,
+            max: 1500,
+            onChanged: (v) => onChanged(
+              zoom.copyWith(enterDuration: Duration(milliseconds: v.toInt())),
+            ),
+            onReset: () => onChanged(
+              zoom.copyWith(enterDuration: const Duration(milliseconds: 500)),
+            ),
+            canReset: zoom.enterDuration != const Duration(milliseconds: 500),
+          ),
+          const SizedBox(height: 24),
+          InspectorSlider(
+            label: 'Exit duration (debug)',
+            subtitle: '${zoom.exitDuration.inMilliseconds} ms ramp-out',
+            value: zoom.exitDuration.inMilliseconds.toDouble(),
+            min: 0,
+            max: 1500,
+            onChanged: (v) => onChanged(
+              zoom.copyWith(exitDuration: Duration(milliseconds: v.toInt())),
+            ),
+            onReset: () => onChanged(
+              zoom.copyWith(exitDuration: const Duration(milliseconds: 500)),
+            ),
+            canReset: zoom.exitDuration != const Duration(milliseconds: 500),
+          ),
+        ],
+        const InspectorSectionDivider(),
+        InspectorToggle(
+          label: 'Animation override',
+          subtitle: 'Use a custom curve for this region\'s ramp.',
+          value: zoom.rampCurveOverride != null,
+          onChanged: (v) {
+            if (v) {
+              onCurveOverrideChanged(
+                const CubicBezierCurve(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0),
+              );
+            } else {
+              onCurveOverrideChanged(null);
+            }
+          },
+        ),
+        if (zoom.rampCurveOverride != null)
+          CurveEditor(
+            curve: zoom.rampCurveOverride!,
+            duration: Duration.zero, // unused — slider hidden
+            durationLabel: '',
+            durationMin: Duration.zero,
+            durationMax: Duration.zero,
+            onCurveChanged: onCurveOverrideChanged,
+            onDurationChanged: (_) {},
+            library: curveLibrary,
+            showDurationSlider: false,
+          ),
+        const InspectorSectionDivider(),
+        _DeleteButton(onPressed: onDelete),
+        const SizedBox(height: 24),
       ],
     );
   }
@@ -529,9 +538,11 @@ class ZoomContextInspector extends ConsumerWidget {
       tw = (640 * aspect).round().clamp(1, 4096);
     }
     return ref
-        .watch(frameExtractorProvider(
-          FrameKey(videoPath, zoom.startTime.inMicroseconds, tw, th),
-        ))
+        .watch(
+          frameExtractorProvider(
+            FrameKey(videoPath, zoom.startTime.inMicroseconds, tw, th),
+          ),
+        )
         .valueOrNull;
   }
 
@@ -541,6 +552,7 @@ class ZoomContextInspector extends ConsumerWidget {
       final s = (d.inSeconds % 60).toString().padLeft(2, '0');
       return '$m:$s';
     }
+
     return '${fmt(z.startTime)} → ${fmt(z.endTime)}';
   }
 
@@ -550,8 +562,7 @@ class ZoomContextInspector extends ConsumerWidget {
   /// `null` ⇒ the zoom-level-aware default fit (shown as "(auto)").
   static String _panBackloadSubtitle(double zoomLevel, double? v) {
     final z = '${zoomLevel.toStringAsFixed(2)}×';
-    final effective =
-        v ?? ZoomFocalController.manualBackloadForZoom(zoomLevel);
+    final effective = v ?? ZoomFocalController.manualBackloadForZoom(zoomLevel);
     final n = '${effective.toStringAsFixed(2)}×';
     final feel = (effective - 1.0).abs() < 0.01
         ? 'lock-step'
@@ -568,10 +579,7 @@ class ZoomContextInspector extends ConsumerWidget {
 /// bar). A subtle divider fades in under the header once the list is scrolled
 /// away from the top, signalling there's more content above.
 class _ZoomInspectorScaffold extends StatefulWidget {
-  const _ZoomInspectorScaffold({
-    required this.header,
-    required this.children,
-  });
+  const _ZoomInspectorScaffold({required this.header, required this.children});
 
   final Widget header;
   final List<Widget> children;
@@ -680,10 +688,7 @@ class _Header extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: const TextStyle(
-                  color: kInspectorMuted,
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: kInspectorMuted, fontSize: 12),
               ),
             ],
           ),
@@ -703,10 +708,7 @@ class _Header extends StatelessWidget {
 }
 
 class _FollowModeSegmented extends StatelessWidget {
-  const _FollowModeSegmented({
-    required this.mode,
-    required this.onChanged,
-  });
+  const _FollowModeSegmented({required this.mode, required this.onChanged});
 
   final FollowMode mode;
   final ValueChanged<FollowMode> onChanged;
@@ -763,8 +765,7 @@ class _DeleteButton extends StatelessWidget {
         child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.delete_outline,
-                color: Color(0xFFE57373), size: 18),
+            Icon(Icons.delete_outline, color: Color(0xFFE57373), size: 18),
             SizedBox(width: 8),
             Text(
               'Delete zoom',

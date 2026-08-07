@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart' show Size;
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
@@ -30,11 +31,13 @@ class DeterministicFocalTrack {
   DeterministicFocalTrack._({
     required this.region,
     required this.cursorRecording,
+    required this.cursorRecordingVersion,
     required this.cursorAnimationConfig,
     required this.cursorPostProcess,
     required this.cursorDelay,
     required this.screenRampCurve,
     required this.rampDurationScale,
+    required this.tuning,
     required this.videoSize,
     required this.fps,
     required this.clips,
@@ -51,6 +54,7 @@ class DeterministicFocalTrack {
 
   final ZoomRegion region;
   final CursorRecording cursorRecording;
+  final int cursorRecordingVersion;
   final CursorAnimationConfig cursorAnimationConfig;
   final CursorPostProcess cursorPostProcess;
 
@@ -58,8 +62,8 @@ class DeterministicFocalTrack {
   /// spring-smoothed *sprite*, which is sampled at `position - cursorDelay`,
   /// so the replay must apply the same delay or the deterministic focal would
   /// diverge from the live one by `cursorDelay` of cursor motion (a visible
-  /// jump at the play↔scrub boundary). Defaults to zero so export — which
-  /// uses this track only for scene-blur sampling — is unchanged.
+  /// jump at the play↔scrub boundary). Defaults to zero for callers without a
+  /// delayed cursor; preview and export both pass the project value explicitly.
   final Duration cursorDelay;
 
   /// Screen ramp curve forwarded to the replayed [ScenePassBuilder] so the
@@ -72,6 +76,12 @@ class DeterministicFocalTrack {
   /// at the same speed as the live camera. Part of the cache key in
   /// [matches] so flipping the feel invalidates a stale track.
   final double rampDurationScale;
+
+  /// Motion constants used by both cursor and focal springs during replay.
+  /// Compared by identity in [matches]: providers/stores retain one immutable
+  /// instance until the user changes tuning, at which point the track must be
+  /// rebuilt rather than silently continuing with defaults.
+  final MotionTuning tuning;
 
   final Size videoSize;
   final int fps;
@@ -107,10 +117,11 @@ class DeterministicFocalTrack {
     Duration cursorDelay = Duration.zero,
     Curve screenRampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
+    MotionTuning tuning = MotionTuning.defaults,
     List<ClipSlice> clips = const <ClipSlice>[],
     ZoomFraming? framing,
   }) {
-    final builder = ScenePassBuilder();
+    final builder = ScenePassBuilder()..setTuning(tuning);
     final regions = <ZoomRegion>[region];
     final startUs = region.startTime.inMicroseconds;
     final endUs = region.endTime.inMicroseconds;
@@ -151,11 +162,13 @@ class DeterministicFocalTrack {
     return DeterministicFocalTrack._(
       region: region,
       cursorRecording: cursorRecording,
+      cursorRecordingVersion: cursorRecording.version,
       cursorAnimationConfig: cursorAnimationConfig,
       cursorPostProcess: cursorPostProcess,
       cursorDelay: cursorDelay,
       screenRampCurve: screenRampCurve,
       rampDurationScale: rampDurationScale,
+      tuning: tuning,
       videoSize: videoSize,
       fps: fps,
       clips: clips,
@@ -205,6 +218,7 @@ class DeterministicFocalTrack {
     Duration cursorDelay = Duration.zero,
     Curve screenRampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
+    MotionTuning tuning = MotionTuning.defaults,
     List<ClipSlice> clips = const <ClipSlice>[],
     ZoomFraming? framing,
   }) {
@@ -217,12 +231,14 @@ class DeterministicFocalTrack {
     }
 
     return identical(this.cursorRecording, cursorRecording) &&
+        cursorRecordingVersion == cursorRecording.version &&
         this.cursorAnimationConfig == cursorAnimationConfig &&
         this.region == region &&
         this.cursorPostProcess == cursorPostProcess &&
         this.cursorDelay == cursorDelay &&
         this.screenRampCurve == screenRampCurve &&
         this.rampDurationScale == rampDurationScale &&
+        identical(this.tuning, tuning) &&
         this.videoSize == videoSize &&
         this.fps == fps &&
         listEquals(this.clips, clips) &&

@@ -13,6 +13,7 @@ import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/frame_painter.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -166,6 +167,62 @@ void main() {
       expect(rgba[i + 2], 0xFF, reason: 'B');
       expect(rgba[i + 3], 0xFF, reason: 'A');
     });
+
+    test(
+      'trimmed-away frames cannot advance exported cursor history',
+      () async {
+        final recording = CursorRecording()
+          ..addPosition(CursorPosition(x: 1, y: 1, timestampMicros: 0))
+          ..addPosition(CursorPosition(x: 7, y: 3, timestampMicros: 3000000));
+        final defaults = EditorProjectState.defaults();
+        final compositor = FrameCompositor(
+          projectState: defaults.copyWith(
+            timeline: defaults.timeline.copyWith(
+              clips: [
+                ClipSlice(
+                  cutStart: Duration.zero,
+                  cutEnd: const Duration(seconds: 1),
+                ),
+                ClipSlice(
+                  cutStart: const Duration(seconds: 2),
+                  cutEnd: const Duration(seconds: 3),
+                ),
+              ],
+            ),
+            windowFrame: const WindowFrame(
+              name: 'None',
+              padding: EdgeInsets.zero,
+              cornerRadius: 0,
+              shadowBlur: 0,
+              shadowOffset: Offset.zero,
+              shadowColor: Color(0x00000000),
+              borderWidth: 0,
+            ),
+          ),
+          cursorRecording: recording,
+          metadata: _meta(),
+          videoSize: const Size(8, 4),
+          fps: 30,
+        );
+        final frame = _solidBgra(8, 4, 0, 0, 0);
+
+        for (final t in [900, 1500, 2000]) {
+          await compositor.compose(
+            videoFrameBgra: frame,
+            position: Duration(milliseconds: t),
+          );
+        }
+
+        expect(
+          compositor.cursorHistoryAt(const Duration(milliseconds: 1950)),
+          isNull,
+        );
+        expect(
+          compositor.cursorHistoryAt(const Duration(seconds: 2)),
+          isNotNull,
+        );
+      },
+    );
 
     test('compose with a "None"-frame zoom region centers the focal at '
         'totalSize.center', () async {

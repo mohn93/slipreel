@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,7 @@ import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
+import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/effects/scene_accumulation_painter.dart';
@@ -172,6 +174,33 @@ double badgeDisplayedLevel(double begin, double end, Curve curve, double t) {
   return ui.lerpDouble(begin, end, curve.transform(t.clamp(0.0, 1.0))) ?? end;
 }
 
+/// Layer split shared by production and a tree-level parity test. Only [body]
+/// is captured for the scene shader; cursor accumulation stays above it.
+@visibleForTesting
+Widget buildInternalSceneBlurTree({
+  required GlobalKey boundaryKey,
+  required Widget body,
+  Widget? blurOverlay,
+  Widget? cursorOverlay,
+  Widget? keystrokeOverlay,
+  Widget? cameraOverlay,
+  Widget? captionOverlay,
+  Widget? stickyBackground,
+}) {
+  return Stack(
+    fit: StackFit.expand,
+    children: [
+      if (stickyBackground != null) stickyBackground,
+      RepaintBoundary(key: boundaryKey, child: body),
+      if (blurOverlay != null) blurOverlay,
+      if (cursorOverlay != null) cursorOverlay,
+      if (keystrokeOverlay != null) keystrokeOverlay,
+      if (cameraOverlay != null) cameraOverlay,
+      if (captionOverlay != null) captionOverlay,
+    ],
+  );
+}
+
 class PlaybackCanvas extends ConsumerStatefulWidget {
   const PlaybackCanvas({
     super.key,
@@ -192,6 +221,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     required this.screenAnimationConfig,
     required this.cursorAnimationConfig,
     required this.motionBlur,
+    this.sceneMotionBlur,
     this.cursorMovementBlur = 1.0,
     this.screenMovementBlur = 1.0,
     this.screenZoomBlur = 1.0,
@@ -286,9 +316,12 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
   /// "no motion blur" and short-circuits the screen ImageFilter and
   /// the cursor multi-stamp path.
   final double motionBlur;
+  final double? sceneMotionBlur;
   final double cursorMovementBlur;
   final double screenMovementBlur;
   final double screenZoomBlur;
+
+  double get effectiveSceneMotionBlur => sceneMotionBlur ?? motionBlur;
 
   /// Live-tunable knobs for the motion-blur path (debug UI). See
   /// [MotionBlurTuning] for the available levers.
@@ -511,7 +544,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
   Duration? _lastPlayingPos;
 
   bool get _scenePassEnabled =>
-      widget.motionBlur > 0 &&
+      widget.effectiveSceneMotionBlur > 0 &&
       widget.zoomRegions.isNotEmpty &&
       _sceneBlurProgram != null;
 
@@ -560,6 +593,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     // so there is no per-controller state to reset on trajectory
     // changes — `compute` reads fresh on every call.
     if (oldWidget.motionBlur != widget.motionBlur ||
+        oldWidget.sceneMotionBlur != widget.sceneMotionBlur ||
         oldWidget.cursorMovementBlur != widget.cursorMovementBlur ||
         oldWidget.screenMovementBlur != widget.screenMovementBlur ||
         oldWidget.screenZoomBlur != widget.screenZoomBlur ||
@@ -823,10 +857,16 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
             final hasCursorData =
                 widget.metadata?.isPureSource == true &&
                 widget.cursorRecording.count > 0;
+            final activeSlice = widget.clips.isEmpty
+                ? null
+                : clipSliceContaining(widget.clips, pos);
+            final effectiveSliceHideCursor =
+                activeSlice?.hideCursor ??
+                (widget.clips.isEmpty ? widget.sliceHideCursor : true);
             final showCursor =
                 hasCursorData &&
                 !widget.hideCursorOverlay &&
-                !widget.sliceHideCursor;
+                !effectiveSliceHideCursor;
 
             // Single call into the shared scene builder. The export
             // pipeline calls the same builder with the same inputs in
@@ -837,14 +877,22 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
             //
             // Hover-scrub bypasses the EMA filter so the same timestamp
             // renders the same regardless of approach direction.
-            final cursorAnimationConfig = widget.sliceDisableSmoothMouse
+            final effectiveCursorAnimationConfig =
+                widget.clips.isEmpty && widget.sliceDisableSmoothMouse
                 ? const CursorAnimationConfig.preset(CursorAnimationStyle.none)
+                : cursorAnimationConfigAt(
+                    clips: widget.clips,
+                    position: pos,
+                    base: widget.cursorAnimationConfig,
+                  );
+            final sceneCursorAnimationConfig = widget.clips.isEmpty
+                ? effectiveCursorAnimationConfig
                 : widget.cursorAnimationConfig;
             final scenePass = _scenePassBuilder.build(
               position: pos,
               zoomRegions: widget.zoomRegions,
               clips: widget.clips,
-              cursorAnimationConfig: cursorAnimationConfig,
+              cursorAnimationConfig: sceneCursorAnimationConfig,
               cursorDelay: widget.cursorDelay,
               cursorPostProcess: widget.cursorPostProcess,
               cursorRecording: widget.cursorRecording,
@@ -852,8 +900,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               fps: widget.metadata?.fps ?? 60,
               hasCursorData: hasCursorData,
               screenRampCurve: widget.screenAnimationConfig.rampCurve,
-              rampDurationScale:
-                  widget.screenAnimationConfig.rampDurationScale,
+              rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
               // When the placement-picker override is active we want the
               // focal to lock onto the previewed rect immediately — the
               // spring otherwise barely advances while the video is paused
@@ -888,7 +935,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 focalUpdate.zoom,
                 videoSize,
                 widget.metadata?.fps ?? 60,
-                cursorAnimationConfig,
+                sceneCursorAnimationConfig,
                 zoomFraming,
               ).focalAt(pos);
             }
@@ -900,6 +947,20 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   widget.cursorMovementBlur,
             );
             final combinedCursorVelocity = scenePass.filteredCursorVelocity;
+
+            Duration? cachedCameraTime;
+            SceneCameraSample? cachedCameraSample;
+            SceneCameraSample cameraSampleAt(Duration t) {
+              if (cachedCameraTime == t && cachedCameraSample != null) {
+                return cachedCameraSample!;
+              }
+              cachedCameraTime = t;
+              return cachedCameraSample = _approxSceneSampleAt(
+                t,
+                videoSize,
+                zoomFraming,
+              );
+            }
 
             // Cursor is extracted from the body composition so the
             // scene-blur shader (which captures and smears the entire
@@ -936,6 +997,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                         cursorRecording: widget.cursorRecording,
                         position: pos,
                         videoSize: videoSize,
+                        currentScreenPos: motion.screenPos,
+                        screenPositionAt: _scenePassBuilder.motion.positionAt,
+                        pathSmoothingSigma:
+                            effectiveCursorAnimationConfig.pathSmoothingSigma,
+                        cursorDelay: widget.cursorDelay,
+                        activeClip: activeSlice,
+                        clips: widget.clips,
                         exposureMs:
                             widget.accumulationExposureMs * effectiveCursorBlur,
                         sampleCount: widget.accumulationSampleCount,
@@ -945,10 +1013,18 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                         devicePixelRatio: MediaQuery.of(
                           context,
                         ).devicePixelRatio,
-                        currentFocalVideo: effectiveFocal,
-                        currentScale: focalUpdate?.zoom.zoomLevel ?? 1.0,
-                        focalAt: widget.accumulationCameraFocalAt,
-                        scaleAt: widget.accumulationCameraScaleAt,
+                        currentFocalVideo: focalUpdate == null
+                            ? null
+                            : cameraSampleAt(pos).focal,
+                        currentScale: focalUpdate == null
+                            ? 1.0
+                            : cameraSampleAt(pos).scale,
+                        focalAt:
+                            widget.accumulationCameraFocalAt ??
+                            (t) => cameraSampleAt(t).focal,
+                        scaleAt:
+                            widget.accumulationCameraScaleAt ??
+                            (t) => cameraSampleAt(t).scale,
                         videoRect: Rect.fromLTWH(
                           effVideoOriginX,
                           effVideoOriginY,
@@ -1460,7 +1536,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     }
 
     final wantsScenePass =
-        widget.motionBlur > 0 &&
+        widget.effectiveSceneMotionBlur > 0 &&
         widget.zoomRegions.isNotEmpty &&
         (widget.screenMovementBlur > 0 || widget.screenZoomBlur > 0);
     if (!wantsScenePass) {
@@ -1468,22 +1544,32 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       return bodyWithCursor();
     }
 
-    final movementExposure = Duration(
+    final movementWallExposure = Duration(
       microseconds:
           (_sceneBlurExposureMs *
-                  widget.motionBlur *
+                  widget.effectiveSceneMotionBlur *
                   widget.screenMovementBlur *
                   1000)
               .round(),
     );
-    final zoomExposure = Duration(
+    final zoomWallExposure = Duration(
       microseconds:
           (_sceneBlurExposureMs *
-                  widget.motionBlur *
+                  widget.effectiveSceneMotionBlur *
                   widget.screenZoomBlur *
                   1000)
               .round(),
     );
+    Duration sourceExposure(Duration wallExposure) => widget.clips.isEmpty
+        ? wallExposure
+        : position -
+              sourceTimeBeforeWallDuration(
+                widget.clips,
+                position,
+                wallExposure,
+              );
+    final movementExposure = sourceExposure(movementWallExposure);
+    final zoomExposure = sourceExposure(zoomWallExposure);
     // Stateless: both `current` (at `position`) and `prev` (at
     // `position − exposure`) come from `_approxSceneSampleAt`, so the
     // smear vector is symmetric by construction and the editor
@@ -1546,28 +1632,15 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       }
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Sticky wallpaper sits at the bottom — it is intentionally
-        // OUTSIDE the captured RepaintBoundary so the scene blur pass
-        // can't see it and therefore can't smear it. When the camera
-        // pans/zooms, the backdrop stays anchored; only the moving
-        // body above gets the directional smear.
-        if (stickyBackground != null) stickyBackground,
-        // Body goes through the RepaintBoundary so we can capture it
-        // for the blur pass. The cursor is deliberately NOT inside this
-        // boundary — its own accumulation smear is the only blur it
-        // should receive, never the scene-level translation+radial
-        // smear (which dwarfs cursor motion during a cursor-following
-        // zoom and made the cursor look like it was jumping to max).
-        RepaintBoundary(key: _sceneBoundaryKey, child: body),
-        if (blurOverlay != null) blurOverlay,
-        if (cursorOverlay != null) cursorOverlay,
-        if (keystrokeOverlayWidget != null) keystrokeOverlayWidget,
-        if (cameraOverlayWidget != null) cameraOverlayWidget,
-        if (captionOverlayWidget != null) captionOverlayWidget,
-      ],
+    return buildInternalSceneBlurTree(
+      boundaryKey: _sceneBoundaryKey,
+      body: body,
+      blurOverlay: blurOverlay,
+      cursorOverlay: cursorOverlay,
+      keystrokeOverlay: keystrokeOverlayWidget,
+      cameraOverlay: cameraOverlayWidget,
+      captionOverlay: captionOverlayWidget,
+      stickyBackground: stickyBackground,
     );
   }
 
@@ -1592,7 +1665,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     // Use the broader of the two channels for the exposure window so a
     // user who only raised one knob still sees its effect.
     final exposureMultiplier =
-        widget.motionBlur *
+        widget.effectiveSceneMotionBlur *
         (widget.screenMovementBlur > widget.screenZoomBlur
             ? widget.screenMovementBlur
             : widget.screenZoomBlur);
@@ -1600,7 +1673,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
         .round();
     if (exposureUs <= 0) return const <Matrix4>[];
 
-    final dtUs = exposureUs ~/ (n - 1);
+    final wallDtUs = exposureUs ~/ (n - 1);
 
     Matrix4 invCurrent;
     try {
@@ -1613,7 +1686,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
 
     final deltas = <Matrix4>[];
     for (var i = 0; i < n; i++) {
-      final t = Duration(microseconds: position.inMicroseconds - i * dtUs);
+      final wallBack = Duration(microseconds: i * wallDtUs);
+      final t = widget.clips.isEmpty
+          ? position - wallBack
+          : sourceTimeBeforeWallDuration(widget.clips, position, wallBack);
       if (t.isNegative) break;
 
       final mI = _subFrameTransformAt(t, videoSize, framing);
@@ -1650,6 +1726,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
           cursorDelay: widget.cursorDelay,
           screenRampCurve: widget.screenAnimationConfig.rampCurve,
           rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
+          tuning: _tuning,
           clips: widget.clips,
           framing: framing,
         )) {
@@ -1665,6 +1742,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       cursorDelay: widget.cursorDelay,
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
       rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
+      tuning: _tuning,
       clips: widget.clips,
       framing: framing,
     );
@@ -1710,22 +1788,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
-      // Raw cursor at `t` — no smoother-emulation lag. See the
-      // matching comment in SceneBlurOverlay._approxSampleAt; the
-      // 200 ms lag here was creating a focal-difference of ~200 ms
-      // of cursor motion against the (converged-during-pause) live
-      // current.focal, saturating the translation cap.
-      final sample = cursorAtFiltered(
-        widget.cursorRecording,
-        t,
-        widget.cursorPostProcess,
-      );
-      focal = sample == null
-          ? videoSize.center(Offset.zero)
-          : Offset(
-              sample.x.toDouble().clamp(0, videoSize.width),
-              sample.y.toDouble().clamp(0, videoSize.height),
-            );
+      focal = _focalTrackFor(
+        active,
+        videoSize,
+        widget.metadata?.fps ?? 60,
+        widget.cursorAnimationConfig,
+        framing,
+      ).focalAt(t);
     }
 
     // This inline scene-blur path is DISABLED in production (the production
@@ -1744,10 +1813,11 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
           widget.screenAnimationConfig.rampCurve,
       rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
     );
+    final scale = matrix.storage[0];
     return SceneCameraSample(
       position: t,
-      focal: focal,
-      scale: matrix.storage[0],
+      focal: framing.clampFocal(focal, scale),
+      scale: scale,
     );
   }
 
@@ -1859,7 +1929,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     Color? solidColor,
   }) {
     final fill = Container(
-        decoration: wallpaperDecoration(category, index, solidColor: solidColor));
+      decoration: wallpaperDecoration(category, index, solidColor: solidColor),
+    );
     if (blur <= 0) return fill;
     // ClipRect prevents the gaussian tail from leaking outside the
     // frame's totalSize. ImageFiltered does a saveLayer internally,

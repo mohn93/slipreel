@@ -15,12 +15,14 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 CursorRecording _record(List<({int micros, double x, double y})> pts) {
   final r = CursorRecording();
   for (final p in pts) {
-    r.addPosition(CursorPosition(
-      x: p.x,
-      y: p.y,
-      timestampMicros: p.micros,
-      isClicked: false,
-    ));
+    r.addPosition(
+      CursorPosition(
+        x: p.x,
+        y: p.y,
+        timestampMicros: p.micros,
+        isClicked: false,
+      ),
+    );
   }
   return r;
 }
@@ -48,11 +50,14 @@ void main() {
       // point, so the weighted mean IS the point — click landings stay
       // truthful.
       final rec = _record([
-        for (var i = 0; i <= 60; i++)
-          (micros: i * 16667, x: 300.0, y: 200.0),
+        for (var i = 0; i <= 60; i++) (micros: i * 16667, x: 300.0, y: 200.0),
       ]);
       final s = smoothedCursorAt(
-          rec, const Duration(milliseconds: 500), none, sigma);
+        rec,
+        const Duration(milliseconds: 500),
+        none,
+        sigma,
+      );
       expect(s!.x, closeTo(300.0, 1e-9));
       expect(s.y, closeTo(200.0, 1e-9));
     });
@@ -62,24 +67,28 @@ void main() {
       // hand-jitter shape the smoother exists to kill.
       final rec = _record([
         for (var i = 0; i <= 120; i++)
-          (
-            micros: i * 16667,
-            x: i * 8.0,
-            y: 100.0 + (i.isEven ? 12.0 : -12.0),
-          ),
+          (micros: i * 16667, x: i * 8.0, y: 100.0 + (i.isEven ? 12.0 : -12.0)),
       ]);
       // Peak deviation of the smoothed path from the centerline across
       // the steady middle of the recording.
       var maxDev = 0.0;
       for (var ms = 500; ms <= 1500; ms += 10) {
-        final s =
-            smoothedCursorAt(rec, Duration(milliseconds: ms), none, sigma)!;
+        final s = smoothedCursorAt(
+          rec,
+          Duration(milliseconds: ms),
+          none,
+          sigma,
+        )!;
         maxDev = math.max(maxDev, (s.y - 100.0).abs());
       }
-      expect(maxDev, lessThan(12.0 * 0.4),
-          reason: 'Gaussian window must attenuate alternating-sample '
-              'jitter by ≥60% (got peak ${maxDev.toStringAsFixed(2)}px '
-              'of a 12px input wiggle)');
+      expect(
+        maxDev,
+        lessThan(12.0 * 0.4),
+        reason:
+            'Gaussian window must attenuate alternating-sample '
+            'jitter by ≥60% (got peak ${maxDev.toStringAsFixed(2)}px '
+            'of a 12px input wiggle)',
+      );
     });
 
     test('rounds a right-angle corner (cuts inside, bounded)', () {
@@ -92,7 +101,11 @@ void main() {
           (micros: (30 + i) * 16667, x: 500.0, y: i * 16.7),
       ]);
       final atCorner = smoothedCursorAt(
-          rec, const Duration(microseconds: 30 * 16667), none, sigma)!;
+        rec,
+        const Duration(microseconds: 30 * 16667),
+        none,
+        sigma,
+      )!;
       // Inside the corner means: x pulled back below 500 AND y pulled up
       // above 0 simultaneously.
       expect(atCorner.x, lessThan(500.0));
@@ -109,8 +122,12 @@ void main() {
           (micros: i * 16667, x: i * 10.0, y: math.sin(i / 3) * 40),
       ]);
       Object sample(int ms) {
-        final s =
-            smoothedCursorAt(rec, Duration(milliseconds: ms), none, sigma)!;
+        final s = smoothedCursorAt(
+          rec,
+          Duration(milliseconds: ms),
+          none,
+          sigma,
+        )!;
         return (s.x, s.y);
       }
 
@@ -124,33 +141,54 @@ void main() {
     test('empty recording returns null', () {
       final rec = CursorRecording();
       expect(
-          smoothedCursorAt(
-              rec, const Duration(milliseconds: 100), none, sigma),
-          isNull);
+        smoothedCursorAt(rec, const Duration(milliseconds: 100), none, sigma),
+        isNull,
+      );
     });
 
     test('click/state come from the center tap, not the window', () {
       final rec = CursorRecording();
       for (var i = 0; i <= 60; i++) {
-        rec.addPosition(CursorPosition(
-          x: i * 10.0,
-          y: 0,
-          timestampMicros: i * 16667,
-          isClicked: i == 30,
-        ));
+        rec.addPosition(
+          CursorPosition(
+            x: i * 10.0,
+            y: 0,
+            timestampMicros: i * 16667,
+            isClicked: i == 30,
+          ),
+        );
       }
       // Query exactly at the clicked sample: isClicked must survive
       // smoothing even though neighboring taps are unclicked.
       final s = smoothedCursorAt(
-          rec, const Duration(microseconds: 30 * 16667), none, sigma)!;
+        rec,
+        const Duration(microseconds: 30 * 16667),
+        none,
+        sigma,
+      )!;
       expect(s.isClicked, isTrue);
+    });
+
+    test('moving path preserves exact recording endpoints', () {
+      final rec = _record([
+        for (var i = 0; i <= 60; i++)
+          (micros: i * 16667, x: i * 10.0, y: i * 5.0),
+      ]);
+      final first = smoothedCursorAt(rec, Duration.zero, none, sigma)!;
+      final endTime = Duration(microseconds: 60 * 16667);
+      final last = smoothedCursorAt(rec, endTime, none, sigma)!;
+
+      expect((first.x, first.y), (0.0, 0.0));
+      expect((last.x, last.y), (600.0, 300.0));
     });
   });
 
   group('pathSmoothingSigma preset wiring', () {
     test('only Smooth smooths the path', () {
-      expect(CursorAnimationStyle.smooth.pathSmoothingSigma,
-          const Duration(milliseconds: 80));
+      expect(
+        CursorAnimationStyle.smooth.pathSmoothingSigma,
+        const Duration(milliseconds: 80),
+      );
       expect(CursorAnimationStyle.medium.pathSmoothingSigma, Duration.zero);
       expect(CursorAnimationStyle.rapid.pathSmoothingSigma, Duration.zero);
       expect(CursorAnimationStyle.none.pathSmoothingSigma, Duration.zero);
@@ -158,8 +196,10 @@ void main() {
 
     test('config exposes the preset sigma', () {
       const cfg = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
-      expect(cfg.pathSmoothingSigma,
-          CursorAnimationStyle.smooth.pathSmoothingSigma);
+      expect(
+        cfg.pathSmoothingSigma,
+        CursorAnimationStyle.smooth.pathSmoothingSigma,
+      );
     });
   });
 }

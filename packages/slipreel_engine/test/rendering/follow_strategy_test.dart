@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/follow_strategy.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
 const Size _videoSize = Size(1920, 1080);
 
@@ -255,8 +256,11 @@ void main() {
         videoSize: _videoSize,
         tuning: MotionTuning.defaults,
       );
-      expect(r.isHolding, isFalse,
-          reason: 'aim is still outside the inner re-center zone');
+      expect(
+        r.isHolding,
+        isFalse,
+        reason: 'aim is still outside the inner re-center zone',
+      );
       expect(s.inFlight, isTrue);
     });
 
@@ -310,6 +314,43 @@ void main() {
       );
       expect(s.inFlight, isFalse);
     });
+
+    test('deadzone is a fraction of the composed viewport when padded', () {
+      const videoSize = Size(1000, 500);
+      final framing = ZoomFraming.device(
+        videoSize: videoSize,
+        videoRect: const Rect.fromLTWH(100, 100, 800, 400),
+        canvasSize: const Size(1200, 800),
+      );
+      const focal = Offset(500, 250);
+      const cursor = Offset(620, 250);
+      final zoom = _bounded(deadzoneRatio: 0.4);
+
+      // Bare-video viewport at 2x is 500 source px wide, so +120 lies outside
+      // its 100 px deadzone half-width.
+      final identity = BoundedFollowStrategy().resolve(
+        zoom: zoom,
+        cursor: cursor,
+        cursorVelocity: Offset.zero,
+        currentFocal: focal,
+        videoSize: videoSize,
+        tuning: MotionTuning.defaults,
+      );
+      expect(identity.isHolding, isFalse);
+
+      // Composed viewport is 750 source px wide (1200 / 2 / 0.8), so the
+      // advertised 40% deadzone has a 150 px half-width and +120 must hold.
+      final composed = BoundedFollowStrategy().resolve(
+        zoom: zoom,
+        cursor: cursor,
+        cursorVelocity: Offset.zero,
+        currentFocal: focal,
+        videoSize: videoSize,
+        tuning: MotionTuning.defaults,
+        framing: framing,
+      );
+      expect(composed.isHolding, isTrue);
+    });
   });
 
   group('PredictiveFollowStrategy anticipation', () {
@@ -344,11 +385,17 @@ void main() {
         videoSize: _videoSize,
         tuning: MotionTuning.defaults,
       );
-      expect(r.isHolding, isFalse,
-          reason: 'anticipated position is past the deadzone edge');
+      expect(
+        r.isHolding,
+        isFalse,
+        reason: 'anticipated position is past the deadzone edge',
+      );
       expect(s.inFlight, isTrue);
-      expect(r.target.dx, closeTo(focal.dx + 300, 0.5),
-          reason: 'target is the fully-led cursor at high speed');
+      expect(
+        r.target.dx,
+        closeTo(focal.dx + 300, 0.5),
+        reason: 'target is the fully-led cursor at high speed',
+      );
     });
 
     test('lead fades out at low speed: a slow cursor does NOT get enough lead '
@@ -367,8 +414,11 @@ void main() {
         videoSize: _videoSize,
         tuning: MotionTuning.defaults,
       );
-      expect(r.isHolding, isTrue,
-          reason: 'faded lead keeps the slow cursor inside the deadzone');
+      expect(
+        r.isHolding,
+        isTrue,
+        reason: 'faded lead keeps the slow cursor inside the deadzone',
+      );
       expect(s.inFlight, isFalse);
     });
 
@@ -383,8 +433,11 @@ void main() {
         videoSize: _videoSize,
         tuning: MotionTuning.defaults,
       );
-      expect(r.isHolding, isTrue,
-          reason: 'bounded aims at the raw cursor (+150, inside dz)');
+      expect(
+        r.isHolding,
+        isTrue,
+        reason: 'bounded aims at the raw cursor (+150, inside dz)',
+      );
     });
   });
 }

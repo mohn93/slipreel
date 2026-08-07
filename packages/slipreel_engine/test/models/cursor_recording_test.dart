@@ -135,6 +135,23 @@ void main() {
              throwsUnsupportedError);
     });
 
+    test('positions snapshot is reused until the recording mutates', () {
+      final recording = CursorRecording();
+      recording.addPosition(CursorPosition(x: 10, y: 20, timestampMicros: 100));
+
+      final first = recording.positions;
+      expect(identical(recording.positions, first), isTrue);
+
+      recording.addPosition(CursorPosition(x: 30, y: 40, timestampMicros: 200));
+      final second = recording.positions;
+      expect(identical(second, first), isFalse);
+      expect(second, hasLength(2));
+      expect(first, hasLength(1), reason: 'published snapshots stay immutable');
+
+      recording.clear();
+      expect(recording.positions, isEmpty);
+    });
+
     test('binary search should work with large dataset', () {
       final recording = CursorRecording();
 

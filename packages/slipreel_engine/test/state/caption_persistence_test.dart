@@ -6,8 +6,8 @@ import 'package:slipreel_engine/state/editor_project_state.dart';
 void main() {
   const dur = Duration(seconds: 10);
 
-  test('schema version is 10', () {
-    expect(EditorProjectState.currentSchemaVersion, 10);
+  test('schema version is 11', () {
+    expect(EditorProjectState.currentSchemaVersion, 11);
   });
 
   test('captionStyle + segments round-trip through JSON', () {
@@ -18,7 +18,10 @@ void main() {
       ],
       captionSource: CaptionAudioSource.mic,
     );
-    final back = EditorProjectState.fromJson(state.toJson(), videoDuration: dur);
+    final back = EditorProjectState.fromJson(
+      state.toJson(),
+      videoDuration: dur,
+    );
     expect(back.captionStyle.enabled, isTrue);
     expect(back.captions.single.text, 'hi');
     expect(back.captionSource, CaptionAudioSource.mic);

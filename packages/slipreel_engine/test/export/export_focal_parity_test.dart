@@ -116,6 +116,7 @@ void main() {
       cursorPostProcess: state.cursorPostProcess,
       videoSize: videoSize,
       fps: fps,
+      cursorDelay: state.cursorDelay,
       screenRampCurve: state.screenAnimationConfig.rampCurve,
       rampDurationScale: state.screenAnimationConfig.rampDurationScale,
       clips: state.timeline.clips,
@@ -129,8 +130,7 @@ void main() {
     for (var ms = 3000; ms <= 6000; ms += 250) Duration(milliseconds: ms),
   ];
 
-  test('a follow-cursor region renders the previewed deterministic focal',
-      () {
+  test('a follow-cursor region renders the previewed deterministic focal', () {
     const fps = 30;
     final compositor = compositorFor(followRegion, fps);
     final track = trackFor(followRegion, fps);
@@ -160,7 +160,8 @@ void main() {
     expect(
       worst,
       lessThan(0.001),
-      reason: 'exported focal differs from the previewed focal by '
+      reason:
+          'exported focal differs from the previewed focal by '
           '${worst.toStringAsFixed(3)}px at ${worstAt.inMilliseconds}ms',
     );
   });
@@ -213,6 +214,7 @@ void main() {
       cursorPostProcess: state.cursorPostProcess,
       videoSize: videoSize,
       fps: fps,
+      cursorDelay: state.cursorDelay,
       screenRampCurve: state.screenAnimationConfig.rampCurve,
       rampDurationScale: state.screenAnimationConfig.rampDurationScale,
       clips: state.timeline.clips,
@@ -237,7 +239,8 @@ void main() {
     expect(
       worst,
       lessThan(0.001),
-      reason: 'with padding, the exported focal differs from the previewed '
+      reason:
+          'with padding, the exported focal differs from the previewed '
           'focal by ${worst.toStringAsFixed(3)}px at '
           '${worstAt.inMilliseconds}ms',
     );
@@ -339,14 +342,16 @@ void main() {
     expect(
       worstInput,
       greaterThan(1.0),
-      reason: 'the live spring should differ between 30fps and 60fps; if it '
+      reason:
+          'the live spring should differ between 30fps and 60fps; if it '
           'does not, this test no longer proves anything',
     );
 
     expect(
       worst,
       lessThan(1.0),
-      reason: 'the exported camera path differs by '
+      reason:
+          'the exported camera path differs by '
           '${worst.toStringAsFixed(2)}px between 30fps and 60fps',
     );
   });

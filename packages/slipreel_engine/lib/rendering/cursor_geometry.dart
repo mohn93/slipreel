@@ -104,7 +104,8 @@ CursorPosition? cursorAtFiltered(
       state: before.state,
     );
   } else {
-    final frac = (queryUs - before.timestampMicros) /
+    final frac =
+        (queryUs - before.timestampMicros) /
         (after.timestampMicros - before.timestampMicros);
     result = CursorPosition(
       x: before.x + (after.x - before.x) * frac,
@@ -157,18 +158,48 @@ CursorPosition? smoothedCursorAt(
   CursorRecording recording,
   Duration t,
   CursorPostProcess cfg,
-  Duration sigma,
-) {
+  Duration sigma, {
+  Duration? lowerBound,
+  Duration? upperBound,
+}) {
+  if (lowerBound != null && t < lowerBound) return null;
+  if (upperBound != null && t > upperBound) return null;
   final center = cursorAtFiltered(recording, t, cfg);
   if (center == null || sigma <= Duration.zero) return center;
 
-  final halfStepUs = sigma.inMicroseconds / 2.0;
+  final samples = recording.positions;
+  if (samples.isEmpty) return center;
+
+  // The kernel reaches ±2σ. Taper σ toward zero as the query approaches
+  // either recording boundary so the first and last recorded positions stay
+  // exact. The old asymmetric/clamped kernel pulled the first point forward
+  // and the final point backward on a moving path.
+  final queryUs = t.inMicroseconds;
+  final firstUs = math.max(
+    samples.first.timestampMicros,
+    lowerBound?.inMicroseconds ?? samples.first.timestampMicros,
+  );
+  final lastUs = math.min(
+    samples.last.timestampMicros,
+    upperBound?.inMicroseconds ?? samples.last.timestampMicros,
+  );
+  final availableBeforeUs = math.max(0, queryUs - firstUs);
+  final availableAfterUs = math.max(0, lastUs - queryUs);
+  final effectiveSigmaUs = math.min(
+    sigma.inMicroseconds.toDouble(),
+    math.min(availableBeforeUs / 2.0, availableAfterUs / 2.0),
+  );
+  if (effectiveSigmaUs <= 0) return center;
+
+  final halfStepUs = effectiveSigmaUs / 2.0;
   var wSum = 0.0;
   var xSum = 0.0;
   var ySum = 0.0;
   for (var k = -4; k <= 4; k++) {
     final tapUs = t.inMicroseconds + (k * halfStepUs).round();
-    if (tapUs < 0) continue;
+    if (tapUs < firstUs || tapUs > lastUs) {
+      continue;
+    }
     final tap = k == 0
         ? center
         : cursorAtFiltered(recording, Duration(microseconds: tapUs), cfg);
@@ -213,8 +244,7 @@ CursorPosition _despike(
   ys.sort();
   final mx = xs[xs.length >> 1];
   final my = ys[ys.length >> 1];
-  if ((raw.x - mx).abs() > thresholdPx ||
-      (raw.y - my).abs() > thresholdPx) {
+  if ((raw.x - mx).abs() > thresholdPx || (raw.y - my).abs() > thresholdPx) {
     return CursorPosition(
       x: mx,
       y: my,
@@ -239,9 +269,19 @@ CursorState? _dominantStateAround(
   final lo = queryUs - half;
   final hi = queryUs + half;
   final counts = <CursorState, int>{};
-  for (final s in samples) {
+  var low = 0;
+  var high = samples.length;
+  while (low < high) {
+    final mid = (low + high) >> 1;
+    if (samples[mid].timestampMicros < lo) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  for (var i = low; i < samples.length; i++) {
+    final s = samples[i];
     final ts = s.timestampMicros;
-    if (ts < lo) continue;
     if (ts > hi) break; // positions list is time-sorted
     counts[s.state] = (counts[s.state] ?? 0) + 1;
   }

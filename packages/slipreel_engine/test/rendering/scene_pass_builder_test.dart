@@ -6,8 +6,10 @@ import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
+import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 const Size _videoSize = Size(1920, 1080);
@@ -558,10 +560,12 @@ void main() {
         // before the raw cursor actually jumps there. That earlier
         // curve-in is the intended "rounds a corner" behavior (see
         // cursor_path_smoothing_test.dart), and it nudges this
-        // particular excursion from <5.0px to ~5.5px. Widened with a
-        // safety margin rather than tightened, so a genuine yank
-        // regression still fails this test.
-        lessThan(6.0),
+        // particular excursion. The focal spring now gives followDuration its
+        // truthful T95 meaning, so this deliberately-fast 100ms fixture can
+        // move ~11px on the first hold frame. Keep the bound tight enough to
+        // reject the old hundreds-of-pixels yank while accepting that intended
+        // faster response.
+        lessThan(15.0),
         reason:
             'the runtime builder should not let the hold phase yank '
             'the camera toward the lagging smoothed cursor',
@@ -603,8 +607,9 @@ void main() {
       final pass = ScenePassBuilder().build(
         position: const Duration(milliseconds: 16),
         zoomRegions: [region],
-        cursorAnimationConfig:
-            const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.smooth,
+        ),
         cursorRecording: recording,
         videoSize: _videoSize,
         fps: 60,
@@ -623,6 +628,435 @@ void main() {
         greaterThan(100.0),
         reason: 'sampling the unsqueezed ramp end mis-aims the whole zoom',
       );
+    });
+
+    test('enter settle target uses Smooth preset averaged path', () {
+      final region = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+      );
+      final recording = CursorRecording();
+      for (var i = 0; i <= 120; i++) {
+        recording.addPosition(
+          CursorPosition(
+            x: 400 + i * 4,
+            y: 500 + (i.isEven ? 12 : -12),
+            timestampMicros: i * 16667,
+          ),
+        );
+      }
+
+      final pass = ScenePassBuilder().build(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [region],
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.smooth,
+        ),
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+      );
+
+      expect(pass.enterCursorTarget, isNotNull);
+      expect(
+        (pass.enterCursorTarget!.dy - 500).abs(),
+        lessThan(4.8),
+        reason:
+            'zoom entry must aim at the averaged cursor line rather '
+            'than one side of the raw ±12px zigzag',
+      );
+    });
+
+    test('per-slice disableSmoothMouse resolves to the None preset', () {
+      final clips = [
+        ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(seconds: 1),
+          disableSmoothMouse: true,
+        ),
+      ];
+      final resolved = cursorAnimationConfigAt(
+        clips: clips,
+        position: const Duration(milliseconds: 500),
+        base: const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+      );
+      expect(resolved.preset, CursorAnimationStyle.none);
+    });
+
+    test('enter target resolves smoothing at the target slice', () {
+      final clips = [
+        ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(milliseconds: 250),
+        ),
+        ClipSlice(
+          cutStart: const Duration(milliseconds: 250),
+          cutEnd: const Duration(seconds: 1),
+          disableSmoothMouse: true,
+        ),
+      ];
+      final recording = _record([
+        for (var i = 0; i <= 100; i++)
+          (
+            micros: i * 10000,
+            x: 400.0 + i,
+            y: 500.0 + (i.isEven ? 12.0 : -12.0),
+            clicked: false,
+          ),
+      ]);
+      final region = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 1),
+        zoomLevel: 2,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+      );
+
+      final pass = ScenePassBuilder().build(
+        position: const Duration(milliseconds: 100),
+        zoomRegions: [region],
+        clips: clips,
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.smooth,
+        ),
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+      );
+
+      expect(pass.enterCursorTarget!.dy, closeTo(512, 1e-9));
+    });
+
+    test('zero-sigma enter target cannot sample before a hard cut', () {
+      final clips = [
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 1)),
+        ClipSlice(
+          cutStart: const Duration(seconds: 2),
+          cutEnd: const Duration(milliseconds: 2100),
+        ),
+      ];
+      final recording = _record([
+        (micros: 1900000, x: 100, y: 100, clicked: false),
+        (micros: 2000000, x: 900, y: 500, clicked: false),
+        (micros: 2100000, x: 900, y: 500, clicked: false),
+      ]);
+      final region = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: const Duration(seconds: 2),
+        duration: const Duration(milliseconds: 500),
+        zoomLevel: 2,
+        enterDuration: const Duration(milliseconds: 100),
+        exitDuration: Duration.zero,
+        followCursor: true,
+      );
+
+      final pass = ScenePassBuilder().build(
+        position: const Duration(seconds: 2),
+        zoomRegions: [region],
+        clips: clips,
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.none,
+        ),
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+        cursorDelay: const Duration(milliseconds: 200),
+      );
+
+      expect(pass.enterCursorTarget, const Offset(900, 500));
+    });
+
+    test('non-contiguous cut clears emitted cursor history', () {
+      final clips = [
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 1)),
+        ClipSlice(
+          cutStart: const Duration(seconds: 2),
+          cutEnd: const Duration(seconds: 3),
+        ),
+      ];
+      final recording = _record([
+        (micros: 0, x: 0, y: 0, clicked: false),
+        (micros: 3000000, x: 600, y: 0, clicked: false),
+      ]);
+      final builder = ScenePassBuilder();
+      for (final t in [900, 1500, 2000]) {
+        builder.build(
+          position: Duration(milliseconds: t),
+          zoomRegions: const [],
+          clips: clips,
+          cursorAnimationConfig: const CursorAnimationConfig.preset(
+            CursorAnimationStyle.smooth,
+          ),
+          cursorRecording: recording,
+          videoSize: _videoSize,
+          fps: 60,
+          hasCursorData: true,
+        );
+      }
+
+      expect(
+        builder.motion.positionAt(const Duration(milliseconds: 1950)),
+        isNull,
+      );
+      expect(builder.motion.positionAt(const Duration(seconds: 2)), isNotNull);
+    });
+
+    test('clip-list deletion cannot dereference a stale prior index', () {
+      final original = [
+        for (var i = 0; i < 3; i++)
+          ClipSlice(
+            cutStart: Duration(seconds: i),
+            cutEnd: Duration(seconds: i + 1),
+          ),
+      ];
+      final recording = _eastBoundRecording(durationMs: 3000);
+      final builder = ScenePassBuilder();
+      builder.build(
+        position: const Duration(milliseconds: 2500),
+        zoomRegions: const [],
+        clips: original,
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.medium,
+        ),
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+      );
+
+      expect(
+        () => builder.build(
+          position: const Duration(milliseconds: 1500),
+          zoomRegions: const [],
+          clips: original.take(2).toList(),
+          cursorAnimationConfig: const CursorAnimationConfig.preset(
+            CursorAnimationStyle.medium,
+          ),
+          cursorRecording: recording,
+          videoSize: _videoSize,
+          fps: 60,
+          hasCursorData: true,
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('direct hard cut resets focal momentum and filtered velocity', () {
+      final clips = [
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 1)),
+        ClipSlice(
+          cutStart: const Duration(seconds: 2),
+          cutEnd: const Duration(seconds: 3),
+        ),
+      ];
+      final recording = _eastBoundRecording(durationMs: 3000, pxPerSec: 300);
+      final region = _bounded(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 3),
+      );
+      final builder = ScenePassBuilder();
+      for (final t in [800, 900]) {
+        builder.build(
+          position: Duration(milliseconds: t),
+          zoomRegions: [region],
+          clips: clips,
+          cursorAnimationConfig: const CursorAnimationConfig.preset(
+            CursorAnimationStyle.medium,
+          ),
+          cursorRecording: recording,
+          videoSize: _videoSize,
+          fps: 60,
+          hasCursorData: true,
+        );
+      }
+      final afterCut = builder.build(
+        position: const Duration(seconds: 2),
+        zoomRegions: [region],
+        clips: clips,
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.medium,
+        ),
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+      );
+
+      expect(afterCut.rawCursorVelocity, Offset.zero);
+      expect(afterCut.filteredCursorVelocity, Offset.zero);
+      expect(builder.focal.focalVelocity, Offset.zero);
+    });
+
+    test('contiguous speed boundary integrates the exact wall-time delta', () {
+      final clips = [
+        ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(milliseconds: 100),
+          playbackSpeed: 1,
+        ),
+        ClipSlice(
+          cutStart: const Duration(milliseconds: 100),
+          cutEnd: const Duration(seconds: 1),
+          playbackSpeed: 2,
+        ),
+      ];
+      final recording = _record([
+        (micros: 0, x: 0, y: 0, clicked: false),
+        (micros: 100000, x: 1000, y: 0, clicked: false),
+        (micros: 1000000, x: 1000, y: 0, clicked: false),
+      ]);
+      const config = CursorAnimationConfig.preset(CursorAnimationStyle.medium);
+      final builder = ScenePassBuilder();
+      builder.build(
+        position: const Duration(milliseconds: 84),
+        zoomRegions: const [],
+        clips: clips,
+        cursorAnimationConfig: config,
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+      );
+      final actual = builder
+          .build(
+            position: const Duration(milliseconds: 116),
+            zoomRegions: const [],
+            clips: clips,
+            cursorAnimationConfig: config,
+            cursorRecording: recording,
+            videoSize: _videoSize,
+            fps: 60,
+            hasCursorData: true,
+          )
+          .motion!;
+
+      final reference = CursorMotionController();
+      reference.update(
+        position: const Duration(milliseconds: 84),
+        cursorRecording: recording,
+        config: config,
+        fps: 60,
+        playbackSpeed: 1,
+        clipStart: Duration.zero,
+        clipEnd: const Duration(seconds: 1),
+      );
+      final expected = reference.update(
+        position: const Duration(milliseconds: 116),
+        cursorRecording: recording,
+        config: config,
+        fps: 60,
+        playbackSpeed: 2,
+        clipStart: Duration.zero,
+        clipEnd: const Duration(seconds: 1),
+        elapsedWallTime: const Duration(milliseconds: 24),
+      )!;
+
+      expect((actual.screenPos - expected.screenPos).distance, lessThan(1e-9));
+      expect(
+        actual.screenPos.dx,
+        lessThan(1000),
+        reason: 'boundary must not snap',
+      );
+    });
+
+    test('delay and Smooth remain continuous across a contiguous split', () {
+      final split = [
+        ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(milliseconds: 100),
+        ),
+        ClipSlice(
+          cutStart: const Duration(milliseconds: 100),
+          cutEnd: const Duration(milliseconds: 300),
+        ),
+      ];
+      final whole = [
+        ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(milliseconds: 300),
+        ),
+      ];
+      final recording = _eastBoundRecording(durationMs: 300, pxPerSec: 1000);
+      const config = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);
+
+      Offset drive(List<ClipSlice> clips) {
+        final builder = ScenePassBuilder();
+        ScenePass? pass;
+        for (final milliseconds in [80, 90, 100, 110]) {
+          pass = builder.build(
+            position: Duration(milliseconds: milliseconds),
+            zoomRegions: const [],
+            clips: clips,
+            cursorAnimationConfig: config,
+            cursorRecording: recording,
+            videoSize: _videoSize,
+            fps: 60,
+            hasCursorData: true,
+            cursorDelay: const Duration(milliseconds: 50),
+          );
+        }
+        return pass!.motion!.screenPos;
+      }
+
+      expect((drive(split) - drive(whole)).distance, lessThan(1e-9));
+    });
+
+    test('camera settle time is stable across playback speeds', () {
+      final region = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 1),
+        zoomLevel: 2,
+        enterDuration: Duration.zero,
+        exitDuration: Duration.zero,
+        followCursor: true,
+        followMode: FollowMode.centered,
+        followDuration: const Duration(milliseconds: 400),
+      );
+      final recording = _record([
+        (micros: 0, x: 960, y: 540, clicked: false),
+        (micros: 1, x: 1500, y: 540, clicked: false),
+        (micros: 1000000, x: 1500, y: 540, clicked: false),
+      ]);
+
+      Offset drive(double speed) {
+        final builder = ScenePassBuilder();
+        final clips = [
+          ClipSlice(
+            cutStart: Duration.zero,
+            cutEnd: const Duration(seconds: 1),
+            playbackSpeed: speed,
+          ),
+        ];
+        ScenePass? pass;
+        for (var frame = 0; frame <= 10; frame++) {
+          pass = builder.build(
+            position: Duration(microseconds: (frame * 16000 * speed).round()),
+            zoomRegions: [region],
+            clips: clips,
+            cursorAnimationConfig: const CursorAnimationConfig.preset(
+              CursorAnimationStyle.none,
+            ),
+            cursorRecording: recording,
+            videoSize: _videoSize,
+            fps: 60,
+            hasCursorData: true,
+          );
+        }
+        return pass!.focalUpdate!.focal;
+      }
+
+      expect((drive(1) - drive(2)).distance, lessThan(0.5));
     });
   });
 }

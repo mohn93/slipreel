@@ -178,11 +178,9 @@ class ZoomFocalController {
   // snap path stays available for the cases that actually need it.
   int get _reverseScrubMinMicros => tuning.reverseScrubFloor.inMicroseconds;
 
-  // Largest sub-step the spring is integrated over. Semi-implicit
-  // Euler is stable for damped-spring systems while `c·dt < 2`; for
-  // the minimum allowed settleTime (100 ms) `c = 4/T = 40`, so
-  // `dt < 50 ms`. 16 ms (one 60 fps frame) keeps the integration
-  // well inside that band for every supported [ZoomRegion.followDuration].
+  // Preferred largest sub-step for spring integration. The corrected T95
+  // frequency is stiffer than the former approximation, so update() further
+  // subdivides this cap when needed to keep `c·dt <= 1`.
   int get _maxSubStepMicros => tuning.subStepCapMicros.inMicroseconds;
 
   // Hard cap on the *total* dt fed into a single update. After a
@@ -190,6 +188,20 @@ class ZoomFocalController {
   // at 250 ms keeps sub-step counts bounded (≤16 sub-steps) and the
   // spring effectively jumps to the new state on the following frame.
   int get _maxTotalDtMicros => tuning.dtCap.inMicroseconds;
+
+  // A critically damped unit-step reaches 95% when
+  // `(1 + x) * exp(-x) == 0.05`, whose positive root is ~4.7439. Treating
+  // followDuration as `2 / omega` made the camera only 59% settled at the
+  // advertised duration and created enormous steady tracking lag. This
+  // constant makes the public/UI meaning truthful: followDuration is T95.
+  static const double _criticalDampedT95 = 4.743864518390578;
+
+  // Once the live cursor breaches the keep-in-view safe area, smoothly raise
+  // the spring frequency. This is intentionally a multiplier on the SAME
+  // spring rather than a returned-output clamp: position and velocity stay
+  // continuous, while the camera gets enough authority to catch a fast cursor.
+  static const double _maxSafetyFrequencyMultiplier = 1.5;
+  static const double _safetyRampViewportFraction = 0.25;
 
   // Velocity threshold (px/s) at which the bounded-mode gate
   // considers the cursor "at rest" and is allowed to release an
@@ -299,6 +311,8 @@ class ZoomFocalController {
     ZoomRegion? activeRegionOverride,
     Curve screenRampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
+    double playbackSpeed = 1.0,
+    Duration? elapsedWallTime,
 
     /// For a followCursor zoom, the SETTLE target for the enter pan: the
     /// (raw) cursor position at the end of the enter ramp — i.e. where the
@@ -480,10 +494,7 @@ class ZoomFocalController {
           activeZoom.zoomLevel,
         );
         _exitRampStartReachable ??=
-            (fr.clampFocal(
-                      _smoothedFocal!,
-                      activeZoom.zoomLevel,
-                    ) -
+            (fr.clampFocal(_smoothedFocal!, activeZoom.zoomLevel) -
                     _smoothedFocal!)
                 .distance <
             0.5;
@@ -527,10 +538,7 @@ class ZoomFocalController {
         // zoom-in progress runs 1 -> 0 across the exit, so z = 1 +
         // (zoomLevel-1)*(1 - eased).
         final z = 1.0 + (activeZoom.zoomLevel - 1.0) * (1.0 - eased);
-        _smoothedFocal = fr.clampFocalRadial(
-          lerped,
-          z,
-        );
+        _smoothedFocal = fr.clampFocalRadial(lerped, z);
         // Zero velocity AND in-flight state so a post-exit re-entry
         // doesn't carry stale momentum or a stale chase flag from
         // before the ramp.
@@ -625,10 +633,7 @@ class ZoomFocalController {
         // way, so the pan lands on the edge exactly as the zoom completes.
         // Pure function of (cursor/rect, videoSize, zoomLevel) — play ==
         // scrub == export stays byte-identical.
-        final entryTarget = fr.clampFocal(
-          rawTarget,
-          activeZoom.zoomLevel,
-        );
+        final entryTarget = fr.clampFocal(rawTarget, activeZoom.zoomLevel);
         _enterRampFocalTarget = entryTarget;
         // Is the cursor reachable at full zoom (interior), or clamped to
         // the bounds (edge)? A LEADING pan (backload<1) overshoots the small
@@ -667,10 +672,7 @@ class ZoomFocalController {
         // no-op for these frames (exact on export/track; the preview badge
         // tween can transiently differ but only ever pulls further in-bounds).
         final z = 1.0 + (activeZoom.zoomLevel - 1.0) * eased;
-        final clampedFocal = fr.clampFocalRadial(
-          newFocal,
-          z,
-        );
+        final clampedFocal = fr.clampFocalRadial(newFocal, z);
         _focalVx = 0;
         _focalVy = 0;
         _smoothedFocal = clampedFocal;
@@ -697,10 +699,7 @@ class ZoomFocalController {
     if (handoffTarget != null && activeZoom.followCursor) {
       final cursorClamped = cursor == null
           ? null
-          : fr.clampFocal(
-              cursor,
-              activeZoom.zoomLevel,
-            );
+          : fr.clampFocal(cursor, activeZoom.zoomLevel);
       final cursorCaughtUp =
           cursorClamped != null &&
           (cursorClamped - handoffTarget).distance < 0.5;
@@ -734,19 +733,43 @@ class ZoomFocalController {
       currentFocal: _smoothedFocal!,
       videoSize: videoSize,
       tuning: tuning,
+      framing: fr,
     );
-    final target = resolution.target;
-    final isHolding = resolution.isHolding;
+
+    var target = resolution.target;
+    var isHolding = resolution.isHolding;
+
+    // Soft keep-in-view barrier. The framing helper tells us how far the
+    // current spring focal lies beyond the cursor-safe basin, but its hard
+    // correction is NEVER returned directly. A breach only (a) wakes a
+    // deadzone that is wider than the safe viewport and (b) smoothly increases
+    // this spring's frequency below. Even a discontinuous cursor sample can
+    // therefore change acceleration, never camera position or velocity.
+    var safetyUrgency = 0.0;
+    if (cursor != null) {
+      final safeFocal = fr.clampFocalKeepCursorInView(
+        _smoothedFocal!,
+        cursor,
+        activeZoom.zoomLevel,
+        tuning.keepInViewEdgeMargin,
+      );
+      final safetyPull = (safeFocal - _smoothedFocal!).distance;
+      if (safetyPull > 0.5) {
+        if (isHolding) target = cursor;
+        isHolding = false;
+        final viewport = fr.visibleViewportSizeInSource(activeZoom.zoomLevel);
+        final rampDistance = math.max(
+          1.0,
+          math.min(viewport.width, viewport.height) *
+              _safetyRampViewportFraction,
+        );
+        final t = (safetyPull / rampDistance).clamp(0.0, 1.0);
+        safetyUrgency = t * t * (3.0 - 2.0 * t);
+      }
+    }
 
     // Step the spring.
     final followUs = activeZoom.followDuration.inMicroseconds;
-    // Whether the spring was stepped forward this frame. Keep-in-view is a
-    // steady-state guard and must not fire on backward-scrub or zero-dt
-    // re-evaluation frames (the cursor at those positions is often at a
-    // different location than the one that drove the last integration step,
-    // so applying it there would silently clamp the output against a transient
-    // cursor that the spring never actually tracked).
-    var forwardStep = false;
     if (prevPosition == null || followUs <= 0) {
       // No previous frame to measure dt against, or the user has dialed
       // [followDuration] to zero (snap mode). Either way: jump to
@@ -756,17 +779,19 @@ class ZoomFocalController {
       _focalVx = 0;
       _focalVy = 0;
     } else {
-      var dtMicros = position.inMicroseconds - prevPosition.inMicroseconds;
+      final sourceDtMicros =
+          position.inMicroseconds - prevPosition.inMicroseconds;
+      final speedFactor = playbackSpeed < 0.05 ? 0.05 : playbackSpeed;
+      var dtMicros =
+          elapsedWallTime?.inMicroseconds ??
+          (sourceDtMicros / speedFactor).round();
       if (dtMicros > 0) {
         if (dtMicros > _maxTotalDtMicros) dtMicros = _maxTotalDtMicros;
-        final numSteps = (dtMicros / _maxSubStepMicros).ceil().clamp(
-          1,
-          1 << 20,
-        );
-        final subDtMicros = dtMicros / numSteps;
-        final subDt = subDtMicros / 1e6;
         final settleSeconds = followUs / 1e6;
-        final omega = 2.0 / settleSeconds;
+        final baseOmega = _criticalDampedT95 / settleSeconds;
+        final frequencyMultiplier =
+            1.0 + (_maxSafetyFrequencyMultiplier - 1.0) * safetyUrgency;
+        final omega = baseOmega * frequencyMultiplier;
         final k = omega * omega;
         // Damping ratio: critical (ζ = 1, c = 2ω) when the spring is
         // chasing — smooth acceleration to the target with no
@@ -778,6 +803,15 @@ class ZoomFocalController {
         // complaint). Hold detection comes from the strategy's
         // explicit flag instead of a fragile Offset== compare.
         final c = isHolding ? 6.0 * omega : 2.0 * omega;
+        // The corrected T95 frequency (and its temporary safety boost) can be
+        // substantially stiffer than the old `2 / T` spring. Keep semi-implicit
+        // Euler inside a conservative `c * dt <= 1` band in addition to the
+        // normal 16 ms cap, especially for the minimum 100 ms duration.
+        final stableStepMicros = math.max(1, (1e6 / c).floor());
+        final stepCapMicros = math.min(_maxSubStepMicros, stableStepMicros);
+        final numSteps = (dtMicros / stepCapMicros).ceil().clamp(1, 1 << 20);
+        final subDtMicros = dtMicros / numSteps;
+        final subDt = subDtMicros / 1e6;
         var x = _smoothedFocal!.dx;
         var y = _smoothedFocal!.dy;
         var vx = _focalVx;
@@ -793,39 +827,13 @@ class ZoomFocalController {
         _smoothedFocal = Offset(x, y);
         _focalVx = vx;
         _focalVy = vy;
-        forwardStep = true;
       }
       // dtMicros == 0 → same-position re-evaluation. Don't integrate;
       // return the current focal so settings edits at a paused
       // playhead are reflected without phantom motion.
     }
 
-    // Keep-in-view safety: the RETURNED focal is constrained so the live
-    // cursor stays inside the framed viewport (minus an edge margin), for
-    // every follow mode. This clamps the OUTPUT only — it deliberately does
-    // NOT feed back into the spring's integration state. _smoothedFocal stays
-    // unclamped (the transformer applies the reachable clamp at paint);
-    // mutating it here would wind up spring velocity against an out-of-reach
-    // (e.g. screen-corner) cursor and alter bounded/centered dynamics. Pure
-    // function of (cursor, focal, zoom, framing), so live play, the
-    // DeterministicFocalTrack replay, and export stay consistent. The
-    // enter/exit ramps return earlier with their own framing, so this runs
-    // only in the steady-state hold phase.
-    //
-    // Apply keep-in-view only on FORWARD steps. Backward-scrub and zero-dt
-    // re-evaluation frames intentionally freeze the spring; the deterministic
-    // focal track and export replay forward-only, so forward-gating keeps
-    // play == track == export consistent while leaving a live scrub's frozen
-    // focal untouched.
-    final focalOut = (forwardStep && cursor != null)
-        ? fr.clampFocalKeepCursorInView(
-            _smoothedFocal!,
-            cursor,
-            activeZoom.zoomLevel,
-            tuning.keepInViewEdgeMargin,
-          )
-        : _smoothedFocal!;
-    return ZoomFocalUpdate(zoom: activeZoom, focal: focalOut);
+    return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
   }
 
   /// Drop all smoothing state. Use when switching to a different
@@ -866,7 +874,9 @@ class ZoomFocalController {
   /// there's no exit ramp to enter (zero-length region or zero exit
   /// duration).
   static ({int exitStartUs, int exitUs})? _exitRampWindow(
-      ZoomRegion zoom, double rampDurationScale) {
+    ZoomRegion zoom,
+    double rampDurationScale,
+  ) {
     final regionUs = zoom.duration.inMicroseconds;
     if (regionUs <= 0) return null;
 
@@ -884,7 +894,9 @@ class ZoomFocalController {
   /// region). Returns null when there's no enter ramp (zero-length region
   /// or zero enter duration).
   static ({int enterUs})? _enterRampWindow(
-      ZoomRegion zoom, double rampDurationScale) {
+    ZoomRegion zoom,
+    double rampDurationScale,
+  ) {
     final regionUs = zoom.duration.inMicroseconds;
     if (regionUs <= 0) return null;
     final enterUs = zoom.resolvedRampsUs(rampDurationScale).enterUs;
