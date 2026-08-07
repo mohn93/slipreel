@@ -90,12 +90,20 @@ void main() {
     // rect dims = videoSize / zoom
     expect(r.rect.width, closeTo(1920 / 1.5, 0.001));
     expect(r.rect.height, closeTo(1080 / 1.5, 0.001));
-    expect(r.followCursor, isFalse);
+    // Click zooms follow as of 2026-08-06 — the camera tracks the cursor
+    // after the click. The rect assertions above still hold: the rect is
+    // computed the same way, it is simply unused by the renderer while
+    // following.
+    expect(r.followCursor, isTrue);
   });
 
-  test('two clicks 3 s apart → two regions', () {
-    // Positions chosen within the non-clamped zone for 1.5× zoom on
-    // 1920×1080: cx ∈ [640, 1280], cy ∈ [360, 720].
+  test('two clicks 3 s apart → one merged region', () {
+    // Regions run from click−500 to click+2300, so two clicks 3000ms apart
+    // leave a 200ms seam — far under the 1000ms of ramps that crossing it
+    // would cost, so they merge. The general form: any two clicks less than
+    // 3800ms apart merge. This test previously asserted two regions, which
+    // was true only under the pre-merge truncation rule.
+    // See docs/superpowers/specs/2026-08-06-auto-zoom-merge-and-follow-design.md
     final cursor = _rec([
       ..._clickAt(atMs: 2000, x: 700, y: 450),
       ..._clickAt(atMs: 5000, x: 1100, y: 600),
@@ -105,30 +113,54 @@ void main() {
       videoSize: videoSize,
       videoDuration: videoDuration,
     );
-    expect(out, hasLength(2));
-    expect(out[0].rect.center, const Offset(700, 450));
-    expect(out[1].rect.center, const Offset(1100, 600));
+    expect(out, hasLength(1));
+    expect(out.single.startTime, const Duration(milliseconds: 1500));
+    expect(out.single.startTime + out.single.duration,
+        const Duration(milliseconds: 7300));
+    expect(out.single.followCursor, isTrue);
   });
 
-  test('two clicks 0.5 s apart → no regions (both fail isolation)', () {
+  test('two clicks 0.5 s apart → one merged region spanning both', () {
+    // Pre-2026-08 this returned zero regions: the isolation filter
+    // dropped both clicks for having a close neighbour, which is why
+    // click-dense recordings opened with an empty zoom lane. They now
+    // merge into a single sustained region.
+    // See docs/superpowers/specs/2026-08-02-auto-zoom-interaction-classifier-design.md
+    //
+    // Coordinates sit in the non-clamped zone for 1.5× on 1920×1080
+    // (cx ∈ [640, 1280], cy ∈ [360, 720]) so the centre assertion below
+    // measures the union, not the clamp.
     final cursor = _rec([
-      ..._clickAt(atMs: 2000, x: 400, y: 300),
-      ..._clickAt(atMs: 2500, x: 800, y: 600),
+      ..._clickAt(atMs: 1000, x: 700, y: 450),
+      ..._clickAt(atMs: 1500, x: 740, y: 470),
     ]);
     final out = detector.detect(
       cursor: cursor,
       videoSize: videoSize,
       videoDuration: videoDuration,
     );
-    expect(out, isEmpty);
+    expect(out, hasLength(1));
+    final r = out.single;
+    // Starts 500ms before the first press and outlives the second click,
+    // i.e. it spans the pair rather than being one region plus a drop.
+    // First press 1000, last release 1550 => raw span 550, which is below
+    // the click shape's 1800ms hold, so the cluster floor raises it to
+    // 1800. Total 500 + 1800 + 500 = 2800, so it ends at 3300. Without
+    // that floor the merged region would be SHORTER than a lone click's.
+    expect(r.startTime, const Duration(milliseconds: 500));
+    expect(r.startTime + r.duration, const Duration(milliseconds: 3300));
+    // Framed on the union of both clicks (720, 460), not on the first.
+    expect(r.rect.center.dx, closeTo(720, 1.0));
+    expect(r.rect.center.dy, closeTo(460, 1.0));
   });
 
-  test('two clicks 1.6 s apart → only the first survives (overlap drops second)', () {
-    // Both pass the 1.5 s isolation gate. But region1 = [1500, 4300] (start
-    // 1500, duration 2800); region2 = [3100, 5900]. They overlap → second
-    // dropped.
-    // Positions within the non-clamped zone for 1.5× on 1920×1080:
-    // cx ∈ [640, 1280], cy ∈ [360, 720].
+  test('two clicks 1.6 s apart → one merged region spanning both', () {
+    // The press gap is 1600ms — above the 1200ms cluster gap, so these are
+    // two clusters. What decides the outcome is the REGION gap: [1500,4300]
+    // and [3100,5900] overlap by 1200ms, which is below the 1000ms of ramps
+    // that crossing the seam would cost, so they merge into one following
+    // region. The press gap this test is named for was never what decided
+    // it. See docs/superpowers/specs/2026-08-06-auto-zoom-merge-and-follow-design.md
     final cursor = _rec([
       ..._clickAt(atMs: 2000, x: 700, y: 450),
       ..._clickAt(atMs: 3600, x: 1100, y: 600),
@@ -139,7 +171,10 @@ void main() {
       videoDuration: videoDuration,
     );
     expect(out, hasLength(1));
-    expect(out.first.rect.center, const Offset(700, 450));
+    expect(out.single.startTime, const Duration(milliseconds: 1500));
+    expect(out.single.startTime + out.single.duration,
+        const Duration(milliseconds: 5900));
+    expect(out.single.followCursor, isTrue);
   });
 
   test('click at t=100 ms clamps region start to zero', () {

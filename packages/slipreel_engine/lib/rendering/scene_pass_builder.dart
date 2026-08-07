@@ -190,14 +190,16 @@ class ScenePassBuilder {
     // from the recording at a fixed source time, so play == scrub == export.
     Offset? enterCursorTarget;
     if (activeZoom != null && activeZoom.followCursor && hasCursorData) {
-      // Sample the settle target at the SCALED enter-ramp end so it tracks
-      // where the cursor actually is when the (feel-scaled) zoom completes —
-      // mirrors the rampDurationScale applied in the focal/transform math.
+      // Sample the settle target at the RESOLVED enter-ramp end so it tracks
+      // where the cursor actually is when the (feel-scaled) zoom completes.
+      // ZoomRegion.resolvedRampsUs is the shared ramp geometry used by the
+      // focal/transform math, so this includes the proportional squeeze a
+      // region shorter than its own ramps gets — sampling the unsqueezed end
+      // aims a short followCursor zoom at a cursor position it never reaches.
       final enterEnd = activeZoom.startTime +
           Duration(
-              microseconds: (activeZoom.enterDuration.inMicroseconds *
-                      rampDurationScale)
-                  .round());
+              microseconds:
+                  activeZoom.resolvedRampsUs(rampDurationScale).enterUs);
       final raw = cursorAt(cursorRecording, enterEnd);
       if (raw != null) {
         enterCursorTarget = Offset(

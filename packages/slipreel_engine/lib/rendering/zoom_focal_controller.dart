@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart' show Offset, Size;
-import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/follow_strategy.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
@@ -861,45 +860,34 @@ class ZoomFocalController {
   // branch in [update], handled inline.
 
   /// Exit ramp window for [zoom] in microseconds-into-region — the
-  /// last [ZoomRegion.exitDuration] post-squeeze when enter+exit
-  /// exceed the region length. Returns null when there's no exit
-  /// ramp to enter (zero-length region or zero exit duration).
+  /// last [ZoomRegion.exitDuration] as resolved by
+  /// [ZoomRegion.resolvedRampsUs] (feel-scaled, then proportionally
+  /// squeezed when enter+exit exceed the region length). Returns null when
+  /// there's no exit ramp to enter (zero-length region or zero exit
+  /// duration).
   static ({int exitStartUs, int exitUs})? _exitRampWindow(
       ZoomRegion zoom, double rampDurationScale) {
     final regionUs = zoom.duration.inMicroseconds;
     if (regionUs <= 0) return null;
 
-    var enterUs = (zoom.enterDuration.inMicroseconds * rampDurationScale).round();
-    var exitUs = (zoom.exitDuration.inMicroseconds * rampDurationScale).round();
-    final totalRamp = enterUs + exitUs;
-    if (totalRamp > regionUs && totalRamp > 0) {
-      // Match ZoomTransformer._calculateZoomFactor's proportional
-      // squeeze when the region can't fit both ramps at full length.
-      final scale = regionUs / totalRamp;
-      enterUs = (enterUs * scale).round();
-      exitUs = (exitUs * scale).round();
-    }
+    // ZoomRegion.resolvedRampsUs applies the feel scale and the proportional
+    // squeeze — shared with ZoomTransformer and ScenePassBuilder.
+    final exitUs = zoom.resolvedRampsUs(rampDurationScale).exitUs;
     if (exitUs <= 0) return null;
     final exitStartUs = regionUs - exitUs;
     return (exitStartUs: exitStartUs, exitUs: exitUs);
   }
 
   /// Enter ramp window for [zoom] in microseconds — the first
-  /// [ZoomRegion.enterDuration], proportionally squeezed (matching
-  /// [ZoomTransformer._calculateZoomFactor]) when enter+exit overflow the
-  /// region. Returns null when there's no enter ramp (zero-length region
+  /// [ZoomRegion.enterDuration] as resolved by [ZoomRegion.resolvedRampsUs]
+  /// (feel-scaled, then proportionally squeezed when enter+exit overflow the
+  /// region). Returns null when there's no enter ramp (zero-length region
   /// or zero enter duration).
   static ({int enterUs})? _enterRampWindow(
       ZoomRegion zoom, double rampDurationScale) {
     final regionUs = zoom.duration.inMicroseconds;
     if (regionUs <= 0) return null;
-    var enterUs = (zoom.enterDuration.inMicroseconds * rampDurationScale).round();
-    final exitUs = (zoom.exitDuration.inMicroseconds * rampDurationScale).round();
-    final totalRamp = enterUs + exitUs;
-    if (totalRamp > regionUs && totalRamp > 0) {
-      final scale = regionUs / totalRamp;
-      enterUs = (enterUs * scale).round();
-    }
+    final enterUs = zoom.resolvedRampsUs(rampDurationScale).enterUs;
     if (enterUs <= 0) return null;
     return (enterUs: enterUs);
   }
