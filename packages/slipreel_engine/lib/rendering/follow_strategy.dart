@@ -45,9 +45,31 @@ abstract class FollowStrategy {
     required Offset currentFocal,
     required Size videoSize,
     required MotionTuning tuning,
-    double playbackSpeed = 1.0,
     ZoomFraming? framing,
   });
+
+  /// Speed-aware entry point used by the rendering pipeline. Kept concrete so
+  /// existing external subclasses that implement only [resolve] remain source
+  /// compatible; strategies without speed-sensitive behavior inherit the
+  /// legacy resolution unchanged.
+  FollowResolution resolveAtPlaybackSpeed({
+    required ZoomRegion zoom,
+    required Offset? cursor,
+    required Offset cursorVelocity,
+    required Offset currentFocal,
+    required Size videoSize,
+    required MotionTuning tuning,
+    required double playbackSpeed,
+    ZoomFraming? framing,
+  }) => resolve(
+    zoom: zoom,
+    cursor: cursor,
+    cursorVelocity: cursorVelocity,
+    currentFocal: currentFocal,
+    videoSize: videoSize,
+    tuning: tuning,
+    framing: framing,
+  );
 
   /// Called when the active zoom region changes so a stateful
   /// strategy (the bounded gate) doesn't carry stale state into the
@@ -76,7 +98,6 @@ class CenteredFollowStrategy extends FollowStrategy {
     required Offset currentFocal,
     required Size videoSize,
     required MotionTuning tuning,
-    double playbackSpeed = 1.0,
     ZoomFraming? framing,
   }) {
     if (!zoom.followCursor) {
@@ -121,12 +142,16 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
   }
 
   /// The point the camera aims at this frame.
-  Offset aimPoint(
+  Offset aimPoint(ZoomRegion zoom, Offset cursor, Offset cursorVelocity);
+
+  /// Speed-aware internal extension that preserves the public three-argument
+  /// [aimPoint] API inherited by the compatibility strategy classes.
+  Offset aimPointAtPlaybackSpeed(
     ZoomRegion zoom,
     Offset cursor,
     Offset cursorVelocity,
     double playbackSpeed,
-  );
+  ) => aimPoint(zoom, cursor, cursorVelocity);
 
   @override
   FollowResolution resolve({
@@ -136,7 +161,47 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
     required Offset currentFocal,
     required Size videoSize,
     required MotionTuning tuning,
-    double playbackSpeed = 1.0,
+    ZoomFraming? framing,
+  }) => _resolve(
+    zoom: zoom,
+    cursor: cursor,
+    cursorVelocity: cursorVelocity,
+    currentFocal: currentFocal,
+    videoSize: videoSize,
+    tuning: tuning,
+    playbackSpeed: 1.0,
+    framing: framing,
+  );
+
+  @override
+  FollowResolution resolveAtPlaybackSpeed({
+    required ZoomRegion zoom,
+    required Offset? cursor,
+    required Offset cursorVelocity,
+    required Offset currentFocal,
+    required Size videoSize,
+    required MotionTuning tuning,
+    required double playbackSpeed,
+    ZoomFraming? framing,
+  }) => _resolve(
+    zoom: zoom,
+    cursor: cursor,
+    cursorVelocity: cursorVelocity,
+    currentFocal: currentFocal,
+    videoSize: videoSize,
+    tuning: tuning,
+    playbackSpeed: playbackSpeed,
+    framing: framing,
+  );
+
+  FollowResolution _resolve({
+    required ZoomRegion zoom,
+    required Offset? cursor,
+    required Offset cursorVelocity,
+    required Offset currentFocal,
+    required Size videoSize,
+    required MotionTuning tuning,
+    required double playbackSpeed,
     ZoomFraming? framing,
   }) {
     final boundsActive =
@@ -156,7 +221,12 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
       return FollowResolution(target: cursor, isHolding: false);
     }
 
-    final aim = aimPoint(zoom, cursor, cursorVelocity, playbackSpeed);
+    final aim = aimPointAtPlaybackSpeed(
+      zoom,
+      cursor,
+      cursorVelocity,
+      playbackSpeed,
+    );
     final z = zoom.zoomLevel;
     final viewport = (framing ?? ZoomFraming.identity(videoSize))
         .visibleViewportSizeInSource(z);
@@ -207,7 +277,18 @@ class SmartFollowStrategy extends _DeadzoneFollowStrategy {
   static const double _leadFadeFullPxPerSec = 900.0;
 
   @override
-  Offset aimPoint(
+  Offset aimPoint(ZoomRegion zoom, Offset cursor, Offset cursorVelocity) =>
+      _aimPoint(zoom, cursor, cursorVelocity, 1.0);
+
+  @override
+  Offset aimPointAtPlaybackSpeed(
+    ZoomRegion zoom,
+    Offset cursor,
+    Offset cursorVelocity,
+    double playbackSpeed,
+  ) => _aimPoint(zoom, cursor, cursorVelocity, playbackSpeed);
+
+  Offset _aimPoint(
     ZoomRegion zoom,
     Offset cursor,
     Offset cursorVelocity,
@@ -230,12 +311,8 @@ class SmartFollowStrategy extends _DeadzoneFollowStrategy {
 /// separate strategy so old bounded projects render exactly as before.
 class BoundedFollowStrategy extends _DeadzoneFollowStrategy {
   @override
-  Offset aimPoint(
-    ZoomRegion zoom,
-    Offset cursor,
-    Offset cursorVelocity,
-    double playbackSpeed,
-  ) => cursor;
+  Offset aimPoint(ZoomRegion zoom, Offset cursor, Offset cursorVelocity) =>
+      cursor;
 }
 
 /// Source-compatible name for the behavior now presented as Smart.

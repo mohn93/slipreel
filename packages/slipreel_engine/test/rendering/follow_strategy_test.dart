@@ -52,7 +52,50 @@ ZoomRegion _centered({bool followCursor = true}) {
   );
 }
 
+class _LegacyFollowStrategy extends FollowStrategy {
+  @override
+  FollowResolution resolve({
+    required ZoomRegion zoom,
+    required Offset? cursor,
+    required Offset cursorVelocity,
+    required Offset currentFocal,
+    required Size videoSize,
+    required MotionTuning tuning,
+    ZoomFraming? framing,
+  }) => FollowResolution(target: currentFocal, isHolding: true);
+}
+
 void main() {
+  group('public API compatibility', () {
+    test('an old-style FollowStrategy subclass remains valid', () {
+      final result = _LegacyFollowStrategy().resolveAtPlaybackSpeed(
+        zoom: _bounded(),
+        cursor: const Offset(100, 100),
+        cursorVelocity: const Offset(1000, 0),
+        currentFocal: const Offset(50, 50),
+        videoSize: _videoSize,
+        tuning: MotionTuning.defaults,
+        playbackSpeed: 2,
+      );
+
+      expect(result.target, const Offset(50, 50));
+      expect(result.isHolding, isTrue);
+    });
+
+    test('compatibility strategies retain the three-argument aimPoint API', () {
+      const cursor = Offset(960, 540);
+      const velocity = Offset(1000, 0);
+      expect(
+        BoundedFollowStrategy().aimPoint(_bounded(), cursor, velocity),
+        cursor,
+      );
+      expect(
+        PredictiveFollowStrategy().aimPoint(_predictive(), cursor, velocity),
+        cursor + const Offset(150, 0),
+      );
+    });
+  });
+
   group('CenteredFollowStrategy', () {
     final s = CenteredFollowStrategy();
 
@@ -452,7 +495,7 @@ void main() {
       final focal = const Offset(960, 540);
 
       FollowResolution resolve(double playbackSpeed) =>
-          SmartFollowStrategy().resolve(
+          SmartFollowStrategy().resolveAtPlaybackSpeed(
             zoom: _predictive(deadzoneRatio: 0.01),
             cursor: focal,
             cursorVelocity: const Offset(2000, 0),

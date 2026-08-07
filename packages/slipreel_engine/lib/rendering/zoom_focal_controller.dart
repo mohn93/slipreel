@@ -727,7 +727,7 @@ class ZoomFocalController {
     // `target == _smoothedFocal` check.
     final strategy = _strategyFor(activeZoom.followMode);
     _activeStrategyMode = activeZoom.followMode.canonical;
-    final resolution = strategy.resolve(
+    final resolution = strategy.resolveAtPlaybackSpeed(
       zoom: activeZoom,
       cursor: cursor,
       cursorVelocity: cursorVelocity,

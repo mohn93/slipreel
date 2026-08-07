@@ -1067,7 +1067,7 @@ void main() {
             hasCursorData: true,
           );
 
-          final expected = SmartFollowStrategy().resolve(
+          final expected = SmartFollowStrategy().resolveAtPlaybackSpeed(
             zoom: region,
             cursor: pass.cursorForFocal,
             cursorVelocity: pass.rawCursorVelocity,
