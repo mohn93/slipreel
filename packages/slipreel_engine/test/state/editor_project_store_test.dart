@@ -34,7 +34,7 @@ void main() {
             startTime: const Duration(seconds: 1),
             duration: const Duration(seconds: 2),
             zoomLevel: 2.5,
-            followMode: FollowMode.predictive,
+            followMode: FollowMode.bounded,
             predictiveWindow: const Duration(milliseconds: 1200),
           ),
         ],

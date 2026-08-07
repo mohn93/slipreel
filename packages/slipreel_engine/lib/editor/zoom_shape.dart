@@ -28,7 +28,7 @@ class ZoomShape {
   final Duration leadOut;
 
   /// Whether the region's camera follows the cursor. Follow regions use
-  /// the `ZoomRegion` defaults (`FollowMode.bounded`, deadzone 0.8) —
+  /// the `ZoomRegion` Smart defaults (`FollowMode.bounded`, deadzone 0.8) —
   /// they ride the stack that is already tuned rather than adding a new
   /// tuning surface.
   final bool followCursor;

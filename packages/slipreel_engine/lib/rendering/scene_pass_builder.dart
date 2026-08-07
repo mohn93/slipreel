@@ -230,9 +230,9 @@ class ScenePassBuilder {
 
     final activeZoom =
         activeRegionOverride ?? _activeZoomAt(position, zoomRegions);
-    // Every follow mode (including predictive) tracks the spring-smoothed
-    // sprite cursor so the camera and the visible cursor never disagree.
-    // Predictive's look-ahead is applied inside PredictiveFollowStrategy.
+    // Every follow mode tracks the spring-smoothed sprite cursor so the camera
+    // and the visible cursor never disagree. Smart's speed-aware look-ahead is
+    // applied inside SmartFollowStrategy.
     final Offset? cursorForFocal = motionSample?.screenPos;
 
     final rawVelocity = motionSample?.velocityPxPerSec ?? Offset.zero;

@@ -19,7 +19,7 @@ void main() {
             const CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 0.7, y2: 0.9),
         manualPanBackload: 0.76,
         followCursor: false,
-        followMode: FollowMode.predictive,
+        followMode: FollowMode.bounded,
         deadzoneRatio: 0.42,
         followDuration: const Duration(milliseconds: 600),
         predictiveWindow: const Duration(milliseconds: 200),
@@ -84,6 +84,22 @@ void main() {
       expect(restored.followDuration, const Duration(milliseconds: 850));
       expect(restored.predictiveWindow, const Duration(milliseconds: 150));
       expect(restored.followCursor, true);
+    });
+
+    test('legacy predictive mode canonicalizes to Smart for the UI', () {
+      final json = ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 1),
+        zoomLevel: 2.0,
+      ).toJson();
+      json['followMode'] = 'predictive';
+
+      final restored = ZoomRegion.fromJson(json);
+      expect(restored.followMode, FollowMode.predictive);
+      expect(restored.followMode.isSmart, isTrue);
+      expect(restored.followMode.canonical, FollowMode.bounded);
+      expect(restored.toJson()['followMode'], 'bounded');
     });
 
     test('legacy followSmoothing / followCurve keys load without error', () {

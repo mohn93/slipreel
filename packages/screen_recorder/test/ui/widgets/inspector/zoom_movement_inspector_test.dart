@@ -6,14 +6,20 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/ui/theme/app_palette.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart';
+import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
-ZoomRegion _region({bool followCursor = false, ZoomMovement? movement}) =>
+ZoomRegion _region({
+  bool followCursor = false,
+  FollowMode followMode = FollowMode.bounded,
+  ZoomMovement? movement,
+}) =>
     ZoomRegion(
       rect: const Rect.fromLTWH(100, 100, 200, 200),
       startTime: Duration.zero,
       duration: const Duration(seconds: 3),
       zoomLevel: 2,
       followCursor: followCursor,
+      followMode: followMode,
       movement: movement ?? const ZoomMovement(),
     );
 
@@ -59,6 +65,63 @@ Future<void> _scrollToText(WidgetTester tester, String text) async {
 }
 
 void main() {
+  testWidgets('follow styles expose only Smart and Centered', (tester) async {
+    await _pump(tester, _region(followCursor: true), (_) {});
+    await _scrollToText(tester, 'Follow style');
+
+    expect(find.text('Smart'), findsOneWidget);
+    expect(find.text('Centered'), findsOneWidget);
+    expect(find.text('Bounded'), findsNothing);
+    expect(find.text('Predictive'), findsNothing);
+    expect(find.text('Lead time'), findsOneWidget);
+  });
+
+  testWidgets('legacy predictive projects display Smart as selected',
+      (tester) async {
+    await _pump(
+      tester,
+      _region(
+        followCursor: true,
+        followMode: FollowMode.predictive,
+      ),
+      (_) {},
+    );
+    await _scrollToText(tester, 'Follow style');
+
+    final smart = tester.widget<InspectorChip>(
+      find.widgetWithText(InspectorChip, 'Smart'),
+    );
+    expect(smart.selected, isTrue);
+  });
+
+  testWidgets('selecting Smart writes the canonical bounded value',
+      (tester) async {
+    ZoomRegion? updated;
+    await _pump(
+      tester,
+      _region(followCursor: true, followMode: FollowMode.centered),
+      (z) => updated = z,
+    );
+    await _scrollToText(tester, 'Follow style');
+    await tester.tap(find.text('Smart'));
+    await tester.pumpAndSettle();
+
+    expect(updated!.followMode, FollowMode.bounded);
+  });
+
+  testWidgets('Centered hides Smart-only deadzone and anticipation controls',
+      (tester) async {
+    await _pump(
+      tester,
+      _region(followCursor: true, followMode: FollowMode.centered),
+      (_) {},
+    );
+    await _scrollToText(tester, 'Follow style');
+
+    expect(find.text('Deadzone size'), findsNothing);
+    expect(find.text('Lead time'), findsNothing);
+  });
+
   testWidgets('selecting Push-in sets the movement on the region',
       (tester) async {
     ZoomRegion? updated;

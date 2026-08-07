@@ -64,8 +64,8 @@ abstract class FollowStrategy {
 /// When `followCursor` is on but the cursor is unavailable, it falls back to
 /// video center so stale manual placement does not affect auto-follow.
 ///
-/// `predictive` mode does NOT use this strategy — it is an anticipatory
-/// deadzone follow (see [PredictiveFollowStrategy]).
+/// Smart mode does NOT use this strategy — it is an anticipatory deadzone
+/// follow (see [SmartFollowStrategy]).
 class CenteredFollowStrategy extends FollowStrategy {
   @override
   FollowResolution resolve({
@@ -87,11 +87,9 @@ class CenteredFollowStrategy extends FollowStrategy {
   }
 }
 
-/// Cursor-follow with a deadzone gate, parameterized by the AIM point each
-/// subclass chooses (raw cursor for bounded; velocity-led cursor for
-/// predictive). The cursor pins the focal while the aim point is inside the
-/// deadzone; crossing the boundary starts a chase that re-centers the cursor
-/// and then holds.
+/// Cursor-follow with a deadzone gate. The cursor pins the focal while the aim
+/// point is inside the deadzone; crossing the boundary starts a chase that
+/// re-centers the cursor and then holds.
 ///
 /// **Engage-positional, release-hysteretic.** Engagement is purely positional
 /// (aim outside the deadzone ⇒ chase) so hover jitter inside the dz never
@@ -185,14 +183,7 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
   }
 }
 
-/// Reactive deadzone follow: aims at the raw cursor (no look-ahead).
-class BoundedFollowStrategy extends _DeadzoneFollowStrategy {
-  @override
-  Offset aimPoint(ZoomRegion zoom, Offset cursor, Offset cursorVelocity) =>
-      cursor;
-}
-
-/// Anticipatory deadzone follow: aims at the velocity-led cursor
+/// Smart deadzone follow: aims at the velocity-led cursor
 /// (`cursor + velocity·leadTime`) so the camera starts panning before the
 /// cursor reaches the deadzone edge. Lead time is [ZoomRegion.predictiveWindow].
 ///
@@ -202,7 +193,7 @@ class BoundedFollowStrategy extends _DeadzoneFollowStrategy {
 /// movements don't get amplified past the deadzone into camera jitter; fast,
 /// deliberate motion gets the full anticipation. At rest the lead is zero ⇒
 /// aim == cursor ⇒ no overshoot on click landings.
-class PredictiveFollowStrategy extends _DeadzoneFollowStrategy {
+class SmartFollowStrategy extends _DeadzoneFollowStrategy {
   static const double _leadFadeStartPxPerSec = 200.0;
   static const double _leadFadeFullPxPerSec = 900.0;
 
@@ -217,16 +208,21 @@ class PredictiveFollowStrategy extends _DeadzoneFollowStrategy {
   }
 }
 
+/// Source-compatible aliases for integrations that constructed the old
+/// strategy classes directly. Both now share the canonical Smart behavior.
+class BoundedFollowStrategy extends SmartFollowStrategy {}
+
+class PredictiveFollowStrategy extends SmartFollowStrategy {}
+
 /// Pick the right strategy for a [FollowMode]. Called by the
 /// controller when the active zoom region changes; the result is
-/// cached for the lifetime of that region so the bounded gate's
+/// cached for the lifetime of that region so the Smart gate's
 /// `_inFlight` persists across frames.
 FollowStrategy followStrategyFor(FollowMode mode) {
   switch (mode) {
     case FollowMode.bounded:
-      return BoundedFollowStrategy();
     case FollowMode.predictive:
-      return PredictiveFollowStrategy();
+      return SmartFollowStrategy();
     case FollowMode.centered:
       return CenteredFollowStrategy();
   }

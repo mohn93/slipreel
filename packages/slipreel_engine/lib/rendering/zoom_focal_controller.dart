@@ -65,7 +65,7 @@ class ZoomFocalController {
   Duration? get lastSnapAt => _lastSnapAt;
 
   /// Per-mode target resolution lives in [FollowStrategy]. Cached by
-  /// [FollowMode] so the bounded gate's `_inFlight` persists across
+  /// [FollowMode] so the Smart gate's `_inFlight` persists across
   /// frames within one zoom region. Reset on active-region change.
   final Map<FollowMode, FollowStrategy> _strategies = {};
   FollowMode? _activeStrategyMode;
@@ -253,13 +253,13 @@ class ZoomFocalController {
   // did against a hover-inside-dz.
   //
   // The threshold itself now lives on [MotionTuning] and is read by
-  // [BoundedFollowStrategy].
+  // [SmartFollowStrategy].
 
   /// Last computed focal. Exposed for the debug HUD that draws the
   /// focal as a hollow yellow ring.
   Offset? get smoothedFocal => _smoothedFocal;
 
-  /// Whether the bounded-mode deadzone gate is currently bypassed
+  /// Whether the Smart-mode deadzone gate is currently bypassed
   /// because the spring is mid-chase. Exposed for the debug HUD so
   /// we can see, frame by frame, whether the camera is "tracking" or
   /// "holding". When the camera is unexpectedly drifting, this tells

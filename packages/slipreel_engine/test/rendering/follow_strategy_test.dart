@@ -108,9 +108,9 @@ void main() {
     });
   });
 
-  group('BoundedFollowStrategy gate semantics', () {
+  group('SmartFollowStrategy gate semantics', () {
     test('with followCursor=false collapses to rect centre target', () {
-      final s = BoundedFollowStrategy();
+      final s = SmartFollowStrategy();
       final r = s.resolve(
         zoom: _bounded(followCursor: false),
         cursor: const Offset(800, 400),
@@ -126,7 +126,7 @@ void main() {
 
     test('engagement is strictly positional: cursor inside dz with zero '
         'velocity keeps the focal pinned (no chase from hover-noise)', () {
-      final s = BoundedFollowStrategy();
+      final s = SmartFollowStrategy();
       final focal = const Offset(960, 540);
       // 1920/2 * 0.4 = 384 px wide deadzone; cursor 100 px from focal
       // is well inside it.
@@ -152,7 +152,7 @@ void main() {
     test(
       'engagement: cursor crossing the deadzone boundary starts a chase',
       () {
-        final s = BoundedFollowStrategy();
+        final s = SmartFollowStrategy();
         final focal = const Offset(960, 540);
         // Deadzone half-width = 1920/2 * 0.4 / 2 = 192. Cursor at +400
         // is well outside.
@@ -173,7 +173,7 @@ void main() {
     test('in-flight, cursor moving fast inside the deadzone keeps the gate '
         'engaged (no flap during continuous motion)', () {
       // Prime: engage the gate.
-      final s = BoundedFollowStrategy();
+      final s = SmartFollowStrategy();
       final focal = const Offset(960, 540);
       s.resolve(
         zoom: _bounded(),
@@ -201,7 +201,7 @@ void main() {
 
     test('release: in-flight cursor inside dz with velocity below threshold '
         'flips the gate to released (cursor has stopped)', () {
-      final s = BoundedFollowStrategy();
+      final s = SmartFollowStrategy();
       final focal = const Offset(960, 540);
       // Engage.
       s.resolve(
@@ -233,7 +233,7 @@ void main() {
     test('release hysteresis: an at-rest cursor in the OUTER ring (inside the '
         'deadzone but outside the inner re-center zone) keeps chasing — it '
         'does NOT release until re-centered', () {
-      final s = BoundedFollowStrategy();
+      final s = SmartFollowStrategy();
       final focal = const Offset(960, 540);
       // Engage by leaving the deadzone (half-width 192).
       s.resolve(
@@ -265,7 +265,7 @@ void main() {
     });
 
     test('reset() clears the gate state', () {
-      final s = BoundedFollowStrategy();
+      final s = SmartFollowStrategy();
       final focal = const Offset(960, 540);
       // Engage.
       s.resolve(
@@ -284,7 +284,7 @@ void main() {
     test('custom tuning: a higher cursorAtRest threshold releases the gate '
         'at speeds the default would keep engaged', () {
       const lenient = MotionTuning(cursorAtRestPxPerSec: 1000.0);
-      final s = BoundedFollowStrategy();
+      final s = SmartFollowStrategy();
       final focal = const Offset(960, 540);
       // Engage.
       s.resolve(
@@ -328,7 +328,7 @@ void main() {
 
       // Bare-video viewport at 2x is 500 source px wide, so +120 lies outside
       // its 100 px deadzone half-width.
-      final identity = BoundedFollowStrategy().resolve(
+      final identity = SmartFollowStrategy().resolve(
         zoom: zoom,
         cursor: cursor,
         cursorVelocity: Offset.zero,
@@ -340,7 +340,7 @@ void main() {
 
       // Composed viewport is 750 source px wide (1200 / 2 / 0.8), so the
       // advertised 40% deadzone has a 150 px half-width and +120 must hold.
-      final composed = BoundedFollowStrategy().resolve(
+      final composed = SmartFollowStrategy().resolve(
         zoom: zoom,
         cursor: cursor,
         cursorVelocity: Offset.zero,
@@ -353,9 +353,9 @@ void main() {
     });
   });
 
-  group('PredictiveFollowStrategy anticipation', () {
+  group('SmartFollowStrategy anticipation', () {
     test('zero velocity behaves like bounded: inside dz holds', () {
-      final s = PredictiveFollowStrategy();
+      final s = SmartFollowStrategy();
       final focal = const Offset(960, 540);
       // dz half-width = 1920/2 * 0.4 / 2 = 192; cursor +100 is inside.
       final r = s.resolve(
@@ -372,7 +372,7 @@ void main() {
 
     test('fast velocity lead engages the chase earlier than the raw cursor '
         'would', () {
-      final s = PredictiveFollowStrategy();
+      final s = SmartFollowStrategy();
       final focal = const Offset(960, 540);
       // Cursor still inside dz (+150 < 192 half-width) but moving fast right.
       // At 1000 px/s the lead is fully faded in (band 200..900 px/s), so
@@ -400,7 +400,7 @@ void main() {
 
     test('lead fades out at low speed: a slow cursor does NOT get enough lead '
         'to engage (no jitter amplification)', () {
-      final s = PredictiveFollowStrategy();
+      final s = SmartFollowStrategy();
       final focal = const Offset(960, 540);
       // Cursor +150 (inside dz half 192). At 300 px/s the lead is faded to
       // near zero (band 200..900 px/s), so aim stays inside the dz and holds.
@@ -422,22 +422,23 @@ void main() {
       expect(s.inFlight, isFalse);
     });
 
-    test('bounded with the same cursor/velocity still holds (no lead)', () {
-      final s = BoundedFollowStrategy();
+    test('legacy bounded and predictive values resolve to Smart', () {
       final focal = const Offset(960, 540);
-      final r = s.resolve(
-        zoom: _bounded(),
-        cursor: focal + const Offset(150, 0),
-        cursorVelocity: const Offset(500, 0),
-        currentFocal: focal,
-        videoSize: _videoSize,
-        tuning: MotionTuning.defaults,
-      );
-      expect(
-        r.isHolding,
-        isTrue,
-        reason: 'bounded aims at the raw cursor (+150, inside dz)',
-      );
+      FollowResolution resolve(FollowMode mode) =>
+          followStrategyFor(mode).resolve(
+            zoom: mode == FollowMode.bounded ? _bounded() : _predictive(),
+            cursor: focal + const Offset(150, 0),
+            cursorVelocity: const Offset(1000, 0),
+            currentFocal: focal,
+            videoSize: _videoSize,
+            tuning: MotionTuning.defaults,
+          );
+
+      final bounded = resolve(FollowMode.bounded);
+      final predictive = resolve(FollowMode.predictive);
+      expect(bounded.isHolding, isFalse);
+      expect(bounded.target, predictive.target);
+      expect(bounded.target.dx, closeTo(focal.dx + 300, 0.5));
     });
   });
 }
