@@ -19,7 +19,7 @@ void main() {
             const CubicBezierCurve(x1: 0.1, y1: 0.2, x2: 0.7, y2: 0.9),
         manualPanBackload: 0.76,
         followCursor: false,
-        followMode: FollowMode.predictive,
+        followMode: FollowMode.bounded,
         deadzoneRatio: 0.42,
         followDuration: const Duration(milliseconds: 600),
         predictiveWindow: const Duration(milliseconds: 200),
@@ -84,6 +84,29 @@ void main() {
       expect(restored.followDuration, const Duration(milliseconds: 850));
       expect(restored.predictiveWindow, const Duration(milliseconds: 150));
       expect(restored.followCursor, true);
+    });
+
+    test('all follow modes round-trip by their persisted name', () {
+      final json = ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 1),
+        zoomLevel: 2.0,
+      ).toJson();
+
+      for (final mode in FollowMode.values) {
+        json['followMode'] = mode.name;
+        final restored = ZoomRegion.fromJson(json);
+        expect(restored.followMode, mode);
+        expect(restored.toJson()['followMode'], mode.name);
+      }
+    });
+
+    test('legacy predictive mode shares Smart runtime identity', () {
+      expect(FollowMode.predictive.isSmart, isTrue);
+      expect(FollowMode.predictive.canonical, FollowMode.smart);
+      expect(FollowMode.bounded.isSmart, isFalse);
+      expect(FollowMode.bounded.canonical, FollowMode.bounded);
     });
 
     test('legacy followSmoothing / followCurve keys load without error', () {

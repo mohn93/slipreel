@@ -381,8 +381,18 @@ class ZoomContextInspector extends ConsumerWidget {
             mode: zoom.followMode,
             onChanged: (m) => onChanged(zoom.copyWith(followMode: m)),
           ),
-          if (zoom.followMode == FollowMode.bounded ||
-              zoom.followMode == FollowMode.predictive) ...[
+          const SizedBox(height: 8),
+          Text(
+            zoom.followMode.isSmart
+                ? 'Holds the frame steady, then anticipates deliberate '
+                      'cursor movement.'
+                : zoom.followMode == FollowMode.bounded
+                ? 'Original deadzone behavior retained for this project. '
+                      'Choose Smart to upgrade explicitly.'
+                : 'Continuously keeps the camera moving toward the cursor.',
+            style: const TextStyle(color: kInspectorMuted, fontSize: 12),
+          ),
+          if (zoom.followMode.usesDeadzone) ...[
             const SizedBox(height: 16),
             InspectorSlider(
               label: 'Deadzone size',
@@ -402,7 +412,7 @@ class ZoomContextInspector extends ConsumerWidget {
               canReset: (zoom.deadzoneRatio - 0.8).abs() > 1e-6,
             ),
           ],
-          if (zoom.followMode == FollowMode.predictive) ...[
+          if (zoom.followMode.isSmart) ...[
             const SizedBox(height: 16),
             InspectorSlider(
               label: 'Lead time',
@@ -713,14 +723,15 @@ class _FollowModeSegmented extends StatelessWidget {
   final FollowMode mode;
   final ValueChanged<FollowMode> onChanged;
 
-  static const List<(FollowMode, String, IconData)> _options = [
-    (FollowMode.bounded, 'Bounded', Icons.crop_free),
-    (FollowMode.centered, 'Centered', Icons.center_focus_strong),
-    (FollowMode.predictive, 'Predictive', Icons.auto_awesome),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final selectedMode = mode.canonical;
+    final options = <(FollowMode, String, IconData)>[
+      if (mode == FollowMode.bounded)
+        (FollowMode.bounded, 'Bounded (Legacy)', Icons.crop_free),
+      (FollowMode.smart, 'Smart', Icons.auto_awesome),
+      (FollowMode.centered, 'Centered', Icons.center_focus_strong),
+    ];
     // Matches the cursor / audio / slice preset rows — a Wrap of
     // [InspectorChip]s in `dense` mode. The earlier custom card-tile
     // layout (Expanded + per-tile vertical column) was inconsistent
@@ -732,11 +743,11 @@ class _FollowModeSegmented extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: [
-        for (final (m, label, icon) in _options)
+        for (final (m, label, icon) in options)
           InspectorChip(
             label: label,
             icon: icon,
-            selected: mode == m,
+            selected: selectedMode == m,
             onTap: () => onChanged(m),
             dense: true,
           ),

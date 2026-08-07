@@ -34,7 +34,7 @@ void main() {
             startTime: const Duration(seconds: 1),
             duration: const Duration(seconds: 2),
             zoomLevel: 2.5,
-            followMode: FollowMode.predictive,
+            followMode: FollowMode.bounded,
             predictiveWindow: const Duration(milliseconds: 1200),
           ),
         ],
@@ -78,6 +78,32 @@ void main() {
       expect(restored.clickSpring.damping, closeTo(0.7, 1e-9));
       expect(restored.cursorDelay, const Duration(milliseconds: 120));
       expect(restored.windowFrame, WindowFrame.modern());
+    });
+
+    test('v11 migration preserves legacy follow-mode trajectories', () {
+      final migrated = migrateEditorProjectJson(
+        {
+          'schemaVersion': 11,
+          'timeline': {
+            'zoomTracks': [
+              {
+                'regions': [
+                  {'followMode': 'bounded'},
+                  {'followMode': 'predictive'},
+                ],
+              },
+            ],
+          },
+        },
+        videoDuration: const Duration(seconds: 60),
+      );
+
+      final timeline = migrated['timeline'] as Map<String, dynamic>;
+      final tracks = timeline['zoomTracks'] as List;
+      final regions = (tracks.first as Map)['regions'] as List;
+      expect(migrated['schemaVersion'], 12);
+      expect((regions[0] as Map)['followMode'], 'bounded');
+      expect((regions[1] as Map)['followMode'], 'predictive');
     });
 
     test('legacy custom animation configs in JSON migrate to the Smooth preset',

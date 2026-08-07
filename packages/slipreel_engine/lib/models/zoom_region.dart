@@ -7,26 +7,39 @@ import 'zoom_movement.dart';
 
 /// How the zoom camera tracks the cursor while a region is active.
 ///
-/// All three modes feed the same critically-damped catch-up spring (see
+/// All modes feed the same critically-damped catch-up spring (see
 /// [ZoomFocalController]) — they only differ in what target the camera is
 /// aimed at each frame. [followDuration] is the spring's settle time; it also
 /// sets how much the spring smooths (rounds) the cursor's path into a curve.
 enum FollowMode {
-  /// Default. The camera holds steady while the cursor sits inside a
-  /// centered deadzone box; once the cursor leaves the deadzone the
-  /// camera springs out to it. After it settles, a new deadzone
-  /// re-engages around the new focal.
+  /// Legacy reactive deadzone follow. Preserved so existing projects keep
+  /// byte-for-byte camera trajectories until the user explicitly upgrades.
   bounded,
 
   /// The camera springs toward the cursor every frame. Smoothest
   /// real-time tracking; no "rest zone".
   centered,
 
-  /// The camera follows the cursor's *anticipated* position
-  /// (`cursor + velocity·leadTime`) through a deadzone gate — it holds steady
-  /// while the cursor works in a centered safe-zone and pans early, before the
-  /// cursor reaches an edge. See [predictiveWindow] for the lead time.
+  /// Legacy persisted name for [smart]. Kept so existing predictive projects
+  /// round-trip unchanged and source integrations remain valid.
   predictive,
+
+  /// User-facing Smart follow. Holds inside a deadzone, then uses speed-faded
+  /// anticipation to begin a smooth chase before deliberate motion reaches
+  /// the frame edge.
+  smart;
+
+  /// Whether this value uses speed-aware anticipation.
+  bool get isSmart =>
+      this == FollowMode.smart || this == FollowMode.predictive;
+
+  /// Whether this value uses a deadzone gate.
+  bool get usesDeadzone => this != FollowMode.centered;
+
+  /// Runtime/UI identity. Predictive is a persisted compatibility alias for
+  /// Smart; bounded stays distinct because changing it would alter old renders.
+  FollowMode get canonical =>
+      this == FollowMode.predictive ? FollowMode.smart : this;
 }
 
 /// Represents a zoom region with timing and transformation parameters.
@@ -49,8 +62,8 @@ class ZoomRegion {
   // linear — 850 ms rounds the corners into a smooth curve without the
   // camera visibly "swimming" behind the cursor.
   static const Duration _defaultFollow = Duration(milliseconds: 850);
-  // Predictive look-ahead lead time: how far ahead the predictive follow
-  // strategy aims (cursor + velocity·leadTime). 150 ms leads enough to cancel
+  // Smart look-ahead lead time: how far ahead the Smart follow strategy aims
+  // (cursor + velocity·leadTime). 150 ms leads enough to cancel
   // the spring's settle lag without overshooting on click landings (velocity
   // ≈ 0 at rest ⇒ no lead). Clamped to [80, 250] ms.
   static const Duration _defaultLeadTime = Duration(milliseconds: 150);
@@ -101,19 +114,19 @@ class ZoomRegion {
   /// the placement picker keeps the resulting viewport inside the canvas.
   final bool followCursor;
 
-  /// How the camera follows the cursor — see [FollowMode]. Default
-  /// is [FollowMode.bounded].
+  /// How the camera follows the cursor — see [FollowMode]. The user-facing
+  /// choices are [FollowMode.smart] and [FollowMode.centered]. Existing
+  /// [FollowMode.bounded] projects retain a conditional legacy option.
   final FollowMode followMode;
 
   /// Edge length of the deadzone as a fraction of the *visible
   /// viewport* (the region of source video framed by the current
   /// zoom). 0.3 = a centered box covering 30% of the viewport on
-  /// each axis. Consulted by the deadzone follow modes
-  /// [FollowMode.bounded] and [FollowMode.predictive].
+  /// each axis. Consulted by every deadzone follow mode.
   final double deadzoneRatio;
 
-  /// Predictive look-ahead lead time: how far ahead [FollowMode.predictive]
-  /// aims along the cursor's velocity. Clamped to [80, 250] ms; default 150 ms.
+  /// Smart look-ahead lead time: how far ahead Smart follow aims along the
+  /// cursor's velocity. Clamped to [80, 250] ms; default 150 ms.
   /// (Field name retained for JSON back-compat — see `predictiveWindowMicros`.)
   final Duration predictiveWindow;
 
@@ -146,7 +159,7 @@ class ZoomRegion {
     this.rampCurveOverride,
     this.manualPanBackload,
     this.followCursor = true,
-    this.followMode = FollowMode.bounded,
+    this.followMode = FollowMode.smart,
     double deadzoneRatio = 0.8,
     Duration? followDuration,
     Duration? predictiveWindow,

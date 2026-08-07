@@ -78,13 +78,13 @@ class ZoomFocalDebugPainter extends CustomPainter {
 
     if (smoothedFocal != null) {
       final f = Offset(smoothedFocal!.dx * scaleX, smoothedFocal!.dy * scaleY);
-      // Deadzone box (bounded mode only): magenta when idle, green
+      // Deadzone box: magenta when idle, green
       // while the gate is bypassed (`_inFlight`). Drawn first so the
       // focal crosshair sits on top.
       final z = activeZoom;
       if (z != null &&
           z.followCursor &&
-          z.followMode == FollowMode.bounded &&
+          z.followMode.usesDeadzone &&
           z.deadzoneRatio > 0 &&
           videoSize.width > 0 &&
           videoSize.height > 0) {
@@ -158,7 +158,7 @@ class ZoomDebugSnapshot {
   final bool inFlight;
   final Offset focalVelocity;
   /// Cursor's intrinsic scene velocity in source-video px/s. This is
-  /// the value the bounded-mode gate consults for "is the cursor at
+  /// the value the Smart-mode gate consults for "is the cursor at
   /// rest?" — if a snap is happening when the user reports the cursor
   /// as stopped, this tells us whether the gate sees a real velocity
   /// spike (e.g. from a click-injected sample landing 2 px off the

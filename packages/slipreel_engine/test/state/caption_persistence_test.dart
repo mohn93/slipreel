@@ -6,8 +6,8 @@ import 'package:slipreel_engine/state/editor_project_state.dart';
 void main() {
   const dur = Duration(seconds: 10);
 
-  test('schema version is 11', () {
-    expect(EditorProjectState.currentSchemaVersion, 11);
+  test('schema version is current', () {
+    expect(EditorProjectState.currentSchemaVersion, 12);
   });
 
   test('captionStyle + segments round-trip through JSON', () {
