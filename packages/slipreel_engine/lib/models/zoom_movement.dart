@@ -70,10 +70,25 @@ class ZoomMovement {
     return c * c * (3.0 - 2.0 * c);
   }
 
+  /// Maps a live focal's horizontal position to a smooth signed direction.
+  ///
+  /// A cursor-following focal can cross the canvas centre on any frame. Using
+  /// only its sign would flip a Sweep from full-left to full-right at that
+  /// crossing. Signed smoothstep instead passes continuously through zero and
+  /// has zero slope both at centre and at the frame edges, so even the change
+  /// in angular velocity is gentle.
+  static double _smoothLiveDirection(double normalizedX) {
+    final x = normalizedX.clamp(-1.0, 1.0).toDouble();
+    final magnitude = x.abs();
+    final eased = magnitude * magnitude * (3.0 - 2.0 * magnitude);
+    return x < 0.0 ? -eased : eased;
+  }
+
   ZoomMovementSample resolveAt({
     required double holdProgress,
     required double rampGate,
     required Offset normalizedFocal,
+    bool followCursor = false,
   }) {
     if (!isActive || rampGate <= 0.0) return ZoomMovementSample.identity;
     final env = _ease(holdProgress) * rampGate.clamp(0.0, 1.0);
@@ -91,7 +106,13 @@ class ZoomMovement {
         final deg = intensity == ZoomMovementIntensity.dramatic
             ? kSweepDramaticDeg
             : kSweepSubtleDeg;
-        final dir = normalizedFocal.dx >= 0 ? 1.0 : -1.0;
+        // A manual focal is static, so preserve the original full-strength
+        // side selection (including a deterministic rightward sweep at exact
+        // centre). A live cursor needs a continuous direction or crossing the
+        // centre causes an instantaneous 10/20 degree yaw reversal.
+        final dir = followCursor
+            ? _smoothLiveDirection(normalizedFocal.dx)
+            : (normalizedFocal.dx >= 0 ? 1.0 : -1.0);
         final rad = deg * (math.pi / 180.0) * dir * env;
         return ZoomMovementSample(extraTiltYRad: rad);
       case ZoomMovementKind.drift:
@@ -99,7 +120,12 @@ class ZoomMovement {
             ? kDriftDramaticFrac
             : kDriftSubtleFrac;
         // Reveal toward the frame center: drift opposite the focal side.
-        final dir = normalizedFocal.dx >= 0 ? -1.0 : 1.0;
+        // Drift is hidden for cursor-following zooms, but imported/hand-edited
+        // projects can still contain that combination. Keep it continuous for
+        // the same reason as Sweep rather than retaining a latent centre snap.
+        final dir = followCursor
+            ? -_smoothLiveDirection(normalizedFocal.dx)
+            : (normalizedFocal.dx >= 0 ? -1.0 : 1.0);
         return ZoomMovementSample(
             focalDriftFrac: Offset(frac * dir * env, 0.0));
     }

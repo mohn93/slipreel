@@ -1,4 +1,4 @@
-import 'dart:ui' show Rect, Size;
+import 'dart:ui' show Offset, Rect, Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_movement.dart';
@@ -90,6 +90,44 @@ void main() {
       framing: framing,
     );
     expect(scaleX(withPush), closeTo(scaleX(none), 1e-9));
+  });
+
+  test('cursor-follow sweep transform crosses canvas center continuously', () {
+    final r = region(
+      movement: const ZoomMovement(
+        kind: ZoomMovementKind.sweep,
+        intensity: ZoomMovementIntensity.dramatic,
+      ),
+      followCursor: true,
+    );
+    final left = t.getTransform(
+      position: midHold,
+      zoomRegion: r,
+      videoSize: videoSize,
+      focalPoint: const Offset(499, 500),
+      framing: framing,
+    );
+    final center = t.getTransform(
+      position: midHold,
+      zoomRegion: r,
+      videoSize: videoSize,
+      focalPoint: const Offset(500, 500),
+      framing: framing,
+    );
+    final right = t.getTransform(
+      position: midHold,
+      zoomRegion: r,
+      videoSize: videoSize,
+      focalPoint: const Offset(501, 500),
+      framing: framing,
+    );
+
+    // Matrix4's Y-rotation sine lives in entry 2 after the base scale is
+    // composed. The old binary direction changed this entry by ~0.35 across
+    // these adjacent focals; a continuous live direction keeps it microscopic.
+    expect(center.storage[2], closeTo(0.0, 1e-12));
+    expect(left.storage[2], closeTo(-right.storage[2], 1e-12));
+    expect((right.storage[2] - left.storage[2]).abs(), lessThan(0.001));
   });
 
   test('getTransform is deterministic — same position, same matrix, '

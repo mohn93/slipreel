@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/zoom_movement.dart';
 
@@ -10,11 +12,13 @@ void main() {
     double holdProgress = 1.0,
     double rampGate = 1.0,
     Offset focal = focalRight,
+    bool followCursor = false,
   }) =>
       m.resolveAt(
         holdProgress: holdProgress,
         rampGate: rampGate,
         normalizedFocal: focal,
+        followCursor: followCursor,
       );
 
   group('resolveAt identity conditions', () {
@@ -90,6 +94,81 @@ void main() {
       final right = resolve(m, focal: const Offset(0.5, 0)).extraTiltYRad;
       final left = resolve(m, focal: const Offset(-0.5, 0)).extraTiltYRad;
       expect(right.sign, isNot(equals(left.sign)));
+    });
+
+    test('manual sweep keeps full strength at a centered focal', () {
+      const m = ZoomMovement(kind: ZoomMovementKind.sweep);
+      final centered = resolve(m, focal: Offset.zero).extraTiltYRad;
+      expect(centered, closeTo(kSweepSubtleDeg * math.pi / 180.0, 1e-9));
+    });
+
+    test('cursor-follow sweep crosses center continuously', () {
+      const m = ZoomMovement(
+          kind: ZoomMovementKind.sweep,
+          intensity: ZoomMovementIntensity.dramatic);
+      final left = resolve(
+        m,
+        focal: const Offset(-0.01, 0),
+        followCursor: true,
+      ).extraTiltYRad;
+      final center = resolve(
+        m,
+        focal: Offset.zero,
+        followCursor: true,
+      ).extraTiltYRad;
+      final right = resolve(
+        m,
+        focal: const Offset(0.01, 0),
+        followCursor: true,
+      ).extraTiltYRad;
+
+      expect(center, 0.0);
+      expect(left, closeTo(-right, 1e-12));
+      expect((right - left).abs(), lessThan(0.001));
+    });
+
+    test('cursor-follow sweep is smooth and monotonic edge to edge', () {
+      const m = ZoomMovement(kind: ZoomMovementKind.sweep);
+      final samples = <double>[
+        for (var i = 0; i <= 200; i++)
+          resolve(
+            m,
+            focal: Offset(-1.0 + i / 100.0, 0),
+            followCursor: true,
+          ).extraTiltYRad,
+      ];
+
+      for (var i = 1; i < samples.length; i++) {
+        expect(samples[i], greaterThanOrEqualTo(samples[i - 1]));
+      }
+      // The signed smoothstep has a horizontal tangent at centre. This guards
+      // against reintroducing a sign threshold or another sharp handoff.
+      final centerStep = samples[101] - samples[99];
+      final quarterStep = samples[151] - samples[149];
+      expect(centerStep.abs(), lessThan(quarterStep.abs() / 10.0));
+    });
+
+    test('defensive cursor-follow drift also crosses center continuously', () {
+      const m = ZoomMovement(kind: ZoomMovementKind.drift);
+      final left = resolve(
+        m,
+        focal: const Offset(-0.01, 0),
+        followCursor: true,
+      ).focalDriftFrac.dx;
+      final center = resolve(
+        m,
+        focal: Offset.zero,
+        followCursor: true,
+      ).focalDriftFrac.dx;
+      final right = resolve(
+        m,
+        focal: const Offset(0.01, 0),
+        followCursor: true,
+      ).focalDriftFrac.dx;
+
+      expect(center, 0.0);
+      expect(left, closeTo(-right, 1e-12));
+      expect((right - left).abs(), lessThan(0.001));
     });
   });
 

@@ -69,6 +69,7 @@ class ZoomTransformer {
       holdProgress: _holdProgress(position, zoomRegion),
       rampGate: rampGate,
       normalizedFocal: f.normalizedFocalOffset(focal),
+      followCursor: zoomRegion.followCursor,
     );
     final zEff = z * mv.scaleMul;
     final focalEff = mv.focalDriftFrac == Offset.zero
