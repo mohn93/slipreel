@@ -365,6 +365,7 @@ class FrameCompositor {
           position: position,
           intensity: effectiveCursorBlur,
           state: motion.state,
+          currentScreenPos: motion.screenPos,
         );
       }
       final fgPicture = fgRecorder.endRecording();
@@ -1144,11 +1145,15 @@ class FrameCompositor {
     required Duration position,
     required double intensity,
     required CursorState state,
+    required Offset currentScreenPos,
   }) {
     final painter = AccumulationCursorPainter(
       cursorRecording: cursorRecording,
       position: position,
       videoSize: videoSize,
+      currentScreenPos: currentScreenPos,
+      pathSmoothingSigma: projectState.cursorAnimationConfig.pathSmoothingSigma,
+      cursorDelay: projectState.cursorDelay,
       // Match production preview (PlaybackScreen): 150 ms base
       // exposure scaled by the same effectiveCursorBlur the preview
       // uses. Zero blur → 0 ms → all N stamps land on the current

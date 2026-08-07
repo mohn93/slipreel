@@ -196,11 +196,21 @@ class ScenePassBuilder {
       // focal/transform math, so this includes the proportional squeeze a
       // region shorter than its own ramps gets — sampling the unsqueezed end
       // aims a short followCursor zoom at a cursor position it never reaches.
-      final enterEnd = activeZoom.startTime +
+      final enterEnd =
+          activeZoom.startTime +
           Duration(
-              microseconds:
-                  activeZoom.resolvedRampsUs(rampDurationScale).enterUs);
-      final raw = cursorAt(cursorRecording, enterEnd);
+            microseconds: activeZoom.resolvedRampsUs(rampDurationScale).enterUs,
+          );
+      final queryEnd = enterEnd - cursorDelay;
+      final sigma = cursorAnimationConfig.pathSmoothingSigma;
+      final raw = sigma <= Duration.zero
+          ? cursorAtFiltered(cursorRecording, queryEnd, cursorPostProcess)
+          : smoothedCursorAt(
+              cursorRecording,
+              queryEnd,
+              cursorPostProcess,
+              sigma,
+            );
       if (raw != null) {
         enterCursorTarget = Offset(
           raw.x.toDouble().clamp(0, videoSize.width),

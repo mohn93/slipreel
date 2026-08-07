@@ -935,6 +935,10 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                         cursorRecording: widget.cursorRecording,
                         position: pos,
                         videoSize: videoSize,
+                        currentScreenPos: motion.screenPos,
+                        pathSmoothingSigma:
+                            cursorAnimationConfig.pathSmoothingSigma,
+                        cursorDelay: widget.cursorDelay,
                         exposureMs:
                             widget.accumulationExposureMs * effectiveCursorBlur,
                         sampleCount: widget.accumulationSampleCount,

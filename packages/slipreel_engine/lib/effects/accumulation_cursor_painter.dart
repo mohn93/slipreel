@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
-import 'dart:ui' show BlendMode, Canvas, Color, FilterQuality, Offset, Paint, Rect, Size;
+import 'dart:ui'
+    show BlendMode, Canvas, Color, FilterQuality, Offset, Paint, Rect, Size;
 
 import 'package:flutter/foundation.dart' show immutable;
 import 'package:flutter/rendering.dart' show CustomPainter;
@@ -18,12 +19,16 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 /// For each output frame at time T, the painter takes [sampleCount]
 /// equally-spaced sub-frame timestamps across the exposure window
 /// `[T - exposureMs, T]`, looks up the cursor position at each, and
-/// stamps the pre-baked cursor sprite at every position with
+/// stamps the pre-baked cursor sprite along the selected preset's averaged
+/// path with
 /// `1 / sampleCount` alpha. Stationary cursors integrate back to
 /// alpha = 1.0 (all stamps land at the same place); moving cursors
-/// spread their stamps out along the **actual recorded path**, giving
+/// spread their stamps out along the **smoothed recorded path**, giving
 /// a smear that curves with the path and tapers naturally on
-/// acceleration / deceleration without any explicit velocity ramps.
+/// acceleration / deceleration without any explicit velocity ramps. The
+/// newest stamp is anchored to [currentScreenPos], so the default production
+/// painter renders the exact same spring-smoothed cursor that the camera
+/// follows.
 ///
 /// This replaces the chord-stretched single sprite ("fake" smear)
 /// produced by [CursorOverlayPainter]'s motion-blur path. Both are
@@ -34,6 +39,9 @@ class AccumulationCursorPainter extends CustomPainter {
     required this.cursorRecording,
     required this.position,
     required this.videoSize,
+    this.currentScreenPos,
+    this.pathSmoothingSigma = Duration.zero,
+    this.cursorDelay = Duration.zero,
     this.exposureMs = 40.0,
     this.sampleCount = 8,
     this.sizeMultiplier = 1.0,
@@ -56,6 +64,24 @@ class AccumulationCursorPainter extends CustomPainter {
   final CursorRecording cursorRecording;
   final Duration position;
   final Size videoSize;
+
+  /// Spring-smoothed cursor position for [position], in recording-space
+  /// pixels. When supplied, the accumulation path is translated so its
+  /// newest stamp lands exactly here. This keeps the production painter on
+  /// the same cursor trajectory as [CursorMotionController] instead of
+  /// silently falling back to the raw, jittery recording.
+  final Offset? currentScreenPos;
+
+  /// Geometric smoothing window used by the selected cursor-animation
+  /// preset. Every sub-frame stamp samples this averaged path before the
+  /// spring alignment above is applied, so a blur trail follows the same
+  /// rounded line as the visible cursor rather than preserving raw zigzags.
+  final Duration pathSmoothingSigma;
+
+  /// Recording-time offset used by [CursorMotionController]. Keeping the
+  /// sub-frame queries on the same shifted timeline prevents the trail from
+  /// separating from a delayed cursor sprite.
+  final Duration cursorDelay;
   final double exposureMs;
   final int sampleCount;
   final double sizeMultiplier;
@@ -156,6 +182,40 @@ class AccumulationCursorPainter extends CustomPainter {
     final pxDiameter =
         kCursorBaseDiameter * sizeMultiplier * (scaleX + scaleY) / 2;
 
+    CursorPosition? pathSampleAt(int visualTimeMicros) {
+      final query = Duration(
+        microseconds: visualTimeMicros - cursorDelay.inMicroseconds,
+      );
+      return pathSmoothingSigma <= Duration.zero
+          ? cursorAtFiltered(cursorRecording, query, postProcess)
+          : smoothedCursorAt(
+              cursorRecording,
+              query,
+              postProcess,
+              pathSmoothingSigma,
+            );
+    }
+
+    // The spring is stateful, while the accumulation painter samples an
+    // arbitrary handful of historical sub-frames. Anchor the stateless,
+    // geometrically-smoothed sub-frame path to the spring's current output.
+    // With zero exposure every stamp therefore lands exactly on the visible
+    // smoothed cursor. With blur enabled, the whole averaged trail retains
+    // its shape and ends at that same point.
+    final centerPathSample = pathSampleAt(position.inMicroseconds);
+    final springAlignment = currentScreenPos != null && centerPathSample != null
+        ? currentScreenPos! -
+              Offset(
+                centerPathSample.x.toDouble(),
+                centerPathSample.y.toDouble(),
+              )
+        : Offset.zero;
+
+    Offset alignedPosition(CursorPosition sample) => Offset(
+      sample.x.toDouble() + springAlignment.dx,
+      sample.y.toDouble() + springAlignment.dy,
+    );
+
     // Buffer is sized to leave ~2 cursor-widths of padding around the
     // glyph (halo / shadow / any overshoot from state glyphs).
     final spriteBufferSize = (pxDiameter * 4).ceil().toDouble();
@@ -168,19 +228,20 @@ class AccumulationCursorPainter extends CustomPainter {
     // cursor type changes inside the accumulation window. We touch each
     // distinct state we end up using; the cache evicts unused entries.
     ui.Image spriteFor(CursorState state) => _spriteCache.get(
-          pxDiameter: pxDiameter,
-          dpr: dpr,
-          style: style,
-          state: state,
-          bufferPx: spritePxSize,
-          bufferLogical: spriteBufferSize,
-          spriteCenter: spriteCenter,
-        );
+      pxDiameter: pxDiameter,
+      dpr: dpr,
+      style: style,
+      state: state,
+      bufferPx: spritePxSize,
+      bufferLogical: spriteBufferSize,
+      spriteCenter: spriteCenter,
+    );
 
     final exposureMicros = (exposureMs * 1000).round();
     // Sub-frame interval. sampleCount=1 → just the current frame.
-    final dtMicros =
-        sampleCount <= 1 ? 0 : (exposureMicros ~/ (sampleCount - 1));
+    final dtMicros = sampleCount <= 1
+        ? 0
+        : (exposureMicros ~/ (sampleCount - 1));
     // Each stamp contributes 1/N to the accumulated alpha via BlendMode.plus
     // inside an isolated saveLayer (see below). A stationary cursor's N
     // stamps land at the same pixel and add to alpha = 1.0 exactly. A
@@ -204,7 +265,8 @@ class AccumulationCursorPainter extends CustomPainter {
     // we fall back to the legacy "stamp at the cursor's raw video
     // position" behaviour, which is correct when there's no zoom
     // transform applied above the painter.
-    final cameraAware = currentFocalVideo != null &&
+    final cameraAware =
+        currentFocalVideo != null &&
         focalAt != null &&
         scaleAt != null &&
         currentScale > 0;
@@ -245,7 +307,8 @@ class AccumulationCursorPainter extends CustomPainter {
               Duration(microseconds: ts + 1),
               postProcess,
             );
-            if (before != null && after != null &&
+            if (before != null &&
+                after != null &&
                 before.state == after.state) {
               continue;
             }
@@ -302,22 +365,23 @@ class AccumulationCursorPainter extends CustomPainter {
       for (var i = 0; i < sampleCount; i++) {
         final t = position.inMicroseconds - i * dtMicros;
         if (t < 0) continue;
-        final sample = cursorAtFiltered(
-          cursorRecording,
-          Duration(microseconds: t),
-          postProcess,
-        );
+        final sample = pathSampleAt(t);
         if (sample == null) continue;
+        final samplePosition = alignedPosition(sample);
         final Offset cv;
         if (cameraAware) {
           final ti = Duration(microseconds: t);
           final fI = focalAt!(ti);
           final sI = scaleAt!(ti);
           final s = sNow == 0 ? 1.0 : sI / sNow;
-          cv = fNow +
-              Offset((sample.x - fI.dx) * s, (sample.y - fI.dy) * s);
+          cv =
+              fNow +
+              Offset(
+                (samplePosition.dx - fI.dx) * s,
+                (samplePosition.dy - fI.dy) * s,
+              );
         } else {
-          cv = Offset(sample.x.toDouble(), sample.y.toDouble());
+          cv = samplePosition;
         }
         sumX += mapping.left + cv.dx * scaleX;
         sumY += mapping.top + cv.dy * scaleY;
@@ -362,20 +426,14 @@ class AccumulationCursorPainter extends CustomPainter {
     // sum to 1.0. Outside, the finished layer composites onto the
     // scene with normal srcOver — the cursor doesn't brighten the
     // wallpaper around it the way a raw plus blend would.
-    canvas.saveLayer(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint(),
-    );
+    canvas.saveLayer(Rect.fromLTWH(0, 0, size.width, size.height), Paint());
 
     for (var i = 0; i < sampleCount; i++) {
       final t = position.inMicroseconds - i * dtMicros;
       if (t < 0) continue;
-      final sample = cursorAtFiltered(
-        cursorRecording,
-        Duration(microseconds: t),
-        postProcess,
-      );
+      final sample = pathSampleAt(t);
       if (sample == null) continue;
+      final samplePosition = alignedPosition(sample);
 
       // Per-sub-frame state — this is what makes arrow→I-beam
       // crossfade for free: stamps before the change use the OLD
@@ -416,13 +474,14 @@ class AccumulationCursorPainter extends CustomPainter {
         final fI = focalAt!(ti);
         final sI = scaleAt!(ti);
         final s = sNow == 0 ? 1.0 : sI / sNow;
-        cursorVideo = fNow +
+        cursorVideo =
+            fNow +
             Offset(
-              (sample.x - fI.dx) * s,
-              (sample.y - fI.dy) * s,
+              (samplePosition.dx - fI.dx) * s,
+              (samplePosition.dy - fI.dy) * s,
             );
       } else {
-        cursorVideo = Offset(sample.x.toDouble(), sample.y.toDouble());
+        cursorVideo = samplePosition;
       }
 
       // Map video-coord into painter coords. When videoRect is the
@@ -485,6 +544,9 @@ class AccumulationCursorPainter extends CustomPainter {
     return old.cursorRecording != cursorRecording ||
         old.position != position ||
         old.videoSize != videoSize ||
+        old.currentScreenPos != currentScreenPos ||
+        old.pathSmoothingSigma != pathSmoothingSigma ||
+        old.cursorDelay != cursorDelay ||
         old.exposureMs != exposureMs ||
         old.sampleCount != sampleCount ||
         old.sizeMultiplier != sizeMultiplier ||
@@ -611,8 +673,7 @@ class _ShadowSpriteCache {
     required double bufferLogical,
     required Offset spriteCenter,
   }) {
-    final key =
-        _ShadowKey(pxDiameter, dpr, style, state, intensity, bufferPx);
+    final key = _ShadowKey(pxDiameter, dpr, style, state, intensity, bufferPx);
     final hit = _entries.remove(key);
     if (hit != null) {
       _entries[key] = hit; // touch (move to end)

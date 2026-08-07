@@ -627,5 +627,48 @@ void main() {
         reason: 'sampling the unsqueezed ramp end mis-aims the whole zoom',
       );
     });
+
+    test('enter settle target uses Smooth preset averaged path', () {
+      final region = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+      );
+      final recording = CursorRecording();
+      for (var i = 0; i <= 120; i++) {
+        recording.addPosition(
+          CursorPosition(
+            x: 400 + i * 4,
+            y: 500 + (i.isEven ? 12 : -12),
+            timestampMicros: i * 16667,
+          ),
+        );
+      }
+
+      final pass = ScenePassBuilder().build(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [region],
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.smooth,
+        ),
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+      );
+
+      expect(pass.enterCursorTarget, isNotNull);
+      expect(
+        (pass.enterCursorTarget!.dy - 500).abs(),
+        lessThan(4.8),
+        reason:
+            'zoom entry must aim at the averaged cursor line rather '
+            'than one side of the raw ±12px zigzag',
+      );
+    });
   });
 }
