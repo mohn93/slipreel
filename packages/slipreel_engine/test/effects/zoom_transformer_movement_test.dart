@@ -1,4 +1,5 @@
-import 'dart:ui' show Rect, Size;
+import 'dart:math' as math;
+import 'dart:ui' show Offset, Rect, Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_movement.dart';
@@ -90,6 +91,139 @@ void main() {
       framing: framing,
     );
     expect(scaleX(withPush), closeTo(scaleX(none), 1e-9));
+  });
+
+  test('scaled enter ramp does not start movement before resolved hold', () {
+    final withSweep = region(
+      movement: const ZoomMovement(kind: ZoomMovementKind.sweep),
+    );
+    final withoutMovement = region(movement: const ZoomMovement());
+    // Raw enter is 1s, but the 1.5x feel scale resolves it to 1.5s. At 1.25s
+    // the old hold envelope was already active even though zoom was entering.
+    const inResolvedEnter = Duration(milliseconds: 1250);
+    final swept = t.getTransform(
+      position: inResolvedEnter,
+      zoomRegion: withSweep,
+      videoSize: videoSize,
+      rampDurationScale: 1.5,
+      framing: framing,
+    );
+    final none = t.getTransform(
+      position: inResolvedEnter,
+      zoomRegion: withoutMovement,
+      videoSize: videoSize,
+      rampDurationScale: 1.5,
+      framing: framing,
+    );
+
+    expect(swept.storage, none.storage);
+  });
+
+  test('scaled exit starts only after movement reaches full strength', () {
+    final withSweep = region(
+      movement: const ZoomMovement(kind: ZoomMovementKind.sweep),
+    );
+    const rampScale = 1.5;
+    // Resolved ramps are 1.5s each, so the 4s region's hold is [1.5s, 2.5s].
+    // Sampling around 2.5s catches an exit calculation that accidentally uses
+    // the raw 1s exit duration (which would put the boundary at 3s).
+    final magnitudes = <double>[];
+    for (final us in [2499999, 2500000, 2500001]) {
+      final transform = t.getTransform(
+        position: Duration(microseconds: us),
+        zoomRegion: withSweep,
+        videoSize: videoSize,
+        rampDurationScale: rampScale,
+        framing: framing,
+      );
+      magnitudes.add(transform.storage[2].abs());
+    }
+    final expectedFull = 2.0 * math.sin(kSweepSubtleDeg * math.pi / 180.0);
+
+    expect(magnitudes[1], closeTo(expectedFull, 1e-9));
+    expect(magnitudes[0], lessThanOrEqualTo(magnitudes[1]));
+    expect(magnitudes[2], lessThanOrEqualTo(magnitudes[1]));
+    expect((magnitudes[1] - magnitudes[0]).abs(), lessThan(1e-6));
+    // The configured cubic ramp has a small non-zero departure immediately
+    // after the boundary; it must still be continuous rather than a yaw step.
+    expect((magnitudes[1] - magnitudes[2]).abs(), lessThan(1e-4));
+  });
+
+  test('compressed zero-span hold never steps sweep on mid-ramp', () {
+    ZoomRegion compressed(ZoomMovement movement) => ZoomRegion(
+          rect: const Rect.fromLTWH(600, 600, 100, 100),
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 1),
+          zoomLevel: 2,
+          enterDuration: const Duration(milliseconds: 800),
+          exitDuration: const Duration(milliseconds: 800),
+          followCursor: false,
+          movement: movement,
+        );
+    final withSweep = compressed(
+      const ZoomMovement(
+        kind: ZoomMovementKind.sweep,
+        intensity: ZoomMovementIntensity.dramatic,
+      ),
+    );
+    final withoutMovement = compressed(const ZoomMovement());
+
+    // The former raw-duration envelope jumped at 200ms (raw holdEnd) even
+    // though resolved ramps squeeze to 500ms + 500ms and leave no hold.
+    for (final us in [199999, 200000, 200001, 499999, 500000, 500001]) {
+      final position = Duration(microseconds: us);
+      final swept = t.getTransform(
+        position: position,
+        zoomRegion: withSweep,
+        videoSize: videoSize,
+        framing: framing,
+      );
+      final none = t.getTransform(
+        position: position,
+        zoomRegion: withoutMovement,
+        videoSize: videoSize,
+        framing: framing,
+      );
+      expect(swept.storage, none.storage, reason: 'position: ${us}us');
+    }
+  });
+
+  test('cursor-follow sweep transform crosses canvas center continuously', () {
+    final r = region(
+      movement: const ZoomMovement(
+        kind: ZoomMovementKind.sweep,
+        intensity: ZoomMovementIntensity.dramatic,
+      ),
+      followCursor: true,
+    );
+    final left = t.getTransform(
+      position: midHold,
+      zoomRegion: r,
+      videoSize: videoSize,
+      focalPoint: const Offset(499, 500),
+      framing: framing,
+    );
+    final center = t.getTransform(
+      position: midHold,
+      zoomRegion: r,
+      videoSize: videoSize,
+      focalPoint: const Offset(500, 500),
+      framing: framing,
+    );
+    final right = t.getTransform(
+      position: midHold,
+      zoomRegion: r,
+      videoSize: videoSize,
+      focalPoint: const Offset(501, 500),
+      framing: framing,
+    );
+
+    // Matrix4's Y-rotation sine lives in entry 2 after the base scale is
+    // composed. The old binary direction changed this entry by ~0.35 across
+    // these adjacent focals; a continuous live direction keeps it microscopic.
+    expect(center.storage[2], closeTo(0.0, 1e-12));
+    expect(left.storage[2], closeTo(-right.storage[2], 1e-12));
+    expect((right.storage[2] - left.storage[2]).abs(), lessThan(0.001));
   });
 
   test('getTransform is deterministic — same position, same matrix, '

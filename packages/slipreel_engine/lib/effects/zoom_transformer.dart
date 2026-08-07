@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
+typedef _ResolvedZoomRamps = ({int enterUs, int exitUs});
+
 /// Builds the per-frame zoom matrix used by the playback preview.
 ///
 /// The matrix scales by the active zoom factor and re-centers the chosen
@@ -49,8 +51,11 @@ class ZoomTransformer {
     if (active == null) {
       return Matrix4.identity();
     }
+    final ramps = zoomRegion.duration.inMicroseconds <= 0
+        ? (enterUs: 0, exitUs: 0)
+        : zoomRegion.resolvedRampsUs(rampDurationScale);
     final z = _calculateZoomFactor(
-        position, zoomRegion, rampCurve, rampDurationScale);
+        position, zoomRegion, rampCurve, ramps);
     if (z == 1.0) return Matrix4.identity();
 
     final focal = focalPoint ?? zoomRegion.rect.center;
@@ -66,9 +71,10 @@ class ZoomTransformer {
     // on top of the settled 2D+tilt transform. None => identity sample => the
     // math below collapses to the Phase 1 result.
     final mv = zoomRegion.movement.resolveAt(
-      holdProgress: _holdProgress(position, zoomRegion),
+      holdProgress: _holdProgress(position, zoomRegion, ramps),
       rampGate: rampGate,
       normalizedFocal: f.normalizedFocalOffset(focal),
+      followCursor: zoomRegion.followCursor,
     );
     final zEff = z * mv.scaleMul;
     final focalEff = mv.focalDriftFrac == Offset.zero
@@ -179,13 +185,12 @@ class ZoomTransformer {
   /// down proportionally so the shape is preserved (and the hold goes
   /// to zero in the limit).
   double _calculateZoomFactor(
-      Duration position, ZoomRegion z, Curve curve, double rampDurationScale) {
+      Duration position, ZoomRegion z, Curve curve, _ResolvedZoomRamps ramps) {
     final tIntoRegionUs =
         (position - z.startTime).inMicroseconds.clamp(0, z.duration.inMicroseconds);
     final regionUs = z.duration.inMicroseconds;
     if (regionUs <= 0) return 1.0;
 
-    final ramps = z.resolvedRampsUs(rampDurationScale);
     final enterUs = ramps.enterUs;
     final exitUs = ramps.exitUs;
 
@@ -205,13 +210,19 @@ class ZoomTransformer {
 
 /// Normalized position within a region's HOLD window (between the enter and
 /// exit ramps): 0 before the hold, 0→1 across it, 1 after. A degenerate hold
-/// (enter+exit consume the region) yields 0 until the very end, so movement
-/// contributes ~nothing and can't whip on tiny zooms.
-double _holdProgress(Duration position, ZoomRegion r) {
-  final holdStart = r.startTime + r.enterDuration;
-  final holdEnd = r.endTime - r.exitDuration;
-  final span = (holdEnd - holdStart).inMicroseconds;
-  if (span <= 0) return position >= holdEnd ? 1.0 : 0.0;
-  final e = (position - holdStart).inMicroseconds / span;
+/// (resolved enter+exit consume the region) stays at 0, so movement cannot
+/// appear as a discontinuous step on a tiny zoom.
+double _holdProgress(
+    Duration position, ZoomRegion r, _ResolvedZoomRamps ramps) {
+  final regionUs = r.duration.inMicroseconds;
+  if (regionUs <= 0) return 0.0;
+  final holdStartUs = ramps.enterUs;
+  final holdEndUs = regionUs - ramps.exitUs;
+  final spanUs = holdEndUs - holdStartUs;
+  // When resolved ramps consume the whole region there is no hold track to
+  // play. Keeping movement at identity avoids a mid-ramp step from 0 to 1.
+  if (spanUs <= 0) return 0.0;
+  final intoRegionUs = (position - r.startTime).inMicroseconds;
+  final e = (intoRegionUs - holdStartUs) / spanUs;
   return e.clamp(0.0, 1.0);
 }
