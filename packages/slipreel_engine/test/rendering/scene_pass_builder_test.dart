@@ -7,6 +7,7 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
+import 'package:slipreel_engine/rendering/follow_strategy.dart';
 import 'package:slipreel_engine/rendering/scene_pass_builder.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
@@ -1010,6 +1011,80 @@ void main() {
 
       expect((drive(split) - drive(whole)).distance, lessThan(1e-9));
     });
+
+    test(
+      'Smart anticipation receives playback speed through the scene pass',
+      () {
+        final recording = _eastBoundRecording(
+          durationMs: 500,
+          pxPerSec: 1000,
+          start: const Offset(700, 540),
+        );
+        final region = ZoomRegion(
+          rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+          startTime: Duration.zero,
+          duration: const Duration(milliseconds: 500),
+          zoomLevel: 2,
+          enterDuration: Duration.zero,
+          exitDuration: Duration.zero,
+          followCursor: true,
+          followMode: FollowMode.smart,
+          deadzoneRatio: 0.01,
+          followDuration: Duration.zero,
+        );
+
+        for (final speed in [0.5, 1.0, 2.0]) {
+          final builder = ScenePassBuilder();
+          final clips = [
+            ClipSlice(
+              cutStart: Duration.zero,
+              cutEnd: const Duration(milliseconds: 500),
+              playbackSpeed: speed,
+            ),
+          ];
+          builder.build(
+            position: Duration.zero,
+            zoomRegions: [region],
+            clips: clips,
+            cursorAnimationConfig: const CursorAnimationConfig.preset(
+              CursorAnimationStyle.none,
+            ),
+            cursorRecording: recording,
+            videoSize: _videoSize,
+            fps: 60,
+            hasCursorData: true,
+          );
+          final pass = builder.build(
+            position: Duration(microseconds: (100000 * speed).round()),
+            zoomRegions: [region],
+            clips: clips,
+            cursorAnimationConfig: const CursorAnimationConfig.preset(
+              CursorAnimationStyle.none,
+            ),
+            cursorRecording: recording,
+            videoSize: _videoSize,
+            fps: 60,
+            hasCursorData: true,
+          );
+
+          final expected = SmartFollowStrategy().resolve(
+            zoom: region,
+            cursor: pass.cursorForFocal,
+            cursorVelocity: pass.rawCursorVelocity,
+            currentFocal: const Offset(960, 540),
+            videoSize: _videoSize,
+            tuning: builder.focal.tuning,
+            playbackSpeed: speed,
+          );
+          expect(pass.rawCursorVelocity.dx, closeTo(1000, 1));
+          expect(
+            (pass.focalUpdate!.focal - expected.target).distance,
+            lessThan(0.5),
+            reason: 'scene pass must forward playbackSpeed=$speed to Smart',
+          );
+        }
+      },
+    );
 
     test('camera settle time is stable across playback speeds', () {
       final region = ZoomRegion(

@@ -150,7 +150,7 @@ void main() {
     expect(r.duration, const Duration(milliseconds: 2750));
     // Follow regions ride the already-tuned defaults rather than
     // introducing a second tuning surface.
-    expect(r.followMode, FollowMode.bounded);
+    expect(r.followMode, FollowMode.smart);
     expect(r.deadzoneRatio, 0.8);
   });
 

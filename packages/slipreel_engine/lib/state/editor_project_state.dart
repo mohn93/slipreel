@@ -171,7 +171,7 @@ class EditorProjectState {
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 11;
+  static const int currentSchemaVersion = 12;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -696,6 +696,10 @@ _schemaMigrations = [
     next['schemaVersion'] = 11;
     return next;
   },
+  // v11 → v12: introduce the explicit `smart` follow-mode name. Existing
+  // bounded and predictive values are intentionally NOT rewritten: preserving
+  // them keeps legacy camera trajectories stable until the user opts in.
+  (json, _) => {...json, 'schemaVersion': 12},
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its

@@ -45,6 +45,7 @@ abstract class FollowStrategy {
     required Offset currentFocal,
     required Size videoSize,
     required MotionTuning tuning,
+    double playbackSpeed = 1.0,
     ZoomFraming? framing,
   });
 
@@ -75,6 +76,7 @@ class CenteredFollowStrategy extends FollowStrategy {
     required Offset currentFocal,
     required Size videoSize,
     required MotionTuning tuning,
+    double playbackSpeed = 1.0,
     ZoomFraming? framing,
   }) {
     if (!zoom.followCursor) {
@@ -119,7 +121,12 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
   }
 
   /// The point the camera aims at this frame.
-  Offset aimPoint(ZoomRegion zoom, Offset cursor, Offset cursorVelocity);
+  Offset aimPoint(
+    ZoomRegion zoom,
+    Offset cursor,
+    Offset cursorVelocity,
+    double playbackSpeed,
+  );
 
   @override
   FollowResolution resolve({
@@ -129,6 +136,7 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
     required Offset currentFocal,
     required Size videoSize,
     required MotionTuning tuning,
+    double playbackSpeed = 1.0,
     ZoomFraming? framing,
   }) {
     final boundsActive =
@@ -148,7 +156,7 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
       return FollowResolution(target: cursor, isHolding: false);
     }
 
-    final aim = aimPoint(zoom, cursor, cursorVelocity);
+    final aim = aimPoint(zoom, cursor, cursorVelocity, playbackSpeed);
     final z = zoom.zoomLevel;
     final viewport = (framing ?? ZoomFraming.identity(videoSize))
         .visibleViewportSizeInSource(z);
@@ -192,26 +200,45 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
 /// sprite's feedforward fade. Slow / jittery motion gets ~no lead, so small
 /// movements don't get amplified past the deadzone into camera jitter; fast,
 /// deliberate motion gets the full anticipation. At rest the lead is zero ⇒
-/// aim == cursor ⇒ no overshoot on click landings.
+/// aim == cursor ⇒ no overshoot on click landings. Velocity is converted from
+/// source-time to perceived wall-time using the active clip's playback speed.
 class SmartFollowStrategy extends _DeadzoneFollowStrategy {
   static const double _leadFadeStartPxPerSec = 200.0;
   static const double _leadFadeFullPxPerSec = 900.0;
 
   @override
-  Offset aimPoint(ZoomRegion zoom, Offset cursor, Offset cursorVelocity) {
-    final speed = cursorVelocity.distance;
+  Offset aimPoint(
+    ZoomRegion zoom,
+    Offset cursor,
+    Offset cursorVelocity,
+    double playbackSpeed,
+  ) {
+    final speedFactor = playbackSpeed.isFinite && playbackSpeed >= 0.05
+        ? playbackSpeed
+        : 0.05;
+    final perceivedVelocity = cursorVelocity * speedFactor;
+    final speed = perceivedVelocity.distance;
     const range = _leadFadeFullPxPerSec - _leadFadeStartPxPerSec;
     final t = ((speed - _leadFadeStartPxPerSec) / range).clamp(0.0, 1.0);
     final fade = t * t * (3.0 - 2.0 * t); // smoothstep
     final leadSec = (zoom.predictiveWindow.inMicroseconds / 1e6) * fade;
-    return cursor + cursorVelocity * leadSec;
+    return cursor + perceivedVelocity * leadSec;
   }
 }
 
-/// Source-compatible aliases for integrations that constructed the old
-/// strategy classes directly. Both now share the canonical Smart behavior.
-class BoundedFollowStrategy extends SmartFollowStrategy {}
+/// Legacy reactive deadzone follow: aims at the raw cursor. It remains a
+/// separate strategy so old bounded projects render exactly as before.
+class BoundedFollowStrategy extends _DeadzoneFollowStrategy {
+  @override
+  Offset aimPoint(
+    ZoomRegion zoom,
+    Offset cursor,
+    Offset cursorVelocity,
+    double playbackSpeed,
+  ) => cursor;
+}
 
+/// Source-compatible name for the behavior now presented as Smart.
 class PredictiveFollowStrategy extends SmartFollowStrategy {}
 
 /// Pick the right strategy for a [FollowMode]. Called by the
@@ -221,7 +248,9 @@ class PredictiveFollowStrategy extends SmartFollowStrategy {}
 FollowStrategy followStrategyFor(FollowMode mode) {
   switch (mode) {
     case FollowMode.bounded:
+      return BoundedFollowStrategy();
     case FollowMode.predictive:
+    case FollowMode.smart:
       return SmartFollowStrategy();
     case FollowMode.centered:
       return CenteredFollowStrategy();

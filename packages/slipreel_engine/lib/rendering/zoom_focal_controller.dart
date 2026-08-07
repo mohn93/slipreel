@@ -34,7 +34,7 @@ class ZoomFocalController {
     : tuning = tuning ?? MotionTuning.defaults;
 
   /// Motion-feel tuning (reverse-scrub floor, sub-step caps, the
-  /// bounded-mode at-rest velocity threshold). Defaults to the
+  /// deadzone at-rest velocity threshold). Defaults to the
   /// historic hand-tuned production set. Mutable so a preset picker
   /// or JSON-reload can swap it at runtime without recreating the
   /// controller (spring state is preserved — the next update() reads
@@ -64,14 +64,16 @@ class ZoomFocalController {
   /// Playhead at which [lastSnapReason] fired. Exposed for the HUD.
   Duration? get lastSnapAt => _lastSnapAt;
 
-  /// Per-mode target resolution lives in [FollowStrategy]. Cached by
-  /// [FollowMode] so the Smart gate's `_inFlight` persists across
-  /// frames within one zoom region. Reset on active-region change.
+  /// Per-mode target resolution lives in [FollowStrategy]. Predictive and
+  /// Smart share a canonical cache key so normalizing the persisted alias
+  /// cannot discard the stateful gate mid-chase.
   final Map<FollowMode, FollowStrategy> _strategies = {};
   FollowMode? _activeStrategyMode;
 
-  FollowStrategy _strategyFor(FollowMode mode) =>
-      _strategies.putIfAbsent(mode, () => followStrategyFor(mode));
+  FollowStrategy _strategyFor(FollowMode mode) {
+    final key = mode.canonical;
+    return _strategies.putIfAbsent(key, () => followStrategyFor(key));
+  }
 
   // Last [position] passed to [update]. Used for two purposes:
   // (1) detect backward scrubs that should snap rather than integrate;
@@ -259,7 +261,7 @@ class ZoomFocalController {
   /// focal as a hollow yellow ring.
   Offset? get smoothedFocal => _smoothedFocal;
 
-  /// Whether the Smart-mode deadzone gate is currently bypassed
+  /// Whether the active deadzone gate is currently bypassed
   /// because the spring is mid-chase. Exposed for the debug HUD so
   /// we can see, frame by frame, whether the camera is "tracking" or
   /// "holding". When the camera is unexpectedly drifting, this tells
@@ -295,7 +297,7 @@ class ZoomFocalController {
   /// deadzone box (`videoSize / zoom.zoomLevel * deadzoneRatio`).
   ///
   /// [cursorVelocity] is the cursor's intrinsic scene velocity (px/s)
-  /// at [position]. Used by the bounded-mode gate to decide when an
+  /// at [position]. Used by deadzone modes to decide when an
   /// in-flight chase should release: continuous motion keeps the
   /// chase engaged (no flap at the dz boundary mid-flight), and the
   /// gate only releases once the cursor has come to rest inside the
@@ -388,7 +390,7 @@ class ZoomFocalController {
       _lastUpdatePosition = position;
       _lastSnapReason = 'init';
       _lastSnapAt = position;
-      _activeStrategyMode = activeZoom.followMode;
+      _activeStrategyMode = activeZoom.followMode.canonical;
       return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
     }
     // Adopt the new zoom instance without resetting any spring state.
@@ -719,13 +721,12 @@ class ZoomFocalController {
     }
 
     // Resolve target this frame via the pluggable per-mode strategy.
-    // The bounded strategy owns its gate state; centered/predictive
-    // are stateless pass-throughs. The strategy also reports whether
-    // the controller should treat this frame as a hold (overdamped)
+    // Deadzone strategies own their gate state. The strategy also reports
+    // whether the controller should treat this frame as a hold (overdamped)
     // or an active chase (critical damping) — replaces the fragile
     // `target == _smoothedFocal` check.
     final strategy = _strategyFor(activeZoom.followMode);
-    _activeStrategyMode = activeZoom.followMode;
+    _activeStrategyMode = activeZoom.followMode.canonical;
     final resolution = strategy.resolve(
       zoom: activeZoom,
       cursor: cursor,
@@ -733,6 +734,7 @@ class ZoomFocalController {
       currentFocal: _smoothedFocal!,
       videoSize: videoSize,
       tuning: tuning,
+      playbackSpeed: playbackSpeed,
       framing: fr,
     );
 

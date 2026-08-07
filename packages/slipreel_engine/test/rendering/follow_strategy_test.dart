@@ -422,23 +422,51 @@ void main() {
       expect(s.inFlight, isFalse);
     });
 
-    test('legacy bounded and predictive values resolve to Smart', () {
+    test(
+      'legacy bounded stays reactive while predictive and Smart anticipate',
+      () {
+        final focal = const Offset(960, 540);
+        FollowResolution resolve(FollowMode mode) =>
+            followStrategyFor(mode).resolve(
+              zoom: mode == FollowMode.bounded
+                  ? _bounded()
+                  : _predictive().copyWith(followMode: mode),
+              cursor: focal + const Offset(150, 0),
+              cursorVelocity: const Offset(1000, 0),
+              currentFocal: focal,
+              videoSize: _videoSize,
+              tuning: MotionTuning.defaults,
+            );
+
+        final bounded = resolve(FollowMode.bounded);
+        final predictive = resolve(FollowMode.predictive);
+        final smart = resolve(FollowMode.smart);
+        expect(bounded.isHolding, isTrue);
+        expect(predictive.isHolding, isFalse);
+        expect(predictive.target, smart.target);
+        expect(smart.target.dx, closeTo(focal.dx + 300, 0.5));
+      },
+    );
+
+    test('lead distance and fade use perceived wall-time velocity', () {
       final focal = const Offset(960, 540);
-      FollowResolution resolve(FollowMode mode) =>
-          followStrategyFor(mode).resolve(
-            zoom: mode == FollowMode.bounded ? _bounded() : _predictive(),
-            cursor: focal + const Offset(150, 0),
-            cursorVelocity: const Offset(1000, 0),
+
+      FollowResolution resolve(double playbackSpeed) =>
+          SmartFollowStrategy().resolve(
+            zoom: _predictive(deadzoneRatio: 0.01),
+            cursor: focal,
+            cursorVelocity: const Offset(2000, 0),
             currentFocal: focal,
             videoSize: _videoSize,
             tuning: MotionTuning.defaults,
+            playbackSpeed: playbackSpeed,
           );
 
-      final bounded = resolve(FollowMode.bounded);
-      final predictive = resolve(FollowMode.predictive);
-      expect(bounded.isHolding, isFalse);
-      expect(bounded.target, predictive.target);
-      expect(bounded.target.dx, closeTo(focal.dx + 300, 0.5));
+      // 2000 source px/s remains above the full-fade threshold even at 0.5×.
+      // A 150 ms wall-time lead therefore travels 150 / 300 / 600 source px.
+      expect(resolve(0.5).target.dx, closeTo(focal.dx + 150, 0.5));
+      expect(resolve(1.0).target.dx, closeTo(focal.dx + 300, 0.5));
+      expect(resolve(2.0).target.dx, closeTo(focal.dx + 600, 0.5));
     });
   });
 }

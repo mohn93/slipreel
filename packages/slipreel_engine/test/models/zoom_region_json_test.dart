@@ -86,20 +86,27 @@ void main() {
       expect(restored.followCursor, true);
     });
 
-    test('legacy predictive mode canonicalizes to Smart for the UI', () {
+    test('all follow modes round-trip by their persisted name', () {
       final json = ZoomRegion(
         rect: const Rect.fromLTWH(0, 0, 100, 100),
         startTime: Duration.zero,
         duration: const Duration(seconds: 1),
         zoomLevel: 2.0,
       ).toJson();
-      json['followMode'] = 'predictive';
 
-      final restored = ZoomRegion.fromJson(json);
-      expect(restored.followMode, FollowMode.predictive);
-      expect(restored.followMode.isSmart, isTrue);
-      expect(restored.followMode.canonical, FollowMode.bounded);
-      expect(restored.toJson()['followMode'], 'bounded');
+      for (final mode in FollowMode.values) {
+        json['followMode'] = mode.name;
+        final restored = ZoomRegion.fromJson(json);
+        expect(restored.followMode, mode);
+        expect(restored.toJson()['followMode'], mode.name);
+      }
+    });
+
+    test('legacy predictive mode shares Smart runtime identity', () {
+      expect(FollowMode.predictive.isSmart, isTrue);
+      expect(FollowMode.predictive.canonical, FollowMode.smart);
+      expect(FollowMode.bounded.isSmart, isFalse);
+      expect(FollowMode.bounded.canonical, FollowMode.bounded);
     });
 
     test('legacy followSmoothing / followCurve keys load without error', () {

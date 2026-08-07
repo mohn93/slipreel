@@ -10,7 +10,7 @@ import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 ZoomRegion _region({
   bool followCursor = false,
-  FollowMode followMode = FollowMode.bounded,
+  FollowMode followMode = FollowMode.smart,
   ZoomMovement? movement,
 }) =>
     ZoomRegion(
@@ -94,7 +94,7 @@ void main() {
     expect(smart.selected, isTrue);
   });
 
-  testWidgets('selecting Smart writes the canonical bounded value',
+  testWidgets('selecting Smart writes the explicit smart value',
       (tester) async {
     ZoomRegion? updated;
     await _pump(
@@ -106,7 +106,29 @@ void main() {
     await tester.tap(find.text('Smart'));
     await tester.pumpAndSettle();
 
-    expect(updated!.followMode, FollowMode.bounded);
+    expect(updated!.followMode, FollowMode.smart);
+  });
+
+  testWidgets('legacy bounded projects retain an explicit upgrade path',
+      (tester) async {
+    ZoomRegion? updated;
+    await _pump(
+      tester,
+      _region(followCursor: true, followMode: FollowMode.bounded),
+      (z) => updated = z,
+    );
+    await _scrollToText(tester, 'Follow style');
+
+    final legacy = tester.widget<InspectorChip>(
+      find.widgetWithText(InspectorChip, 'Bounded (Legacy)'),
+    );
+    expect(legacy.selected, isTrue);
+    expect(find.text('Deadzone size'), findsOneWidget);
+    expect(find.text('Lead time'), findsNothing);
+
+    await tester.tap(find.text('Smart'));
+    await tester.pumpAndSettle();
+    expect(updated!.followMode, FollowMode.smart);
   });
 
   testWidgets('Centered hides Smart-only deadzone and anticipation controls',

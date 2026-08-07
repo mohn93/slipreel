@@ -78,13 +78,13 @@ class ZoomFocalDebugPainter extends CustomPainter {
 
     if (smoothedFocal != null) {
       final f = Offset(smoothedFocal!.dx * scaleX, smoothedFocal!.dy * scaleY);
-      // Deadzone box (bounded mode only): magenta when idle, green
+      // Deadzone box: magenta when idle, green
       // while the gate is bypassed (`_inFlight`). Drawn first so the
       // focal crosshair sits on top.
       final z = activeZoom;
       if (z != null &&
           z.followCursor &&
-          z.followMode.isSmart &&
+          z.followMode.usesDeadzone &&
           z.deadzoneRatio > 0 &&
           videoSize.width > 0 &&
           videoSize.height > 0) {

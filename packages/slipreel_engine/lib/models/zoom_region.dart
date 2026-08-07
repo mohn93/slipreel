@@ -7,32 +7,39 @@ import 'zoom_movement.dart';
 
 /// How the zoom camera tracks the cursor while a region is active.
 ///
-/// All three modes feed the same critically-damped catch-up spring (see
+/// All modes feed the same critically-damped catch-up spring (see
 /// [ZoomFocalController]) — they only differ in what target the camera is
 /// aimed at each frame. [followDuration] is the spring's settle time; it also
 /// sets how much the spring smooths (rounds) the cursor's path into a curve.
 enum FollowMode {
-  /// User-facing "Smart" mode and the persisted default name. The camera
-  /// holds inside a deadzone, then uses speed-faded anticipation to begin a
-  /// smooth chase before a deliberate cursor move reaches the frame edge.
+  /// Legacy reactive deadzone follow. Preserved so existing projects keep
+  /// byte-for-byte camera trajectories until the user explicitly upgrades.
   bounded,
 
   /// The camera springs toward the cursor every frame. Smoothest
   /// real-time tracking; no "rest zone".
   centered,
 
-  /// Legacy persisted alias for [bounded]. Kept so existing project JSON and
-  /// source integrations remain valid; the editor no longer exposes it as a
-  /// separate style and both values resolve to the same Smart behavior.
-  predictive;
+  /// Legacy persisted name for [smart]. Kept so existing predictive projects
+  /// round-trip unchanged and source integrations remain valid.
+  predictive,
 
-  /// Whether this value resolves to the deadzone-based Smart behavior.
-  bool get isSmart => this != FollowMode.centered;
+  /// User-facing Smart follow. Holds inside a deadzone, then uses speed-faded
+  /// anticipation to begin a smooth chase before deliberate motion reaches
+  /// the frame edge.
+  smart;
 
-  /// Canonical value written by new user interaction. Legacy [predictive]
-  /// projects display as Smart and normalize to [bounded] when reselected.
+  /// Whether this value uses speed-aware anticipation.
+  bool get isSmart =>
+      this == FollowMode.smart || this == FollowMode.predictive;
+
+  /// Whether this value uses a deadzone gate.
+  bool get usesDeadzone => this != FollowMode.centered;
+
+  /// Runtime/UI identity. Predictive is a persisted compatibility alias for
+  /// Smart; bounded stays distinct because changing it would alter old renders.
   FollowMode get canonical =>
-      isSmart ? FollowMode.bounded : FollowMode.centered;
+      this == FollowMode.predictive ? FollowMode.smart : this;
 }
 
 /// Represents a zoom region with timing and transformation parameters.
@@ -108,14 +115,14 @@ class ZoomRegion {
   final bool followCursor;
 
   /// How the camera follows the cursor — see [FollowMode]. The user-facing
-  /// choices are Smart ([FollowMode.bounded]) and [FollowMode.centered].
+  /// choices are [FollowMode.smart] and [FollowMode.centered]. Existing
+  /// [FollowMode.bounded] projects retain a conditional legacy option.
   final FollowMode followMode;
 
   /// Edge length of the deadzone as a fraction of the *visible
   /// viewport* (the region of source video framed by the current
   /// zoom). 0.3 = a centered box covering 30% of the viewport on
-  /// each axis. Consulted by Smart follow (including the legacy
-  /// [FollowMode.predictive] alias).
+  /// each axis. Consulted by every deadzone follow mode.
   final double deadzoneRatio;
 
   /// Smart look-ahead lead time: how far ahead Smart follow aims along the
@@ -152,7 +159,7 @@ class ZoomRegion {
     this.rampCurveOverride,
     this.manualPanBackload,
     this.followCursor = true,
-    this.followMode = FollowMode.bounded,
+    this.followMode = FollowMode.smart,
     double deadzoneRatio = 0.8,
     Duration? followDuration,
     Duration? predictiveWindow,
@@ -313,7 +320,7 @@ class ZoomRegion {
         'rampCurveOverride': rampCurveOverride!.toJson(),
       if (manualPanBackload != null) 'manualPanBackload': manualPanBackload,
       'followCursor': followCursor,
-      'followMode': followMode.canonical.name,
+      'followMode': followMode.name,
       'deadzoneRatio': deadzoneRatio,
       'followDurationMicros': followDuration.inMicroseconds,
       'predictiveWindowMicros': predictiveWindow.inMicroseconds,

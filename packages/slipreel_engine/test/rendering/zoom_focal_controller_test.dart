@@ -498,6 +498,48 @@ void main() {
       },
     );
 
+    test('predictive-to-Smart normalization preserves an in-flight chase', () {
+      final ctrl = ZoomFocalController();
+      final predictive = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        followMode: FollowMode.predictive,
+        deadzoneRatio: 0.4,
+      );
+
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [predictive],
+        cursor: const Offset(960, 540),
+        videoSize: _videoSize,
+      );
+      final engaged = ctrl.update(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [predictive],
+        cursor: const Offset(1360, 540),
+        cursorVelocity: const Offset(1000, 0),
+        videoSize: _videoSize,
+      )!;
+      expect(ctrl.inFlight, isTrue);
+
+      final smart = predictive.copyWith(followMode: FollowMode.smart);
+      ctrl.update(
+        position: const Duration(milliseconds: 32),
+        zoomRegions: [smart],
+        // The anticipated point is inside a fresh gate, so only preserved
+        // in-flight state keeps this deliberate motion chasing.
+        cursor: engaged.focal,
+        cursorVelocity: const Offset(1000, 0),
+        videoSize: _videoSize,
+      );
+
+      expect(
+        ctrl.inFlight,
+        isTrue,
+        reason: 'the predictive alias and Smart must share one gate instance',
+      );
+    });
+
     // --- spring dynamics --------------------------------------------------
 
     test('spring reaches target within ~3× settle time', () {
