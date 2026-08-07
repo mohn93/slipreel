@@ -2,6 +2,7 @@ import 'package:flutter/painting.dart';
 
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
+import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
 /// One frame's decision from a [FollowStrategy]: where should the
 /// spring chase, and is the controller currently holding (so it can
@@ -44,6 +45,7 @@ abstract class FollowStrategy {
     required Offset currentFocal,
     required Size videoSize,
     required MotionTuning tuning,
+    ZoomFraming? framing,
   });
 
   /// Called when the active zoom region changes so a stateful
@@ -73,6 +75,7 @@ class CenteredFollowStrategy extends FollowStrategy {
     required Offset currentFocal,
     required Size videoSize,
     required MotionTuning tuning,
+    ZoomFraming? framing,
   }) {
     if (!zoom.followCursor) {
       return _fixedTarget(zoom.rect.center, currentFocal);
@@ -128,8 +131,10 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
     required Offset currentFocal,
     required Size videoSize,
     required MotionTuning tuning,
+    ZoomFraming? framing,
   }) {
-    final boundsActive = zoom.followCursor &&
+    final boundsActive =
+        zoom.followCursor &&
         cursor != null &&
         zoom.deadzoneRatio > 0 &&
         videoSize.width > 0 &&
@@ -147,8 +152,10 @@ abstract class _DeadzoneFollowStrategy extends FollowStrategy {
 
     final aim = aimPoint(zoom, cursor, cursorVelocity);
     final z = zoom.zoomLevel;
-    final dzW = (videoSize.width / z) * zoom.deadzoneRatio;
-    final dzH = (videoSize.height / z) * zoom.deadzoneRatio;
+    final viewport = (framing ?? ZoomFraming.identity(videoSize))
+        .visibleViewportSizeInSource(z);
+    final dzW = viewport.width * zoom.deadzoneRatio;
+    final dzH = viewport.height * zoom.deadzoneRatio;
     final dz = Rect.fromCenter(center: currentFocal, width: dzW, height: dzH);
 
     if (_inFlight) {

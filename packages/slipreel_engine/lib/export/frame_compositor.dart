@@ -61,6 +61,7 @@ class FrameCompositor {
     this.cameraSrcWidth = 0,
     this.cameraSrcHeight = 0,
     this.deviceFrameCatalog,
+    this.motionTuning = MotionTuning.defaults,
   }) : _framePainter = FramePainter(
          frame: projectState.windowFrame,
          videoSize: videoSize,
@@ -79,6 +80,10 @@ class FrameCompositor {
   /// `outputFps` so the smoother's window is sized against the rate
   /// the consumer (encoder) is actually reading at.
   final int fps;
+
+  /// Session motion tuning captured when export starts. Preview, MP4, and GIF
+  /// must replay the same immutable values or follow-camera framing diverges.
+  final MotionTuning motionTuning;
 
   /// Time-aligned source of decoded camera (facecam) BGRA frames, or
   /// null when this recording has no camera sidecar. When non-null and
@@ -111,10 +116,13 @@ class FrameCompositor {
     final entry = catalog.entryById(id);
     if (entry == null) return null;
     if (!deviceFrameCompatible(entry, videoSize)) return null;
-    final color = entry.colorById(projectState.windowFrame.deviceFrameColor ?? '')
-        ?? (entry.colors.isEmpty ? null : entry.colors.first);
+    final color =
+        entry.colorById(projectState.windowFrame.deviceFrameColor ?? '') ??
+        (entry.colors.isEmpty ? null : entry.colors.first);
     if (color == null) return null;
-    final asset = recordingIsPortrait(videoSize) ? color.portrait : color.landscape;
+    final asset = recordingIsPortrait(videoSize)
+        ? color.portrait
+        : color.landscape;
     final layout = resolveDeviceFrameLayout(
       asset: asset,
       recordingSize: videoSize,
@@ -136,7 +144,7 @@ class FrameCompositor {
   /// [ui.instantiateImageCodec]. The caller owns disposing the codec.
   @visibleForTesting
   Future<ui.Codec> Function(String assetPath, int targetWidth)?
-      wallpaperCodecFactoryOverride;
+  wallpaperCodecFactoryOverride;
 
   /// Cached bezel image for this export. Loaded once and reused across all
   /// frames (like [_cachedWallpaperImage]). Disposed in [dispose].
@@ -149,11 +157,13 @@ class FrameCompositor {
   /// When no device frame is active, equals the standard output canvas size.
   late final Size totalSize = deviceFramePlan != null
       ? _evenSize(deviceFramePlan!.layout.canvasSize)
-      : _evenSize(OutputCanvasResolver.resolve(
-          videoSize: videoSize,
-          padding: projectState.windowFrame.padding,
-          aspect: projectState.outputAspect,
-        ).canvasSize);
+      : _evenSize(
+          OutputCanvasResolver.resolve(
+            videoSize: videoSize,
+            padding: projectState.windowFrame.padding,
+            aspect: projectState.outputAspect,
+          ).canvasSize,
+        );
 
   final FramePainter _framePainter;
 
@@ -162,22 +172,29 @@ class FrameCompositor {
   /// for even-canvas centering. On the standard path it is centered in the
   /// even canvas just as before.
   late final Rect _videoRect = deviceFramePlan != null
-      ? _shiftRect(deviceFramePlan!.layout.videoRect,
-          _evenCenteringDelta(deviceFramePlan!.layout.canvasSize))
+      ? _shiftRect(
+          deviceFramePlan!.layout.videoRect,
+          _evenCenteringDelta(deviceFramePlan!.layout.canvasSize),
+        )
       : _centeredVideoRect(
-          _evenSize(OutputCanvasResolver.resolve(
-            videoSize: videoSize,
-            padding: projectState.windowFrame.padding,
-            aspect: projectState.outputAspect,
-          ).canvasSize),
-          videoSize);
+          _evenSize(
+            OutputCanvasResolver.resolve(
+              videoSize: videoSize,
+              padding: projectState.windowFrame.padding,
+              aspect: projectState.outputAspect,
+            ).canvasSize,
+          ),
+          videoSize,
+        );
 
   /// Rect where the bezel PNG is drawn (in canvas coordinates).
   /// Only meaningful when [deviceFramePlan] is non-null.
   late final Rect _bezelRect = deviceFramePlan == null
       ? Rect.zero
-      : _shiftRect(deviceFramePlan!.layout.bezelRect,
-          _evenCenteringDelta(deviceFramePlan!.layout.canvasSize));
+      : _shiftRect(
+          deviceFramePlan!.layout.bezelRect,
+          _evenCenteringDelta(deviceFramePlan!.layout.canvasSize),
+        );
 
   /// Corner radius (canvas px) the video is clipped to so its square
   /// corners don't show through the bezel's transparent rounded cutout.
@@ -196,16 +213,17 @@ class FrameCompositor {
   /// [ZoomFraming.centerOffset] (canvas-space) so no path relies on the
   /// "video centered 1:1" assumption, and preview/export share one framing.
   late final ZoomFraming _framing = ZoomFraming.device(
-        videoSize: videoSize,
-        videoRect: _videoRect,
-        canvasSize: totalSize,
-      );
+    videoSize: videoSize,
+    videoRect: _videoRect,
+    canvasSize: totalSize,
+  );
 
   /// Shared scene-state production for preview and export. Owns the
   /// spring controllers and EMA filter; one source of truth means
   /// preview and export cannot disagree on cursor velocity, focal
   /// trajectory, or filtered blur velocity.
-  final ScenePassBuilder _scenePassBuilder = ScenePassBuilder();
+  late final ScenePassBuilder _scenePassBuilder = ScenePassBuilder()
+    ..setTuning(motionTuning);
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
   DeterministicFocalTrack? _focalTrack;
   ui.FragmentProgram? _sceneBlurProgram;
@@ -218,15 +236,12 @@ class FrameCompositor {
 
   // Scene-blur knobs come from [MotionTuning] so the export pipeline
   // and the preview canvas share one source of truth. Reads are
-  // instance accessors because [MotionTuning] fields aren't const-
-  // exposable; the instance itself is `MotionTuning.defaults` (a
-  // const) so there's no per-frame allocation.
-  static final MotionTuning _tuning = MotionTuning.defaults;
-  double get _sceneBlurExposureMs => _tuning.sceneBlurExposureMs;
-  double get _sceneBlurMaxTranslation => _tuning.sceneBlurMaxTranslation;
-  int get _sceneBlurSampleCount => _tuning.sceneBlurSampleCount;
-  double get _sceneBlurSpeedCurveExp => _tuning.sceneBlurSpeedCurveExp;
-  double get _sceneBlurSpeedCurveRefPx => _tuning.sceneBlurSpeedCurveRefPx;
+  // instance accessors because [MotionTuning] fields aren't const-exposable.
+  double get _sceneBlurExposureMs => motionTuning.sceneBlurExposureMs;
+  double get _sceneBlurMaxTranslation => motionTuning.sceneBlurMaxTranslation;
+  int get _sceneBlurSampleCount => motionTuning.sceneBlurSampleCount;
+  double get _sceneBlurSpeedCurveExp => motionTuning.sceneBlurSpeedCurveExp;
+  double get _sceneBlurSpeedCurveRefPx => motionTuning.sceneBlurSpeedCurveRefPx;
 
   WindowFrame get _frame => projectState.windowFrame;
 
@@ -273,8 +288,7 @@ class FrameCompositor {
         fps: fps,
         hasCursorData: _hasCursorData,
         screenRampCurve: projectState.screenAnimationConfig.rampCurve,
-        rampDurationScale:
-            projectState.screenAnimationConfig.rampDurationScale,
+        rampDurationScale: projectState.screenAnimationConfig.rampDurationScale,
         framing: _framing,
       );
       final motion = scenePass.motion;
@@ -438,11 +452,12 @@ class FrameCompositor {
             final wallpaperImage = await _ensureWallpaperImage();
             // No wallpaper, no chrome, no camera, AND no active caption:
             // the content IS the final image. Skip the composite step.
-            final captionsActive = projectState.captionStyle.enabled &&
+            final captionsActive =
+                projectState.captionStyle.enabled &&
                 activeCaptionAt(
-                  projectState.captions,
-                  position.inMicroseconds,
-                ) !=
+                      projectState.captions,
+                      position.inMicroseconds,
+                    ) !=
                     null;
             if (wallpaperImage == null &&
                 chromeImage == null &&
@@ -657,8 +672,12 @@ class FrameCompositor {
     // transparent cutout.
     if (_videoCornerRadius > 0) {
       fgCanvas.save();
-      fgCanvas.clipRRect(ui.RRect.fromRectAndRadius(
-          _videoRect, ui.Radius.circular(_videoCornerRadius)));
+      fgCanvas.clipRRect(
+        ui.RRect.fromRectAndRadius(
+          _videoRect,
+          ui.Radius.circular(_videoCornerRadius),
+        ),
+      );
       paintImageRectToRect(fgCanvas, videoImage, _videoRect);
       fgCanvas.restore();
     } else {
@@ -679,19 +698,25 @@ class FrameCompositor {
 
     try {
       final fgImage = await fgPicture.toImage(
-          totalSize.width.toInt(), totalSize.height.toInt());
+        totalSize.width.toInt(),
+        totalSize.height.toInt(),
+      );
       final ui.Image? bezelImg = bezelPicture == null
           ? null
           : await bezelPicture.toImage(
-              totalSize.width.toInt(), totalSize.height.toInt());
+              totalSize.width.toInt(),
+              totalSize.height.toInt(),
+            );
       try {
         final blurredFg = await _applySceneMotionBlur(fgImage, sceneSignal);
         final fgToComposite = blurredFg ?? fgImage;
         try {
           final wallpaperImage = await _ensureWallpaperImage();
           final composeRecorder = ui.PictureRecorder();
-          final composeCanvas = ui.Canvas(composeRecorder,
-              Rect.fromLTWH(0, 0, totalSize.width, totalSize.height));
+          final composeCanvas = ui.Canvas(
+            composeRecorder,
+            Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+          );
           if (wallpaperImage != null) {
             composeCanvas.drawImage(wallpaperImage, Offset.zero, Paint());
           }
@@ -748,10 +773,13 @@ class FrameCompositor {
           final composePicture = composeRecorder.endRecording();
           try {
             final finalImage = await composePicture.toImage(
-                totalSize.width.toInt(), totalSize.height.toInt());
+              totalSize.width.toInt(),
+              totalSize.height.toInt(),
+            );
             try {
-              final byteData =
-                  await finalImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+              final byteData = await finalImage.toByteData(
+                format: ui.ImageByteFormat.rawRgba,
+              );
               if (byteData == null) {
                 throw StateError('toByteData returned null at $position');
               }
@@ -778,9 +806,17 @@ class FrameCompositor {
   /// Draws [image] (its full bounds) scaled to fit [dst].
   static void paintImageRectToRect(ui.Canvas c, ui.Image image, Rect dst) {
     final src = Rect.fromLTWH(
-        0, 0, image.width.toDouble(), image.height.toDouble());
-    c.drawImageRect(image, src, dst,
-        Paint()..filterQuality = FilterQuality.high);
+      0,
+      0,
+      image.width.toDouble(),
+      image.height.toDouble(),
+    );
+    c.drawImageRect(
+      image,
+      src,
+      dst,
+      Paint()..filterQuality = FilterQuality.high,
+    );
   }
 
   // --- internals --------------------------------------------------------
@@ -800,9 +836,11 @@ class FrameCompositor {
           cursorPostProcess: projectState.cursorPostProcess,
           videoSize: videoSize,
           fps: fps,
+          cursorDelay: projectState.cursorDelay,
           screenRampCurve: projectState.screenAnimationConfig.rampCurve,
           rampDurationScale:
               projectState.screenAnimationConfig.rampDurationScale,
+          tuning: motionTuning,
           clips: projectState.timeline.clips,
           framing: _framing,
         )) {
@@ -820,9 +858,10 @@ class FrameCompositor {
       cursorPostProcess: projectState.cursorPostProcess,
       videoSize: videoSize,
       fps: fps,
+      cursorDelay: projectState.cursorDelay,
       screenRampCurve: projectState.screenAnimationConfig.rampCurve,
-      rampDurationScale:
-          projectState.screenAnimationConfig.rampDurationScale,
+      rampDurationScale: projectState.screenAnimationConfig.rampDurationScale,
+      tuning: motionTuning,
       clips: projectState.timeline.clips,
       framing: _framing,
     );
@@ -959,8 +998,7 @@ class FrameCompositor {
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
           projectState.screenAnimationConfig.rampCurve,
-      rampDurationScale:
-          projectState.screenAnimationConfig.rampDurationScale,
+      rampDurationScale: projectState.screenAnimationConfig.rampDurationScale,
       framing: _framing,
     );
     final scale = matrix.storage[0];
@@ -1029,8 +1067,11 @@ class FrameCompositor {
     }
 
     void drawProcedural() {
-      final decoration = wallpaperDecoration(category, _frame.wallpaperIndex,
-          solidColor: _frame.solidColor);
+      final decoration = wallpaperDecoration(
+        category,
+        _frame.wallpaperIndex,
+        solidColor: _frame.solidColor,
+      );
       final boxPainter = decoration.createBoxPainter(() {});
       boxPainter.paint(
         canvas,

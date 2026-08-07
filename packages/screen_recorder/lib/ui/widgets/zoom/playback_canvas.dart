@@ -852,8 +852,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               fps: widget.metadata?.fps ?? 60,
               hasCursorData: hasCursorData,
               screenRampCurve: widget.screenAnimationConfig.rampCurve,
-              rampDurationScale:
-                  widget.screenAnimationConfig.rampDurationScale,
+              rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
               // When the placement-picker override is active we want the
               // focal to lock onto the previewed rect immediately — the
               // spring otherwise barely advances while the video is paused
@@ -1650,6 +1649,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
           cursorDelay: widget.cursorDelay,
           screenRampCurve: widget.screenAnimationConfig.rampCurve,
           rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
+          tuning: _tuning,
           clips: widget.clips,
           framing: framing,
         )) {
@@ -1665,6 +1665,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       cursorDelay: widget.cursorDelay,
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
       rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
+      tuning: _tuning,
       clips: widget.clips,
       framing: framing,
     );
@@ -1859,7 +1860,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     Color? solidColor,
   }) {
     final fill = Container(
-        decoration: wallpaperDecoration(category, index, solidColor: solidColor));
+      decoration: wallpaperDecoration(category, index, solidColor: solidColor),
+    );
     if (blur <= 0) return fill;
     // ClipRect prevents the gaussian tail from leaking outside the
     // frame's totalSize. ImageFiltered does a saveLayer internally,

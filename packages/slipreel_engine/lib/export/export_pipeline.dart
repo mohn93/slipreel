@@ -11,6 +11,7 @@ import '../models/device_frame.dart';
 import '../models/export_settings.dart';
 import '../models/recording_metadata.dart';
 import '../rendering/output_canvas_resolver.dart';
+import '../rendering/motion_tuning.dart';
 import '../state/clip_slice.dart';
 import '../state/editor_project_state.dart';
 import '../utils/perf_summary.dart';
@@ -33,8 +34,7 @@ bool shouldCompositeCamera({
   required bool enabled,
   required bool hasRegions,
   required bool movieExists,
-}) =>
-    hasSidecar && enabled && hasRegions && movieExists;
+}) => hasSidecar && enabled && hasRegions && movieExists;
 
 /// User-facing warning when the camera couldn't be decoded and the export
 /// finished screen-only. Single source of truth (set at decode-setup failure
@@ -77,6 +77,9 @@ class ExportPipeline {
   /// chrome path — matching the editor preview pixel-for-pixel.
   final DeviceFrameCatalog? deviceFrameCatalog;
 
+  /// Immutable session motion tuning captured when export starts.
+  final MotionTuning motionTuning;
+
   // Cache for a single ffprobe result per pipeline instance.
   FfmpegProbeResult? _probeCache;
 
@@ -88,6 +91,7 @@ class ExportPipeline {
     required this.projectState,
     required this.settings,
     this.deviceFrameCatalog,
+    this.motionTuning = MotionTuning.defaults,
   }) {
     if (settings.format != ExportFormat.mp4) {
       throw ArgumentError.value(
@@ -175,8 +179,9 @@ class ExportPipeline {
       try {
         cameraSrcWidth = cameraMeta!.width;
         cameraSrcHeight = cameraMeta.height;
-        cameraOriginalAspect =
-            cameraSrcHeight == 0 ? 1.0 : cameraSrcWidth / cameraSrcHeight;
+        cameraOriginalAspect = cameraSrcHeight == 0
+            ? 1.0
+            : cameraSrcWidth / cameraSrcHeight;
         final camDecoder = FfmpegDecoder(
           inputPath: cameraMoviePath,
           width: cameraSrcWidth,
@@ -192,25 +197,31 @@ class ExportPipeline {
           onDispose: camDecoder.kill,
         );
       } catch (e, st) {
-        AppLogger.ffmpeg.w('Camera export decode setup failed: $e',
-            error: e, stackTrace: st);
+        AppLogger.ffmpeg.w(
+          'Camera export decode setup failed: $e',
+          error: e,
+          stackTrace: st,
+        );
         cameraSource = null;
         warnings.add(_kCameraDecodeWarning);
       }
     }
 
-    final ExportCompositor compositor = InProcessExportCompositor(FrameCompositor(
-      projectState: projectState,
-      cursorRecording: cursorRecording,
-      metadata: sourceMetadata,
-      videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
-      fps: pipelineFps,
-      cameraFrameSource: cameraSource,
-      cameraOriginalAspect: cameraOriginalAspect,
-      cameraSrcWidth: cameraSrcWidth,
-      cameraSrcHeight: cameraSrcHeight,
-      deviceFrameCatalog: deviceFrameCatalog,
-    ));
+    final ExportCompositor compositor = InProcessExportCompositor(
+      FrameCompositor(
+        projectState: projectState,
+        cursorRecording: cursorRecording,
+        metadata: sourceMetadata,
+        videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
+        fps: pipelineFps,
+        cameraFrameSource: cameraSource,
+        cameraOriginalAspect: cameraOriginalAspect,
+        cameraSrcWidth: cameraSrcWidth,
+        cameraSrcHeight: cameraSrcHeight,
+        deviceFrameCatalog: deviceFrameCatalog,
+        motionTuning: motionTuning,
+      ),
+    );
 
     final decoder = FfmpegDecoder(
       inputPath: sourcePath,
@@ -453,18 +464,23 @@ class ExportPipeline {
     // A camera decode error can surface mid-encode (the source disables itself
     // on the first failed read). Capture it as a warning so the export still
     // succeeds, just without the overlay.
-    if (cameraSource?.failed == true && !warnings.contains(_kCameraDecodeWarning)) {
+    if (cameraSource?.failed == true &&
+        !warnings.contains(_kCameraDecodeWarning)) {
       warnings.add(_kCameraDecodeWarning);
     }
 
     final summary = ExportPerfSummary(
       inputDurationSeconds: inputDuration,
       wallTimeSeconds: wallSec,
-      decodeMsPerFrame: totalFrames > 0 ? decoder.totalDecodeMs / totalFrames : 0,
+      decodeMsPerFrame: totalFrames > 0
+          ? decoder.totalDecodeMs / totalFrames
+          : 0,
       compositeMsPerFrame: totalFrames > 0
           ? compositeSw.elapsedMilliseconds / totalFrames
           : 0,
-      encodeMsPerFrame: totalFrames > 0 ? encoder.totalEncodeMs / totalFrames : 0,
+      encodeMsPerFrame: totalFrames > 0
+          ? encoder.totalEncodeMs / totalFrames
+          : 0,
       outputBytes: outputBytes,
       outputCodec: encoder.codecUsed,
       usedHardwareEncoder: encoder.usedHardware,
@@ -498,9 +514,7 @@ EditorProjectState _ensureSlices(
       : const Duration(milliseconds: 1);
   return state.copyWith(
     timeline: state.timeline.copyWith(
-      clips: [
-        ClipSlice(cutStart: Duration.zero, cutEnd: span),
-      ],
+      clips: [ClipSlice(cutStart: Duration.zero, cutEnd: span)],
     ),
   );
 }
@@ -549,7 +563,8 @@ String _composeWithScalePad(
   required int outWidth,
   required int outHeight,
 }) {
-  final scalePad = '${videoLabel}scale=$outWidth:$outHeight:'
+  final scalePad =
+      '${videoLabel}scale=$outWidth:$outHeight:'
       'force_original_aspect_ratio=decrease,'
       'pad=$outWidth:$outHeight:(ow-iw)/2:(oh-ih)/2:color=black,'
       'setsar=1[outv_scaled]';

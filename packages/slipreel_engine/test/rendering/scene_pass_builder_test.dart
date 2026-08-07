@@ -558,10 +558,12 @@ void main() {
         // before the raw cursor actually jumps there. That earlier
         // curve-in is the intended "rounds a corner" behavior (see
         // cursor_path_smoothing_test.dart), and it nudges this
-        // particular excursion from <5.0px to ~5.5px. Widened with a
-        // safety margin rather than tightened, so a genuine yank
-        // regression still fails this test.
-        lessThan(6.0),
+        // particular excursion. The focal spring now gives followDuration its
+        // truthful T95 meaning, so this deliberately-fast 100ms fixture can
+        // move ~11px on the first hold frame. Keep the bound tight enough to
+        // reject the old hundreds-of-pixels yank while accepting that intended
+        // faster response.
+        lessThan(15.0),
         reason:
             'the runtime builder should not let the hold phase yank '
             'the camera toward the lagging smoothed cursor',
@@ -603,8 +605,9 @@ void main() {
       final pass = ScenePassBuilder().build(
         position: const Duration(milliseconds: 16),
         zoomRegions: [region],
-        cursorAnimationConfig:
-            const CursorAnimationConfig.preset(CursorAnimationStyle.smooth),
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.smooth,
+        ),
         cursorRecording: recording,
         videoSize: _videoSize,
         fps: 60,

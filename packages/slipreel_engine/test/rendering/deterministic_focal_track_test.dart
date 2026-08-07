@@ -9,6 +9,7 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 
 void main() {
@@ -162,8 +163,8 @@ void main() {
     });
 
     test('omitted cursorDelay defaults to zero — back-compat for export', () {
-      // [track] was built without cursorDelay; export calls matches() without
-      // it too, so a delay-less call must still match.
+      // [track] was built without cursorDelay, so a delay-less caller must
+      // still match even though production preview/export pass it explicitly.
       expect(
         track.matches(
           region: region,
@@ -189,6 +190,43 @@ void main() {
           cursorDelay: const Duration(milliseconds: 50),
         ),
         isFalse,
+      );
+    });
+
+    test('changed MotionTuning instance invalidates the replay cache', () {
+      const custom = MotionTuning(cursorAtRestPxPerSec: 61);
+      expect(
+        track.matches(
+          region: region,
+          cursorRecording: recording,
+          cursorAnimationConfig: config,
+          cursorPostProcess: CursorPostProcess.none,
+          videoSize: videoSize,
+          fps: 60,
+          tuning: custom,
+        ),
+        isFalse,
+      );
+
+      final customTrack = DeterministicFocalTrack.build(
+        region: region,
+        cursorRecording: recording,
+        cursorAnimationConfig: config,
+        videoSize: videoSize,
+        fps: 60,
+        tuning: custom,
+      );
+      expect(
+        customTrack.matches(
+          region: region,
+          cursorRecording: recording,
+          cursorAnimationConfig: config,
+          cursorPostProcess: CursorPostProcess.none,
+          videoSize: videoSize,
+          fps: 60,
+          tuning: custom,
+        ),
+        isTrue,
       );
     });
   });

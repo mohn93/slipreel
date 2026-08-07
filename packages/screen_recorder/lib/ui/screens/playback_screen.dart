@@ -7,8 +7,10 @@ import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_history_controller.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
+import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:video_player/video_player.dart';
-import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart' show CursorBlurMode;
+import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart'
+    show CursorBlurMode;
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
@@ -76,7 +78,8 @@ import 'package:screen_recorder/ui/screens/playback/cut_decision.dart';
 import 'package:screen_recorder/ui/screens/playback/slice_nav_decision.dart';
 import 'package:screen_recorder/state/snap_preference_controller.dart';
 import '../../state/global_preferences_controller.dart';
-import 'package:slipreel_engine/timeline/slice_navigation.dart' show NavDirection;
+import 'package:slipreel_engine/timeline/slice_navigation.dart'
+    show NavDirection;
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -187,10 +190,7 @@ int activeSliceIndex(List<ClipSlice> clips, Duration sourcePosition) {
 /// sits outside every trimmed range — so resume-at-end and seek-to-zero
 /// produce a sensible rate.
 @visibleForTesting
-double effectiveClipSpeedAt(
-  List<ClipSlice> clips,
-  Duration sourcePosition,
-) {
+double effectiveClipSpeedAt(List<ClipSlice> clips, Duration sourcePosition) {
   if (clips.isEmpty) return 1.0;
   final idx = activeSliceIndex(clips, sourcePosition);
   if (idx != -1) return clips[idx].playbackSpeed;
@@ -251,8 +251,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // paused / on seeks), and from each hover-state handler. The timeline
   // subscribes via `ValueListenableBuilder` so per-vsync ticks land on
   // just the playhead subtree instead of rebuilding the whole tree.
-  final ValueNotifier<Duration> _playheadEditedPos =
-      ValueNotifier<Duration>(Duration.zero);
+  final ValueNotifier<Duration> _playheadEditedPos = ValueNotifier<Duration>(
+    Duration.zero,
+  );
   bool _isInitialized = false;
   String? _error;
   // Path of the last successfully exported file — used to wire the
@@ -325,8 +326,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // immutable [EditorProjectState] + per-field mutators; the screen
   // reads via [ref.watch] in build() and mutates via these helpers
   // below.
-  EditorProjectState get _project =>
-      ref.read(editorProjectControllerProvider);
+  EditorProjectState get _project => ref.read(editorProjectControllerProvider);
   EditorProjectController get _projectController =>
       ref.read(editorProjectControllerProvider.notifier);
 
@@ -470,7 +470,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
     final isOptBracket = HardwareKeyboard.instance.isAltPressed &&
         (event.logicalKey == LogicalKeyboardKey.bracketRight ||
-         event.logicalKey == LogicalKeyboardKey.bracketLeft);
+            event.logicalKey == LogicalKeyboardKey.bracketLeft);
     if (isOptBracket) {
       if (!_isInitialized) return false;
       if (_focusedWidgetIsEditable()) return false;
@@ -601,11 +601,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// lie about the export.
   void _onSpeedTick() {
     if (!_isInitialized) return;
-    final clips =
-        ref.read(editorProjectControllerProvider).timeline.clips;
+    final clips = ref.read(editorProjectControllerProvider).timeline.clips;
     if (clips.isEmpty) return;
-    final pos =
-        _smoothPlayhead?.position ?? _controller.value.position;
+    final pos = _smoothPlayhead?.position ?? _controller.value.position;
     final idx = activeSliceIndex(clips, pos);
     if (idx == -1) return; // mid-seek through a gap — wait for landing
     if (idx != _currentSliceIndex) {
@@ -662,7 +660,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // (only a @visibleForTesting getter is public, but it is stable in 2.11.x
       // and the only way to key the side channel).
       // ignore: invalid_use_of_visible_for_testing_member
-      _latencyProbe = DisplayLatencyProbe(playerId: _controller.playerId)..start();
+      _latencyProbe = DisplayLatencyProbe(playerId: _controller.playerId)
+        ..start();
       // Per-vsync (while playing) and per-controller-tick (paused/seek)
       // updates of the edited-time playhead notifier. Either listener
       // calling _refreshPlayheadEditedPos is cheap and idempotent — the
@@ -717,7 +716,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       try {
         final meta = await CameraSidecarMeta.loadForVideo(widget.videoPath);
         if (meta != null && meta.frameCount > 0) {
-          final moviePath = CameraSidecarMeta.moviePathForVideo(widget.videoPath);
+          final moviePath = CameraSidecarMeta.moviePathForVideo(
+            widget.videoPath,
+          );
           if (await File(moviePath).exists()) {
             _cameraMeta = meta;
             _cameraMoviePath = moviePath;
@@ -738,7 +739,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           }
         }
       } catch (e) {
-        AppLogger.ui.w('Camera sidecar load failed; editor opens without camera: $e');
+        AppLogger.ui.w(
+          'Camera sidecar load failed; editor opens without camera: $e',
+        );
       }
       // Auto-select a device frame for device captures with no frame set
       // yet, when a Perfect (exact-resolution) match exists. Persist so a
@@ -863,7 +866,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           ref.read(recordingAudioStreamsProvider.notifier).state =
               probedForAudio.audioStreams;
         }
-      } catch (_) {/* leave empty */}
+      } catch (_) {
+        /* leave empty */
+      }
     } catch (e) {
       // A missing/corrupt video hits this path fast — the user may already
       // have navigated away, so guard against setState-after-dispose.
@@ -957,7 +962,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // stale "still in removed region" position, and we'd queue duplicate
   // seekTo calls every frame.
   Duration? _lastSkipTarget;
-
 
   /// Position-tick listener that skips removed regions. When playback
   /// walks off a slice's trimEnd, seeks to the next slice's trimStart;
@@ -1095,8 +1099,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     if (overlay == null) return;
     final btnTL = box.localToGlobal(Offset.zero, ancestor: overlay);
     final btnBR = box.localToGlobal(
-        box.size.bottomRight(Offset.zero),
-        ancestor: overlay);
+      box.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
     const verticalGap = 6.0;
     final position = RelativeRect.fromLTRB(
       btnTL.dx,
@@ -1214,12 +1219,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// entries like "Restore default zoom ranges" can stay disabled
   /// when there's nothing to restore from.
   Future<void> _showCommandPalette() async {
-    final controller =
-        ref.read(editorProjectControllerProvider.notifier);
-    final hasZooms = ref
-        .read(editorProjectControllerProvider)
-        .zoomRegions
-        .isNotEmpty;
+    final controller = ref.read(editorProjectControllerProvider.notifier);
+    final hasZooms =
+        ref.read(editorProjectControllerProvider).zoomRegions.isNotEmpty;
     final hasCursorClicks = _cursorRecording.positions.any((p) => p.isClicked);
     final hasMetadata = _metadata != null;
 
@@ -1270,7 +1272,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               _setSelectedZoomIndex(null);
               if (paddingAfter > paddingBefore) {
                 AppAlerts.info(
-                    '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+                  '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px',
+                );
               }
               AppAlerts.success(
                 'Restored ${detected.length} zoom range${detected.length == 1 ? '' : 's'} from cursor activity',
@@ -1339,8 +1342,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Cancel',
-                style: TextStyle(color: palette.textSecondary)),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: palette.textSecondary),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -1348,10 +1353,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               backgroundColor: Colors.red.shade700,
               foregroundColor: Colors.white,
               elevation: 0,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -1428,8 +1430,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final canRedo = _history?.canRedo ?? false;
     final dim = palette.textSecondary;
 
-    Widget icon(IconData glyph, String tip, VoidCallback onTap,
-            {bool enabled = true}) =>
+    Widget icon(
+      IconData glyph,
+      String tip,
+      VoidCallback onTap, {
+      bool enabled = true,
+    }) =>
         SpringyIconButton(
           icon: glyph,
           tooltip: tip,
@@ -1459,11 +1465,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            icon(LucideIcons.folderOpen, 'Record another',
-                () => Navigator.of(context).pop()),
+            icon(
+              LucideIcons.folderOpen,
+              'Record another',
+              () => Navigator.of(context).pop(),
+            ),
             const SizedBox(width: 4),
-            icon(LucideIcons.trash2, 'Delete recording',
-                _deleteRecording),
+            icon(LucideIcons.trash2, 'Delete recording', _deleteRecording),
           ],
         ),
       ),
@@ -1498,27 +1506,25 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         icon(LucideIcons.command, 'Commands', _showCommandPalette),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Container(
-              width: 1, height: 22, color: palette.dividerSubtle),
+          child: Container(width: 1, height: 22, color: palette.dividerSubtle),
         ),
-        icon(LucideIcons.undo2, 'Undo (Cmd+Z)', _handleUndo,
-            enabled: canUndo),
-        icon(LucideIcons.redo2, 'Redo (Cmd+Shift+Z)', _handleRedo,
-            enabled: canRedo),
+        icon(LucideIcons.undo2, 'Undo (Cmd+Z)', _handleUndo, enabled: canUndo),
+        icon(
+          LucideIcons.redo2,
+          'Redo (Cmd+Shift+Z)',
+          _handleRedo,
+          enabled: canRedo,
+        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Container(
-              width: 1, height: 22, color: palette.dividerSubtle),
+          child: Container(width: 1, height: 22, color: palette.dividerSubtle),
         ),
         // Eye → "View" menu. Builder captures its own context so the
         // showMenu anchor math points at the eye's render box, not the
         // top-bar parent.
         Builder(
-          builder: (ctx) => icon(
-            LucideIcons.eye,
-            'View options',
-            () => _showViewMenu(ctx),
-          ),
+          builder: (ctx) =>
+              icon(LucideIcons.eye, 'View options', () => _showViewMenu(ctx)),
         ),
         const SizedBox(width: 12),
         Padding(
@@ -1566,14 +1572,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// to the raw controller position.
   void _refreshPlayheadEditedPos() {
     if (!mounted || !_isInitialized) return;
-    final clips =
-        ref.read(editorProjectControllerProvider).timeline.clips;
+    final clips = ref.read(editorProjectControllerProvider).timeline.clips;
     final sourcePos = _hover.isHovering
         ? _hover.intendedPosition
         : (_smoothPlayhead?.position ?? _controller.value.position);
-    final next = clips.isEmpty
-        ? sourcePos
-        : sourceToEdited(clips, sourcePos);
+    final next = clips.isEmpty ? sourcePos : sourceToEdited(clips, sourcePos);
     if (_playheadEditedPos.value != next) {
       _playheadEditedPos.value = next;
     }
@@ -1704,7 +1707,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final paddingAfter = _projectController.current.windowFrame.padding.left;
     if (paddingAfter > paddingBefore) {
       AppAlerts.info(
-          '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+        '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px',
+      );
     }
     _zoomPreviewOverride.value = null;
     setState(() {
@@ -1773,8 +1777,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     ];
     if (members.isEmpty) return;
     final notifier = ref.read(editorProjectControllerProvider.notifier);
-    final settings =
-        ref.read(editorProjectControllerProvider).keystrokeOverlay;
+    final settings = ref.read(editorProjectControllerProvider).keystrokeOverlay;
     final next = Set<int>.from(settings.disabledKeys);
     // The group's enabled state is keyed on its first press.
     if (next.contains(g.firstMicros)) {
@@ -1854,9 +1857,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           // TODO(slice-editor T10): build the AudioMix from the active
           // clip once the editor follows per-slice audio settings.
           audioBitrateKbps: buildAudioMixArgs(
-                  probed.audioStreams,
-                  _bridgeAudioMix(ref.read(editorProjectControllerProvider)))
-              .bitrateKbps,
+            probed.audioStreams,
+            _bridgeAudioMix(ref.read(editorProjectControllerProvider)),
+          ).bitrateKbps,
           estimator: ExportEstimator(
             lastRealtimeMultiplier: persistedMultiplier ?? 0.7,
           ),
@@ -1872,8 +1875,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     return;
                   }
                   if (Platform.isMacOS) {
-                    unawaited(Process.run('open', ['-R', path])
-                        .catchError((_) => ProcessResult(0, 1, '', '')));
+                    unawaited(
+                      Process.run('open', [
+                        '-R',
+                        path,
+                      ]).catchError((_) => ProcessResult(0, 1, '', '')),
+                    );
                   }
                 },
         ),
@@ -1940,40 +1947,42 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     try {
       // Fire-and-forget: the dialog is dismissed via Navigator.pop below;
       // we don't need the returned Future<void>.
-      unawaited(showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          content: SizedBox(
-            height: 80,
-            child: ValueListenableBuilder<double?>(
-              valueListenable: progress,
-              builder: (context, value, _) {
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      value == null
-                          ? 'Exporting…'
-                          : 'Exporting… ${(value * 100).round()}%',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
+      unawaited(
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => AlertDialog(
+            content: SizedBox(
+              height: 80,
+              child: ValueListenableBuilder<double?>(
+                valueListenable: progress,
+                builder: (context, value, _) {
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        value == null
+                            ? 'Exporting…'
+                            : 'Exporting… ${(value * 100).round()}%',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    // value=null → indeterminate (the bar bounces) until
-                    // we know the frame count; once we do, it switches
-                    // to a determinate fill.
-                    LinearProgressIndicator(value: value),
-                  ],
-                );
-              },
+                      const SizedBox(height: 12),
+                      // value=null → indeterminate (the bar bounces) until
+                      // we know the frame count; once we do, it switches
+                      // to a determinate fill.
+                      LinearProgressIndicator(value: value),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),
-      ));
+      );
 
       // Run the pipeline + deliver via the headless ExportController. The
       // pipeline is picked by format inside the injected closure; this widget
@@ -1989,6 +1998,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   projectState: _project,
                   settings: settings,
                   deviceFrameCatalog: _deviceFrameCatalog,
+                  motionTuning: ref.read(motionTuningProvider),
                 ).run(onProgress: onProgress, cancelToken: cancelToken)
               : ExportPipeline(
                   sourcePath: widget.videoPath,
@@ -1998,6 +2008,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   projectState: _project,
                   settings: settings,
                   deviceFrameCatalog: _deviceFrameCatalog,
+                  motionTuning: ref.read(motionTuningProvider),
                 ).run(onProgress: onProgress, cancelToken: cancelToken);
           // N-slice export for both formats: per-slice trim/speed/fade come
           // from state.timeline.clips. The B-era top-level TrimSelection is
@@ -2026,7 +2037,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           // not the linear pixels-per-second model the estimator assumes.
           if (settings.format == ExportFormat.mp4 &&
               summary.realtimeMultiple > 0) {
-            final outDims = settings.resolution.dimensionsFor(composedVideoSize);
+            final outDims = settings.resolution.dimensionsFor(
+              composedVideoSize,
+            );
             final outArea = outDims.width * outDims.height;
             final fpsScale = settings.frameRate / kBaselineFrameRate;
             final areaScale = outArea / kBaselineAreaPixels;
@@ -2047,8 +2060,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     onPressed: () {
                       // macOS-only: reveal in Finder. No-op on other platforms.
                       if (Platform.isMacOS) {
-                        unawaited(Process.run('open', ['-R', result.revealPath!])
-                            .catchError((_) => ProcessResult(0, 1, '', '')));
+                        unawaited(
+                          Process.run('open', [
+                            '-R',
+                            result.revealPath!,
+                          ]).catchError((_) => ProcessResult(0, 1, '', '')),
+                        );
                       }
                     },
                   )
@@ -2101,9 +2118,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final m = d.inMinutes;
     final s = (d.inSeconds % 60).toString().padLeft(2, '0');
     final hundredths = ((d.inMilliseconds % 1000) ~/ 10).toString().padLeft(
-      2,
-      '0',
-    );
+          2,
+          '0',
+        );
     return '$m:$s.$hundredths';
   }
 
@@ -2218,10 +2235,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 ref.read(editorProjectControllerProvider).timelineScale,
             setScale: (next) => ref
                 .read(editorProjectControllerProvider.notifier)
-                .setTimelineScale(
-                  next,
-                  anchorTime: _controller.value.position,
-                ),
+                .setTimelineScale(next, anchorTime: _controller.value.position),
           ),
           child: Scaffold(
             backgroundColor: context.palette.appBackground,
@@ -2237,17 +2251,23 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                         child: Column(
                           children: [
                             Divider(
-                                height: 1,
-                                thickness: 1,
-                                color: context.palette.dividerSubtle),
-                            CanvasToolbar(children: [
-                              AspectRatioPicker(
-                                current: project.outputAspect,
-                                onChanged: (v) => ref
-                                    .read(editorProjectControllerProvider.notifier)
-                                    .setOutputAspect(v),
-                              ),
-                            ]),
+                              height: 1,
+                              thickness: 1,
+                              color: context.palette.dividerSubtle,
+                            ),
+                            CanvasToolbar(
+                              children: [
+                                AspectRatioPicker(
+                                  current: project.outputAspect,
+                                  onChanged: (v) => ref
+                                      .read(
+                                        editorProjectControllerProvider
+                                            .notifier,
+                                      )
+                                      .setOutputAspect(v),
+                                ),
+                              ],
+                            ),
                             Expanded(
                               child: Stack(
                                 children: [
@@ -2265,50 +2285,53 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                                     alignment: Alignment.center,
                                     child: _buildVideoPlayer(),
                                   ),
-                            // Zoom debug readout — rendered at the top-left
-                            // of the preview pane, OUTSIDE the playback
-                            // canvas's zoom Transform so the text stays
-                            // anchored even when the video is zoomed in
-                            // and the canvas content slides off-screen.
-                            if (_showZoomDebug)
-                              Positioned(
-                                top: 12,
-                                left: 12,
-                                child: ValueListenableBuilder<ZoomDebugSnapshot?>(
-                                  valueListenable: _zoomDebugSnapshot,
-                                  builder: (context, snap, _) {
-                                    if (snap == null) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return ZoomDebugReadoutPanel(
-                                      cursor: snap.cursor,
-                                      smoothedFocal: snap.smoothedFocal,
-                                      activeZoom: snap.activeZoom,
-                                      inFlight: snap.inFlight,
-                                      focalVelocity: snap.focalVelocity,
-                                      cursorVelocity: snap.cursorVelocity,
-                                      videoSize: snap.videoSize,
-                                      cursorSampleCount: snap.cursorSampleCount,
-                                      position: snap.position,
-                                      cursorXRange: snap.cursorXRange,
-                                      cursorYRange: snap.cursorYRange,
-                                      lastSnapReason: snap.lastSnapReason,
-                                      lastSnapAt: snap.lastSnapAt,
-                                    );
-                                  },
-                                ),
+                                  // Zoom debug readout — rendered at the top-left
+                                  // of the preview pane, OUTSIDE the playback
+                                  // canvas's zoom Transform so the text stays
+                                  // anchored even when the video is zoomed in
+                                  // and the canvas content slides off-screen.
+                                  if (_showZoomDebug)
+                                    Positioned(
+                                      top: 12,
+                                      left: 12,
+                                      child: ValueListenableBuilder<
+                                          ZoomDebugSnapshot?>(
+                                        valueListenable: _zoomDebugSnapshot,
+                                        builder: (context, snap, _) {
+                                          if (snap == null) {
+                                            return const SizedBox.shrink();
+                                          }
+                                          return ZoomDebugReadoutPanel(
+                                            cursor: snap.cursor,
+                                            smoothedFocal: snap.smoothedFocal,
+                                            activeZoom: snap.activeZoom,
+                                            inFlight: snap.inFlight,
+                                            focalVelocity: snap.focalVelocity,
+                                            cursorVelocity: snap.cursorVelocity,
+                                            videoSize: snap.videoSize,
+                                            cursorSampleCount:
+                                                snap.cursorSampleCount,
+                                            position: snap.position,
+                                            cursorXRange: snap.cursorXRange,
+                                            cursorYRange: snap.cursorYRange,
+                                            lastSnapReason: snap.lastSnapReason,
+                                            lastSnapAt: snap.lastSnapAt,
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                ],
                               ),
-                          ],
-                        ),
-                      ),
+                            ),
                           ],
                         ),
                       ),
                       if (_isInitialized && _showSidebar)
                         VerticalDivider(
-                            width: 1,
-                            thickness: 1,
-                            color: context.palette.dividerSubtle),
+                          width: 1,
+                          thickness: 1,
+                          color: context.palette.dividerSubtle,
+                        ),
                       if (_isInitialized && _showSidebar)
                         InspectorPanel(
                           selection: _currentSelection(),
@@ -2324,13 +2347,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                             final vs = _videoSize();
                             final paddingBefore = _projectController
                                 .current.windowFrame.padding.left;
-                            _projectController.updateZoomAt(i, next,
-                                videoSize: vs);
+                            _projectController.updateZoomAt(
+                              i,
+                              next,
+                              videoSize: vs,
+                            );
                             final paddingAfter = _projectController
                                 .current.windowFrame.padding.left;
                             if (paddingAfter > paddingBefore) {
                               AppAlerts.info(
-                                  '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+                                '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px',
+                              );
                             }
                           },
                           onZoomDeleted: (index) {
@@ -2360,10 +2387,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                                 ? 16 / 9
                                 : cs.width / cs.height;
                           }(),
-                          cameraOriginalAspect: _cameraMeta == null ||
-                                  _cameraMeta!.height == 0
-                              ? 1.0
-                              : _cameraMeta!.width / _cameraMeta!.height,
+                          cameraOriginalAspect:
+                              _cameraMeta == null || _cameraMeta!.height == 0
+                                  ? 1.0
+                                  : _cameraMeta!.width / _cameraMeta!.height,
                           onCameraChanged: (i, next) =>
                               _projectController.updateCameraRegionAt(i, next),
                           onCameraDeleted: (index) {
@@ -2372,8 +2399,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                           },
                           onSliceRemoved: (removed) {
                             setState(() {
-                              _selectedSliceIndex =
-                                  decrementSelectionOnRemoval(
+                              _selectedSliceIndex = decrementSelectionOnRemoval(
                                 selected: _selectedSliceIndex,
                                 removed: removed,
                               );
@@ -2396,9 +2422,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   ),
                 ),
                 Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: context.palette.dividerSubtle),
+                  height: 1,
+                  thickness: 1,
+                  color: context.palette.dividerSubtle,
+                ),
                 _buildControls(),
               ],
             ),
@@ -2573,8 +2600,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final screenMovementCurved = project.screenMovementBlur *
         project.screenMovementBlur *
         project.screenMovementBlur;
-    final screenZoomCurved =
-        project.screenZoomBlur * project.screenZoomBlur * project.screenZoomBlur;
+    final screenZoomCurved = project.screenZoomBlur *
+        project.screenZoomBlur *
+        project.screenZoomBlur;
     // Build the same device-frame framing that PlaybackCanvas uses so the
     // scene-blur camera clamps in canvas space when a bezel is active.
     // Identity framing (null → resolved inside SceneBlurOverlay) is the
@@ -2611,6 +2639,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       fps: _metadata?.fps ?? 60,
       cursorPostProcess: project.cursorPostProcess,
       framing: sceneBlurFraming,
+      motionTuning: ref.watch(motionTuningProvider),
       child: playbackCanvas,
     );
   }
@@ -2633,13 +2662,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         // timeline x-axis: per-slice playbackSpeed compresses/expands the
         // contribution to total, and the current-time ticks at the rate
         // the user sees the playhead move.
-        final clips = ref
-            .watch(editorProjectControllerProvider)
-            .timeline
-            .clips;
-        final pos = clips.isEmpty
-            ? sourcePos
-            : sourceToEdited(clips, sourcePos);
+        final clips = ref.watch(editorProjectControllerProvider).timeline.clips;
+        final pos =
+            clips.isEmpty ? sourcePos : sourceToEdited(clips, sourcePos);
         final dur = clips.isEmpty
             ? _controller.value.duration
             : totalEditedDuration(clips);
@@ -2713,8 +2738,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       color: _cutModeActive
                           ? const Color(0xFF6C63FF)
                           : Colors.white70,
-                      onPressed: () => setState(
-                          () => _cutModeActive = !_cutModeActive),
+                      onPressed: () =>
+                          setState(() => _cutModeActive = !_cutModeActive),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -2787,15 +2812,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               // and we convert back to source before seeking the
               // controller. The playhead position itself rides the
               // [_playheadEditedPos] notifier, not this builder.
-              final clipsForTimeline = ref
-                  .watch(editorProjectControllerProvider)
-                  .timeline
-                  .clips;
+              final clipsForTimeline =
+                  ref.watch(editorProjectControllerProvider).timeline.clips;
               final editedDuration = clipsForTimeline.isEmpty
                   ? _controller.value.duration
                   : totalEditedDuration(clipsForTimeline);
-              final audioRoles =
-                  inferAudioRoles(ref.watch(recordingAudioStreamsProvider));
+              final audioRoles = inferAudioRoles(
+                ref.watch(recordingAudioStreamsProvider),
+              );
               return EditorTimeline(
                 duration: editedDuration,
                 position: _playheadEditedPos,
@@ -2815,10 +2839,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   // EditorTimeline emits edited-time positions; convert
                   // to source before feeding the controller-bound hover
                   // chain so the controller seeks to the correct frame.
-                  final clips = ref
-                      .read(editorProjectControllerProvider)
-                      .timeline
-                      .clips;
+                  final clips =
+                      ref.read(editorProjectControllerProvider).timeline.clips;
                   final sourceNext = clips.isEmpty
                       ? editedNext
                       : seekFromEditedTime(clips, editedNext);
@@ -2843,10 +2865,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   // hover-end is whatever the listener last wrote — i.e.
                   // the user's actual stopped position. Convert edited
                   // → source so the controller seeks the right frame.
-                  final clips = ref
-                      .read(editorProjectControllerProvider)
-                      .timeline
-                      .clips;
+                  final clips =
+                      ref.read(editorProjectControllerProvider).timeline.clips;
                   final sourceNext = clips.isEmpty
                       ? editedNext
                       : seekFromEditedTime(clips, editedNext);
@@ -2883,7 +2903,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       _projectController.current.windowFrame.padding.left;
                   if (paddingAfter > paddingBefore) {
                     AppAlerts.info(
-                        '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px');
+                      '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px',
+                    );
                   }
                 },
                 onZoomDeleted: (index) {
@@ -2925,10 +2946,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 },
                 onCameraAdded: _addCameraAt,
                 showCameraLane: _hasCamera,
-                clips: ref
-                    .watch(editorProjectControllerProvider)
-                    .timeline
-                    .clips,
+                clips:
+                    ref.watch(editorProjectControllerProvider).timeline.clips,
                 selectedSliceIndex: _selectedSliceIndex,
                 onSliceSelected: (idx) {
                   setState(() {
@@ -2949,16 +2968,18 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     .read(editorProjectControllerProvider.notifier)
                     .clearSeamTrims(seamIndex),
                 onClearStartTrim: () {
-                  final ctl = ref
-                      .read(editorProjectControllerProvider.notifier);
+                  final ctl = ref.read(
+                    editorProjectControllerProvider.notifier,
+                  );
                   final clips =
                       ref.read(editorProjectControllerProvider).timeline.clips;
                   if (clips.isEmpty) return;
                   ctl.setSliceTrimStart(0, clips.first.cutStart);
                 },
                 onClearEndTrim: () {
-                  final ctl = ref
-                      .read(editorProjectControllerProvider.notifier);
+                  final ctl = ref.read(
+                    editorProjectControllerProvider.notifier,
+                  );
                   final clips =
                       ref.read(editorProjectControllerProvider).timeline.clips;
                   if (clips.isEmpty) return;
@@ -2987,16 +3008,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       .mergeSeam(seamIndex);
                 },
                 cutModeActive: _cutModeActive,
-                onCutModeChanged: (v) =>
-                    setState(() => _cutModeActive = v),
+                onCutModeChanged: (v) => setState(() => _cutModeActive = v),
                 playheadFlashOn: _playheadFlashOn,
                 cursorClickTimes: _cursorRecording.eventIndex.clickTimes,
                 onSnapped: _flashSnap,
                 snapFlashTarget: _snapFlashTarget,
                 keystrokeRecording: _keystrokeRecording,
-                keystrokeSettings: ref
-                    .watch(editorProjectControllerProvider)
-                    .keystrokeOverlay,
+                keystrokeSettings:
+                    ref.watch(editorProjectControllerProvider).keystrokeOverlay,
                 onKeystrokeToggle: _toggleKeystrokeGroup,
                 // cursorXListenable stays unset — when cut mode is on,
                 // EditorTimeline pipes its own overlay's cursor in. Off
@@ -3040,9 +3059,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onPressed: () =>
                     setState(() => _showZoomDebug = !_showZoomDebug),
                 icon: const Icon(Icons.gps_fixed),
-                color: _showZoomDebug
-                    ? context.palette.accent
-                    : Colors.white38,
+                color: _showZoomDebug ? context.palette.accent : Colors.white38,
                 tooltip: _showZoomDebug ? 'Hide cursor HUD' : 'Show cursor HUD',
               ),
             ],

@@ -11,6 +11,7 @@ import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/deterministic_focal_track.dart';
+import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
@@ -90,6 +91,7 @@ class SceneBlurOverlay extends StatefulWidget {
     this.cursorPostProcess = CursorPostProcess.none,
     this.clips = const <ClipSlice>[],
     this.framing,
+    this.motionTuning = MotionTuning.defaults,
   });
 
   /// The widget tree to apply the scene-blur smear to. Usually the
@@ -115,6 +117,11 @@ class SceneBlurOverlay extends StatefulWidget {
   /// Playback rate hint for the cursor smoother — passed through to
   /// [CursorMotionController]. Defaults to 60 fps to match the editor.
   final int fps;
+
+  /// Motion constants used by the deterministic camera replay. This must match
+  /// the inner PlaybackCanvas or the blur signal measures a different camera
+  /// trajectory than the one actually rendered.
+  final MotionTuning motionTuning;
 
   /// Per-project cursor filters. Forwarded to the fallback `cursorAt`
   /// lookup inside this overlay (used for the scene-blur focal at
@@ -466,6 +473,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
           fps: widget.fps,
           screenRampCurve: widget.screenAnimationConfig.rampCurve,
           rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
+          tuning: widget.motionTuning,
           clips: widget.clips,
           framing: framing,
         )) {
@@ -480,6 +488,7 @@ class _SceneBlurOverlayState extends State<SceneBlurOverlay> {
       fps: widget.fps,
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
       rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
+      tuning: widget.motionTuning,
       clips: widget.clips,
       framing: framing,
     );

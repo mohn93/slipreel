@@ -254,7 +254,8 @@ void main() {
       expect(
         settled!.focal.dx,
         greaterThan(200),
-        reason: 'spring should have advanced well toward zoomB cursor (300,200)',
+        reason:
+            'spring should have advanced well toward zoomB cursor (300,200)',
       );
     });
 
@@ -1313,9 +1314,11 @@ void main() {
     test('focal is constant across the whole region (no ramp pan, '
         'curve-independent)', () {
       for (final ms in <int>[0, 16, 100, 200, 500, 800, 900, 1000]) {
-        expect((focalAt(ms, curve: Curves.linear) - placement).distance,
-            lessThan(1e-9),
-            reason: 'manual focal must stay at rect.center at ms=$ms');
+        expect(
+          (focalAt(ms, curve: Curves.linear) - placement).distance,
+          lessThan(1e-9),
+          reason: 'manual focal must stay at rect.center at ms=$ms',
+        );
       }
     });
 
@@ -1963,9 +1966,7 @@ void main() {
       final staleRect = followWithRect(
         const Rect.fromLTRB(1200, 700, 1600, 1000), // far off-center
       );
-      final originRect = followWithRect(
-        const Rect.fromLTRB(0, 0, 0, 0),
-      );
+      final originRect = followWithRect(const Rect.fromLTRB(0, 0, 0, 0));
       const cursor = Offset(300, 220);
       final a = ZoomFocalController();
       final b = ZoomFocalController();
@@ -2046,47 +2047,58 @@ void main() {
     });
   });
 
-  test('device framing: edge cursor enter-pan is lock-step (no leading overshoot)',
-      () {
-    const videoSize = Size(1170, 2532);
-    final framing = ZoomFraming.device(
-      videoSize: videoSize,
-      videoRect: const Rect.fromLTWH(100, 120, 1200, 2596),
-      canvasSize: const Size(1400, 2900),
-    );
-    final region = ZoomRegion(
-      startTime: Duration.zero,
-      duration: const Duration(seconds: 3),
-      rect: const Rect.fromLTWH(0, 0, 1, 1),
-      zoomLevel: 2.0,
-      enterDuration: const Duration(milliseconds: 600),
-      exitDuration: const Duration(milliseconds: 600),
-      followCursor: true,
-    );
-    const edgeCursor = Offset(1160, 1266); // near right screen edge
-    final ctrl = ZoomFocalController();
-    // Prime (first frame parks the spring).
-    ctrl.update(position: Duration.zero, zoomRegions: [region],
-        cursor: edgeCursor, videoSize: videoSize, framing: framing);
-    // Halfway through the enter ramp.
-    final mid = ctrl.update(
-        position: const Duration(milliseconds: 300), zoomRegions: [region],
-        cursor: edgeCursor, videoSize: videoSize, framing: framing,
-        enterCursorTarget: edgeCursor)!;
-    // Lock-step (backload 1.0) means the focal at the eased-50% point sits
-    // BETWEEN the video center and the (canvas-)clamped target — it must NOT
-    // have overshot past the canvas-clamped target (which a leading pan does).
-    final target = framing.clampFocal(edgeCursor, region.zoomLevel);
-    final centre = Offset(videoSize.width / 2, videoSize.height / 2);
-    // mid focal.dx is between centre and target (inclusive), not beyond target.
-    // Upper bound: no overshoot past the canvas-clamped target.
-    expect(mid.focal.dx, lessThanOrEqualTo(target.dx + 0.5));
-    // Lower bound: the focal must have made real progress toward the target —
-    // strictly more than 1 px past the video center so we know the pan is
-    // actually in motion (the old greaterThanOrEqualTo(centre.dx - 0.5) was
-    // vacuous since the pan goes center→right, i.e. dx only increases).
-    expect(mid.focal.dx, greaterThan(centre.dx + 1.0));
-  });
+  test(
+    'device framing: edge cursor enter-pan is lock-step (no leading overshoot)',
+    () {
+      const videoSize = Size(1170, 2532);
+      final framing = ZoomFraming.device(
+        videoSize: videoSize,
+        videoRect: const Rect.fromLTWH(100, 120, 1200, 2596),
+        canvasSize: const Size(1400, 2900),
+      );
+      final region = ZoomRegion(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 3),
+        rect: const Rect.fromLTWH(0, 0, 1, 1),
+        zoomLevel: 2.0,
+        enterDuration: const Duration(milliseconds: 600),
+        exitDuration: const Duration(milliseconds: 600),
+        followCursor: true,
+      );
+      const edgeCursor = Offset(1160, 1266); // near right screen edge
+      final ctrl = ZoomFocalController();
+      // Prime (first frame parks the spring).
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [region],
+        cursor: edgeCursor,
+        videoSize: videoSize,
+        framing: framing,
+      );
+      // Halfway through the enter ramp.
+      final mid = ctrl.update(
+        position: const Duration(milliseconds: 300),
+        zoomRegions: [region],
+        cursor: edgeCursor,
+        videoSize: videoSize,
+        framing: framing,
+        enterCursorTarget: edgeCursor,
+      )!;
+      // Lock-step (backload 1.0) means the focal at the eased-50% point sits
+      // BETWEEN the video center and the (canvas-)clamped target — it must NOT
+      // have overshot past the canvas-clamped target (which a leading pan does).
+      final target = framing.clampFocal(edgeCursor, region.zoomLevel);
+      final centre = Offset(videoSize.width / 2, videoSize.height / 2);
+      // mid focal.dx is between centre and target (inclusive), not beyond target.
+      // Upper bound: no overshoot past the canvas-clamped target.
+      expect(mid.focal.dx, lessThanOrEqualTo(target.dx + 0.5));
+      // Lower bound: the focal must have made real progress toward the target —
+      // strictly more than 1 px past the video center so we know the pan is
+      // actually in motion (the old greaterThanOrEqualTo(centre.dx - 0.5) was
+      // vacuous since the pan goes center→right, i.e. dx only increases).
+      expect(mid.focal.dx, greaterThan(centre.dx + 1.0));
+    },
+  );
 
   group('keep-in-view safety', () {
     // Mirror of ZoomFraming's per-axis viewport-relative allowed distance.
@@ -2095,38 +2107,92 @@ void main() {
         z *
         (0.5 - MotionTuning.defaults.keepInViewEdgeMargin);
 
-    test('a far (reachable) cursor is kept within the viewport safe area', () {
-      final ctrl = ZoomFocalController();
-      final zoom = _zoomAt(
-        startTime: Duration.zero,
-        duration: const Duration(seconds: 4),
-        zoomLevel: 2.0,
-        followMode: FollowMode.centered,
-        followDuration: const Duration(milliseconds: 850),
-      );
-      ctrl.update(
-        position: const Duration(milliseconds: 1000),
-        zoomRegions: [zoom],
-        cursor: const Offset(960, 540),
-        videoSize: _videoSize,
-      );
-      final out = ctrl.update(
-        position: const Duration(milliseconds: 1016),
-        zoomRegions: [zoom],
-        cursor: const Offset(1700, 540),
-        videoSize: _videoSize,
-      );
-      expect(out, isNotNull);
-      expect(
-        (1700 - out!.focal.dx).abs(),
-        lessThanOrEqualTo(allowedX(2.0) + 0.5),
-        reason: 'keep-in-view pulls the lagging focal so the cursor stays in '
-            'the viewport safe area',
-      );
-    });
+    test(
+      'a far cursor accelerates the spring without teleporting the camera',
+      () {
+        final ctrl = ZoomFocalController();
+        final zoom = _zoomAt(
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 4),
+          zoomLevel: 2.0,
+          followMode: FollowMode.centered,
+          followDuration: const Duration(milliseconds: 850),
+        );
+        ctrl.update(
+          position: const Duration(milliseconds: 1000),
+          zoomRegions: [zoom],
+          cursor: const Offset(960, 540),
+          videoSize: _videoSize,
+        );
+        final first = ctrl.update(
+          position: const Duration(milliseconds: 1016),
+          zoomRegions: [zoom],
+          cursor: const Offset(1700, 540),
+          videoSize: _videoSize,
+        );
+        expect(first, isNotNull);
+        expect(
+          first!.focal.dx - 960,
+          inExclusiveRange(0, 50),
+          reason:
+              'a cursor teleport may increase acceleration, but must never '
+              'replace the spring output with a hundreds-of-pixels correction',
+        );
 
-    test('a cursor jammed against the canvas edge pins the focal to the '
-        'reachable bound', () {
+        final settled = _drive(
+          ctrl,
+          zoom,
+          from: const Duration(milliseconds: 1016),
+          to: const Duration(milliseconds: 1400),
+          cursor: const Offset(1700, 540),
+        )!;
+        expect(
+          (1700 - settled.focal.dx).abs(),
+          lessThanOrEqualTo(allowedX(2.0)),
+          reason: 'the soft safety boost must still catch the cursor promptly',
+        );
+      },
+    );
+
+    test(
+      'a cursor at the canvas edge produces a monotonic finite trajectory',
+      () {
+        final ctrl = ZoomFocalController();
+        final zoom = _zoomAt(
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 4),
+          zoomLevel: 2.0,
+          followMode: FollowMode.centered,
+          followDuration: const Duration(milliseconds: 850),
+        );
+        ctrl.update(
+          position: const Duration(milliseconds: 1000),
+          zoomRegions: [zoom],
+          cursor: const Offset(960, 540),
+          videoSize: _videoSize,
+        );
+        var previous = 960.0;
+        for (var ms = 1016; ms <= 1500; ms += 16) {
+          final out = ctrl.update(
+            position: Duration(milliseconds: ms),
+            zoomRegions: [zoom],
+            cursor: const Offset(1915, 540),
+            videoSize: _videoSize,
+          )!;
+          expect(out.focal.dx.isFinite, isTrue);
+          expect(out.focal.dx, greaterThanOrEqualTo(previous));
+          expect(
+            out.focal.dx - previous,
+            lessThan(70),
+            reason:
+                'soft safety must not create a one-frame edge jump at $ms ms',
+          );
+          previous = out.focal.dx;
+        }
+      },
+    );
+
+    test('followDuration is the approximately-95-percent settle time', () {
       final ctrl = ZoomFocalController();
       final zoom = _zoomAt(
         startTime: Duration.zero,
@@ -2135,20 +2201,23 @@ void main() {
         followMode: FollowMode.centered,
         followDuration: const Duration(milliseconds: 850),
       );
+      const start = Offset(960, 540);
+      const target = Offset(1160, 540); // inside keep-in-view safety basin
       ctrl.update(
-        position: const Duration(milliseconds: 1000),
+        position: Duration.zero,
         zoomRegions: [zoom],
-        cursor: const Offset(960, 540),
+        cursor: start,
         videoSize: _videoSize,
       );
-      final out = ctrl.update(
-        position: const Duration(milliseconds: 1016),
-        zoomRegions: [zoom],
-        cursor: const Offset(1915, 540),
-        videoSize: _videoSize,
-      );
-      // Reachable focal max at z=2 is 1440; keep-in-view cannot exceed it.
-      expect(out!.focal.dx, lessThanOrEqualTo(1440 + 0.5));
+      final atT95 = _drive(
+        ctrl,
+        zoom,
+        from: Duration.zero,
+        to: const Duration(milliseconds: 850),
+        cursor: target,
+      )!;
+      final progress = (atT95.focal.dx - start.dx) / (target.dx - start.dx);
+      expect(progress, inInclusiveRange(0.93, 0.98));
     });
   });
 }

@@ -42,11 +42,11 @@ class ZoomFraming {
   });
 
   factory ZoomFraming.identity(Size videoSize) => ZoomFraming._(
-        videoSize: videoSize,
-        videoRect: Rect.fromLTWH(0, 0, videoSize.width, videoSize.height),
-        canvasSize: videoSize,
-        isIdentity: true,
-      );
+    videoSize: videoSize,
+    videoRect: Rect.fromLTWH(0, 0, videoSize.width, videoSize.height),
+    canvasSize: videoSize,
+    isIdentity: true,
+  );
 
   /// Device-bezel framing. Falls back to identity when the inputs are
   /// degenerate (zero-area videoRect/canvas) so callers never divide by zero.
@@ -86,13 +86,27 @@ class ZoomFraming {
 
   /// Inverse of [toCanvas]: maps a CANVAS-pixel point back to SOURCE-VIDEO
   /// coordinates.
-  Offset fromCanvas(Offset q) => Offset(
-        (q.dx - videoRect.left) / _sx,
-        (q.dy - videoRect.top) / _sy,
-      );
+  Offset fromCanvas(Offset q) =>
+      Offset((q.dx - videoRect.left) / _sx, (q.dy - videoRect.top) / _sy);
 
   Offset _toCanvas(Offset p) => toCanvas(p);
   Offset _fromCanvas(Offset q) => fromCanvas(q);
+
+  /// Size of the visible composed-canvas viewport expressed in SOURCE-VIDEO
+  /// coordinates at zoom [z].
+  ///
+  /// This is deliberately derived from [canvasSize] and the video-to-canvas
+  /// scale instead of assuming `videoSize / z`. With padding, wallpaper, or a
+  /// device bezel, the composed canvas exposes a different amount of source
+  /// space than the bare video frame. Follow deadzones must use this geometry
+  /// or their advertised "fraction of the visible viewport" is incorrect.
+  Size visibleViewportSizeInSource(double z) {
+    final safeZ = z <= 0 ? 1.0 : z;
+    return Size(
+      canvasSize.width / safeZ / _sx,
+      canvasSize.height / safeZ / _sy,
+    );
+  }
 
   Offset get _canvasCenter =>
       Offset(canvasSize.width / 2, canvasSize.height / 2);
@@ -102,8 +116,11 @@ class ZoomFraming {
     if (isIdentity) {
       return ZoomTransformer.clampFocalToBounds(focal, videoSize, z);
     }
-    final clamped =
-        ZoomTransformer.clampFocalToBounds(_toCanvas(focal), canvasSize, z);
+    final clamped = ZoomTransformer.clampFocalToBounds(
+      _toCanvas(focal),
+      canvasSize,
+      z,
+    );
     return _fromCanvas(clamped);
   }
 
@@ -114,7 +131,10 @@ class ZoomFraming {
       return ZoomTransformer.clampFocalToBoundsRadial(focal, videoSize, z);
     }
     final clamped = ZoomTransformer.clampFocalToBoundsRadial(
-        _toCanvas(focal), canvasSize, z);
+      _toCanvas(focal),
+      canvasSize,
+      z,
+    );
     return _fromCanvas(clamped);
   }
 
@@ -161,8 +181,11 @@ class ZoomFraming {
   /// center so the focal lands at the viewport center.
   Offset centerOffset(Offset focal, double z) {
     final canvasFocal = _toCanvas(focal);
-    final clamped =
-        ZoomTransformer.clampFocalToBounds(canvasFocal, canvasSize, z);
+    final clamped = ZoomTransformer.clampFocalToBounds(
+      canvasFocal,
+      canvasSize,
+      z,
+    );
     return clamped - Offset(canvasSize.width / 2, canvasSize.height / 2);
   }
 
@@ -181,8 +204,10 @@ class ZoomFraming {
   /// the right of center → `dx > 0`, below center → `dy > 0`.
   Offset normalizedFocalOffset(Offset focal) {
     final cf = toCanvas(focal);
-    final nx = ((cf.dx - canvasSize.width / 2) / (canvasSize.width / 2))
-        .clamp(-1.0, 1.0);
+    final nx = ((cf.dx - canvasSize.width / 2) / (canvasSize.width / 2)).clamp(
+      -1.0,
+      1.0,
+    );
     final ny = ((cf.dy - canvasSize.height / 2) / (canvasSize.height / 2))
         .clamp(-1.0, 1.0);
     return Offset(nx, ny);
