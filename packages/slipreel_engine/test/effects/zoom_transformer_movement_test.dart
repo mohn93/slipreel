@@ -92,6 +92,71 @@ void main() {
     expect(scaleX(withPush), closeTo(scaleX(none), 1e-9));
   });
 
+  test('scaled enter ramp does not start movement before resolved hold', () {
+    final withSweep = region(
+      movement: const ZoomMovement(kind: ZoomMovementKind.sweep),
+    );
+    final withoutMovement = region(movement: const ZoomMovement());
+    // Raw enter is 1s, but the 1.5x feel scale resolves it to 1.5s. At 1.25s
+    // the old hold envelope was already active even though zoom was entering.
+    const inResolvedEnter = Duration(milliseconds: 1250);
+    final swept = t.getTransform(
+      position: inResolvedEnter,
+      zoomRegion: withSweep,
+      videoSize: videoSize,
+      rampDurationScale: 1.5,
+      framing: framing,
+    );
+    final none = t.getTransform(
+      position: inResolvedEnter,
+      zoomRegion: withoutMovement,
+      videoSize: videoSize,
+      rampDurationScale: 1.5,
+      framing: framing,
+    );
+
+    expect(swept.storage, none.storage);
+  });
+
+  test('compressed zero-span hold never steps sweep on mid-ramp', () {
+    ZoomRegion compressed(ZoomMovement movement) => ZoomRegion(
+          rect: const Rect.fromLTWH(600, 600, 100, 100),
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 1),
+          zoomLevel: 2,
+          enterDuration: const Duration(milliseconds: 800),
+          exitDuration: const Duration(milliseconds: 800),
+          followCursor: false,
+          movement: movement,
+        );
+    final withSweep = compressed(
+      const ZoomMovement(
+        kind: ZoomMovementKind.sweep,
+        intensity: ZoomMovementIntensity.dramatic,
+      ),
+    );
+    final withoutMovement = compressed(const ZoomMovement());
+
+    // The former raw-duration envelope jumped at 200ms (raw holdEnd) even
+    // though resolved ramps squeeze to 500ms + 500ms and leave no hold.
+    for (final us in [199999, 200000, 200001, 499999, 500000, 500001]) {
+      final position = Duration(microseconds: us);
+      final swept = t.getTransform(
+        position: position,
+        zoomRegion: withSweep,
+        videoSize: videoSize,
+        framing: framing,
+      );
+      final none = t.getTransform(
+        position: position,
+        zoomRegion: withoutMovement,
+        videoSize: videoSize,
+        framing: framing,
+      );
+      expect(swept.storage, none.storage, reason: 'position: ${us}us');
+    }
+  });
+
   test('cursor-follow sweep transform crosses canvas center continuously', () {
     final r = region(
       movement: const ZoomMovement(
