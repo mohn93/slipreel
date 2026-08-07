@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show Offset, Rect, Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
@@ -116,6 +117,36 @@ void main() {
     );
 
     expect(swept.storage, none.storage);
+  });
+
+  test('scaled exit starts only after movement reaches full strength', () {
+    final withSweep = region(
+      movement: const ZoomMovement(kind: ZoomMovementKind.sweep),
+    );
+    const rampScale = 1.5;
+    // Resolved ramps are 1.5s each, so the 4s region's hold is [1.5s, 2.5s].
+    // Sampling around 2.5s catches an exit calculation that accidentally uses
+    // the raw 1s exit duration (which would put the boundary at 3s).
+    final magnitudes = <double>[];
+    for (final us in [2499999, 2500000, 2500001]) {
+      final transform = t.getTransform(
+        position: Duration(microseconds: us),
+        zoomRegion: withSweep,
+        videoSize: videoSize,
+        rampDurationScale: rampScale,
+        framing: framing,
+      );
+      magnitudes.add(transform.storage[2].abs());
+    }
+    final expectedFull = 2.0 * math.sin(kSweepSubtleDeg * math.pi / 180.0);
+
+    expect(magnitudes[1], closeTo(expectedFull, 1e-9));
+    expect(magnitudes[0], lessThanOrEqualTo(magnitudes[1]));
+    expect(magnitudes[2], lessThanOrEqualTo(magnitudes[1]));
+    expect((magnitudes[1] - magnitudes[0]).abs(), lessThan(1e-6));
+    // The configured cubic ramp has a small non-zero departure immediately
+    // after the boundary; it must still be continuous rather than a yaw step.
+    expect((magnitudes[1] - magnitudes[2]).abs(), lessThan(1e-4));
   });
 
   test('compressed zero-span hold never steps sweep on mid-ramp', () {
