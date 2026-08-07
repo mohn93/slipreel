@@ -3,6 +3,18 @@ import 'dart:ui' show BlendMode, Canvas, Offset, Paint, Rect, Size;
 
 import 'package:flutter/rendering.dart' show CustomPainter;
 
+/// Perceptual response used by the scene-blur controls in both preview and
+/// export. Keeping this math here prevents mid-range slider values from
+/// producing different exposure lengths in the two renderers.
+double sceneBlurMasterResponse(double value) => value * value * value / 0.25;
+
+double sceneBlurChannelResponse(double value) => value * value * value;
+
+double sceneBlurExposureScale({
+  required double master,
+  required double channel,
+}) => sceneBlurMasterResponse(master) * sceneBlurChannelResponse(channel);
+
 /// Which scene-level motion-blur pipeline to use.
 enum SceneBlurMode {
   /// Single-velocity directional shader. The current and previous camera
@@ -153,8 +165,7 @@ class SceneMotionBlurController {
   ) {
     if (exposure <= Duration.zero) return Offset.zero;
     final prev = sampleAt(current.position - exposure);
-    final raw =
-        (prev.focal - current.focal) * prev.scale * current.screenScale;
+    final raw = (prev.focal - current.focal) * prev.scale * current.screenScale;
     if (raw.distance > maxTranslation) {
       return raw * (maxTranslation / raw.distance);
     }

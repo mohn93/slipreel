@@ -4,16 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
+import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
+import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 /// Recording canvas that captures the destination rect of every
 /// drawImageRect call. Other methods no-op so paint() runs through.
 class _StampSizingCanvas implements ui.Canvas {
   final List<Rect> stampDstRects = [];
+  final List<bool> stampHasImageFilter = [];
 
   @override
   void drawImageRect(ui.Image image, Rect src, Rect dst, Paint paint) {
     stampDstRects.add(dst);
+    stampHasImageFilter.add(paint.imageFilter != null);
   }
 
   @override
@@ -197,6 +201,249 @@ void main() {
             'the production painter must not reproduce the raw ±12px '
             'capture zigzag',
       );
+    });
+
+    test('historical stamps use actual spring history, not current lag', () {
+      const painterSize = Size(600, 300);
+      final painter = AccumulationCursorPainter(
+        cursorRecording: _jitterRecording(),
+        position: const Duration(milliseconds: 700),
+        videoSize: painterSize,
+        currentScreenPos: const Offset(320, 100),
+        screenPositionAt: (t) => t == const Duration(milliseconds: 600)
+            ? const Offset(140, 90)
+            : null,
+        exposureMs: 100,
+        sampleCount: 2,
+        devicePixelRatio: 1,
+      );
+
+      final canvas = _StampSizingCanvas();
+      painter.paint(canvas, painterSize);
+
+      expect(canvas.stampDstRects, hasLength(2));
+      expect(canvas.stampDstRects[0].center, const Offset(320, 100));
+      expect(canvas.stampDstRects[1].center, const Offset(140, 90));
+    });
+
+    test('cursor delay shifts the press pulse with the path', () {
+      const painterSize = Size(200, 200);
+      final rec = _staticRecording(withClick: true); // press at 60ms
+
+      List<double> widthsAt(int visualMs) {
+        final painter = AccumulationCursorPainter(
+          cursorRecording: rec,
+          position: Duration(milliseconds: visualMs),
+          videoSize: painterSize,
+          cursorDelay: const Duration(milliseconds: 50),
+          exposureMs: 0,
+          sampleCount: 2,
+          devicePixelRatio: 1,
+        );
+        final canvas = _StampSizingCanvas();
+        painter.paint(canvas, painterSize);
+        return canvas.stampDstRects.map((r) => r.width).toList();
+      }
+
+      final beforeDelayedPress = widthsAt(100); // query=50ms
+      final afterDelayedPress = widthsAt(120); // query=70ms
+      expect(beforeDelayedPress.toSet(), hasLength(1));
+      expect(
+        afterDelayedPress.reduce((a, b) => a < b ? a : b),
+        lessThan(beforeDelayedPress.first),
+      );
+    });
+
+    test('exposure is wall-time scaled and clipped at a hard cut', () {
+      const painterSize = Size(600, 300);
+      final queried = <Duration>[];
+      final activeClip = ClipSlice(
+        cutStart: const Duration(milliseconds: 550),
+        cutEnd: const Duration(seconds: 2),
+        playbackSpeed: 2,
+      );
+      final painter = AccumulationCursorPainter(
+        cursorRecording: _jitterRecording(),
+        position: const Duration(milliseconds: 700),
+        videoSize: painterSize,
+        activeClip: activeClip,
+        clips: [activeClip],
+        screenPositionAt: (t) {
+          queried.add(t);
+          return const Offset(100, 100);
+        },
+        exposureMs: 100,
+        sampleCount: 2,
+        devicePixelRatio: 1,
+      );
+
+      final canvas = _StampSizingCanvas();
+      painter.paint(canvas, painterSize);
+
+      expect(queried, [
+        const Duration(milliseconds: 700),
+        const Duration(milliseconds: 550),
+      ]);
+      expect(canvas.stampDstRects, hasLength(2));
+    });
+
+    test('exposure traverses a contiguous mixed-speed boundary', () {
+      const painterSize = Size(600, 300);
+      final queried = <Duration>[];
+      final clips = [
+        ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(milliseconds: 600),
+          playbackSpeed: 1,
+        ),
+        ClipSlice(
+          cutStart: const Duration(milliseconds: 600),
+          cutEnd: const Duration(seconds: 2),
+          playbackSpeed: 2,
+        ),
+      ];
+      final painter = AccumulationCursorPainter(
+        cursorRecording: _jitterRecording(),
+        position: const Duration(milliseconds: 650),
+        videoSize: painterSize,
+        activeClip: clips.last,
+        clips: clips,
+        screenPositionAt: (t) {
+          queried.add(t);
+          return const Offset(100, 100);
+        },
+        exposureMs: 100,
+        sampleCount: 2,
+        devicePixelRatio: 1,
+      );
+
+      painter.paint(_StampSizingCanvas(), painterSize);
+
+      expect(queried.first, const Duration(milliseconds: 650));
+      expect(queried.last.inMicroseconds, 525000);
+    });
+
+    test('delay and smoothing stay continuous across an ordinary split', () {
+      const painterSize = Size(600, 300);
+      final recording = _jitterRecording();
+      final split = [
+        ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(milliseconds: 600),
+        ),
+        ClipSlice(
+          cutStart: const Duration(milliseconds: 600),
+          cutEnd: const Duration(seconds: 2),
+        ),
+      ];
+      final whole = [
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 2)),
+      ];
+
+      Offset centerFor(List<ClipSlice> clips) {
+        final painter = AccumulationCursorPainter(
+          cursorRecording: recording,
+          position: const Duration(milliseconds: 600),
+          videoSize: painterSize,
+          clips: clips,
+          activeClip: clips.last,
+          cursorDelay: const Duration(milliseconds: 80),
+          pathSmoothingSigma: const Duration(milliseconds: 80),
+          exposureMs: 0,
+          sampleCount: 1,
+          devicePixelRatio: 1,
+        );
+        final canvas = _StampSizingCanvas();
+        painter.paint(canvas, painterSize);
+        return canvas.stampDstRects.single.center;
+      }
+
+      expect((centerFor(split) - centerFor(whole)).distance, lessThan(1e-9));
+    });
+
+    test('recording mutation invalidates a paused painter', () {
+      final recording = _staticRecording(withClick: false);
+      final oldPainter = AccumulationCursorPainter(
+        cursorRecording: recording,
+        position: const Duration(milliseconds: 100),
+        videoSize: const Size(200, 200),
+      );
+      recording.addPosition(
+        CursorPosition(x: 80, y: 80, timestampMicros: 130000, isClicked: false),
+      );
+      final newPainter = AccumulationCursorPainter(
+        cursorRecording: recording,
+        position: const Duration(milliseconds: 100),
+        videoSize: const Size(200, 200),
+      );
+
+      expect(newPainter.shouldRepaint(oldPainter), isTrue);
+    });
+
+    test('type-transition blur sees across a contiguous split', () {
+      const painterSize = Size(600, 300);
+      final recording = CursorRecording()
+        ..addPosition(
+          CursorPosition(
+            x: 100,
+            y: 100,
+            timestampMicros: 0,
+            state: CursorState.arrow,
+          ),
+        )
+        ..addPosition(
+          CursorPosition(
+            x: 100,
+            y: 100,
+            timestampMicros: 620000,
+            state: CursorState.iBeam,
+          ),
+        )
+        ..addPosition(
+          CursorPosition(
+            x: 100,
+            y: 100,
+            timestampMicros: 1000000,
+            state: CursorState.iBeam,
+          ),
+        );
+      final split = [
+        ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(milliseconds: 600),
+        ),
+        ClipSlice(
+          cutStart: const Duration(milliseconds: 600),
+          cutEnd: const Duration(seconds: 1),
+        ),
+      ];
+      final whole = [
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 1)),
+      ];
+
+      List<bool> filtersFor(List<ClipSlice> clips) {
+        final painter = AccumulationCursorPainter(
+          cursorRecording: recording,
+          position: const Duration(milliseconds: 600),
+          videoSize: painterSize,
+          clips: clips,
+          activeClip: clips.last,
+          exposureMs: 0,
+          sampleCount: 1,
+          devicePixelRatio: 1,
+          typeChangeBlurSigmaPx: 8,
+          typeChangeBlurHalfWidthMs: 40,
+          clickEffect: CursorClickEffect.none,
+        );
+        final canvas = _StampSizingCanvas();
+        painter.paint(canvas, painterSize);
+        return canvas.stampHasImageFilter;
+      }
+
+      final splitFilters = filtersFor(split);
+      final wholeFilters = filtersFor(whole);
+      expect(splitFilters, wholeFilters);
+      expect(splitFilters, contains(isTrue));
     });
   });
 }

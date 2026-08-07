@@ -311,6 +311,8 @@ class ZoomFocalController {
     ZoomRegion? activeRegionOverride,
     Curve screenRampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
+    double playbackSpeed = 1.0,
+    Duration? elapsedWallTime,
 
     /// For a followCursor zoom, the SETTLE target for the enter pan: the
     /// (raw) cursor position at the end of the enter ramp — i.e. where the
@@ -777,7 +779,12 @@ class ZoomFocalController {
       _focalVx = 0;
       _focalVy = 0;
     } else {
-      var dtMicros = position.inMicroseconds - prevPosition.inMicroseconds;
+      final sourceDtMicros =
+          position.inMicroseconds - prevPosition.inMicroseconds;
+      final speedFactor = playbackSpeed < 0.05 ? 0.05 : playbackSpeed;
+      var dtMicros =
+          elapsedWallTime?.inMicroseconds ??
+          (sourceDtMicros / speedFactor).round();
       if (dtMicros > 0) {
         if (dtMicros > _maxTotalDtMicros) dtMicros = _maxTotalDtMicros;
         final settleSeconds = followUs / 1e6;

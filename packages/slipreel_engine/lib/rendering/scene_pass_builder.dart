@@ -5,10 +5,12 @@ import 'package:slipreel_engine/effects/ema_velocity_filter.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
+import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_geometry.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
+import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:slipreel_engine/rendering/cursor_motion_controller.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
@@ -100,6 +102,9 @@ class ScenePassBuilder {
   final CursorMotionController motion;
   final ZoomFocalController focal;
   final EmaVelocityFilter velocityFilter;
+  Duration? _lastPosition;
+  int? _lastClipIndex;
+  ClipSlice? _lastClip;
 
   /// Propagate a new [MotionTuning] to the owned spring controllers
   /// so a preset-picker swap or JSON reload takes effect on the next
@@ -158,18 +163,68 @@ class ScenePassBuilder {
   }) {
     // Resolve once, here in the shared builder, so preview and export —
     // the only two callers — cannot resolve slice speed differently.
-    final playbackSpeed = clips.isEmpty
-        ? 1.0
-        : clipSliceAt(clips, position).playbackSpeed;
-    final motionSample = hasCursorData
+    final activeClipIndex = clips.isEmpty
+        ? 0
+        : clipSliceIndexContaining(clips, position);
+    final activeClip = clips.isEmpty || activeClipIndex < 0
+        ? null
+        : clips[activeClipIndex];
+    final activeRun = clips.isEmpty
+        ? null
+        : contiguousClipRunBounds(clips, position);
+    var crossedHardBoundary = forceSnap;
+    if (clips.isNotEmpty && activeClipIndex < 0) {
+      crossedHardBoundary = true;
+    } else if (clips.isNotEmpty &&
+        _lastClipIndex != null &&
+        _lastClipIndex! >= 0) {
+      if (_lastClipIndex! >= clips.length || _lastClip == null) {
+        crossedHardBoundary = true;
+      } else if (activeClipIndex != _lastClipIndex) {
+        crossedHardBoundary =
+            activeClipIndex < _lastClipIndex! ||
+            activeClip!.trimStart != _lastClip!.trimEnd;
+      } else if (activeClip != _lastClip &&
+          (activeClip!.cutStart != _lastClip!.cutStart ||
+              activeClip.cutEnd != _lastClip!.cutEnd)) {
+        crossedHardBoundary = true;
+      }
+    }
+    Duration? elapsedWallTime;
+    final previousPosition = _lastPosition;
+    if (previousPosition != null && !crossedHardBoundary) {
+      elapsedWallTime = clips.isEmpty
+          ? position - previousPosition
+          : sourceToEdited(clips, position) -
+                sourceToEdited(clips, previousPosition);
+    }
+    if (crossedHardBoundary) {
+      focal.reset();
+      velocityFilter.reset();
+    }
+    if (clips.isNotEmpty && activeClipIndex < 0) {
+      motion.reset();
+    }
+    final playbackSpeed = activeClip?.playbackSpeed ?? 1.0;
+    final effectiveCursorAnimationConfig = cursorAnimationConfigAt(
+      clips: clips,
+      position: position,
+      base: cursorAnimationConfig,
+    );
+    final motionSample =
+        hasCursorData && (clips.isEmpty || activeClipIndex >= 0)
         ? motion.update(
             position: position,
             cursorRecording: cursorRecording,
-            config: cursorAnimationConfig,
+            config: effectiveCursorAnimationConfig,
             fps: fps,
             cursorDelay: cursorDelay,
             postProcess: cursorPostProcess,
             playbackSpeed: playbackSpeed,
+            clipStart: activeRun?.start,
+            clipEnd: activeRun?.end,
+            elapsedWallTime: elapsedWallTime,
+            forceSnap: crossedHardBoundary,
           )
         : null;
 
@@ -201,8 +256,33 @@ class ScenePassBuilder {
           Duration(
             microseconds: activeZoom.resolvedRampsUs(rampDurationScale).enterUs,
           );
-      final queryEnd = enterEnd - cursorDelay;
-      final sigma = cursorAnimationConfig.pathSmoothingSigma;
+      var queryEnd = enterEnd - cursorDelay;
+      ClipSlice? targetClip = clips.isEmpty
+          ? null
+          : clipSliceContaining(clips, enterEnd);
+      if (targetClip == null) {
+        for (final clip in clips.reversed) {
+          if (clip.trimEnd == enterEnd) {
+            targetClip = clip;
+            break;
+          }
+        }
+      }
+      final targetConfig = targetClip?.disableSmoothMouse == true
+          ? const CursorAnimationConfig.preset(CursorAnimationStyle.none)
+          : cursorAnimationConfig;
+      final targetRun = clips.isEmpty
+          ? null
+          : contiguousClipRunBounds(clips, enterEnd);
+      final targetLower = targetRun?.start ?? targetClip?.trimStart;
+      final targetUpper = targetRun?.end ?? targetClip?.trimEnd;
+      if (targetLower != null && queryEnd < targetLower) {
+        queryEnd = targetLower;
+      }
+      if (targetUpper != null && queryEnd > targetUpper) {
+        queryEnd = targetUpper;
+      }
+      final sigma = targetConfig.pathSmoothingSigma;
       final raw = sigma <= Duration.zero
           ? cursorAtFiltered(cursorRecording, queryEnd, cursorPostProcess)
           : smoothedCursorAt(
@@ -210,6 +290,8 @@ class ScenePassBuilder {
               queryEnd,
               cursorPostProcess,
               sigma,
+              lowerBound: targetLower,
+              upperBound: targetUpper,
             );
       if (raw != null) {
         enterCursorTarget = Offset(
@@ -225,18 +307,23 @@ class ScenePassBuilder {
       cursor: cursorForFocal,
       videoSize: videoSize,
       cursorVelocity: rawVelocity,
-      forceSnap: forceSnap,
+      forceSnap: crossedHardBoundary,
       activeRegionOverride: activeRegionOverride,
       screenRampCurve: screenRampCurve,
       rampDurationScale: rampDurationScale,
       enterCursorTarget: enterCursorTarget,
       framing: framing,
+      playbackSpeed: playbackSpeed,
+      elapsedWallTime: elapsedWallTime,
     );
 
     final filteredVelocity = bypassVelocityFilter
         ? rawVelocity
         : velocityFilter.filter(rawVelocity, position);
 
+    _lastPosition = position;
+    _lastClipIndex = activeClipIndex;
+    _lastClip = activeClip;
     return ScenePass(
       motion: motionSample,
       activeZoom: activeZoom,
@@ -256,4 +343,18 @@ class ScenePassBuilder {
   // going null for the exit-ramp completion frame.
   ZoomRegion? _activeZoomAt(Duration position, List<ZoomRegion> regions) =>
       ZoomRegion.activeAt(position, regions);
+}
+
+/// Resolves the per-slice "Disable smooth mouse" override at [position].
+/// Keeping this shared prevents the preview painter, camera replay, and export
+/// compositor from selecting different cursor trajectories.
+CursorAnimationConfig cursorAnimationConfigAt({
+  required List<ClipSlice> clips,
+  required Duration position,
+  required CursorAnimationConfig base,
+}) {
+  if (clips.isEmpty || !clipSliceAt(clips, position).disableSmoothMouse) {
+    return base;
+  }
+  return const CursorAnimationConfig.preset(CursorAnimationStyle.none);
 }

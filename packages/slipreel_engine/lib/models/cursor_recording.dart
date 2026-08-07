@@ -6,16 +6,27 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 /// Stores cursor position data for a recording session
 class CursorRecording {
   final List<CursorPosition> _positions = [];
+  List<CursorPosition>? _positionsSnapshot;
   int _version = 0;
   CursorEventIndex? _eventIndexCache;
   int? _eventIndexVersion;
 
-  /// Get unmodifiable view of positions
-  List<CursorPosition> get positions => List.unmodifiable(_positions);
+  /// Mutation revision used by render caches that retain trajectory state.
+  int get version => _version;
+
+  /// Get an immutable snapshot of positions.
+  ///
+  /// The snapshot is cached until the recording mutates. Rendering performs
+  /// many cursor lookups per frame; rebuilding an unmodifiable list for every
+  /// lookup made smoothing with post-processing O(recording length) in both
+  /// allocation and copying cost.
+  List<CursorPosition> get positions =>
+      _positionsSnapshot ??= List.unmodifiable(_positions);
 
   /// Add a cursor position to the recording
   void addPosition(CursorPosition position) {
     _positions.add(position);
+    _positionsSnapshot = null;
     _version++;
   }
 
@@ -84,8 +95,9 @@ class CursorRecording {
     }
 
     // Interpolate
-    final t = (timestampMicros - before.timestampMicros) /
-              (after.timestampMicros - before.timestampMicros);
+    final t =
+        (timestampMicros - before.timestampMicros) /
+        (after.timestampMicros - before.timestampMicros);
 
     return CursorPosition(
       x: before.x + (after.x - before.x) * t,
@@ -150,13 +162,15 @@ class CursorRecording {
           raw.first.timestampMicros > _legacyTimestampThresholdMicros;
       final base = isLegacy ? raw.first.timestampMicros : 0;
       for (final p in raw) {
-        recording.addPosition(CursorPosition(
-          x: p.x,
-          y: p.y,
-          timestampMicros: p.timestampMicros - base,
-          isClicked: p.isClicked,
-          state: p.state,
-        ));
+        recording.addPosition(
+          CursorPosition(
+            x: p.x,
+            y: p.y,
+            timestampMicros: p.timestampMicros - base,
+            isClicked: p.isClicked,
+            state: p.state,
+          ),
+        );
       }
 
       return recording;
@@ -171,6 +185,7 @@ class CursorRecording {
   /// Clear all positions
   void clear() {
     _positions.clear();
+    _positionsSnapshot = null;
     _version++;
   }
 }

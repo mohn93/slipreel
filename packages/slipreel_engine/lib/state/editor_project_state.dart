@@ -171,7 +171,7 @@ class EditorProjectState {
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 10;
+  static const int currentSchemaVersion = 11;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -241,12 +241,14 @@ class EditorProjectState {
       if (captionSegments != null || captionSource != null) {
         final tracks = t.captionTracks;
         if (tracks.isEmpty) {
-          t = t.copyWith(captionTracks: [
-            CaptionTrack(
-              segments: captionSegments ?? const <CaptionSegment>[],
-              source: captionSource ?? CaptionAudioSource.mixed,
-            ),
-          ]);
+          t = t.copyWith(
+            captionTracks: [
+              CaptionTrack(
+                segments: captionSegments ?? const <CaptionSegment>[],
+                source: captionSource ?? CaptionAudioSource.mixed,
+              ),
+            ],
+          );
         } else {
           final updated = List<CaptionTrack>.from(tracks)
             ..[0] = tracks[0].copyWith(
@@ -333,7 +335,10 @@ class EditorProjectState {
     // field readers below only ever see the current shape. A v2 JSON
     // (flat zoomRegions list) is reshaped into a v3 JSON (timeline
     // container) by the v2→v3 step before we look up `timeline`.
-    final json = migrateEditorProjectJson(rawJson, videoDuration: videoDuration);
+    final json = migrateEditorProjectJson(
+      rawJson,
+      videoDuration: videoDuration,
+    );
 
     final timelineJson = json['timeline'];
     final timeline = timelineJson is Map<String, dynamic>
@@ -404,18 +409,21 @@ class EditorProjectState {
               json['cursorPostProcess'] as Map<String, dynamic>,
             )
           : CursorPostProcess.none,
-      outputAspect: (json['outputAspect'] is String) &&
+      outputAspect:
+          (json['outputAspect'] is String) &&
               OutputAspect.values.any((v) => v.name == json['outputAspect'])
           ? OutputAspect.values.byName(json['outputAspect'] as String)
           : defaults.outputAspect,
       timelineScale: _readTimelineScale(json['timelineScale']),
       keystrokeOverlay: json['keystrokeOverlay'] is Map<String, dynamic>
           ? KeystrokeOverlaySettings.fromJson(
-              json['keystrokeOverlay'] as Map<String, dynamic>)
+              json['keystrokeOverlay'] as Map<String, dynamic>,
+            )
           : const KeystrokeOverlaySettings(),
       cameraSettings: json['cameraSettings'] is Map<String, dynamic>
           ? CameraSettings.fromJson(
-              json['cameraSettings'] as Map<String, dynamic>)
+              json['cameraSettings'] as Map<String, dynamic>,
+            )
           : const CameraSettings(),
       captionStyle: json['captionStyle'] is Map<String, dynamic>
           ? CaptionStyle.fromJson(json['captionStyle'] as Map<String, dynamic>)
@@ -478,29 +486,29 @@ class EditorProjectState {
 
   @override
   int get hashCode => Object.hashAll([
-        timeline,
-        screenAnimationConfig,
-        cursorAnimationConfig,
-        cursorSize,
-        cursorStyle,
-        cursorClickEffect,
-        hideCursorOverlay,
-        motionBlur,
-        cursorMovementBlur,
-        screenMovementBlur,
-        screenZoomBlur,
-        cursorShadow,
-        clickSpring,
-        cursorDelay,
-        cursorPostProcess,
-        windowFrame,
-        outputAspect,
-        timelineScale,
-        keystrokeOverlay,
-        cameraSettings,
-        captionStyle,
-        // pendingScaleAnchor intentionally excluded.
-      ]);
+    timeline,
+    screenAnimationConfig,
+    cursorAnimationConfig,
+    cursorSize,
+    cursorStyle,
+    cursorClickEffect,
+    hideCursorOverlay,
+    motionBlur,
+    cursorMovementBlur,
+    screenMovementBlur,
+    screenZoomBlur,
+    cursorShadow,
+    clickSpring,
+    cursorDelay,
+    cursorPostProcess,
+    windowFrame,
+    outputAspect,
+    timelineScale,
+    keystrokeOverlay,
+    cameraSettings,
+    captionStyle,
+    // pendingScaleAnchor intentionally excluded.
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -528,7 +536,7 @@ class EditorProjectState {
 /// Ordered list of vN → vN+1 migration functions. Index `i` migrates
 /// from schemaVersion `i` to `i + 1`.
 final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
-    _schemaMigrations = [
+_schemaMigrations = [
   // v0 → v1: no-op. v0 is hypothetical (pre-public builds); v1
   // recordings exist in the wild, so the chain starts at v1.
   (json, _) => json,
@@ -636,6 +644,58 @@ final List<Map<String, dynamic> Function(Map<String, dynamic>, Duration)>
   // and Timeline.fromJson fills an empty caption-track list when the keys are
   // absent, so the migration only bumps the version marker.
   (json, _) => {...json, 'schemaVersion': 10},
+  // v10 → v11: followDuration used to feed ω = 2 / T. The corrected
+  // controller defines T as the critically-damped 95%-settle time and uses
+  // ω = 4.743864 / T. Scale stored durations so an existing project's camera
+  // trajectory remains unchanged after upgrading.
+  (json, _) {
+    const oldOmegaNumerator = 2.0;
+    const newOmegaNumerator = 4.743864518390578;
+    const durationScale = newOmegaNumerator / oldOmegaNumerator;
+    final next = Map<String, dynamic>.from(json);
+    final rawTimeline = next['timeline'];
+    if (rawTimeline is Map) {
+      final timeline = Map<String, dynamic>.from(rawTimeline.cast());
+      final rawTracks = timeline['zoomTracks'];
+      if (rawTracks is List) {
+        timeline['zoomTracks'] = [
+          for (final rawTrack in rawTracks)
+            if (rawTrack is Map)
+              (() {
+                final track = Map<String, dynamic>.from(rawTrack.cast());
+                final rawRegions = track['regions'];
+                if (rawRegions is List) {
+                  track['regions'] = [
+                    for (final rawRegion in rawRegions)
+                      if (rawRegion is Map)
+                        (() {
+                          final region = Map<String, dynamic>.from(
+                            rawRegion.cast(),
+                          );
+                          final duration = region['followDurationMicros'];
+                          const legacyDefaultMicros = 850000;
+                          final oldDurationMicros = duration is num
+                              ? duration.toDouble()
+                              : legacyDefaultMicros.toDouble();
+                          region['followDurationMicros'] =
+                              (oldDurationMicros * durationScale).round();
+                          return region;
+                        })()
+                      else
+                        rawRegion,
+                  ];
+                }
+                return track;
+              })()
+            else
+              rawTrack,
+        ];
+      }
+      next['timeline'] = timeline;
+    }
+    next['schemaVersion'] = 11;
+    return next;
+  },
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its

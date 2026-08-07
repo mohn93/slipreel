@@ -34,15 +34,15 @@ class ClipSlice {
     this.systemMuted = false,
     this.hideCursor = false,
     this.disableSmoothMouse = false,
-  })  : trimStart = _clampTrimStart(cutStart, cutEnd, trimStart ?? cutStart),
-        trimEnd = _clampTrimEnd(
-          cutStart,
-          cutEnd,
-          _clampTrimStart(cutStart, cutEnd, trimStart ?? cutStart),
-          trimEnd ?? cutEnd,
-        ),
-        micGainPercent = _clampGain(micGainPercent),
-        systemGainPercent = _clampGain(systemGainPercent);
+  }) : trimStart = _clampTrimStart(cutStart, cutEnd, trimStart ?? cutStart),
+       trimEnd = _clampTrimEnd(
+         cutStart,
+         cutEnd,
+         _clampTrimStart(cutStart, cutEnd, trimStart ?? cutStart),
+         trimEnd ?? cutEnd,
+       ),
+       micGainPercent = _clampGain(micGainPercent),
+       systemGainPercent = _clampGain(systemGainPercent);
 
   final Duration cutStart;
   final Duration cutEnd;
@@ -82,8 +82,7 @@ class ClipSlice {
   Duration get editedLength {
     if (playbackSpeed <= 0) return effectiveLength;
     return Duration(
-      microseconds:
-          (effectiveLength.inMicroseconds / playbackSpeed).round(),
+      microseconds: (effectiveLength.inMicroseconds / playbackSpeed).round(),
     );
   }
 
@@ -119,7 +118,11 @@ class ClipSlice {
   }
 
   static Duration _clampTrimEnd(
-      Duration cs, Duration ce, Duration ts, Duration te) {
+    Duration cs,
+    Duration ce,
+    Duration ts,
+    Duration te,
+  ) {
     if (te > ce) te = ce;
     if (te < ts + _minLen) te = ts + _minLen;
     if (te > ce) te = ce; // unreachable unless cut span < _minLen
@@ -140,38 +143,37 @@ class ClipSlice {
     bool? systemMuted,
     bool? hideCursor,
     bool? disableSmoothMouse,
-  }) =>
-      ClipSlice(
-        cutStart: cutStart ?? this.cutStart,
-        cutEnd: cutEnd ?? this.cutEnd,
-        trimStart: trimStart ?? this.trimStart,
-        trimEnd: trimEnd ?? this.trimEnd,
-        playbackSpeed: playbackSpeed ?? this.playbackSpeed,
-        fadeIn: fadeIn ?? this.fadeIn,
-        fadeOut: fadeOut ?? this.fadeOut,
-        micGainPercent: micGainPercent ?? this.micGainPercent,
-        micMuted: micMuted ?? this.micMuted,
-        systemGainPercent: systemGainPercent ?? this.systemGainPercent,
-        systemMuted: systemMuted ?? this.systemMuted,
-        hideCursor: hideCursor ?? this.hideCursor,
-        disableSmoothMouse: disableSmoothMouse ?? this.disableSmoothMouse,
-      );
+  }) => ClipSlice(
+    cutStart: cutStart ?? this.cutStart,
+    cutEnd: cutEnd ?? this.cutEnd,
+    trimStart: trimStart ?? this.trimStart,
+    trimEnd: trimEnd ?? this.trimEnd,
+    playbackSpeed: playbackSpeed ?? this.playbackSpeed,
+    fadeIn: fadeIn ?? this.fadeIn,
+    fadeOut: fadeOut ?? this.fadeOut,
+    micGainPercent: micGainPercent ?? this.micGainPercent,
+    micMuted: micMuted ?? this.micMuted,
+    systemGainPercent: systemGainPercent ?? this.systemGainPercent,
+    systemMuted: systemMuted ?? this.systemMuted,
+    hideCursor: hideCursor ?? this.hideCursor,
+    disableSmoothMouse: disableSmoothMouse ?? this.disableSmoothMouse,
+  );
 
   Map<String, dynamic> toJson() => {
-        'cutStartMicros': cutStart.inMicroseconds,
-        'cutEndMicros': cutEnd.inMicroseconds,
-        'trimStartMicros': trimStart.inMicroseconds,
-        'trimEndMicros': trimEnd.inMicroseconds,
-        'playbackSpeed': playbackSpeed,
-        'fadeInMicros': fadeIn.inMicroseconds,
-        'fadeOutMicros': fadeOut.inMicroseconds,
-        'micGainPercent': micGainPercent,
-        'micMuted': micMuted,
-        'systemGainPercent': systemGainPercent,
-        'systemMuted': systemMuted,
-        'hideCursor': hideCursor,
-        'disableSmoothMouse': disableSmoothMouse,
-      };
+    'cutStartMicros': cutStart.inMicroseconds,
+    'cutEndMicros': cutEnd.inMicroseconds,
+    'trimStartMicros': trimStart.inMicroseconds,
+    'trimEndMicros': trimEnd.inMicroseconds,
+    'playbackSpeed': playbackSpeed,
+    'fadeInMicros': fadeIn.inMicroseconds,
+    'fadeOutMicros': fadeOut.inMicroseconds,
+    'micGainPercent': micGainPercent,
+    'micMuted': micMuted,
+    'systemGainPercent': systemGainPercent,
+    'systemMuted': systemMuted,
+    'hideCursor': hideCursor,
+    'disableSmoothMouse': disableSmoothMouse,
+  };
 
   factory ClipSlice.fromJson(Map<String, dynamic> json) {
     final csRaw = json['cutStartMicros'];
@@ -206,10 +208,12 @@ class ClipSlice {
       systemGainPercent: json['systemGainPercent'] is num
           ? (json['systemGainPercent'] as num).toInt()
           : 100,
-      systemMuted:
-          json['systemMuted'] is bool ? json['systemMuted'] as bool : false,
-      hideCursor:
-          json['hideCursor'] is bool ? json['hideCursor'] as bool : false,
+      systemMuted: json['systemMuted'] is bool
+          ? json['systemMuted'] as bool
+          : false,
+      hideCursor: json['hideCursor'] is bool
+          ? json['hideCursor'] as bool
+          : false,
       disableSmoothMouse: json['disableSmoothMouse'] is bool
           ? json['disableSmoothMouse'] as bool
           : false,
@@ -236,20 +240,20 @@ class ClipSlice {
 
   @override
   int get hashCode => Object.hash(
-        cutStart,
-        cutEnd,
-        trimStart,
-        trimEnd,
-        playbackSpeed,
-        fadeIn,
-        fadeOut,
-        micGainPercent,
-        micMuted,
-        systemGainPercent,
-        systemMuted,
-        hideCursor,
-        disableSmoothMouse,
-      );
+    cutStart,
+    cutEnd,
+    trimStart,
+    trimEnd,
+    playbackSpeed,
+    fadeIn,
+    fadeOut,
+    micGainPercent,
+    micMuted,
+    systemGainPercent,
+    systemMuted,
+    hideCursor,
+    disableSmoothMouse,
+  );
 }
 
 /// Returns the slice covering [position] in source time. Falls back to
@@ -268,4 +272,20 @@ ClipSlice clipSliceAt(List<ClipSlice> clips, Duration position) {
     if (position >= s.trimStart && position < s.trimEnd) return s;
   }
   return clips.last;
+}
+
+/// Index of the slice that strictly contains [position] in source time.
+/// Returns -1 in trimmed-away gaps and for an empty timeline.
+int clipSliceIndexContaining(List<ClipSlice> clips, Duration position) {
+  for (var i = 0; i < clips.length; i++) {
+    final slice = clips[i];
+    if (position >= slice.trimStart && position < slice.trimEnd) return i;
+  }
+  return -1;
+}
+
+/// The slice strictly containing [position], or null in a hard-cut gap.
+ClipSlice? clipSliceContaining(List<ClipSlice> clips, Duration position) {
+  final index = clipSliceIndexContaining(clips, position);
+  return index < 0 ? null : clips[index];
 }

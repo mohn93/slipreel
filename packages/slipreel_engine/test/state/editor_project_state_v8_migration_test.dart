@@ -3,7 +3,7 @@ import 'package:slipreel_engine/state/editor_project_state.dart';
 
 void main() {
   group('v7 -> v8 migration', () {
-    test('bumps schemaVersion to 10 (v8→v9 and v9→v10 additive steps run immediately after)', () {
+    test('bumps schemaVersion to 11 through all subsequent steps', () {
       final v7 = {
         'schemaVersion': 7,
         'timeline': {
@@ -21,35 +21,42 @@ void main() {
               'systemMuted': false,
               'hideCursor': false,
               'disableSmoothMouse': false,
-            }
+            },
           ],
         },
       };
-      final out = migrateEditorProjectJson(v7,
-          videoDuration: const Duration(seconds: 12));
-      expect(out['schemaVersion'], 10);
+      final out = migrateEditorProjectJson(
+        v7,
+        videoDuration: const Duration(seconds: 12),
+      );
+      expect(out['schemaVersion'], 11);
     });
 
-    test('renames startMicros -> cutStartMicros and duplicates to trimStartMicros', () {
-      final v7 = {
-        'schemaVersion': 7,
-        'timeline': {
-          'zoomTracks': [],
-          'clips': [
-            {'startMicros': 1000000, 'endMicros': 11000000},
-          ],
-        },
-      };
-      final out = migrateEditorProjectJson(v7,
-          videoDuration: const Duration(seconds: 12));
-      final clip = (out['timeline'] as Map)['clips'][0] as Map;
-      expect(clip['cutStartMicros'], 1000000);
-      expect(clip['cutEndMicros'], 11000000);
-      expect(clip['trimStartMicros'], 1000000);
-      expect(clip['trimEndMicros'], 11000000);
-      expect(clip.containsKey('startMicros'), false);
-      expect(clip.containsKey('endMicros'), false);
-    });
+    test(
+      'renames startMicros -> cutStartMicros and duplicates to trimStartMicros',
+      () {
+        final v7 = {
+          'schemaVersion': 7,
+          'timeline': {
+            'zoomTracks': [],
+            'clips': [
+              {'startMicros': 1000000, 'endMicros': 11000000},
+            ],
+          },
+        };
+        final out = migrateEditorProjectJson(
+          v7,
+          videoDuration: const Duration(seconds: 12),
+        );
+        final clip = (out['timeline'] as Map)['clips'][0] as Map;
+        expect(clip['cutStartMicros'], 1000000);
+        expect(clip['cutEndMicros'], 11000000);
+        expect(clip['trimStartMicros'], 1000000);
+        expect(clip['trimEndMicros'], 11000000);
+        expect(clip.containsKey('startMicros'), false);
+        expect(clip.containsKey('endMicros'), false);
+      },
+    );
 
     test('preserves all non-bound clip fields', () {
       final v7 = {
@@ -69,12 +76,14 @@ void main() {
               'systemMuted': false,
               'hideCursor': true,
               'disableSmoothMouse': true,
-            }
+            },
           ],
         },
       };
-      final out = migrateEditorProjectJson(v7,
-          videoDuration: const Duration(seconds: 12));
+      final out = migrateEditorProjectJson(
+        v7,
+        videoDuration: const Duration(seconds: 12),
+      );
       final clip = (out['timeline'] as Map)['clips'][0] as Map;
       expect(clip['playbackSpeed'], 2.0);
       expect(clip['fadeInMicros'], 500000);
@@ -89,9 +98,11 @@ void main() {
         'schemaVersion': 7,
         'timeline': {'zoomTracks': []},
       };
-      final out = migrateEditorProjectJson(v7,
-          videoDuration: const Duration(seconds: 12));
-      expect(out['schemaVersion'], 10);
+      final out = migrateEditorProjectJson(
+        v7,
+        videoDuration: const Duration(seconds: 12),
+      );
+      expect(out['schemaVersion'], 11);
       final timeline = out['timeline'] as Map;
       // 'clips' may be missing or empty — both acceptable post-migration.
       final clips = timeline['clips'];
@@ -114,7 +125,7 @@ void main() {
               'systemMuted': false,
               'hideCursor': false,
               'disableSmoothMouse': false,
-            }
+            },
           ],
         },
       };

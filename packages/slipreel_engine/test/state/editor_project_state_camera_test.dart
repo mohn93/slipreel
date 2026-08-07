@@ -8,12 +8,12 @@ import 'package:slipreel_engine/timeline/timeline.dart';
 void main() {
   const dur = Duration(seconds: 10);
   CameraRegion region() => CameraRegion(
-        startTime: Duration.zero,
-        duration: const Duration(seconds: 5),
-        centerX: 0.8,
-        centerY: 0.8,
-        size: 0.22,
-      );
+    startTime: Duration.zero,
+    duration: const Duration(seconds: 5),
+    centerX: 0.8,
+    centerY: 0.8,
+    size: 0.22,
+  );
 
   group('EditorProjectState camera', () {
     test('defaults: enabled circle look, empty camera regions', () {
@@ -22,9 +22,9 @@ void main() {
       expect(s.cameraRegions, isEmpty);
     });
 
-    test('schemaVersion is 10', () {
-      expect(EditorProjectState.currentSchemaVersion, 10);
-      expect(EditorProjectState.defaults().toJson()['schemaVersion'], 10);
+    test('schemaVersion is 11', () {
+      expect(EditorProjectState.currentSchemaVersion, 11);
+      expect(EditorProjectState.defaults().toJson()['schemaVersion'], 11);
     });
 
     test('json round-trips cameraSettings + cameraRegions', () {
@@ -63,8 +63,7 @@ void main() {
 
     test('equality includes cameraSettings', () {
       final a = EditorProjectState.defaults();
-      final b = a.copyWith(
-          cameraSettings: const CameraSettings(opacity: 0.5));
+      final b = a.copyWith(cameraSettings: const CameraSettings(opacity: 0.5));
       expect(a == b, isFalse);
     });
   });

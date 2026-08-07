@@ -26,8 +26,8 @@ Duration editedToSource(List<ClipSlice> clips, Duration editedTime) {
     final next = acc + c.editedLength;
     if (editedTime <= next) {
       final editedOffset = editedTime - acc;
-      final sourceOffsetMicros =
-          (editedOffset.inMicroseconds * c.playbackSpeed).round();
+      final sourceOffsetMicros = (editedOffset.inMicroseconds * c.playbackSpeed)
+          .round();
       return c.trimStart + Duration(microseconds: sourceOffsetMicros);
     }
     acc = next;
@@ -47,13 +47,80 @@ Duration sourceToEdited(List<ClipSlice> clips, Duration sourceTime) {
     if (sourceTime <= c.trimEnd) {
       final sourceOffset = sourceTime - c.trimStart;
       final speed = c.playbackSpeed > 0 ? c.playbackSpeed : 1.0;
-      final editedOffsetMicros =
-          (sourceOffset.inMicroseconds / speed).round();
+      final editedOffsetMicros = (sourceOffset.inMicroseconds / speed).round();
       return acc + Duration(microseconds: editedOffsetMicros);
     }
     acc += c.editedLength;
   }
   return acc;
+}
+
+/// Maps a wall/output-time lookback from [position] onto source time.
+/// Traverses contiguous slices using each slice's speed and stops at a real
+/// source discontinuity, so temporal effects never smear across a hard cut.
+Duration sourceTimeBeforeWallDuration(
+  List<ClipSlice> clips,
+  Duration position,
+  Duration wallLookback,
+) {
+  if (clips.isEmpty || wallLookback <= Duration.zero) return position;
+  var index = clipSliceIndexContaining(clips, position);
+  if (index < 0) return position;
+  var sourceCursor = position;
+  var remainingWallMicros = wallLookback.inMicroseconds.toDouble();
+
+  while (index >= 0) {
+    final slice = clips[index];
+    final speed = slice.playbackSpeed > 0.05 ? slice.playbackSpeed : 0.05;
+    final availableSourceMicros =
+        sourceCursor.inMicroseconds - slice.trimStart.inMicroseconds;
+    final availableWallMicros = availableSourceMicros / speed;
+    if (remainingWallMicros <= availableWallMicros) {
+      return Duration(
+        microseconds:
+            sourceCursor.inMicroseconds - (remainingWallMicros * speed).round(),
+      );
+    }
+
+    remainingWallMicros -= availableWallMicros;
+    if (index == 0 || clips[index - 1].trimEnd != slice.trimStart) {
+      return slice.trimStart;
+    }
+    index--;
+    sourceCursor = clips[index].trimEnd;
+  }
+  return clips.first.trimStart;
+}
+
+/// Start of the contiguous edited run containing [position].
+Duration contiguousClipRunStart(List<ClipSlice> clips, Duration position) {
+  return contiguousClipRunBounds(clips, position)?.start ?? position;
+}
+
+/// Source-time bounds of the maximal contiguous slice run containing
+/// [position]. If the position is an otherwise-unowned exact trim end, the
+/// preceding slice owns that final frame. Ordinary splits remain one
+/// trajectory; only a real source gap creates a clamp boundary for cursor
+/// delay and path smoothing.
+({Duration start, Duration end})? contiguousClipRunBounds(
+  List<ClipSlice> clips,
+  Duration position,
+) {
+  var activeIndex = clipSliceIndexContaining(clips, position);
+  if (activeIndex < 0) {
+    activeIndex = clips.lastIndexWhere((clip) => clip.trimEnd == position);
+  }
+  if (activeIndex < 0) return null;
+  var first = activeIndex;
+  var last = activeIndex;
+  while (first > 0 && clips[first - 1].trimEnd == clips[first].trimStart) {
+    first--;
+  }
+  while (last + 1 < clips.length &&
+      clips[last].trimEnd == clips[last + 1].trimStart) {
+    last++;
+  }
+  return (start: clips[first].trimStart, end: clips[last].trimEnd);
 }
 
 /// The lower/upper clamp for dragging a region's edge (zoom or camera pill),

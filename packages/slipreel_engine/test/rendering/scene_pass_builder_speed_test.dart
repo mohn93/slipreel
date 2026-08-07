@@ -10,8 +10,14 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 CursorRecording _ramp() {
   final r = CursorRecording();
   for (int i = 0; i <= 40; i++) {
-    r.addPosition(CursorPosition(
-        x: i * 50.0, y: 0, timestampMicros: i * 16000, isClicked: false));
+    r.addPosition(
+      CursorPosition(
+        x: i * 50.0,
+        y: 0,
+        timestampMicros: i * 16000,
+        isClicked: false,
+      ),
+    );
   }
   return r;
 }
@@ -21,13 +27,14 @@ void main() {
   const videoSize = Size(1920, 1080);
 
   ScenePass driveBuilder(ScenePassBuilder b, List<ClipSlice> clips) {
+    final recording = _ramp();
     late ScenePass pass;
     for (int i = 0; i <= 10; i++) {
       pass = b.build(
         position: Duration(microseconds: i * 16000),
         zoomRegions: const [],
         cursorAnimationConfig: cfg,
-        cursorRecording: _ramp(),
+        cursorRecording: recording,
         videoSize: videoSize,
         fps: 60,
         hasCursorData: true,
@@ -58,10 +65,12 @@ void main() {
         cutStart: Duration.zero,
         cutEnd: const Duration(milliseconds: 640),
         playbackSpeed: 1.0,
-      )
+      ),
     ]);
-    expect(empty.motion!.screenPos.dx,
-        closeTo(oneX.motion!.screenPos.dx, 1e-9));
+    expect(
+      empty.motion!.screenPos.dx,
+      closeTo(oneX.motion!.screenPos.dx, 1e-9),
+    );
   });
 
   test('preview-style and export-style cursor stepping converge for a '
@@ -85,18 +94,20 @@ void main() {
 
     Offset driveStepped(int stepMicros) {
       final b = ScenePassBuilder();
+      final recording = _ramp();
       late ScenePass pass;
       ScenePass step(int us) => pass = b.build(
-            position: Duration(microseconds: us),
-            zoomRegions: const [],
-            cursorAnimationConfig: const CursorAnimationConfig.preset(
-                CursorAnimationStyle.smooth),
-            cursorRecording: _ramp(),
-            videoSize: const Size(1920, 1080),
-            fps: 60,
-            hasCursorData: true,
-            clips: [slice],
-          );
+        position: Duration(microseconds: us),
+        zoomRegions: const [],
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.smooth,
+        ),
+        cursorRecording: recording,
+        videoSize: const Size(1920, 1080),
+        fps: 60,
+        hasCursorData: true,
+        clips: [slice],
+      );
       for (int us = 0; us < 480000; us += stepMicros) {
         step(us);
       }
@@ -109,7 +120,7 @@ void main() {
 
     final exportStyle = driveStepped(16667); // ~1/60 s (export)
     final coarse = (driveStepped(33333) - exportStyle).distance; // 2× preview
-    final mid = (driveStepped(20834) - exportStyle).distance;    // 1.25× step
+    final mid = (driveStepped(20834) - exportStyle).distance; // 1.25× step
 
     // Bounded: a gross divergence (e.g. broken speed resolution) would
     // blow this far past the inherent ~30 px target-staleness gap.

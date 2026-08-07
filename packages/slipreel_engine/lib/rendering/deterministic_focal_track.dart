@@ -31,6 +31,7 @@ class DeterministicFocalTrack {
   DeterministicFocalTrack._({
     required this.region,
     required this.cursorRecording,
+    required this.cursorRecordingVersion,
     required this.cursorAnimationConfig,
     required this.cursorPostProcess,
     required this.cursorDelay,
@@ -53,6 +54,7 @@ class DeterministicFocalTrack {
 
   final ZoomRegion region;
   final CursorRecording cursorRecording;
+  final int cursorRecordingVersion;
   final CursorAnimationConfig cursorAnimationConfig;
   final CursorPostProcess cursorPostProcess;
 
@@ -160,6 +162,7 @@ class DeterministicFocalTrack {
     return DeterministicFocalTrack._(
       region: region,
       cursorRecording: cursorRecording,
+      cursorRecordingVersion: cursorRecording.version,
       cursorAnimationConfig: cursorAnimationConfig,
       cursorPostProcess: cursorPostProcess,
       cursorDelay: cursorDelay,
@@ -228,6 +231,7 @@ class DeterministicFocalTrack {
     }
 
     return identical(this.cursorRecording, cursorRecording) &&
+        cursorRecordingVersion == cursorRecording.version &&
         this.cursorAnimationConfig == cursorAnimationConfig &&
         this.region == region &&
         this.cursorPostProcess == cursorPostProcess &&

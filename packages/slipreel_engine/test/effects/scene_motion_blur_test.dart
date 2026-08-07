@@ -16,6 +16,21 @@ import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 /// signals depending on the EMA's accumulated state. These tests pin
 /// the no-history, no-EMA contract that replaces it.
 void main() {
+  test('shared slider curve gives preview and export the same scale', () {
+    const master = 0.25;
+    const channel = 0.5;
+    final previewScale =
+        sceneBlurMasterResponse(master) * sceneBlurChannelResponse(channel);
+
+    expect(sceneBlurMasterResponse(master), closeTo(0.0625, 1e-12));
+    expect(sceneBlurChannelResponse(channel), closeTo(0.125, 1e-12));
+    expect(
+      sceneBlurExposureScale(master: master, channel: channel),
+      closeTo(previewScale, 1e-12),
+    );
+    expect(previewScale, closeTo(0.0078125, 1e-12));
+  });
+
   // Linear camera pan: focal moves +100 px/s on x, scale held at 1.0.
   // Pure function of t, so two calls at the same t must be identical.
   SceneCameraSample panAt(Duration t) {
@@ -28,11 +43,8 @@ void main() {
   }
 
   // Static camera — no motion at all. Signal must report zero.
-  SceneCameraSample stillAt(Duration t) => SceneCameraSample(
-        position: t,
-        focal: const Offset(500, 500),
-        scale: 1.0,
-      );
+  SceneCameraSample stillAt(Duration t) =>
+      SceneCameraSample(position: t, focal: const Offset(500, 500), scale: 1.0);
 
   const movementExposure = Duration(milliseconds: 16);
   const zoomExposure = Duration(milliseconds: 16);
@@ -116,31 +128,32 @@ void main() {
     },
   );
 
-  test(
-    'translation magnitude equals prev.focal − current.focal scaled by '
-    'prev.scale × current.screenScale (linear pan, no EMA attenuation)',
-    () {
-      // panAt moves the focal at +100 px/s on x. Translation is
-      // `(prev.focal − current.focal) × scale`, so for a +x camera
-      // motion the smear vector points in −x. Over a 16 ms exposure
-      // that's exactly −1.6 px.
-      final signal = SceneMotionBlurController.compute(
-        position: const Duration(milliseconds: 500),
-        sampleAt: panAt,
-        movementExposure: movementExposure,
-        zoomExposure: zoomExposure,
-        maxTranslation: maxTranslation,
-      );
-      expect(signal.translation.dx, closeTo(-1.6, 0.01));
-      expect(signal.translation.dy, closeTo(0.0, 0.01));
-    },
-  );
+  test('translation magnitude equals prev.focal − current.focal scaled by '
+      'prev.scale × current.screenScale (linear pan, no EMA attenuation)', () {
+    // panAt moves the focal at +100 px/s on x. Translation is
+    // `(prev.focal − current.focal) × scale`, so for a +x camera
+    // motion the smear vector points in −x. Over a 16 ms exposure
+    // that's exactly −1.6 px.
+    final signal = SceneMotionBlurController.compute(
+      position: const Duration(milliseconds: 500),
+      sampleAt: panAt,
+      movementExposure: movementExposure,
+      zoomExposure: zoomExposure,
+      maxTranslation: maxTranslation,
+    );
+    expect(signal.translation.dx, closeTo(-1.6, 0.01));
+    expect(signal.translation.dy, closeTo(0.0, 0.01));
+  });
 
   test('translation is clamped to maxTranslation magnitude', () {
     SceneCameraSample fastPan(Duration t) {
       final s = t.inMicroseconds / 1e6;
       // 100_000 px/s — over a 16 ms window that's 1600 px raw.
-      return SceneCameraSample(position: t, focal: Offset(100000 * s, 0), scale: 1.0);
+      return SceneCameraSample(
+        position: t,
+        focal: Offset(100000 * s, 0),
+        scale: 1.0,
+      );
     }
 
     final signal = SceneMotionBlurController.compute(
@@ -176,29 +189,26 @@ void main() {
     expect(signal.scaleDelta, 0);
   });
 
-  test(
-    'scaleDelta reflects zoom motion across the exposure window',
-    () {
-      // Linear ramp from 1.0× → 2.0× over 1 second. At t=500 ms the
-      // scale is 1.5×; 16 ms earlier (t=484 ms) it was ~1.484×.
-      // scaleDelta = 1 − prev.scale / current.scale ≈ 1 − 1.484/1.5 ≈ 0.01067.
-      SceneCameraSample rampZoom(Duration t) {
-        final s = t.inMicroseconds / 1e6;
-        return SceneCameraSample(
-          position: t,
-          focal: const Offset(500, 500),
-          scale: 1.0 + s, // 1.0× → 2.0× over 1 s
-        );
-      }
-
-      final signal = SceneMotionBlurController.compute(
-        position: const Duration(milliseconds: 500),
-        sampleAt: rampZoom,
-        movementExposure: movementExposure,
-        zoomExposure: zoomExposure,
-        maxTranslation: maxTranslation,
+  test('scaleDelta reflects zoom motion across the exposure window', () {
+    // Linear ramp from 1.0× → 2.0× over 1 second. At t=500 ms the
+    // scale is 1.5×; 16 ms earlier (t=484 ms) it was ~1.484×.
+    // scaleDelta = 1 − prev.scale / current.scale ≈ 1 − 1.484/1.5 ≈ 0.01067.
+    SceneCameraSample rampZoom(Duration t) {
+      final s = t.inMicroseconds / 1e6;
+      return SceneCameraSample(
+        position: t,
+        focal: const Offset(500, 500),
+        scale: 1.0 + s, // 1.0× → 2.0× over 1 s
       );
-      expect(signal.scaleDelta, closeTo(0.01067, 0.001));
-    },
-  );
+    }
+
+    final signal = SceneMotionBlurController.compute(
+      position: const Duration(milliseconds: 500),
+      sampleAt: rampZoom,
+      movementExposure: movementExposure,
+      zoomExposure: zoomExposure,
+      maxTranslation: maxTranslation,
+    );
+    expect(signal.scaleDelta, closeTo(0.01067, 0.001));
+  });
 }

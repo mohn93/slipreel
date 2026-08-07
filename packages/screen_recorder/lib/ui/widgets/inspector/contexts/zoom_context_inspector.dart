@@ -435,7 +435,10 @@ class ZoomContextInspector extends ConsumerWidget {
                 'camera to settle on a new target',
             value: zoom.followDuration.inMilliseconds.toDouble(),
             min: 100,
-            max: 1500,
+            // Migrated projects can legitimately exceed the previous 1500ms
+            // ceiling: preserving the legacy ω=2/T camera feel maps the old
+            // maximum to ~3558ms under truthful T95 semantics.
+            max: 4000,
             onChanged: (v) => onChanged(
               zoom.copyWith(followDuration: Duration(milliseconds: v.toInt())),
             ),
