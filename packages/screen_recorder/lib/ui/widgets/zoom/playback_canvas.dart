@@ -508,8 +508,11 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
   /// region. Used to render a position-pure focal while scrubbing/paused — the
   /// live focal spring is path-dependent and lands on the wrong spot when the
   /// user scrubs backward. Rebuilt when the region or its replay inputs change
-  /// (mirrors `FrameCompositor._trackFor`).
-  DeterministicFocalTrack? _focalTrack;
+  /// (mirrors `FrameCompositor._trackFor`). LRU rather than a single slot:
+  /// blur-window queries near a region boundary alternate between adjacent
+  /// regions and thrashed a single-entry cache with full replays per frame.
+  final DeterministicFocalTrackCache _focalTracks =
+      DeterministicFocalTrackCache();
 
   /// Single source of truth for per-frame scene state (cursor sprite,
   /// focal trajectory, EMA-filtered cursor velocity). Shared with the
@@ -1714,25 +1717,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     CursorAnimationConfig cursorAnimationConfig,
     ZoomFraming framing,
   ) {
-    final cached = _focalTrack;
-    if (cached != null &&
-        cached.matches(
-          region: region,
-          cursorRecording: widget.cursorRecording,
-          cursorAnimationConfig: cursorAnimationConfig,
-          cursorPostProcess: widget.cursorPostProcess,
-          videoSize: videoSize,
-          fps: fps,
-          cursorDelay: widget.cursorDelay,
-          screenRampCurve: widget.screenAnimationConfig.rampCurve,
-          rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
-          tuning: _tuning,
-          clips: widget.clips,
-          framing: framing,
-        )) {
-      return cached;
-    }
-    return _focalTrack = DeterministicFocalTrack.build(
+    return _focalTracks.getOrBuild(
       region: region,
       cursorRecording: widget.cursorRecording,
       cursorAnimationConfig: cursorAnimationConfig,

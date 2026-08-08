@@ -1,7 +1,7 @@
 import 'dart:ui' show Offset;
 
 import 'package:flutter/animation.dart' show Curve, Curves;
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, visibleForTesting;
 import 'package:flutter/widgets.dart' show Size;
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -243,5 +243,93 @@ class DeterministicFocalTrack {
         this.fps == fps &&
         listEquals(this.clips, clips) &&
         sameFraming(this.framing, framing);
+  }
+}
+
+/// Small LRU of built [DeterministicFocalTrack]s.
+///
+/// A single cached track thrashes: per frame, the scene-blur signal and
+/// the cursor accumulation stamps query timestamps from MULTIPLE
+/// regions whenever the blur exposure window spans a region boundary
+/// (auto-zoom produces back-to-back follow regions). Each cross-region
+/// query then evicted the other's track and forced a full
+/// ScenePassBuilder replay — 2-4 rebuilds per frame for the whole
+/// overlap window, in both preview and export. A few entries keyed by
+/// [DeterministicFocalTrack.matches] make the boundary crossing free.
+/// Pure caching: the tracks themselves are unchanged, so determinism
+/// and preview==export parity are unaffected.
+class DeterministicFocalTrackCache {
+  DeterministicFocalTrackCache({this.capacity = 4})
+      : assert(capacity > 0, 'capacity must be positive');
+
+  final int capacity;
+  final List<DeterministicFocalTrack> _entries = [];
+
+  /// Number of full track builds performed. Test hook: alternating
+  /// queries across N <= capacity regions must build exactly N tracks.
+  @visibleForTesting
+  int buildCount = 0;
+
+  /// Drops all cached tracks (call when project-wide inputs change).
+  void clear() => _entries.clear();
+
+  DeterministicFocalTrack getOrBuild({
+    required ZoomRegion region,
+    required CursorRecording cursorRecording,
+    required CursorAnimationConfig cursorAnimationConfig,
+    required Size videoSize,
+    required int fps,
+    CursorPostProcess cursorPostProcess = CursorPostProcess.none,
+    Duration cursorDelay = Duration.zero,
+    Curve screenRampCurve = Curves.easeInOutQuad,
+    double rampDurationScale = 1.0,
+    MotionTuning tuning = MotionTuning.defaults,
+    List<ClipSlice> clips = const <ClipSlice>[],
+    ZoomFraming? framing,
+  }) {
+    for (var i = 0; i < _entries.length; i++) {
+      final track = _entries[i];
+      if (track.matches(
+        region: region,
+        cursorRecording: cursorRecording,
+        cursorAnimationConfig: cursorAnimationConfig,
+        cursorPostProcess: cursorPostProcess,
+        videoSize: videoSize,
+        fps: fps,
+        cursorDelay: cursorDelay,
+        screenRampCurve: screenRampCurve,
+        rampDurationScale: rampDurationScale,
+        tuning: tuning,
+        clips: clips,
+        framing: framing,
+      )) {
+        if (i != 0) {
+          _entries
+            ..removeAt(i)
+            ..insert(0, track);
+        }
+        return track;
+      }
+    }
+    buildCount++;
+    final built = DeterministicFocalTrack.build(
+      region: region,
+      cursorRecording: cursorRecording,
+      cursorAnimationConfig: cursorAnimationConfig,
+      cursorPostProcess: cursorPostProcess,
+      videoSize: videoSize,
+      fps: fps,
+      cursorDelay: cursorDelay,
+      screenRampCurve: screenRampCurve,
+      rampDurationScale: rampDurationScale,
+      tuning: tuning,
+      clips: clips,
+      framing: framing,
+    );
+    _entries.insert(0, built);
+    if (_entries.length > capacity) {
+      _entries.removeLast();
+    }
+    return built;
   }
 }

@@ -228,7 +228,11 @@ class FrameCompositor {
   late final ScenePassBuilder _scenePassBuilder = ScenePassBuilder()
     ..setTuning(motionTuning);
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
-  DeterministicFocalTrack? _focalTrack;
+  // Multi-region LRU: per frame the blur signal and cursor stamps can
+  // query timestamps from adjacent regions (exposure window spanning a
+  // boundary); a single slot thrashed with full replays per query.
+  final DeterministicFocalTrackCache _focalTracks =
+      DeterministicFocalTrackCache();
   ui.FragmentProgram? _sceneBlurProgram;
   // The wallpaper is rendered once per export and reused for every
   // composited frame, since the wallpaper inputs (category/index/blur/
@@ -504,7 +508,8 @@ class FrameCompositor {
               if (byteData == null) {
                 throw StateError('toByteData returned null at $position');
               }
-              return Uint8List.fromList(byteData.buffer.asUint8List());
+              // No defensive copy — see to_byte_data_ownership_test.dart.
+              return byteData.buffer.asUint8List();
             }
             // Composite bottom-to-top: sticky wallpaper, crisp frame chrome
             // (shadow/ring/border), the possibly blurred video, the crisp
@@ -548,9 +553,12 @@ class FrameCompositor {
                 if (byteData == null) {
                   throw StateError('toByteData returned null at $position');
                 }
-                // Defensive copy — the underlying buffer is owned by
-                // the ui.Image and freed when we dispose it.
-                return Uint8List.fromList(byteData.buffer.asUint8List());
+                // No defensive copy: toByteData's readback buffer is
+                // independently allocated by the engine and survives
+                // image.dispose() — pinned by
+                // to_byte_data_ownership_test.dart. Copying here cost a
+                // 10-60MB memcpy per frame.
+                return byteData.buffer.asUint8List();
               } finally {
                 finalImage.dispose();
               }
@@ -823,7 +831,8 @@ class FrameCompositor {
               if (byteData == null) {
                 throw StateError('toByteData returned null at $position');
               }
-              return Uint8List.fromList(byteData.buffer.asUint8List());
+              // No defensive copy — see to_byte_data_ownership_test.dart.
+              return byteData.buffer.asUint8List();
             } finally {
               finalImage.dispose();
             }
@@ -867,31 +876,12 @@ class FrameCompositor {
   /// non-follow-cursor regions (the caller uses rect.center instead).
   DeterministicFocalTrack? _trackFor(ZoomRegion region) {
     if (!region.followCursor) return null;
-    final cached = _focalTrack;
-    if (cached != null &&
-        cached.matches(
-          region: region,
-          cursorRecording: cursorRecording,
-          cursorAnimationConfig: projectState.cursorAnimationConfig,
-          cursorPostProcess: projectState.cursorPostProcess,
-          videoSize: videoSize,
-          fps: fps,
-          cursorDelay: projectState.cursorDelay,
-          screenRampCurve: projectState.screenAnimationConfig.rampCurve,
-          rampDurationScale:
-              projectState.screenAnimationConfig.rampDurationScale,
-          tuning: motionTuning,
-          clips: projectState.timeline.clips,
-          framing: _framing,
-        )) {
-      return cached;
-    }
     // `framing` is not optional in practice: the preview builds its track
     // with the project's ZoomFraming, so omitting it here clamps the focal
     // in a different space and re-opens the very preview/export gap this
     // track exists to close. A zero-padding project cannot tell the two
     // apart, which is why the omission survived — any real padding can.
-    return _focalTrack = DeterministicFocalTrack.build(
+    return _focalTracks.getOrBuild(
       region: region,
       cursorRecording: cursorRecording,
       cursorAnimationConfig: projectState.cursorAnimationConfig,
