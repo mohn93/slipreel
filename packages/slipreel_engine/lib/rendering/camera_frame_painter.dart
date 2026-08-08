@@ -34,17 +34,29 @@ class CameraFramePainter {
         : settings.roundness.clamp(0.0, 1.0) * (pixelBox.shortestSide / 2);
     final rrect = RRect.fromRectAndRadius(pixelBox, Radius.circular(radius));
 
-    final layerPaint = Paint()..color = Color.fromRGBO(0, 0, 0, effOpacity);
-    if (blurSigma > 0.01) {
-      layerPaint.imageFilter =
-          ui.ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma);
+    // The group layer exists to fade/blur shadow+image+border as ONE
+    // unit. At full opacity with no reveal blur it is a pure no-op
+    // group (alpha 1, no filter): group compositing equals direct
+    // drawing, so skip the offscreen layer entirely — the steady state
+    // of every exported frame with a visible camera. The goldens in
+    // camera_frame_painter_test.dart pin pixel-identity of the skip.
+    final needsGroupLayer = effOpacity < 1.0 || blurSigma > 0.01;
+    if (needsGroupLayer) {
+      final layerPaint = Paint()..color = Color.fromRGBO(0, 0, 0, effOpacity);
+      if (blurSigma > 0.01) {
+        layerPaint.imageFilter =
+            ui.ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma);
+      }
+      // Bounds must contain the drop shadow (blur 18 + 6px offset ≈ 39px past
+      // the box) and, while hiding, the reveal blur halo (≈ blurSigma*3). 60
+      // clears the shadow with margin; the reveal term grows it as the bubble
+      // blurs out.
+      canvas.saveLayer(
+          pixelBox.shift(Offset(0, slideY)).inflate(60 + blurSigma * 3),
+          layerPaint);
+    } else {
+      canvas.save();
     }
-    // Bounds must contain the drop shadow (blur 18 + 6px offset ≈ 39px past the
-    // box) and, while hiding, the reveal blur halo (≈ blurSigma*3). 60 clears
-    // the shadow with margin; the reveal term grows it as the bubble blurs out.
-    canvas.saveLayer(
-        pixelBox.shift(Offset(0, slideY)).inflate(60 + blurSigma * 3),
-        layerPaint);
     canvas.translate(0, slideY);
 
     if (settings.shadow) {
@@ -92,7 +104,7 @@ class CameraFramePainter {
       }
     }
 
-    canvas.restore(); // opacity layer
+    canvas.restore(); // opacity layer (or the plain save in the skip path)
   }
 
   // BoxFit.cover source crop: largest centered sub-rect of [image] matching the

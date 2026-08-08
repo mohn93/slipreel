@@ -419,22 +419,25 @@ class FrameCompositor {
         chromePicture = chromeRecorder.endRecording();
       }
 
+      // The fg raster is ONLY needed as the blur shader's sampler.
+      // Ordinary (no-blur) frames draw the recorded pictures straight
+      // into the single compose pass below — ONE full-canvas
+      // rasterization per frame instead of 2-3 (fg toImage + chrome
+      // toImage + compose toImage). The chrome picture is likewise
+      // drawn directly (the cursor picture always was).
+      final blurActive = sceneSignal.hasMotion && projectState.motionBlur > 0;
+      ui.Image? fgImage;
       try {
-        final fgImage = await fgPicture.toImage(
-          totalSize.width.toInt(),
-          totalSize.height.toInt(),
-        );
-        final ui.Image? chromeImage = chromePicture == null
-            ? null
-            : await chromePicture.toImage(
-                totalSize.width.toInt(),
-                totalSize.height.toInt(),
-              );
-        try {
-          // Smear the moving CONTENT only. The crisp chrome (shadow) and the
-          // sticky wallpaper are composited un-blurred.
-          final blurredFg = await _applySceneMotionBlur(fgImage, sceneSignal);
-          final fgToComposite = blurredFg ?? fgImage;
+        ui.FragmentProgram? blurProgram;
+        if (blurActive) {
+          fgImage = await fgPicture.toImage(
+            totalSize.width.toInt(),
+            totalSize.height.toInt(),
+          );
+          blurProgram = _sceneBlurProgram ??=
+              await SceneMotionBlurShader.ensureLoaded();
+        }
+        {
           // Resolve + decode the camera PiP frame (async) BEFORE the
           // synchronous canvas draws below. The camera bubble is
           // canvas-fixed: it must NOT inherit the zoom transform, so it
@@ -488,34 +491,13 @@ class FrameCompositor {
 
           try {
             final wallpaperImage = await _ensureWallpaperImage();
-            // No wallpaper, no chrome, no camera, AND no active caption:
-            // the content IS the final image. Skip the composite step.
-            final captionsActive =
-                projectState.captionStyle.enabled &&
-                activeCaptionAt(
-                      projectState.captions,
-                      position.inMicroseconds,
-                    ) !=
-                    null;
-            if (wallpaperImage == null &&
-                chromeImage == null &&
-                cursorPicture == null &&
-                cameraImage == null &&
-                !captionsActive) {
-              final byteData = await fgToComposite.toByteData(
-                format: ui.ImageByteFormat.rawRgba,
-              );
-              if (byteData == null) {
-                throw StateError('toByteData returned null at $position');
-              }
-              // No defensive copy — see to_byte_data_ownership_test.dart.
-              return byteData.buffer.asUint8List();
-            }
-            // Composite bottom-to-top: sticky wallpaper, crisp frame chrome
-            // (shadow/ring/border), the possibly blurred video, the crisp
-            // cursor picture when scene smear is active, then the canvas-fixed
-            // camera bubble. The content
-            // layer's transparent padding reveals the chrome (and wallpaper)
+            // Composite bottom-to-top in ONE pass: sticky wallpaper,
+            // crisp frame chrome (shadow/ring/border), the video content
+            // (smeared through the blur shader when active, otherwise
+            // the recorded picture drawn directly), the crisp cursor
+            // picture when scene smear is active, then the canvas-fixed
+            // camera bubble and captions. The content layer's
+            // transparent padding reveals the chrome (and wallpaper)
             // around the framed video.
             final composeRecorder = ui.PictureRecorder();
             final composeCanvas = ui.Canvas(
@@ -525,10 +507,29 @@ class FrameCompositor {
             if (wallpaperImage != null) {
               composeCanvas.drawImage(wallpaperImage, Offset.zero, Paint());
             }
-            if (chromeImage != null) {
-              composeCanvas.drawImage(chromeImage, Offset.zero, Paint());
+            if (chromePicture != null) {
+              composeCanvas.drawPicture(chromePicture);
             }
-            composeCanvas.drawImage(fgToComposite, Offset.zero, Paint());
+            if (blurActive) {
+              // Smear the moving CONTENT only, painted straight onto the
+              // compose canvas — paintSceneMotionBlur isolates itself
+              // (saveLayer + dstIn mask), so no intermediate full-res
+              // toImage round-trip is needed. The crisp chrome (shadow)
+              // and sticky wallpaper stay un-blurred beneath it.
+              paintSceneMotionBlur(
+                canvas: composeCanvas,
+                image: fgImage!,
+                program: blurProgram!,
+                size: totalSize,
+                signal: sceneSignal,
+                sampleCount: _sceneBlurSampleCount,
+                speedCurveExp: _sceneBlurSpeedCurveExp,
+                speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
+                devicePixelRatio: 1.0,
+              );
+            } else {
+              composeCanvas.drawPicture(fgPicture);
+            }
             if (cursorPicture != null) {
               composeCanvas.drawPicture(cursorPicture);
             }
@@ -567,13 +568,10 @@ class FrameCompositor {
             }
           } finally {
             cameraImage?.dispose();
-            if (blurredFg != null) blurredFg.dispose();
           }
-        } finally {
-          fgImage.dispose();
-          chromeImage?.dispose();
         }
       } finally {
+        fgImage?.dispose();
         fgPicture.dispose();
         chromePicture?.dispose();
         cursorPicture?.dispose();
@@ -744,21 +742,23 @@ class FrameCompositor {
       bezelPicture = r.endRecording();
     }
 
+    // One-pass, mirroring the standard path: the fg raster only exists
+    // when the blur shader needs a sampler; the bezel picture is drawn
+    // directly instead of round-tripping through a full-canvas image.
+    final blurActive = sceneSignal.hasMotion && projectState.motionBlur > 0;
+    ui.Image? fgImage;
     try {
-      final fgImage = await fgPicture.toImage(
-        totalSize.width.toInt(),
-        totalSize.height.toInt(),
-      );
-      final ui.Image? bezelImg = bezelPicture == null
-          ? null
-          : await bezelPicture.toImage(
-              totalSize.width.toInt(),
-              totalSize.height.toInt(),
-            );
-      try {
-        final blurredFg = await _applySceneMotionBlur(fgImage, sceneSignal);
-        final fgToComposite = blurredFg ?? fgImage;
-        try {
+      ui.FragmentProgram? blurProgram;
+      if (blurActive) {
+        fgImage = await fgPicture.toImage(
+          totalSize.width.toInt(),
+          totalSize.height.toInt(),
+        );
+        blurProgram = _sceneBlurProgram ??=
+            await SceneMotionBlurShader.ensureLoaded();
+      }
+      {
+        {
           final wallpaperImage = await _ensureWallpaperImage();
           final composeRecorder = ui.PictureRecorder();
           final composeCanvas = ui.Canvas(
@@ -768,9 +768,23 @@ class FrameCompositor {
           if (wallpaperImage != null) {
             composeCanvas.drawImage(wallpaperImage, Offset.zero, Paint());
           }
-          composeCanvas.drawImage(fgToComposite, Offset.zero, Paint());
-          if (bezelImg != null) {
-            composeCanvas.drawImage(bezelImg, Offset.zero, Paint());
+          if (blurActive) {
+            paintSceneMotionBlur(
+              canvas: composeCanvas,
+              image: fgImage!,
+              program: blurProgram!,
+              size: totalSize,
+              signal: sceneSignal,
+              sampleCount: _sceneBlurSampleCount,
+              speedCurveExp: _sceneBlurSpeedCurveExp,
+              speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
+              devicePixelRatio: 1.0,
+            );
+          } else {
+            composeCanvas.drawPicture(fgPicture);
+          }
+          if (bezelPicture != null) {
+            composeCanvas.drawPicture(bezelPicture);
           }
           // Camera: drawn canvas-fixed (not zoom-transformed) on top, same
           // as the standard path.
@@ -839,14 +853,10 @@ class FrameCompositor {
           } finally {
             composePicture.dispose();
           }
-        } finally {
-          if (blurredFg != null) blurredFg.dispose();
         }
-      } finally {
-        fgImage.dispose();
-        bezelImg?.dispose();
       }
     } finally {
+      fgImage?.dispose();
       fgPicture.dispose();
       bezelPicture?.dispose();
     }
@@ -1062,42 +1072,6 @@ class FrameCompositor {
     // Uses _framing so the device path clamps in canvas space (not video bounds).
     final visibleFocal = _framing.clampFocal(focal, scale);
     return SceneCameraSample(position: t, focal: visibleFocal, scale: scale);
-  }
-
-  Future<ui.Image?> _applySceneMotionBlur(
-    ui.Image sceneImage,
-    SceneMotionBlurSignal signal,
-  ) async {
-    if (!signal.hasMotion || projectState.motionBlur <= 0) return null;
-
-    final program = _sceneBlurProgram ??=
-        await SceneMotionBlurShader.ensureLoaded();
-
-    final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(
-      recorder,
-      Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
-    );
-    paintSceneMotionBlur(
-      canvas: canvas,
-      image: sceneImage,
-      program: program,
-      size: totalSize,
-      signal: signal,
-      sampleCount: _sceneBlurSampleCount,
-      speedCurveExp: _sceneBlurSpeedCurveExp,
-      speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
-      devicePixelRatio: 1.0,
-    );
-    final picture = recorder.endRecording();
-    try {
-      return await picture.toImage(
-        totalSize.width.toInt(),
-        totalSize.height.toInt(),
-      );
-    } finally {
-      picture.dispose();
-    }
   }
 
   void _paintWallpaper(Canvas canvas, {ui.Image? photo}) {
