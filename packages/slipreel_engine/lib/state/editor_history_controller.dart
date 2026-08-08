@@ -88,9 +88,12 @@ class EditorHistoryController extends ChangeNotifier {
   void _commitPending() {
     _coalesceTimer = null;
     final current = controller.current;
-    // Avoid pushing duplicates — happens when a mutator is called
-    // with the same value the state already has.
-    if (identical(_history.current, current)) return;
+    // Avoid pushing duplicates — a publish can carry a new instance
+    // that is value-equal to the last entry (e.g. a mutator fed the
+    // value the state already has, or replace() with a copyWith()).
+    // Deep equality (not identical) is the dedupe key; pushing an
+    // equal state would light up Cmd-Z with a visible no-op.
+    if (_history.current == current) return;
     _history.push(current);
     // Notify listeners so toolbar Undo/Redo buttons re-enable as
     // history changes (otherwise the buttons stay disabled until

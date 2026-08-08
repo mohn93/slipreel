@@ -5,6 +5,7 @@ import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
+import '../models/camera_sidecar_meta.dart';
 import '../models/compression_bitrate.dart';
 import '../models/cursor_recording.dart';
 import '../models/device_frame.dart';
@@ -14,10 +15,13 @@ import '../rendering/output_canvas_resolver.dart';
 import '../rendering/motion_tuning.dart';
 import '../state/clip_slice.dart';
 import '../state/editor_project_state.dart';
+import '../timeline/edited_time.dart';
 import '../utils/app_logger.dart';
 import '../utils/perf_summary.dart';
+import 'camera_frame_source.dart';
 import 'export_cancellation.dart';
 import 'export_compositor.dart';
+import 'export_pipeline.dart' show shouldCompositeCamera;
 import 'ffmpeg_decoder.dart';
 import 'ffmpeg_probe.dart';
 import 'ffmpeg_resolver.dart';
@@ -144,18 +148,87 @@ class GifExportPipeline {
       audioStreams: const [],
     );
 
+    // Camera PiP parity with ExportPipeline (Plan 3): composite the
+    // webcam sidecar when present + enabled. Each pass gets its OWN
+    // CameraFrameSource — the source is a forward-only stream reader,
+    // and pass 2 must replay the camera from t=0 to reproduce the exact
+    // frames pass 1 showed palettegen. Decode failures degrade
+    // gracefully (warning, no abort), matching the MP4 pipeline.
+    const cameraDecodeWarning =
+        'Camera could not be decoded; exported without the camera overlay.';
+    final warnings = <String>[];
+    final cameraMeta = await CameraSidecarMeta.loadForVideo(sourcePath);
+    final cameraMoviePath = CameraSidecarMeta.moviePathForVideo(sourcePath);
+    final compositeCamera = shouldCompositeCamera(
+      hasSidecar: cameraMeta != null,
+      enabled: projectState.cameraSettings.enabled,
+      hasRegions: projectState.cameraRegions.isNotEmpty,
+      movieExists: File(cameraMoviePath).existsSync(),
+    );
+    final cameraSrcWidth = compositeCamera ? cameraMeta!.width : 0;
+    final cameraSrcHeight = compositeCamera ? cameraMeta!.height : 0;
+    final cameraOriginalAspect = compositeCamera && cameraSrcHeight != 0
+        ? cameraSrcWidth / cameraSrcHeight
+        : 1.0;
+    void warnCameraOnce() {
+      if (!warnings.contains(cameraDecodeWarning)) {
+        warnings.add(cameraDecodeWarning);
+      }
+    }
+
+    CameraFrameSource? makeCameraSource() {
+      if (!compositeCamera) return null;
+      try {
+        final camDecoder = FfmpegDecoder(
+          inputPath: cameraMoviePath,
+          width: cameraSrcWidth,
+          height: cameraSrcHeight,
+          cfrFps: fps,
+        );
+        return CameraFrameSource(
+          frames: camDecoder.frames(),
+          fps: fps,
+          offsetMicros: cameraMeta!.offsetMicros,
+          // Reap the camera ffmpeg subprocess on teardown — cancelling
+          // the stream iterator alone leaves it blocked on a full
+          // stdout pipe.
+          onDispose: camDecoder.kill,
+        );
+      } catch (e, st) {
+        AppLogger.ffmpeg.w(
+          'Camera GIF decode setup failed: $e',
+          error: e,
+          stackTrace: st,
+        );
+        warnCameraOnce();
+        return null;
+      }
+    }
+
     final palettePath = _makePaletteTmpPath();
 
-    final int? expectedFrames = _expectedFrames(probed, fps);
+    // Progress mirrors ExportPipeline: each fed frame's source timestamp
+    // maps through editedProgressAtSource so lead-in/gap frames report
+    // zero and each pass sweeps its half of the bar exactly once. The
+    // slice list (never empty after _ensureSlices) is the denominator,
+    // so a failed duration probe can't silence the bar.
+    final progressClips = slicedState.timeline.clips;
+    final Duration? sourceFallbackTotal =
+        sourceDuration > Duration.zero ? sourceDuration : null;
+    double? passProgress(int tsMicros) => editedProgressAtSource(
+          progressClips,
+          Duration(microseconds: tsMicros),
+          sourceFallbackTotal: sourceFallbackTotal,
+        );
 
     try {
       try {
         final compositeSw1 = Stopwatch();
-        var pass1Frames = 0;
 
         // Pass 1: decode + compose → ffmpeg palettegen → palette.png.
         // The compositor renders each frame at its full framed size; ffmpeg
         // then scales and generates the optimum palette from all frames.
+        final cameraSource1 = makeCameraSource();
         final compositor1 = InProcessExportCompositor(
           FrameCompositor(
             projectState: projectState,
@@ -163,6 +236,10 @@ class GifExportPipeline {
             metadata: sourceMetadata,
             videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
             fps: fps,
+            cameraFrameSource: cameraSource1,
+            cameraOriginalAspect: cameraOriginalAspect,
+            cameraSrcWidth: cameraSrcWidth,
+            cameraSrcHeight: cameraSrcHeight,
             deviceFrameCatalog: deviceFrameCatalog,
             motionTuning: motionTuning,
           ),
@@ -248,15 +325,14 @@ class GifExportPipeline {
               decoder1.kill();
               continue;
             }
-            pass1Frames++;
-            if (onProgress != null &&
-                expectedFrames != null &&
-                expectedFrames > 0) {
-              onProgress((pass1Frames / expectedFrames * 0.5).clamp(0.0, 0.5));
+            if (onProgress != null) {
+              final p = passProgress(tsMicros);
+              if (p != null) onProgress((p * 0.5).clamp(0.0, 0.5));
             }
           }
         } finally {
           await compositor1.dispose();
+          await cameraSource1?.dispose();
           if (!pass1StdinClosed) {
             try {
               await proc1.stdin.close();
@@ -265,6 +341,7 @@ class GifExportPipeline {
             }
           }
         }
+        if (cameraSource1?.failed == true) warnCameraOnce();
 
         final exit1 = await proc1.exitCode;
         await stderr1Done;
@@ -280,6 +357,7 @@ class GifExportPipeline {
         final compositeSw2 = Stopwatch();
         var pass2Frames = 0;
 
+        final cameraSource2 = makeCameraSource();
         final compositor2 = InProcessExportCompositor(
           FrameCompositor(
             projectState: projectState,
@@ -287,6 +365,10 @@ class GifExportPipeline {
             metadata: sourceMetadata,
             videoSize: Size(srcWidth.toDouble(), srcHeight.toDouble()),
             fps: fps,
+            cameraFrameSource: cameraSource2,
+            cameraOriginalAspect: cameraOriginalAspect,
+            cameraSrcWidth: cameraSrcWidth,
+            cameraSrcHeight: cameraSrcHeight,
             deviceFrameCatalog: deviceFrameCatalog,
             motionTuning: motionTuning,
           ),
@@ -372,16 +454,14 @@ class GifExportPipeline {
                 continue;
               }
               pass2Frames++;
-              if (onProgress != null &&
-                  expectedFrames != null &&
-                  expectedFrames > 0) {
-                onProgress(
-                  (0.5 + pass2Frames / expectedFrames * 0.5).clamp(0.5, 1.0),
-                );
+              if (onProgress != null) {
+                final p = passProgress(tsMicros);
+                if (p != null) onProgress((0.5 + p * 0.5).clamp(0.5, 1.0));
               }
             }
           } finally {
             await compositor2.dispose();
+            await cameraSource2?.dispose();
             if (!pass2StdinClosed) {
               try {
                 await proc2.stdin.close();
@@ -390,6 +470,7 @@ class GifExportPipeline {
               }
             }
           }
+          if (cameraSource2?.failed == true) warnCameraOnce();
 
           final exit2 = await proc2.exitCode;
           await stderr2Done;
@@ -432,6 +513,7 @@ class GifExportPipeline {
           outputBytes: outputBytes,
           outputCodec: 'gif',
           usedHardwareEncoder: false,
+          warnings: warnings,
         );
         AppLogger.ffmpeg.i(summary.format());
         return summary;
@@ -470,16 +552,6 @@ class GifExportPipeline {
   String _makePaletteTmpPath() {
     _paletteDir = Directory.systemTemp.createTempSync('gif_palette');
     return '${_paletteDir!.path}/palette.png';
-  }
-
-  int? _expectedFrames(FfmpegProbeResult probed, int fps) {
-    final dur = probed.durationSec;
-    if (dur != null && dur > 0) return (dur * fps).round();
-    final nb = probed.nbFrames;
-    if (nb != null && probed.fps > 0) {
-      return (nb * fps / probed.fps).round();
-    }
-    return null;
   }
 
   Future<int> _fileLength(String path) async {

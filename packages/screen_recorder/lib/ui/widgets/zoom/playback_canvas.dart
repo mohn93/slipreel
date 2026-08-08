@@ -233,7 +233,7 @@ class PlaybackCanvas extends ConsumerStatefulWidget {
     this.displayLatency,
     this.cursorBlurMode = CursorBlurMode.shader,
     this.accumulationExposureMs = 40.0,
-    this.accumulationSampleCount = 32,
+    this.accumulationSampleCount = kCursorBlurStampCount,
     this.accumulationCameraFocalAt,
     this.accumulationCameraScaleAt,
     this.cursorTypeChangeBlurSigmaPx = 0.0,

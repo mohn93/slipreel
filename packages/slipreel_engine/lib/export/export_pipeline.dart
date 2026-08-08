@@ -14,6 +14,7 @@ import '../rendering/output_canvas_resolver.dart';
 import '../rendering/motion_tuning.dart';
 import '../state/clip_slice.dart';
 import '../state/editor_project_state.dart';
+import '../timeline/edited_time.dart';
 import '../utils/perf_summary.dart';
 import '../utils/app_logger.dart';
 import 'bounded_async_queue.dart';
@@ -292,21 +293,20 @@ class ExportPipeline {
     final compositeSw = Stopwatch();
     int totalFrames = 0;
 
-    // After CFR-resampling at pipelineFps the encoder emits
-    // outputDurationSec * pipelineFps frames. m9: outputDurationSec is the
-    // EDITED (sliced + speed-adjusted) length, so a trimmed export no longer
-    // measures progress against the full source duration (which froze the bar
-    // well below 100%). Falls back to the probed source duration / nb_frames
-    // only when the edited length is unavailable; null leaves the bar
-    // indeterminate, preferable to a wrong percentage. (Final so Dart can
-    // promote across the encode-stage closure that reads it.)
-    final int? expectedFrames = expectedOutputFrames(
-      outputDurationSec: outputDurationSec,
-      pipelineFps: pipelineFps,
-      sourceDurationSec: probed.durationSec,
-      sourceNbFrames: probed.nbFrames,
-      sourceFps: probed.fps,
-    );
+    // Progress inputs. Frames are fed to ffmpeg at SOURCE cadence
+    // (leading trims, gaps, and sped-up slices all pass through the
+    // pipe and are dropped by the filter graph), so frame counts can't
+    // be compared against the edited output length — that pinned the
+    // bar at 100% halfway through any back-trimmed export. Instead the
+    // encode stage maps each fed frame's source timestamp through
+    // editedProgressAtSource. The probed source duration is only a
+    // fallback for the no-slice-data case.
+    final progressClips = slicedState.timeline.clips;
+    final probedDurationSec = probed.durationSec;
+    final Duration? sourceFallbackTotal =
+        (probedDurationSec != null && probedDurationSec > 0)
+            ? Duration(microseconds: (probedDurationSec * 1e6).round())
+            : null;
 
     // Three-stage producer/consumer pipeline. Decode reads from ffmpeg's
     // stdout, compose rasterizes the frame chrome + cursor + zoom, encode
@@ -394,10 +394,16 @@ class ExportPipeline {
           break;
         }
         totalFrames++;
-        if (onProgress != null &&
-            expectedFrames != null &&
-            expectedFrames > 0) {
-          onProgress((totalFrames / expectedFrames).clamp(0.0, 1.0));
+        if (onProgress != null) {
+          // Frame N corresponds to source time N/fps (same mapping the
+          // compose stage uses for tsMicros).
+          final sourceMicros = (1000000 * (totalFrames - 1)) ~/ pipelineFps;
+          final progress = editedProgressAtSource(
+            progressClips,
+            Duration(microseconds: sourceMicros),
+            sourceFallbackTotal: sourceFallbackTotal,
+          );
+          if (progress != null) onProgress(progress);
         }
       }
     }();
@@ -454,6 +460,11 @@ class ExportPipeline {
 
     await encoder.finish();
     wallSw.stop();
+
+    // The cooperative early-exit (ffmpeg trim-closes stdin before the
+    // final fed frame is counted) can leave the last reported value a
+    // hair under 1.0 — pin the bar on success.
+    onProgress?.call(1.0);
 
     final wallSec = wallSw.elapsedMilliseconds / 1000.0;
     final inputDuration = outputDurationSec > 0

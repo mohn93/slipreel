@@ -1194,10 +1194,9 @@ class FrameCompositor {
   /// ([`CursorOverlayPainter`]) is intentionally only kept for the
   /// playground's A/B compare screen.
   ///
-  /// Exposure (150 ms) matches production preview's
-  /// `accumulationExposureMs` so a slider drag and a re-export read
-  /// the same trail length. Sample count (8) matches the preview's
-  /// `accumulationSampleCount` default on [`PlaybackCanvas`].
+  /// Exposure and stamp count come from [kCursorBlurBaseExposureMs] /
+  /// [kCursorBlurStampCount], the same constants the preview reads, so
+  /// a slider drag and a re-export produce the same trail.
   void _paintCursor(
     Canvas canvas, {
     required Duration position,
@@ -1233,12 +1232,12 @@ class FrameCompositor {
       currentScale: currentCamera.scale,
       focalAt: (t) => cameraSampleAt(t).focal,
       scaleAt: (t) => cameraSampleAt(t).scale,
-      // Match production preview (PlaybackScreen): 150 ms base
-      // exposure scaled by the same effectiveCursorBlur the preview
-      // uses. Zero blur → 0 ms → all N stamps land on the current
+      // Shared with production preview (PlaybackScreen/PlaybackCanvas):
+      // same base exposure scaled by the same effectiveCursorBlur, same
+      // stamp count. Zero blur → 0 ms → all N stamps land on the current
       // frame, so the painter degenerates to a single sharp sprite.
-      exposureMs: 150.0 * intensity,
-      sampleCount: 8,
+      exposureMs: kCursorBlurBaseExposureMs * intensity,
+      sampleCount: kCursorBlurStampCount,
       sizeMultiplier: projectState.cursorSize,
       cursorShadow: projectState.cursorShadow,
       style: projectState.cursorStyle,

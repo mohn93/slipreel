@@ -205,6 +205,32 @@ void main() {
       },
     );
 
+    test(
+      'a value-equal republication does not create a phantom undo entry',
+      () {
+        // Regression: history deduped by identical(), so a publish of a
+        // new-but-value-equal state (e.g. replace(current.copyWith()))
+        // landed as a fresh entry — Cmd-Z lit up and visibly did
+        // nothing for one press.
+        fakeAsync((async) {
+          final controller = EditorProjectController();
+          final history = EditorHistoryController(
+            controller: controller,
+            coalesceWindow: const Duration(milliseconds: 100),
+          );
+          history.start();
+
+          controller.replace(controller.current.copyWith());
+          async.elapse(const Duration(milliseconds: 200));
+
+          expect(history.canUndo, isFalse,
+              reason: 'A state equal to the previous history entry must '
+                  'not be pushed as a new undoable atom');
+          history.dispose();
+        });
+      },
+    );
+
     test('undo flushes a pending coalesced change before reverting', () {
       // Scenario: user drags a slider, then immediately Cmd-Z without
       // waiting for the coalesce window to expire. The pending edit

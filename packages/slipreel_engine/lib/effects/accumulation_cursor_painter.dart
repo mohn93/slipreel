@@ -32,6 +32,20 @@ import 'package:slipreel_engine/timeline/edited_time.dart';
 /// painter renders the exact same spring-smoothed cursor that the camera
 /// follows.
 ///
+/// Production sub-frame stamp count for cursor motion blur.
+///
+/// Preview (`PlaybackCanvas.accumulationSampleCount` default) and export
+/// (`FrameCompositor._paintCursor`) MUST both read this constant — they
+/// diverged once (preview 32, export 8) and fast cursor moves shipped
+/// as 8 discrete ghosts instead of the ribbon the user previewed.
+/// `cursor_blur_parity_test.dart` (both packages) pins the wiring.
+const int kCursorBlurStampCount = 32;
+
+/// Production virtual-shutter base exposure in milliseconds. Scaled by
+/// the user's blur intensity at both call sites; same parity contract
+/// as [kCursorBlurStampCount].
+const double kCursorBlurBaseExposureMs = 150.0;
+
 /// This replaces the chord-stretched single sprite ("fake" smear)
 /// produced by [CursorOverlayPainter]'s motion-blur path. Both are
 /// kept in the codebase during the prototype so the playground can

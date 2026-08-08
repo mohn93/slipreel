@@ -21,6 +21,64 @@ Duration _s(int s) => Duration(seconds: s);
 Duration _ms(int ms) => Duration(milliseconds: ms);
 
 void main() {
+  group('editedProgressAtSource', () {
+    // Export progress regression: the numerator counted frames fed to
+    // ffmpeg at SOURCE cadence while the denominator was the EDITED
+    // duration, so any leading trim, mid-timeline gap, or speed != 1
+    // pinned the bar at 100% early. Progress must be the fraction of
+    // the edited output completed at a given source position.
+    test('untrimmed 1x slice: source midpoint -> 0.5', () {
+      final clips = [_slice(cs: 0, ce: 10)];
+      expect(editedProgressAtSource(clips, _s(5)), closeTo(0.5, 1e-9));
+    });
+
+    test('leading trim: pre-trim source time reports 0, not overshoot', () {
+      final clips = [_slice(cs: 0, ce: 30, ts: 10, te: 20)];
+      expect(editedProgressAtSource(clips, _s(5)), 0.0);
+      expect(editedProgressAtSource(clips, _s(10)), 0.0);
+      expect(editedProgressAtSource(clips, _s(15)), closeTo(0.5, 1e-9));
+      expect(editedProgressAtSource(clips, _s(20)), closeTo(1.0, 1e-9));
+    });
+
+    test('2x speed slice: source midpoint is still half the edited output',
+        () {
+      final clips = [_slice(cs: 0, ce: 10, speed: 2.0)];
+      expect(editedProgressAtSource(clips, _s(5)), closeTo(0.5, 1e-9));
+    });
+
+    test('gap between slices: gap frames contribute no progress', () {
+      final clips = [
+        _slice(cs: 0, ce: 30, ts: 0, te: 5),
+        _slice(cs: 0, ce: 30, ts: 10, te: 15),
+      ];
+      expect(editedProgressAtSource(clips, _s(5)), closeTo(0.5, 1e-9));
+      expect(editedProgressAtSource(clips, _s(7)), closeTo(0.5, 1e-9));
+      expect(editedProgressAtSource(clips, _s(10)), closeTo(0.5, 1e-9));
+      expect(editedProgressAtSource(clips, _s(15)), closeTo(1.0, 1e-9));
+    });
+
+    test('past the final trimEnd clamps to 1.0', () {
+      final clips = [_slice(cs: 0, ce: 10)];
+      expect(editedProgressAtSource(clips, _s(25)), 1.0);
+    });
+
+    test('empty clips falls back to source-duration fraction', () {
+      expect(
+        editedProgressAtSource(const [], _s(5), sourceFallbackTotal: _s(10)),
+        closeTo(0.5, 1e-9),
+      );
+    });
+
+    test('no denominator available -> null (indeterminate bar)', () {
+      expect(editedProgressAtSource(const [], _s(5)), isNull);
+      expect(
+        editedProgressAtSource(const [], _s(5),
+            sourceFallbackTotal: Duration.zero),
+        isNull,
+      );
+    });
+  });
+
   group('totalEditedDuration', () {
     test('empty -> zero', () {
       expect(totalEditedDuration(const []), Duration.zero);

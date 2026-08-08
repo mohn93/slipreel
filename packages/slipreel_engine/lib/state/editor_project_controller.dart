@@ -58,57 +58,96 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   }
 
   // ---- single-field mutators -------------------------------------------
+  //
+  // Each guards against value-equal input so `setX(currentX)` is a
+  // true no-op: no publish, no full-screen rebuild, no debounced disk
+  // save, no undo entry. The slice mutators below follow the same
+  // invariant.
 
-  void setCursorSize(double value) =>
-      state = state.copyWith(cursorSize: value);
+  void setCursorSize(double value) {
+    if (value == state.cursorSize) return;
+    state = state.copyWith(cursorSize: value);
+  }
 
-  void setCursorStyle(CursorStyle value) =>
-      state = state.copyWith(cursorStyle: value);
+  void setCursorStyle(CursorStyle value) {
+    if (value == state.cursorStyle) return;
+    state = state.copyWith(cursorStyle: value);
+  }
 
-  void setCursorClickEffect(CursorClickEffect value) =>
-      state = state.copyWith(cursorClickEffect: value);
+  void setCursorClickEffect(CursorClickEffect value) {
+    if (value == state.cursorClickEffect) return;
+    state = state.copyWith(cursorClickEffect: value);
+  }
 
-  void setHideCursorOverlay(bool value) =>
-      state = state.copyWith(hideCursorOverlay: value);
+  void setHideCursorOverlay(bool value) {
+    if (value == state.hideCursorOverlay) return;
+    state = state.copyWith(hideCursorOverlay: value);
+  }
 
-  void setMotionBlur(double value) =>
-      state = state.copyWith(motionBlur: value);
+  void setMotionBlur(double value) {
+    if (value == state.motionBlur) return;
+    state = state.copyWith(motionBlur: value);
+  }
 
-  void setCursorMovementBlur(double value) =>
-      state = state.copyWith(cursorMovementBlur: value);
+  void setCursorMovementBlur(double value) {
+    if (value == state.cursorMovementBlur) return;
+    state = state.copyWith(cursorMovementBlur: value);
+  }
 
-  void setScreenMovementBlur(double value) =>
-      state = state.copyWith(screenMovementBlur: value);
+  void setScreenMovementBlur(double value) {
+    if (value == state.screenMovementBlur) return;
+    state = state.copyWith(screenMovementBlur: value);
+  }
 
-  void setScreenZoomBlur(double value) =>
-      state = state.copyWith(screenZoomBlur: value);
+  void setScreenZoomBlur(double value) {
+    if (value == state.screenZoomBlur) return;
+    state = state.copyWith(screenZoomBlur: value);
+  }
 
-  void setCursorShadow(double value) =>
-      state = state.copyWith(cursorShadow: value);
+  void setCursorShadow(double value) {
+    if (value == state.cursorShadow) return;
+    state = state.copyWith(cursorShadow: value);
+  }
 
-  void setClickSpring(ClickSpring value) =>
-      state = state.copyWith(clickSpring: value);
+  void setClickSpring(ClickSpring value) {
+    if (value == state.clickSpring) return;
+    state = state.copyWith(clickSpring: value);
+  }
 
-  void setCursorDelay(Duration value) =>
-      state = state.copyWith(cursorDelay: value);
+  void setCursorDelay(Duration value) {
+    if (value == state.cursorDelay) return;
+    state = state.copyWith(cursorDelay: value);
+  }
 
-  void setCursorPostProcess(CursorPostProcess value) =>
-      state = state.copyWith(cursorPostProcess: value);
+  void setCursorPostProcess(CursorPostProcess value) {
+    if (value == state.cursorPostProcess) return;
+    state = state.copyWith(cursorPostProcess: value);
+  }
 
-  void setScreenAnimationConfig(ScreenAnimationConfig value) =>
-      state = state.copyWith(screenAnimationConfig: value);
+  void setScreenAnimationConfig(ScreenAnimationConfig value) {
+    if (value == state.screenAnimationConfig) return;
+    state = state.copyWith(screenAnimationConfig: value);
+  }
 
-  void setCursorAnimationConfig(CursorAnimationConfig value) =>
-      state = state.copyWith(cursorAnimationConfig: value);
+  void setCursorAnimationConfig(CursorAnimationConfig value) {
+    if (value == state.cursorAnimationConfig) return;
+    state = state.copyWith(cursorAnimationConfig: value);
+  }
 
-  void setWindowFrame(WindowFrame value) =>
-      state = state.copyWith(windowFrame: value);
+  void setWindowFrame(WindowFrame value) {
+    if (value == state.windowFrame) return;
+    state = state.copyWith(windowFrame: value);
+  }
 
-  void setOutputAspect(OutputAspect value) =>
-      state = state.copyWith(outputAspect: value);
+  void setOutputAspect(OutputAspect value) {
+    if (value == state.outputAspect) return;
+    state = state.copyWith(outputAspect: value);
+  }
 
-  void setKeystrokeOverlay(KeystrokeOverlaySettings value) =>
-      state = state.copyWith(keystrokeOverlay: value);
+  void setKeystrokeOverlay(KeystrokeOverlaySettings value) {
+    if (value == state.keystrokeOverlay) return;
+    state = state.copyWith(keystrokeOverlay: value);
+  }
 
   /// Set the timeline horizontal scale. Clamped to [1.0, 8.0]. The
   /// optional [anchorTime] is a one-shot hint stored on the next
@@ -273,11 +312,15 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
 
   // ---- Captions ---------------------------------------------------------
 
-  void setCaptionStyle(CaptionStyle value) =>
-      state = state.copyWith(captionStyle: value);
+  void setCaptionStyle(CaptionStyle value) {
+    if (value == state.captionStyle) return;
+    state = state.copyWith(captionStyle: value);
+  }
 
-  void setCaptionSource(CaptionAudioSource source) =>
-      state = state.copyWith(captionSource: source);
+  void setCaptionSource(CaptionAudioSource source) {
+    if (source == state.captionSource) return;
+    state = state.copyWith(captionSource: source);
+  }
 
   void replaceCaptionSegments(List<CaptionSegment> segments) =>
       state = state.copyWith(captionSegments: List.unmodifiable(segments));
