@@ -220,6 +220,17 @@ class SceneMotionBlurPainter extends CustomPainter {
   }
 }
 
+// One shader reused across paints (the documented Flutter pattern:
+// create once, mutate uniforms per frame). fragmentShader() allocates
+// GPU-side state; creating one per composed/previewed frame was pure
+// churn. Safe because every uniform and the sampler are re-set on every
+// call below — no state carries over (pinned by the shader-reuse test
+// in frame_compositor_test.dart) — and the display list snapshots
+// uniform data at record time, so a pending raster never observes the
+// next frame's mutation.
+ui.FragmentShader? _cachedShader;
+ui.FragmentProgram? _cachedShaderProgram;
+
 void paintSceneMotionBlur({
   required Canvas canvas,
   required ui.Image image,
@@ -232,7 +243,15 @@ void paintSceneMotionBlur({
   required double devicePixelRatio,
 }) {
   final dpr = devicePixelRatio <= 0 ? 1.0 : devicePixelRatio;
-  final shader = program.fragmentShader()
+  ui.FragmentShader shader;
+  if (_cachedShaderProgram == program && _cachedShader != null) {
+    shader = _cachedShader!;
+  } else {
+    shader = program.fragmentShader();
+    _cachedShader = shader;
+    _cachedShaderProgram = program;
+  }
+  shader
     ..setImageSampler(0, image)
     ..setFloat(0, size.width * dpr)
     ..setFloat(1, size.height * dpr)

@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:slipreel_engine/captions/caption_transcriber.dart'
+    show CaptionCancelledException;
 import 'package:slipreel_engine/export/audio_streams.dart';
+import 'package:slipreel_engine/export/export_cancellation.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/export/ffmpeg_resolver.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
@@ -95,11 +99,18 @@ int captionAudioOffsetMicros(
 class CaptionAudioExtractor {
   const CaptionAudioExtractor();
 
+  /// [cancelToken]: firing it SIGKILLs the ffmpeg subprocess and throws
+  /// [CaptionCancelledException] (unlike ordinary failures, which return
+  /// null) so callers can tell "user cancelled" from "no audio".
   Future<String?> extract(
     String videoPath,
     CaptionAudioSource source, {
     String? outPath,
+    CancelToken? cancelToken,
   }) async {
+    if (cancelToken?.isCancelled ?? false) {
+      throw const CaptionCancelledException();
+    }
     try {
       final probe = await ffmpegProbe(path: videoPath);
       final streamCount = probe.audioStreams.length;
@@ -110,13 +121,23 @@ class CaptionAudioExtractor {
             Directory.systemTemp.createTempSync('slipreel_caption_').path,
             'caption_audio.wav',
           );
-      final result = await Process.run(
+      final process = await Process.start(
         Ffmpeg.resolve(),
         buildCaptionAudioArgs(videoPath, source, streamCount, out),
       );
-      if (result.exitCode != 0) return null;
+      cancelToken?.whenCancelled
+          .then((_) => process.kill(ProcessSignal.sigkill));
+      unawaited(process.stdout.drain<void>());
+      unawaited(process.stderr.drain<void>());
+      final exitCode = await process.exitCode;
+      if (cancelToken?.isCancelled ?? false) {
+        throw const CaptionCancelledException();
+      }
+      if (exitCode != 0) return null;
       if (!File(out).existsSync()) return null;
       return out;
+    } on CaptionCancelledException {
+      rethrow;
     } catch (_) {
       return null;
     }

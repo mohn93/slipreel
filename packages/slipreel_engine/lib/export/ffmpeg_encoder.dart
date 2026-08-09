@@ -134,6 +134,14 @@ class FfmpegEncoder {
       '-i', '-',
     ];
 
+    // libx264 only runs when the HW encoder is unavailable — exactly when
+    // speed matters most. x264's default `medium` preset is several times
+    // slower than `veryfast` for negligible quality difference at our
+    // bitrates. (VideoToolbox has no -preset; passing one errors.)
+    final codecTuning = <String>[
+      if (codec == 'libx264') ...['-preset', 'veryfast'],
+    ];
+
     if (useGraph) {
       if (hasAudio) {
         args.addAll(['-i', audioSourcePath!]);
@@ -145,6 +153,7 @@ class FfmpegEncoder {
       }
       args.addAll(
           ['-c:v', codec, '-b:v', '${bitrateKbps}k', '-pix_fmt', 'yuv420p']);
+      args.addAll(codecTuning);
       args.addAll(['-r', '$fps']);
       if (hasAudio) {
         args.addAll(['-c:a', 'aac', '-b:a', '${audioBitrateKbps}k']);
@@ -163,11 +172,15 @@ class FfmpegEncoder {
       ];
       args.addAll(
           ['-c:v', codec, '-b:v', '${bitrateKbps}k', '-pix_fmt', 'yuv420p']);
+      args.addAll(codecTuning);
       if (videoFilters.isNotEmpty) {
         args.addAll(['-vf', videoFilters.join(',')]);
       }
       args.addAll(['-r', '$fps']);
     }
+    // faststart relocates the moov atom to the file head at finalize so
+    // the MP4 starts playing before a full download (shareable links).
+    args.addAll(['-movflags', '+faststart']);
     args.add(outputPath);
     return args;
   }

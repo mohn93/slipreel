@@ -51,7 +51,6 @@ import 'ui/bar/wake_modal.dart';
 import 'ui/screens/onboarding/onboarding_screen.dart';
 import 'ui/screens/playback_screen.dart';
 import 'ui/widgets/recovery_modal.dart';
-import 'ui/widgets/scene_blur_overlay.dart';
 import 'ui/widgets/zoom/playback_canvas.dart';
 import 'update/updater_backend.dart';
 import 'update/updater_service.dart';
@@ -256,18 +255,6 @@ Future<void> main() async {
 /// state without needing a separate getter. Add new toggles here as
 /// the debugging surface grows.
 void _registerSlipreelDebugExtensions({TipsController? tipsController}) {
-  developer.registerExtension(
-    'ext.slipreel.setSceneBlurTrace',
-    (method, params) async {
-      final raw = params['enabled'];
-      final enabled = raw == 'true' || raw == '1';
-      sceneBlurTraceEnabled = enabled;
-      return developer.ServiceExtensionResponse.result(
-        '{"enabled": $enabled}',
-      );
-    },
-  );
-
   // Playback control for the active editor. Lets the agent drive the
   // transport (play / pause / seek) and read position without hunting
   // for the on-screen buttons. `seek` takes `ms`.

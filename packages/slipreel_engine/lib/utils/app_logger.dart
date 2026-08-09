@@ -5,7 +5,6 @@ enum LogZone {
   platform('Platform'),
   videoEncoder('VideoEncoder'),
   audioEncoder('AudioEncoder'),
-  cursorRenderer('CursorRenderer'),
   recording('Recording'),
   ui('UI'),
   isolate('Isolate'),
@@ -107,7 +106,6 @@ class AppLogger {
   static Logger get platform => zone(LogZone.platform);
   static Logger get videoEncoder => zone(LogZone.videoEncoder);
   static Logger get audioEncoder => zone(LogZone.audioEncoder);
-  static Logger get cursorRenderer => zone(LogZone.cursorRenderer);
   static Logger get recording => zone(LogZone.recording);
   static Logger get ui => zone(LogZone.ui);
   static Logger get isolate => zone(LogZone.isolate);

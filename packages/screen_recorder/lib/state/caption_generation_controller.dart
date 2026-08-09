@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:slipreel_engine/captions/caption_audio_extractor.dart';
 import 'package:slipreel_engine/captions/caption_transcriber.dart';
+import 'package:slipreel_engine/export/export_cancellation.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
@@ -40,13 +41,19 @@ class CaptionError extends CaptionGenerationStatus {
   final String message;
 }
 
+/// The user cancelled the run (or the tab was disposed mid-run). The
+/// whisper/ffmpeg subprocess was killed; nothing was written.
+class CaptionCancelled extends CaptionGenerationStatus {
+  const CaptionCancelled();
+}
+
 typedef EnsureModel = Future<String> Function(
     void Function(double progress)? onProgress);
 typedef ExtractAudio = Future<String?> Function(
-    String videoPath, CaptionAudioSource source);
+    String videoPath, CaptionAudioSource source, CancelToken? cancelToken);
 typedef Transcribe = Future<List<CaptionSegment>> Function(
     String audioPath, String modelPath,
-    void Function(double progress)? onProgress);
+    void Function(double progress)? onProgress, CancelToken? cancelToken);
 
 /// Resolves the microsecond offset to add to whisper timestamps so they land on
 /// movie-time (the recording's audio leading-gap). See `captionAudioOffsetMicros`.
@@ -76,26 +83,51 @@ class CaptionGenerationController extends StateNotifier<CaptionGenerationStatus>
   final Transcribe _transcribe;
   final AudioOffset _audioOffset;
 
+  /// Token for the in-flight [generate] run; fired by [cancel]/[dispose].
+  CancelToken? _activeCancel;
+
+  /// Cancels the in-flight generation: the extractor/transcriber
+  /// subprocess is killed and the run lands in [CaptionCancelled].
+  /// No-op when idle.
+  void cancel() => _activeCancel?.cancel();
+
+  @override
+  void dispose() {
+    // The Captions tab's provider is autoDispose: closing the tab must
+    // kill a running whisper (minutes of pinned CPU on long recordings)
+    // instead of orphaning it.
+    _activeCancel?.cancel();
+    super.dispose();
+  }
+
+  /// Sets [state] only while this notifier is still mounted — a
+  /// dispose-triggered cancel resolves after dispose, when setting
+  /// state would throw.
+  void _setState(CaptionGenerationStatus next) {
+    if (mounted) state = next;
+  }
+
   Future<void> generate({
     required String videoPath,
     required CaptionAudioSource source,
   }) async {
+    final cancelToken = _activeCancel = CancelToken();
     String? audio;
     try {
-      state = const CaptionDownloadingModel(0);
+      _setState(const CaptionDownloadingModel(0));
       final model =
-          await _ensureModel((p) => state = CaptionDownloadingModel(p));
+          await _ensureModel((p) => _setState(CaptionDownloadingModel(p)));
 
-      state = const CaptionExtracting();
-      audio = await _extractAudio(videoPath, source);
+      _setState(const CaptionExtracting());
+      audio = await _extractAudio(videoPath, source, cancelToken);
       if (audio == null) {
-        state = const CaptionError('No audio could be extracted from this '
-            'recording.');
+        _setState(const CaptionError('No audio could be extracted from this '
+            'recording.'));
         return;
       }
 
-      state = const CaptionTranscribing();
-      final segments = await _transcribe(audio, model, null);
+      _setState(const CaptionTranscribing());
+      final segments = await _transcribe(audio, model, null, cancelToken);
       // Map whisper's WAV-relative times onto movie-time by re-adding the
       // recording's audio leading-gap, so captions line up with the audio in
       // both the preview and the export.
@@ -107,10 +139,13 @@ class CaptionGenerationController extends StateNotifier<CaptionGenerationStatus>
       // Auto-enable captions so the user immediately sees the result.
       _editor.setCaptionStyle(
           _editor.state.captionStyle.copyWith(enabled: true));
-      state = CaptionDone(segments.length);
+      _setState(CaptionDone(segments.length));
+    } on CaptionCancelledException {
+      _setState(const CaptionCancelled());
     } catch (e) {
-      state = CaptionError(e.toString());
+      _setState(CaptionError(e.toString()));
     } finally {
+      _activeCancel = null;
       _cleanupCaptionTemp(audio);
     }
   }

@@ -122,4 +122,37 @@ void main() {
       expect(args.join(' '), contains('-b:a 128k'));
     });
   });
+
+  group('codec tuning flags', () {
+    FfmpegEncoder enc() => FfmpegEncoder(
+          outputPath: '/tmp/o.mp4',
+          width: 100,
+          height: 100,
+          fps: 30,
+          bitrateKbps: 2000,
+        );
+
+    test('libx264 fallback uses -preset veryfast', () {
+      // Without an explicit preset x264 defaults to `medium`, which is
+      // several times slower — and the software path only runs when the
+      // HW encoder is unavailable, i.e. exactly when speed matters most.
+      final args = enc().argsForTesting('libx264').join(' ');
+      expect(args, contains('-preset veryfast'));
+    });
+
+    test('h264_videotoolbox gets no -preset (unsupported by the encoder)',
+        () {
+      final args = enc().argsForTesting('h264_videotoolbox').join(' ');
+      expect(args, isNot(contains('-preset')));
+    });
+
+    test('both codecs write faststart MP4s (moov atom up front)', () {
+      for (final codec in ['libx264', 'h264_videotoolbox']) {
+        final args = enc().argsForTesting(codec).join(' ');
+        expect(args, contains('-movflags +faststart'),
+            reason: '$codec output should start playing before a full '
+                'download (shareable-link streaming)');
+      }
+    });
+  });
 }

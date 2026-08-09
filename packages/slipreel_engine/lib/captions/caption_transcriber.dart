@@ -1,9 +1,21 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:slipreel_engine/captions/whisper_resolver.dart';
+import 'package:slipreel_engine/export/export_cancellation.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
+
+/// Thrown by the caption toolchain when its [CancelToken] fires — either
+/// before a stage starts or while its subprocess is running (the process
+/// is SIGKILLed). Callers surface this as "cancelled", not an error.
+class CaptionCancelledException implements Exception {
+  const CaptionCancelledException();
+
+  @override
+  String toString() => 'CaptionCancelledException';
+}
 
 /// Parses whisper.cpp `-oj` (output-json) text into caption segments.
 ///
@@ -65,12 +77,20 @@ List<CaptionSegment> shiftCaptionSegments(
 class CaptionTranscriber {
   const CaptionTranscriber();
 
+  /// [cancelToken]: transcription of a long recording runs for minutes;
+  /// firing the token SIGKILLs the whisper subprocess and throws
+  /// [CaptionCancelledException] instead of leaving an orphan pinning a
+  /// CPU core (the old Process.run was unkillable).
   Future<List<CaptionSegment>> transcribe({
     required String audioPath,
     required String modelPath,
     String language = 'auto',
     String? outBase,
+    CancelToken? cancelToken,
   }) async {
+    if (cancelToken?.isCancelled ?? false) {
+      throw const CaptionCancelledException();
+    }
     final base = outBase ??
         p.join(p.dirname(audioPath), 'caption_transcript');
     final String bin;
@@ -88,10 +108,19 @@ class CaptionTranscriber {
       '-of', base,
       '--no-prints',
     ];
-    final result = await Process.run(bin, args);
-    if (result.exitCode != 0) {
-      throw Exception('whisper-cli exited ${result.exitCode}: '
-          '${(result.stderr as String?)?.trim() ?? ''}');
+    final process = await Process.start(bin, args);
+    cancelToken?.whenCancelled
+        .then((_) => process.kill(ProcessSignal.sigkill));
+    final stderrText =
+        process.stderr.transform(const SystemEncoding().decoder).join();
+    unawaited(process.stdout.drain<void>());
+    final exitCode = await process.exitCode;
+    if (cancelToken?.isCancelled ?? false) {
+      throw const CaptionCancelledException();
+    }
+    if (exitCode != 0) {
+      throw Exception(
+          'whisper-cli exited $exitCode: ${(await stderrText).trim()}');
     }
     final jsonFile = File('$base.json');
     if (!jsonFile.existsSync()) {

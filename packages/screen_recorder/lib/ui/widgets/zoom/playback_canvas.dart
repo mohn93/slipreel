@@ -531,8 +531,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
   // the most recent build still references the old _capturedScene; disposing it
   // synchronously can paint a disposed image if a repaint fires before the next
   // build swaps the painter. Queue here, flush at the START of build so the old
-  // image is freed only once its painter is about to be replaced. Mirrors
-  // SceneBlurOverlay's _disposeQueue.
+  // image is freed only once its painter is about to be replaced.
   final List<ui.Image> _sceneDisposeQueue = <ui.Image>[];
   // Locked playhead during pause to filter smoothPlayhead's per-tick
   // micro-jitter out of the scene-blur signal. See the comment in

@@ -745,8 +745,19 @@ void main() {
         }
       }
 
+      // Both sequences flow through the module-level cached
+      // FragmentShader (reused across paints and compositors). Byte
+      // determinism here doubles as the reuse pin: every uniform and the
+      // sampler must be re-set per call, so a frame's bytes cannot
+      // depend on what the shader painted previously. The second
+      // blurred run reproduces the first byte-for-byte even though the
+      // shader painted different (crisp-path skipped) frames in
+      // between.
       final blurred = await composeSequence(motionBlur: 1.0);
       final crisp = await composeSequence(motionBlur: 0.0);
+      final blurredAgain = await composeSequence(motionBlur: 1.0);
+      expect(blurredAgain, equals(blurred),
+          reason: 'reused shader must not carry state between frames');
       expect(blurred.length, crisp.length);
       var differ = false;
       for (var i = 0; i < blurred.length && !differ; i++) {

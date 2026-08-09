@@ -23,11 +23,12 @@ final captionGenerationControllerProvider = StateNotifierProvider.autoDispose<
   return CaptionGenerationController(
     editor: editor,
     ensureModel: (onP) => store.ensureModel(onProgress: onP),
-    extractAudio: (video, source) => extractor.extract(video, source),
+    extractAudio: (video, source, cancelToken) =>
+        extractor.extract(video, source, cancelToken: cancelToken),
     // `onP` is intentionally dropped: CaptionTranscriber doesn't expose
     // transcription progress yet.
-    transcribe: (audio, model, onP) =>
-        transcriber.transcribe(audioPath: audio, modelPath: model),
+    transcribe: (audio, model, onP, cancelToken) => transcriber.transcribe(
+        audioPath: audio, modelPath: model, cancelToken: cancelToken),
     // Probe the chosen source's audio start_time so whisper's WAV-relative
     // times get shifted onto movie-time (the recording's audio leading-gap).
     audioOffset: (video, source) async {
@@ -90,7 +91,8 @@ class _CaptionsTabState extends ConsumerState<CaptionsTab> {
                     : sources.last;
             final busy = status is! CaptionIdle &&
                 status is! CaptionDone &&
-                status is! CaptionError;
+                status is! CaptionError &&
+                status is! CaptionCancelled;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -102,19 +104,29 @@ class _CaptionsTabState extends ConsumerState<CaptionsTab> {
                     onSelected: (s) => setState(() => _selected = s),
                   ),
                 const SizedBox(height: 8),
+                // While a run is in flight the button becomes the cancel
+                // affordance — whisper on a long recording runs for
+                // minutes and used to be unkillable.
                 FilledButton.icon(
                   onPressed: busy
-                      ? null
+                      ? () => ref
+                          .read(captionGenerationControllerProvider.notifier)
+                          .cancel()
                       : () => ref
                           .read(captionGenerationControllerProvider.notifier)
                           .generate(
                             videoPath: widget.videoPath,
                             source: selected,
                           ),
-                  icon: const Icon(Icons.closed_caption, size: 18),
-                  label: Text(hasCaptions
-                      ? 'Regenerate captions'
-                      : 'Generate captions'),
+                  icon: Icon(
+                    busy ? Icons.stop : Icons.closed_caption,
+                    size: 18,
+                  ),
+                  label: Text(busy
+                      ? 'Cancel'
+                      : hasCaptions
+                          ? 'Regenerate captions'
+                          : 'Generate captions'),
                 ),
                 const SizedBox(height: 8),
                 _StatusLine(status: status),
@@ -151,6 +163,7 @@ class _StatusLine extends StatelessWidget {
       CaptionTranscribing() => ('Transcribing…', false),
       CaptionDone(:final count) => ('Done — $count segments.', false),
       CaptionError(:final message) => (message, true),
+      CaptionCancelled() => ('Cancelled.', false),
     };
     if (text.isEmpty) return const SizedBox.shrink();
     return Padding(

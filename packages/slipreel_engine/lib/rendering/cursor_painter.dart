@@ -8,11 +8,11 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 
 /// Inputs for [paintCursorComposed] — every value the unified
 /// ripple+glyph composition needs. Pulled out as a value class so the
-/// three current cursor painters (export `CursorRenderer`, preview
-/// `CursorOverlayPainter`, accumulation `AccumulationCursorPainter`)
-/// can build it once per frame and route it to the same code path,
-/// rather than each maintaining its own `paintCursorRipple` +
-/// `paintCursorGlyphWithPulse` sequence and silently drifting.
+/// cursor painters (playground `CursorOverlayPainter`, production
+/// `AccumulationCursorPainter`) can build it once per frame and route
+/// it to the same code path, rather than each maintaining its own
+/// `paintCursorRipple` + `paintCursorGlyphWithPulse` sequence and
+/// silently drifting.
 ///
 /// The two-position split is load-bearing: the ripple anchors at
 /// [clickPosition] (where the click actually happened) while the glyph

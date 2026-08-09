@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:slipreel_engine/captions/caption_transcriber.dart'
+    show CaptionCancelledException;
 import 'package:slipreel_engine/models/caption_segment.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:screen_recorder/state/caption_generation_controller.dart';
@@ -21,9 +23,9 @@ void main() {
           onP?.call(0.5);
           return ensureModel == null ? '/model.bin' : await ensureModel();
         },
-        extractAudio: (video, source) async =>
+        extractAudio: (video, source, token) async =>
             extract == null ? '/audio.wav' : await extract(),
-        transcribe: (audio, model, onP) async => transcribe == null
+        transcribe: (audio, model, onP, token) async => transcribe == null
             ? const [
                 CaptionSegment(
                     id: 's', startMicros: 0, endMicros: 1000, text: 'hi'),
@@ -123,8 +125,8 @@ void main() {
     final c = CaptionGenerationController(
       editor: editor,
       ensureModel: (_) async => '/m.bin',
-      extractAudio: (_, __) async => '/a.wav',
-      transcribe: (_, __, ___) async => const [
+      extractAudio: (_, __, ___) async => '/a.wav',
+      transcribe: (_, __, ___, ____) async => const [
         CaptionSegment(id: 's', startMicros: 0, endMicros: 1000, text: 'hi'),
       ],
       audioOffset: (video, source) async {
@@ -136,6 +138,57 @@ void main() {
     await c.generate(videoPath: '/clip.mov', source: CaptionAudioSource.mixed);
     expect(seenVideo, '/clip.mov');
     expect(seenSource, CaptionAudioSource.mixed);
+  });
+
+  test('cancel() during transcription lands in CaptionCancelled and still '
+      'cleans the temp dir', () async {
+    // whisper-cli on a long recording runs for minutes; before
+    // cancellation support the process was unkillable (Process.run) and
+    // the UI had no way out of CaptionTranscribing.
+    final tempDir = Directory.systemTemp.createTempSync('slipreel_caption_');
+    final wav = File('${tempDir.path}/caption_audio.wav')
+      ..writeAsBytesSync([0, 1, 2]);
+
+    final c = CaptionGenerationController(
+      editor: editor,
+      ensureModel: (_) async => '/m.bin',
+      extractAudio: (_, __, ___) async => wav.path,
+      transcribe: (_, __, ___, token) async {
+        await token!.whenCancelled;
+        throw const CaptionCancelledException();
+      },
+      audioOffset: (_, __) async => 0,
+    );
+    final run = c.generate(videoPath: '/v.mp4', source: CaptionAudioSource.mic);
+    c.cancel();
+    await run;
+
+    expect(c.state, isA<CaptionCancelled>());
+    expect(tempDir.existsSync(), isFalse,
+        reason: 'a cancelled run must not leak its temp dir');
+  });
+
+  test('dispose() cancels the in-flight token so the process dies with the '
+      'tab', () async {
+    var sawCancel = false;
+    final c = CaptionGenerationController(
+      editor: editor,
+      ensureModel: (_) async => '/m.bin',
+      extractAudio: (_, __, ___) async => '/a.wav',
+      transcribe: (_, __, ___, token) async {
+        await token!.whenCancelled;
+        sawCancel = true;
+        throw const CaptionCancelledException();
+      },
+      audioOffset: (_, __) async => 0,
+    );
+    final run = c.generate(videoPath: '/v.mp4', source: CaptionAudioSource.mic);
+    await Future<void>.delayed(Duration.zero);
+    c.dispose();
+    await run;
+    expect(sawCancel, isTrue,
+        reason: 'closing the Captions tab (autoDispose) must kill the '
+            'running whisper/ffmpeg instead of orphaning it');
   });
 
   test('extractor returning null → CaptionError', () async {

@@ -13,8 +13,8 @@ import 'package:screen_recorder/ui/widgets/inspector/tabs/captions_tab.dart';
 CaptionGenerationController _fakeController() => CaptionGenerationController(
       editor: EditorProjectController(),
       ensureModel: (_) async => '/fake/model.bin',
-      extractAudio: (_, __) async => '/fake/audio.wav',
-      transcribe: (_, __, ___) async => const [],
+      extractAudio: (_, __, ___) async => '/fake/audio.wav',
+      transcribe: (_, __, ___, ____) async => const [],
       audioOffset: (_, __) async => 0,
     );
 
