@@ -111,46 +111,73 @@ EditorProjectState _benchState() {
   );
 }
 
+Future<void> _runBench({
+  required String label,
+  required ExportResolution resolution,
+  required EditorProjectState state,
+}) async {
+  final tmp = Directory.systemTemp.createTempSync('export_bench');
+  try {
+    final srcPath = await _synthesizeSource(tmp);
+    final outPath = '${tmp.path}/bench_out.mp4';
+
+    final summary = await ExportPipeline(
+      sourcePath: srcPath,
+      outputPath: outPath,
+      sourceMetadata: RecordingMetadata(
+        isPureSource: true,
+        recordedAt: DateTime.now(),
+        widthPx: _srcWidth,
+        heightPx: _srcHeight,
+        fps: _srcFps,
+      ),
+      cursorRecording: _sweepingCursor(),
+      projectState: state,
+      settings: ExportSettings(
+        format: ExportFormat.mp4,
+        resolution: resolution,
+        compression: CompressionTier.web,
+        frameRate: 30,
+        destination: ExportDestination.file,
+      ),
+    ).run();
+
+    // The perf summary line is the benchmark output.
+    // ignore: avoid_print
+    print('BENCH[$label] ${summary.format()}');
+    expect(File(outPath).existsSync(), isTrue);
+  } finally {
+    tmp.deleteSync(recursive: true);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
     'export-benchmark',
-    () async {
-      final tmp = Directory.systemTemp.createTempSync('export_bench');
-      try {
-        final srcPath = await _synthesizeSource(tmp);
-        final outPath = '${tmp.path}/bench_out.mp4';
+    () => _runBench(
+      label: 'trimmed-1080p',
+      resolution: ExportResolution.r1080p,
+      state: _benchState(),
+    ),
+    skip: 'Benchmark — run explicitly with --run-skipped',
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
 
-        final summary = await ExportPipeline(
-          sourcePath: srcPath,
-          outputPath: outPath,
-          sourceMetadata: RecordingMetadata(
-            isPureSource: true,
-            recordedAt: DateTime.now(),
-            widthPx: _srcWidth,
-            heightPx: _srcHeight,
-            fps: _srcFps,
-          ),
-          cursorRecording: _sweepingCursor(),
-          projectState: _benchState(),
-          settings: const ExportSettings(
-            format: ExportFormat.mp4,
-            resolution: ExportResolution.r1080p,
-            compression: CompressionTier.web,
-            frameRate: 30,
-            destination: ExportDestination.file,
-          ),
-        ).run();
-
-        // The perf summary line is the benchmark output.
-        // ignore: avoid_print
-        print('BENCH ${summary.format()}');
-        expect(File(outPath).existsSync(), isTrue);
-      } finally {
-        tmp.deleteSync(recursive: true);
-      }
-    },
+  // Downscale case: the 1408×848 canvas exported at 720p renders each
+  // frame at ~1196×720 (FrameCompositor.renderSize) instead of canvas
+  // size + swscale. No trim, so the slice-skip path stays cold and the
+  // delta isolates output-resolution rendering.
+  test(
+    'export-benchmark-downscale',
+    () => _runBench(
+      label: 'full-720p',
+      resolution: ExportResolution.r720p,
+      state: _benchState().copyWith(
+        timeline: _benchState().timeline.copyWith(clips: const []),
+      ),
+    ),
     skip: 'Benchmark — run explicitly with --run-skipped',
     timeout: const Timeout(Duration(minutes: 5)),
   );

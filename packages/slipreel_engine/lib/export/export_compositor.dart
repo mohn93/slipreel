@@ -14,6 +14,11 @@ abstract class ExportCompositor {
   /// Output canvas size — see [FrameCompositor.totalSize].
   Size get totalSize;
 
+  /// Actual pixel size of the buffers [compose] returns — see
+  /// [FrameCompositor.renderSize]. Equals [totalSize] unless the
+  /// compositor is downscale-rendering to the export resolution.
+  Size get renderSize;
+
   /// Render one frame. Implementations must accept calls in
   /// monotonically increasing [position] order; controllers inside
   /// the underlying [FrameCompositor] (cursor smoother, focal tween)
@@ -22,6 +27,13 @@ abstract class ExportCompositor {
     required Uint8List bgra,
     required Duration position,
   });
+
+  /// Advance the compositor's cross-frame state for [position] WITHOUT
+  /// rendering. Used for source frames in trimmed-away gaps whose pixels
+  /// ffmpeg drops: the pipeline feeds a blank placeholder instead, but the
+  /// stateful controllers must still see the frame or every kept frame
+  /// after the gap diverges. Same monotonic-order contract as [compose].
+  void advance(Duration position);
 
   /// Release any background resources (isolate, ports, picture
   /// recorders). Idempotent — safe to call from a `finally` block.
@@ -39,11 +51,17 @@ class InProcessExportCompositor implements ExportCompositor {
   Size get totalSize => _delegate.totalSize;
 
   @override
+  Size get renderSize => _delegate.renderSize;
+
+  @override
   Future<Uint8List> compose({
     required Uint8List bgra,
     required Duration position,
   }) =>
       _delegate.compose(videoFrameBgra: bgra, position: position);
+
+  @override
+  void advance(Duration position) => _delegate.advanceScenePass(position);
 
   @override
   Future<void> dispose() async {

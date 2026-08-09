@@ -88,6 +88,32 @@ double? editedProgressAtSource(
   return (done.inMicroseconds / total.inMicroseconds).clamp(0.0, 1.0);
 }
 
+/// Whether the source frame at [sourcePosition] can appear in the exported
+/// output — i.e. it lies inside (or within [margin] of) some slice's
+/// `[trimStart, trimEnd]` window. Frames outside every window are dropped by
+/// ffmpeg's per-slice `trim=` nodes, so the export pipeline substitutes a
+/// blank buffer for them instead of paying full composition.
+///
+/// [margin] absorbs frame-boundary rounding between the pipeline's
+/// index/fps timestamps and the filter graph's fractional trim seconds:
+/// blanking a frame ffmpeg unexpectedly keeps would flash black in the
+/// output, so boundary frames within one frame period stay fully composed.
+/// An empty [clips] list (no slice data) keeps every frame.
+bool sourceFrameContributes(
+  List<ClipSlice> clips,
+  Duration sourcePosition, {
+  required Duration margin,
+}) {
+  if (clips.isEmpty) return true;
+  for (final c in clips) {
+    if (sourcePosition >= c.trimStart - margin &&
+        sourcePosition <= c.trimEnd + margin) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Maps a wall/output-time lookback from [position] onto source time.
 /// Traverses contiguous slices using each slice's speed and stops at a real
 /// source discontinuity, so temporal effects never smear across a hard cut.

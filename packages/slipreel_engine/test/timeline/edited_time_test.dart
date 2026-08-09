@@ -282,4 +282,79 @@ void main() {
       ));
     });
   });
+
+  group('sourceFrameContributes', () {
+    // Slice-aware export skip: a source frame only needs full composition
+    // when ffmpeg's per-slice trim can keep it. The margin absorbs
+    // frame-boundary rounding between our index/fps timestamps and the
+    // filter graph's fractional trim seconds — a blanked frame that ffmpeg
+    // unexpectedly kept would flash black in the output.
+    final margin = _ms(40); // one frame period at 25fps
+
+    test('empty clip list: every frame contributes', () {
+      expect(sourceFrameContributes([], _s(3), margin: margin), isTrue);
+      expect(
+        sourceFrameContributes([], Duration.zero, margin: margin),
+        isTrue,
+      );
+    });
+
+    test('inside a trim window contributes', () {
+      final clips = [_slice(cs: 0, ce: 10, ts: 2, te: 8)];
+      expect(sourceFrameContributes(clips, _s(5), margin: margin), isTrue);
+    });
+
+    test('exactly at trimStart and trimEnd contributes', () {
+      final clips = [_slice(cs: 0, ce: 10, ts: 2, te: 8)];
+      expect(sourceFrameContributes(clips, _s(2), margin: margin), isTrue);
+      expect(sourceFrameContributes(clips, _s(8), margin: margin), isTrue);
+    });
+
+    test('within margin outside the window still contributes', () {
+      final clips = [_slice(cs: 0, ce: 10, ts: 2, te: 8)];
+      expect(
+        sourceFrameContributes(clips, _s(2) - _ms(40), margin: margin),
+        isTrue,
+      );
+      expect(
+        sourceFrameContributes(clips, _s(8) + _ms(40), margin: margin),
+        isTrue,
+      );
+    });
+
+    test('beyond margin in a leading trim does not contribute', () {
+      final clips = [_slice(cs: 0, ce: 10, ts: 2, te: 8)];
+      expect(
+        sourceFrameContributes(clips, _s(2) - _ms(41), margin: margin),
+        isFalse,
+      );
+      expect(
+        sourceFrameContributes(clips, Duration.zero, margin: margin),
+        isFalse,
+      );
+    });
+
+    test('beyond margin after the last trimEnd does not contribute', () {
+      final clips = [_slice(cs: 0, ce: 10, ts: 2, te: 8)];
+      expect(
+        sourceFrameContributes(clips, _s(8) + _ms(41), margin: margin),
+        isFalse,
+      );
+      expect(sourceFrameContributes(clips, _s(10), margin: margin), isFalse);
+    });
+
+    test('mid-timeline gap between two slices does not contribute', () {
+      final clips = [
+        _slice(cs: 0, ce: 3, ts: 0, te: 3),
+        _slice(cs: 3, ce: 10, ts: 6, te: 9),
+      ];
+      expect(
+        sourceFrameContributes(clips, _ms(4500), margin: margin),
+        isFalse,
+      );
+      // Both edges of the gap stay live.
+      expect(sourceFrameContributes(clips, _s(3), margin: margin), isTrue);
+      expect(sourceFrameContributes(clips, _s(6), margin: margin), isTrue);
+    });
+  });
 }

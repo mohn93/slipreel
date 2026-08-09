@@ -74,6 +74,11 @@ class ExportPerfSummary {
   /// dropped because the sidecar movie failed to decode). Empty on a clean run.
   final List<String> warnings;
 
+  /// Source frames fed as blank placeholders instead of being composed —
+  /// frames in trimmed-away gaps that ffmpeg's per-slice trim drops anyway.
+  /// For the two-pass GIF pipeline this counts both passes.
+  final int skippedCompositeFrames;
+
   const ExportPerfSummary({
     required this.inputDurationSeconds,
     required this.wallTimeSeconds,
@@ -84,6 +89,7 @@ class ExportPerfSummary {
     required this.outputCodec,
     required this.usedHardwareEncoder,
     this.warnings = const [],
+    this.skippedCompositeFrames = 0,
   });
 
   double get realtimeMultiple =>
@@ -95,7 +101,7 @@ class ExportPerfSummary {
     final hw = usedHardwareEncoder ? 'yes' : 'no';
     final mark = pass ? '✓' : '✗';
     return '''
-[Export] summary: inputDuration=${inputDurationSeconds.toStringAsFixed(1)}s exportWallTime=${wallTimeSeconds.toStringAsFixed(1)}s realtimeMultiple=${realtimeMultiple.toStringAsFixed(1)}x (HW encoder: $hw) decodeMs/frame=${decodeMsPerFrame.toStringAsFixed(1)} compositeMs/frame=${compositeMsPerFrame.toStringAsFixed(1)} encodeMs/frame=${encodeMsPerFrame.toStringAsFixed(1)} outputBytes=$outputBytes outputCodec=$outputCodec
+[Export] summary: inputDuration=${inputDurationSeconds.toStringAsFixed(1)}s exportWallTime=${wallTimeSeconds.toStringAsFixed(1)}s realtimeMultiple=${realtimeMultiple.toStringAsFixed(1)}x (HW encoder: $hw) decodeMs/frame=${decodeMsPerFrame.toStringAsFixed(1)} compositeMs/frame=${compositeMsPerFrame.toStringAsFixed(1)} encodeMs/frame=${encodeMsPerFrame.toStringAsFixed(1)} skippedFrames=$skippedCompositeFrames outputBytes=$outputBytes outputCodec=$outputCodec
 [Export] verdict: realtimeMultiple≥1.0 $mark  -> ${pass ? "PASS" : "FAIL"}'''
         .trim();
   }
