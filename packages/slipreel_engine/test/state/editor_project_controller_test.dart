@@ -56,8 +56,15 @@ void main() {
       controller.setCursorShadow(s.cursorShadow);
       controller.setCursorDelay(s.cursorDelay);
       controller.setCursorPostProcess(s.cursorPostProcess);
-      controller.setScreenAnimationConfig(s.screenAnimationConfig);
-      controller.setCursorAnimationConfig(s.cursorAnimationConfig);
+      // Rebuilt-but-equal instances (what the inspector actually hands back)
+      // must count as no-ops — passing the same instance would let a type
+      // that only has identity equality slip through this guard.
+      controller.setScreenAnimationConfig(
+        ScreenAnimationConfig.preset(s.screenAnimationConfig.preset!),
+      );
+      controller.setCursorAnimationConfig(
+        CursorAnimationConfig.preset(s.cursorAnimationConfig.preset!),
+      );
       controller.setOutputAspect(s.outputAspect);
       controller.setKeystrokeOverlay(s.keystrokeOverlay);
       controller.setCaptionStyle(s.captionStyle);
@@ -76,6 +83,28 @@ void main() {
           reason: 'Value-equal sets must not publish a new state');
       expect(controller.current, same(s),
           reason: 'No-op mutators must not allocate a new state instance');
+    });
+
+    test('setScreenAnimationConfig with a rebuilt-equal preset is a no-op', () {
+      // Regression: the animation inspector's preset tile fires onSelected
+      // even when it is already selected, handing back a fresh
+      // ScreenAnimationConfig.preset(s). Without value equality on
+      // ScreenAnimationConfig the setter guard treated it as a change and
+      // published a value-equal state — a phantom undo entry plus a
+      // spurious full-screen rebuild and debounced disk save. Its sibling
+      // CursorAnimationConfig already deduped; this pins parity.
+      final controller = EditorProjectController();
+      var notifies = 0;
+      controller.addListener((_) => notifies++, fireImmediately: false);
+
+      final s = controller.current;
+      controller.setScreenAnimationConfig(
+        ScreenAnimationConfig.preset(s.screenAnimationConfig.preset!),
+      );
+
+      expect(notifies, 0,
+          reason: 're-selecting the current preset must not publish state');
+      expect(controller.current, same(s));
     });
 
     test('each updateX mutator changes only the targeted field', () {
