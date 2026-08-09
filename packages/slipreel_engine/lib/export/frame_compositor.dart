@@ -65,7 +65,9 @@ class FrameCompositor {
     this.cameraSrcHeight = 0,
     this.deviceFrameCatalog,
     this.motionTuning = MotionTuning.defaults,
-  }) : _framePainter = FramePainter(
+    Size? outputSize,
+  }) : _outputSizeHint = outputSize,
+       _framePainter = FramePainter(
          frame: projectState.windowFrame,
          videoSize: videoSize,
          aspect: projectState.outputAspect,
@@ -169,6 +171,54 @@ class FrameCompositor {
         );
 
   final FramePainter _framePainter;
+
+  /// Export target dimensions — see [renderSize].
+  final Size? _outputSizeHint;
+
+  /// The pixel size [compose] rasterizes and returns. Defaults to
+  /// [totalSize]. When the export resolution ([_outputSizeHint]) is
+  /// strictly smaller than the canvas, this is [totalSize] fitted inside
+  /// it (aspect-preserving, even-rounded — the same rule ffmpeg's
+  /// `scale=...:force_original_aspect_ratio=decrease` stage applies, so
+  /// the downstream scale/pad becomes a near-no-op). Each frame is then
+  /// rendered at output size through a top-level canvas scale instead of
+  /// being rendered at canvas size and downscaled by swscale per frame:
+  /// vector content (chrome, cursor, captions) rasterizes natively sharp
+  /// at the output resolution and the video/wallpaper downscale once with
+  /// filtered sampling. All scene math stays in canvas space
+  /// ([totalSize]) — only the rasterization grid changes. Upscaled
+  /// exports keep the default and let ffmpeg upscale.
+  late final Size renderSize = _computeRenderSize();
+
+  Size _computeRenderSize() {
+    final out = _outputSizeHint;
+    if (out == null) return totalSize;
+    if (out.width >= totalSize.width || out.height >= totalSize.height) {
+      return totalSize; // not a downscale — render at canvas size
+    }
+    final scale = out.width / totalSize.width < out.height / totalSize.height
+        ? out.width / totalSize.width
+        : out.height / totalSize.height;
+    // Nearest-even, clamped so the render never exceeds the output box —
+    // ffmpeg's pad stage errors when its input is larger than the pad.
+    int evenClamped(double v, double max) {
+      var r = (v / 2).round() * 2;
+      if (r > max) r -= 2;
+      return r < 2 ? 2 : r;
+    }
+
+    return Size(
+      evenClamped(totalSize.width * scale, out.width).toDouble(),
+      evenClamped(totalSize.height * scale, out.height).toDouble(),
+    );
+  }
+
+  /// Horizontal / vertical canvas→render scale. Both are exactly 1.0 when
+  /// no downscaling output hint is set, making every code path below
+  /// byte-identical to the pre-renderSize compositor (pinned by
+  /// frame_compositor_render_size_test.dart).
+  late final double _renderSx = renderSize.width / totalSize.width;
+  late final double _renderSy = renderSize.height / totalSize.height;
 
   /// Rect where the video is drawn (in canvas coordinates).
   /// On the device path this is derived from the layout's videoRect, shifted
@@ -283,21 +333,7 @@ class FrameCompositor {
       // and therefore path-dependent. See [_renderFocal], which applies
       // the same substitution here. Everything else this pass computes is
       // what the preview shows.
-      final scenePass = _scenePassBuilder.build(
-        position: position,
-        zoomRegions: projectState.zoomRegions,
-        clips: projectState.timeline.clips,
-        cursorAnimationConfig: projectState.cursorAnimationConfig,
-        cursorDelay: projectState.cursorDelay,
-        cursorPostProcess: projectState.cursorPostProcess,
-        cursorRecording: cursorRecording,
-        videoSize: videoSize,
-        fps: fps,
-        hasCursorData: _hasCursorData,
-        screenRampCurve: projectState.screenAnimationConfig.rampCurve,
-        rampDurationScale: projectState.screenAnimationConfig.rampDurationScale,
-        framing: _framing,
-      );
+      final scenePass = _buildScenePass(position);
       final motion = scenePass.motion;
       final focalUpdate = scenePass.focalUpdate;
       final activeSlice = projectState.timeline.clips.isEmpty
@@ -430,10 +466,7 @@ class FrameCompositor {
       try {
         ui.FragmentProgram? blurProgram;
         if (blurActive) {
-          fgImage = await fgPicture.toImage(
-            totalSize.width.toInt(),
-            totalSize.height.toInt(),
-          );
+          fgImage = await _rasterizeAtRenderSize(fgPicture);
           blurProgram = _sceneBlurProgram ??=
               await SceneMotionBlurShader.ensureLoaded();
         }
@@ -499,13 +532,30 @@ class FrameCompositor {
             // camera bubble and captions. The content layer's
             // transparent padding reveals the chrome (and wallpaper)
             // around the framed video.
+            // The compose canvas rasterizes at renderSize; the top-level
+            // scale keeps every draw below in canvas space (identity when
+            // no renderSize override is set).
             final composeRecorder = ui.PictureRecorder();
             final composeCanvas = ui.Canvas(
               composeRecorder,
-              Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+              Rect.fromLTWH(0, 0, renderSize.width, renderSize.height),
             );
+            composeCanvas.scale(_renderSx, _renderSy);
             if (wallpaperImage != null) {
-              composeCanvas.drawImage(wallpaperImage, Offset.zero, Paint());
+              // The wallpaper raster is cached at renderSize; drawn to
+              // the canvas-space totalRect under the top-level scale the
+              // mapping is exactly 1:1 render pixels.
+              composeCanvas.drawImageRect(
+                wallpaperImage,
+                Rect.fromLTWH(
+                  0,
+                  0,
+                  wallpaperImage.width.toDouble(),
+                  wallpaperImage.height.toDouble(),
+                ),
+                Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+                Paint(),
+              );
             }
             if (chromePicture != null) {
               composeCanvas.drawPicture(chromePicture);
@@ -516,6 +566,10 @@ class FrameCompositor {
               // (saveLayer + dstIn mask), so no intermediate full-res
               // toImage round-trip is needed. The crisp chrome (shadow)
               // and sticky wallpaper stay un-blurred beneath it.
+              // devicePixelRatio carries the canvas→render scale exactly
+              // like the preview's logical→physical DPR: the sampler
+              // image is at renderSize while the canvas coordinates and
+              // the signal's translation stay in canvas space.
               paintSceneMotionBlur(
                 canvas: composeCanvas,
                 image: fgImage!,
@@ -525,7 +579,7 @@ class FrameCompositor {
                 sampleCount: _sceneBlurSampleCount,
                 speedCurveExp: _sceneBlurSpeedCurveExp,
                 speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
-                devicePixelRatio: 1.0,
+                devicePixelRatio: _renderSx,
               );
             } else {
               composeCanvas.drawPicture(fgPicture);
@@ -544,8 +598,8 @@ class FrameCompositor {
             final composePicture = composeRecorder.endRecording();
             try {
               final finalImage = await composePicture.toImage(
-                totalSize.width.toInt(),
-                totalSize.height.toInt(),
+                renderSize.width.toInt(),
+                renderSize.height.toInt(),
               );
               try {
                 final byteData = await finalImage.toByteData(
@@ -581,6 +635,67 @@ class FrameCompositor {
     }
   }
 
+  /// Rasterizes [picture] (recorded in canvas space) at [renderSize], for
+  /// the blur shader's sampler. With no renderSize override this is a
+  /// plain toImage — the wrapper picture would rasterize identically but
+  /// costs an extra recording per frame.
+  Future<ui.Image> _rasterizeAtRenderSize(ui.Picture picture) async {
+    if (_renderSx == 1.0 && _renderSy == 1.0) {
+      return picture.toImage(totalSize.width.toInt(), totalSize.height.toInt());
+    }
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, renderSize.width, renderSize.height),
+    );
+    canvas.scale(_renderSx, _renderSy);
+    canvas.drawPicture(picture);
+    final scaled = recorder.endRecording();
+    try {
+      return await scaled.toImage(
+        renderSize.width.toInt(),
+        renderSize.height.toInt(),
+      );
+    } finally {
+      scaled.dispose();
+    }
+  }
+
+  /// Runs the shared scene-state pass for [position]. This is the ONLY
+  /// stateful step of [compose]: the builder's cursor spring, EMA filter,
+  /// and emitted-position history all advance per call (everything else —
+  /// scene signal, zoom transform, focal tracks — is a pure function of
+  /// the timestamp). Extracted so [advanceScenePass] can advance state for
+  /// frames whose pixels are never seen.
+  ScenePass _buildScenePass(Duration position) => _scenePassBuilder.build(
+    position: position,
+    zoomRegions: projectState.zoomRegions,
+    clips: projectState.timeline.clips,
+    cursorAnimationConfig: projectState.cursorAnimationConfig,
+    cursorDelay: projectState.cursorDelay,
+    cursorPostProcess: projectState.cursorPostProcess,
+    cursorRecording: cursorRecording,
+    videoSize: videoSize,
+    fps: fps,
+    hasCursorData: _hasCursorData,
+    screenRampCurve: projectState.screenAnimationConfig.rampCurve,
+    rampDurationScale: projectState.screenAnimationConfig.rampDurationScale,
+    framing: _framing,
+  );
+
+  /// Advances scene state for a source frame WITHOUT composing it.
+  ///
+  /// Used by the export pipelines for frames in trimmed-away gaps: ffmpeg's
+  /// per-slice `trim=` drops them, so their pixels don't matter — but the
+  /// spring/EMA/history state they would have accumulated does, or every
+  /// kept frame after a gap would diverge from an export that composed the
+  /// gap frames (pinned by frame_compositor_gap_skip_test.dart). Must be
+  /// called in the same monotonically increasing position order as
+  /// [compose].
+  void advanceScenePass(Duration position) {
+    _buildScenePass(position);
+  }
+
   /// Lazily renders the wallpaper into a `ui.Image` and caches it,
   /// keyed by the inputs that affect its appearance. Returns null when
   /// the project has no wallpaper. All frames of one export hit the
@@ -598,7 +713,8 @@ class FrameCompositor {
     final key =
         '$category|${_frame.wallpaperIndex}|'
         '${_frame.backgroundBlur}|'
-        '${totalSize.width.toInt()}x${totalSize.height.toInt()}';
+        '${totalSize.width.toInt()}x${totalSize.height.toInt()}|'
+        '${renderSize.width.toInt()}x${renderSize.height.toInt()}';
     final cached = _cachedWallpaperImage;
     if (cached != null && _cachedWallpaperKey == key) return cached;
 
@@ -614,17 +730,21 @@ class FrameCompositor {
     // paints synchronously and uses the BoxPainter path.
     final photo = await _loadWallpaperPhoto(category, _frame.wallpaperIndex);
 
+    // Rasterized at renderSize (the top-level scale keeps the paint code
+    // in canvas space) so the per-frame drawImageRect in compose maps the
+    // cached raster 1:1 onto render pixels.
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(
       recorder,
-      Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+      Rect.fromLTWH(0, 0, renderSize.width, renderSize.height),
     );
+    canvas.scale(_renderSx, _renderSy);
     _paintWallpaper(canvas, photo: photo);
     final picture = recorder.endRecording();
     try {
       final image = await picture.toImage(
-        totalSize.width.toInt(),
-        totalSize.height.toInt(),
+        renderSize.width.toInt(),
+        renderSize.height.toInt(),
       );
       _cachedWallpaperImage = image;
       return image;
@@ -750,23 +870,33 @@ class FrameCompositor {
     try {
       ui.FragmentProgram? blurProgram;
       if (blurActive) {
-        fgImage = await fgPicture.toImage(
-          totalSize.width.toInt(),
-          totalSize.height.toInt(),
-        );
+        fgImage = await _rasterizeAtRenderSize(fgPicture);
         blurProgram = _sceneBlurProgram ??=
             await SceneMotionBlurShader.ensureLoaded();
       }
       {
         {
           final wallpaperImage = await _ensureWallpaperImage();
+          // Same renderSize treatment as the standard path: rasterize at
+          // the output size, keep all draws in canvas space.
           final composeRecorder = ui.PictureRecorder();
           final composeCanvas = ui.Canvas(
             composeRecorder,
-            Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+            Rect.fromLTWH(0, 0, renderSize.width, renderSize.height),
           );
+          composeCanvas.scale(_renderSx, _renderSy);
           if (wallpaperImage != null) {
-            composeCanvas.drawImage(wallpaperImage, Offset.zero, Paint());
+            composeCanvas.drawImageRect(
+              wallpaperImage,
+              Rect.fromLTWH(
+                0,
+                0,
+                wallpaperImage.width.toDouble(),
+                wallpaperImage.height.toDouble(),
+              ),
+              Rect.fromLTWH(0, 0, totalSize.width, totalSize.height),
+              Paint(),
+            );
           }
           if (blurActive) {
             paintSceneMotionBlur(
@@ -778,7 +908,7 @@ class FrameCompositor {
               sampleCount: _sceneBlurSampleCount,
               speedCurveExp: _sceneBlurSpeedCurveExp,
               speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
-              devicePixelRatio: 1.0,
+              devicePixelRatio: _renderSx,
             );
           } else {
             composeCanvas.drawPicture(fgPicture);
@@ -835,8 +965,8 @@ class FrameCompositor {
           final composePicture = composeRecorder.endRecording();
           try {
             final finalImage = await composePicture.toImage(
-              totalSize.width.toInt(),
-              totalSize.height.toInt(),
+              renderSize.width.toInt(),
+              renderSize.height.toInt(),
             );
             try {
               final byteData = await finalImage.toByteData(

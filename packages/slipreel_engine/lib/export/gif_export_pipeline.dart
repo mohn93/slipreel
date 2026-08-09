@@ -1,6 +1,7 @@
 // packages/screen_recorder/lib/export/gif_export_pipeline.dart
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -221,6 +222,20 @@ class GifExportPipeline {
           sourceFallbackTotal: sourceFallbackTotal,
         );
 
+    // Slice-aware skip, mirroring ExportPipeline: gap frames are dropped
+    // by the filter graph's per-slice trim in BOTH passes, so neither
+    // pass composes them — scene state still advances so kept frames
+    // match a full compose. One reused blank buffer (never mutated;
+    // stdin.flush() is awaited per write, so reuse is safe).
+    final skipMargin = Duration(microseconds: (1000000 + fps - 1) ~/ fps);
+    Uint8List? blankFrame;
+    var skippedFrames = 0;
+    bool skipFrame(int tsMicros) => !sourceFrameContributes(
+          progressClips,
+          Duration(microseconds: tsMicros),
+          margin: skipMargin,
+        );
+
     try {
       try {
         final compositeSw1 = Stopwatch();
@@ -242,6 +257,9 @@ class GifExportPipeline {
             cameraSrcHeight: cameraSrcHeight,
             deviceFrameCatalog: deviceFrameCatalog,
             motionTuning: motionTuning,
+            // Downscale-only hint, mirroring ExportPipeline: render at
+            // export size when it is smaller than the composed canvas.
+            outputSize: Size(outWidth.toDouble(), outHeight.toDouble()),
           ),
         );
 
@@ -260,7 +278,7 @@ class GifExportPipeline {
           '-pix_fmt',
           'rgba',
           '-s',
-          '${compositor1.totalSize.width.toInt()}x${compositor1.totalSize.height.toInt()}',
+          '${compositor1.renderSize.width.toInt()}x${compositor1.renderSize.height.toInt()}',
           '-r',
           '$fps',
           '-i',
@@ -303,12 +321,23 @@ class GifExportPipeline {
             // `trim=trimStart:trimEnd` nodes built by the N-slice helper.
             final tsMicros = (1000000 * index) ~/ fps;
             index++;
-            compositeSw1.start();
-            final composed = await compositor1.compose(
-              bgra: raw,
-              position: Duration(microseconds: tsMicros),
-            );
-            compositeSw1.stop();
+            final Uint8List composed;
+            if (skipFrame(tsMicros)) {
+              compositor1.advance(Duration(microseconds: tsMicros));
+              skippedFrames++;
+              composed = blankFrame ??= Uint8List(
+                compositor1.renderSize.width.toInt() *
+                    compositor1.renderSize.height.toInt() *
+                    4,
+              );
+            } else {
+              compositeSw1.start();
+              composed = await compositor1.compose(
+                bgra: raw,
+                position: Duration(microseconds: tsMicros),
+              );
+              compositeSw1.stop();
+            }
             if (pass1StdinClosed) continue;
             try {
               proc1.stdin.add(composed);
@@ -371,6 +400,9 @@ class GifExportPipeline {
             cameraSrcHeight: cameraSrcHeight,
             deviceFrameCatalog: deviceFrameCatalog,
             motionTuning: motionTuning,
+            // Downscale-only hint, mirroring ExportPipeline: render at
+            // export size when it is smaller than the composed canvas.
+            outputSize: Size(outWidth.toDouble(), outHeight.toDouble()),
           ),
         );
 
@@ -389,7 +421,7 @@ class GifExportPipeline {
           '-pix_fmt',
           'rgba',
           '-s',
-          '${compositor2.totalSize.width.toInt()}x${compositor2.totalSize.height.toInt()}',
+          '${compositor2.renderSize.width.toInt()}x${compositor2.renderSize.height.toInt()}',
           '-r',
           '$fps',
           '-i',
@@ -434,12 +466,23 @@ class GifExportPipeline {
               }
               final tsMicros = (1000000 * index) ~/ fps;
               index++;
-              compositeSw2.start();
-              final composed = await compositor2.compose(
-                bgra: raw,
-                position: Duration(microseconds: tsMicros),
-              );
-              compositeSw2.stop();
+              final Uint8List composed;
+              if (skipFrame(tsMicros)) {
+                compositor2.advance(Duration(microseconds: tsMicros));
+                skippedFrames++;
+                composed = blankFrame ??= Uint8List(
+                  compositor2.renderSize.width.toInt() *
+                      compositor2.renderSize.height.toInt() *
+                      4,
+                );
+              } else {
+                compositeSw2.start();
+                composed = await compositor2.compose(
+                  bgra: raw,
+                  position: Duration(microseconds: tsMicros),
+                );
+                compositeSw2.stop();
+              }
               if (pass2StdinClosed) continue;
               try {
                 proc2.stdin.add(composed);
@@ -498,10 +541,13 @@ class GifExportPipeline {
         final inputDuration = totalFrames > 0 ? totalFrames / fps : 0.0;
         final outputBytes = await _fileLength(outputPath);
 
-        final compositeMsPerFrame = totalFrames > 0
+        // Blank-skipped frames were fed to ffmpeg but never composed —
+        // divide composite time by the compose calls actually made.
+        final composedFrames = totalFrames * 2 - skippedFrames;
+        final compositeMsPerFrame = composedFrames > 0
             ? (compositeSw1.elapsedMilliseconds +
                       compositeSw2.elapsedMilliseconds) /
-                  (totalFrames * 2)
+                  composedFrames
             : 0.0;
 
         final summary = ExportPerfSummary(
@@ -514,6 +560,7 @@ class GifExportPipeline {
           outputCodec: 'gif',
           usedHardwareEncoder: false,
           warnings: warnings,
+          skippedCompositeFrames: skippedFrames,
         );
         AppLogger.ffmpeg.i(summary.format());
         return summary;

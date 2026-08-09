@@ -221,6 +221,10 @@ class ExportPipeline {
         cameraSrcHeight: cameraSrcHeight,
         deviceFrameCatalog: deviceFrameCatalog,
         motionTuning: motionTuning,
+        // Downscale-only hint: when the export resolution is smaller than
+        // the composed canvas the compositor renders directly at output
+        // size (see FrameCompositor.renderSize); otherwise ignored.
+        outputSize: Size(outWidth.toDouble(), outHeight.toDouble()),
       ),
     );
 
@@ -269,10 +273,11 @@ class ExportPipeline {
       filterComplex: filterComplex,
       videoOutLabel: videoMapLabel,
       audioOutLabel: audioMapLabel,
-      // Composited frames arrive at totalSize; the filter graph handles
-      // the trim/concat/fade then post-processes to outWidth × outHeight.
-      sourceWidth: compositor.totalSize.width.toInt(),
-      sourceHeight: compositor.totalSize.height.toInt(),
+      // Composited frames arrive at renderSize (totalSize unless the
+      // compositor is downscale-rendering); the filter graph handles the
+      // trim/concat/fade then post-processes to outWidth × outHeight.
+      sourceWidth: compositor.renderSize.width.toInt(),
+      sourceHeight: compositor.renderSize.height.toInt(),
       sourceFps: pipelineFps,
       pixelFormat: FfmpegPixelFormat.rgba,
     );
@@ -292,6 +297,7 @@ class ExportPipeline {
     final wallSw = Stopwatch()..start();
     final compositeSw = Stopwatch();
     int totalFrames = 0;
+    int skippedFrames = 0;
 
     // Progress inputs. Frames are fed to ffmpeg at SOURCE cadence
     // (leading trims, gaps, and sped-up slices all pass through the
@@ -335,6 +341,23 @@ class ExportPipeline {
       }
     }();
 
+    // Slice-aware skip: frames outside every slice's [trimStart, trimEnd]
+    // window (plus a one-frame margin for trim-boundary rounding) are
+    // dropped by the filter graph, so their pixels never reach the output.
+    // Feed a single reused blank buffer instead of composing them — the
+    // encoder awaits stdin.flush() per write and the buffer is never
+    // mutated, so reuse across queue slots is safe. Scene state still
+    // advances (see ExportCompositor.advance) so kept frames after a gap
+    // stay byte-identical to a full compose.
+    final skipMargin = Duration(
+      microseconds: (1000000 + pipelineFps - 1) ~/ pipelineFps,
+    );
+    final blankFrame = Uint8List(
+      compositor.renderSize.width.toInt() *
+          compositor.renderSize.height.toInt() *
+          4,
+    );
+
     final composeFuture = () async {
       try {
         var index = 0;
@@ -351,12 +374,23 @@ class ExportPipeline {
           // trims) — cursor / zoom sampling is direct.
           final tsMicros = (1000000 * index) ~/ pipelineFps;
           final scenePosition = Duration(microseconds: tsMicros);
-          compositeSw.start();
-          final composited = await compositor.compose(
-            bgra: raw,
-            position: scenePosition,
-          );
-          compositeSw.stop();
+          final Uint8List composited;
+          if (!sourceFrameContributes(
+            progressClips,
+            scenePosition,
+            margin: skipMargin,
+          )) {
+            compositor.advance(scenePosition);
+            skippedFrames++;
+            composited = blankFrame;
+          } else {
+            compositeSw.start();
+            composited = await compositor.compose(
+              bgra: raw,
+              position: scenePosition,
+            );
+            compositeSw.stop();
+          }
           try {
             await composedQueue.add(composited);
           } on StateError {
@@ -480,14 +514,18 @@ class ExportPipeline {
       warnings.add(_kCameraDecodeWarning);
     }
 
+    // Blank-skipped frames pass through the encode stage (they're counted
+    // in totalFrames) but never touch the compositor — divide composite
+    // time by the frames actually composed.
+    final composedFrames = totalFrames - skippedFrames;
     final summary = ExportPerfSummary(
       inputDurationSeconds: inputDuration,
       wallTimeSeconds: wallSec,
       decodeMsPerFrame: totalFrames > 0
           ? decoder.totalDecodeMs / totalFrames
           : 0,
-      compositeMsPerFrame: totalFrames > 0
-          ? compositeSw.elapsedMilliseconds / totalFrames
+      compositeMsPerFrame: composedFrames > 0
+          ? compositeSw.elapsedMilliseconds / composedFrames
           : 0,
       encodeMsPerFrame: totalFrames > 0
           ? encoder.totalEncodeMs / totalFrames
@@ -496,6 +534,7 @@ class ExportPipeline {
       outputCodec: encoder.codecUsed,
       usedHardwareEncoder: encoder.usedHardware,
       warnings: warnings,
+      skippedCompositeFrames: skippedFrames,
     );
     AppLogger.ffmpeg.i(summary.format());
     return summary;
