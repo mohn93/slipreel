@@ -19,8 +19,17 @@ import 'package:flutter_test/flutter_test.dart';
 /// speed normalization diverges preview vs export.)
 void main() {
   test('PlaybackScreen pre-curves master and channel blur values', () {
-    final source =
-        File('lib/ui/screens/playback_screen.dart').readAsStringSync();
+    // Source-level contract: this reads the screen's source relative to the
+    // package root (how `flutter test` runs it). Assert existence first so a
+    // wrong CWD — or a genuine rename/move of the screen — fails with an
+    // actionable message instead of an opaque FileSystemException. It must
+    // still fail loudly (not skip): a moved file means this parity check
+    // needs updating.
+    final file = File('lib/ui/screens/playback_screen.dart');
+    expect(file.existsSync(), isTrue,
+        reason: 'run from the screen_recorder package root; if '
+            'playback_screen.dart moved, update this parity contract');
+    final source = file.readAsStringSync();
     expect(
       source.contains('sceneBlurMasterResponse(project.motionBlur)'),
       isTrue,
