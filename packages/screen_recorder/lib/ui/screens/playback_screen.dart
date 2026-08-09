@@ -338,9 +338,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // while NOT hover-scrubbing (so it tracks playback and committed
   // seeks) and frozen while hovering (so hover seeks don't overwrite
   // it with previewed positions). The colored playhead and time
-  // labels display the frozen anchor while hovering; PlaybackCanvas /
-  // SceneBlurOverlay receive `isHovering` as `isHoverScrubbing` so
-  // their stateful smoothers bypass. Wired in [_initializeVideo] once
+  // labels display the frozen anchor while hovering; PlaybackCanvas
+  // receives `isHovering` as `isHoverScrubbing` so its stateful
+  // smoothers bypass. Wired in [_initializeVideo] once
   // the controller is initialised. setState is owned by this widget:
   // it wraps the controller's mutating methods at the call sites.
   late final HoverScrubController _hover;

@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:slipreel_engine/captions/caption_transcriber.dart'
+    show CaptionCancelledException;
 import 'package:slipreel_engine/export/audio_streams.dart';
+import 'package:slipreel_engine/export/export_cancellation.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/export/ffmpeg_resolver.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
@@ -95,30 +99,65 @@ int captionAudioOffsetMicros(
 class CaptionAudioExtractor {
   const CaptionAudioExtractor();
 
+  /// [cancelToken]: firing it SIGKILLs the ffmpeg subprocess and throws
+  /// [CaptionCancelledException] (unlike ordinary failures, which return
+  /// null) so callers can tell "user cancelled" from "no audio".
   Future<String?> extract(
     String videoPath,
     CaptionAudioSource source, {
     String? outPath,
+    CancelToken? cancelToken,
   }) async {
+    if (cancelToken?.isCancelled ?? false) {
+      throw const CaptionCancelledException();
+    }
+    // A temp dir we minted ourselves (only when the caller didn't inject an
+    // outPath). We hand its WAV path to the caller on success — the
+    // controller reaps it then. On any non-success exit (cancel, ffmpeg
+    // failure, missing output) the caller never gets the path, so we must
+    // delete it here or it leaks; ownership transfers to the caller only on
+    // the success return below.
+    Directory? ownedTempDir;
     try {
       final probe = await ffmpegProbe(path: videoPath);
       final streamCount = probe.audioStreams.length;
       if (streamCount == 0) return null;
 
-      final out = outPath ??
-          p.join(
-            Directory.systemTemp.createTempSync('slipreel_caption_').path,
-            'caption_audio.wav',
-          );
-      final result = await Process.run(
+      final String out;
+      if (outPath != null) {
+        out = outPath;
+      } else {
+        ownedTempDir = Directory.systemTemp.createTempSync('slipreel_caption_');
+        out = p.join(ownedTempDir.path, 'caption_audio.wav');
+      }
+      final process = await Process.start(
         Ffmpeg.resolve(),
         buildCaptionAudioArgs(videoPath, source, streamCount, out),
       );
-      if (result.exitCode != 0) return null;
+      cancelToken?.whenCancelled
+          .then((_) => process.kill(ProcessSignal.sigkill));
+      unawaited(process.stdout.drain<void>());
+      unawaited(process.stderr.drain<void>());
+      final exitCode = await process.exitCode;
+      if (cancelToken?.isCancelled ?? false) {
+        throw const CaptionCancelledException();
+      }
+      if (exitCode != 0) return null;
       if (!File(out).existsSync()) return null;
+      ownedTempDir = null; // success: the caller now owns the temp dir
       return out;
+    } on CaptionCancelledException {
+      rethrow;
     } catch (_) {
       return null;
+    } finally {
+      if (ownedTempDir != null && ownedTempDir.existsSync()) {
+        try {
+          ownedTempDir.deleteSync(recursive: true);
+        } catch (_) {
+          // Best-effort; the OS temp reaper is the backstop.
+        }
+      }
     }
   }
 }
