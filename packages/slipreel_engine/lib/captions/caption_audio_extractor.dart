@@ -111,16 +111,25 @@ class CaptionAudioExtractor {
     if (cancelToken?.isCancelled ?? false) {
       throw const CaptionCancelledException();
     }
+    // A temp dir we minted ourselves (only when the caller didn't inject an
+    // outPath). We hand its WAV path to the caller on success — the
+    // controller reaps it then. On any non-success exit (cancel, ffmpeg
+    // failure, missing output) the caller never gets the path, so we must
+    // delete it here or it leaks; ownership transfers to the caller only on
+    // the success return below.
+    Directory? ownedTempDir;
     try {
       final probe = await ffmpegProbe(path: videoPath);
       final streamCount = probe.audioStreams.length;
       if (streamCount == 0) return null;
 
-      final out = outPath ??
-          p.join(
-            Directory.systemTemp.createTempSync('slipreel_caption_').path,
-            'caption_audio.wav',
-          );
+      final String out;
+      if (outPath != null) {
+        out = outPath;
+      } else {
+        ownedTempDir = Directory.systemTemp.createTempSync('slipreel_caption_');
+        out = p.join(ownedTempDir.path, 'caption_audio.wav');
+      }
       final process = await Process.start(
         Ffmpeg.resolve(),
         buildCaptionAudioArgs(videoPath, source, streamCount, out),
@@ -135,11 +144,20 @@ class CaptionAudioExtractor {
       }
       if (exitCode != 0) return null;
       if (!File(out).existsSync()) return null;
+      ownedTempDir = null; // success: the caller now owns the temp dir
       return out;
     } on CaptionCancelledException {
       rethrow;
     } catch (_) {
       return null;
+    } finally {
+      if (ownedTempDir != null && ownedTempDir.existsSync()) {
+        try {
+          ownedTempDir.deleteSync(recursive: true);
+        } catch (_) {
+          // Best-effort; the OS temp reaper is the backstop.
+        }
+      }
     }
   }
 }
