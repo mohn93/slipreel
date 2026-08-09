@@ -67,12 +67,21 @@ class FfmpegDecoder {
   }
 
   Stream<Uint8List> frames() async* {
+    final frameSize = width * height * 4;
+    // A zero-area frame makes the chunk-draining loop below take 0 bytes
+    // per iteration and never advance — a hard hang the instant stdout
+    // arrives. Dimensions come from validated decode metadata, so this is
+    // unreachable in practice; guard it anyway rather than freeze an export.
+    if (frameSize <= 0) {
+      throw StateError(
+          'FfmpegDecoder: invalid frame dimensions ${width}x$height');
+    }
+
     final args = _buildArgs();
     final binary = Ffmpeg.resolve();
     AppLogger.ffmpeg.d('decode: $binary ${args.join(" ")}');
 
     final process = _process = await Process.start(binary, args);
-    final frameSize = width * height * 4;
     final stopwatch = Stopwatch()..start();
 
     final stderrBuffer = StringBuffer();

@@ -154,5 +154,16 @@ void main() {
       expect(vfIndex, greaterThanOrEqualTo(0));
       expect(args[vfIndex + 1], 'fps=30');
     });
+
+    test('rejects a zero-area frame size before spawning ffmpeg', () {
+      // frameSize == width*height*4 == 0 makes the chunk-draining loop
+      // take 0 bytes per iteration and never advance `offset` — a hard
+      // hang the moment any stdout arrives. Guard it up front so a bad
+      // dimension surfaces as a clear error instead of a frozen export.
+      final decoder =
+          FfmpegDecoder(inputPath: 'test/fixtures/sample_recording.mp4',
+              width: 0, height: 240);
+      expect(decoder.frames().toList(), throwsA(isA<StateError>()));
+    });
   });
 }
