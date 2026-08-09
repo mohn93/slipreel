@@ -142,6 +142,59 @@ void main() {
       }
     });
 
+    test('progress reports the fraction of the EDITED output, matching '
+        'the MP4 pipeline semantics', () async {
+      // GIF progress previously measured "fraction of source frames
+      // fed" (probed source duration as denominator, slices ignored).
+      // MP4 reports "fraction of edited output completed" — the
+      // forward-correct semantics once trimmed-away frames stop being
+      // composed at all. Unify: lead-in frames (source time before
+      // trimStart) contribute zero, and a failed probe no longer
+      // silences the bar (the slice list is the denominator).
+      final tmp = Directory.systemTemp.createTempSync('gif_pipe_prog_trim');
+      final outPath = '${tmp.path}/out.gif';
+
+      final base = _bareState();
+      final trimmed = base.copyWith(
+        timeline: base.timeline.copyWith(clips: [
+          ClipSlice(
+            cutStart: Duration.zero,
+            cutEnd: const Duration(seconds: 1),
+            trimStart: const Duration(milliseconds: 500),
+            trimEnd: const Duration(seconds: 1),
+          ),
+        ]),
+      );
+
+      final reported = <double>[];
+      try {
+        await GifExportPipeline(
+          sourcePath: 'test/fixtures/sample_recording.mp4',
+          outputPath: outPath,
+          sourceMetadata: _metadata(),
+          cursorRecording: CursorRecording(),
+          projectState: trimmed,
+          settings: _gifSettings(),
+        ).run(onProgress: reported.add);
+
+        expect(reported, isNotEmpty);
+        for (var i = 1; i < reported.length; i++) {
+          expect(reported[i], greaterThanOrEqualTo(reported[i - 1]),
+              reason: 'progress must be monotonically non-decreasing');
+        }
+        expect(reported.last, closeTo(1.0, 0.001));
+        expect(reported.first, 0.0,
+            reason: 'the first fed frame is at source t=0, before the '
+                'trimStart — none of the edited output exists yet, so '
+                'progress must read 0, not "1 source frame consumed"');
+        expect(reported.where((p) => p == 0.0).length, greaterThanOrEqualTo(3),
+            reason: 'every lead-in frame before trimStart must report 0.0 '
+                'under edited-output semantics');
+      } finally {
+        tmp.deleteSync(recursive: true);
+      }
+    });
+
     test('palette tmp directory is removed after a successful run', () async {
       final tmp = Directory.systemTemp.createTempSync('gif_pipe_cleanup');
       final outPath = '${tmp.path}/out.gif';

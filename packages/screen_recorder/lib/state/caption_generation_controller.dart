@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:slipreel_engine/captions/caption_audio_extractor.dart';
 import 'package:slipreel_engine/captions/caption_transcriber.dart';
 import 'package:slipreel_engine/export/ffmpeg_probe.dart';
@@ -77,13 +80,14 @@ class CaptionGenerationController extends StateNotifier<CaptionGenerationStatus>
     required String videoPath,
     required CaptionAudioSource source,
   }) async {
+    String? audio;
     try {
       state = const CaptionDownloadingModel(0);
       final model =
           await _ensureModel((p) => state = CaptionDownloadingModel(p));
 
       state = const CaptionExtracting();
-      final audio = await _extractAudio(videoPath, source);
+      audio = await _extractAudio(videoPath, source);
       if (audio == null) {
         state = const CaptionError('No audio could be extracted from this '
             'recording.');
@@ -106,6 +110,24 @@ class CaptionGenerationController extends StateNotifier<CaptionGenerationStatus>
       state = CaptionDone(segments.length);
     } catch (e) {
       state = CaptionError(e.toString());
+    } finally {
+      _cleanupCaptionTemp(audio);
+    }
+  }
+
+  /// Removes the extractor's `slipreel_caption_*` temp dir (WAV +
+  /// whisper transcript). Without this, every generation — including
+  /// every failed retry — leaked a fresh dir holding ~2 MB per minute
+  /// of extracted audio. Only deletes directories matching our naming
+  /// convention so an injected `outPath` outside it is never touched.
+  static void _cleanupCaptionTemp(String? audioPath) {
+    if (audioPath == null) return;
+    try {
+      final dir = File(audioPath).parent;
+      if (!p.basename(dir.path).startsWith('slipreel_caption_')) return;
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    } catch (_) {
+      // Best-effort; the OS temp reaper is the fallback.
     }
   }
 

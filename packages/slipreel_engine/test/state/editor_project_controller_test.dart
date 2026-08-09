@@ -35,6 +35,78 @@ void main() {
       expect(controller.state, same(loaded));
     });
 
+    test('single-field mutators are no-ops for value-equal input', () {
+      // "setX(currentX) is a no-op" is a state-wide invariant; the
+      // slice mutators already honor it. A same-value publish is not
+      // harmless: it triggers a full-screen rebuild, a debounced disk
+      // save, and (before the history-side fix) a phantom undo entry.
+      final controller = EditorProjectController();
+      var notifies = 0;
+      controller.addListener((_) => notifies++, fireImmediately: false);
+
+      final s = controller.current;
+      controller.setCursorSize(s.cursorSize);
+      controller.setCursorStyle(s.cursorStyle);
+      controller.setCursorClickEffect(s.cursorClickEffect);
+      controller.setHideCursorOverlay(s.hideCursorOverlay);
+      controller.setMotionBlur(s.motionBlur);
+      controller.setCursorMovementBlur(s.cursorMovementBlur);
+      controller.setScreenMovementBlur(s.screenMovementBlur);
+      controller.setScreenZoomBlur(s.screenZoomBlur);
+      controller.setCursorShadow(s.cursorShadow);
+      controller.setCursorDelay(s.cursorDelay);
+      controller.setCursorPostProcess(s.cursorPostProcess);
+      // Rebuilt-but-equal instances (what the inspector actually hands back)
+      // must count as no-ops — passing the same instance would let a type
+      // that only has identity equality slip through this guard.
+      controller.setScreenAnimationConfig(
+        ScreenAnimationConfig.preset(s.screenAnimationConfig.preset!),
+      );
+      controller.setCursorAnimationConfig(
+        CursorAnimationConfig.preset(s.cursorAnimationConfig.preset!),
+      );
+      controller.setOutputAspect(s.outputAspect);
+      controller.setKeystrokeOverlay(s.keystrokeOverlay);
+      controller.setCaptionStyle(s.captionStyle);
+      // Equal-but-distinct instances must count as no-ops too — the
+      // inspector frequently hands back a rebuilt value object.
+      controller.setClickSpring(
+        ClickSpring(
+          stiffness: s.clickSpring.stiffness,
+          damping: s.clickSpring.damping,
+          mass: s.clickSpring.mass,
+        ),
+      );
+      controller.setWindowFrame(s.windowFrame.copyWith());
+
+      expect(notifies, 0,
+          reason: 'Value-equal sets must not publish a new state');
+      expect(controller.current, same(s),
+          reason: 'No-op mutators must not allocate a new state instance');
+    });
+
+    test('setScreenAnimationConfig with a rebuilt-equal preset is a no-op', () {
+      // Regression: the animation inspector's preset tile fires onSelected
+      // even when it is already selected, handing back a fresh
+      // ScreenAnimationConfig.preset(s). Without value equality on
+      // ScreenAnimationConfig the setter guard treated it as a change and
+      // published a value-equal state — a phantom undo entry plus a
+      // spurious full-screen rebuild and debounced disk save. Its sibling
+      // CursorAnimationConfig already deduped; this pins parity.
+      final controller = EditorProjectController();
+      var notifies = 0;
+      controller.addListener((_) => notifies++, fireImmediately: false);
+
+      final s = controller.current;
+      controller.setScreenAnimationConfig(
+        ScreenAnimationConfig.preset(s.screenAnimationConfig.preset!),
+      );
+
+      expect(notifies, 0,
+          reason: 're-selecting the current preset must not publish state');
+      expect(controller.current, same(s));
+    });
+
     test('each updateX mutator changes only the targeted field', () {
       final controller = EditorProjectController();
       final initial = controller.state;

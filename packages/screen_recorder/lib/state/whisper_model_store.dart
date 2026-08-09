@@ -1,5 +1,6 @@
 // packages/screen_recorder/lib/state/whisper_model_store.dart
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
@@ -51,12 +52,27 @@ class WhisperModelStore {
   }
 
   /// Returns the absolute model path, downloading + verifying on a miss.
+  ///
+  /// Integrity is verified ONCE — after download (or once for installs
+  /// that predate the marker) — and recorded in a `.verified` marker
+  /// holding the expected SHA. Later calls trust the marker: the model
+  /// is 487 MB, and re-reading + re-hashing it on every caption
+  /// generation froze the UI for seconds per click. A changed
+  /// [_expectedSha] (model upgrade) invalidates the marker and forces a
+  /// fresh verification.
   Future<String> ensureModel({void Function(double progress)? onProgress}) async {
     final dir = await _resolveDir();
     final model = File(p.join(dir.path, kWhisperModelFileName));
+    final marker = File('${model.path}.verified');
 
-    if (model.existsSync() && await _matchesSha(model)) {
-      return model.path;
+    if (model.existsSync()) {
+      if (await _markerMatches(marker)) return model.path;
+      // Pre-marker install (or upgraded expected SHA): one full
+      // verification, then the marker makes future calls cheap.
+      if (await _matchesSha(model)) {
+        await marker.writeAsString(_expectedSha);
+        return model.path;
+      }
     }
 
     final part = File('${model.path}.part');
@@ -68,19 +84,36 @@ class WhisperModelStore {
       }
       if (model.existsSync()) model.deleteSync();
       await part.rename(model.path);
+      await marker.writeAsString(_expectedSha);
       return model.path;
     } catch (_) {
       if (part.existsSync()) part.deleteSync();
       if (model.existsSync() && !await _matchesSha(model)) {
         model.deleteSync();
+        if (marker.existsSync()) marker.deleteSync();
       }
       rethrow;
     }
   }
 
+  Future<bool> _markerMatches(File marker) async {
+    try {
+      if (!marker.existsSync()) return false;
+      return (await marker.readAsString()).trim() == _expectedSha;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Streams the file through SHA-256 in a worker isolate: O(64KB)
+  /// memory instead of materializing the whole model, and the hashing
+  /// CPU never blocks the UI isolate.
   Future<bool> _matchesSha(File f) async {
     try {
-      final digest = sha256.convert(await f.readAsBytes()).toString();
+      final path = f.path;
+      final digest = await Isolate.run(
+        () async => (await sha256.bind(File(path).openRead()).first).toString(),
+      );
       return digest == _expectedSha;
     } catch (_) {
       return false;

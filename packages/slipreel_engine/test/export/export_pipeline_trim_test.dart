@@ -190,4 +190,55 @@ void main() {
         reason: 'aggressive trim window of 100ms ± 50ms slop');
     tmp.deleteSync(recursive: true);
   });
+
+  test('progress on a leading-trimmed slice does not pin at 100% early',
+      () async {
+    // Regression: progress counted frames fed at SOURCE cadence against
+    // an EDITED-duration denominator, so a slice trimmed to the back
+    // half of the source hit (clamped) 1.0 when the export was only
+    // halfway done. Pre-trim frames must contribute zero progress.
+    final tmp = Directory.systemTemp.createTempSync('progress_trim');
+    final outPath = '${tmp.path}/out.mp4';
+
+    // Fixture is ~1s. Trim to the back half [0.5s, 1s]: the decoder
+    // still feeds all ~30 source frames, but only the last ~15 land in
+    // the output.
+    final state = _noneFrameState(clips: [
+      ClipSlice(
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 1),
+        trimStart: const Duration(milliseconds: 500),
+        trimEnd: const Duration(seconds: 1),
+      ),
+    ]);
+
+    final reported = <double>[];
+    await ExportPipeline(
+      sourcePath: 'test/fixtures/sample_recording.mp4',
+      outputPath: outPath,
+      sourceMetadata: RecordingMetadata(
+        isPureSource: true,
+        recordedAt: DateTime.now(),
+        widthPx: 320,
+        heightPx: 240,
+        fps: 30,
+      ),
+      cursorRecording: CursorRecording(),
+      projectState: state,
+      settings: _settings,
+    ).run(onProgress: reported.add);
+
+    expect(reported, isNotEmpty);
+    for (var i = 1; i < reported.length; i++) {
+      expect(reported[i], greaterThanOrEqualTo(reported[i - 1]),
+          reason: 'progress must be monotonically non-decreasing');
+    }
+    expect(reported.last, 1.0,
+        reason: 'a successful export must end at exactly 100%');
+    expect(reported.where((p) => p >= 0.999).length, lessThanOrEqualTo(2),
+        reason: 'with a back-half trim the OLD source-frame counting '
+            'reported ~1.0 for the entire second half of the feed; the '
+            'edited-time mapping only reaches 1.0 at the very end');
+    tmp.deleteSync(recursive: true);
+  });
 }

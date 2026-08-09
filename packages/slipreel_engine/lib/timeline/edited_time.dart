@@ -55,6 +55,39 @@ Duration sourceToEdited(List<ClipSlice> clips, Duration sourceTime) {
   return acc;
 }
 
+/// Fraction (0..1) of the edited output completed once export has
+/// consumed source time up to [sourcePosition].
+///
+/// Export feeds frames at SOURCE cadence but the output has EDITED
+/// length — comparing a source-frame count against an edited-duration
+/// denominator overshoots on any leading trim, gap, or speed != 1
+/// (the progress bar pinned at 100% early). Mapping the source
+/// position through [sourceToEdited] makes pre-trim and gap frames
+/// contribute zero and sped-up slices advance at their edited rate.
+///
+/// With empty [clips] (no slice data), edited time equals source time;
+/// [sourceFallbackTotal] (the probed source duration) becomes the
+/// denominator. Returns null when no positive denominator exists —
+/// callers should leave the bar indeterminate rather than lie.
+double? editedProgressAtSource(
+  List<ClipSlice> clips,
+  Duration sourcePosition, {
+  Duration? sourceFallbackTotal,
+}) {
+  final Duration done;
+  final Duration total;
+  if (clips.isEmpty) {
+    if (sourceFallbackTotal == null) return null;
+    done = sourcePosition;
+    total = sourceFallbackTotal;
+  } else {
+    done = sourceToEdited(clips, sourcePosition);
+    total = totalEditedDuration(clips);
+  }
+  if (total <= Duration.zero) return null;
+  return (done.inMicroseconds / total.inMicroseconds).clamp(0.0, 1.0);
+}
+
 /// Maps a wall/output-time lookback from [position] onto source time.
 /// Traverses contiguous slices using each slice's speed and stops at a real
 /// source discontinuity, so temporal effects never smear across a hard cut.

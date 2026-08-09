@@ -10,7 +10,7 @@ import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:video_player/video_player.dart';
 import 'package:slipreel_engine/effects/accumulation_cursor_painter.dart'
-    show CursorBlurMode;
+    show CursorBlurMode, kCursorBlurBaseExposureMs;
 import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
@@ -2545,7 +2545,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // cursor (2× here vs 4× in the playground); master at 50%
       // now produces a clearly visible ~75 ms trail and the slider
       // gives a usable gradient.
-      accumulationExposureMs: 150.0,
+      accumulationExposureMs: kCursorBlurBaseExposureMs,
       cursorShadow: project.cursorShadow,
       clickSpring: project.clickSpring,
       cursorDelay: project.cursorDelay,

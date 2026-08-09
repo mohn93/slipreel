@@ -40,6 +40,14 @@ class ScreenAnimationConfig {
     // Legacy custom config (curve + badgeDurationMicros) — migrate to Smooth.
     return const ScreenAnimationConfig.preset(ScreenAnimationStyle.smooth);
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ScreenAnimationConfig && other._preset == _preset;
+
+  @override
+  int get hashCode => _preset.hashCode;
 }
 
 class CursorAnimationConfig {

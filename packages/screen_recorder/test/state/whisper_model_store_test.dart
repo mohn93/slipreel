@@ -42,6 +42,62 @@ void main() {
     expect(File(path).readAsBytesSync(), bytes);
   });
 
+  test('a verified model is trusted on later calls — no re-hash, no '
+      're-download', () async {
+    // Regression: ensureModel re-read and re-hashed the model on EVERY
+    // call, including cache hits. At the real model's 487 MB that froze
+    // the UI for seconds on every "Generate captions" click. Integrity
+    // is now verified once (at download) and recorded in a marker;
+    // later calls trust the marker.
+    final bytes = [5, 5, 5];
+    final sha = sha256.convert(bytes).toString();
+    var downloads = 0;
+    final store = WhisperModelStore(
+      baseDir: tmp,
+      expectedSha256: sha,
+      downloader: (url, dest, onProgress) async {
+        downloads++;
+        await dest.writeAsBytes(bytes);
+      },
+    );
+
+    final path = await store.ensureModel();
+    expect(downloads, 1);
+
+    // Corrupt the model body but keep the verification marker. A
+    // trusted cache hit must NOT notice (we no longer pay a full read
+    // to defend against on-disk corruption per call) — the old
+    // implementation re-hashed, saw the mismatch, and re-downloaded.
+    File(path).writeAsBytesSync([6, 6, 6]);
+    final again = await store.ensureModel();
+    expect(again, path);
+    expect(downloads, 1,
+        reason: 'a marked-verified model must be trusted without '
+            're-reading it');
+  });
+
+  test('a pre-existing valid model without a marker is verified once and '
+      'marked', () async {
+    final bytes = [1, 2, 3, 4];
+    File('${tmp.path}/$kWhisperModelFileName').writeAsBytesSync(bytes);
+    final sha = sha256.convert(bytes).toString();
+
+    var downloads = 0;
+    final store = WhisperModelStore(
+      baseDir: tmp,
+      expectedSha256: sha,
+      downloader: (_, __, ___) async => downloads++,
+    );
+    await store.ensureModel();
+    expect(downloads, 0);
+    expect(
+      File('${tmp.path}/$kWhisperModelFileName.verified').existsSync(),
+      isTrue,
+      reason: 'migration for installs that predate the marker: one full '
+          'verification, then the marker makes future calls cheap',
+    );
+  });
+
   test('checksum mismatch deletes the partial and throws', () async {
     final store = WhisperModelStore(
       baseDir: tmp,
