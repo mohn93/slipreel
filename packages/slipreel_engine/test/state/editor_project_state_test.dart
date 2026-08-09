@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:slipreel_engine/models/caption_segment.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
@@ -68,9 +70,10 @@ void main() {
 
     test('zoomRegions override replaces the list, not appends', () {
       // The controller will replace, never append in-place; copyWith
-      // must mirror that. Verify by passing a freshly-constructed list
-      // and confirming the new state's reference *is* the passed list,
-      // not a copy of the original's.
+      // must mirror that. (This used to pin identity with the passed
+      // list; copyWith now takes a defensive unmodifiable copy so undo
+      // snapshots can't be corrupted by later caller mutations — the
+      // replace-not-append contract is checked by content instead.)
       final original = EditorProjectState.defaults();
       final fresh = <ZoomRegion>[
         ZoomRegion(
@@ -82,7 +85,7 @@ void main() {
       ];
       final patched = original.copyWith(zoomRegions: fresh);
       expect(patched.zoomRegions, hasLength(1));
-      expect(identical(patched.zoomRegions, fresh), isTrue);
+      expect(patched.zoomRegions.single, fresh.single);
       expect(original.zoomRegions, isEmpty); // original untouched
     });
 
@@ -426,6 +429,181 @@ void main() {
       expect(a == b, isTrue, reason: 'anchor must not affect ==');
       expect(a == c, isTrue);
       expect(a.hashCode == c.hashCode, isTrue);
+    });
+  });
+
+  group('corrupt sidecar resilience', () {
+    // EditorProjectStore.load() wraps fromJson in a blanket catch that
+    // discards the ENTIRE saved project for defaults. One malformed
+    // nested object (a hand-edited region, a truncated write) must
+    // therefore never throw out of fromJson — bad list entries are
+    // skipped and bad sections fall back to their own defaults, keeping
+    // everything else the user edited.
+    const videoDuration = Duration(seconds: 10);
+
+    Map<String, dynamic> baseJson() {
+      final base = EditorProjectState.defaults();
+      final state = base.copyWith(
+        timeline: base.timeline.copyWith(
+          zoomTracks: [
+            ZoomTrack(
+              regions: [
+                ZoomRegion(
+                  rect: const Rect.fromLTWH(0, 0, 100, 100),
+                  startTime: const Duration(seconds: 1),
+                  duration: const Duration(seconds: 2),
+                  zoomLevel: 2.0,
+                ),
+              ],
+            ),
+          ],
+          clips: [
+            ClipSlice(
+              cutStart: Duration.zero,
+              cutEnd: const Duration(seconds: 5),
+            ),
+            ClipSlice(
+              cutStart: const Duration(seconds: 5),
+              cutEnd: const Duration(seconds: 10),
+            ),
+          ],
+          captionTracks: [
+            const CaptionTrack(
+              segments: [
+                CaptionSegment(
+                  id: 'c1',
+                  startMicros: 0,
+                  endMicros: 1000000,
+                  text: 'hello',
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      // Round-trip through encode/decode so tests mutate plain maps.
+      return jsonDecode(jsonEncode(state.toJson())) as Map<String, dynamic>;
+    }
+
+    test('one malformed zoom region is skipped, the rest survives', () {
+      final json = baseJson();
+      final regions =
+          ((json['timeline'] as Map)['zoomTracks'] as List)[0]['regions']
+              as List;
+      regions.insert(0, {'rect': 42, 'garbage': true});
+      final state = EditorProjectState.fromJson(
+        json,
+        videoDuration: videoDuration,
+      );
+      expect(state.zoomRegions, hasLength(1));
+      expect(state.timeline.clips, hasLength(2));
+    });
+
+    test('one malformed clip slice is skipped, the rest survives', () {
+      final json = baseJson();
+      final clips = (json['timeline'] as Map)['clips'] as List;
+      clips[0] = {'cutStartMicros': 'not-a-number'};
+      final state = EditorProjectState.fromJson(
+        json,
+        videoDuration: videoDuration,
+      );
+      expect(state.timeline.clips, hasLength(1));
+      expect(state.zoomRegions, hasLength(1));
+    });
+
+    test('one malformed caption segment is skipped, the rest survives', () {
+      final json = baseJson();
+      final segments =
+          ((json['timeline'] as Map)['captionTracks'] as List)[0]['segments']
+              as List;
+      segments.add({'startMicros': [], 'endMicros': 'x'});
+      final state = EditorProjectState.fromJson(
+        json,
+        videoDuration: videoDuration,
+      );
+      expect(state.captions, hasLength(1));
+      expect(state.timeline.clips, hasLength(2));
+    });
+
+    test('non-map windowFrame falls back without dropping the timeline', () {
+      final json = baseJson();
+      json['windowFrame'] = 'garbage';
+      final state = EditorProjectState.fromJson(
+        json,
+        videoDuration: videoDuration,
+      );
+      expect(
+        state.windowFrame.name,
+        EditorProjectState.defaults().windowFrame.name,
+      );
+      expect(state.timeline.clips, hasLength(2));
+      expect(state.zoomRegions, hasLength(1));
+    });
+
+    test('wrong-typed scalars fall back without throwing', () {
+      final json = baseJson();
+      json['cursorSize'] = 'big';
+      json['hideCursorOverlay'] = 'yes';
+      json['motionBlur'] = [];
+      json['cursorStyle'] = 42;
+      final state = EditorProjectState.fromJson(
+        json,
+        videoDuration: videoDuration,
+      );
+      final defaults = EditorProjectState.defaults();
+      expect(state.cursorSize, defaults.cursorSize);
+      expect(state.hideCursorOverlay, defaults.hideCursorOverlay);
+      expect(state.motionBlur, defaults.motionBlur);
+      expect(state.cursorStyle, defaults.cursorStyle);
+      expect(state.timeline.clips, hasLength(2));
+    });
+
+    test('throwing nested section (screenAnimationConfig) falls back '
+        'without dropping the timeline', () {
+      final json = baseJson();
+      json['screenAnimationConfig'] = {'rampCurve': 999, 'style': []};
+      final state = EditorProjectState.fromJson(
+        json,
+        videoDuration: videoDuration,
+      );
+      expect(state.timeline.clips, hasLength(2));
+      expect(state.zoomRegions, hasLength(1));
+    });
+  });
+
+  group('copyWith list retention (undo-snapshot corruption)', () {
+    // Undo history holds state snapshots by reference; the convenience
+    // list params must not retain the caller's mutable list.
+    test('copyWith(zoomRegions:) does not retain the caller list', () {
+      final source = [
+        ZoomRegion(
+          rect: const Rect.fromLTWH(0, 0, 100, 100),
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 1),
+          zoomLevel: 2.0,
+        ),
+      ];
+      final state = EditorProjectState.defaults().copyWith(
+        zoomRegions: source,
+      );
+      source.clear();
+      expect(state.zoomRegions, hasLength(1));
+    });
+
+    test('copyWith(captionSegments:) does not retain the caller list', () {
+      final source = [
+        const CaptionSegment(
+          id: 'c1',
+          startMicros: 0,
+          endMicros: 1000000,
+          text: 'hi',
+        ),
+      ];
+      final state = EditorProjectState.defaults().copyWith(
+        captionSegments: source,
+      );
+      source.clear();
+      expect(state.captions, hasLength(1));
     });
   });
 }

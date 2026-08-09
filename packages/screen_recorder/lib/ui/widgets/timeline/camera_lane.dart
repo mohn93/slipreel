@@ -309,15 +309,22 @@ class _CameraPillState extends State<_CameraPill> {
   double _dxAccum = 0;
   bool _hovered = false;
 
+  // Live drag preview — commit happens once in [_endDrag], mirroring
+  // _ZoomPillState (see the note there): per-tick onChanged commits
+  // rebuilt every project watcher at drag rate.
+  CameraRegion? _preview;
+
+  CameraRegion get _renderRegion => _preview ?? widget.region;
+
   Duration _sourceToEdited(Duration t) =>
       widget.clips.isEmpty ? t : sourceToEdited(widget.clips, t);
   Duration _editedToSource(Duration t) =>
       widget.clips.isEmpty ? t : editedToSource(widget.clips, t);
 
-  double get _startX =>
-      timeToX(_sourceToEdited(widget.region.startTime), widget.pixelsPerSecond);
+  double get _startX => timeToX(
+      _sourceToEdited(_renderRegion.startTime), widget.pixelsPerSecond);
   double get _endX =>
-      timeToX(_sourceToEdited(widget.region.endTime), widget.pixelsPerSecond);
+      timeToX(_sourceToEdited(_renderRegion.endTime), widget.pixelsPerSecond);
 
   Duration get _minDuration =>
       const Duration(milliseconds: minCameraDurationMs);
@@ -331,10 +338,15 @@ class _CameraPillState extends State<_CameraPill> {
   }
 
   void _endDrag() {
+    final committed = _preview;
     setState(() {
       _mode = _CameraDragMode.none;
       _dxAccum = 0;
+      _preview = null;
     });
+    if (committed != null && committed != widget.region) {
+      widget.onChanged?.call(widget.index, committed);
+    }
   }
 
   void _update(double dxDelta) {
@@ -396,13 +408,12 @@ class _CameraPillState extends State<_CameraPill> {
     final nextStart = _editedToSource(editedNextStart);
     final nextEnd = _editedToSource(editedNextEnd);
 
-    widget.onChanged!(
-      widget.index,
-      widget.region.copyWith(
+    setState(() {
+      _preview = widget.region.copyWith(
         startTime: nextStart,
         duration: nextEnd - nextStart,
-      ),
-    );
+      );
+    });
   }
 
   @override
@@ -417,7 +428,11 @@ class _CameraPillState extends State<_CameraPill> {
     final stroke = widget.isSelected ? Colors.white : cameraStroke;
 
     return AnimatedPositioned(
-      duration: widget.trimDragging || !widget.animateLayout
+      // Snap during this pill's own drag — the preview geometry changes
+      // every pointer tick and must track it 1:1 (see _ZoomPillState).
+      duration: widget.trimDragging ||
+              !widget.animateLayout ||
+              _mode != _CameraDragMode.none
           ? Duration.zero
           : const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,

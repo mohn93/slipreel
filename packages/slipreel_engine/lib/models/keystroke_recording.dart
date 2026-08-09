@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
@@ -13,8 +14,26 @@ class KeystrokeRecording {
   int get count => _events.length;
   List<KeystrokeEvent> get events => List.unmodifiable(_events);
 
+  /// [eventsInRange] binary-searches assuming ascending timestamps, so
+  /// ingestion enforces the invariant: in-order appends stay O(1); a
+  /// late arrival takes the rare sorted-insert path instead of breaking
+  /// range queries after the inversion.
   void addEvent(KeystrokeEvent event) {
-    _events.add(event);
+    if (_events.isEmpty ||
+        event.timestampMicros >= _events.last.timestampMicros) {
+      _events.add(event);
+      return;
+    }
+    var lo = 0, hi = _events.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (_events[mid].timestampMicros <= event.timestampMicros) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    _events.insert(lo, event);
   }
 
   void clear() {
@@ -54,18 +73,31 @@ class KeystrokeRecording {
   }
 
   static Future<KeystrokeRecording> loadFromFile(String path) async {
+    // Parse in a worker isolate for the same reason as
+    // CursorRecording.loadFromFile: long recordings produce sidecars big
+    // enough for per-line JSON decoding to stall the UI isolate.
+    final events = await Isolate.run(() => _parseSidecar(path));
     final recording = KeystrokeRecording();
+    for (final e in events) {
+      recording.addEvent(e);
+    }
+    return recording;
+  }
+
+  /// Pure parse stage of [loadFromFile] — runs inside [Isolate.run].
+  static Future<List<KeystrokeEvent>> _parseSidecar(String path) async {
     final lines = await File(path).readAsLines();
+    final events = <KeystrokeEvent>[];
     for (final line in lines) {
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
       try {
         final json = jsonDecode(trimmed) as Map<String, dynamic>;
-        recording.addEvent(KeystrokeEvent.fromJson(json));
+        events.add(KeystrokeEvent.fromJson(json));
       } catch (_) {
         // Skip malformed lines.
       }
     }
-    return recording;
+    return events;
   }
 }

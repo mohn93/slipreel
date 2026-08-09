@@ -221,7 +221,12 @@ class EditorProjectState {
       if (zoomRegions != null) {
         final tracks = t.zoomTracks;
         if (tracks.isEmpty) {
-          t = t.copyWith(zoomTracks: [ZoomTrack(regions: zoomRegions)]);
+          // List.unmodifiable: don't retain the caller's mutable list —
+          // history snapshots hold this state by reference (the non-empty
+          // branch copies inside the track's copyWith).
+          t = t.copyWith(
+            zoomTracks: [ZoomTrack(regions: List.unmodifiable(zoomRegions))],
+          );
         } else {
           final updated = List<ZoomTrack>.from(tracks)
             ..[0] = tracks[0].copyWith(regions: zoomRegions);
@@ -231,7 +236,11 @@ class EditorProjectState {
       if (cameraRegions != null) {
         final tracks = t.cameraTracks;
         if (tracks.isEmpty) {
-          t = t.copyWith(cameraTracks: [CameraTrack(regions: cameraRegions)]);
+          t = t.copyWith(
+            cameraTracks: [
+              CameraTrack(regions: List.unmodifiable(cameraRegions)),
+            ],
+          );
         } else {
           final updated = List<CameraTrack>.from(tracks)
             ..[0] = tracks[0].copyWith(regions: cameraRegions);
@@ -244,7 +253,9 @@ class EditorProjectState {
           t = t.copyWith(
             captionTracks: [
               CaptionTrack(
-                segments: captionSegments ?? const <CaptionSegment>[],
+                segments: captionSegments == null
+                    ? const <CaptionSegment>[]
+                    : List.unmodifiable(captionSegments),
                 source: captionSource ?? CaptionAudioSource.mixed,
               ),
             ],
@@ -340,38 +351,44 @@ class EditorProjectState {
       videoDuration: videoDuration,
     );
 
-    final timelineJson = json['timeline'];
-    final timeline = timelineJson is Map<String, dynamic>
-        ? Timeline.fromJson(timelineJson)
-        : Timeline.defaults();
-
-    final screen = json['screenAnimationConfig'] as Map<String, dynamic>?;
-    final cursorAnim = json['cursorAnimationConfig'] as Map<String, dynamic>?;
-    final frame = json['windowFrame'] as Map<String, dynamic>?;
+    // Every nested section and scalar below reads defensively: this
+    // parser sits under EditorProjectStore.load()'s blanket catch, so a
+    // single throwing field would trade the user's ENTIRE project for
+    // defaults. A malformed section falls back to that section's default
+    // and everything else survives (see _section / the typed reads).
     final defaults = EditorProjectState.defaults();
+    final timeline = _section(
+      json['timeline'],
+      Timeline.fromJson,
+      Timeline.defaults(),
+    );
 
     return EditorProjectState(
       timeline: timeline,
-      screenAnimationConfig: screen != null
-          ? ScreenAnimationConfig.fromJson(screen)
-          : defaults.screenAnimationConfig,
-      cursorAnimationConfig: cursorAnim != null
-          ? CursorAnimationConfig.fromJson(cursorAnim)
-          : defaults.cursorAnimationConfig,
-      cursorSize:
-          (json['cursorSize'] as num?)?.toDouble() ?? defaults.cursorSize,
+      screenAnimationConfig: _section(
+        json['screenAnimationConfig'],
+        ScreenAnimationConfig.fromJson,
+        defaults.screenAnimationConfig,
+      ),
+      cursorAnimationConfig: _section(
+        json['cursorAnimationConfig'],
+        CursorAnimationConfig.fromJson,
+        defaults.cursorAnimationConfig,
+      ),
+      cursorSize: _readDouble(json['cursorSize'], defaults.cursorSize),
       cursorStyle: _decodeEnum<CursorStyle>(
-        json['cursorStyle'] as String?,
+        json['cursorStyle'],
         CursorStyle.values,
         defaults.cursorStyle,
       ),
       cursorClickEffect: _decodeEnum<CursorClickEffect>(
-        json['cursorClickEffect'] as String?,
+        json['cursorClickEffect'],
         CursorClickEffect.values,
         defaults.cursorClickEffect,
       ),
-      hideCursorOverlay:
-          (json['hideCursorOverlay'] as bool?) ?? defaults.hideCursorOverlay,
+      hideCursorOverlay: json['hideCursorOverlay'] is bool
+          ? json['hideCursorOverlay'] as bool
+          : defaults.hideCursorOverlay,
       // Motion-blur ranges were rescaled (master 0–2 → 0–0.5, channels
       // 0–2 → 0–1) after early-access. Clamp incoming JSON so projects
       // saved before the rescale don't push the sliders / smear past
@@ -379,55 +396,59 @@ class EditorProjectState {
       // blur. The clamp is non-destructive — saving rewrites with the
       // clamped value, so subsequent loads are stable.
       motionBlur:
-          ((json['motionBlur'] as num?)?.toDouble() ?? defaults.motionBlur)
-              .clamp(0.0, 0.5),
-      cursorMovementBlur:
-          ((json['cursorMovementBlur'] as num?)?.toDouble() ??
-                  defaults.cursorMovementBlur)
-              .clamp(0.0, 1.0),
-      screenMovementBlur:
-          ((json['screenMovementBlur'] as num?)?.toDouble() ??
-                  defaults.screenMovementBlur)
-              .clamp(0.0, 1.0),
-      screenZoomBlur:
-          ((json['screenZoomBlur'] as num?)?.toDouble() ??
-                  defaults.screenZoomBlur)
-              .clamp(0.0, 1.0),
-      cursorShadow:
-          (json['cursorShadow'] as num?)?.toDouble() ?? defaults.cursorShadow,
-      clickSpring: json['clickSpring'] is Map<String, dynamic>
-          ? ClickSpring.fromJson(json['clickSpring'] as Map<String, dynamic>)
-          : defaults.clickSpring,
+          _readDouble(json['motionBlur'], defaults.motionBlur).clamp(0.0, 0.5),
+      cursorMovementBlur: _readDouble(
+        json['cursorMovementBlur'],
+        defaults.cursorMovementBlur,
+      ).clamp(0.0, 1.0),
+      screenMovementBlur: _readDouble(
+        json['screenMovementBlur'],
+        defaults.screenMovementBlur,
+      ).clamp(0.0, 1.0),
+      screenZoomBlur: _readDouble(
+        json['screenZoomBlur'],
+        defaults.screenZoomBlur,
+      ).clamp(0.0, 1.0),
+      cursorShadow: _readDouble(json['cursorShadow'], defaults.cursorShadow),
+      clickSpring: _section(
+        json['clickSpring'],
+        ClickSpring.fromJson,
+        defaults.clickSpring,
+      ),
       cursorDelay: json['cursorDelayMicros'] is int
           ? Duration(microseconds: json['cursorDelayMicros'] as int)
           : defaults.cursorDelay,
-      windowFrame: frame != null
-          ? WindowFrame.fromJson(frame)
-          : defaults.windowFrame,
-      cursorPostProcess: json['cursorPostProcess'] is Map<String, dynamic>
-          ? CursorPostProcess.fromJson(
-              json['cursorPostProcess'] as Map<String, dynamic>,
-            )
-          : CursorPostProcess.none,
+      windowFrame: _section(
+        json['windowFrame'],
+        WindowFrame.fromJson,
+        defaults.windowFrame,
+      ),
+      cursorPostProcess: _section(
+        json['cursorPostProcess'],
+        CursorPostProcess.fromJson,
+        CursorPostProcess.none,
+      ),
       outputAspect:
           (json['outputAspect'] is String) &&
               OutputAspect.values.any((v) => v.name == json['outputAspect'])
           ? OutputAspect.values.byName(json['outputAspect'] as String)
           : defaults.outputAspect,
       timelineScale: _readTimelineScale(json['timelineScale']),
-      keystrokeOverlay: json['keystrokeOverlay'] is Map<String, dynamic>
-          ? KeystrokeOverlaySettings.fromJson(
-              json['keystrokeOverlay'] as Map<String, dynamic>,
-            )
-          : const KeystrokeOverlaySettings(),
-      cameraSettings: json['cameraSettings'] is Map<String, dynamic>
-          ? CameraSettings.fromJson(
-              json['cameraSettings'] as Map<String, dynamic>,
-            )
-          : const CameraSettings(),
-      captionStyle: json['captionStyle'] is Map<String, dynamic>
-          ? CaptionStyle.fromJson(json['captionStyle'] as Map<String, dynamic>)
-          : const CaptionStyle(),
+      keystrokeOverlay: _section(
+        json['keystrokeOverlay'],
+        KeystrokeOverlaySettings.fromJson,
+        const KeystrokeOverlaySettings(),
+      ),
+      cameraSettings: _section(
+        json['cameraSettings'],
+        CameraSettings.fromJson,
+        const CameraSettings(),
+      ),
+      captionStyle: _section(
+        json['captionStyle'],
+        CaptionStyle.fromJson,
+        const CaptionStyle(),
+      ),
       // pendingScaleAnchor is transient; always null after load.
     );
   }
@@ -441,11 +462,11 @@ class EditorProjectState {
   }
 
   static T _decodeEnum<T extends Enum>(
-    String? name,
+    Object? name,
     List<T> values,
     T fallback,
   ) {
-    if (name == null) return fallback;
+    if (name is! String) return fallback;
     for (final v in values) {
       if (v.name == name) return v;
     }
@@ -455,6 +476,26 @@ class EditorProjectState {
     // for defaults — far worse than a single cosmetic field resetting.
     return fallback;
   }
+
+  /// Parses a nested JSON section, falling back to [fallback] when the
+  /// value isn't a map or its parser throws. One malformed section must
+  /// cost only that section — see the note at the top of [fromJson].
+  static T _section<T>(
+    Object? raw,
+    T Function(Map<String, dynamic>) parse,
+    T fallback,
+  ) {
+    if (raw is! Map<String, dynamic>) return fallback;
+    try {
+      return parse(raw);
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  /// Reads a double, tolerating a wrong-typed value.
+  static double _readDouble(Object? raw, double fallback) =>
+      raw is num ? raw.toDouble() : fallback;
 
   @override
   bool operator ==(Object other) {

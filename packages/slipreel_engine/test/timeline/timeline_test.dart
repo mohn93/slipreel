@@ -118,4 +118,38 @@ void main() {
       expect(restored.zoomTracks, isEmpty);
     });
   });
+
+  group('list retention (undo-snapshot corruption)', () {
+    // History entries hold EditorProjectState snapshots by reference.
+    // If Timeline/track copyWith retained the CALLER'S list, a caller
+    // mutating its list after the snapshot silently rewrites history.
+    // copyWith must take a defensive unmodifiable copy.
+    ZoomRegion region(int startMs) => ZoomRegion(
+      rect: const Rect.fromLTWH(0, 0, 100, 100),
+      startTime: Duration(milliseconds: startMs),
+      duration: const Duration(seconds: 1),
+      zoomLevel: 2.0,
+    );
+
+    test('Timeline.copyWith does not retain the caller list', () {
+      final source = <ZoomTrack>[
+        ZoomTrack(regions: [region(0)]),
+      ];
+      final timeline = const Timeline().copyWith(zoomTracks: source);
+      source.clear();
+      expect(timeline.zoomTracks, hasLength(1));
+      expect(
+        () => timeline.zoomTracks.add(const ZoomTrack()),
+        throwsUnsupportedError,
+      );
+    });
+
+    test('ZoomTrack.copyWith does not retain the caller list', () {
+      final source = [region(0), region(2000)];
+      final track = const ZoomTrack().copyWith(regions: source);
+      source.removeLast();
+      expect(track.regions, hasLength(2));
+      expect(() => track.regions.add(region(4000)), throwsUnsupportedError);
+    });
+  });
 }
