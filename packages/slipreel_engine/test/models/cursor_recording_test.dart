@@ -282,5 +282,46 @@ void main() {
         expect(loadedLegacy.positions[1].timestampMicros, 16000);
       });
     });
+
+    group('chronological ingestion', () {
+      // getPositionAt and the event index binary-search over the sample
+      // list assuming ascending timestamps, but nothing enforced it at
+      // ingestion — an out-of-order sidecar (hand-edited, or a capture
+      // hiccup) silently broke every lookup after the inversion.
+      // addPosition must keep the list sorted.
+      CursorPosition p(int ms, double x) =>
+          CursorPosition(x: x, y: 0, timestampMicros: ms * 1000);
+
+      test('out-of-order addPosition keeps samples sorted', () {
+        final rec = CursorRecording();
+        rec.addPosition(p(0, 0));
+        rec.addPosition(p(100, 100));
+        rec.addPosition(p(50, 50)); // late arrival
+        final ts = rec.positions.map((s) => s.timestampMicros).toList();
+        expect(ts, [0, 50000, 100000]);
+      });
+
+      test('lookups after an out-of-order append stay correct', () {
+        final rec = CursorRecording();
+        rec.addPosition(p(0, 0));
+        rec.addPosition(p(100, 100));
+        rec.addPosition(p(50, 50));
+        // 75ms sits between the 50ms and 100ms samples: linear
+        // interpolation must give x = 75. With the inversion unsorted,
+        // the binary search lands in the wrong bracket.
+        final at = rec.getPositionAt(75 * 1000);
+        expect(at, isNotNull);
+        expect(at!.x, closeTo(75, 0.001));
+      });
+
+      test('in-order appends stay O(1) fast path (no reorder)', () {
+        final rec = CursorRecording();
+        for (var i = 0; i < 5; i++) {
+          rec.addPosition(p(i * 16, i.toDouble()));
+        }
+        final ts = rec.positions.map((s) => s.timestampMicros).toList();
+        expect(ts, [0, 16000, 32000, 48000, 64000]);
+      });
+    });
   });
 }

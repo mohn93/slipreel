@@ -15,8 +15,13 @@ class ZoomTrack {
 
   final List<ZoomRegion> regions;
 
-  ZoomTrack copyWith({List<ZoomRegion>? regions}) =>
-      ZoomTrack(regions: regions ?? this.regions);
+  // copyWith takes a defensive unmodifiable copy: history snapshots hold
+  // these objects by reference, so retaining a caller's mutable list
+  // would let later caller mutations silently rewrite undo entries.
+  // (Same rationale for every track/Timeline copyWith below.)
+  ZoomTrack copyWith({List<ZoomRegion>? regions}) => ZoomTrack(
+        regions: regions == null ? this.regions : List.unmodifiable(regions),
+      );
 
   Map<String, dynamic> toJson() => {
         'regions': regions.map((r) => r.toJson()).toList(),
@@ -28,7 +33,12 @@ class ZoomTrack {
     if (raw is List) {
       for (final r in raw) {
         if (r is Map<String, dynamic>) {
-          regions.add(ZoomRegion.fromJson(r));
+          try {
+            regions.add(ZoomRegion.fromJson(r));
+          } catch (_) {
+            // Skip the malformed entry: the store's blanket catch would
+            // otherwise trade the WHOLE project for defaults.
+          }
         }
       }
     }
@@ -51,8 +61,9 @@ class CameraTrack {
 
   final List<CameraRegion> regions;
 
-  CameraTrack copyWith({List<CameraRegion>? regions}) =>
-      CameraTrack(regions: regions ?? this.regions);
+  CameraTrack copyWith({List<CameraRegion>? regions}) => CameraTrack(
+        regions: regions == null ? this.regions : List.unmodifiable(regions),
+      );
 
   Map<String, dynamic> toJson() => {
         'regions': regions.map((r) => r.toJson()).toList(),
@@ -64,7 +75,12 @@ class CameraTrack {
     if (raw is List) {
       for (final r in raw) {
         if (r is Map<String, dynamic>) {
-          regions.add(CameraRegion.fromJson(r));
+          try {
+            regions.add(CameraRegion.fromJson(r));
+          } catch (_) {
+            // Skip the malformed entry: the store's blanket catch would
+            // otherwise trade the WHOLE project for defaults.
+          }
         }
       }
     }
@@ -97,7 +113,8 @@ class CaptionTrack {
     CaptionAudioSource? source,
   }) =>
       CaptionTrack(
-        segments: segments ?? this.segments,
+        segments:
+            segments == null ? this.segments : List.unmodifiable(segments),
         source: source ?? this.source,
       );
 
@@ -112,7 +129,11 @@ class CaptionTrack {
     if (raw is List) {
       for (final s in raw) {
         if (s is Map<String, dynamic>) {
-          segments.add(CaptionSegment.fromJson(s));
+          try {
+            segments.add(CaptionSegment.fromJson(s));
+          } catch (_) {
+            // Skip the malformed entry (see ZoomTrack.fromJson).
+          }
         }
       }
     }
@@ -197,10 +218,15 @@ class Timeline {
     List<CaptionTrack>? captionTracks,
   }) =>
       Timeline(
-        zoomTracks: zoomTracks ?? this.zoomTracks,
-        clips: clips ?? this.clips,
-        cameraTracks: cameraTracks ?? this.cameraTracks,
-        captionTracks: captionTracks ?? this.captionTracks,
+        zoomTracks:
+            zoomTracks == null ? this.zoomTracks : List.unmodifiable(zoomTracks),
+        clips: clips == null ? this.clips : List.unmodifiable(clips),
+        cameraTracks: cameraTracks == null
+            ? this.cameraTracks
+            : List.unmodifiable(cameraTracks),
+        captionTracks: captionTracks == null
+            ? this.captionTracks
+            : List.unmodifiable(captionTracks),
       );
 
   Map<String, dynamic> toJson() => {
@@ -225,7 +251,11 @@ class Timeline {
     if (rawClips is List) {
       for (final c in rawClips) {
         if (c is Map<String, dynamic>) {
-          clips.add(ClipSlice.fromJson(c));
+          try {
+            clips.add(ClipSlice.fromJson(c));
+          } catch (_) {
+            // Skip the malformed slice (see ZoomTrack.fromJson).
+          }
         }
       }
     }

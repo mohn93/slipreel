@@ -18,6 +18,7 @@ void main() {
     ValueChanged<int?>? onSelected,
     ValueChanged<int>? onDeleted,
     void Function(Duration, Duration)? onAdded,
+    void Function(int, CameraRegion)? onChanged,
   }) =>
       MaterialApp(
         home: Scaffold(
@@ -35,7 +36,7 @@ void main() {
               onCameraSelected: onSelected,
               onCameraDeleted: onDeleted,
               onCameraAdded: onAdded,
-              onCameraChanged: (_, __) {},
+              onCameraChanged: onChanged ?? (_, __) {},
             ),
           ),
         ),
@@ -56,5 +57,34 @@ void main() {
     await tester.tap(find.byKey(const Key('camera-pill-0')));
     await tester.pump();
     expect(selected, 0);
+  });
+
+  testWidgets('body drag previews locally and commits once on release',
+      (tester) async {
+    // Mirrors zoom_lane_drag_commit_test.dart: per-tick onChanged
+    // commits rebuilt every project watcher at drag rate; the pill now
+    // previews locally and commits exactly once.
+    final changes = <(int, CameraRegion)>[];
+    await tester.pumpWidget(host(
+      regions: [region(2000, 2000)],
+      onChanged: (i, r) => changes.add((i, r)),
+    ));
+    await tester.pumpAndSettle();
+
+    final gesture = await tester
+        .startGesture(tester.getCenter(find.byKey(const Key('camera-pill-0'))));
+    await gesture.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(30, 0));
+    await tester.pump();
+    expect(changes, isEmpty,
+        reason: 'no commit may happen while the pointer is down');
+
+    await gesture.up();
+    await tester.pump();
+    expect(changes, hasLength(1), reason: 'exactly one commit on release');
+    expect(changes.single.$2.startTime,
+        greaterThan(const Duration(seconds: 2)));
+    expect(changes.single.$2.duration, const Duration(seconds: 2));
   });
 }

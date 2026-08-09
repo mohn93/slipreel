@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:convert';
 import 'package:flutter/painting.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
@@ -23,9 +24,30 @@ class CursorRecording {
   List<CursorPosition> get positions =>
       _positionsSnapshot ??= List.unmodifiable(_positions);
 
-  /// Add a cursor position to the recording
+  /// Add a cursor position to the recording.
+  ///
+  /// [getPositionAt] and the event index binary-search over the list
+  /// assuming ascending timestamps, so ingestion enforces the invariant
+  /// here: the normal capture path appends in order (O(1)); a late
+  /// arrival (hand-edited sidecar, capture hiccup) takes the rare
+  /// sorted-insert path instead of silently breaking every lookup
+  /// after the inversion.
   void addPosition(CursorPosition position) {
-    _positions.add(position);
+    if (_positions.isEmpty ||
+        position.timestampMicros >= _positions.last.timestampMicros) {
+      _positions.add(position);
+    } else {
+      var lo = 0, hi = _positions.length;
+      while (lo < hi) {
+        final mid = (lo + hi) >> 1;
+        if (_positions[mid].timestampMicros <= position.timestampMicros) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
+        }
+      }
+      _positions.insert(lo, position);
+    }
     _positionsSnapshot = null;
     _version++;
   }
@@ -149,34 +171,48 @@ class CursorRecording {
         throw Exception('Cursor file not found: $filePath');
       }
 
-      final content = await file.readAsString();
-      final jsonData = jsonDecode(content) as List;
+      // Read + JSON-decode + sample mapping run in a worker isolate: a
+      // long recording's sidecar is megabytes of JSON, and parsing it on
+      // the UI isolate stalled editor open / recording stop for
+      // 50-300 ms. The parsed samples transfer back by message; the
+      // recording itself is assembled here (its caches aren't sendable).
+      final samples = await Isolate.run(() => _parseSidecar(filePath));
 
       final recording = CursorRecording();
-      if (jsonData.isEmpty) return recording;
-
-      final raw = jsonData
-          .map((m) => CursorPosition.fromJson(m as Map<String, dynamic>))
-          .toList(growable: false);
-      final isLegacy =
-          raw.first.timestampMicros > _legacyTimestampThresholdMicros;
-      final base = isLegacy ? raw.first.timestampMicros : 0;
-      for (final p in raw) {
-        recording.addPosition(
-          CursorPosition(
-            x: p.x,
-            y: p.y,
-            timestampMicros: p.timestampMicros - base,
-            isClicked: p.isClicked,
-            state: p.state,
-          ),
-        );
+      for (final p in samples) {
+        recording.addPosition(p);
       }
-
       return recording;
     } catch (e) {
       throw Exception('Failed to load cursor data: $e');
     }
+  }
+
+  /// Pure parse stage of [loadFromFile] — runs inside [Isolate.run].
+  /// Applies the legacy mach-timestamp rebase (see the note above
+  /// [_legacyTimestampThresholdMicros]).
+  static Future<List<CursorPosition>> _parseSidecar(String filePath) async {
+    final content = await File(filePath).readAsString();
+    final jsonData = jsonDecode(content) as List;
+    if (jsonData.isEmpty) return const [];
+
+    final raw = jsonData
+        .map((m) => CursorPosition.fromJson(m as Map<String, dynamic>))
+        .toList(growable: false);
+    final isLegacy =
+        raw.first.timestampMicros > _legacyTimestampThresholdMicros;
+    final base = isLegacy ? raw.first.timestampMicros : 0;
+    if (base == 0) return raw;
+    return [
+      for (final p in raw)
+        CursorPosition(
+          x: p.x,
+          y: p.y,
+          timestampMicros: p.timestampMicros - base,
+          isClicked: p.isClicked,
+          state: p.state,
+        ),
+    ];
   }
 
   /// Get total number of positions

@@ -394,6 +394,18 @@ class _ZoomPillState extends State<_ZoomPill> {
   double _dxAccum = 0;
   bool _hovered = false;
 
+  // Live drag preview. Per-tick widget.onChanged commits used to push a
+  // full project-state publish on EVERY pointer move — rebuilding every
+  // project watcher (canvas, inspector, all lanes) at drag rate and
+  // spamming the coalesced-undo timer. The pill now renders this local
+  // preview during the gesture and commits exactly once in [_endDrag]
+  // (pinned by zoom_lane_drag_commit_test.dart).
+  ZoomRegion? _preview;
+
+  /// What the pill renders: the in-flight drag preview, else the
+  /// committed region.
+  ZoomRegion get _renderZoom => _preview ?? widget.zoom;
+
   // Zooms are stored in SOURCE time but the timeline x-axis is edited
   // time (compressed by slice playback speed + collapsed across trimmed
   // ranges). Map source → edited at the rendering and drag-clamp seams.
@@ -403,10 +415,10 @@ class _ZoomPillState extends State<_ZoomPill> {
       widget.clips.isEmpty ? t : editedToSource(widget.clips, t);
 
   double get _startX =>
-      timeToX(_sourceToEdited(widget.zoom.startTime), widget.pixelsPerSecond);
+      timeToX(_sourceToEdited(_renderZoom.startTime), widget.pixelsPerSecond);
 
   double get _endX =>
-      timeToX(_sourceToEdited(widget.zoom.endTime), widget.pixelsPerSecond);
+      timeToX(_sourceToEdited(_renderZoom.endTime), widget.pixelsPerSecond);
 
   Duration get _minDuration => const Duration(milliseconds: minZoomDurationMs);
 
@@ -421,10 +433,18 @@ class _ZoomPillState extends State<_ZoomPill> {
   }
 
   void _endDrag() {
+    final committed = _preview;
     setState(() {
       _mode = _ZoomDragMode.none;
       _dxAccum = 0;
+      _preview = null;
     });
+    // Single commit for the whole gesture. The parent's state publish
+    // rebuilds this pill with widget.zoom == committed, so clearing the
+    // preview in the same frame never flickers back to the old geometry.
+    if (committed != null && committed != widget.zoom) {
+      widget.onChanged?.call(widget.index, committed);
+    }
   }
 
   void _update(double dxDelta) {
@@ -501,15 +521,14 @@ class _ZoomPillState extends State<_ZoomPill> {
       newDuration: newDuration,
     );
 
-    widget.onChanged!(
-      widget.index,
-      widget.zoom.copyWith(
+    setState(() {
+      _preview = widget.zoom.copyWith(
         startTime: nextStart,
         duration: newDuration,
         enterDuration: ramps.enter,
         exitDuration: ramps.exit,
-      ),
-    );
+      );
+    });
   }
 
   @override
@@ -543,11 +562,11 @@ class _ZoomPillState extends State<_ZoomPill> {
     final fill = widget.isSelected ? zoomFillSelected : zoomFill;
     final stroke = widget.isSelected ? Colors.white : zoomStroke;
 
-    final regionUs = widget.zoom.duration.inMicroseconds;
+    final regionUs = _renderZoom.duration.inMicroseconds;
     final pxPerRegionUs = regionUs == 0 ? 0.0 : pillWidth / regionUs;
-    final enterPx = widget.zoom.enterDuration.inMicroseconds * pxPerRegionUs;
+    final enterPx = _renderZoom.enterDuration.inMicroseconds * pxPerRegionUs;
     final exitPx =
-        pillWidth - widget.zoom.exitDuration.inMicroseconds * pxPerRegionUs;
+        pillWidth - _renderZoom.exitDuration.inMicroseconds * pxPerRegionUs;
 
     // The zoom lane is sized to (pillBodyHeight + badgeArea + 2*inset). The
     // outer MouseRegion only tracks `_hovered` for show-on-hover affordances
@@ -563,7 +582,11 @@ class _ZoomPillState extends State<_ZoomPill> {
     // dragging behind. Pill state (drag mode, hover) is unaffected —
     // AnimatedPositioned only animates the outer Stack-slot geometry.
     return AnimatedPositioned(
-      duration: widget.trimDragging || !widget.animateLayout
+      // Snap (no tween) during this pill's own drag too — the preview
+      // geometry changes every pointer tick and must track it 1:1.
+      duration: widget.trimDragging ||
+              !widget.animateLayout ||
+              _mode != _ZoomDragMode.none
           ? Duration.zero
           : const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
