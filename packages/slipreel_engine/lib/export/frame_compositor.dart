@@ -220,6 +220,15 @@ class FrameCompositor {
   late final double _renderSx = renderSize.width / totalSize.width;
   late final double _renderSy = renderSize.height / totalSize.height;
 
+  /// The scene-blur shader scales its kernel radius by a single
+  /// devicePixelRatio scalar, but the canvas→render scale can differ
+  /// slightly per axis once each dimension is independently rounded to
+  /// even. Feed it the axis-neutral mean so the blur radius doesn't
+  /// arbitrarily track width over height; with no downscale
+  /// (sx == sy == 1) it is exactly 1.0, so the render-size==canvas
+  /// byte-identical path is unaffected.
+  late final double _renderScale = (_renderSx + _renderSy) / 2;
+
   /// Rect where the video is drawn (in canvas coordinates).
   /// On the device path this is derived from the layout's videoRect, shifted
   /// for even-canvas centering. On the standard path it is centered in the
@@ -579,7 +588,7 @@ class FrameCompositor {
                 sampleCount: _sceneBlurSampleCount,
                 speedCurveExp: _sceneBlurSpeedCurveExp,
                 speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
-                devicePixelRatio: _renderSx,
+                devicePixelRatio: _renderScale,
               );
             } else {
               composeCanvas.drawPicture(fgPicture);
@@ -908,7 +917,7 @@ class FrameCompositor {
               sampleCount: _sceneBlurSampleCount,
               speedCurveExp: _sceneBlurSpeedCurveExp,
               speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
-              devicePixelRatio: _renderSx,
+              devicePixelRatio: _renderScale,
             );
           } else {
             composeCanvas.drawPicture(fgPicture);
