@@ -639,6 +639,125 @@ void main() {
       photo?.dispose();
     });
 
+    test('visible chrome reaches the composed bytes (opaque vs transparent '
+        'shadow differ)', () async {
+      // Guards the chrome compositing step itself: if a refactor drops
+      // the chrome layer from the output, both composes below produce
+      // identical bytes and this fails. Same frame geometry both times
+      // so totalSize is identical; only the chrome's visibility changes.
+      Future<Uint8List> composeWithShadow(int shadowArgb) async {
+        final compositor = FrameCompositor(
+          projectState: EditorProjectState.defaults().copyWith(
+            windowFrame: WindowFrame(
+              name: 'ChromeGuard',
+              padding: const EdgeInsets.all(24),
+              cornerRadius: 12,
+              shadowBlur: 18,
+              shadowOffset: const Offset(0, 8),
+              shadowColor: Color(shadowArgb),
+              borderWidth: 0,
+            ),
+          ),
+          cursorRecording: CursorRecording(),
+          metadata: _meta(),
+          videoSize: const Size(32, 24),
+          fps: 30,
+        );
+        try {
+          return await compositor.compose(
+            videoFrameBgra: _solidBgra(32, 24, 0xFF, 0x00, 0xFF),
+            position: Duration.zero,
+          );
+        } finally {
+          compositor.dispose();
+        }
+      }
+
+      final withShadow = await composeWithShadow(0xAA000000);
+      final withoutShadow = await composeWithShadow(0x00000000);
+      expect(withShadow.length, withoutShadow.length);
+      var differ = false;
+      for (var i = 0; i < withShadow.length && !differ; i++) {
+        differ = withShadow[i] != withoutShadow[i];
+      }
+      expect(differ, isTrue,
+          reason: 'an opaque drop shadow must change the composed pixels; '
+              'identical bytes mean the chrome layer was dropped');
+    });
+
+    test('scene motion blur reaches the composed bytes (blur on vs off '
+        'differ mid-pan)', () async {
+      // Guards the blur compositing step: if a refactor stops routing
+      // the smeared content into the output, the blur-on sequence
+      // produces the same bytes as blur-off and this fails.
+      Future<Uint8List> composeSequence({required double motionBlur}) async {
+        final recording = CursorRecording();
+        for (var ms = 0; ms <= 800; ms += 16) {
+          recording.addPosition(
+            CursorPosition(
+              x: 160 + ms * 0.2,
+              y: 120,
+              timestampMicros: ms * 1000,
+            ),
+          );
+        }
+        final compositor = FrameCompositor(
+          projectState: EditorProjectState.defaults().copyWith(
+            motionBlur: motionBlur,
+            screenMovementBlur: 1.0,
+            zoomRegions: [
+              ZoomRegion(
+                rect: const Rect.fromLTWH(120, 90, 80, 60),
+                startTime: Duration.zero,
+                duration: const Duration(milliseconds: 800),
+                zoomLevel: 2.0,
+                followCursor: true,
+                enterDuration: const Duration(milliseconds: 300),
+              ),
+            ],
+            windowFrame: const WindowFrame(
+              name: 'BlurGuard',
+              padding: EdgeInsets.all(24),
+              cornerRadius: 12,
+              shadowBlur: 0,
+              shadowOffset: Offset.zero,
+              shadowColor: Color(0x00000000),
+              borderWidth: 0,
+            ),
+          ),
+          cursorRecording: recording,
+          metadata: _meta(),
+          videoSize: const Size(320, 240),
+          fps: 30,
+        );
+        try {
+          final magenta = _solidBgra(320, 240, 0xFF, 0x00, 0xFF);
+          await compositor.compose(
+            videoFrameBgra: magenta,
+            position: const Duration(milliseconds: 150),
+          );
+          return await compositor.compose(
+            videoFrameBgra: magenta,
+            position: const Duration(milliseconds: 200),
+          );
+        } finally {
+          compositor.dispose();
+        }
+      }
+
+      final blurred = await composeSequence(motionBlur: 1.0);
+      final crisp = await composeSequence(motionBlur: 0.0);
+      expect(blurred.length, crisp.length);
+      var differ = false;
+      for (var i = 0; i < blurred.length && !differ; i++) {
+        differ = blurred[i] != crisp[i];
+      }
+      expect(differ, isTrue,
+          reason: 'a mid-ramp panning frame with scene blur must differ '
+              'from the crisp compose; identical bytes mean the smear '
+              'never reached the output');
+    });
+
     test('_loadWallpaperPhoto disposes the codec even when decoding '
         'throws', () async {
       // The whole point of the try/finally: a throw from getNextFrame
