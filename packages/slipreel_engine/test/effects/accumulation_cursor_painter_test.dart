@@ -13,11 +13,17 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 class _StampSizingCanvas implements ui.Canvas {
   final List<Rect> stampDstRects = [];
   final List<bool> stampHasImageFilter = [];
+  final List<Rect?> saveLayerBounds = [];
 
   @override
   void drawImageRect(ui.Image image, Rect src, Rect dst, Paint paint) {
     stampDstRects.add(dst);
     stampHasImageFilter.add(paint.imageFilter != null);
+  }
+
+  @override
+  void saveLayer(Rect? bounds, Paint paint) {
+    saveLayerBounds.add(bounds);
   }
 
   @override
@@ -60,6 +66,79 @@ CursorRecording _jitterRecording() {
 }
 
 void main() {
+  group('AccumulationCursorPainter zero-exposure fast path', () {
+    test('zero exposure draws exactly ONE stamp regardless of sampleCount',
+        () {
+      // With the blur slider at 0 the exposure window collapses: all N
+      // sub-frame stamps land on the same visual time, same sample,
+      // same position. Drawing N coincident 1/N-alpha stamps through
+      // the additive layer is 32x the necessary work AND accumulates
+      // up to N/2 levels of 8-bit rounding error versus a single stamp
+      // at alpha 1.0.
+      const painterSize = Size(200, 200);
+      final painter = AccumulationCursorPainter(
+        cursorRecording: _staticRecording(withClick: false),
+        position: const Duration(milliseconds: 100),
+        videoSize: painterSize,
+        exposureMs: 0,
+        sampleCount: 32,
+        sizeMultiplier: 1.0,
+        devicePixelRatio: 1.0,
+      );
+
+      final canvas = _StampSizingCanvas();
+      painter.paint(canvas, painterSize);
+
+      expect(canvas.stampDstRects.length, 1,
+          reason: 'zero exposure must degenerate to a single sharp '
+              'stamp, not N coincident ones');
+    });
+
+    test('sampleCount 1 also draws exactly one stamp', () {
+      const painterSize = Size(200, 200);
+      final painter = AccumulationCursorPainter(
+        cursorRecording: _staticRecording(withClick: false),
+        position: const Duration(milliseconds: 100),
+        videoSize: painterSize,
+        exposureMs: 40,
+        sampleCount: 1,
+        sizeMultiplier: 1.0,
+        devicePixelRatio: 1.0,
+      );
+      final canvas = _StampSizingCanvas();
+      painter.paint(canvas, painterSize);
+      expect(canvas.stampDstRects.length, 1);
+    });
+  });
+
+  group('AccumulationCursorPainter layer bounds', () {
+    test('accumulation saveLayer covers the full canvas (measured-faster '
+        'than trail bounds under the software rasterizer)', () {
+      // A trail-bounded layer was tried and benchmarked ~2x slower
+      // end-to-end (see the comment at the saveLayer call site). This
+      // pins the deliberate full-canvas choice so a future
+      // "optimization" re-attempt starts from the measurement, not the
+      // intuition.
+      const painterSize = Size(2000, 2000);
+      final painter = AccumulationCursorPainter(
+        cursorRecording: _staticRecording(withClick: false),
+        position: const Duration(milliseconds: 100),
+        videoSize: painterSize,
+        exposureMs: 40,
+        sampleCount: 8,
+        sizeMultiplier: 1.0,
+        devicePixelRatio: 1.0,
+      );
+
+      final canvas = _StampSizingCanvas();
+      painter.paint(canvas, painterSize);
+
+      expect(canvas.saveLayerBounds, hasLength(1));
+      expect(canvas.saveLayerBounds.single,
+          const Rect.fromLTWH(0, 0, 2000, 2000));
+    });
+  });
+
   group('AccumulationCursorPainter press-pulse', () {
     test('with a click event mid-window, at least one stamp is smaller than '
         'the equivalent stamp from a recording with no click events '
@@ -171,7 +250,9 @@ void main() {
       final canvas = _StampSizingCanvas();
       painter.paint(canvas, painterSize);
 
-      expect(canvas.stampDstRects, hasLength(8));
+      // Zero exposure collapses to a single stamp (fast path) — the
+      // point of this test is WHERE it lands, not how many there are.
+      expect(canvas.stampDstRects, hasLength(1));
       for (final stamp in canvas.stampDstRects) {
         expect(stamp.center.dx, closeTo(smoothed.dx, 1e-6));
         expect(stamp.center.dy, closeTo(smoothed.dy, 1e-6));

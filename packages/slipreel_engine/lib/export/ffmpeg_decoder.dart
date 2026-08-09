@@ -67,13 +67,21 @@ class FfmpegDecoder {
   }
 
   Stream<Uint8List> frames() async* {
+    final frameSize = width * height * 4;
+    // A zero-area frame makes the chunk-draining loop below take 0 bytes
+    // per iteration and never advance — a hard hang the instant stdout
+    // arrives. Dimensions come from validated decode metadata, so this is
+    // unreachable in practice; guard it anyway rather than freeze an export.
+    if (frameSize <= 0) {
+      throw StateError(
+          'FfmpegDecoder: invalid frame dimensions ${width}x$height');
+    }
+
     final args = _buildArgs();
     final binary = Ffmpeg.resolve();
     AppLogger.ffmpeg.d('decode: $binary ${args.join(" ")}');
 
     final process = _process = await Process.start(binary, args);
-    final frameSize = width * height * 4;
-    final buffer = BytesBuilder(copy: false);
     final stopwatch = Stopwatch()..start();
 
     final stderrBuffer = StringBuffer();
@@ -83,17 +91,28 @@ class FfmpegDecoder {
         .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
 
     try {
+      // Copy incoming chunks straight into a per-frame accumulator:
+      // exactly one memcpy per byte. Each completed frame is yielded
+      // and a fresh buffer allocated — consumers queue frames, so a
+      // yielded buffer must never be reused. (The previous
+      // BytesBuilder + sublist + fromList slicing copied every frame
+      // 2-3x, ~an extra 33MB of memcpy per 4K frame on the hottest
+      // producer in the pipeline.)
+      var frame = Uint8List(frameSize);
+      var filled = 0;
       await for (final chunk in process.stdout) {
-        buffer.add(chunk);
-        while (buffer.length >= frameSize) {
-          final all = buffer.takeBytes();
-          var offset = 0;
-          while (all.length - offset >= frameSize) {
-            yield Uint8List.fromList(all.sublist(offset, offset + frameSize));
-            offset += frameSize;
-          }
-          if (offset < all.length) {
-            buffer.add(all.sublist(offset));
+        var offset = 0;
+        while (offset < chunk.length) {
+          final available = chunk.length - offset;
+          final needed = frameSize - filled;
+          final take = available < needed ? available : needed;
+          frame.setRange(filled, filled + take, chunk, offset);
+          filled += take;
+          offset += take;
+          if (filled == frameSize) {
+            yield frame;
+            frame = Uint8List(frameSize);
+            filled = 0;
           }
         }
       }

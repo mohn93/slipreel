@@ -262,15 +262,6 @@ class AccumulationCursorPainter extends CustomPainter {
             );
     }
 
-    Offset resolvedPosition(CursorPosition sample, int visualTimeMicros) {
-      if (visualTimeMicros == position.inMicroseconds &&
-          currentScreenPos != null) {
-        return currentScreenPos!;
-      }
-      return screenPositionAt?.call(Duration(microseconds: visualTimeMicros)) ??
-          Offset(sample.x.toDouble(), sample.y.toDouble());
-    }
-
     // Buffer is sized to leave ~2 cursor-widths of padding around the
     // glyph (halo / shadow / any overshoot from state glyphs).
     final spriteBufferSize = (pxDiameter * 4).ceil().toDouble();
@@ -297,6 +288,13 @@ class AccumulationCursorPainter extends CustomPainter {
     final wallDtMicros = sampleCount <= 1
         ? 0
         : (exposureMicros ~/ (sampleCount - 1));
+    // Zero interval ⇒ every stamp is byte-identical (same visual time,
+    // same sample, same position). Collapse to ONE stamp at alpha 1.0:
+    // N coincident 1/N stamps through the additive layer are N× the
+    // work and accumulate up to N/2 levels of 8-bit rounding error
+    // versus the single sharp stamp. This is the blur-slider-at-zero
+    // steady state, so it is the common case, not an edge case.
+    final effectiveSampleCount = wallDtMicros == 0 ? 1 : sampleCount;
     final sourceMicrosPerWallMicro = effectiveActiveClip?.playbackSpeed ?? 1.0;
 
     // Resolve every geometric/spring sample once and reuse it for the shadow
@@ -312,7 +310,7 @@ class AccumulationCursorPainter extends CustomPainter {
             Offset screenPos,
           })
         >[];
-    for (var i = 0; i < sampleCount; i++) {
+    for (var i = 0; i < effectiveSampleCount; i++) {
       final wallBack = Duration(microseconds: i * wallDtMicros);
       final visualMicros = clips.isEmpty
           ? position.inMicroseconds -
@@ -325,13 +323,34 @@ class AccumulationCursorPainter extends CustomPainter {
       if (visualMicros < 0) continue;
       final stampClip = clipAtVisual(visualMicros);
       final run = runBoundsFor(visualMicros);
-      final sample = pathSampleAt(visualMicros, stampClip, run);
+      final queryMicros = queryMicrosFor(visualMicros, stampClip, run);
+
+      // Resolve the spring-history position FIRST. When it resolves
+      // (essentially every stamp during playback and export), the
+      // geometric path sample's x/y would be discarded anyway — and
+      // with the Smooth preset that sample costs a 9-tap Gaussian per
+      // stamp (~288 binary-searched lookups per frame at 32 stamps).
+      // Only the STATE is needed then, and a single filtered lookup
+      // returns the same state smoothedCursorAt would (it passes its
+      // center tap's state through unchanged).
+      final springPos =
+          (visualMicros == position.inMicroseconds && currentScreenPos != null)
+              ? currentScreenPos
+              : screenPositionAt?.call(Duration(microseconds: visualMicros));
+      final sample = springPos != null
+          ? cursorAtFiltered(
+              cursorRecording,
+              Duration(microseconds: queryMicros),
+              postProcess,
+            )
+          : pathSampleAt(visualMicros, stampClip, run);
       if (sample == null) continue;
       stamps.add((
         visualMicros: visualMicros,
-        queryMicros: queryMicrosFor(visualMicros, stampClip, run),
+        queryMicros: queryMicros,
         sample: sample,
-        screenPos: resolvedPosition(sample, visualMicros),
+        screenPos:
+            springPos ?? Offset(sample.x.toDouble(), sample.y.toDouble()),
       ));
     }
     if (stamps.isEmpty) return;
@@ -558,6 +577,12 @@ class AccumulationCursorPainter extends CustomPainter {
     // sum to 1.0. Outside, the finished layer composites onto the
     // scene with normal srcOver — the cursor doesn't brighten the
     // wallpaper around it the way a raw plus blend would.
+    //
+    // Deliberately FULL-CANVAS bounds. A trail-bounded layer was tried
+    // (2026-08-08 batch 2) and benchmarked ~2x SLOWER end-to-end under
+    // the software rasterizer, even when clamped to the canvas — the
+    // per-frame varying layer geometry costs more than the smaller
+    // allocation saves. Re-attempt only with a GPU-side measurement.
     canvas.saveLayer(Rect.fromLTWH(0, 0, size.width, size.height), Paint());
 
     for (final positioned in positionedStamps) {
