@@ -43,9 +43,24 @@ Duration steadyPreviewPlayhead({
   required Duration? prevRawPlayhead,
   required Duration? prevEmitted,
 }) {
+  // AVPlayerVideoOutput reports the presentation timestamp at which the
+  // current pixel buffer STARTED. On sparse/VFR screen recordings that same
+  // buffer can legitimately remain current for hundreds of milliseconds (the
+  // fixture that exposed this has a 1.15s packet). Treating the whole
+  // `clock - frameStart` age as decode latency pushes cursor/camera time far
+  // behind the playback clock, then makes it jump forward when the next frame
+  // or the completion event arrives.
+  //
+  // Genuine preview decode latency is only a few display frames. Bound the
+  // correction before the first-frame/no-history return as well as the
+  // monotonic floor below; otherwise play-after-seek can still jump backward
+  // once by the full VFR packet duration.
+  final boundedLatency = displayLatency > kMaxPreviewLag
+      ? kMaxPreviewLag
+      : displayLatency;
   final adjusted = previewPlayheadWithLatency(
     playhead: rawPlayhead,
-    displayLatency: displayLatency,
+    displayLatency: boundedLatency,
   );
   if (prevRawPlayhead == null || prevEmitted == null) return adjusted;
   // Real backward seek/loop — the raw playhead itself moved back. Follow it.
@@ -59,10 +74,13 @@ Duration steadyPreviewPlayhead({
 }
 
 /// Upper bound on how far the steadied preview clock may trail the real
-/// playback clock. Comfortably above genuine decode latency (a few frames) so
-/// normal jitter suppression is untouched, but small enough that a stalled
-/// texture / runaway latency estimate can't freeze the preview.
-const Duration kMaxPreviewLag = Duration(milliseconds: 250);
+/// playback clock. Fifty milliseconds covers roughly one frame at the
+/// timestamp-derived 25fps used by sparse screen captures (and three nominal
+/// 60fps frames), while preventing a long VFR packet from masquerading as
+/// hundreds of milliseconds of decode latency. Keeping this below
+/// PlaybackCanvas's 100ms paused-position stabilization threshold also avoids
+/// a correction disappearing as a visible jump on natural completion.
+const Duration kMaxPreviewLag = Duration(milliseconds: 50);
 
 /// Whether the preview should render the zoom focal from the deterministic
 /// [DeterministicFocalTrack] (a pure function of the playhead) instead of the

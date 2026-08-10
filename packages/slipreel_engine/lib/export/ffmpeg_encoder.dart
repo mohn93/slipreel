@@ -115,9 +115,9 @@ class FfmpegEncoder {
     int? sourceHeight,
     int? sourceFps,
     this.pixelFormat = FfmpegPixelFormat.bgra,
-  })  : sourceWidth = sourceWidth ?? width,
-        sourceHeight = sourceHeight ?? height,
-        sourceFps = sourceFps ?? fps;
+  }) : sourceWidth = sourceWidth ?? width,
+       sourceHeight = sourceHeight ?? height,
+       sourceFps = sourceFps ?? fps;
 
   List<String> _argsFor(String codec) {
     final useGraph = filterComplex != null && filterComplex!.isNotEmpty;
@@ -125,13 +125,19 @@ class FfmpegEncoder {
         useGraph && audioOutLabel != null && audioSourcePath != null;
 
     final args = <String>[
-      '-loglevel', 'error',
+      '-loglevel',
+      'error',
       '-y',
-      '-f', 'rawvideo',
-      '-pix_fmt', pixelFormat.ffmpegName,
-      '-s', '${sourceWidth}x$sourceHeight',
-      '-r', '$sourceFps',
-      '-i', '-',
+      '-f',
+      'rawvideo',
+      '-pix_fmt',
+      pixelFormat.ffmpegName,
+      '-s',
+      '${sourceWidth}x$sourceHeight',
+      '-r',
+      '$sourceFps',
+      '-i',
+      '-',
     ];
 
     // libx264 only runs when the HW encoder is unavailable — exactly when
@@ -151,8 +157,14 @@ class FfmpegEncoder {
       if (hasAudio) {
         args.addAll(['-map', audioOutLabel!]);
       }
-      args.addAll(
-          ['-c:v', codec, '-b:v', '${bitrateKbps}k', '-pix_fmt', 'yuv420p']);
+      args.addAll([
+        '-c:v',
+        codec,
+        '-b:v',
+        '${bitrateKbps}k',
+        '-pix_fmt',
+        'yuv420p',
+      ]);
       args.addAll(codecTuning);
       args.addAll(['-r', '$fps']);
       if (hasAudio) {
@@ -170,8 +182,14 @@ class FfmpegEncoder {
           'setsar=1',
         ],
       ];
-      args.addAll(
-          ['-c:v', codec, '-b:v', '${bitrateKbps}k', '-pix_fmt', 'yuv420p']);
+      args.addAll([
+        '-c:v',
+        codec,
+        '-b:v',
+        '${bitrateKbps}k',
+        '-pix_fmt',
+        'yuv420p',
+      ]);
       args.addAll(codecTuning);
       if (videoFilters.isNotEmpty) {
         args.addAll(['-vf', videoFilters.join(',')]);
@@ -262,7 +280,9 @@ class FfmpegEncoder {
     _stderrDone = p.stderr
         .transform(const SystemEncoding().decoder)
         .forEach(buffer.write)
-        .catchError((_) {}); // stderr is diagnostic only; never let it go unhandled
+        .catchError(
+          (_) {},
+        ); // stderr is diagnostic only; never let it go unhandled
     _sw.start();
   }
 
@@ -288,8 +308,9 @@ class FfmpegEncoder {
       // ffmpeg closed stdin (filter trim satisfied, process exiting).
       // Mark and let the caller drain instead of crashing the pipeline.
       _stdinClosed = true;
-      AppLogger.ffmpeg
-          .d('FfmpegEncoder: stdin closed mid-write (likely trim-satisfied): $e');
+      AppLogger.ffmpeg.d(
+        'FfmpegEncoder: stdin closed mid-write (likely trim-satisfied): $e',
+      );
       return false;
     } on FileSystemException catch (e) {
       // Some Dart versions on macOS surface broken pipes as
@@ -298,8 +319,9 @@ class FfmpegEncoder {
       // disk-level error) still propagates because writeFrame doesn't
       // touch the filesystem.
       _stdinClosed = true;
-      AppLogger.ffmpeg
-          .d('FfmpegEncoder: stdin closed mid-write (likely trim-satisfied): $e');
+      AppLogger.ffmpeg.d(
+        'FfmpegEncoder: stdin closed mid-write (likely trim-satisfied): $e',
+      );
       return false;
     }
   }

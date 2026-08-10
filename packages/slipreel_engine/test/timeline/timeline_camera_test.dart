@@ -23,6 +23,14 @@ void main() {
       expect(t.activeCameraRegions, hasLength(1));
     });
 
+    test('CameraTrack constructor does not retain a mutable region list', () {
+      final source = [region()];
+      final track = CameraTrack(regions: source);
+      source.clear();
+      expect(track.regions, hasLength(1));
+      expect(() => track.regions.clear(), throwsUnsupportedError);
+    });
+
     test('json round-trips camera tracks alongside zoom + clips', () {
       final t = Timeline(cameraTracks: [CameraTrack(regions: [region()])]);
       final back = Timeline.fromJson(t.toJson());

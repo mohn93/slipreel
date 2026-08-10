@@ -11,21 +11,21 @@ import 'package:slipreel_engine/state/clip_slice.dart';
 /// (mute, lock, color label) later without re-shaping the persisted
 /// state again.
 class ZoomTrack {
-  const ZoomTrack({this.regions = const <ZoomRegion>[]});
+  ZoomTrack({List<ZoomRegion> regions = const <ZoomRegion>[]})
+    : regions = List.unmodifiable(regions);
 
   final List<ZoomRegion> regions;
 
-  // copyWith takes a defensive unmodifiable copy: history snapshots hold
-  // these objects by reference, so retaining a caller's mutable list
-  // would let later caller mutations silently rewrite undo entries.
-  // (Same rationale for every track/Timeline copyWith below.)
-  ZoomTrack copyWith({List<ZoomRegion>? regions}) => ZoomTrack(
-        regions: regions == null ? this.regions : List.unmodifiable(regions),
-      );
+  // Constructors take defensive unmodifiable copies: history snapshots hold
+  // these objects by reference, so retaining a caller's mutable list would
+  // let later caller mutations silently rewrite undo entries.
+  // (Same rationale for every track/Timeline below.)
+  ZoomTrack copyWith({List<ZoomRegion>? regions}) =>
+      ZoomTrack(regions: regions ?? this.regions);
 
   Map<String, dynamic> toJson() => {
-        'regions': regions.map((r) => r.toJson()).toList(),
-      };
+    'regions': regions.map((r) => r.toJson()).toList(),
+  };
 
   factory ZoomTrack.fromJson(Map<String, dynamic> json) {
     final raw = json['regions'];
@@ -57,17 +57,17 @@ class ZoomTrack {
 /// One lane of [CameraRegion]s on the [Timeline]. Parallels [ZoomTrack];
 /// today the editor renders only the first camera track.
 class CameraTrack {
-  const CameraTrack({this.regions = const <CameraRegion>[]});
+  CameraTrack({List<CameraRegion> regions = const <CameraRegion>[]})
+    : regions = List.unmodifiable(regions);
 
   final List<CameraRegion> regions;
 
-  CameraTrack copyWith({List<CameraRegion>? regions}) => CameraTrack(
-        regions: regions == null ? this.regions : List.unmodifiable(regions),
-      );
+  CameraTrack copyWith({List<CameraRegion>? regions}) =>
+      CameraTrack(regions: regions ?? this.regions);
 
   Map<String, dynamic> toJson() => {
-        'regions': regions.map((r) => r.toJson()).toList(),
-      };
+    'regions': regions.map((r) => r.toJson()).toList(),
+  };
 
   factory CameraTrack.fromJson(Map<String, dynamic> json) {
     final raw = json['regions'];
@@ -100,10 +100,10 @@ class CameraTrack {
 /// was transcribed from (remembered so re-generation preselects it). Parallels
 /// [CameraTrack]; today the editor renders only the first caption track.
 class CaptionTrack {
-  const CaptionTrack({
-    this.segments = const <CaptionSegment>[],
+  CaptionTrack({
+    List<CaptionSegment> segments = const <CaptionSegment>[],
     this.source = CaptionAudioSource.mixed,
-  });
+  }) : segments = List.unmodifiable(segments);
 
   final List<CaptionSegment> segments;
   final CaptionAudioSource source;
@@ -111,17 +111,15 @@ class CaptionTrack {
   CaptionTrack copyWith({
     List<CaptionSegment>? segments,
     CaptionAudioSource? source,
-  }) =>
-      CaptionTrack(
-        segments:
-            segments == null ? this.segments : List.unmodifiable(segments),
-        source: source ?? this.source,
-      );
+  }) => CaptionTrack(
+    segments: segments ?? this.segments,
+    source: source ?? this.source,
+  );
 
   Map<String, dynamic> toJson() => {
-        'segments': segments.map((s) => s.toJson()).toList(),
-        'source': source.name,
-      };
+    'segments': segments.map((s) => s.toJson()).toList(),
+    'source': source.name,
+  };
 
   factory CaptionTrack.fromJson(Map<String, dynamic> json) {
     final raw = json['segments'];
@@ -137,14 +135,12 @@ class CaptionTrack {
         }
       }
     }
-    final source = CaptionAudioSource.values
+    final source =
+        CaptionAudioSource.values
             .where((v) => v.name == json['source'])
             .firstOrNull ??
         CaptionAudioSource.mixed;
-    return CaptionTrack(
-      segments: List.unmodifiable(segments),
-      source: source,
-    );
+    return CaptionTrack(segments: List.unmodifiable(segments), source: source);
   }
 
   @override
@@ -172,18 +168,19 @@ class CaptionTrack {
 /// migration chain will fill them in (with empty defaults) when the
 /// fields land.
 class Timeline {
-  const Timeline({
-    this.zoomTracks = const <ZoomTrack>[],
-    this.clips = const <ClipSlice>[],
-    this.cameraTracks = const <CameraTrack>[],
-    this.captionTracks = const <CaptionTrack>[],
-  });
+  Timeline({
+    List<ZoomTrack> zoomTracks = const <ZoomTrack>[],
+    List<ClipSlice> clips = const <ClipSlice>[],
+    List<CameraTrack> cameraTracks = const <CameraTrack>[],
+    List<CaptionTrack> captionTracks = const <CaptionTrack>[],
+  }) : zoomTracks = List.unmodifiable(zoomTracks),
+       clips = SourceOrderedClipList(clips),
+       cameraTracks = List.unmodifiable(cameraTracks),
+       captionTracks = List.unmodifiable(captionTracks);
 
   /// Sensible blank slate: one empty zoom track, no clips (the
   /// controller seeds a single slice once it knows the video duration).
-  factory Timeline.defaults() => const Timeline(
-        zoomTracks: [ZoomTrack()],
-      );
+  factory Timeline.defaults() => Timeline(zoomTracks: [ZoomTrack()]);
 
   final List<ZoomTrack> zoomTracks;
   final List<ClipSlice> clips;
@@ -199,8 +196,9 @@ class Timeline {
 
   /// Regions on the first (active) camera track, or empty when none.
   /// The editor renders against this today.
-  List<CameraRegion> get activeCameraRegions =>
-      cameraTracks.isEmpty ? const <CameraRegion>[] : cameraTracks.first.regions;
+  List<CameraRegion> get activeCameraRegions => cameraTracks.isEmpty
+      ? const <CameraRegion>[]
+      : cameraTracks.first.regions;
 
   /// Segments on the first (active) caption track, or empty when none.
   List<CaptionSegment> get activeCaptions => captionTracks.isEmpty
@@ -216,25 +214,19 @@ class Timeline {
     List<ClipSlice>? clips,
     List<CameraTrack>? cameraTracks,
     List<CaptionTrack>? captionTracks,
-  }) =>
-      Timeline(
-        zoomTracks:
-            zoomTracks == null ? this.zoomTracks : List.unmodifiable(zoomTracks),
-        clips: clips == null ? this.clips : List.unmodifiable(clips),
-        cameraTracks: cameraTracks == null
-            ? this.cameraTracks
-            : List.unmodifiable(cameraTracks),
-        captionTracks: captionTracks == null
-            ? this.captionTracks
-            : List.unmodifiable(captionTracks),
-      );
+  }) => Timeline(
+    zoomTracks: zoomTracks ?? this.zoomTracks,
+    clips: clips ?? this.clips,
+    cameraTracks: cameraTracks ?? this.cameraTracks,
+    captionTracks: captionTracks ?? this.captionTracks,
+  );
 
   Map<String, dynamic> toJson() => {
-        'zoomTracks': zoomTracks.map((t) => t.toJson()).toList(),
-        'clips': clips.map((c) => c.toJson()).toList(),
-        'cameraTracks': cameraTracks.map((t) => t.toJson()).toList(),
-        'captionTracks': captionTracks.map((t) => t.toJson()).toList(),
-      };
+    'zoomTracks': zoomTracks.map((t) => t.toJson()).toList(),
+    'clips': clips.map((c) => c.toJson()).toList(),
+    'cameraTracks': cameraTracks.map((t) => t.toJson()).toList(),
+    'captionTracks': captionTracks.map((t) => t.toJson()).toList(),
+  };
 
   factory Timeline.fromJson(Map<String, dynamic> json) {
     final rawTracks = json['zoomTracks'];
@@ -296,11 +288,11 @@ class Timeline {
 
   @override
   int get hashCode => Object.hash(
-        Object.hashAll(zoomTracks),
-        Object.hashAll(clips),
-        Object.hashAll(cameraTracks),
-        Object.hashAll(captionTracks),
-      );
+    Object.hashAll(zoomTracks),
+    Object.hashAll(clips),
+    Object.hashAll(cameraTracks),
+    Object.hashAll(captionTracks),
+  );
 }
 
 bool _listEq<T>(List<T> a, List<T> b) {

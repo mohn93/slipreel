@@ -89,9 +89,17 @@ class ZoomMovement {
     required double rampGate,
     required Offset normalizedFocal,
     bool followCursor = false,
+    double? orientationRampGate,
   }) {
-    if (!isActive || rampGate <= 0.0) return ZoomMovementSample.identity;
-    final env = _ease(holdProgress) * rampGate.clamp(0.0, 1.0);
+    if (!isActive) return ZoomMovementSample.identity;
+    // Scale/drift stay locked to the zoom ramp. Sweep is an orientation
+    // channel, so the transformer may give it a softer return envelope that
+    // keeps yaw from appearing to snap flat while scale is still unwinding.
+    final channelGate = kind == ZoomMovementKind.sweep
+        ? (orientationRampGate ?? rampGate)
+        : rampGate;
+    if (channelGate <= 0.0) return ZoomMovementSample.identity;
+    final env = _ease(holdProgress) * channelGate.clamp(0.0, 1.0);
     if (env <= 0.0) return ZoomMovementSample.identity;
 
     switch (kind) {
@@ -127,7 +135,8 @@ class ZoomMovement {
             ? -_smoothLiveDirection(normalizedFocal.dx)
             : (normalizedFocal.dx >= 0 ? -1.0 : 1.0);
         return ZoomMovementSample(
-            focalDriftFrac: Offset(frac * dir * env, 0.0));
+          focalDriftFrac: Offset(frac * dir * env, 0.0),
+        );
     }
   }
 
@@ -142,9 +151,9 @@ class ZoomMovement {
   }
 
   Map<String, dynamic> toJson() => {
-        'kind': kind.name,
-        'intensity': intensity.name,
-      };
+    'kind': kind.name,
+    'intensity': intensity.name,
+  };
 
   factory ZoomMovement.fromJson(Map<String, dynamic> json) {
     ZoomMovementKind kind = ZoomMovementKind.none;

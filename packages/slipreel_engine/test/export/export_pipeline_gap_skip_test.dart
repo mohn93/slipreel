@@ -7,9 +7,11 @@
 // (b) that no blank frame ever leaks into the visible output — a margin
 // bug at a trim boundary would flash a pure-black frame.
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:slipreel_engine/export/export_cancellation.dart';
 import 'package:slipreel_engine/export/export_pipeline.dart';
 import 'package:slipreel_engine/export/gif_export_pipeline.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
@@ -91,72 +93,101 @@ Future<List<double>> _frameMeans(String path) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test(
-    'MP4: back-half trim skips composition for the leading gap and no '
-    'blank frame leaks into the output',
-    () async {
-      final tmp = Directory.systemTemp.createTempSync('gap_skip_mp4');
-      final outPath = '${tmp.path}/out.mp4';
+  test('MP4: back-half trim skips composition for the leading gap and no '
+      'blank frame leaks into the output', () async {
+    final tmp = Directory.systemTemp.createTempSync('gap_skip_mp4');
+    final outPath = '${tmp.path}/out.mp4';
 
-      // Fixture is ~1s @30fps. Trim to the back half [0.5s, 1s]: the first
-      // ~15 source frames are pure gap — they must be blank-skipped, not
-      // composed.
-      final state = _noneFrameState(
-        clips: [
-          ClipSlice(
-            cutStart: Duration.zero,
-            cutEnd: const Duration(seconds: 1),
-            trimStart: const Duration(milliseconds: 500),
-            trimEnd: const Duration(seconds: 1),
-          ),
-        ],
-      );
-
-      final summary = await ExportPipeline(
-        sourcePath: 'test/fixtures/sample_recording.mp4',
-        outputPath: outPath,
-        sourceMetadata: _meta(),
-        cursorRecording: CursorRecording(),
-        projectState: state,
-        settings: const ExportSettings(
-          format: ExportFormat.mp4,
-          resolution: ExportResolution.r720p,
-          compression: CompressionTier.web,
-          frameRate: 30,
-          destination: ExportDestination.file,
+    // Fixture is ~1s @30fps. Trim to the back half [0.5s, 1s]: the first
+    // ~15 source frames are pure gap — they must be blank-skipped, not
+    // composed.
+    final state = _noneFrameState(
+      clips: [
+        ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(seconds: 1),
+          trimStart: const Duration(milliseconds: 500),
+          trimEnd: const Duration(seconds: 1),
         ),
-      ).run();
+      ],
+    );
 
-      // ~15 gap frames minus the one-frame boundary margin — anything
-      // clearly positive proves the skip path ran.
+    final summary = await ExportPipeline(
+      sourcePath: 'test/fixtures/sample_recording.mp4',
+      outputPath: outPath,
+      sourceMetadata: _meta(),
+      cursorRecording: CursorRecording(),
+      projectState: state,
+      settings: const ExportSettings(
+        format: ExportFormat.mp4,
+        resolution: ExportResolution.r720p,
+        compression: CompressionTier.web,
+        frameRate: 30,
+        destination: ExportDestination.file,
+      ),
+    ).run();
+
+    // ~15 gap frames minus the one-frame boundary margin — anything
+    // clearly positive proves the skip path ran.
+    expect(
+      summary.skippedCompositeFrames,
+      greaterThanOrEqualTo(5),
+      reason:
+          'a 0.5s leading gap at 30fps must skip composition for '
+          'most of its frames',
+    );
+
+    final means = await _frameMeans(outPath);
+    expect(
+      means.length,
+      inInclusiveRange(12, 18),
+      reason: 'the retained 0.5s window should contain ~15 frames',
+    );
+    for (var i = 0; i < means.length; i++) {
       expect(
-        summary.skippedCompositeFrames,
-        greaterThanOrEqualTo(5),
-        reason: 'a 0.5s leading gap at 30fps must skip composition for '
-            'most of its frames',
+        means[i],
+        greaterThan(10),
+        reason:
+            'output frame $i is near-black — a blanked gap frame '
+            'leaked through the trim boundary',
       );
+    }
+    tmp.deleteSync(recursive: true);
+  });
 
-      final means = await _frameMeans(outPath);
-      expect(means, isNotEmpty);
-      for (var i = 0; i < means.length; i++) {
-        expect(
-          means[i],
-          greaterThan(10),
-          reason: 'output frame $i is near-black — a blanked gap frame '
-              'leaked through the trim boundary',
-        );
-      }
-      tmp.deleteSync(recursive: true);
-    },
-  );
+  test('MP4: untrimmed timeline skips nothing', () async {
+    final tmp = Directory.systemTemp.createTempSync('gap_skip_none');
+    final outPath = '${tmp.path}/out.mp4';
+
+    final summary = await ExportPipeline(
+      sourcePath: 'test/fixtures/sample_recording.mp4',
+      outputPath: outPath,
+      sourceMetadata: _meta(),
+      cursorRecording: CursorRecording(),
+      projectState: _noneFrameState(clips: const []),
+      settings: const ExportSettings(
+        format: ExportFormat.mp4,
+        resolution: ExportResolution.r720p,
+        compression: CompressionTier.web,
+        frameRate: 30,
+        destination: ExportDestination.file,
+      ),
+    ).run();
+
+    expect(summary.skippedCompositeFrames, 0);
+    tmp.deleteSync(recursive: true);
+  });
 
   test(
-    'MP4: untrimmed timeline skips nothing',
+    'MP4: a finalization failure removes the completed/partial output',
     () async {
-      final tmp = Directory.systemTemp.createTempSync('gap_skip_none');
+      final tmp = Directory.systemTemp.createTempSync('mp4_finish_failure');
+      addTearDown(() {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      });
       final outPath = '${tmp.path}/out.mp4';
 
-      final summary = await ExportPipeline(
+      final pipeline = ExportPipeline(
         sourcePath: 'test/fixtures/sample_recording.mp4',
         outputPath: outPath,
         sourceMetadata: _meta(),
@@ -169,64 +200,110 @@ void main() {
           frameRate: 30,
           destination: ExportDestination.file,
         ),
-      ).run();
+        finishForTesting: (encoder) async {
+          await encoder.finish();
+          throw Exception('simulated late mux/finalization failure');
+        },
+      );
 
-      expect(summary.skippedCompositeFrames, 0);
-      tmp.deleteSync(recursive: true);
+      await expectLater(pipeline.run(), throwsException);
+      expect(File(outPath).existsSync(), isFalse);
     },
   );
 
-  test(
-    'GIF: back-half trim skips composition in both passes and no blank '
-    'frame leaks into the output',
-    () async {
-      final tmp = Directory.systemTemp.createTempSync('gap_skip_gif');
-      final outPath = '${tmp.path}/out.gif';
+  test('MP4: cancellation during finalization stays a cancellation', () async {
+    final tmp = Directory.systemTemp.createTempSync('mp4_finish_cancel');
+    addTearDown(() {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
+    final outPath = '${tmp.path}/out.mp4';
+    final enteredFinish = Completer<void>();
+    final releaseFinish = Completer<void>();
+    final token = CancelToken();
 
-      final state = _noneFrameState(
-        clips: [
-          ClipSlice(
-            cutStart: Duration.zero,
-            cutEnd: const Duration(seconds: 1),
-            trimStart: const Duration(milliseconds: 500),
-            trimEnd: const Duration(seconds: 1),
-          ),
-        ],
-      );
+    final pipeline = ExportPipeline(
+      sourcePath: 'test/fixtures/sample_recording.mp4',
+      outputPath: outPath,
+      sourceMetadata: _meta(),
+      cursorRecording: CursorRecording(),
+      projectState: _noneFrameState(clips: const []),
+      settings: const ExportSettings(
+        format: ExportFormat.mp4,
+        resolution: ExportResolution.r720p,
+        compression: CompressionTier.web,
+        frameRate: 30,
+        destination: ExportDestination.file,
+      ),
+      finishForTesting: (encoder) async {
+        enteredFinish.complete();
+        await releaseFinish.future;
+        await encoder.finish();
+      },
+    );
 
-      final summary = await GifExportPipeline(
-        sourcePath: 'test/fixtures/sample_recording.mp4',
-        outputPath: outPath,
-        sourceMetadata: _meta(),
-        cursorRecording: CursorRecording(),
-        projectState: state,
-        settings: const ExportSettings(
-          format: ExportFormat.gif,
-          resolution: ExportResolution.r720p,
-          compression: CompressionTier.web,
-          frameRate: 10,
-          destination: ExportDestination.file,
+    final run = pipeline.run(cancelToken: token);
+    await enteredFinish.future.timeout(const Duration(seconds: 20));
+    token.cancel();
+    releaseFinish.complete();
+
+    await expectLater(run, throwsA(isA<ExportCancelledException>()));
+    expect(File(outPath).existsSync(), isFalse);
+  });
+
+  test('GIF: back-half trim skips source composition and no blank '
+      'frame leaks into the output', () async {
+    final tmp = Directory.systemTemp.createTempSync('gap_skip_gif');
+    final outPath = '${tmp.path}/out.gif';
+
+    final state = _noneFrameState(
+      clips: [
+        ClipSlice(
+          cutStart: Duration.zero,
+          cutEnd: const Duration(seconds: 1),
+          trimStart: const Duration(milliseconds: 500),
+          trimEnd: const Duration(seconds: 1),
         ),
-      ).run();
+      ],
+    );
 
-      // ~5 gap frames per pass at 10fps; both passes skip.
+    final summary = await GifExportPipeline(
+      sourcePath: 'test/fixtures/sample_recording.mp4',
+      outputPath: outPath,
+      sourceMetadata: _meta(),
+      cursorRecording: CursorRecording(),
+      projectState: state,
+      settings: const ExportSettings(
+        format: ExportFormat.gif,
+        resolution: ExportResolution.r720p,
+        compression: CompressionTier.web,
+        frameRate: 10,
+        destination: ExportDestination.file,
+      ),
+    ).run();
+
+    // ~5 leading source frames at 10fps are state-only; pass 2 now reads
+    // the lossless pass-1 cache and performs no Flutter composition.
+    expect(
+      summary.skippedCompositeFrames,
+      greaterThanOrEqualTo(4),
+      reason: 'the GIF source pass must skip the leading gap',
+    );
+
+    final means = await _frameMeans(outPath);
+    expect(
+      means.length,
+      inInclusiveRange(4, 6),
+      reason: 'the retained 0.5s window should contain ~5 GIF frames',
+    );
+    for (var i = 0; i < means.length; i++) {
       expect(
-        summary.skippedCompositeFrames,
-        greaterThanOrEqualTo(4),
-        reason: 'both GIF passes must skip composition in the leading gap',
+        means[i],
+        greaterThan(10),
+        reason:
+            'GIF frame $i is near-black — a blanked gap frame '
+            'leaked through the trim boundary',
       );
-
-      final means = await _frameMeans(outPath);
-      expect(means, isNotEmpty);
-      for (var i = 0; i < means.length; i++) {
-        expect(
-          means[i],
-          greaterThan(10),
-          reason: 'GIF frame $i is near-black — a blanked gap frame '
-              'leaked through the trim boundary',
-        );
-      }
-      tmp.deleteSync(recursive: true);
-    },
-  );
+    }
+    tmp.deleteSync(recursive: true);
+  });
 }

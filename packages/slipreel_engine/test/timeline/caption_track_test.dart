@@ -8,21 +8,29 @@ void main() {
         id: 's', startMicros: 0, endMicros: 1000, text: 'hi');
 
     test('CaptionTrack JSON round-trips with source', () {
-      const t = CaptionTrack(
+      final t = CaptionTrack(
           segments: [seg], source: CaptionAudioSource.mic);
       final back = CaptionTrack.fromJson(t.toJson());
       expect(back, t);
     });
 
+    test('CaptionTrack constructor does not retain a mutable segment list', () {
+      final source = [seg];
+      final track = CaptionTrack(segments: source);
+      source.clear();
+      expect(track.segments, [seg]);
+      expect(() => track.segments.clear(), throwsUnsupportedError);
+    });
+
     test('Timeline persists caption tracks', () {
-      const t = Timeline(captionTracks: [CaptionTrack(segments: [seg])]);
+      final t = Timeline(captionTracks: [CaptionTrack(segments: [seg])]);
       final back = Timeline.fromJson(t.toJson());
       expect(back.captionTracks.length, 1);
       expect(back.activeCaptions.single.text, 'hi');
     });
 
     test('activeCaptions is empty when no tracks', () {
-      const t = Timeline();
+      final t = Timeline();
       expect(t.activeCaptions, isEmpty);
       expect(t.activeCaptionTrack, isNull);
     });

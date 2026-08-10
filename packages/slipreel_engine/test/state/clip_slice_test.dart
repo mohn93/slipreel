@@ -94,25 +94,24 @@ void main() {
     });
 
     test('fromJson throws when bounds are missing', () {
-      expect(
-        () => ClipSlice.fromJson({}),
-        throwsFormatException,
-      );
+      expect(() => ClipSlice.fromJson({}), throwsFormatException);
     });
 
-    test('fromJson tolerates non-numeric optional fields by using defaults',
-        () {
-      final s = ClipSlice.fromJson({
-        'cutStartMicros': 0,
-        'cutEndMicros': 10_000_000,
-        'playbackSpeed': 'fast',     // wrong type
-        'micMuted': 'yes',           // wrong type
-        'micGainPercent': null,      // wrong type
-      });
-      expect(s.playbackSpeed, 1.0);
-      expect(s.micMuted, isFalse);
-      expect(s.micGainPercent, 100);
-    });
+    test(
+      'fromJson tolerates non-numeric optional fields by using defaults',
+      () {
+        final s = ClipSlice.fromJson({
+          'cutStartMicros': 0,
+          'cutEndMicros': 10_000_000,
+          'playbackSpeed': 'fast', // wrong type
+          'micMuted': 'yes', // wrong type
+          'micGainPercent': null, // wrong type
+        });
+        expect(s.playbackSpeed, 1.0);
+        expect(s.micMuted, isFalse);
+        expect(s.micGainPercent, 100);
+      },
+    );
 
     test('copyWith re-applies the gain clamp', () {
       final s = ClipSlice(
@@ -122,6 +121,19 @@ void main() {
       final next = s.copyWith(micGainPercent: 999, systemGainPercent: -5);
       expect(next.micGainPercent, 200);
       expect(next.systemGainPercent, 0);
+    });
+
+    test('normalizes non-finite and out-of-range playback speeds', () {
+      ClipSlice slice(double speed) => ClipSlice(
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 1),
+        playbackSpeed: speed,
+      );
+
+      expect(slice(double.nan).playbackSpeed, 1.0);
+      expect(slice(double.infinity).playbackSpeed, 1.0);
+      expect(slice(-2).playbackSpeed, 0.25);
+      expect(slice(100).playbackSpeed, 24.0);
     });
   });
 
@@ -139,6 +151,33 @@ void main() {
       final next = t.copyWith(clips: clips);
       expect(next.clips, hasLength(1));
       expect(next.clips.first.effectiveLength, const Duration(seconds: 10));
+    });
+
+    test('constructor does not retain a mutable clips list', () {
+      final clips = [
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 10)),
+      ];
+      final timeline = Timeline(clips: clips);
+      clips.clear();
+      expect(timeline.clips, hasLength(1));
+      expect(() => timeline.clips.clear(), throwsUnsupportedError);
+    });
+
+    test('constructor normalizes clips into source order', () {
+      final timeline = Timeline(
+        clips: [
+          ClipSlice(
+            cutStart: const Duration(seconds: 5),
+            cutEnd: const Duration(seconds: 10),
+          ),
+          ClipSlice(
+            cutStart: Duration.zero,
+            cutEnd: const Duration(seconds: 5),
+          ),
+        ],
+      );
+      expect(timeline.clips.first.trimStart, Duration.zero);
+      expect(timeline.clips.last.trimStart, const Duration(seconds: 5));
     });
 
     test('toJson + fromJson round-trip preserves clips', () {
@@ -168,10 +207,10 @@ void main() {
 
   group('audioSilencedBySpeed', () {
     ClipSlice slice(double speed) => ClipSlice(
-          cutStart: Duration.zero,
-          cutEnd: const Duration(seconds: 5),
-          playbackSpeed: speed,
-        );
+      cutStart: Duration.zero,
+      cutEnd: const Duration(seconds: 5),
+      playbackSpeed: speed,
+    );
 
     test('is false at or below the threshold', () {
       expect(slice(1.0).audioSilencedBySpeed, isFalse);
@@ -223,6 +262,21 @@ void main() {
     test('returns an empty fallback when clips is empty', () {
       final s = clipSliceAt(const [], const Duration(seconds: 1));
       expect(s.end, Duration.zero);
+    });
+
+    test('falls back safely for a caller-owned unsorted list', () {
+      final late = ClipSlice(
+        cutStart: const Duration(seconds: 10),
+        cutEnd: const Duration(seconds: 20),
+      );
+      final early = ClipSlice(
+        cutStart: Duration.zero,
+        cutEnd: const Duration(seconds: 5),
+      );
+      final clips = [late, early];
+
+      expect(clipSliceIndexContaining(clips, const Duration(seconds: 12)), 0);
+      expect(clipSliceAt(clips, const Duration(seconds: 12)), same(late));
     });
   });
 }

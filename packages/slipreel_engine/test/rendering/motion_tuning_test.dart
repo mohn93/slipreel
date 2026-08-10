@@ -18,10 +18,11 @@ void main() {
       expect(t.cursorFeedforwardStrength, 0.5);
       expect(t.cursorFeedforwardFadeStartPxPerSec, 200.0);
       expect(t.cursorFeedforwardFullSpeedPxPerSec, 800.0);
-      // Scene-blur knobs (phase B).
-      expect(t.sceneBlurExposureMs, 16.0);
-      expect(t.sceneBlurMaxTranslation, 60.0);
-      expect(t.sceneBlurSampleCount, 48);
+      // Scene-blur knobs: short-shutter calibration. The master slider is
+      // capped at 0.5, so this reaches at most one 60 fps frame of exposure.
+      expect(t.sceneBlurExposureMs, 32.0);
+      expect(t.sceneBlurMaxTranslation, 64.0);
+      expect(t.sceneBlurSampleCount, 21);
       expect(t.sceneBlurSpeedCurveExp, 1.0);
       expect(t.sceneBlurSpeedCurveRefPx, 10.0);
       expect(t.pauseStabilizeThreshold.inMilliseconds, 100);
@@ -31,22 +32,31 @@ void main() {
       const def = MotionTuning.defaults;
       const snappy = MotionTuning.snappy;
 
-      expect(snappy.cursorAtRestPxPerSec, lessThanOrEqualTo(def.cursorAtRestPxPerSec),
-          reason: 'Snappy releases the gate sooner so it should accept a '
-              'lower "at-rest" velocity (or equal)');
-      expect(snappy.cursorFeedforwardStrength,
-          greaterThanOrEqualTo(def.cursorFeedforwardStrength),
-          reason: 'Snappy compensates more of the spring lag — higher '
-              'feedforward strength puts the sprite closer to the raw path');
+      expect(
+        snappy.cursorAtRestPxPerSec,
+        lessThanOrEqualTo(def.cursorAtRestPxPerSec),
+        reason:
+            'Snappy releases the gate sooner so it should accept a '
+            'lower "at-rest" velocity (or equal)',
+      );
+      expect(
+        snappy.cursorFeedforwardStrength,
+        greaterThanOrEqualTo(def.cursorFeedforwardStrength),
+        reason:
+            'Snappy compensates more of the spring lag — higher '
+            'feedforward strength puts the sprite closer to the raw path',
+      );
     });
 
     test('cinematic preset slackens cursor follow vs defaults', () {
       const def = MotionTuning.defaults;
       const cine = MotionTuning.cinematic;
 
-      expect(cine.cursorFeedforwardStrength,
-          lessThanOrEqualTo(def.cursorFeedforwardStrength),
-          reason: 'Cinematic preserves the spring lag for a more film-y feel');
+      expect(
+        cine.cursorFeedforwardStrength,
+        lessThanOrEqualTo(def.cursorFeedforwardStrength),
+        reason: 'Cinematic preserves the spring lag for a more film-y feel',
+      );
     });
 
     test('toJson + fromJson round-trip preserves every field', () {
@@ -68,6 +78,7 @@ void main() {
       );
 
       final json = original.toJson();
+      expect(json['schemaVersion'], MotionTuning.currentSchemaVersion);
       final round = MotionTuning.fromJson(json);
 
       expect(round.reverseScrubFloor, original.reverseScrubFloor);
@@ -75,7 +86,10 @@ void main() {
       expect(round.dtCap, original.dtCap);
       expect(round.cursorAtRestPxPerSec, original.cursorAtRestPxPerSec);
       expect(round.cursorVelocityLookback, original.cursorVelocityLookback);
-      expect(round.cursorFeedforwardStrength, original.cursorFeedforwardStrength);
+      expect(
+        round.cursorFeedforwardStrength,
+        original.cursorFeedforwardStrength,
+      );
       expect(
         round.cursorFeedforwardFadeStartPxPerSec,
         original.cursorFeedforwardFadeStartPxPerSec,
@@ -95,27 +109,69 @@ void main() {
     test('fromJson fills missing fields with defaults', () {
       // A user-edited JSON config may omit fields they don't care about
       // — those should fall back to the production defaults, not crash.
-      final partial = <String, dynamic>{
-        'cursorAtRestPxPerSec': 120.0,
-      };
+      final partial = <String, dynamic>{'cursorAtRestPxPerSec': 120.0};
       final tuning = MotionTuning.fromJson(partial);
       expect(tuning.cursorAtRestPxPerSec, 120.0);
-      expect(tuning.cursorFeedforwardStrength,
-          MotionTuning.defaults.cursorFeedforwardStrength);
+      expect(
+        tuning.cursorFeedforwardStrength,
+        MotionTuning.defaults.cursorFeedforwardStrength,
+      );
       expect(tuning.dtCap, MotionTuning.defaults.dtCap);
+    });
+
+    test('legacy sidecar defaults migrate to short-shutter calibration', () {
+      final tuning = MotionTuning.fromJson(<String, dynamic>{
+        'cursorAtRestPxPerSec': 60,
+        'cursorFeedforwardStrength': 0.75,
+        'sceneBlurExposureMs': 16,
+        'sceneBlurMaxTranslation': 60,
+      });
+
+      expect(tuning.cursorAtRestPxPerSec, 60);
+      expect(tuning.cursorFeedforwardStrength, 0.75);
+      expect(tuning.sceneBlurExposureMs, 32);
+      expect(tuning.sceneBlurMaxTranslation, 64);
+      expect(tuning.sceneBlurSampleCount, 21);
+    });
+
+    test('schema 2 long-shutter defaults migrate without changing customs', () {
+      final defaults = MotionTuning.fromJson(<String, dynamic>{
+        'schemaVersion': 2,
+        'sceneBlurExposureMs': 80,
+        'sceneBlurMaxTranslation': 160,
+        'sceneBlurSampleCount': 48,
+      });
+      final custom = MotionTuning.fromJson(<String, dynamic>{
+        'schemaVersion': 2,
+        'sceneBlurExposureMs': 16,
+        'sceneBlurMaxTranslation': 60,
+        'sceneBlurSampleCount': 17,
+      });
+
+      expect(defaults.sceneBlurExposureMs, 32);
+      expect(defaults.sceneBlurMaxTranslation, 64);
+      expect(defaults.sceneBlurSampleCount, 21);
+      expect(custom.sceneBlurExposureMs, 16);
+      expect(custom.sceneBlurMaxTranslation, 60);
+      expect(custom.sceneBlurSampleCount, 17);
+    });
+
+    test('versioned custom 16/60 calibration remains untouched', () {
+      final tuning = MotionTuning.fromJson(<String, dynamic>{
+        'schemaVersion': MotionTuning.currentSchemaVersion,
+        'sceneBlurExposureMs': 16,
+        'sceneBlurMaxTranslation': 60,
+      });
+
+      expect(tuning.sceneBlurExposureMs, 16);
+      expect(tuning.sceneBlurMaxTranslation, 60);
     });
 
     test('controllers default to MotionTuning.defaults', () {
       // The wiring should be behavior-neutral when no override is
       // passed — production code paths get the historic constants.
-      expect(
-        ZoomFocalController().tuning,
-        same(MotionTuning.defaults),
-      );
-      expect(
-        CursorMotionController().tuning,
-        same(MotionTuning.defaults),
-      );
+      expect(ZoomFocalController().tuning, same(MotionTuning.defaults));
+      expect(CursorMotionController().tuning, same(MotionTuning.defaults));
     });
 
     test('controllers honour a custom tuning passed at construction', () {

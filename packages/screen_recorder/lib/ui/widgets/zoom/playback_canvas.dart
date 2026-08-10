@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
@@ -186,12 +187,26 @@ Widget buildInternalSceneBlurTree({
   Widget? cameraOverlay,
   Widget? captionOverlay,
   Widget? stickyBackground,
+  Widget? sceneUnderlay,
 }) {
   return Stack(
     fit: StackFit.expand,
     children: [
       if (stickyBackground != null) stickyBackground,
-      RepaintBoundary(key: boundaryKey, child: body),
+      if (sceneUnderlay != null) sceneUnderlay,
+      if (blurOverlay == null)
+        RepaintBoundary(key: boundaryKey, child: body)
+      else
+        // The boundary still captures the unfiltered moving scene, while the
+        // ancestor filter suppresses its sharp on-screen copy. The blurred
+        // pass therefore replaces the scene instead of double-exposing it.
+        ColorFiltered(
+          colorFilter: const ColorFilter.mode(
+            Colors.transparent,
+            BlendMode.srcIn,
+          ),
+          child: RepaintBoundary(key: boundaryKey, child: body),
+        ),
       if (blurOverlay != null) blurOverlay,
       if (cursorOverlay != null) cursorOverlay,
       if (keystrokeOverlay != null) keystrokeOverlay,
@@ -497,8 +512,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
   double get _sceneBlurExposureMs => _tuning.sceneBlurExposureMs;
   double get _sceneBlurMaxTranslation => _tuning.sceneBlurMaxTranslation;
   int get _sceneBlurSampleCount => _tuning.sceneBlurSampleCount;
-  double get _sceneBlurSpeedCurveExp => _tuning.sceneBlurSpeedCurveExp;
-  double get _sceneBlurSpeedCurveRefPx => _tuning.sceneBlurSpeedCurveRefPx;
   int get _pauseStabilizeThresholdMicros =>
       _tuning.pauseStabilizeThreshold.inMicroseconds;
 
@@ -926,6 +939,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
             // instead (built with the same cursorDelay so play == scrub ==
             // export). See [shouldUseDeterministicFocal].
             Offset? effectiveFocal = focalUpdate?.focal;
+            Offset? exitOrientationFocal = focalUpdate?.exitOrientationFocal;
             if (focalUpdate != null &&
                 shouldUseDeterministicFocal(
                   isHoverScrubbing: widget.isHoverScrubbing,
@@ -933,13 +947,15 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   hasOverride: widget.zoomPreviewOverride?.value != null,
                   followCursor: focalUpdate.zoom.followCursor,
                 )) {
-              effectiveFocal = _focalTrackFor(
+              final track = _focalTrackFor(
                 focalUpdate.zoom,
                 videoSize,
                 widget.metadata?.fps ?? 60,
                 sceneCursorAnimationConfig,
                 zoomFraming,
-              ).focalAt(pos);
+              );
+              effectiveFocal = track.focalAt(pos);
+              exitOrientationFocal = track.exitOrientationFocalAt(pos);
             }
             final effectiveCursorBlur =
                 widget.motionBlur * widget.cursorMovementBlur;
@@ -1238,16 +1254,26 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
             // both the video and the bezel PNG as a single widget subtree that
             // is placed inside this Stack.  That Stack becomes the scene-blur
             // capture target (RepaintBoundary below), so the bezel is captured
-            // by the scene-blur shader and smears during zoom ramps — just like
-            // the drop-shadow in the standard chrome path.  The export
+            // by the scene-blur shader and smears during zoom ramps. The export
             // compositor (FrameCompositor._composeDeviceFrame) draws the bezel
             // in a separate crisp layer AFTER the motion-blur pass, so the
             // export bezel is always crisp.  This is the same accepted
-            // preview-only divergence as the drop-shadow smear; revisit if
-            // runtime testing shows it's objectionable.
+            // remaining preview-only divergence; standard frame chrome is
+            // split into [frameChrome] below to match export.
+            final isDeviceFrame = deviceLayout != null && deviceAsset != null;
+            final Widget? frameChrome = isDeviceFrame
+                ? null
+                : CustomPaint(
+                    size: totalSize,
+                    painter: FramePainter(
+                      frame: currentFrame,
+                      videoSize: videoSize,
+                      aspect: widget.outputAspect,
+                    ),
+                  );
             final composition = Stack(
               children: [
-                if (deviceLayout != null && deviceAsset != null)
+                if (isDeviceFrame)
                   SizedBox(
                     width: effTotalSize.width,
                     height: effTotalSize.height,
@@ -1257,15 +1283,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                       bezel: AssetImage(deviceAsset.asset),
                     ),
                   )
-                else ...[
-                  CustomPaint(
-                    size: totalSize,
-                    painter: FramePainter(
-                      frame: currentFrame,
-                      videoSize: videoSize,
-                      aspect: widget.outputAspect,
-                    ),
-                  ),
+                else
                   Positioned(
                     left: videoOriginX,
                     top: videoOriginY,
@@ -1280,7 +1298,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                       ),
                     ),
                   ),
-                ],
                 if (widget.showZoomDebug)
                   Positioned(
                     left: currentFrame.padding.left,
@@ -1367,6 +1384,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 cameraOverlayWidget: cameraOverlayWidget,
                 captionOverlayWidget: captionOverlayWidget,
                 stickyBackground: stickyBackground,
+                sceneUnderlay: frameChrome,
                 position: pos,
                 // effTotalSize is the composition's actual canvas (device
                 // canvas when a frame is active, else == totalSize). The pass's
@@ -1410,6 +1428,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   zoomRegion: tweenedRegion,
                   videoSize: videoSize,
                   focalPoint: focalForFrame,
+                  exitOrientationFocalPoint: exitOrientationFocal,
                   rampCurve:
                       activeZoom.rampCurveOverride?.toFlutterCurve() ??
                       widget.screenAnimationConfig.rampCurve,
@@ -1431,6 +1450,23 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                             rawSample.y.toDouble(),
                           );
                     final renderedZoom = transform.storage[0];
+                    final yawDeg =
+                        math.atan2(
+                          transform.entry(0, 2),
+                          transform.entry(2, 2),
+                        ) *
+                        180.0 /
+                        math.pi;
+                    final pitchDeg =
+                        math.atan2(
+                          -transform.entry(1, 2),
+                          math.sqrt(
+                            transform.entry(0, 2) * transform.entry(0, 2) +
+                                transform.entry(2, 2) * transform.entry(2, 2),
+                          ),
+                        ) *
+                        180.0 /
+                        math.pi;
                     final paintedFocal = ZoomTransformer.clampFocalToBounds(
                       focalForFrame,
                       videoSize,
@@ -1443,6 +1479,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                       'zoom=${renderedZoom.toStringAsFixed(3)} '
                       'zoomEnd=${activeZoom.zoomLevel.toStringAsFixed(3)} '
                       'animated=${displayedZoom.toStringAsFixed(3)} '
+                      'yaw=${yawDeg.toStringAsFixed(3)}deg '
+                      'pitch=${pitchDeg.toStringAsFixed(3)}deg '
                       '| ctrl=${fmt(focalUpdate.focal)} '
                       'effective=${fmt(focalForFrame)} '
                       'painted=${fmt(paintedFocal)} '
@@ -1476,6 +1514,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                         alignment: Alignment.center,
                         child: cursorOverlay,
                       );
+                final transformedFrameChrome = frameChrome == null
+                    ? null
+                    : Transform(
+                        transform: transform,
+                        alignment: Alignment.center,
+                        child: frameChrome,
+                      );
                 return _buildSceneMotionBlurPass(
                   body: transformed,
                   cursorOverlay: transformedCursor,
@@ -1486,6 +1531,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   // Caption overlay is also canvas-fixed (NOT zoomed).
                   captionOverlayWidget: captionOverlayWidget,
                   stickyBackground: stickyBackground,
+                  sceneUnderlay: transformedFrameChrome,
                   position: pos,
                   // See note at the other call site: effTotalSize keeps the
                   // scene-blur canvas + zoom pivot lock-step with the
@@ -1515,6 +1561,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     Widget? cameraOverlayWidget,
     Widget? captionOverlayWidget,
     Widget? stickyBackground,
+    Widget? sceneUnderlay,
     required Duration position,
     required Size totalSize,
     required Size videoSize,
@@ -1527,6 +1574,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     Widget bodyWithCursor() {
       final layers = <Widget>[
         if (stickyBackground != null) stickyBackground,
+        if (sceneUnderlay != null) sceneUnderlay,
         body,
         if (cursorOverlay != null) cursorOverlay,
         if (keystrokeOverlayWidget != null) keystrokeOverlayWidget,
@@ -1605,8 +1653,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               program: program,
               signal: _capturedSceneSignal,
               sampleCount: _sceneBlurSampleCount,
-              speedCurveExp: _sceneBlurSpeedCurveExp,
-              speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
               devicePixelRatio: MediaQuery.of(context).devicePixelRatio,
             ),
             size: totalSize,
@@ -1643,6 +1689,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       cameraOverlay: cameraOverlayWidget,
       captionOverlay: captionOverlayWidget,
       stickyBackground: stickyBackground,
+      sceneUnderlay: sceneUnderlay,
     );
   }
 
@@ -1747,6 +1794,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
         position: t,
         focal: videoSize.center(Offset.zero),
         scale: 1.0,
+        transform: Matrix4.identity(),
+        transformOrigin: framing.canvasSize.center(Offset.zero),
       );
     }
 
@@ -1765,32 +1814,37 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
         position: t,
         focal: videoSize.center(Offset.zero),
         scale: 1.0,
+        transform: Matrix4.identity(),
+        transformOrigin: framing.canvasSize.center(Offset.zero),
       );
     }
 
     Offset focal;
+    Offset? exitOrientationFocal;
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
-      focal = _focalTrackFor(
+      final track = _focalTrackFor(
         active,
         videoSize,
         widget.metadata?.fps ?? 60,
         widget.cursorAnimationConfig,
         framing,
-      ).focalAt(t);
+      );
+      focal = track.focalAt(t);
+      exitOrientationFocal = track.exitOrientationFocalAt(t);
     }
 
-    // This inline scene-blur path is DISABLED in production (the production
-    // PlaybackCanvas is built with screenMovementBlur/screenZoomBlur == 0, so
-    // the signal has no motion and the pass returns early). It is kept
-    // framing-correct so that IF re-enabled it matches export, which feeds the
-    // same composed-canvas ZoomFraming into getTransform.
+    // Production and export both reduce this exact camera matrix to the same
+    // z=0-plane homography. Keeping the matrix on the sample means 3D Sweep
+    // yaw/pitch and perspective survive scene-blur signal computation instead
+    // of being mistaken for a tiny change in matrix.storage[0].
     final matrix = _zoomTransformer.getTransform(
       position: t,
       zoomRegion: active,
       videoSize: videoSize,
       focalPoint: focal,
+      exitOrientationFocalPoint: exitOrientationFocal,
       framing: framing,
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
@@ -1802,6 +1856,8 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       position: t,
       focal: framing.clampFocal(focal, scale),
       scale: scale,
+      transform: matrix,
+      transformOrigin: framing.canvasSize.center(Offset.zero),
     );
   }
 
@@ -1826,6 +1882,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     if (active == null) return Matrix4.identity();
 
     Offset focal;
+    Offset? exitOrientationFocal;
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
@@ -1844,6 +1901,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               sample.x.toDouble().clamp(0, videoSize.width),
               sample.y.toDouble().clamp(0, videoSize.height),
             );
+      exitOrientationFocal = _focalTrackFor(
+        active,
+        videoSize,
+        widget.metadata?.fps ?? 60,
+        widget.cursorAnimationConfig,
+        framing,
+      ).exitOrientationFocalAt(t);
     }
 
     // Same disabled-but-framing-correct contract as _approxSceneSampleAt:
@@ -1855,6 +1919,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       zoomRegion: active,
       videoSize: videoSize,
       focalPoint: focal,
+      exitOrientationFocalPoint: exitOrientationFocal,
       framing: framing,
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??

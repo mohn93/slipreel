@@ -58,6 +58,7 @@ class FrameCompositor {
     required this.cursorRecording,
     required this.metadata,
     required this.videoSize,
+    Size? decodedVideoSize,
     required this.fps,
     this.cameraFrameSource,
     this.cameraOriginalAspect = 1.0,
@@ -66,7 +67,8 @@ class FrameCompositor {
     this.deviceFrameCatalog,
     this.motionTuning = MotionTuning.defaults,
     Size? outputSize,
-  }) : _outputSizeHint = outputSize,
+  }) : decodedVideoSize = decodedVideoSize ?? videoSize,
+       _outputSizeHint = outputSize,
        _framePainter = FramePainter(
          frame: projectState.windowFrame,
          videoSize: videoSize,
@@ -79,6 +81,11 @@ class FrameCompositor {
 
   /// Source video resolution in pixels (matches the decoder's frame size).
   final Size videoSize;
+
+  /// Pixel dimensions of [compose]'s BGRA input. Logical scene/cursor/zoom
+  /// geometry continues to use [videoSize]; this may be smaller when ffmpeg
+  /// downscales before writing raw frames to Dart.
+  final Size decodedVideoSize;
 
   /// Rate at which [compose] will be called, used to seed the FIR
   /// cursor smoother. The export pipeline drives this at the chosen
@@ -306,8 +313,6 @@ class FrameCompositor {
   double get _sceneBlurExposureMs => motionTuning.sceneBlurExposureMs;
   double get _sceneBlurMaxTranslation => motionTuning.sceneBlurMaxTranslation;
   int get _sceneBlurSampleCount => motionTuning.sceneBlurSampleCount;
-  double get _sceneBlurSpeedCurveExp => motionTuning.sceneBlurSpeedCurveExp;
-  double get _sceneBlurSpeedCurveRefPx => motionTuning.sceneBlurSpeedCurveRefPx;
 
   WindowFrame get _frame => projectState.windowFrame;
 
@@ -319,7 +324,7 @@ class FrameCompositor {
 
   /// Compose one frame of the export.
   ///
-  /// [videoFrameBgra] is the raw BGRA byte buffer for the source frame
+  /// [videoFrameBgra] is the raw BGRA byte buffer for the decoded frame
   /// at [position] (the decoder's output). Returns RGBA bytes sized to
   /// [totalSize] — pipe directly to ffmpeg with
   /// [FfmpegPixelFormat.rgba].
@@ -329,8 +334,8 @@ class FrameCompositor {
   }) async {
     final videoImage = await _bgraToImage(
       videoFrameBgra,
-      videoSize.width.toInt(),
-      videoSize.height.toInt(),
+      decodedVideoSize.width.toInt(),
+      decodedVideoSize.height.toInt(),
     );
     try {
       // Single source of truth shared with PlaybackCanvas: same spring
@@ -369,11 +374,15 @@ class FrameCompositor {
           liveFocal: focalUpdate.focal,
           position: position,
         );
+        final exitOrientationFocal =
+            _trackFor(focalUpdate.zoom)?.exitOrientationFocalAt(position) ??
+            focalUpdate.exitOrientationFocal;
         zoomTransform = _zoomTransformer.getTransform(
           position: position,
           zoomRegion: focalUpdate.zoom,
           videoSize: videoSize,
           focalPoint: renderFocal,
+          exitOrientationFocalPoint: exitOrientationFocal,
           rampCurve: ramp,
           rampDurationScale:
               projectState.screenAnimationConfig.rampDurationScale,
@@ -571,10 +580,10 @@ class FrameCompositor {
             }
             if (blurActive) {
               // Smear the moving CONTENT only, painted straight onto the
-              // compose canvas — paintSceneMotionBlur isolates itself
-              // (saveLayer + dstIn mask), so no intermediate full-res
-              // toImage round-trip is needed. The crisp chrome (shadow)
-              // and sticky wallpaper stay un-blurred beneath it.
+              // compose canvas, so no intermediate full-res toImage
+              // round-trip is needed. Its premultiplied temporal coverage
+              // composites naturally over the crisp chrome and sticky
+              // wallpaper, including the directional trail at a moving edge.
               // devicePixelRatio carries the canvas→render scale exactly
               // like the preview's logical→physical DPR: the sampler
               // image is at renderSize while the canvas coordinates and
@@ -586,8 +595,6 @@ class FrameCompositor {
                 size: totalSize,
                 signal: sceneSignal,
                 sampleCount: _sceneBlurSampleCount,
-                speedCurveExp: _sceneBlurSpeedCurveExp,
-                speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
                 devicePixelRatio: _renderScale,
               );
             } else {
@@ -705,6 +712,14 @@ class FrameCompositor {
     _buildScenePass(position);
   }
 
+  /// Advances every forward-only source used by composition while skipping
+  /// pixels. In particular, keeping the camera decoder near [position] avoids
+  /// a large synchronous drain on the first visible frame after a long trim.
+  Future<void> advanceWithoutCompose(Duration position) async {
+    advanceScenePass(position);
+    await cameraFrameSource?.advanceTo(position);
+  }
+
   /// Lazily renders the wallpaper into a `ui.Image` and caches it,
   /// keyed by the inputs that affect its appearance. Returns null when
   /// the project has no wallpaper. All frames of one export hit the
@@ -783,13 +798,14 @@ class FrameCompositor {
   /// [wallpaperCodecFactoryOverride] when set (tests). The caller owns
   /// disposing the returned codec.
   Future<ui.Codec> _instantiateWallpaperCodec(String assetPath) async {
-    final targetWidth = totalSize.width.toInt();
+    final targetWidth = renderSize.width.toInt();
     final override = wallpaperCodecFactoryOverride;
     if (override != null) return override(assetPath, targetWidth);
     final data = await rootBundle.load(assetPath);
     return ui.instantiateImageCodec(
       data.buffer.asUint8List(),
       targetWidth: targetWidth,
+      allowUpscaling: false,
     );
   }
 
@@ -816,7 +832,16 @@ class FrameCompositor {
 
   Future<ui.Image> _loadBezelFromBundle(String assetPath) async {
     final data = await rootBundle.load(assetPath);
-    final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+    final maxZoom = projectState.zoomRegions.fold<double>(
+      1.0,
+      (value, region) => region.zoomLevel > value ? region.zoomLevel : value,
+    );
+    final targetWidth = (_bezelRect.width * _renderSx * maxZoom).ceil();
+    final codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: targetWidth,
+      allowUpscaling: false,
+    );
     try {
       final frame = await codec.getNextFrame();
       return frame.image;
@@ -915,8 +940,6 @@ class FrameCompositor {
               size: totalSize,
               signal: sceneSignal,
               sampleCount: _sceneBlurSampleCount,
-              speedCurveExp: _sceneBlurSpeedCurveExp,
-              speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
               devicePixelRatio: _renderScale,
             );
           } else {
@@ -1154,6 +1177,8 @@ class FrameCompositor {
         position: t,
         focal: videoSize.center(Offset.zero),
         scale: 1.0,
+        transform: Matrix4.identity(),
+        transformOrigin: _framing.canvasSize.center(Offset.zero),
       );
     }
 
@@ -1163,16 +1188,20 @@ class FrameCompositor {
         position: t,
         focal: videoSize.center(Offset.zero),
         scale: 1.0,
+        transform: Matrix4.identity(),
+        transformOrigin: _framing.canvasSize.center(Offset.zero),
       );
     }
 
     Offset focal;
+    Offset? exitOrientationFocal;
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
       final track = _trackFor(active);
       if (track != null) {
         focal = track.focalAt(t);
+        exitOrientationFocal = track.exitOrientationFocalAt(t);
       } else {
         final s = cursorAtFiltered(
           cursorRecording,
@@ -1193,6 +1222,7 @@ class FrameCompositor {
       zoomRegion: active,
       videoSize: videoSize,
       focalPoint: focal,
+      exitOrientationFocalPoint: exitOrientationFocal,
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
           projectState.screenAnimationConfig.rampCurve,
@@ -1210,7 +1240,13 @@ class FrameCompositor {
     // motion contributes no smear. Identity for in-bounds focals.
     // Uses _framing so the device path clamps in canvas space (not video bounds).
     final visibleFocal = _framing.clampFocal(focal, scale);
-    return SceneCameraSample(position: t, focal: visibleFocal, scale: scale);
+    return SceneCameraSample(
+      position: t,
+      focal: visibleFocal,
+      scale: scale,
+      transform: matrix,
+      transformOrigin: _framing.canvasSize.center(Offset.zero),
+    );
   }
 
   void _paintWallpaper(Canvas canvas, {ui.Image? photo}) {

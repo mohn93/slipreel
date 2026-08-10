@@ -70,14 +70,18 @@ class CursorImageCache {
       }
       try {
         final codec = await ui.instantiateImageCodec(entry.value.png);
-        final frame = await codec.getNextFrame();
-        _cache[state] = CachedCursorImage(
-          image: frame.image,
-          hotSpotX: entry.value.hotSpotX,
-          hotSpotY: entry.value.hotSpotY,
-          imageWidth: entry.value.imageWidth,
-          imageHeight: entry.value.imageHeight,
-        );
+        try {
+          final frame = await codec.getNextFrame();
+          _cache[state] = CachedCursorImage(
+            image: frame.image,
+            hotSpotX: entry.value.hotSpotX,
+            hotSpotY: entry.value.hotSpotY,
+            imageWidth: entry.value.imageWidth,
+            imageHeight: entry.value.imageHeight,
+          );
+        } finally {
+          codec.dispose();
+        }
       } catch (_) {
         // Single-image decode failure (corrupt PNG, etc.) shouldn't
         // disable the whole cache.

@@ -40,9 +40,36 @@ abstract class ExportCompositor {
   Future<void> dispose();
 }
 
+/// Optional capability for compositors whose state-only advancement must
+/// await a forward-only side source (currently camera decode).
+///
+/// This is deliberately separate from [ExportCompositor]. Adding a concrete
+/// method to that abstract class would still break every downstream class
+/// using `implements ExportCompositor`, because Dart requires implementers to
+/// provide all interface members even when the class supplies a body.
+abstract interface class AsyncExportCompositorAdvance {
+  Future<void> advanceAndWait(Duration position);
+}
+
+/// Advances [compositor] and awaits asynchronous side-source work when the
+/// implementation advertises [AsyncExportCompositorAdvance]. Legacy
+/// `implements ExportCompositor` classes keep using the original synchronous
+/// [ExportCompositor.advance] contract unchanged.
+Future<void> advanceExportCompositor(
+  ExportCompositor compositor,
+  Duration position,
+) async {
+  if (compositor case AsyncExportCompositorAdvance asyncCompositor) {
+    await asyncCompositor.advanceAndWait(position);
+  } else {
+    compositor.advance(position);
+  }
+}
+
 /// Adapter that wraps a [FrameCompositor] in the [ExportCompositor]
 /// interface.
-class InProcessExportCompositor implements ExportCompositor {
+class InProcessExportCompositor
+    implements ExportCompositor, AsyncExportCompositorAdvance {
   InProcessExportCompositor(this._delegate);
 
   final FrameCompositor _delegate;
@@ -57,11 +84,14 @@ class InProcessExportCompositor implements ExportCompositor {
   Future<Uint8List> compose({
     required Uint8List bgra,
     required Duration position,
-  }) =>
-      _delegate.compose(videoFrameBgra: bgra, position: position);
+  }) => _delegate.compose(videoFrameBgra: bgra, position: position);
 
   @override
   void advance(Duration position) => _delegate.advanceScenePass(position);
+
+  @override
+  Future<void> advanceAndWait(Duration position) =>
+      _delegate.advanceWithoutCompose(position);
 
   @override
   Future<void> dispose() async {

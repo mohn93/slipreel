@@ -9,6 +9,7 @@ import 'package:slipreel_engine/export/frame_compositor.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
+import 'package:slipreel_engine/models/tilt3d.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/frame_painter.dart';
@@ -284,7 +285,7 @@ void main() {
     });
 
     test(
-      'compose with motionBlur=1 still returns RGBA bytes sized to totalSize',
+      'compose with max motion blur still returns RGBA bytes sized to totalSize',
       () async {
         // Smoke test for the screen-blur saveLayer + ImageFilter wrap.
         // We don't pixel-assert the blur (that's covered by the
@@ -292,7 +293,7 @@ void main() {
         // produces a buffer of the right length and doesn't throw.
         final compositor = FrameCompositor(
           projectState: EditorProjectState.defaults().copyWith(
-            motionBlur: 1.0,
+            motionBlur: 0.5,
             windowFrame: const WindowFrame(
               name: 'None',
               padding: EdgeInsets.zero,
@@ -328,7 +329,7 @@ void main() {
     );
 
     test(
-      'compose with motionBlur=1 and a zooming pan produces a valid buffer',
+      'compose with max motion blur and a zooming pan produces a valid buffer',
       () async {
         // Drives the saveLayer + ImageFilter branch by giving the
         // compositor a zoom region whose focal pans across consecutive
@@ -343,7 +344,7 @@ void main() {
         );
         final compositor = FrameCompositor(
           projectState: EditorProjectState.defaults().copyWith(
-            motionBlur: 1.0,
+            motionBlur: 0.5,
             zoomRegions: [zoom],
             windowFrame: const WindowFrame(
               name: 'None',
@@ -405,7 +406,7 @@ void main() {
       );
       final compositor = FrameCompositor(
         projectState: EditorProjectState.defaults().copyWith(
-          motionBlur: 1.0,
+          motionBlur: 0.5,
           screenMovementBlur: 1.0,
           zoomRegions: [zoom],
           windowFrame: const WindowFrame(
@@ -501,7 +502,7 @@ void main() {
 
       final compositor = FrameCompositor(
         projectState: EditorProjectState.defaults().copyWith(
-          motionBlur: 1.0,
+          motionBlur: 0.5,
           screenMovementBlur: 1.0,
           zoomRegions: [zoomRegion],
           windowFrame: const WindowFrame(
@@ -577,7 +578,7 @@ void main() {
 
       final compositor = FrameCompositor(
         projectState: EditorProjectState.defaults().copyWith(
-          motionBlur: 1.0,
+          motionBlur: 0.5,
           screenMovementBlur: 1.0,
           zoomRegions: [zoomRegion],
           windowFrame: const WindowFrame(
@@ -639,6 +640,25 @@ void main() {
       photo?.dispose();
     });
 
+    test(
+      'wallpaper photo decode targets render width, not source canvas',
+      () async {
+        final compositor = _wallpaperCompositor(outputSize: const Size(4, 2));
+        final image = await _make1x1Image();
+        final spy = _SpyCodec(image);
+        int? requestedWidth;
+        compositor.wallpaperCodecFactoryOverride =
+            (assetPath, targetWidth) async {
+              requestedWidth = targetWidth;
+              return spy;
+            };
+
+        final photo = await compositor.debugLoadWallpaperPhoto('macOS', 0);
+        expect(requestedWidth, 4);
+        photo?.dispose();
+      },
+    );
+
     test('visible chrome reaches the composed bytes (opaque vs transparent '
         'shadow differ)', () async {
       // Guards the chrome compositing step itself: if a refactor drops
@@ -680,9 +700,13 @@ void main() {
       for (var i = 0; i < withShadow.length && !differ; i++) {
         differ = withShadow[i] != withoutShadow[i];
       }
-      expect(differ, isTrue,
-          reason: 'an opaque drop shadow must change the composed pixels; '
-              'identical bytes mean the chrome layer was dropped');
+      expect(
+        differ,
+        isTrue,
+        reason:
+            'an opaque drop shadow must change the composed pixels; '
+            'identical bytes mean the chrome layer was dropped',
+      );
     });
 
     test('scene motion blur reaches the composed bytes (blur on vs off '
@@ -753,21 +777,90 @@ void main() {
       // blurred run reproduces the first byte-for-byte even though the
       // shader painted different (crisp-path skipped) frames in
       // between.
-      final blurred = await composeSequence(motionBlur: 1.0);
+      // Use the actual product maximum. A former version tested 1.0 even
+      // though the UI and persisted project state cap this control at 0.5,
+      // allowing an invisible-in-production calibration to pass.
+      final blurred = await composeSequence(motionBlur: 0.5);
       final crisp = await composeSequence(motionBlur: 0.0);
-      final blurredAgain = await composeSequence(motionBlur: 1.0);
-      expect(blurredAgain, equals(blurred),
-          reason: 'reused shader must not carry state between frames');
+      final blurredAgain = await composeSequence(motionBlur: 0.5);
+      expect(
+        blurredAgain,
+        equals(blurred),
+        reason: 'reused shader must not carry state between frames',
+      );
       expect(blurred.length, crisp.length);
       var differ = false;
       for (var i = 0; i < blurred.length && !differ; i++) {
         differ = blurred[i] != crisp[i];
       }
-      expect(differ, isTrue,
-          reason: 'a mid-ramp panning frame with scene blur must differ '
-              'from the crisp compose; identical bytes mean the smear '
-              'never reached the output');
+      expect(
+        differ,
+        isTrue,
+        reason:
+            'a mid-ramp panning frame with scene blur must differ '
+            'from the crisp compose; identical bytes mean the smear '
+            'never reached the output',
+      );
     });
+
+    test(
+      '3D tilt motion contributes projective blur at the product maximum',
+      () async {
+        Future<Uint8List> composeTilt({required double motionBlur}) async {
+          final compositor = FrameCompositor(
+            projectState: EditorProjectState.defaults().copyWith(
+              motionBlur: motionBlur,
+              screenMovementBlur: 1,
+              screenZoomBlur: 1,
+              zoomRegions: [
+                ZoomRegion(
+                  rect: const Rect.fromLTWH(190, 120, 60, 60),
+                  startTime: Duration.zero,
+                  duration: const Duration(milliseconds: 900),
+                  zoomLevel: 2,
+                  followCursor: false,
+                  enterDuration: const Duration(milliseconds: 400),
+                  exitDuration: const Duration(milliseconds: 300),
+                  tilt: const Tilt3D(style: ZoomTiltStyle.dramatic),
+                ),
+              ],
+              windowFrame: const WindowFrame(
+                name: 'None',
+                padding: EdgeInsets.zero,
+                cornerRadius: 0,
+                shadowBlur: 0,
+                shadowOffset: Offset.zero,
+                shadowColor: Color(0x00000000),
+                borderWidth: 0,
+              ),
+            ),
+            cursorRecording: CursorRecording(),
+            metadata: _meta(),
+            videoSize: const Size(320, 240),
+            fps: 30,
+          );
+          try {
+            final signal = compositor.sceneMotionSignalAt(
+              const Duration(milliseconds: 220),
+            );
+            if (motionBlur > 0) {
+              expect(signal.projectiveTransform, isNotNull);
+              expect(signal.projectiveTransform!.isIdentity, isFalse);
+            }
+            return compositor.compose(
+              videoFrameBgra: _twoTone(320, 240),
+              position: const Duration(milliseconds: 220),
+            );
+          } finally {
+            compositor.dispose();
+          }
+        }
+
+        final blurred = await composeTilt(motionBlur: 0.5);
+        final crisp = await composeTilt(motionBlur: 0);
+        expect(blurred, isNot(equals(crisp)));
+      },
+    );
 
     test('_loadWallpaperPhoto disposes the codec even when decoding '
         'throws', () async {
@@ -793,7 +886,7 @@ void main() {
 
 /// Compositor with a "None" frame, used to exercise [debugLoadWallpaperPhoto]
 /// directly (the passed category drives the load, not the frame's wallpaper).
-FrameCompositor _wallpaperCompositor() => FrameCompositor(
+FrameCompositor _wallpaperCompositor({Size? outputSize}) => FrameCompositor(
   projectState: EditorProjectState.defaults().copyWith(
     windowFrame: const WindowFrame(
       name: 'None',
@@ -808,6 +901,7 @@ FrameCompositor _wallpaperCompositor() => FrameCompositor(
   cursorRecording: CursorRecording(),
   metadata: _meta(),
   videoSize: const Size(8, 4),
+  outputSize: outputSize,
   fps: 30,
 );
 

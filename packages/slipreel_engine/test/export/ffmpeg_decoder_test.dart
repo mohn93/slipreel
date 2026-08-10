@@ -8,36 +8,70 @@ import 'package:slipreel_engine/export/ffmpeg_resolver.dart';
 
 void main() {
   group('FfmpegDecoder', () {
-    test('decodes the test fixture into the expected number of frames', () async {
+    test(
+      'decodes the test fixture into the expected number of frames',
+      () async {
+        final decoder = FfmpegDecoder(
+          inputPath: 'test/fixtures/sample_recording.mp4',
+          width: 320,
+          height: 240,
+        );
+        final frames = <Uint8List>[];
+        await decoder.frames().forEach(frames.add);
+        // 30fps × 1s = 30 frames; allow ±2 for encoder rounding.
+        expect(frames.length, inInclusiveRange(28, 32));
+        // Each frame is W * H * 4 bytes (BGRA).
+        expect(frames.first.length, 320 * 240 * 4);
+        // Total decode time recorded.
+        expect(decoder.totalDecodeMs, greaterThan(0));
+      },
+    );
+
+    test(
+      'cfrFps resamples a 30fps source to a different constant rate',
+      () async {
+        // Source is 30fps × 1s = 30 frames. Asking for 60fps must dup
+        // frames so we end up with ~60 raw frames (allow ±2 for ffmpeg's
+        // own rounding at fixture boundaries).
+        final decoder = FfmpegDecoder(
+          inputPath: 'test/fixtures/sample_recording.mp4',
+          width: 320,
+          height: 240,
+          cfrFps: 60,
+        );
+        final frames = <Uint8List>[];
+        await decoder.frames().forEach(frames.add);
+        expect(frames.length, inInclusiveRange(58, 62));
+      },
+    );
+
+    test('scales raw output before it enters Dart', () async {
       final decoder = FfmpegDecoder(
         inputPath: 'test/fixtures/sample_recording.mp4',
         width: 320,
         height: 240,
+        cfrFps: 30,
+        outputWidth: 160,
+        outputHeight: 120,
       );
-      final frames = <Uint8List>[];
-      await decoder.frames().forEach(frames.add);
-      // 30fps × 1s = 30 frames; allow ±2 for encoder rounding.
-      expect(frames.length, inInclusiveRange(28, 32));
-      // Each frame is W * H * 4 bytes (BGRA).
-      expect(frames.first.length, 320 * 240 * 4);
-      // Total decode time recorded.
-      expect(decoder.totalDecodeMs, greaterThan(0));
+      final frames = await decoder.frames().toList();
+      expect(frames, isNotEmpty);
+      expect(frames.first.length, 160 * 120 * 4);
+      expect(decoder.frameWidth, 160);
+      expect(decoder.frameHeight, 120);
     });
 
-    test('cfrFps resamples a 30fps source to a different constant rate',
-        () async {
-      // Source is 30fps × 1s = 30 frames. Asking for 60fps must dup
-      // frames so we end up with ~60 raw frames (allow ±2 for ffmpeg's
-      // own rounding at fixture boundaries).
+    test('decodes only the requested source window', () async {
       final decoder = FfmpegDecoder(
         inputPath: 'test/fixtures/sample_recording.mp4',
         width: 320,
         height: 240,
-        cfrFps: 60,
+        cfrFps: 30,
+        startTime: const Duration(milliseconds: 400),
+        endTime: const Duration(milliseconds: 700),
       );
-      final frames = <Uint8List>[];
-      await decoder.frames().forEach(frames.add);
-      expect(frames.length, inInclusiveRange(58, 62));
+      final frames = await decoder.frames().toList();
+      expect(frames.length, inInclusiveRange(8, 10));
     });
 
     test('throws on non-existent file', () async {
@@ -64,95 +98,165 @@ void main() {
       await decoder.frames().forEach(frames.add);
       expect(frames.length, greaterThan(2));
       expect(identical(frames[0], frames[1]), isFalse);
-      expect(identical(frames[0].buffer, frames[1].buffer), isFalse,
-          reason: 'distinct frames must not share an underlying buffer');
+      expect(
+        identical(frames[0].buffer, frames[1].buffer),
+        isFalse,
+        reason: 'distinct frames must not share an underlying buffer',
+      );
       final probe = frames[1][0];
       frames[0][0] = probe == 0 ? 255 : 0;
-      expect(frames[1][0], probe,
-          reason: 'mutating one frame must not affect another');
-    });
-
-    test('decoded pixels carry correct BGRA content (solid red source)',
-        () async {
-      // Pins channel order and frame-slicing offsets: a byte of drift
-      // at a frame boundary or a channel swap shows up immediately on
-      // a solid-color source. Near-equality because H.264 YUV
-      // round-trips are not byte-exact.
-      final tmp = Directory.systemTemp.createTempSync('decoder_content');
-      addTearDown(() => tmp.deleteSync(recursive: true));
-      final srcPath = '${tmp.path}/red.mp4';
-      final gen = await Process.run(Ffmpeg.resolve(), [
-        '-v', 'error', '-y',
-        '-f', 'lavfi',
-        '-i', 'color=c=red:size=64x48:rate=10',
-        '-t', '1',
-        '-c:v', 'h264_videotoolbox',
-        '-b:v', '500k',
-        '-pix_fmt', 'yuv420p',
-        srcPath,
-      ]);
-      expect(gen.exitCode, 0, reason: 'source synthesis: ${gen.stderr}');
-
-      final decoder = FfmpegDecoder(
-        inputPath: srcPath,
-        width: 64,
-        height: 48,
+      expect(
+        frames[1][0],
+        probe,
+        reason: 'mutating one frame must not affect another',
       );
-      final frames = <Uint8List>[];
-      await decoder.frames().forEach(frames.add);
-      expect(frames, isNotEmpty);
-      for (final frame in frames) {
-        // Sample a few pixels across the frame: BGRA ⇒ [B, G, R, A].
-        for (final px in [0, (frame.length ~/ 8) & ~3, frame.length - 4]) {
-          expect(frame[px], lessThan(80), reason: 'blue channel at $px');
-          expect(frame[px + 1], lessThan(80), reason: 'green channel at $px');
-          expect(frame[px + 2], greaterThan(180),
-              reason: 'red channel at $px');
-          expect(frame[px + 3], 255, reason: 'alpha at $px');
-        }
-      }
     });
 
-    test('kill() ends the frame stream cleanly — no decode-error throw', () async {
-      // Cooperative early-exit: the pipeline kills the decoder mid-stream once
-      // the encoder satisfies its trim. The resulting signal exit (-9) is an
-      // intentional teardown and must NOT surface as a decode failure (the
-      // throw racing the stream-cancel is what intermittently failed exports).
+    test(
+      'decoded pixels carry correct BGRA content (solid red source)',
+      () async {
+        // Pins channel order and frame-slicing offsets: a byte of drift
+        // at a frame boundary or a channel swap shows up immediately on
+        // a solid-color source. Near-equality because H.264 YUV
+        // round-trips are not byte-exact.
+        final tmp = Directory.systemTemp.createTempSync('decoder_content');
+        addTearDown(() => tmp.deleteSync(recursive: true));
+        final srcPath = '${tmp.path}/red.mp4';
+        final gen = await Process.run(Ffmpeg.resolve(), [
+          '-v',
+          'error',
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=red:size=64x48:rate=10',
+          '-t',
+          '1',
+          '-c:v',
+          'mpeg4',
+          '-q:v',
+          '2',
+          '-pix_fmt',
+          'yuv420p',
+          srcPath,
+        ]);
+        expect(gen.exitCode, 0, reason: 'source synthesis: ${gen.stderr}');
+
+        final decoder = FfmpegDecoder(
+          inputPath: srcPath,
+          width: 64,
+          height: 48,
+        );
+        final frames = <Uint8List>[];
+        await decoder.frames().forEach(frames.add);
+        expect(frames, isNotEmpty);
+        for (final frame in frames) {
+          // Sample a few pixels across the frame: BGRA ⇒ [B, G, R, A].
+          for (final px in [0, (frame.length ~/ 8) & ~3, frame.length - 4]) {
+            expect(frame[px], lessThan(80), reason: 'blue channel at $px');
+            expect(frame[px + 1], lessThan(80), reason: 'green channel at $px');
+            expect(
+              frame[px + 2],
+              greaterThan(180),
+              reason: 'red channel at $px',
+            );
+            expect(frame[px + 3], 255, reason: 'alpha at $px');
+          }
+        }
+      },
+    );
+
+    test(
+      'kill() ends the frame stream cleanly — no decode-error throw',
+      () async {
+        // Cooperative early-exit: the pipeline kills the decoder mid-stream once
+        // the encoder satisfies its trim. The resulting signal exit (-9) is an
+        // intentional teardown and must NOT surface as a decode failure (the
+        // throw racing the stream-cancel is what intermittently failed exports).
+        final decoder = FfmpegDecoder(
+          inputPath: 'test/fixtures/sample_recording.mp4',
+          width: 320,
+          height: 240,
+        );
+        final it = StreamIterator(decoder.frames());
+        expect(
+          await it.moveNext(),
+          isTrue,
+          reason: 'a frame in hand ⇒ ffmpeg is running when we kill it',
+        );
+        decoder.kill();
+        // Draining the rest must COMPLETE (return false), never throw, despite
+        // the SIGKILL. Without the kill-aware guard this throws "exited -9".
+        await expectLater(() async {
+          while (await it.moveNext()) {}
+        }(), completes);
+      },
+    );
+
+    test('kill before listen prevents ffmpeg startup', () async {
       final decoder = FfmpegDecoder(
-        inputPath: 'test/fixtures/sample_recording.mp4',
+        // If frames() attempted to spawn ffmpeg this missing input would
+        // throw. A pre-killed decoder must instead complete without work.
+        inputPath: '/definitely/missing/pre_killed_source.mp4',
         width: 320,
         height: 240,
       );
-      final it = StreamIterator(decoder.frames());
-      expect(await it.moveNext(), isTrue,
-          reason: 'a frame in hand ⇒ ffmpeg is running when we kill it');
       decoder.kill();
-      // Draining the rest must COMPLETE (return false), never throw, despite
-      // the SIGKILL. Without the kill-aware guard this throws "exited -9".
-      await expectLater(() async {
-        while (await it.moveNext()) {}
-      }(), completes);
+      expect(await decoder.frames().toList(), isEmpty);
+      expect(decoder.totalDecodeMs, 0);
     });
   });
 
   group('FfmpegDecoder args', () {
     test('no cfrFps => no -vf', () {
-      final d = FfmpegDecoder(
-        inputPath: 'in.mp4',
-        width: 320,
-        height: 240,
-      );
+      final d = FfmpegDecoder(inputPath: 'in.mp4', width: 320, height: 240);
       final args = d.argsForTesting();
       expect(args.contains('-vf'), isFalse);
     });
 
     test('cfrFps => -vf is just fps', () {
       final d = FfmpegDecoder(
-          inputPath: 'in.mp4', width: 320, height: 240, cfrFps: 30);
+        inputPath: 'in.mp4',
+        width: 320,
+        height: 240,
+        cfrFps: 30,
+      );
       final args = d.argsForTesting();
       final vfIndex = args.indexOf('-vf');
       expect(vfIndex, greaterThanOrEqualTo(0));
       expect(args[vfIndex + 1], 'fps=30');
+    });
+
+    test('scale and fps share one ordered filter chain', () {
+      final d = FfmpegDecoder(
+        inputPath: 'in.mp4',
+        width: 1920,
+        height: 1080,
+        cfrFps: 30,
+        outputWidth: 960,
+        outputHeight: 540,
+      );
+      final args = d.argsForTesting();
+      expect(
+        args[args.indexOf('-vf') + 1],
+        'fps=30,scale=960:540:flags=lanczos',
+      );
+    });
+
+    test('seek window uses input -ss and relative -t', () {
+      final d = FfmpegDecoder(
+        inputPath: 'in.mp4',
+        width: 320,
+        height: 240,
+        startTime: const Duration(milliseconds: 1250),
+        endTime: const Duration(milliseconds: 3500),
+      );
+      final args = d.argsForTesting();
+      expect(
+        args.sublist(0, args.indexOf('-i')),
+        containsAllInOrder(['-ss', '1.250000']),
+      );
+      expect(args[args.indexOf('-t') + 1], '2.250000');
     });
 
     test('rejects a zero-area frame size before spawning ffmpeg', () {
@@ -160,9 +264,11 @@ void main() {
       // take 0 bytes per iteration and never advance `offset` — a hard
       // hang the moment any stdout arrives. Guard it up front so a bad
       // dimension surfaces as a clear error instead of a frozen export.
-      final decoder =
-          FfmpegDecoder(inputPath: 'test/fixtures/sample_recording.mp4',
-              width: 0, height: 240);
+      final decoder = FfmpegDecoder(
+        inputPath: 'test/fixtures/sample_recording.mp4',
+        width: 0,
+        height: 240,
+      );
       expect(decoder.frames().toList(), throwsA(isA<StateError>()));
     });
   });

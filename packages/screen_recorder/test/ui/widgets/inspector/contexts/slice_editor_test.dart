@@ -12,7 +12,7 @@ EditorProjectState _stateWithOneSlice({
   ClipSlice? slice,
 }) {
   return EditorProjectState.defaults().copyWith(
-    timeline: const Timeline(zoomTracks: []).copyWith(
+    timeline: Timeline(zoomTracks: []).copyWith(
       clips: [
         slice ??
             ClipSlice(
@@ -26,7 +26,7 @@ EditorProjectState _stateWithOneSlice({
 
 EditorProjectState _stateWithTwoSlices() {
   return EditorProjectState.defaults().copyWith(
-    timeline: const Timeline(zoomTracks: []).copyWith(
+    timeline: Timeline(zoomTracks: []).copyWith(
       clips: [
         ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 5)),
         ClipSlice(

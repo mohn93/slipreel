@@ -10,9 +10,11 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 /// time-range queries so playback overlays stay O(log N) per frame.
 class KeystrokeRecording {
   final List<KeystrokeEvent> _events = [];
+  List<KeystrokeEvent>? _eventsSnapshot;
 
   int get count => _events.length;
-  List<KeystrokeEvent> get events => List.unmodifiable(_events);
+  List<KeystrokeEvent> get events =>
+      _eventsSnapshot ??= List.unmodifiable(_events);
 
   /// [eventsInRange] binary-searches assuming ascending timestamps, so
   /// ingestion enforces the invariant: in-order appends stay O(1); a
@@ -22,6 +24,7 @@ class KeystrokeRecording {
     if (_events.isEmpty ||
         event.timestampMicros >= _events.last.timestampMicros) {
       _events.add(event);
+      _eventsSnapshot = null;
       return;
     }
     var lo = 0, hi = _events.length;
@@ -34,10 +37,12 @@ class KeystrokeRecording {
       }
     }
     _events.insert(lo, event);
+    _eventsSnapshot = null;
   }
 
   void clear() {
     _events.clear();
+    _eventsSnapshot = null;
   }
 
   /// All events whose timestamp falls in the range
@@ -65,11 +70,14 @@ class KeystrokeRecording {
   }
 
   Future<void> saveToFile(String path) async {
-    final buf = StringBuffer();
-    for (final e in _events) {
-      buf.writeln(jsonEncode(e.toJson()));
-    }
-    await File(path).writeAsString(buf.toString());
+    final snapshot = List<KeystrokeEvent>.of(_events, growable: false);
+    await Isolate.run(() async {
+      final buf = StringBuffer();
+      for (final e in snapshot) {
+        buf.writeln(jsonEncode(e.toJson()));
+      }
+      await File(path).writeAsString(buf.toString());
+    });
   }
 
   static Future<KeystrokeRecording> loadFromFile(String path) async {
@@ -78,9 +86,7 @@ class KeystrokeRecording {
     // enough for per-line JSON decoding to stall the UI isolate.
     final events = await Isolate.run(() => _parseSidecar(path));
     final recording = KeystrokeRecording();
-    for (final e in events) {
-      recording.addEvent(e);
-    }
+    recording._events.addAll(events);
     return recording;
   }
 
@@ -98,6 +104,7 @@ class KeystrokeRecording {
         // Skip malformed lines.
       }
     }
+    events.sort((a, b) => a.timestampMicros.compareTo(b.timestampMicros));
     return events;
   }
 }

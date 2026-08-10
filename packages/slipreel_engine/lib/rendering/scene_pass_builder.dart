@@ -1,4 +1,5 @@
 import 'package:flutter/animation.dart' show Curve, Curves;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart';
 
 import 'package:slipreel_engine/effects/ema_velocity_filter.dart';
@@ -105,6 +106,20 @@ class ScenePassBuilder {
   Duration? _lastPosition;
   int? _lastClipIndex;
   ClipSlice? _lastClip;
+  ZoomRegion? _enterTargetRegion;
+  CursorRecording? _enterTargetRecording;
+  int? _enterTargetRecordingVersion;
+  CursorAnimationConfig? _enterTargetConfig;
+  CursorPostProcess? _enterTargetPostProcess;
+  Duration? _enterTargetDelay;
+  double? _enterTargetRampScale;
+  List<ClipSlice>? _enterTargetClips;
+  Size? _enterTargetVideoSize;
+  Offset? _cachedEnterTarget;
+  int _enterTargetBuildCount = 0;
+
+  @visibleForTesting
+  int get debugEnterTargetBuildCount => _enterTargetBuildCount;
 
   /// Propagate a new [MotionTuning] to the owned spring controllers
   /// so a preset-picker swap or JSON reload takes effect on the next
@@ -243,63 +258,19 @@ class ScenePassBuilder {
     // of chasing the lagging smoothed cursor (whose catch-up path read as
     // "the zoom goes to the wrong spot then slides to the cursor"). Sampled
     // from the recording at a fixed source time, so play == scrub == export.
-    Offset? enterCursorTarget;
-    if (activeZoom != null && activeZoom.followCursor && hasCursorData) {
-      // Sample the settle target at the RESOLVED enter-ramp end so it tracks
-      // where the cursor actually is when the (feel-scaled) zoom completes.
-      // ZoomRegion.resolvedRampsUs is the shared ramp geometry used by the
-      // focal/transform math, so this includes the proportional squeeze a
-      // region shorter than its own ramps gets — sampling the unsqueezed end
-      // aims a short followCursor zoom at a cursor position it never reaches.
-      final enterEnd =
-          activeZoom.startTime +
-          Duration(
-            microseconds: activeZoom.resolvedRampsUs(rampDurationScale).enterUs,
-          );
-      var queryEnd = enterEnd - cursorDelay;
-      ClipSlice? targetClip = clips.isEmpty
-          ? null
-          : clipSliceContaining(clips, enterEnd);
-      if (targetClip == null) {
-        for (final clip in clips.reversed) {
-          if (clip.trimEnd == enterEnd) {
-            targetClip = clip;
-            break;
-          }
-        }
-      }
-      final targetConfig = targetClip?.disableSmoothMouse == true
-          ? const CursorAnimationConfig.preset(CursorAnimationStyle.none)
-          : cursorAnimationConfig;
-      final targetRun = clips.isEmpty
-          ? null
-          : contiguousClipRunBounds(clips, enterEnd);
-      final targetLower = targetRun?.start ?? targetClip?.trimStart;
-      final targetUpper = targetRun?.end ?? targetClip?.trimEnd;
-      if (targetLower != null && queryEnd < targetLower) {
-        queryEnd = targetLower;
-      }
-      if (targetUpper != null && queryEnd > targetUpper) {
-        queryEnd = targetUpper;
-      }
-      final sigma = targetConfig.pathSmoothingSigma;
-      final raw = sigma <= Duration.zero
-          ? cursorAtFiltered(cursorRecording, queryEnd, cursorPostProcess)
-          : smoothedCursorAt(
-              cursorRecording,
-              queryEnd,
-              cursorPostProcess,
-              sigma,
-              lowerBound: targetLower,
-              upperBound: targetUpper,
-            );
-      if (raw != null) {
-        enterCursorTarget = Offset(
-          raw.x.toDouble().clamp(0, videoSize.width),
-          raw.y.toDouble().clamp(0, videoSize.height),
-        );
-      }
-    }
+    final enterCursorTarget =
+        activeZoom != null && activeZoom.followCursor && hasCursorData
+        ? _resolveEnterCursorTarget(
+            activeZoom: activeZoom,
+            cursorRecording: cursorRecording,
+            cursorAnimationConfig: cursorAnimationConfig,
+            cursorPostProcess: cursorPostProcess,
+            cursorDelay: cursorDelay,
+            rampDurationScale: rampDurationScale,
+            clips: clips,
+            videoSize: videoSize,
+          )
+        : null;
 
     final focalUpdate = focal.update(
       position: position,
@@ -343,6 +314,93 @@ class ScenePassBuilder {
   // going null for the exit-ramp completion frame.
   ZoomRegion? _activeZoomAt(Duration position, List<ZoomRegion> regions) =>
       ZoomRegion.activeAt(position, regions);
+
+  Offset? _resolveEnterCursorTarget({
+    required ZoomRegion activeZoom,
+    required CursorRecording cursorRecording,
+    required CursorAnimationConfig cursorAnimationConfig,
+    required CursorPostProcess cursorPostProcess,
+    required Duration cursorDelay,
+    required double rampDurationScale,
+    required List<ClipSlice> clips,
+    required Size videoSize,
+  }) {
+    final clipsAreStable = clips.isEmpty || clips is SourceOrderedClipList;
+    final cacheHit =
+        clipsAreStable &&
+        _enterTargetRegion == activeZoom &&
+        identical(_enterTargetRecording, cursorRecording) &&
+        _enterTargetRecordingVersion == cursorRecording.version &&
+        _enterTargetConfig == cursorAnimationConfig &&
+        _enterTargetPostProcess == cursorPostProcess &&
+        _enterTargetDelay == cursorDelay &&
+        _enterTargetRampScale == rampDurationScale &&
+        identical(_enterTargetClips, clips) &&
+        _enterTargetVideoSize == videoSize;
+    if (cacheHit) return _cachedEnterTarget;
+    _enterTargetBuildCount++;
+
+    final enterEnd =
+        activeZoom.startTime +
+        Duration(
+          microseconds: activeZoom.resolvedRampsUs(rampDurationScale).enterUs,
+        );
+    var queryEnd = enterEnd - cursorDelay;
+    ClipSlice? targetClip = clips.isEmpty
+        ? null
+        : clipSliceContaining(clips, enterEnd);
+    if (targetClip == null) {
+      for (final clip in clips.reversed) {
+        if (clip.trimEnd == enterEnd) {
+          targetClip = clip;
+          break;
+        }
+      }
+    }
+    final targetConfig = targetClip?.disableSmoothMouse == true
+        ? const CursorAnimationConfig.preset(CursorAnimationStyle.none)
+        : cursorAnimationConfig;
+    final targetRun = clips.isEmpty
+        ? null
+        : contiguousClipRunBounds(clips, enterEnd);
+    final targetLower = targetRun?.start ?? targetClip?.trimStart;
+    final targetUpper = targetRun?.end ?? targetClip?.trimEnd;
+    if (targetLower != null && queryEnd < targetLower) queryEnd = targetLower;
+    if (targetUpper != null && queryEnd > targetUpper) queryEnd = targetUpper;
+    final sigma = targetConfig.pathSmoothingSigma;
+    final raw = sigma <= Duration.zero
+        ? cursorAtFiltered(cursorRecording, queryEnd, cursorPostProcess)
+        : smoothedCursorAt(
+            cursorRecording,
+            queryEnd,
+            cursorPostProcess,
+            sigma,
+            lowerBound: targetLower,
+            upperBound: targetUpper,
+          );
+    final resolved = raw == null
+        ? null
+        : Offset(
+            raw.x.toDouble().clamp(0, videoSize.width),
+            raw.y.toDouble().clamp(0, videoSize.height),
+          );
+
+    _enterTargetRegion = activeZoom;
+    _enterTargetRecording = cursorRecording;
+    _enterTargetRecordingVersion = cursorRecording.version;
+    _enterTargetConfig = cursorAnimationConfig;
+    _enterTargetPostProcess = cursorPostProcess;
+    _enterTargetDelay = cursorDelay;
+    _enterTargetRampScale = rampDurationScale;
+    // Identity caching is only valid for Timeline's immutable marker list.
+    // Direct API callers may reuse and mutate an ordinary List between
+    // frames; those calls deliberately rebuild instead of serving stale trim
+    // bounds or per-slice cursor settings.
+    _enterTargetClips = clipsAreStable ? clips : null;
+    _enterTargetVideoSize = videoSize;
+    _cachedEnterTarget = resolved;
+    return resolved;
+  }
 }
 
 /// Resolves the per-slice "Disable smooth mouse" override at [position].

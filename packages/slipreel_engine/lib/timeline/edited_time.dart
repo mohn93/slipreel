@@ -1,15 +1,158 @@
 import 'package:slipreel_engine/state/clip_slice.dart';
 
+final Expando<_PreparedClipTimeline> _preparedTimelines =
+    Expando<_PreparedClipTimeline>('prepared clip timeline');
+
+_PreparedClipTimeline _prepared(List<ClipSlice> clips) {
+  // Only Timeline's immutable marker list is safe to memoize by identity.
+  // Public helpers also accept ordinary mutable lists; rebuilding their small
+  // index prevents append/replace/remove operations from observing stale
+  // prefix sums or out-of-range run arrays.
+  if (clips is! SourceOrderedClipList) return _PreparedClipTimeline(clips);
+  return _preparedTimelines[clips] ??= _PreparedClipTimeline(clips);
+}
+
+class _PreparedClipTimeline {
+  _PreparedClipTimeline(this.clips)
+    : cumulativeEdited = List<Duration>.filled(clips.length + 1, Duration.zero),
+      runFirst = List<int>.filled(clips.length, 0),
+      runLast = List<int>.filled(clips.length, 0) {
+    for (var i = 0; i < clips.length; i++) {
+      cumulativeEdited[i + 1] = cumulativeEdited[i] + clips[i].editedLength;
+      if (i > 0 && clips[i - 1].trimStart > clips[i].trimStart) {
+        sorted = false;
+      }
+    }
+    var first = 0;
+    for (var i = 0; i < clips.length; i++) {
+      if (i == 0 || clips[i - 1].trimEnd != clips[i].trimStart) first = i;
+      runFirst[i] = first;
+    }
+    var last = clips.length - 1;
+    for (var i = clips.length - 1; i >= 0; i--) {
+      if (i == clips.length - 1 || clips[i].trimEnd != clips[i + 1].trimStart) {
+        last = i;
+      }
+      runLast[i] = last;
+    }
+  }
+
+  final List<ClipSlice> clips;
+  final List<Duration> cumulativeEdited;
+  final List<int> runFirst;
+  final List<int> runLast;
+  bool sorted = true;
+
+  int containing(Duration position) {
+    if (!sorted) {
+      for (var i = 0; i < clips.length; i++) {
+        if (position >= clips[i].trimStart && position < clips[i].trimEnd) {
+          return i;
+        }
+      }
+      return -1;
+    }
+    return clipSliceIndexContaining(clips, position);
+  }
+
+  ({Duration start, Duration end})? runBounds(Duration position) {
+    var index = containing(position);
+    if (index < 0) {
+      // Preserve final-frame ownership at an exact trim end.
+      if (!sorted) {
+        index = clips.lastIndexWhere((clip) => clip.trimEnd == position);
+      }
+    }
+    if (index < 0) {
+      var lo = 0, hi = clips.length - 1;
+      while (lo <= hi) {
+        final mid = (lo + hi) >> 1;
+        final cmp = clips[mid].trimEnd.compareTo(position);
+        if (cmp == 0) {
+          index = mid;
+          break;
+        }
+        if (cmp < 0) {
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+    }
+    if (index < 0) return null;
+    return (
+      start: clips[runFirst[index]].trimStart,
+      end: clips[runLast[index]].trimEnd,
+    );
+  }
+
+  Duration sourceToEdited(Duration sourceTime) {
+    if (!sorted) {
+      for (var i = 0; i < clips.length; i++) {
+        final c = clips[i];
+        if (sourceTime < c.trimStart) return cumulativeEdited[i];
+        if (sourceTime <= c.trimEnd) return _insideEdited(i, sourceTime);
+      }
+      return cumulativeEdited.last;
+    }
+    var lo = 0, hi = clips.length - 1, candidate = clips.length;
+    while (lo <= hi) {
+      final mid = (lo + hi) >> 1;
+      if (clips[mid].trimEnd >= sourceTime) {
+        candidate = mid;
+        hi = mid - 1;
+      } else {
+        lo = mid + 1;
+      }
+    }
+    if (candidate == clips.length) return cumulativeEdited.last;
+    final clip = clips[candidate];
+    if (sourceTime < clip.trimStart) return cumulativeEdited[candidate];
+    return _insideEdited(candidate, sourceTime);
+  }
+
+  Duration editedToSource(Duration editedTime) {
+    if (editedTime > cumulativeEdited.last) return clips.last.trimEnd;
+
+    // Find the first cumulative end >= editedTime. Equality intentionally
+    // belongs to the preceding clip, preserving the historical final-frame
+    // behavior at an edited slice boundary.
+    var lo = 1;
+    var hi = cumulativeEdited.length - 1;
+    var boundary = hi;
+    while (lo <= hi) {
+      final mid = (lo + hi) >> 1;
+      if (cumulativeEdited[mid] >= editedTime) {
+        boundary = mid;
+        hi = mid - 1;
+      } else {
+        lo = mid + 1;
+      }
+    }
+    final index = boundary - 1;
+    final clip = clips[index];
+    final editedOffset = editedTime - cumulativeEdited[index];
+    final sourceOffsetMicros =
+        (editedOffset.inMicroseconds * clip.playbackSpeed).round();
+    return clip.trimStart + Duration(microseconds: sourceOffsetMicros);
+  }
+
+  Duration _insideEdited(int index, Duration sourceTime) {
+    final clip = clips[index];
+    final speed = clip.playbackSpeed > 0 ? clip.playbackSpeed : 1.0;
+    final offset = ((sourceTime - clip.trimStart).inMicroseconds / speed)
+        .round();
+    return cumulativeEdited[index] + Duration(microseconds: offset);
+  }
+}
+
 /// Total edited timeline duration: sum of each slice's [ClipSlice.editedLength]
 /// (i.e. `effectiveLength / playbackSpeed`). The visual timeline x-axis
 /// covers this duration; trimmed-away portions of source time are removed,
 /// and per-slice speed compresses/expands the on-timeline width.
 Duration totalEditedDuration(List<ClipSlice> clips) {
-  var acc = Duration.zero;
-  for (final c in clips) {
-    acc += c.editedLength;
-  }
-  return acc;
+  if (clips.isEmpty) return Duration.zero;
+  return _prepared(clips).cumulativeEdited.last;
 }
 
 /// Maps an edited-time position (timeline x-axis, output time) to its
@@ -21,18 +164,7 @@ Duration totalEditedDuration(List<ClipSlice> clips) {
 /// final slice's trimEnd. Returns zero on empty input.
 Duration editedToSource(List<ClipSlice> clips, Duration editedTime) {
   if (clips.isEmpty) return Duration.zero;
-  var acc = Duration.zero;
-  for (final c in clips) {
-    final next = acc + c.editedLength;
-    if (editedTime <= next) {
-      final editedOffset = editedTime - acc;
-      final sourceOffsetMicros = (editedOffset.inMicroseconds * c.playbackSpeed)
-          .round();
-      return c.trimStart + Duration(microseconds: sourceOffsetMicros);
-    }
-    acc = next;
-  }
-  return clips.last.trimEnd;
+  return _prepared(clips).editedToSource(editedTime);
 }
 
 /// Maps a SOURCE-time position back to its corresponding edited-time
@@ -41,18 +173,8 @@ Duration editedToSource(List<ClipSlice> clips, Duration editedTime) {
 /// trimmed-away regions snap to the nearest edge in edited time.
 Duration sourceToEdited(List<ClipSlice> clips, Duration sourceTime) {
   if (clips.isEmpty) return Duration.zero;
-  var acc = Duration.zero;
-  for (final c in clips) {
-    if (sourceTime < c.trimStart) return acc;
-    if (sourceTime <= c.trimEnd) {
-      final sourceOffset = sourceTime - c.trimStart;
-      final speed = c.playbackSpeed > 0 ? c.playbackSpeed : 1.0;
-      final editedOffsetMicros = (sourceOffset.inMicroseconds / speed).round();
-      return acc + Duration(microseconds: editedOffsetMicros);
-    }
-    acc += c.editedLength;
-  }
-  return acc;
+  final prepared = _prepared(clips);
+  return prepared.sourceToEdited(sourceTime);
 }
 
 /// Fraction (0..1) of the edited output completed once export has
@@ -105,13 +227,29 @@ bool sourceFrameContributes(
   required Duration margin,
 }) {
   if (clips.isEmpty) return true;
-  for (final c in clips) {
-    if (sourcePosition >= c.trimStart - margin &&
-        sourcePosition <= c.trimEnd + margin) {
-      return true;
+  final prepared = _prepared(clips);
+  if (!prepared.sorted) {
+    for (final c in clips) {
+      if (sourcePosition >= c.trimStart - margin &&
+          sourcePosition <= c.trimEnd + margin) {
+        return true;
+      }
+    }
+    return false;
+  }
+  // Find the last slice whose expanded start is <= the frame. Only that slice
+  // can contain the frame in a source-ordered, non-overlapping timeline.
+  var lo = 0, hi = clips.length - 1, candidate = -1;
+  while (lo <= hi) {
+    final mid = (lo + hi) >> 1;
+    if (clips[mid].trimStart - margin <= sourcePosition) {
+      candidate = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
     }
   }
-  return false;
+  return candidate >= 0 && sourcePosition <= clips[candidate].trimEnd + margin;
 }
 
 /// Maps a wall/output-time lookback from [position] onto source time.
@@ -123,7 +261,7 @@ Duration sourceTimeBeforeWallDuration(
   Duration wallLookback,
 ) {
   if (clips.isEmpty || wallLookback <= Duration.zero) return position;
-  var index = clipSliceIndexContaining(clips, position);
+  var index = _prepared(clips).containing(position);
   if (index < 0) return position;
   var sourceCursor = position;
   var remainingWallMicros = wallLookback.inMicroseconds.toDouble();
@@ -165,21 +303,8 @@ Duration contiguousClipRunStart(List<ClipSlice> clips, Duration position) {
   List<ClipSlice> clips,
   Duration position,
 ) {
-  var activeIndex = clipSliceIndexContaining(clips, position);
-  if (activeIndex < 0) {
-    activeIndex = clips.lastIndexWhere((clip) => clip.trimEnd == position);
-  }
-  if (activeIndex < 0) return null;
-  var first = activeIndex;
-  var last = activeIndex;
-  while (first > 0 && clips[first - 1].trimEnd == clips[first].trimStart) {
-    first--;
-  }
-  while (last + 1 < clips.length &&
-      clips[last].trimEnd == clips[last + 1].trimStart) {
-    last++;
-  }
-  return (start: clips[first].trimStart, end: clips[last].trimEnd);
+  if (clips.isEmpty) return null;
+  return _prepared(clips).runBounds(position);
 }
 
 /// The lower/upper clamp for dragging a region's edge (zoom or camera pill),

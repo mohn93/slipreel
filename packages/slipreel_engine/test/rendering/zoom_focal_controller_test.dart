@@ -2,6 +2,7 @@ import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
+import 'package:slipreel_engine/models/zoom_movement.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/rendering/zoom_focal_controller.dart';
@@ -23,6 +24,7 @@ ZoomRegion _zoomAt({
   Duration enterDuration = Duration.zero,
   Duration exitDuration = Duration.zero,
   Duration followDuration = const Duration(milliseconds: 400),
+  ZoomMovement movement = const ZoomMovement(),
 }) {
   return ZoomRegion(
     rect: rect,
@@ -35,6 +37,7 @@ ZoomRegion _zoomAt({
     followMode: followMode,
     deadzoneRatio: deadzoneRatio,
     followDuration: followDuration,
+    movement: movement,
   );
 }
 
@@ -1017,6 +1020,7 @@ void main() {
       );
       expect(progressX, greaterThan(0));
       expect(progressX, lessThan(1));
+      expect(midExit.exitOrientationFocal, startFocal);
 
       // Frame at the very end of the exit ramp: focal must be exactly
       // at video centre, regardless of the cursor's current position.
@@ -1035,6 +1039,68 @@ void main() {
         endExit.focal.dy,
         closeTo(540, 1e-6),
         reason: 'Y must finish at video centre when the zoom hits 1.0×',
+      );
+      expect(
+        endExit.exitOrientationFocal,
+        startFocal,
+        reason:
+            'translation recenters, but tilt must keep the captured '
+            'exit-start direction until its envelope reaches zero',
+      );
+    });
+
+    test('push-in keeps the painted edge focal continuous at exit start', () {
+      final ctrl = ZoomFocalController();
+      final zoom = _zoomAt(
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        zoomLevel: 1.5,
+        exitDuration: const Duration(milliseconds: 500),
+        followDuration: Duration.zero,
+        movement: const ZoomMovement(
+          kind: ZoomMovementKind.pushIn,
+          intensity: ZoomMovementIntensity.dramatic,
+        ),
+      );
+      const edgeCursor = Offset(1900, 540);
+
+      // Initialize, then let the zero-duration follower reach the edge during
+      // the hold. The transformer can paint farther toward the edge because
+      // Dramatic Push-in raises 1.5x to an effective 1.68x.
+      ctrl.update(
+        position: Duration.zero,
+        zoomRegions: [zoom],
+        cursor: edgeCursor,
+        videoSize: _videoSize,
+      );
+      final hold = ctrl.update(
+        position: const Duration(milliseconds: 1499),
+        zoomRegions: [zoom],
+        cursor: edgeCursor,
+        videoSize: _videoSize,
+      );
+      expect(hold!.focal, edgeCursor);
+
+      final exitStart = ctrl.update(
+        position: const Duration(milliseconds: 1500),
+        zoomRegions: [zoom],
+        cursor: edgeCursor,
+        videoSize: _videoSize,
+      );
+      final paintedHoldFocal = ZoomTransformer.clampFocalToBounds(
+        edgeCursor,
+        _videoSize,
+        1.5 * (1.0 + kPushInDramaticExtra),
+      );
+
+      expect(exitStart!.focal.dx, closeTo(paintedHoldFocal.dx, 1e-9));
+      expect(exitStart.focal.dy, closeTo(paintedHoldFocal.dy, 1e-9));
+      expect(
+        exitStart.focal.dx,
+        greaterThan(1280),
+        reason:
+            'the base 1.5x clamp ends at x=1280 and caused the visible '
+            'hold-to-exit jump; the 1.68x painted focal must be preserved',
       );
     });
 

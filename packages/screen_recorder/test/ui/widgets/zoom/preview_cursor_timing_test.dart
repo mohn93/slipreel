@@ -52,27 +52,28 @@ void main() {
     });
 
     test('a latency spike that would reverse pos holds at prevEmitted', () {
-      // raw advanced 16ms but latency jumped 50->80 → adjusted 936 < prev 950.
+      // Raw advanced 16ms but latency jumped from zero beyond the 50ms cap:
+      // adjusted=966 < previous=1000, so the emitted playhead must hold.
       expect(
         steadyPreviewPlayhead(
           rawPlayhead: const Duration(milliseconds: 1016),
           displayLatency: const Duration(milliseconds: 80),
           prevRawPlayhead: const Duration(milliseconds: 1000),
-          prevEmitted: const Duration(milliseconds: 950),
+          prevEmitted: const Duration(milliseconds: 1000),
         ),
-        const Duration(milliseconds: 950),
+        const Duration(milliseconds: 1000),
       );
     });
 
     test('resumes advancing once adjusted passes the held value', () {
       expect(
         steadyPreviewPlayhead(
-          rawPlayhead: const Duration(milliseconds: 1040),
-          displayLatency: const Duration(milliseconds: 60),
+          rawPlayhead: const Duration(milliseconds: 1070),
+          displayLatency: const Duration(milliseconds: 50),
           prevRawPlayhead: const Duration(milliseconds: 1016),
-          prevEmitted: const Duration(milliseconds: 950),
+          prevEmitted: const Duration(milliseconds: 1000),
         ),
-        const Duration(milliseconds: 980),
+        const Duration(milliseconds: 1020),
       );
     });
 
@@ -90,8 +91,37 @@ void main() {
       );
       expect(
         out,
-        greaterThan(const Duration(milliseconds: 7000)),
+        const Duration(milliseconds: 7650),
         reason: 'preview must not stay frozen ~1.7s behind the play clock',
+      );
+    });
+
+    test('a long VFR frame cannot masquerade as decode latency', () {
+      // Sparse screen recordings may keep one encoded frame alive for over a
+      // second. The native probe sees clock-frameStart and reports that whole
+      // age, but cursor/camera time must remain within the bounded correction.
+      expect(
+        steadyPreviewPlayhead(
+          rawPlayhead: const Duration(milliseconds: 29800),
+          displayLatency: const Duration(milliseconds: 1150),
+          prevRawPlayhead: const Duration(milliseconds: 29784),
+          prevEmitted: const Duration(milliseconds: 29734),
+        ),
+        const Duration(milliseconds: 29750),
+      );
+    });
+
+    test('first frame after play or seek also bounds VFR latency', () {
+      // No history used to bypass the monotonic floor and subtract the full
+      // latency once, producing an immediate backward jump on resume.
+      expect(
+        steadyPreviewPlayhead(
+          rawPlayhead: const Duration(milliseconds: 28750),
+          displayLatency: const Duration(milliseconds: 1200),
+          prevRawPlayhead: null,
+          prevEmitted: null,
+        ),
+        const Duration(milliseconds: 28700),
       );
     });
 

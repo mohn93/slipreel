@@ -81,7 +81,7 @@ void main() {
     ),
     zoomRegions: [followRegion],
     timeline: EditorProjectState.defaults().timeline.copyWith(clips: clips),
-    motionBlur: 0.8,
+    motionBlur: 0.5,
     cursorMovementBlur: 0.8,
   );
 

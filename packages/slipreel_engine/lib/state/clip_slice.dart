@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 /// Slices sped past this factor have their audio auto-silenced in export and
 /// preview — sped-up audio above ~4× is unusable (chipmunk noise). The mute is
 /// DERIVED from speed (see [ClipSlice.audioSilencedBySpeed]); it never touches
@@ -25,7 +27,7 @@ class ClipSlice {
     required this.cutEnd,
     Duration? trimStart,
     Duration? trimEnd,
-    this.playbackSpeed = 1.0,
+    double playbackSpeed = 1.0,
     this.fadeIn = Duration.zero,
     this.fadeOut = Duration.zero,
     int micGainPercent = 100,
@@ -34,7 +36,8 @@ class ClipSlice {
     this.systemMuted = false,
     this.hideCursor = false,
     this.disableSmoothMouse = false,
-  }) : trimStart = _clampTrimStart(cutStart, cutEnd, trimStart ?? cutStart),
+  }) : playbackSpeed = _normalizeSpeed(playbackSpeed),
+       trimStart = _clampTrimStart(cutStart, cutEnd, trimStart ?? cutStart),
        trimEnd = _clampTrimEnd(
          cutStart,
          cutEnd,
@@ -106,6 +109,11 @@ class ClipSlice {
   static const Duration _minLen = Duration(milliseconds: 100);
 
   static int _clampGain(int v) => v < 0 ? 0 : (v > 200 ? 200 : v);
+
+  static double _normalizeSpeed(double value) {
+    if (!value.isFinite) return 1.0;
+    return value.clamp(0.25, 24.0).toDouble();
+  }
 
   static Duration _clampTrimStart(Duration cs, Duration ce, Duration ts) {
     if (ts < cs) return cs;
@@ -256,6 +264,35 @@ class ClipSlice {
   );
 }
 
+/// Immutable, source-ordered clip storage used by [Timeline]. The marker type
+/// lets frame-hot lookup/index code safely memoize and binary-search without
+/// assuming that an arbitrary caller-owned `List<ClipSlice>` will never be
+/// mutated or reordered behind its back.
+class SourceOrderedClipList extends ListBase<ClipSlice> {
+  SourceOrderedClipList(Iterable<ClipSlice> clips)
+    : _items = List<ClipSlice>.of(clips) {
+    _items.sort((a, b) {
+      final byStart = a.trimStart.compareTo(b.trimStart);
+      return byStart != 0 ? byStart : a.trimEnd.compareTo(b.trimEnd);
+    });
+  }
+
+  final List<ClipSlice> _items;
+
+  @override
+  int get length => _items.length;
+
+  @override
+  set length(int value) => throw UnsupportedError('immutable clip list');
+
+  @override
+  ClipSlice operator [](int index) => _items[index];
+
+  @override
+  void operator []=(int index, ClipSlice value) =>
+      throw UnsupportedError('immutable clip list');
+}
+
 /// Returns the slice covering [position] in source time. Falls back to
 /// the last slice when [position] is at or past the final trimEnd
 /// (final-frame behaviour for cursor lookup); falls back to a fresh
@@ -268,19 +305,45 @@ ClipSlice clipSliceAt(List<ClipSlice> clips, Duration position) {
   if (clips.isEmpty) {
     return ClipSlice(cutStart: Duration.zero, cutEnd: Duration.zero);
   }
-  for (final s in clips) {
-    if (position >= s.trimStart && position < s.trimEnd) return s;
-  }
-  return clips.last;
+  final index = clipSliceIndexContaining(clips, position);
+  return index < 0 ? clips.last : clips[index];
 }
 
 /// Index of the slice that strictly contains [position] in source time.
 /// Returns -1 in trimmed-away gaps and for an empty timeline.
 int clipSliceIndexContaining(List<ClipSlice> clips, Duration position) {
-  for (var i = 0; i < clips.length; i++) {
-    final slice = clips[i];
-    if (position >= slice.trimStart && position < slice.trimEnd) return i;
+  if (clips.isEmpty) return -1;
+  if (clips is! SourceOrderedClipList) {
+    var ordered = true;
+    for (var i = 1; i < clips.length; i++) {
+      if (clips[i - 1].trimStart > clips[i].trimStart) {
+        ordered = false;
+        break;
+      }
+    }
+    if (!ordered) {
+      for (var i = 0; i < clips.length; i++) {
+        final slice = clips[i];
+        if (position >= slice.trimStart && position < slice.trimEnd) return i;
+      }
+      return -1;
+    }
   }
+  // Timeline slices are source-ordered. Find the last start <= position,
+  // then verify that the position has not fallen into the following gap.
+  var lo = 0;
+  var hi = clips.length - 1;
+  var candidate = -1;
+  while (lo <= hi) {
+    final mid = (lo + hi) >> 1;
+    if (clips[mid].trimStart <= position) {
+      candidate = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (candidate >= 0 && position < clips[candidate].trimEnd) return candidate;
   return -1;
 }
 

@@ -1,7 +1,156 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
+import 'package:video_player/video_player.dart';
+import 'package:video_player_platform_interface/video_player_platform_interface.dart';
+
+class _DelayedSeekVideoPlatform extends VideoPlayerPlatform {
+  final List<Completer<void>> seekCompleters = [];
+  Duration? requestedSeek;
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<int?> create(DataSource dataSource) async => 1;
+
+  @override
+  Stream<VideoEvent> videoEventsFor(int playerId) => Stream.value(
+    VideoEvent(
+      eventType: VideoEventType.initialized,
+      duration: const Duration(seconds: 10),
+      size: const Size(1920, 1080),
+    ),
+  );
+
+  @override
+  Future<void> dispose(int playerId) async {}
+
+  @override
+  Future<void> setLooping(int playerId, bool looping) async {}
+
+  @override
+  Future<void> setVolume(int playerId, double volume) async {}
+
+  @override
+  Future<void> play(int playerId) async {}
+
+  @override
+  Future<void> pause(int playerId) async {}
+
+  @override
+  Future<void> setPlaybackSpeed(int playerId, double speed) async {}
+
+  @override
+  Future<Duration> getPosition(int playerId) async => Duration.zero;
+
+  @override
+  Future<void> seekTo(int playerId, Duration position) {
+    requestedSeek = position;
+    final completer = Completer<void>();
+    seekCompleters.add(completer);
+    return completer.future;
+  }
+}
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('SmoothPlayheadController application seeks', () {
+    late VideoPlayerPlatform previousPlatform;
+    late _DelayedSeekVideoPlatform platform;
+    late VideoPlayerController video;
+    late SmoothPlayheadController smooth;
+
+    setUp(() async {
+      previousPlatform = VideoPlayerPlatform.instance;
+      platform = _DelayedSeekVideoPlatform();
+      VideoPlayerPlatform.instance = platform;
+      video = VideoPlayerController.networkUrl(
+        Uri.parse('https://example.invalid/test.mp4'),
+      );
+      await video.initialize();
+      video.value = video.value.copyWith(
+        position: const Duration(seconds: 5),
+        isPlaying: true,
+      );
+      smooth = SmoothPlayheadController(
+        videoController: video,
+        vsync: const TestVSync(),
+      );
+    });
+
+    tearDown(() async {
+      smooth.dispose();
+      await video.dispose();
+      VideoPlayerPlatform.instance = previousPlatform;
+    });
+
+    test(
+      'nearby backward seek moves immediately while native seek waits',
+      () async {
+        // 500ms backward used to fall inside the normal playback-jitter filter,
+        // so the actual player sought while the moving playhead looked inert.
+        final seek = smooth.seekTo(const Duration(milliseconds: 4500));
+
+        expect(platform.requestedSeek, const Duration(milliseconds: 4500));
+        expect(smooth.position, const Duration(milliseconds: 4500));
+
+        // AVPlayer can publish its old timestamp while decoding the target.
+        // That report must not undo the responsive visual jump.
+        video.value = video.value.copyWith(
+          position: const Duration(milliseconds: 5050),
+        );
+        expect(smooth.position, const Duration(milliseconds: 4500));
+
+        platform.seekCompleters.single.complete();
+        await seek;
+        expect(video.value.position, const Duration(milliseconds: 4500));
+        expect(
+          smooth.position.inMilliseconds,
+          closeTo(const Duration(milliseconds: 4500).inMilliseconds, 20),
+        );
+      },
+    );
+
+    test('nearby forward seek is not filtered as small native drift', () async {
+      final seek = smooth.seekTo(const Duration(milliseconds: 5200));
+
+      expect(smooth.position, const Duration(milliseconds: 5200));
+      video.value = video.value.copyWith(
+        position: const Duration(milliseconds: 5050),
+      );
+      expect(smooth.position, const Duration(milliseconds: 5200));
+
+      platform.seekCompleters.single.complete();
+      await seek;
+      expect(video.value.position, const Duration(milliseconds: 5200));
+    });
+
+    test('older seek completion cannot overwrite a newer click', () async {
+      final first = smooth.seekTo(const Duration(milliseconds: 4500));
+      final second = smooth.seekTo(const Duration(seconds: 7));
+      expect(smooth.position, const Duration(seconds: 7));
+
+      // The first native seek lands late. Its controller notification must be
+      // ignored while the second click still owns the pending-seek latch.
+      platform.seekCompleters.first.complete();
+      await first;
+      expect(video.value.position, const Duration(milliseconds: 4500));
+      expect(smooth.position, const Duration(seconds: 7));
+
+      platform.seekCompleters.last.complete();
+      await second;
+      expect(video.value.position, const Duration(seconds: 7));
+      expect(
+        smooth.position.inMilliseconds,
+        closeTo(const Duration(seconds: 7).inMilliseconds, 20),
+      );
+    });
+  });
+
   group('SmoothPlayheadController.rebaseBaseOnSpeedChange', () {
     // The boundary-jump audit (2026-06-03) tracked a visible "jump
     // then slow back" at slice seams to a stale `_basePosition` not

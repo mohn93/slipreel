@@ -14,10 +14,12 @@ class CameraFrameSource {
     required Stream<Uint8List> frames,
     required this.fps,
     required int offsetMicros,
+    int firstFrameIndex = 0,
     void Function()? onDispose,
-  })  : _it = StreamIterator(frames),
-        _offsetFrames = (offsetMicros * fps / 1e6).round(),
-        _onDispose = onDispose;
+  }) : _it = StreamIterator(frames),
+       _offsetFrames = (offsetMicros * fps / 1e6).round(),
+       _consumed = firstFrameIndex - 1,
+       _onDispose = onDispose;
 
   final int fps;
   final int _offsetFrames;
@@ -29,10 +31,11 @@ class CameraFrameSource {
   /// `kill` here to reap it. Null in tests with a synthetic stream.
   final void Function()? _onDispose;
 
-  int _consumed = -1; // index of the frame currently in _current
+  int _consumed; // global camera index of the frame currently in _current
   Uint8List? _current;
   bool _exhausted = false;
   bool _failed = false;
+  bool _disposed = false;
 
   bool get failed => _failed;
 
@@ -60,10 +63,23 @@ class CameraFrameSource {
     return _current;
   }
 
+  /// Consumes through the frame aligned with [t] without exposing its pixels.
+  /// Used while the screen compositor skips trimmed-away frames so the next
+  /// retained camera frame does not synchronously drain a potentially huge
+  /// backlog.
+  Future<void> advanceTo(Duration t) async {
+    await frameAt(t);
+  }
+
   /// Stops consuming and reaps the underlying decoder. Idempotent-safe to call
   /// on any export exit path (success, error, cancel).
   Future<void> dispose() async {
-    await _it.cancel();
+    if (_disposed) return;
+    _disposed = true;
+    // Stop the producer first. Cancelling the consumer while ffmpeg is
+    // blocked on a full stdout pipe can otherwise leave cancellation waiting
+    // for a process that still has no reader.
     _onDispose?.call();
+    await _it.cancel();
   }
 }

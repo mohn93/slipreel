@@ -11,15 +11,16 @@ void main() {
     ZoomMovement m, {
     double holdProgress = 1.0,
     double rampGate = 1.0,
+    double? orientationRampGate,
     Offset focal = focalRight,
     bool followCursor = false,
-  }) =>
-      m.resolveAt(
-        holdProgress: holdProgress,
-        rampGate: rampGate,
-        normalizedFocal: focal,
-        followCursor: followCursor,
-      );
+  }) => m.resolveAt(
+    holdProgress: holdProgress,
+    rampGate: rampGate,
+    normalizedFocal: focal,
+    followCursor: followCursor,
+    orientationRampGate: orientationRampGate,
+  );
 
   group('resolveAt identity conditions', () {
     test('none is always the identity sample', () {
@@ -76,9 +77,12 @@ void main() {
   group('intensity + curve', () {
     test('dramatic push-in scales more than subtle', () {
       final sub = resolve(const ZoomMovement(kind: ZoomMovementKind.pushIn));
-      final dra = resolve(const ZoomMovement(
+      final dra = resolve(
+        const ZoomMovement(
           kind: ZoomMovementKind.pushIn,
-          intensity: ZoomMovementIntensity.dramatic));
+          intensity: ZoomMovementIntensity.dramatic,
+        ),
+      );
       expect(dra.scaleMul, greaterThan(sub.scaleMul));
     });
 
@@ -96,6 +100,29 @@ void main() {
       expect(right.sign, isNot(equals(left.sign)));
     });
 
+    test(
+      'sweep can use a softer orientation gate without changing push-in',
+      () {
+        const sweep = ZoomMovement(kind: ZoomMovementKind.sweep);
+        const push = ZoomMovement(kind: ZoomMovementKind.pushIn);
+        final sweepBase = resolve(sweep, rampGate: 0.5).extraTiltYRad;
+        final sweepSoft = resolve(
+          sweep,
+          rampGate: 0.5,
+          orientationRampGate: 0.75,
+        ).extraTiltYRad;
+        final pushBase = resolve(push, rampGate: 0.5).scaleMul;
+        final pushWithOrientation = resolve(
+          push,
+          rampGate: 0.5,
+          orientationRampGate: 0.75,
+        ).scaleMul;
+
+        expect(sweepSoft, closeTo(sweepBase * 1.5, 1e-12));
+        expect(pushWithOrientation, pushBase);
+      },
+    );
+
     test('manual sweep keeps full strength at a centered focal', () {
       const m = ZoomMovement(kind: ZoomMovementKind.sweep);
       final centered = resolve(m, focal: Offset.zero).extraTiltYRad;
@@ -104,8 +131,9 @@ void main() {
 
     test('cursor-follow sweep crosses center continuously', () {
       const m = ZoomMovement(
-          kind: ZoomMovementKind.sweep,
-          intensity: ZoomMovementIntensity.dramatic);
+        kind: ZoomMovementKind.sweep,
+        intensity: ZoomMovementIntensity.dramatic,
+      );
       final left = resolve(
         m,
         focal: const Offset(-0.01, 0),
@@ -175,8 +203,9 @@ void main() {
   group('json', () {
     test('round-trips kind + intensity', () {
       const m = ZoomMovement(
-          kind: ZoomMovementKind.sweep,
-          intensity: ZoomMovementIntensity.dramatic);
+        kind: ZoomMovementKind.sweep,
+        intensity: ZoomMovementIntensity.dramatic,
+      );
       expect(ZoomMovement.fromJson(m.toJson()), m);
     });
 

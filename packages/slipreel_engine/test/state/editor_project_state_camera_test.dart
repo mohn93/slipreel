@@ -41,7 +41,7 @@ void main() {
         'without disturbing zoom regions or clips', () {
       final base = EditorProjectState.defaults().copyWith(
         timeline: Timeline(
-          zoomTracks: const [ZoomTrack()],
+          zoomTracks: [ZoomTrack()],
           clips: EditorProjectState.defaults().timeline.clips,
           cameraTracks: const [],
         ),

@@ -88,6 +88,27 @@ void main() {
     );
   });
 
+  test('exit orientation focal is a stable position-pure exit anchor', () {
+    final track = buildTrack();
+    final ramps = region.resolvedRampsUs(1.0);
+    final exitStart = region.endTime - Duration(microseconds: ramps.exitUs);
+    final beforeExit = exitStart - const Duration(microseconds: 1);
+    final midExit = exitStart + Duration(microseconds: ramps.exitUs ~/ 2);
+
+    expect(track.exitOrientationFocalAt(beforeExit), isNull);
+    final anchor = track.exitOrientationFocalAt(exitStart);
+    expect(anchor, isNotNull);
+    expect(track.exitOrientationFocalAt(midExit), anchor);
+    expect(track.exitOrientationFocalAt(region.endTime), anchor);
+    expect(
+      (track.focalAt(midExit) - anchor!).distance,
+      greaterThan(1.0),
+      reason:
+          'the pan focal must keep recentering while orientation stays '
+          'anchored to the exit-start direction',
+    );
+  });
+
   group('matches()', () {
     final recording = sweep();
     const config = CursorAnimationConfig.preset(CursorAnimationStyle.smooth);

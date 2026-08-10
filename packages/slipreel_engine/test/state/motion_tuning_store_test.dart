@@ -41,13 +41,30 @@ void main() {
       expect(loaded.sceneBlurExposureMs, 20);
     });
 
-    test('load() returns null on corrupt JSON (silently — does not throw)',
-        () async {
-      final path = _tempPath('corrupt.json');
-      await File(path).writeAsString('{not valid json');
-      final store = MotionTuningStore(path: path);
-      expect(await store.load(), isNull);
+    test('load migrates an unversioned legacy scene calibration', () async {
+      final path = _tempPath('legacy.json');
+      await File(path).writeAsString(
+        '{"cursorAtRestPxPerSec":60,'
+        '"sceneBlurExposureMs":16,"sceneBlurMaxTranslation":60}',
+      );
+      final loaded = await MotionTuningStore(path: path).load();
+
+      expect(loaded, isNotNull);
+      expect(loaded!.cursorAtRestPxPerSec, 60);
+      expect(loaded.sceneBlurExposureMs, 32);
+      expect(loaded.sceneBlurMaxTranslation, 64);
+      expect(loaded.sceneBlurSampleCount, 21);
     });
+
+    test(
+      'load() returns null on corrupt JSON (silently — does not throw)',
+      () async {
+        final path = _tempPath('corrupt.json');
+        await File(path).writeAsString('{not valid json');
+        final store = MotionTuningStore(path: path);
+        expect(await store.load(), isNull);
+      },
+    );
 
     test('save() is atomic — write to tmp + rename, so a partial write '
         'can not leave the file in an unreadable state', () async {
