@@ -534,6 +534,7 @@ class _MotionBlurPlaygroundScreenState extends State<MotionBlurPlaygroundScreen>
       zoomRegion: activeZoom,
       videoSize: videoSize,
       focalPoint: focalUpdate.focal,
+      exitOrientationFocalPoint: focalUpdate.exitOrientationFocal,
       rampCurve:
           activeZoom.rampCurveOverride?.toFlutterCurve() ??
           const ScreenAnimationConfig.preset(

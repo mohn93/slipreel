@@ -61,6 +61,20 @@ uniform vec2 uTranslation;
 uniform float uSpeedCurveExp;
 uniform float uSpeedCurveRefPx;
 
+// Exact current-pose → previous-pose projective mapping for the composed
+// z=0 scene plane. The legacy radial+translation signal remains in charge of
+// the independently adjustable Screen zoom / Screen movement channels. We
+// subtract its approximation over the same projective window, then add this
+// homography as a residual so yaw, pitch, perspective and camera movement are
+// represented without double-counting scale or pan.
+uniform float uHasProjective;
+uniform vec3 uProjectiveRow0;
+uniform vec3 uProjectiveRow1;
+uniform vec3 uProjectiveRow2;
+uniform float uProjectiveScaleDelta;
+uniform vec2 uProjectiveTranslation;
+uniform float uDevicePixelRatio;
+
 out vec4 fragColor;
 
 // Compile-time tap budget. 64 lets the smear stay continuous even
@@ -91,6 +105,24 @@ void main() {
   // uniform across the frame so a pure pan smears every pixel
   // equally.
   vec2 motion = (fragCoord - uFocal) * uScaleDelta + uTranslation;
+  if (uHasProjective > 0.5) {
+    float safeDpr = max(uDevicePixelRatio, 0.001);
+    vec3 logicalPoint = vec3(fragCoord / safeDpr, 1.0);
+    vec3 projected = vec3(
+      dot(uProjectiveRow0, logicalPoint),
+      dot(uProjectiveRow1, logicalPoint),
+      dot(uProjectiveRow2, logicalPoint)
+    );
+    if (abs(projected.z) > 0.000001) {
+      vec2 projectivePast = projected.xy / projected.z * safeDpr;
+      vec2 baselineMotion =
+          (fragCoord - uFocal) * uProjectiveScaleDelta +
+          uProjectiveTranslation;
+      vec2 baselinePast = fragCoord - baselineMotion;
+      vec2 projectiveResidual = projectivePast - baselinePast;
+      motion -= projectiveResidual;
+    }
+  }
   // Apply the speed curve. p == 1 leaves motion untouched (linear).
   // p > 1 boosts large motions and dampens small motions relative
   // to a reference magnitude.

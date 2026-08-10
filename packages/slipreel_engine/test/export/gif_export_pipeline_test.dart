@@ -1,4 +1,5 @@
 // packages/screen_recorder/test/export/gif_export_pipeline_test.dart
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/painting.dart';
@@ -156,14 +157,16 @@ void main() {
 
       final base = _bareState();
       final trimmed = base.copyWith(
-        timeline: base.timeline.copyWith(clips: [
-          ClipSlice(
-            cutStart: Duration.zero,
-            cutEnd: const Duration(seconds: 1),
-            trimStart: const Duration(milliseconds: 500),
-            trimEnd: const Duration(seconds: 1),
-          ),
-        ]),
+        timeline: base.timeline.copyWith(
+          clips: [
+            ClipSlice(
+              cutStart: Duration.zero,
+              cutEnd: const Duration(seconds: 1),
+              trimStart: const Duration(milliseconds: 500),
+              trimEnd: const Duration(seconds: 1),
+            ),
+          ],
+        ),
       );
 
       final reported = <double>[];
@@ -179,17 +182,28 @@ void main() {
 
         expect(reported, isNotEmpty);
         for (var i = 1; i < reported.length; i++) {
-          expect(reported[i], greaterThanOrEqualTo(reported[i - 1]),
-              reason: 'progress must be monotonically non-decreasing');
+          expect(
+            reported[i],
+            greaterThanOrEqualTo(reported[i - 1]),
+            reason: 'progress must be monotonically non-decreasing',
+          );
         }
         expect(reported.last, closeTo(1.0, 0.001));
-        expect(reported.first, 0.0,
-            reason: 'the first fed frame is at source t=0, before the '
-                'trimStart — none of the edited output exists yet, so '
-                'progress must read 0, not "1 source frame consumed"');
-        expect(reported.where((p) => p == 0.0).length, greaterThanOrEqualTo(3),
-            reason: 'every lead-in frame before trimStart must report 0.0 '
-                'under edited-output semantics');
+        expect(
+          reported.first,
+          0.0,
+          reason:
+              'the first fed frame is at source t=0, before the '
+              'trimStart — none of the edited output exists yet, so '
+              'progress must read 0, not "1 source frame consumed"',
+        );
+        expect(
+          reported.where((p) => p == 0.0).length,
+          greaterThanOrEqualTo(3),
+          reason:
+              'every lead-in frame before trimStart must report 0.0 '
+              'under edited-output semantics',
+        );
       } finally {
         tmp.deleteSync(recursive: true);
       }
@@ -198,14 +212,6 @@ void main() {
     test('palette tmp directory is removed after a successful run', () async {
       final tmp = Directory.systemTemp.createTempSync('gif_pipe_cleanup');
       final outPath = '${tmp.path}/out.gif';
-
-      // Snapshot which gif_palette* directories already exist before we run.
-      final paletteDirsBefore = Directory.systemTemp
-          .listSync()
-          .whereType<Directory>()
-          .where((d) => d.path.split('/').last.startsWith('gif_palette'))
-          .map((d) => d.path)
-          .toSet();
 
       try {
         final pipeline = GifExportPipeline(
@@ -218,17 +224,11 @@ void main() {
         );
 
         await pipeline.run();
-
-        final paletteDirsAfter = Directory.systemTemp
-            .listSync()
-            .whereType<Directory>()
-            .where((d) => d.path.split('/').last.startsWith('gif_palette'))
-            .map((d) => d.path)
-            .toSet();
-
+        final paletteDir = pipeline.debugPaletteDirectoryPath;
+        expect(paletteDir, isNotNull);
         expect(
-          paletteDirsAfter.difference(paletteDirsBefore),
-          isEmpty,
+          Directory(paletteDir!).existsSync(),
+          isFalse,
           reason: 'pipeline must clean up its palette dir',
         );
       } finally {
@@ -241,13 +241,6 @@ void main() {
       // non-existent directory — ffmpeg cannot open the output file.
       final bogusOutput =
           '/tmp/nonexistent_dir_${DateTime.now().microsecondsSinceEpoch}/out.gif';
-
-      final paletteDirsBefore = Directory.systemTemp
-          .listSync()
-          .whereType<Directory>()
-          .where((d) => d.path.split('/').last.startsWith('gif_palette'))
-          .map((d) => d.path)
-          .toSet();
 
       final pipeline = GifExportPipeline(
         sourcePath: 'test/fixtures/sample_recording.mp4',
@@ -262,16 +255,11 @@ void main() {
       await expectLater(pipeline.run(), throwsA(isA<Exception>()));
 
       // Even though it threw, the palette directory must be cleaned up.
-      final paletteDirsAfter = Directory.systemTemp
-          .listSync()
-          .whereType<Directory>()
-          .where((d) => d.path.split('/').last.startsWith('gif_palette'))
-          .map((d) => d.path)
-          .toSet();
-
+      final paletteDir = pipeline.debugPaletteDirectoryPath;
+      expect(paletteDir, isNotNull);
       expect(
-        paletteDirsAfter.difference(paletteDirsBefore),
-        isEmpty,
+        Directory(paletteDir!).existsSync(),
+        isFalse,
         reason: 'palette dir must be cleaned up even when pass 2 fails',
       );
     });
@@ -298,6 +286,189 @@ void main() {
         isFalse,
         reason: 'partial output.gif must be deleted on pass 2 failure',
       );
+    });
+
+    test(
+      'lossless cache is capped and stale crash artifacts are reaped',
+      () async {
+        final tmp = Directory.systemTemp.createTempSync('gif_cache_cap_test');
+        final stale = Directory(
+          '${Directory.systemTemp.path}/slipreel_gif_cache_stale_'
+          '${DateTime.now().microsecondsSinceEpoch}',
+        )..createSync();
+        final marker = File('${stale.path}/.created')
+          ..writeAsStringSync(
+            jsonEncode({
+              'kind': 'slipreel-gif-cache',
+              'version': 1,
+              'ownerPid': 99999999,
+              'createdAt': DateTime.now()
+                  .subtract(const Duration(days: 2))
+                  .toUtc()
+                  .toIso8601String(),
+            }),
+          );
+        await marker.setLastModified(
+          DateTime.now().subtract(const Duration(days: 2)),
+        );
+        final active = Directory(
+          '${Directory.systemTemp.path}/slipreel_gif_cache_active_'
+          '${DateTime.now().microsecondsSinceEpoch}',
+        )..createSync();
+        final activeMarker = File('${active.path}/.created')
+          ..writeAsStringSync(
+            jsonEncode({
+              'kind': 'slipreel-gif-cache',
+              'version': 1,
+              'ownerPid': pid,
+              'createdAt': DateTime.now()
+                  .subtract(const Duration(days: 2))
+                  .toUtc()
+                  .toIso8601String(),
+            }),
+          );
+        await activeMarker.setLastModified(
+          DateTime.now().subtract(const Duration(days: 2)),
+        );
+        final unowned = Directory(
+          '${Directory.systemTemp.path}/slipreel_gif_cache_unowned_'
+          '${DateTime.now().microsecondsSinceEpoch}',
+        )..createSync();
+        addTearDown(() {
+          if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+          if (stale.existsSync()) stale.deleteSync(recursive: true);
+          if (active.existsSync()) active.deleteSync(recursive: true);
+          if (unowned.existsSync()) unowned.deleteSync(recursive: true);
+        });
+        final outPath = '${tmp.path}/out.gif';
+        final pipeline = GifExportPipeline(
+          sourcePath: 'test/fixtures/sample_recording.mp4',
+          outputPath: outPath,
+          sourceMetadata: _metadata(),
+          cursorRecording: CursorRecording(),
+          projectState: _bareState(),
+          settings: _gifSettings(),
+          maxCacheBytes: 1024,
+        );
+
+        await expectLater(
+          pipeline.run(),
+          throwsA(isA<GifCacheLimitExceededException>()),
+        );
+
+        expect(stale.existsSync(), isFalse);
+        expect(
+          active.existsSync(),
+          isTrue,
+          reason: 'an old cache whose owner PID is alive must be preserved',
+        );
+        expect(
+          unowned.existsSync(),
+          isTrue,
+          reason: 'a prefix match without an ownership marker is not ours',
+        );
+        expect(File(outPath).existsSync(), isFalse);
+        expect(
+          Directory(pipeline.debugPaletteDirectoryPath!).existsSync(),
+          isFalse,
+        );
+      },
+    );
+
+    test('cache cap is enforced after the first submitted frame', () async {
+      final tmp = Directory.systemTemp.createTempSync('gif_cache_first_frame');
+      final outPath = '${tmp.path}/out.gif';
+      var cacheLengthChecks = 0;
+      addTearDown(() {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      });
+
+      final pipeline = GifExportPipeline(
+        sourcePath: 'test/fixtures/sample_recording.mp4',
+        outputPath: outPath,
+        sourceMetadata: _metadata(),
+        cursorRecording: CursorRecording(),
+        projectState: _bareState(),
+        settings: _gifSettings(),
+        maxCacheBytes: 16 * 1024 * 1024,
+        cacheLengthForTesting: (_) async {
+          cacheLengthChecks++;
+          // First call is the pre-write headroom check. The very next call is
+          // the post-first-frame limit check and must abort immediately.
+          return cacheLengthChecks == 1 ? 0 : 20 * 1024 * 1024;
+        },
+      );
+
+      await expectLater(
+        pipeline.run(),
+        throwsA(isA<GifCacheLimitExceededException>()),
+      );
+      expect(File(outPath).existsSync(), isFalse);
+      expect(
+        Directory(pipeline.debugPaletteDirectoryPath!).existsSync(),
+        isFalse,
+      );
+    });
+
+    test(
+      'low free space is rejected before pass 1 can write a 1080p frame',
+      () async {
+        final tmp = Directory.systemTemp.createTempSync('gif_cache_low_space');
+        final outPath = '${tmp.path}/out.gif';
+        final pipeline = GifExportPipeline(
+          sourcePath: 'test/fixtures/sample_recording.mp4',
+          outputPath: outPath,
+          sourceMetadata: _metadata(),
+          cursorRecording: CursorRecording(),
+          projectState: _bareState(),
+          settings: _gifSettings(resolution: ExportResolution.r1080p),
+          availableBytesForTesting: (_) async => 17 * 1024 * 1024,
+        );
+        addTearDown(() {
+          if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+        });
+
+        await expectLater(
+          pipeline.run(),
+          throwsA(isA<GifCacheLimitExceededException>()),
+        );
+        expect(File(outPath).existsSync(), isFalse);
+        expect(
+          Directory(pipeline.debugPaletteDirectoryPath!).existsSync(),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'marker write failure removes the newly-created cache directory',
+      () async {
+        final tmp = Directory.systemTemp.createTempSync('gif_marker_failure');
+        addTearDown(() {
+          if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+        });
+        final pipeline = GifExportPipeline(
+          sourcePath: 'test/fixtures/sample_recording.mp4',
+          outputPath: '${tmp.path}/unused.gif',
+          sourceMetadata: _metadata(),
+          cursorRecording: CursorRecording(),
+          projectState: _bareState(),
+          settings: _gifSettings(),
+          writeCacheMarkerForTesting: (_) => throw StateError('marker failed'),
+        );
+
+        await expectLater(pipeline.run(), throwsA(isA<StateError>()));
+        expect(pipeline.debugPaletteDirectoryPath, isNotNull);
+        expect(
+          Directory(pipeline.debugPaletteDirectoryPath!).existsSync(),
+          isFalse,
+        );
+      },
+    );
+
+    test('Windows free-space output parser accepts byte counts', () {
+      expect(parseWindowsFreeSpaceOutput('  123456789\r\n'), 123456789);
+      expect(parseWindowsFreeSpaceOutput('not-a-number'), isNull);
     });
 
     test('throws with a message when pass 1 fails (bad source)', () async {
@@ -437,4 +608,3 @@ void main() {
     });
   });
 }
-

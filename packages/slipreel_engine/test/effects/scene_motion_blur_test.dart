@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 
 /// Determinism contract: the displayed scene-blur signal must be a pure
@@ -30,6 +31,20 @@ void main() {
     );
     expect(previewScale, closeTo(0.0078125, 1e-12));
   });
+
+  test(
+    'production slider range yields a visible but bounded scene shutter',
+    () {
+      const baseExposureMs = 80.0;
+      final commonMs =
+          baseExposureMs * sceneBlurExposureScale(master: 0.25, channel: 1.0);
+      final maximumMs =
+          baseExposureMs * sceneBlurExposureScale(master: 0.5, channel: 1.0);
+
+      expect(commonMs, closeTo(5.0, 1e-12));
+      expect(maximumMs, closeTo(40.0, 1e-12));
+    },
+  );
 
   // Linear camera pan: focal moves +100 px/s on x, scale held at 1.0.
   // Pure function of t, so two calls at the same t must be identical.
@@ -210,5 +225,85 @@ void main() {
       maxTranslation: maxTranslation,
     );
     expect(signal.scaleDelta, closeTo(0.01067, 0.001));
+  });
+
+  test('projective camera delta detects pure 3D tilt motion', () {
+    SceneCameraSample tiltAt(Duration t) {
+      final progress =
+          t.inMicroseconds / const Duration(seconds: 1).inMicroseconds;
+      final transform = Matrix4.identity()
+        ..setEntry(3, 2, -1 / 1600)
+        ..rotateY(progress * 0.2);
+      return SceneCameraSample(
+        position: t,
+        focal: const Offset(500, 500),
+        // Keep the legacy scalar signal deliberately motionless. The full
+        // transform must be what activates blur for this case.
+        scale: 1,
+        transform: transform,
+        transformOrigin: const Offset(500, 500),
+      );
+    }
+
+    final signal = SceneMotionBlurController.compute(
+      position: const Duration(milliseconds: 500),
+      sampleAt: tiltAt,
+      movementExposure: Duration.zero,
+      zoomExposure: const Duration(milliseconds: 40),
+      maxTranslation: 160,
+    );
+
+    expect(signal.scaleDelta, 0);
+    expect(signal.translation, Offset.zero);
+    expect(signal.projectiveTransform, isNotNull);
+    expect(signal.projectiveTransform!.isIdentity, isFalse);
+    expect(signal.hasMotion, isTrue);
+    expect(
+      signal.projectiveTransform!.transformPoint(const Offset(850, 500)),
+      isNot(const Offset(850, 500)),
+    );
+  });
+
+  test(
+    'projective delta maps current scaled pixels back to their prior pose',
+    () {
+      final current = Matrix4.identity()..scaleByDouble(2, 2, 1, 1);
+      final mapping = SceneProjectiveTransform.between(
+        current: current,
+        previous: Matrix4.identity(),
+        origin: const Offset(100, 100),
+      );
+
+      // Source point (120, 130) appears at (140, 160) after a 2x scale about
+      // (100, 100). The current→previous homography must recover its old pixel.
+      expect(
+        mapping.transformPoint(const Offset(140, 160)),
+        const Offset(120, 130),
+      );
+    },
+  );
+
+  test('identical full camera transforms do not create phantom blur', () {
+    final transform = Matrix4.identity()
+      ..setEntry(3, 2, -1 / 1600)
+      ..rotateY(0.1);
+    SceneCameraSample fixedTilt(Duration t) => SceneCameraSample(
+      position: t,
+      focal: const Offset(500, 500),
+      scale: 1,
+      transform: transform,
+      transformOrigin: const Offset(500, 500),
+    );
+
+    final signal = SceneMotionBlurController.compute(
+      position: const Duration(milliseconds: 500),
+      sampleAt: fixedTilt,
+      movementExposure: const Duration(milliseconds: 40),
+      zoomExposure: const Duration(milliseconds: 40),
+      maxTranslation: 160,
+    );
+
+    expect(signal.projectiveTransform!.isIdentity, isTrue);
+    expect(signal.hasMotion, isFalse);
   });
 }

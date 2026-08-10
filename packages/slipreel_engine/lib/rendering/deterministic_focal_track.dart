@@ -201,6 +201,21 @@ class DeterministicFocalTrack {
     return Offset.lerp(_samples[i], _samples[i + 1], f)!;
   }
 
+  /// The focal captured at the start of the exit ramp, while [focalAt]
+  /// continues along its return-to-centre path. Null outside the exit window.
+  ///
+  /// Keeping this position-pure is important: preview scrubbing and export
+  /// must derive the same tilt direction without relying on which frame was
+  /// rendered first.
+  Offset? exitOrientationFocalAt(Duration t) {
+    if (!region.followCursor || _samples.isEmpty) return null;
+    final ramps = region.resolvedRampsUs(rampDurationScale);
+    if (ramps.exitUs <= 0) return null;
+    final exitStart = region.endTime - Duration(microseconds: ramps.exitUs);
+    if (t < exitStart || t > region.endTime) return null;
+    return focalAt(exitStart);
+  }
+
   /// True when this track was built from inputs equal to the given set —
   /// used by callers to decide whether to rebuild after a widget update.
   /// [cursorRecording] is compared by identity (the shell swaps the whole
@@ -260,7 +275,7 @@ class DeterministicFocalTrack {
 /// and preview==export parity are unaffected.
 class DeterministicFocalTrackCache {
   DeterministicFocalTrackCache({this.capacity = 4})
-      : assert(capacity > 0, 'capacity must be positive');
+    : assert(capacity > 0, 'capacity must be positive');
 
   final int capacity;
   final List<DeterministicFocalTrack> _entries = [];

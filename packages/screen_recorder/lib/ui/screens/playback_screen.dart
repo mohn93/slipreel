@@ -846,7 +846,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // so hover-end-before-any-other-action restores to a meaningful
       // value rather than Duration.zero (which would jump to start).
       _hover = HoverScrubController(
-        seekTo: _controller.seekTo,
+        // Route editor-driven seeks through the smooth playhead first. It
+        // moves synchronously and suppresses stale native position reports
+        // while AVPlayer decodes the target frame, so clicking near/behind a
+        // moving playhead never looks like an ignored click.
+        seekTo: (position) {
+          unawaited(_smoothPlayhead!.seekTo(position));
+        },
         initialPosition: _controller.value.position,
       );
       _controller.addListener(_onHoverTrack);

@@ -37,6 +37,7 @@ class ZoomTransformer {
     required ZoomRegion zoomRegion,
     required Size videoSize,
     Offset? focalPoint,
+    Offset? exitOrientationFocalPoint,
     Curve rampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
     ZoomFraming? framing,
@@ -54,8 +55,7 @@ class ZoomTransformer {
     final ramps = zoomRegion.duration.inMicroseconds <= 0
         ? (enterUs: 0, exitUs: 0)
         : zoomRegion.resolvedRampsUs(rampDurationScale);
-    final z = _calculateZoomFactor(
-        position, zoomRegion, rampCurve, ramps);
+    final z = _calculateZoomFactor(position, zoomRegion, rampCurve, ramps);
     if (z == 1.0) return Matrix4.identity();
 
     final focal = focalPoint ?? zoomRegion.rect.center;
@@ -66,6 +66,47 @@ class ZoomTransformer {
     // and full only at the settled hold.
     final denom = zoomRegion.zoomLevel - 1.0;
     final rampGate = denom <= 0 ? 0.0 : ((z - 1.0) / denom).clamp(0.0, 1.0);
+    // Perspective gets its own time-based ramp. The Smooth scale curve is very
+    // steep through its middle: driving orientation from the already-eased
+    // scale gate keeps yaw/pitch near full strength too long, then removes most
+    // of the angle in only a few hundred milliseconds. Enter uses smoothstep;
+    // exit uses a decelerating return-to-flat curve so it starts unwinding as
+    // soon as zoom-out begins and cannot appear to hold before dropping late.
+    final orientationGate = _calculateOrientationGate(
+      position,
+      zoomRegion,
+      ramps,
+    );
+
+    // Follow-camera ramps move the focal itself between the canvas centre and
+    // the settled cursor target. Using that already-ramped focal as the 3D
+    // direction and then multiplying the angle by [rampGate] again makes the
+    // orientation fade twice. It is especially visible on zoom-out: halfway
+    // through the ramp a Sweep can already be down near 20% strength and reads
+    // as though the camera snapped back to centre.
+    //
+    // Recover the settled direction by dividing out the focal ramp. The gate
+    // below remains the single envelope controlling how much tilt/movement is
+    // visible. Clamp each axis because edge targets and radial reachability can
+    // legitimately lead the scale ramp. Manual placements keep a fixed focal,
+    // so their direction must not be compensated.
+    final normalizedFocal = f.normalizedFocalOffset(focal);
+    // Mouse-following exits can use a nonlinear/back-loaded radial return,
+    // especially when the cursor is near an edge. Dividing that live focal by
+    // the zoom gate cannot reconstruct the settled direction: its magnitude
+    // changes as the reachable viewport changes and the tilt appears to hold,
+    // then correct itself near the end. The focal controller/deterministic
+    // track therefore supplies the exit-start focal captured before recentering.
+    // Keep the division as the compatibility fallback for callers that do not
+    // yet provide that anchor.
+    final directionalFocal = exitOrientationFocalPoint != null
+        ? f.normalizedFocalOffset(exitOrientationFocalPoint)
+        : zoomRegion.followCursor && rampGate > 1e-6
+        ? Offset(
+            (normalizedFocal.dx / rampGate).clamp(-1.0, 1.0),
+            (normalizedFocal.dy / rampGate).clamp(-1.0, 1.0),
+          )
+        : normalizedFocal;
 
     // Movement (Phase 2): a pure, position-parameterized additive sample folded
     // on top of the settled 2D+tilt transform. None => identity sample => the
@@ -73,8 +114,9 @@ class ZoomTransformer {
     final mv = zoomRegion.movement.resolveAt(
       holdProgress: _holdProgress(position, zoomRegion, ramps),
       rampGate: rampGate,
-      normalizedFocal: f.normalizedFocalOffset(focal),
+      normalizedFocal: directionalFocal,
       followCursor: zoomRegion.followCursor,
+      orientationRampGate: orientationGate,
     );
     final zEff = z * mv.scaleMul;
     final focalEff = mv.focalDriftFrac == Offset.zero
@@ -88,8 +130,8 @@ class ZoomTransformer {
     // magnify in place and are intentionally unclamped, so leave them.
     final focalUsed =
         (zoomRegion.followCursor && mv.focalDriftFrac != Offset.zero)
-            ? clampFocalToBounds(focalEff, videoSize, zEff)
-            : focalEff;
+        ? clampFocalToBounds(focalEff, videoSize, zEff)
+        : focalEff;
 
     // pCenterRel is in canvas px. Follow-cursor zooms center-and-clamp (the
     // moving cursor must be brought to the viewport center); for identity
@@ -111,9 +153,15 @@ class ZoomTransformer {
 
     // 2D / flat AND no movement tilt => return the legacy 2D matrix. (Push-in /
     // Drift add no tilt, so they fall through here with only base changed.)
+    // Drift can alter a manual placement's direction. Cursor-following drift
+    // is not exposed by the editor; for defensive imported projects, keep the
+    // stable follow direction rather than reintroducing the double-ramp.
+    final tiltDirection = zoomRegion.followCursor
+        ? directionalFocal
+        : f.normalizedFocalOffset(focalUsed);
     final angles = zoomRegion.tilt.resolveAngles(
-      normalizedFocal: f.normalizedFocalOffset(focalUsed),
-      progress: rampGate,
+      normalizedFocal: tiltDirection,
+      progress: orientationGate,
     );
     final axRad = angles.xRad + mv.extraTiltXRad;
     final ayRad = angles.yRad + mv.extraTiltYRad;
@@ -143,6 +191,27 @@ class ZoomTransformer {
     );
   }
 
+  /// Smoothstep used by the independent 3D orientation track. Public so its
+  /// endpoint and monotonicity contract can be regression-tested directly.
+  static double orientationRampProgress(double linearProgress) {
+    final t = linearProgress.clamp(0.0, 1.0).toDouble();
+    return t * t * (3.0 - 2.0 * t);
+  }
+
+  /// Remaining orientation during exit, from fully tilted at `t == 0` to
+  /// flat at `t == 1`.
+  ///
+  /// A symmetric smoothstep is a poor fit for returning the camera to rest:
+  /// its zero initial velocity visually holds the old angle, then its peak
+  /// velocity lands in the middle of the zoom-out and reads as a snap. This
+  /// quadratic ease-out starts the unwind immediately and continuously sheds
+  /// angular velocity until it reaches flat with zero terminal velocity.
+  static double orientationExitGate(double linearProgress) {
+    final t = linearProgress.clamp(0.0, 1.0).toDouble();
+    final remaining = 1.0 - t;
+    return remaining * remaining;
+  }
+
   /// RADIAL counterpart of [clampFocalToBounds]: clamp [focal] into the same
   /// reachable box at zoom [z], but by scaling the whole offset from the
   /// video center by a single scalar instead of clamping each axis
@@ -166,7 +235,10 @@ class ZoomTransformer {
   /// `z <= 1` the box collapses, so this returns the video center (matching
   /// [clampFocalToBounds]'s degenerate fallback).
   static Offset clampFocalToBoundsRadial(
-      Offset focal, Size videoSize, double z) {
+    Offset focal,
+    Size videoSize,
+    double z,
+  ) {
     final centre = Offset(videoSize.width / 2, videoSize.height / 2);
     final hx = (videoSize.width / 2) * (1 - 1 / z);
     final hy = (videoSize.height / 2) * (1 - 1 / z);
@@ -185,9 +257,15 @@ class ZoomTransformer {
   /// down proportionally so the shape is preserved (and the hold goes
   /// to zero in the limit).
   double _calculateZoomFactor(
-      Duration position, ZoomRegion z, Curve curve, _ResolvedZoomRamps ramps) {
-    final tIntoRegionUs =
-        (position - z.startTime).inMicroseconds.clamp(0, z.duration.inMicroseconds);
+    Duration position,
+    ZoomRegion z,
+    Curve curve,
+    _ResolvedZoomRamps ramps,
+  ) {
+    final tIntoRegionUs = (position - z.startTime).inMicroseconds.clamp(
+      0,
+      z.duration.inMicroseconds,
+    );
     final regionUs = z.duration.inMicroseconds;
     if (regionUs <= 0) return 1.0;
 
@@ -206,6 +284,29 @@ class ZoomTransformer {
     // Hold phase.
     return z.zoomLevel;
   }
+
+  double _calculateOrientationGate(
+    Duration position,
+    ZoomRegion region,
+    _ResolvedZoomRamps ramps,
+  ) {
+    final regionUs = region.duration.inMicroseconds;
+    if (regionUs <= 0) return 0.0;
+    final intoUs = (position - region.startTime).inMicroseconds.clamp(
+      0,
+      regionUs,
+    );
+
+    if (ramps.enterUs > 0 && intoUs < ramps.enterUs) {
+      return orientationRampProgress(intoUs / ramps.enterUs);
+    }
+    final exitStartUs = regionUs - ramps.exitUs;
+    if (ramps.exitUs > 0 && intoUs >= exitStartUs) {
+      final exitProgress = (intoUs - exitStartUs) / ramps.exitUs;
+      return orientationExitGate(exitProgress);
+    }
+    return 1.0;
+  }
 }
 
 /// Normalized position within a region's HOLD window (between the enter and
@@ -213,7 +314,10 @@ class ZoomTransformer {
 /// (resolved enter+exit consume the region) stays at 0, so movement cannot
 /// appear as a discontinuous step on a tiny zoom.
 double _holdProgress(
-    Duration position, ZoomRegion r, _ResolvedZoomRamps ramps) {
+  Duration position,
+  ZoomRegion r,
+  _ResolvedZoomRamps ramps,
+) {
   final regionUs = r.duration.inMicroseconds;
   if (regionUs <= 0) return 0.0;
   final holdStartUs = ramps.enterUs;

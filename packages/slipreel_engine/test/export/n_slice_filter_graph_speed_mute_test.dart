@@ -7,7 +7,7 @@ import 'package:slipreel_engine/timeline/timeline.dart';
 
 EditorProjectState _stateWith(ClipSlice slice) =>
     EditorProjectState.defaults().copyWith(
-      timeline: const Timeline(zoomTracks: []).copyWith(clips: [slice]),
+      timeline: Timeline(zoomTracks: []).copyWith(clips: [slice]),
     );
 
 // A single mono source stream (one audio track → microphone role).
@@ -23,7 +23,7 @@ ClipSlice _slice(double speed) => ClipSlice(
 
 EditorProjectState _stateWithClips(List<ClipSlice> clips) =>
     EditorProjectState.defaults().copyWith(
-      timeline: const Timeline(zoomTracks: []).copyWith(clips: clips),
+      timeline: Timeline(zoomTracks: []).copyWith(clips: clips),
     );
 
 void main() {

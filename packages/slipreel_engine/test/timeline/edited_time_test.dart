@@ -20,6 +20,18 @@ ClipSlice _slice({
 Duration _s(int s) => Duration(seconds: s);
 Duration _ms(int ms) => Duration(milliseconds: ms);
 
+class _CountingSourceOrderedClipList extends SourceOrderedClipList {
+  _CountingSourceOrderedClipList(super.clips);
+
+  int reads = 0;
+
+  @override
+  ClipSlice operator [](int index) {
+    reads++;
+    return super[index];
+  }
+}
+
 void main() {
   group('editedProgressAtSource', () {
     // Export progress regression: the numerator counted frames fed to
@@ -40,8 +52,7 @@ void main() {
       expect(editedProgressAtSource(clips, _s(20)), closeTo(1.0, 1e-9));
     });
 
-    test('2x speed slice: source midpoint is still half the edited output',
-        () {
+    test('2x speed slice: source midpoint is still half the edited output', () {
       final clips = [_slice(cs: 0, ce: 10, speed: 2.0)];
       expect(editedProgressAtSource(clips, _s(5)), closeTo(0.5, 1e-9));
     });
@@ -72,8 +83,11 @@ void main() {
     test('no denominator available -> null (indeterminate bar)', () {
       expect(editedProgressAtSource(const [], _s(5)), isNull);
       expect(
-        editedProgressAtSource(const [], _s(5),
-            sourceFallbackTotal: Duration.zero),
+        editedProgressAtSource(
+          const [],
+          _s(5),
+          sourceFallbackTotal: Duration.zero,
+        ),
         isNull,
       );
     });
@@ -293,10 +307,7 @@ void main() {
 
     test('empty clip list: every frame contributes', () {
       expect(sourceFrameContributes([], _s(3), margin: margin), isTrue);
-      expect(
-        sourceFrameContributes([], Duration.zero, margin: margin),
-        isTrue,
-      );
+      expect(sourceFrameContributes([], Duration.zero, margin: margin), isTrue);
     });
 
     test('inside a trim window contributes', () {
@@ -348,13 +359,104 @@ void main() {
         _slice(cs: 0, ce: 3, ts: 0, te: 3),
         _slice(cs: 3, ce: 10, ts: 6, te: 9),
       ];
-      expect(
-        sourceFrameContributes(clips, _ms(4500), margin: margin),
-        isFalse,
-      );
+      expect(sourceFrameContributes(clips, _ms(4500), margin: margin), isFalse);
       // Both edges of the gap stay live.
       expect(sourceFrameContributes(clips, _s(3), margin: margin), isTrue);
       expect(sourceFrameContributes(clips, _s(6), margin: margin), isTrue);
     });
+  });
+
+  test(
+    'indexed timeline lookups match the linear reference on many slices',
+    () {
+      final clips = <ClipSlice>[
+        for (var i = 0; i < 256; i++)
+          ClipSlice(
+            cutStart: Duration(milliseconds: i * 1200),
+            cutEnd: Duration(milliseconds: i * 1200 + 1000),
+            trimStart: Duration(milliseconds: i * 1200 + 100),
+            trimEnd: Duration(milliseconds: i * 1200 + 900),
+            playbackSpeed: [0.5, 1.0, 1.5, 2.0][i % 4],
+          ),
+      ];
+
+      Duration linearSourceToEdited(Duration position) {
+        var edited = Duration.zero;
+        for (final clip in clips) {
+          if (position < clip.trimStart) return edited;
+          if (position <= clip.trimEnd) {
+            return edited +
+                Duration(
+                  microseconds:
+                      ((position - clip.trimStart).inMicroseconds /
+                              clip.playbackSpeed)
+                          .round(),
+                );
+          }
+          edited += clip.editedLength;
+        }
+        return edited;
+      }
+
+      int linearContaining(Duration position) {
+        for (var i = 0; i < clips.length; i++) {
+          if (position >= clips[i].trimStart && position < clips[i].trimEnd) {
+            return i;
+          }
+        }
+        return -1;
+      }
+
+      for (var ms = 0; ms <= 307000; ms += 37) {
+        final position = Duration(milliseconds: ms);
+        expect(sourceToEdited(clips, position), linearSourceToEdited(position));
+        expect(
+          clipSliceIndexContaining(clips, position),
+          linearContaining(position),
+        );
+      }
+    },
+  );
+
+  test('mutable list changes never reuse a stale prepared timeline', () {
+    final clips = <ClipSlice>[_slice(cs: 0, ce: 1)];
+    expect(totalEditedDuration(clips), _s(1));
+    expect(sourceToEdited(clips, _ms(500)), _ms(500));
+
+    clips.add(_slice(cs: 1, ce: 3));
+    expect(totalEditedDuration(clips), _s(3));
+    expect(sourceToEdited(clips, _ms(2500)), _ms(2500));
+    expect(contiguousClipRunBounds(clips, _ms(2500)), (
+      start: Duration.zero,
+      end: _s(3),
+    ));
+
+    clips.removeAt(0);
+    expect(totalEditedDuration(clips), _s(2));
+    expect(sourceToEdited(clips, _ms(2500)), _ms(1500));
+  });
+
+  test('editedToSource uses the prepared index instead of a linear scan', () {
+    final clips = _CountingSourceOrderedClipList([
+      for (var i = 0; i < 1024; i++)
+        ClipSlice(
+          cutStart: Duration(seconds: i),
+          cutEnd: Duration(seconds: i + 1),
+        ),
+    ]);
+
+    // Warm and memoize the immutable-list index, then measure only the lookup.
+    expect(totalEditedDuration(clips), const Duration(seconds: 1024));
+    clips.reads = 0;
+
+    expect(
+      editedToSource(clips, const Duration(milliseconds: 1023500)),
+      const Duration(milliseconds: 1023500),
+    );
+    expect(
+      clips.reads,
+      lessThan(20),
+      reason: 'a 1024-clip lookup should require logarithmic clip reads',
+    );
   });
 }

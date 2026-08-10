@@ -87,7 +87,7 @@ EditorProjectState _benchState() {
       shadowColor: Color(0x66000000),
       borderWidth: 0,
     ),
-    motionBlur: 0.8,
+    motionBlur: 0.5,
     cursorMovementBlur: 0.8,
     zoomRegions: [
       ZoomRegion(

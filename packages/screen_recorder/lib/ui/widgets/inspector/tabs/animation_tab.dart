@@ -102,8 +102,8 @@ class _AnimationTabState extends ConsumerState<AnimationTab> {
         InspectorSlider(
           label: 'Motion blur',
           subtitle:
-              'While mouse cursor or screen is moving, cinematic motion '
-              'blur effect will be applied.',
+              'Adds cinematic trails while the cursor or editor camera '
+              'moves. Motion already inside the recording is unchanged.',
           value: project.motionBlur.clamp(0.0, 0.5),
           min: 0,
           max: 0.5,

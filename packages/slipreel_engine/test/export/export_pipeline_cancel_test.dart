@@ -42,7 +42,9 @@ void main() {
         );
 
         final pipeline = ExportPipeline(
-          sourcePath: 'test/fixtures/sample_recording.mp4',
+          // A pre-cancelled run must fail before probing this deliberately
+          // missing source, proving no ffprobe/encoder setup occurs.
+          sourcePath: 'test/fixtures/pre_cancel_must_not_probe.mp4',
           outputPath: outPath,
           sourceMetadata: RecordingMetadata(
             isPureSource: true,
@@ -63,12 +65,7 @@ void main() {
           throwsA(isA<ExportCancelledException>()),
         );
 
-        // No complete MP4 should have been written. The file may not exist at
-        // all, or be a tiny truncated fragment.
-        final outFile = File(outPath);
-        if (outFile.existsSync()) {
-          expect(outFile.lengthSync(), lessThan(100000));
-        }
+        expect(File(outPath).existsSync(), isFalse);
 
         tmp.deleteSync(recursive: true);
       },

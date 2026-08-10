@@ -68,12 +68,17 @@ class NSliceFilterGraph {
 /// [audioStreams] is the ffprobe result of the source MP4. Pass the empty
 /// list to skip the audio half of the graph (video-only export).
 ///
+/// [videoTimeOffset] is subtracted from video trim boundaries when the raw
+/// frame decoder has already seeked into the source. Audio boundaries remain
+/// absolute because audio is opened separately from the original movie.
+///
 /// Always produces a valid graph for N >= 1: a 1-slice project still uses
 /// `concat=n=1`, which ffmpeg accepts as a no-op concat. Returns an empty
 /// graph for N == 0.
 NSliceFilterGraph buildExportFilterGraph({
   required EditorProjectState state,
   required List<AudioStreamInfo> audioStreams,
+  Duration videoTimeOffset = Duration.zero,
 }) {
   final clips = state.timeline.clips;
   if (clips.isEmpty) {
@@ -89,28 +94,16 @@ NSliceFilterGraph buildExportFilterGraph({
   final micIdx = roles[AudioRole.microphone];
   final sysIdx = roles[AudioRole.system];
 
-  // Each audio track's per-slice `atrim` + `asetpts=PTS-STARTPTS` rebases the
-  // track to start at output t=0, which drops the recording's audio
-  // leading-gap (system audio spins up after video; see AudioStreamInfo
-  // .startMicros). That shifts the whole exported track earlier than the
-  // video by (gap − firstSliceTrimStart). We re-add exactly that with a
-  // per-track `adelay` so audio lands back on movie-time. A first slice
-  // trimmed past the gap is already aligned ⇒ delay clamps to 0.
-  final firstTrimStartMicros = clips.first.trimStart.inMicroseconds;
-  int delayMicrosFor(int? audioIdx) {
-    if (audioIdx == null) return 0;
-    final d = _startMicrosForIdx(audioStreams, audioIdx) - firstTrimStartMicros;
-    return d > 0 ? d : 0;
-  }
-
   final chains = <String>[];
 
   // Video: one chain per slice, then concat=n=N:v=1:a=0[outv].
   for (var i = 0; i < clips.length; i++) {
-    chains.add(_videoChainFor(clips[i], i));
+    chains.add(_videoChainFor(clips[i], i, timeOffset: videoTimeOffset));
   }
-  chains.add('${_labels('v', clips.length)}'
-      'concat=n=${clips.length}:v=1:a=0[outv]');
+  chains.add(
+    '${_labels('v', clips.length)}'
+    'concat=n=${clips.length}:v=1:a=0[outv]',
+  );
 
   // Audio: per-track per-slice chains, concat per track, then amix the two
   // tracks. Muted/0% slices still contribute volume=0 to keep concat input
@@ -122,47 +115,55 @@ NSliceFilterGraph buildExportFilterGraph({
   if (hasMic && hasSys) {
     // Both tracks: each concats into its own intermediate label so they can
     // be amixed at the end.
-    chains.addAll(_trackChainBlock(
-      clips: clips,
-      streamLabel: '[1:a:$micIdx]',
-      chainTag: 'a_mic',
-      outLabel: '[mic_track]',
-      gainOf: (c) => c.micGainPercent,
-      mutedOf: (c) => c.micMuted,
-      delayMicros: delayMicrosFor(micIdx),
-    ));
-    chains.addAll(_trackChainBlock(
-      clips: clips,
-      streamLabel: '[1:a:$sysIdx]',
-      chainTag: 'a_sys',
-      outLabel: '[sys_track]',
-      gainOf: (c) => c.systemGainPercent,
-      mutedOf: (c) => c.systemMuted,
-      delayMicros: delayMicrosFor(sysIdx),
-    ));
+    chains.addAll(
+      _trackChainBlock(
+        clips: clips,
+        streamLabel: '[1:a:$micIdx]',
+        chainTag: 'a_mic',
+        outLabel: '[mic_track]',
+        gainOf: (c) => c.micGainPercent,
+        mutedOf: (c) => c.micMuted,
+        streamStartMicros: _startMicrosForIdx(audioStreams, micIdx),
+      ),
+    );
+    chains.addAll(
+      _trackChainBlock(
+        clips: clips,
+        streamLabel: '[1:a:$sysIdx]',
+        chainTag: 'a_sys',
+        outLabel: '[sys_track]',
+        gainOf: (c) => c.systemGainPercent,
+        mutedOf: (c) => c.systemMuted,
+        streamStartMicros: _startMicrosForIdx(audioStreams, sysIdx),
+      ),
+    );
     chains.add('[mic_track][sys_track]amix=inputs=2:normalize=0[outa]');
     audioMapLabel = '[outa]';
   } else if (hasMic) {
-    chains.addAll(_trackChainBlock(
-      clips: clips,
-      streamLabel: '[1:a:$micIdx]',
-      chainTag: 'a_mic',
-      outLabel: '[outa]',
-      gainOf: (c) => c.micGainPercent,
-      mutedOf: (c) => c.micMuted,
-      delayMicros: delayMicrosFor(micIdx),
-    ));
+    chains.addAll(
+      _trackChainBlock(
+        clips: clips,
+        streamLabel: '[1:a:$micIdx]',
+        chainTag: 'a_mic',
+        outLabel: '[outa]',
+        gainOf: (c) => c.micGainPercent,
+        mutedOf: (c) => c.micMuted,
+        streamStartMicros: _startMicrosForIdx(audioStreams, micIdx),
+      ),
+    );
     audioMapLabel = '[outa]';
   } else if (hasSys) {
-    chains.addAll(_trackChainBlock(
-      clips: clips,
-      streamLabel: '[1:a:$sysIdx]',
-      chainTag: 'a_sys',
-      outLabel: '[outa]',
-      gainOf: (c) => c.systemGainPercent,
-      mutedOf: (c) => c.systemMuted,
-      delayMicros: delayMicrosFor(sysIdx),
-    ));
+    chains.addAll(
+      _trackChainBlock(
+        clips: clips,
+        streamLabel: '[1:a:$sysIdx]',
+        chainTag: 'a_sys',
+        outLabel: '[outa]',
+        gainOf: (c) => c.systemGainPercent,
+        mutedOf: (c) => c.systemMuted,
+        streamStartMicros: _startMicrosForIdx(audioStreams, sysIdx),
+      ),
+    );
     audioMapLabel = '[outa]';
   }
 
@@ -194,29 +195,26 @@ List<String> _trackChainBlock({
   required String outLabel,
   required int Function(ClipSlice) gainOf,
   required bool Function(ClipSlice) mutedOf,
-  int delayMicros = 0,
+  required int streamStartMicros,
 }) {
   final out = <String>[];
   for (var i = 0; i < clips.length; i++) {
-    out.add(_audioChainFor(
-      clips[i], i,
-      streamLabel: streamLabel,
-      chainTag: chainTag,
-      gainPercent: gainOf(clips[i]),
-      muted: mutedOf(clips[i]),
-    ));
+    out.add(
+      _audioChainFor(
+        clips[i],
+        i,
+        streamLabel: streamLabel,
+        chainTag: chainTag,
+        gainPercent: gainOf(clips[i]),
+        muted: mutedOf(clips[i]),
+        streamStartMicros: streamStartMicros,
+      ),
+    );
   }
-  final delayMs = (delayMicros / 1000).round();
-  if (delayMicros > 0 && delayMs > 0) {
-    // Concat into an intermediate label, then adelay it onto movie-time.
-    // `all=1` applies the one delay value to every channel of the track.
-    out.add('${_labels(chainTag, clips.length)}'
-        'concat=n=${clips.length}:v=0:a=1[${chainTag}_cat]');
-    out.add('[${chainTag}_cat]adelay=$delayMs:all=1$outLabel');
-  } else {
-    out.add('${_labels(chainTag, clips.length)}'
-        'concat=n=${clips.length}:v=0:a=1$outLabel');
-  }
+  out.add(
+    '${_labels(chainTag, clips.length)}'
+    'concat=n=${clips.length}:v=0:a=1$outLabel',
+  );
   return out;
 }
 
@@ -230,9 +228,15 @@ int _startMicrosForIdx(List<AudioStreamInfo> streams, int audioIdx) {
   return 0;
 }
 
-String _videoChainFor(ClipSlice s, int i) {
-  final tsSec = ffSeconds(s.trimStart);
-  final teSec = ffSeconds(s.trimEnd);
+String _videoChainFor(ClipSlice s, int i, {required Duration timeOffset}) {
+  final shiftedStart = s.trimStart - timeOffset;
+  final shiftedEnd = s.trimEnd - timeOffset;
+  final tsSec = ffSeconds(
+    shiftedStart < Duration.zero ? Duration.zero : shiftedStart,
+  );
+  final teSec = ffSeconds(
+    shiftedEnd < Duration.zero ? Duration.zero : shiftedEnd,
+  );
   final filters = <String>[
     'trim=start=$tsSec:end=$teSec',
     // Reset STARTPTS so each chain's first frame is at t=0 going into concat.
@@ -249,14 +253,16 @@ String _videoChainFor(ClipSlice s, int i) {
   final effectiveOut = Duration(microseconds: effectiveOutMicros);
   if (s.fadeIn > Duration.zero) {
     filters.add(
-        'fade=t=in:st=${ffSeconds(Duration.zero)}:d=${ffSeconds(s.fadeIn)}');
+      'fade=t=in:st=${ffSeconds(Duration.zero)}:d=${ffSeconds(s.fadeIn)}',
+    );
   }
   if (s.fadeOut > Duration.zero) {
     final fadeOutStart = effectiveOut > s.fadeOut
         ? effectiveOut - s.fadeOut
         : Duration.zero;
-    filters
-        .add('fade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(s.fadeOut)}');
+    filters.add(
+      'fade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(s.fadeOut)}',
+    );
   }
   return '[0:v]${filters.join(',')}[v$i]';
 }
@@ -268,6 +274,7 @@ String _audioChainFor(
   required String chainTag,
   required int gainPercent,
   required bool muted,
+  required int streamStartMicros,
 }) {
   final tsSec = ffSeconds(s.trimStart);
   final teSec = ffSeconds(s.trimEnd);
@@ -288,16 +295,38 @@ String _audioChainFor(
   final effectiveOutMicros =
       (s.effectiveLength.inMicroseconds / s.playbackSpeed).round();
   final effectiveOut = Duration(microseconds: effectiveOutMicros);
+  // atrim + asetpts collapses a stream's leading no-packet gap. Restore that
+  // silence inside EACH slice, after atempo, so its duration is expressed in
+  // edited time. A single delay after concatenation is incorrect whenever the
+  // slice is sped up/slowed down and cannot represent later slices that cross
+  // the stream start independently.
+  final missingSourceMicros = streamStartMicros - s.trimStart.inMicroseconds;
+  final delayMicros = missingSourceMicros <= 0
+      ? 0
+      : (missingSourceMicros / s.playbackSpeed).round().clamp(
+          0,
+          effectiveOutMicros,
+        );
+  final delayMs = (delayMicros / 1000).round();
+  if (delayMs > 0) filters.add('adelay=$delayMs:all=1');
+
+  // Guarantee one audio segment with exactly the video's edited duration even
+  // when this slice lies wholly before the stream's first packet or extends
+  // past its last one. This keeps concat slots aligned across hard cuts.
+  filters.add('apad=whole_dur=${ffSeconds(effectiveOut)}');
+  filters.add('atrim=duration=${ffSeconds(effectiveOut)}');
   if (s.fadeIn > Duration.zero) {
     filters.add(
-        'afade=t=in:st=${ffSeconds(Duration.zero)}:d=${ffSeconds(s.fadeIn)}');
+      'afade=t=in:st=${ffSeconds(Duration.zero)}:d=${ffSeconds(s.fadeIn)}',
+    );
   }
   if (s.fadeOut > Duration.zero) {
     final fadeOutStart = effectiveOut > s.fadeOut
         ? effectiveOut - s.fadeOut
         : Duration.zero;
     filters.add(
-        'afade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(s.fadeOut)}');
+      'afade=t=out:st=${ffSeconds(fadeOutStart)}:d=${ffSeconds(s.fadeOut)}',
+    );
   }
   return '$streamLabel${filters.join(',')}[$chainTag$i]';
 }

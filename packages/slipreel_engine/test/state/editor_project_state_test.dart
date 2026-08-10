@@ -149,7 +149,7 @@ void main() {
         // first inspector edit after a partial load doesn't silently
         // lose the regions the user just placed.
         final state = EditorProjectState.defaults()
-            .copyWith(timeline: const Timeline(zoomTracks: []));
+            .copyWith(timeline: Timeline(zoomTracks: []));
         expect(state.timeline.zoomTracks, isEmpty);
 
         final region = ZoomRegion(
@@ -468,7 +468,7 @@ void main() {
             ),
           ],
           captionTracks: [
-            const CaptionTrack(
+            CaptionTrack(
               segments: [
                 CaptionSegment(
                   id: 'c1',

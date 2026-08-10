@@ -1,21 +1,23 @@
 // packages/screen_recorder/lib/export/ffmpeg_probe.dart
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../utils/app_logger.dart';
 import 'audio_streams.dart';
 import 'ffmpeg_resolver.dart';
 
 /// The resolved output of a single `ffprobe` run.
 class FfmpegProbeResult {
-  const FfmpegProbeResult({
+  FfmpegProbeResult({
     required this.width,
     required this.height,
     required this.fps,
     this.nbFrames,
     this.durationSec,
     this.audioBitrateKbps,
-    this.audioStreams = const [],
-  });
+    List<AudioStreamInfo> audioStreams = const [],
+  }) : audioStreams = List.unmodifiable(audioStreams);
 
   final int width;
   final int height;
@@ -66,22 +68,69 @@ class FfmpegProbeResult {
 ///
 /// Throws [Exception] if ffprobe exits non-zero or if width/height are
 /// missing from the output.
+const int _probeCacheCapacity = 32;
+final Map<String, Future<FfmpegProbeResult>> _probeCache = {};
+
+/// Clears the process-wide probe memo. Production invalidation is automatic
+/// via path + size + mtime; this hook keeps tests independent.
+@visibleForTesting
+void clearFfmpegProbeCache() => _probeCache.clear();
+
 Future<FfmpegProbeResult> ffmpegProbe({
   required String path,
   int? metadataFps,
 }) async {
+  String? cacheKey;
+  try {
+    final stat = await File(path).stat();
+    cacheKey =
+        '$path|${stat.size}|${stat.modified.microsecondsSinceEpoch}|'
+        '${metadataFps ?? 0}';
+  } catch (_) {
+    // Preserve the original ffprobe error for missing/unreadable inputs.
+  }
+
+  if (cacheKey == null) {
+    return _ffmpegProbeUncached(path: path, metadataFps: metadataFps);
+  }
+  final cached = _probeCache.remove(cacheKey);
+  if (cached != null) {
+    _probeCache[cacheKey] = cached;
+    return cached;
+  }
+  final future = _ffmpegProbeUncached(path: path, metadataFps: metadataFps);
+  _probeCache[cacheKey] = future;
+  if (_probeCache.length > _probeCacheCapacity) {
+    _probeCache.remove(_probeCache.keys.first);
+  }
+  try {
+    return await future;
+  } catch (_) {
+    if (identical(_probeCache[cacheKey], future)) {
+      _probeCache.remove(cacheKey);
+    }
+    rethrow;
+  }
+}
+
+Future<FfmpegProbeResult> _ffmpegProbeUncached({
+  required String path,
+  int? metadataFps,
+}) async {
   final result = await Process.run(Ffmpeg.resolveProbe(), [
-    '-v', 'error',
-    '-select_streams', 'v:0',
+    '-v',
+    'error',
+    '-select_streams',
+    'v:0',
     '-show_entries',
     'stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,duration',
-    '-of', 'default=nw=1:nk=0',
+    '-of',
+    'default=nw=1:nk=0',
     path,
   ]);
 
   if (result.exitCode != 0) {
-    throw Exception(
-        'ffprobe exited ${result.exitCode}: ${result.stderr}');
+    throw Exception('ffprobe exited ${result.exitCode}: ${result.stderr}');
   }
 
   final output = (result.stdout as String).trim();
@@ -123,7 +172,8 @@ Future<FfmpegProbeResult> ffmpegProbe({
     derivedRate = (nbFrames / dur).round();
   }
 
-  final fps = avgRate ??
+  final fps =
+      avgRate ??
       derivedRate ??
       rRate ??
       (metadataFps != null && metadataFps > 0 ? metadataFps : 30);
@@ -138,8 +188,9 @@ Future<FfmpegProbeResult> ffmpegProbe({
   // no audio track or with an unreported bitrate just leave the field
   // null, and the size estimator skips the audio adjustment.
   final audioStreams = await _probeAudioStreams(path);
-  final audioBitrateKbps =
-      audioStreams.isEmpty ? null : audioStreams.first.bitrateKbps;
+  final audioBitrateKbps = audioStreams.isEmpty
+      ? null
+      : audioStreams.first.bitrateKbps;
 
   return FfmpegProbeResult(
     width: w,
@@ -155,10 +206,14 @@ Future<FfmpegProbeResult> ffmpegProbe({
 Future<List<AudioStreamInfo>> _probeAudioStreams(String path) async {
   try {
     final result = await Process.run(Ffmpeg.resolveProbe(), [
-      '-v', 'error',
-      '-select_streams', 'a',
-      '-show_entries', 'stream=index,codec_name,channels,bit_rate,start_time',
-      '-of', 'json',
+      '-v',
+      'error',
+      '-select_streams',
+      'a',
+      '-show_entries',
+      'stream=index,codec_name,channels,bit_rate,start_time',
+      '-of',
+      'json',
       path,
     ]);
     if (result.exitCode != 0) return const [];

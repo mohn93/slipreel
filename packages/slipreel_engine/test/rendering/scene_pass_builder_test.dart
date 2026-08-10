@@ -674,6 +674,59 @@ void main() {
       );
     });
 
+    test('enter settle target is cached for the region lifetime', () {
+      final region = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+      );
+      final recording = _eastBoundRecording(
+        durationMs: 1000,
+        start: const Offset(100, 540),
+      );
+      final builder = ScenePassBuilder();
+      final regions = [region];
+
+      for (final ms in [16, 32, 48]) {
+        builder.build(
+          position: Duration(milliseconds: ms),
+          zoomRegions: regions,
+          cursorAnimationConfig: const CursorAnimationConfig.preset(
+            CursorAnimationStyle.smooth,
+          ),
+          cursorRecording: recording,
+          videoSize: _videoSize,
+          fps: 60,
+          hasCursorData: true,
+        );
+      }
+      expect(builder.debugEnterTargetBuildCount, 1);
+
+      recording.addPosition(
+        const CursorPosition(x: 800, y: 540, timestampMicros: 1100000),
+      );
+      builder.build(
+        position: const Duration(milliseconds: 64),
+        zoomRegions: regions,
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.smooth,
+        ),
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+      );
+      expect(
+        builder.debugEnterTargetBuildCount,
+        2,
+        reason: 'recording mutation must invalidate the cached target',
+      );
+    });
+
     test('per-slice disableSmoothMouse resolves to the None preset', () {
       final clips = [
         ClipSlice(
@@ -735,6 +788,60 @@ void main() {
       );
 
       expect(pass.enterCursorTarget!.dy, closeTo(512, 1e-9));
+    });
+
+    test('mutable clip replacement cannot reuse a stale enter target', () {
+      final clips = <ClipSlice>[
+        ClipSlice(cutStart: Duration.zero, cutEnd: const Duration(seconds: 1)),
+      ];
+      final recording = _record([
+        for (var i = 0; i <= 100; i++)
+          (
+            micros: i * 10000,
+            x: 400.0 + i,
+            y: 500.0 + (i.isEven ? 12.0 : -12.0),
+            clicked: false,
+          ),
+      ]);
+      final region = ZoomRegion(
+        rect: const Rect.fromLTRB(0, 0, 1920, 1080),
+        startTime: Duration.zero,
+        duration: const Duration(seconds: 1),
+        zoomLevel: 2,
+        enterDuration: const Duration(milliseconds: 500),
+        exitDuration: Duration.zero,
+        followCursor: true,
+      );
+      final builder = ScenePassBuilder();
+
+      builder.build(
+        position: const Duration(milliseconds: 16),
+        zoomRegions: [region],
+        clips: clips,
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.smooth,
+        ),
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+      );
+      clips[0] = clips[0].copyWith(disableSmoothMouse: true);
+      final unsmoothed = builder.build(
+        position: const Duration(milliseconds: 32),
+        zoomRegions: [region],
+        clips: clips,
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.smooth,
+        ),
+        cursorRecording: recording,
+        videoSize: _videoSize,
+        fps: 60,
+        hasCursorData: true,
+      );
+
+      expect(builder.debugEnterTargetBuildCount, 2);
+      expect(unsmoothed.enterCursorTarget!.dy, closeTo(512, 1e-9));
     });
 
     test('zero-sigma enter target cannot sample before a hard cut', () {

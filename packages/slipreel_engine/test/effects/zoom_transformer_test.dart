@@ -1,7 +1,4 @@
-import 'package:flutter/animation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/painting.dart';
-import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/effects/zoom_transformer.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';

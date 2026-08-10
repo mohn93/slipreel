@@ -15,10 +15,7 @@ void main() {
       rec.addEvent(e(0, 'a'));
       rec.addEvent(e(200, 'c'));
       rec.addEvent(e(100, 'b')); // late arrival
-      expect(
-        rec.events.map((k) => k.label).toList(),
-        ['a', 'b', 'c'],
-      );
+      expect(rec.events.map((k) => k.label).toList(), ['a', 'b', 'c']);
     });
 
     test('range queries stay correct after an out-of-order append', () {
@@ -36,6 +33,21 @@ void main() {
         rec.addEvent(e(i * 100, '$i'));
       }
       expect(rec.events.map((k) => k.label).toList(), ['0', '1', '2', '3']);
+    });
+
+    test('events snapshot is reused until the recording mutates', () {
+      final rec = KeystrokeRecording()..addEvent(e(0, 'a'));
+      final first = rec.events;
+      expect(identical(first, rec.events), isTrue);
+
+      rec.addEvent(e(100, 'b'));
+      expect(identical(first, rec.events), isFalse);
+      expect(
+        first.map((event) => event.label),
+        ['a'],
+        reason: 'published snapshots must remain immutable snapshots',
+      );
+      expect(rec.events.map((event) => event.label), ['a', 'b']);
     });
   });
 }

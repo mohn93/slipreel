@@ -7,7 +7,7 @@ import 'package:slipreel_engine/timeline/timeline.dart';
 void main() {
   group('ZoomTrack', () {
     test('empty by default', () {
-      const track = ZoomTrack();
+      final track = ZoomTrack();
       expect(track.regions, isEmpty);
     });
 
@@ -31,7 +31,7 @@ void main() {
     });
 
     test('copyWith replaces regions', () {
-      const original = ZoomTrack();
+      final original = ZoomTrack();
       final next = original.copyWith(regions: [
         ZoomRegion(
           rect: const Rect.fromLTWH(0, 0, 1, 1),
@@ -107,7 +107,7 @@ void main() {
     });
 
     test('activeZoomRegions is empty when no tracks present', () {
-      const timeline = Timeline(zoomTracks: []);
+      final timeline = Timeline(zoomTracks: []);
       expect(timeline.activeZoomRegions, isEmpty);
     });
 
@@ -121,9 +121,9 @@ void main() {
 
   group('list retention (undo-snapshot corruption)', () {
     // History entries hold EditorProjectState snapshots by reference.
-    // If Timeline/track copyWith retained the CALLER'S list, a caller
+    // If Timeline/track construction retained the CALLER'S list, a caller
     // mutating its list after the snapshot silently rewrites history.
-    // copyWith must take a defensive unmodifiable copy.
+    // Constructors and copyWith must take defensive unmodifiable copies.
     ZoomRegion region(int startMs) => ZoomRegion(
       rect: const Rect.fromLTWH(0, 0, 100, 100),
       startTime: Duration(milliseconds: startMs),
@@ -135,18 +135,39 @@ void main() {
       final source = <ZoomTrack>[
         ZoomTrack(regions: [region(0)]),
       ];
-      final timeline = const Timeline().copyWith(zoomTracks: source);
+      final timeline = Timeline().copyWith(zoomTracks: source);
       source.clear();
       expect(timeline.zoomTracks, hasLength(1));
       expect(
-        () => timeline.zoomTracks.add(const ZoomTrack()),
+        () => timeline.zoomTracks.add(ZoomTrack()),
+        throwsUnsupportedError,
+      );
+    });
+
+    test('Timeline constructor does not retain the caller list', () {
+      final source = <ZoomTrack>[
+        ZoomTrack(regions: [region(0)]),
+      ];
+      final timeline = Timeline(zoomTracks: source);
+      source.clear();
+      expect(timeline.zoomTracks, hasLength(1));
+      expect(
+        () => timeline.zoomTracks.add(ZoomTrack()),
         throwsUnsupportedError,
       );
     });
 
     test('ZoomTrack.copyWith does not retain the caller list', () {
       final source = [region(0), region(2000)];
-      final track = const ZoomTrack().copyWith(regions: source);
+      final track = ZoomTrack().copyWith(regions: source);
+      source.removeLast();
+      expect(track.regions, hasLength(2));
+      expect(() => track.regions.add(region(4000)), throwsUnsupportedError);
+    });
+
+    test('ZoomTrack constructor does not retain the caller list', () {
+      final source = [region(0), region(2000)];
+      final track = ZoomTrack(regions: source);
       source.removeLast();
       expect(track.regions, hasLength(2));
       expect(() => track.regions.add(region(4000)), throwsUnsupportedError);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/painting.dart';
@@ -14,32 +15,160 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('GifExportPipeline cancellation', () {
+    test('a pre-cancelled token throws ExportCancelledException and leaves no '
+        'GIF output', () async {
+      final tmp = Directory.systemTemp.createTempSync('gif_cancel_pipe');
+      final outPath = '${tmp.path}/out.gif';
+
+      final state = EditorProjectState.defaults().copyWith(
+        windowFrame: const WindowFrame(
+          name: 'None',
+          padding: EdgeInsets.zero,
+          cornerRadius: 0,
+          shadowBlur: 0,
+          shadowOffset: Offset.zero,
+          shadowColor: Color(0x00000000),
+          borderWidth: 0,
+        ),
+      );
+
+      const settings = ExportSettings(
+        format: ExportFormat.gif,
+        resolution: ExportResolution.r720p,
+        compression: CompressionTier.web,
+        frameRate: 10,
+        destination: ExportDestination.file,
+      );
+
+      final pipeline = GifExportPipeline(
+        // Deliberately missing: pre-cancellation must win before probing or
+        // launching either GIF pass.
+        sourcePath: 'test/fixtures/pre_cancel_must_not_probe.mp4',
+        outputPath: outPath,
+        sourceMetadata: RecordingMetadata(
+          isPureSource: true,
+          recordedAt: DateTime.now(),
+          widthPx: 320,
+          heightPx: 240,
+          fps: 30,
+        ),
+        cursorRecording: CursorRecording(),
+        projectState: state,
+        settings: settings,
+      );
+
+      final token = CancelToken()..cancel();
+
+      await expectLater(
+        pipeline.run(cancelToken: token),
+        throwsA(isA<ExportCancelledException>()),
+      );
+
+      // The translating catch deletes any partial output, so no GIF should
+      // remain on disk.
+      expect(File(outPath).existsSync(), isFalse);
+      expect(pipeline.debugPaletteDirectoryPath, isNull);
+
+      tmp.deleteSync(recursive: true);
+    });
+
+    test('cancellation mid-pass kills the decoder ffmpeg process (no orphan '
+        'blocked on a full stdout pipe)', () async {
+      // Pause only after pass 1 has flushed a real frame, then cancel while
+      // both ffmpeg processes and the bounded stages are genuinely live.
+      final tmp = Directory.systemTemp.createTempSync('gif_leak');
+      addTearDown(() {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      });
+      // Unique source name so the pgrep below can't match a decoder
+      // owned by another concurrently-running test suite.
+      final uniqueName =
+          'leakprobe_${DateTime.now().microsecondsSinceEpoch}.mp4';
+      final srcPath = '${tmp.path}/$uniqueName';
+      File('test/fixtures/sample_recording.mp4').copySync(srcPath);
+      final outPath = '${tmp.path}/out.gif';
+      final enteredLivePass = Completer<void>();
+      final releaseLivePass = Completer<void>();
+
+      final state = EditorProjectState.defaults().copyWith(
+        windowFrame: const WindowFrame(
+          name: 'None',
+          padding: EdgeInsets.zero,
+          cornerRadius: 0,
+          shadowBlur: 0,
+          shadowOffset: Offset.zero,
+          shadowColor: Color(0x00000000),
+          borderWidth: 0,
+        ),
+      );
+
+      const settings = ExportSettings(
+        format: ExportFormat.gif,
+        resolution: ExportResolution.r720p,
+        compression: CompressionTier.web,
+        frameRate: 10,
+        destination: ExportDestination.file,
+      );
+
+      final pipeline = GifExportPipeline(
+        sourcePath: srcPath,
+        outputPath: outPath,
+        sourceMetadata: RecordingMetadata(
+          isPureSource: true,
+          recordedAt: DateTime.now(),
+          widthPx: 320,
+          heightPx: 240,
+          fps: 30,
+        ),
+        cursorRecording: CursorRecording(),
+        projectState: state,
+        settings: settings,
+        afterPass1FrameForTesting: () async {
+          enteredLivePass.complete();
+          await releaseLivePass.future;
+        },
+      );
+
+      final token = CancelToken();
+      final run = pipeline.run(cancelToken: token);
+      await enteredLivePass.future.timeout(const Duration(seconds: 20));
+      token.cancel();
+      releaseLivePass.complete();
+      await expectLater(run, throwsA(isA<ExportCancelledException>()));
+
+      // A killed process disappears promptly; poll briefly to absorb
+      // OS teardown latency, then require zero survivors.
+      var alive = true;
+      for (var i = 0; i < 30 && alive; i++) {
+        final pgrep = await Process.run('pgrep', ['-f', uniqueName]);
+        alive = pgrep.exitCode == 0;
+        if (alive) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+      }
+      expect(
+        alive,
+        isFalse,
+        reason:
+            'an ffmpeg process reading $uniqueName survived the '
+            'cancelled export — the pass finally-block must kill the '
+            'decoder',
+      );
+    });
+
     test(
-      'a pre-cancelled token throws ExportCancelledException and leaves no '
-      'GIF output',
+      'cancellation at the pass transition cannot escape into pass 2',
       () async {
-        final tmp = Directory.systemTemp.createTempSync('gif_cancel_pipe');
+        final tmp = Directory.systemTemp.createTempSync(
+          'gif_cancel_transition',
+        );
+        addTearDown(() {
+          if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+        });
         final outPath = '${tmp.path}/out.gif';
-
-        final state = EditorProjectState.defaults().copyWith(
-          windowFrame: const WindowFrame(
-            name: 'None',
-            padding: EdgeInsets.zero,
-            cornerRadius: 0,
-            shadowBlur: 0,
-            shadowOffset: Offset.zero,
-            shadowColor: Color(0x00000000),
-            borderWidth: 0,
-          ),
-        );
-
-        const settings = ExportSettings(
-          format: ExportFormat.gif,
-          resolution: ExportResolution.r720p,
-          compression: CompressionTier.web,
-          frameRate: 10,
-          destination: ExportDestination.file,
-        );
+        final enteredTransition = Completer<void>();
+        final releaseTransition = Completer<void>();
+        final token = CancelToken();
 
         final pipeline = GifExportPipeline(
           sourcePath: 'test/fixtures/sample_recording.mp4',
@@ -52,107 +181,37 @@ void main() {
             fps: 30,
           ),
           cursorRecording: CursorRecording(),
-          projectState: state,
-          settings: settings,
+          projectState: EditorProjectState.defaults().copyWith(
+            windowFrame: const WindowFrame(
+              name: 'None',
+              padding: EdgeInsets.zero,
+              cornerRadius: 0,
+              shadowBlur: 0,
+              shadowOffset: Offset.zero,
+              shadowColor: Color(0x00000000),
+              borderWidth: 0,
+            ),
+          ),
+          settings: const ExportSettings(
+            format: ExportFormat.gif,
+            resolution: ExportResolution.r720p,
+            compression: CompressionTier.web,
+            frameRate: 10,
+            destination: ExportDestination.file,
+          ),
+          beforePass2ForTesting: () async {
+            enteredTransition.complete();
+            await releaseTransition.future;
+          },
         );
 
-        final token = CancelToken()..cancel();
+        final run = pipeline.run(cancelToken: token);
+        await enteredTransition.future.timeout(const Duration(seconds: 10));
+        token.cancel();
+        releaseTransition.complete();
 
-        await expectLater(
-          pipeline.run(cancelToken: token),
-          throwsA(isA<ExportCancelledException>()),
-        );
-
-        // The translating catch deletes any partial output, so no GIF should
-        // remain on disk.
+        await expectLater(run, throwsA(isA<ExportCancelledException>()));
         expect(File(outPath).existsSync(), isFalse);
-
-        tmp.deleteSync(recursive: true);
-      },
-    );
-
-    test(
-      'cancellation mid-pass kills the decoder ffmpeg process (no orphan '
-      'blocked on a full stdout pipe)',
-      () async {
-        // Contract pin. The pass loops only call decoder.kill() in the
-        // stdin-closed cooperative-exit branches, so on an exception
-        // thrown from inside the loop (here: the loop-top cancellation
-        // check, firing on the first decoded frame because the token
-        // was cancelled before the whenCancelled handler had a live
-        // decoder to kill) the decoder is never explicitly killed. It
-        // still must not survive: cancelling the frames() stream
-        // closes the stdout pipe's read end and ffmpeg exits on EPIPE.
-        // This test pins that no-orphan behavior — a decoder refactor
-        // that detaches stdout from the consumer (background drain,
-        // buffering isolate) would break the implicit cleanup and must
-        // add an explicit kill on the exception path.
-        final tmp = Directory.systemTemp.createTempSync('gif_leak');
-        // Unique source name so the pgrep below can't match a decoder
-        // owned by another concurrently-running test suite.
-        final uniqueName =
-            'leakprobe_${DateTime.now().microsecondsSinceEpoch}.mp4';
-        final srcPath = '${tmp.path}/$uniqueName';
-        File('test/fixtures/sample_recording.mp4').copySync(srcPath);
-        final outPath = '${tmp.path}/out.gif';
-
-        final state = EditorProjectState.defaults().copyWith(
-          windowFrame: const WindowFrame(
-            name: 'None',
-            padding: EdgeInsets.zero,
-            cornerRadius: 0,
-            shadowBlur: 0,
-            shadowOffset: Offset.zero,
-            shadowColor: Color(0x00000000),
-            borderWidth: 0,
-          ),
-        );
-
-        const settings = ExportSettings(
-          format: ExportFormat.gif,
-          resolution: ExportResolution.r720p,
-          compression: CompressionTier.web,
-          frameRate: 10,
-          destination: ExportDestination.file,
-        );
-
-        final pipeline = GifExportPipeline(
-          sourcePath: srcPath,
-          outputPath: outPath,
-          sourceMetadata: RecordingMetadata(
-            isPureSource: true,
-            recordedAt: DateTime.now(),
-            widthPx: 320,
-            heightPx: 240,
-            fps: 30,
-          ),
-          cursorRecording: CursorRecording(),
-          projectState: state,
-          settings: settings,
-        );
-
-        final token = CancelToken()..cancel();
-        await expectLater(
-          pipeline.run(cancelToken: token),
-          throwsA(isA<ExportCancelledException>()),
-        );
-
-        // A killed process disappears promptly; poll briefly to absorb
-        // OS teardown latency, then require zero survivors.
-        var alive = true;
-        for (var i = 0; i < 30 && alive; i++) {
-          final pgrep = await Process.run('pgrep', ['-f', uniqueName]);
-          alive = pgrep.exitCode == 0;
-          if (alive) {
-            await Future<void>.delayed(const Duration(milliseconds: 100));
-          }
-        }
-        expect(alive, isFalse,
-            reason: 'an ffmpeg process reading $uniqueName survived the '
-                'cancelled export — the pass finally-block must kill the '
-                'decoder');
-
-        tmp.deleteSync(recursive: true);
       },
     );
   });

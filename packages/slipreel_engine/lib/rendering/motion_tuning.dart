@@ -27,8 +27,8 @@ class MotionTuning {
     this.cursorFeedforwardFadeStartPxPerSec = 200.0,
     this.cursorFeedforwardFullSpeedPxPerSec = 800.0,
     this.keepInViewEdgeMargin = 0.04,
-    this.sceneBlurExposureMs = 16.0,
-    this.sceneBlurMaxTranslation = 60.0,
+    this.sceneBlurExposureMs = 80.0,
+    this.sceneBlurMaxTranslation = 160.0,
     this.sceneBlurSampleCount = 48,
     this.sceneBlurSpeedCurveExp = 1.0,
     this.sceneBlurSpeedCurveRefPx = 10.0,
@@ -86,15 +86,17 @@ class MotionTuning {
 
   /// Base virtual-shutter window for the scene-blur shader before
   /// the user-facing motion-blur and sub-blur sliders modulate it.
-  /// 16 ms ≈ one 60 fps frame's worth of motion captured per
-  /// composition tick — the smear band matches what the eye expects
-  /// from cinematic motion blur on a moving camera.
+  /// 80 ms gives the cubically-shaped 0..0.5 master control enough authority:
+  /// its maximum produces a 40 ms shutter while the common 0.25 setting lands
+  /// at 5 ms. This restores the production calibration used before the scene
+  /// pass moved inside PlaybackCanvas.
   final double sceneBlurExposureMs;
 
   /// Hard cap (px) on the scene-blur shader's translation magnitude.
   /// Without it a fast camera pan would smear the frame end-to-end
-  /// and the cursor would visually skate. 60 px keeps the trail
-  /// readable at 1440p.
+  /// and the cursor would visually skate. 160 px preserves headroom for fast
+  /// follow-camera and 3D Sweep motion
+  /// without flattening the upper half of the slider against an early cap.
   final double sceneBlurMaxTranslation;
 
   /// Number of stamps the scene-blur shader takes across the
@@ -122,6 +124,10 @@ class MotionTuning {
   /// P2-8 landed. Every controller defaults here unless the caller
   /// passes an override, so this commit alone is behavior-neutral.
   static const MotionTuning defaults = MotionTuning();
+
+  /// Persistence schema for the optional app-wide motion-tuning sidecar.
+  /// Version 2 restores the production scene shutter/cap from 16/60 to 80/160.
+  static const int currentSchemaVersion = 2;
 
   /// Tighter, more responsive feel. Drops the at-rest threshold so
   /// the gate releases sooner, bumps feedforward closer to full lag
@@ -188,6 +194,7 @@ class MotionTuning {
   }
 
   Map<String, dynamic> toJson() => {
+    'schemaVersion': currentSchemaVersion,
     'reverseScrubFloorMs': reverseScrubFloor.inMilliseconds,
     'subStepCapMicros': subStepCapMicros.inMicroseconds,
     'dtCapMs': dtCap.inMilliseconds,
@@ -207,6 +214,10 @@ class MotionTuning {
 
   factory MotionTuning.fromJson(Map<String, dynamic> json) {
     const d = MotionTuning.defaults;
+    final schemaVersion = switch (json['schemaVersion']) {
+      final num value => value.round(),
+      _ => 1,
+    };
     Duration durationFromMs(String key, Duration fallback) {
       final v = json[key];
       if (v is num) return Duration(milliseconds: v.round());
@@ -227,6 +238,27 @@ class MotionTuning {
     int intOr(String key, int fallback) {
       final v = json[key];
       return v is num ? v.round() : fallback;
+    }
+
+    var sceneBlurExposureMs = doubleOr(
+      'sceneBlurExposureMs',
+      d.sceneBlurExposureMs,
+    );
+    var sceneBlurMaxTranslation = doubleOr(
+      'sceneBlurMaxTranslation',
+      d.sceneBlurMaxTranslation,
+    );
+    // Older sidecars serialized every field, including the then-default weak
+    // scene calibration. Without a migration those persisted 16/60 values
+    // override the restored defaults forever. Upgrade only exact legacy
+    // defaults; deliberately custom values survive unchanged.
+    if (schemaVersion < 2) {
+      if (sceneBlurExposureMs == 16.0) {
+        sceneBlurExposureMs = d.sceneBlurExposureMs;
+      }
+      if (sceneBlurMaxTranslation == 60.0) {
+        sceneBlurMaxTranslation = d.sceneBlurMaxTranslation;
+      }
     }
 
     return MotionTuning(
@@ -263,14 +295,8 @@ class MotionTuning {
         'keepInViewEdgeMargin',
         d.keepInViewEdgeMargin,
       ),
-      sceneBlurExposureMs: doubleOr(
-        'sceneBlurExposureMs',
-        d.sceneBlurExposureMs,
-      ),
-      sceneBlurMaxTranslation: doubleOr(
-        'sceneBlurMaxTranslation',
-        d.sceneBlurMaxTranslation,
-      ),
+      sceneBlurExposureMs: sceneBlurExposureMs,
+      sceneBlurMaxTranslation: sceneBlurMaxTranslation,
       sceneBlurSampleCount: intOr(
         'sceneBlurSampleCount',
         d.sceneBlurSampleCount,

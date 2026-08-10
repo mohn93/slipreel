@@ -26,9 +26,13 @@ void main() {
     // still fail loudly (not skip): a moved file means this parity check
     // needs updating.
     final file = File('lib/ui/screens/playback_screen.dart');
-    expect(file.existsSync(), isTrue,
-        reason: 'run from the screen_recorder package root; if '
-            'playback_screen.dart moved, update this parity contract');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason:
+          'run from the screen_recorder package root; if '
+          'playback_screen.dart moved, update this parity contract',
+    );
     final source = file.readAsStringSync();
     expect(
       source.contains('sceneBlurMasterResponse(project.motionBlur)'),
@@ -37,8 +41,8 @@ void main() {
     );
     expect(
       source.contains(
-        'sceneBlurChannelResponse(\n    project.screenMovementBlur,\n  )',
-      ) ||
+            'sceneBlurChannelResponse(\n    project.screenMovementBlur,\n  )',
+          ) ||
           source.contains(
             'sceneBlurChannelResponse(project.screenMovementBlur)',
           ) ||
@@ -63,6 +67,23 @@ void main() {
       source.contains('screenMovementBlur: project.screenMovementBlur'),
       isFalse,
       reason: 'raw channel values must never reach PlaybackCanvas',
+    );
+  });
+
+  test('PlaybackCanvas includes the full camera matrix in scene samples', () {
+    final file = File('lib/ui/widgets/zoom/playback_canvas.dart');
+    expect(file.existsSync(), isTrue);
+    final source = file.readAsStringSync();
+
+    expect(
+      RegExp(
+        r'SceneCameraSample\([\s\S]*?transform:\s*matrix,[\s\S]*?'
+        r'transformOrigin:\s*framing\.canvasSize\.center',
+      ).hasMatch(source),
+      isTrue,
+      reason:
+          'preview scene samples must retain the exact 3D camera '
+          'matrix; reducing it to scale/focal drops Sweep yaw and pitch',
     );
   });
 }

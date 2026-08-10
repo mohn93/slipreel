@@ -104,57 +104,84 @@ void main() {
     expect(make(const Size(160, 120)).renderSize, const Size(160, 120));
   });
 
-  test('renderSize output buffer is sized to renderSize, not totalSize',
-      () async {
-    final compositor = FrameCompositor(
-      projectState: EditorProjectState.defaults().copyWith(
-        windowFrame: _noneFrame,
-      ),
-      cursorRecording: CursorRecording(),
-      metadata: _meta(),
-      videoSize: const Size(320, 240),
-      fps: 30,
-      outputSize: const Size(160, 120),
-    );
-    final rgba = await compositor.compose(
-      videoFrameBgra: _solidBgra(320, 240, 0xFF, 0x00, 0xFF),
-      position: Duration.zero,
-    );
-    expect(rgba.length, 160 * 120 * 4);
-  });
+  test(
+    'renderSize output buffer is sized to renderSize, not totalSize',
+    () async {
+      final compositor = FrameCompositor(
+        projectState: EditorProjectState.defaults().copyWith(
+          windowFrame: _noneFrame,
+        ),
+        cursorRecording: CursorRecording(),
+        metadata: _meta(),
+        videoSize: const Size(320, 240),
+        fps: 30,
+        outputSize: const Size(160, 120),
+      );
+      final rgba = await compositor.compose(
+        videoFrameBgra: _solidBgra(320, 240, 0xFF, 0x00, 0xFF),
+        position: Duration.zero,
+      );
+      expect(rgba.length, 160 * 120 * 4);
+    },
+  );
 
-  test('content is scaled, not cropped: video fills the render frame',
-      () async {
-    final compositor = FrameCompositor(
-      projectState: EditorProjectState.defaults().copyWith(
-        windowFrame: _noneFrame,
-      ),
-      cursorRecording: CursorRecording(),
-      metadata: _meta(),
-      videoSize: const Size(320, 240),
-      fps: 30,
-      outputSize: const Size(160, 120),
-    );
-    final rgba = await compositor.compose(
-      videoFrameBgra: _solidBgra(320, 240, 0xFF, 0x00, 0xFF), // magenta
-      position: Duration.zero,
-    );
-    // Center and all four near-corner probes must be magenta: a cropped
-    // (unscaled) render would leave everything beyond 160×120 missing,
-    // and a mis-scaled one would shift the edges.
-    for (final p in [
-      [80, 60],
-      [2, 2],
-      [157, 2],
-      [2, 117],
-      [157, 117],
-    ]) {
-      final px = _rgbaAt(rgba, 160, p[0], p[1]);
-      expect(px[0], greaterThan(200), reason: 'R at $p');
-      expect(px[1], lessThan(50), reason: 'G at $p');
-      expect(px[2], greaterThan(200), reason: 'B at $p');
-    }
-  });
+  test(
+    'accepts downscaled decoder pixels with native logical geometry',
+    () async {
+      final compositor = FrameCompositor(
+        projectState: EditorProjectState.defaults().copyWith(
+          windowFrame: _noneFrame,
+        ),
+        cursorRecording: CursorRecording(),
+        metadata: _meta(),
+        videoSize: const Size(320, 240),
+        decodedVideoSize: const Size(160, 120),
+        fps: 30,
+        outputSize: const Size(160, 120),
+      );
+      final rgba = await compositor.compose(
+        videoFrameBgra: _solidBgra(160, 120, 0xFF, 0x00, 0xFF),
+        position: Duration.zero,
+      );
+      expect(rgba.length, 160 * 120 * 4);
+      expect(_rgbaAt(rgba, 160, 80, 60), [0xFF, 0x00, 0xFF, 0xFF]);
+    },
+  );
+
+  test(
+    'content is scaled, not cropped: video fills the render frame',
+    () async {
+      final compositor = FrameCompositor(
+        projectState: EditorProjectState.defaults().copyWith(
+          windowFrame: _noneFrame,
+        ),
+        cursorRecording: CursorRecording(),
+        metadata: _meta(),
+        videoSize: const Size(320, 240),
+        fps: 30,
+        outputSize: const Size(160, 120),
+      );
+      final rgba = await compositor.compose(
+        videoFrameBgra: _solidBgra(320, 240, 0xFF, 0x00, 0xFF), // magenta
+        position: Duration.zero,
+      );
+      // Center and all four near-corner probes must be magenta: a cropped
+      // (unscaled) render would leave everything beyond 160×120 missing,
+      // and a mis-scaled one would shift the edges.
+      for (final p in [
+        [80, 60],
+        [2, 2],
+        [157, 2],
+        [2, 117],
+        [157, 117],
+      ]) {
+        final px = _rgbaAt(rgba, 160, p[0], p[1]);
+        expect(px[0], greaterThan(200), reason: 'R at $p');
+        expect(px[1], lessThan(50), reason: 'G at $p');
+        expect(px[2], greaterThan(200), reason: 'B at $p');
+      }
+    },
+  );
 
   test('padding geometry scales with the render size', () async {
     // 320×240 video + 30px padding → totalSize 380×300. At renderSize
@@ -189,38 +216,40 @@ void main() {
     expect(inside[0], greaterThan(200));
   });
 
-  test('explicit renderSize == totalSize is byte-identical to default',
-      () async {
-    // Includes a solid wallpaper so the wallpaper raster path (cached at
-    // renderSize, drawn via drawImageRect) is part of the parity pin.
-    FrameCompositor make({Size? outputSize}) => FrameCompositor(
-      projectState: EditorProjectState.defaults().copyWith(
-        windowFrame: _wallpaperFrame,
-      ),
-      cursorRecording: CursorRecording(),
-      metadata: _meta(),
-      videoSize: const Size(320, 240),
-      fps: 30,
-      outputSize: outputSize,
-    );
-    final defaultPath = make();
-    final explicit = make(outputSize: const Size(380, 300));
-    final frame = _solidBgra(320, 240, 0x10, 0xC0, 0x40);
-    final a = await defaultPath.compose(
-      videoFrameBgra: frame,
-      position: Duration.zero,
-    );
-    final b = await explicit.compose(
-      videoFrameBgra: frame,
-      position: Duration.zero,
-    );
-    expect(a, equals(b));
-    // Sanity: the wallpaper actually painted (padding corner is opaque
-    // dodger blue, not transparent).
-    final corner = _rgbaAt(a, 380, 4, 4);
-    expect(corner[3], 0xFF);
-    expect(corner[2], greaterThan(200), reason: 'solid blue wallpaper');
-  });
+  test(
+    'explicit renderSize == totalSize is byte-identical to default',
+    () async {
+      // Includes a solid wallpaper so the wallpaper raster path (cached at
+      // renderSize, drawn via drawImageRect) is part of the parity pin.
+      FrameCompositor make({Size? outputSize}) => FrameCompositor(
+        projectState: EditorProjectState.defaults().copyWith(
+          windowFrame: _wallpaperFrame,
+        ),
+        cursorRecording: CursorRecording(),
+        metadata: _meta(),
+        videoSize: const Size(320, 240),
+        fps: 30,
+        outputSize: outputSize,
+      );
+      final defaultPath = make();
+      final explicit = make(outputSize: const Size(380, 300));
+      final frame = _solidBgra(320, 240, 0x10, 0xC0, 0x40);
+      final a = await defaultPath.compose(
+        videoFrameBgra: frame,
+        position: Duration.zero,
+      );
+      final b = await explicit.compose(
+        videoFrameBgra: frame,
+        position: Duration.zero,
+      );
+      expect(a, equals(b));
+      // Sanity: the wallpaper actually painted (padding corner is opaque
+      // dodger blue, not transparent).
+      final corner = _rgbaAt(a, 380, 4, 4);
+      expect(corner[3], 0xFF);
+      expect(corner[2], greaterThan(200), reason: 'solid blue wallpaper');
+    },
+  );
 
   test('wallpaper scales with the render size', () async {
     final compositor = FrameCompositor(

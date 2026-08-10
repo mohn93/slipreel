@@ -490,13 +490,23 @@ class ZoomFocalController {
         // placements/cursors the hold-phase spring can sit outside the
         // full-zoom box, while the transformer paints the per-axis-clamped
         // point; capturing the painted point removes a one-frame hold->exit
-        // jump.
+        // jump. Movement can alter that box: Push-in raises the effective
+        // scale above [zoomLevel], so using the base zoom here would pull the
+        // focal inward on the first exit frame even though the transform's
+        // scale is still unchanged.
+        final fullEffectiveZoom =
+            activeZoom.zoomLevel *
+            _exitMovementScaleMultiplier(
+              activeZoom,
+              rampGate: 1.0,
+              rampDurationScale: rampDurationScale,
+            );
         _exitRampStartFocal ??= fr.clampFocal(
           _smoothedFocal!,
-          activeZoom.zoomLevel,
+          fullEffectiveZoom,
         );
         _exitRampStartReachable ??=
-            (fr.clampFocal(_smoothedFocal!, activeZoom.zoomLevel) -
+            (fr.clampFocal(_smoothedFocal!, fullEffectiveZoom) -
                     _smoothedFocal!)
                 .distance <
             0.5;
@@ -539,8 +549,19 @@ class ZoomFocalController {
         // the current-frame box. z mirrors the enter's, time-reversed:
         // zoom-in progress runs 1 -> 0 across the exit, so z = 1 +
         // (zoomLevel-1)*(1 - eased).
-        final z = 1.0 + (activeZoom.zoomLevel - 1.0) * (1.0 - eased);
-        _smoothedFocal = fr.clampFocalRadial(lerped, z);
+        final rampGate = 1.0 - eased;
+        final z = 1.0 + (activeZoom.zoomLevel - 1.0) * rampGate;
+        // Match ZoomTransformer's effective scale throughout the exit. This
+        // keeps the focal's reachable box continuous while Push-in fades out;
+        // all other movement kinds return a 1.0 multiplier here.
+        final effectiveZ =
+            z *
+            _exitMovementScaleMultiplier(
+              activeZoom,
+              rampGate: rampGate,
+              rampDurationScale: rampDurationScale,
+            );
+        _smoothedFocal = fr.clampFocalRadial(lerped, effectiveZ);
         // Zero velocity AND in-flight state so a post-exit re-entry
         // doesn't carry stale momentum or a stale chase flag from
         // before the ramp.
@@ -555,7 +576,11 @@ class ZoomFocalController {
         _enterRampTarget = null;
         _enterRampFocalTarget = null;
         _postEnterHoldTarget = null;
-        return ZoomFocalUpdate(zoom: activeZoom, focal: _smoothedFocal!);
+        return ZoomFocalUpdate(
+          zoom: activeZoom,
+          focal: _smoothedFocal!,
+          exitOrientationFocal: _exitRampStartFocal,
+        );
       }
     }
     // Outside the exit ramp — clear the captured anchor so the next
@@ -890,6 +915,29 @@ class ZoomFocalController {
     return (exitStartUs: exitStartUs, exitUs: exitUs);
   }
 
+  /// Scale contribution that [ZoomTransformer] applies during the exit ramp.
+  /// A real hold has reached movement progress 1.0 before exit begins; when
+  /// resolved ramps consume the whole region there is no hold track and the
+  /// transformer deliberately keeps movement at identity.
+  static double _exitMovementScaleMultiplier(
+    ZoomRegion zoom, {
+    required double rampGate,
+    required double rampDurationScale,
+  }) {
+    final ramps = zoom.resolvedRampsUs(rampDurationScale);
+    final holdSpanUs =
+        zoom.duration.inMicroseconds - ramps.enterUs - ramps.exitUs;
+    final holdProgress = holdSpanUs > 0 ? 1.0 : 0.0;
+    return zoom.movement
+        .resolveAt(
+          holdProgress: holdProgress,
+          rampGate: rampGate,
+          normalizedFocal: Offset.zero,
+          followCursor: zoom.followCursor,
+        )
+        .scaleMul;
+  }
+
   /// Enter ramp window for [zoom] in microseconds — the first
   /// [ZoomRegion.enterDuration] as resolved by [ZoomRegion.resolvedRampsUs]
   /// (feel-scaled, then proportionally squeezed when enter+exit overflow the
@@ -944,7 +992,16 @@ class ZoomFocalController {
 
 /// Result of a [ZoomFocalController.update] call when a zoom is active.
 class ZoomFocalUpdate {
-  const ZoomFocalUpdate({required this.zoom, required this.focal});
+  const ZoomFocalUpdate({
+    required this.zoom,
+    required this.focal,
+    this.exitOrientationFocal,
+  });
   final ZoomRegion zoom;
   final Offset focal;
+
+  /// Stable focal captured at the start of a mouse-following exit ramp.
+  /// Translation continues recentering through [focal], while tilt direction
+  /// remains derived from this anchor and only its magnitude eases to zero.
+  final Offset? exitOrientationFocal;
 }

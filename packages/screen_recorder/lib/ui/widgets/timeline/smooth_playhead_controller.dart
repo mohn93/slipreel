@@ -49,6 +49,20 @@ class SmoothPlayheadController extends ChangeNotifier
   // threshold (the seek landed) — see [_onVideoUpdate].
   Duration? _suppressBackwardDriftBelow;
 
+  // A seek initiated by the editor (timeline click, transport jump, hover
+  // preview) must update the extrapolator immediately. The native player
+  // reports its old position until the target frame has decoded; without
+  // this latch, that stale report can either undo the visual seek or be
+  // mistaken for ordinary decoder jitter. The latter is especially visible
+  // for backward seeks under [_backwardSeekThreshold]: the video seeks, but
+  // the playhead appears not to respond at all.
+  //
+  // The generation makes rapid consecutive seeks safe. Completion of an
+  // older native seek cannot release the latch owned by the newest click.
+  int _applicationSeekGeneration = 0;
+  bool _applicationSeekPending = false;
+  bool _disposed = false;
+
   /// Forward drift this large means video_player jumped ahead of our
   /// extrapolation — almost certainly a forward seek; re-base immediately.
   static const _forwardSeekThreshold = Duration(milliseconds: 250);
@@ -93,8 +107,7 @@ class SmoothPlayheadController extends ChangeNotifier
   @visibleForTesting
   static Duration rebaseBaseOnSpeedChange({
     required Duration currentSmoothed,
-  }) =>
-      currentSmoothed;
+  }) => currentSmoothed;
 
   /// Pure helper documenting the [snapForward] no-op contract: a snap
   /// only advances state when the requested target is strictly greater
@@ -106,8 +119,7 @@ class SmoothPlayheadController extends ChangeNotifier
   static bool snapForwardWouldAdvance({
     required Duration target,
     required Duration currentSmoothed,
-  }) =>
-      target > currentSmoothed;
+  }) => target > currentSmoothed;
 
   /// Pure helper documenting the suppress-backward-drift contract:
   /// after [snapForward] sets `suppressBelow`, the player's reported
@@ -121,8 +133,7 @@ class SmoothPlayheadController extends ChangeNotifier
   static bool shouldClearBackwardDriftSuppression({
     required Duration vPosition,
     required Duration suppressBelow,
-  }) =>
-      vPosition >= suppressBelow;
+  }) => vPosition >= suppressBelow;
 
   /// Called when application logic seeks the player past a stretch of
   /// source time that should not be played through (e.g. a trim gap
@@ -138,10 +149,7 @@ class SmoothPlayheadController extends ChangeNotifier
   /// position (no-op) — the caller doesn't need to gate on "did we
   /// already snap to this target".
   void snapForward(Duration target) {
-    if (!snapForwardWouldAdvance(
-      target: target,
-      currentSmoothed: _smoothed,
-    )) {
+    if (!snapForwardWouldAdvance(target: target, currentSmoothed: _smoothed)) {
       return;
     }
     _basePosition = target;
@@ -149,6 +157,61 @@ class SmoothPlayheadController extends ChangeNotifier
     _suppressBackwardDriftBelow = target;
     _smoothed = target;
     notifyListeners();
+  }
+
+  /// Seeks the native player while moving the smoothed playhead to [target]
+  /// synchronously.
+  ///
+  /// Keep all user-driven seeks on this path instead of calling
+  /// [videoController.seekTo] directly. Native seek completion can take a few
+  /// frames; during that window [_onVideoUpdate] ignores the player's stale
+  /// pre-seek position so a nearby backward/forward click cannot be filtered
+  /// out as playback jitter.
+  Future<void> seekTo(Duration target) async {
+    final duration = videoController.value.duration;
+    final clamped = target < Duration.zero
+        ? Duration.zero
+        : duration > Duration.zero && target > duration
+        ? duration
+        : target;
+    final generation = ++_applicationSeekGeneration;
+    _applicationSeekPending = true;
+    // An explicit user seek supersedes any trim-gap forward-snap latch.
+    _suppressBackwardDriftBelow = null;
+    _basePosition = clamped;
+    _baseTimestamp = DateTime.now();
+    if (_smoothed != clamped) {
+      _smoothed = clamped;
+      notifyListeners();
+    }
+
+    var completed = false;
+    try {
+      await videoController.seekTo(clamped);
+      completed = true;
+    } finally {
+      // A newer click owns the latch now. Do not let this older completion
+      // release it or rebase the playhead away from the newer target.
+      if (!_disposed && generation == _applicationSeekGeneration) {
+        _applicationSeekPending = false;
+        if (completed) {
+          // video_player has published the landed position by the time its
+          // seek future completes. Re-run normal reconciliation now that
+          // stale reports are allowed again.
+          _onVideoUpdate();
+        } else {
+          // A failed seek should not strand the visual playhead at a frame
+          // the native player never reached.
+          final actual = videoController.value.position;
+          _basePosition = actual;
+          _baseTimestamp = DateTime.now();
+          if (_smoothed != actual) {
+            _smoothed = actual;
+            notifyListeners();
+          }
+        }
+      }
+    }
   }
 
   void _onVideoUpdate() {
@@ -176,6 +239,17 @@ class SmoothPlayheadController extends ChangeNotifier
       _basePosition = _smoothed;
       _baseTimestamp = DateTime.now();
       _lastPlaybackSpeed = v.playbackSpeed;
+    }
+
+    if (_applicationSeekPending) {
+      // Preserve play/pause ticker correctness if transport state happens to
+      // change while the native seek is decoding, but never reconcile
+      // position against the stale pre-seek timestamp.
+      if (isPlaying != _wasPlaying) {
+        _wasPlaying = isPlaying;
+        _syncTickerToPlayState();
+      }
+      return;
     }
 
     if (isPlaying != _wasPlaying) {
@@ -209,7 +283,8 @@ class SmoothPlayheadController extends ChangeNotifier
           return;
         }
       }
-      final expected = _basePosition +
+      final expected =
+          _basePosition +
           _scale(DateTime.now().difference(_baseTimestamp), v.playbackSpeed);
       final drift = v.position - expected;
       if (drift > _forwardSeekThreshold || drift < _backwardSeekThreshold) {
@@ -259,7 +334,8 @@ class SmoothPlayheadController extends ChangeNotifier
 
   void _onTick(Duration _) {
     final v = videoController.value;
-    var next = _basePosition +
+    var next =
+        _basePosition +
         _scale(DateTime.now().difference(_baseTimestamp), v.playbackSpeed);
     if (next > v.duration) next = v.duration;
     if (next < Duration.zero) next = Duration.zero;
@@ -275,6 +351,7 @@ class SmoothPlayheadController extends ChangeNotifier
 
   @override
   void dispose() {
+    _disposed = true;
     _ticker.dispose();
     videoController.removeListener(_onVideoUpdate);
     super.dispose();

@@ -137,9 +137,11 @@ class CursorRecording {
   /// Save cursor data to file
   Future<void> saveToFile(String filePath) async {
     try {
-      final file = File(filePath);
-      final jsonData = _positions.map((p) => p.toJson()).toList();
-      await file.writeAsString(jsonEncode(jsonData));
+      final snapshot = List<CursorPosition>.of(_positions, growable: false);
+      await Isolate.run(() async {
+        final jsonData = snapshot.map((p) => p.toJson()).toList();
+        await File(filePath).writeAsString(jsonEncode(jsonData));
+      });
     } catch (e) {
       throw Exception('Failed to save cursor data: $e');
     }
@@ -179,8 +181,12 @@ class CursorRecording {
       final samples = await Isolate.run(() => _parseSidecar(filePath));
 
       final recording = CursorRecording();
-      for (final p in samples) {
-        recording.addPosition(p);
+      recording._positions.addAll(samples);
+      if (samples.isNotEmpty) {
+        // One logical load is one mutation revision. Calling addPosition for
+        // every sample needlessly invalidated caches tens of thousands of
+        // times while rebuilding a recording that was not yet observable.
+        recording._version = 1;
       }
       return recording;
     } catch (e) {
@@ -198,7 +204,8 @@ class CursorRecording {
 
     final raw = jsonData
         .map((m) => CursorPosition.fromJson(m as Map<String, dynamic>))
-        .toList(growable: false);
+        .toList();
+    raw.sort((a, b) => a.timestampMicros.compareTo(b.timestampMicros));
     final isLegacy =
         raw.first.timestampMicros > _legacyTimestampThresholdMicros;
     final base = isLegacy ? raw.first.timestampMicros : 0;
