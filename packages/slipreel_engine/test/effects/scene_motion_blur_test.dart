@@ -1,6 +1,8 @@
 @TestOn('vm')
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
@@ -227,6 +229,78 @@ void main() {
     expect(signal.scaleDelta, closeTo(0.01067, 0.001));
   });
 
+  test('trajectory samples the real nonlinear camera path at four knots', () {
+    SceneCameraSample acceleratingPan(Duration t) {
+      final seconds = t.inMicroseconds / 1e6;
+      return SceneCameraSample(
+        position: t,
+        focal: Offset(100 * seconds * seconds, 0),
+        scale: 1,
+      );
+    }
+
+    final signal = SceneMotionBlurController.compute(
+      position: const Duration(seconds: 1),
+      sampleAt: acceleratingPan,
+      movementExposure: const Duration(seconds: 1),
+      zoomExposure: Duration.zero,
+      maxTranslation: 1000,
+    );
+
+    expect(signal.trajectory, hasLength(4));
+    expect(signal.trajectory[0].translation.dx, closeTo(-43.75, 1e-9));
+    expect(signal.trajectory[1].translation.dx, closeTo(-75, 1e-9));
+    expect(signal.trajectory[2].translation.dx, closeTo(-93.75, 1e-9));
+    expect(signal.trajectory[3].translation.dx, closeTo(-100, 1e-9));
+    expect(signal.translation, signal.trajectory.last.translation);
+  });
+
+  test('out-and-back camera path blurs even when endpoints match', () {
+    SceneCameraSample loopPan(Duration t) {
+      final seconds = t.inMicroseconds / 1e6;
+      return SceneCameraSample(
+        position: t,
+        focal: Offset(math.sin(seconds * math.pi * 2) * 100, 0),
+        scale: 1,
+      );
+    }
+
+    final signal = SceneMotionBlurController.compute(
+      position: const Duration(seconds: 1),
+      sampleAt: loopPan,
+      movementExposure: const Duration(seconds: 1),
+      zoomExposure: Duration.zero,
+      maxTranslation: 1000,
+    );
+
+    expect(signal.translation.distance, lessThan(1e-9));
+    expect(signal.trajectory[0].translation.distance, closeTo(100, 1e-9));
+    expect(signal.trajectory[2].translation.distance, closeTo(100, 1e-9));
+    expect(signal.hasMotion, isTrue);
+  });
+
+  test('shared movement/zoom timestamps are sampled only once', () {
+    var calls = 0;
+    SceneCameraSample counted(Duration t) {
+      calls++;
+      return SceneCameraSample(
+        position: t,
+        focal: Offset(t.inMicroseconds.toDouble(), 0),
+        scale: 1,
+      );
+    }
+
+    SceneMotionBlurController.compute(
+      position: const Duration(seconds: 1),
+      sampleAt: counted,
+      movementExposure: const Duration(milliseconds: 40),
+      zoomExposure: const Duration(milliseconds: 40),
+      maxTranslation: 160,
+    );
+
+    expect(calls, 5); // current + four shared shutter knots
+  });
+
   test('projective camera delta detects pure 3D tilt motion', () {
     SceneCameraSample tiltAt(Duration t) {
       final progress =
@@ -260,6 +334,14 @@ void main() {
     expect(signal.hasMotion, isTrue);
     expect(
       signal.projectiveTransform!.transformPoint(const Offset(850, 500)),
+      isNot(const Offset(850, 500)),
+    );
+    expect(signal.trajectory, hasLength(4));
+    expect(signal.trajectory.take(3), everyElement(isA<SceneMotionBlurKnot>()));
+    expect(
+      signal.trajectory[1].projectiveTransform!.transformPoint(
+        const Offset(850, 500),
+      ),
       isNot(const Offset(850, 500)),
     );
   });

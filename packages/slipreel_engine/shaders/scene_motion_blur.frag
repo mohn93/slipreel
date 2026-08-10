@@ -15,9 +15,9 @@
 //     m(p) = (p - F) * (1 - S_prev/S_now)
 //
 // (a radial vector centred on F; magnitude grows linearly with
-// distance from F). The blur samples N points along that vector
-// at uniform spacing — equivalent to averaging N substeps of a
-// linear zoom ramp during the exposure window.
+// distance from F). The blur samples N points along four exact camera
+// knots. Linear interpolation is limited to each quarter-shutter interval,
+// preserving nonlinear easing, curved follow motion, and projective Sweep.
 
 uniform sampler2D uScene;
 
@@ -75,6 +75,39 @@ uniform float uProjectiveScaleDelta;
 uniform vec2 uProjectiveTranslation;
 uniform float uDevicePixelRatio;
 
+// Intermediate exact camera poses at 25%, 50%, and 75% of the shutter.
+// The existing uniforms above are the 100% endpoint. With these knots the
+// shader follows camera easing and curved cursor-following / 3D Sweep paths
+// while retaining one captured image and one GPU pass.
+uniform float uHasTrajectory;
+
+uniform float uKnot1ScaleDelta;
+uniform vec2 uKnot1Translation;
+uniform float uKnot1HasProjective;
+uniform vec3 uKnot1ProjectiveRow0;
+uniform vec3 uKnot1ProjectiveRow1;
+uniform vec3 uKnot1ProjectiveRow2;
+uniform float uKnot1ProjectiveScaleDelta;
+uniform vec2 uKnot1ProjectiveTranslation;
+
+uniform float uKnot2ScaleDelta;
+uniform vec2 uKnot2Translation;
+uniform float uKnot2HasProjective;
+uniform vec3 uKnot2ProjectiveRow0;
+uniform vec3 uKnot2ProjectiveRow1;
+uniform vec3 uKnot2ProjectiveRow2;
+uniform float uKnot2ProjectiveScaleDelta;
+uniform vec2 uKnot2ProjectiveTranslation;
+
+uniform float uKnot3ScaleDelta;
+uniform vec2 uKnot3Translation;
+uniform float uKnot3HasProjective;
+uniform vec3 uKnot3ProjectiveRow0;
+uniform vec3 uKnot3ProjectiveRow1;
+uniform vec3 uKnot3ProjectiveRow2;
+uniform float uKnot3ProjectiveScaleDelta;
+uniform vec2 uKnot3ProjectiveTranslation;
+
 out vec4 fragColor;
 
 // Compile-time tap budget. 64 lets the smear stay continuous even
@@ -83,6 +116,39 @@ out vec4 fragColor;
 // stair-stepping visible.
 const int kMaxSamples = 64;
 const float kMaxSamplesF = 64.0;
+
+vec2 cameraPastPosition(
+  vec2 fragCoord,
+  float scaleDelta,
+  vec2 translation,
+  float hasProjective,
+  vec3 projectiveRow0,
+  vec3 projectiveRow1,
+  vec3 projectiveRow2,
+  float projectiveScaleDelta,
+  vec2 projectiveTranslation
+) {
+  vec2 motion = (fragCoord - uFocal) * scaleDelta + translation;
+  if (hasProjective > 0.5) {
+    float safeDpr = max(uDevicePixelRatio, 0.001);
+    vec3 logicalPoint = vec3(fragCoord / safeDpr, 1.0);
+    vec3 projected = vec3(
+      dot(projectiveRow0, logicalPoint),
+      dot(projectiveRow1, logicalPoint),
+      dot(projectiveRow2, logicalPoint)
+    );
+    if (abs(projected.z) > 0.000001) {
+      vec2 projectivePast = projected.xy / projected.z * safeDpr;
+      vec2 baselineMotion =
+          (fragCoord - uFocal) * projectiveScaleDelta +
+          projectiveTranslation;
+      vec2 baselinePast = fragCoord - baselineMotion;
+      vec2 projectiveResidual = projectivePast - baselinePast;
+      motion -= projectiveResidual;
+    }
+  }
+  return fragCoord - motion;
+}
 
 void main() {
   vec2 fragCoord = FlutterFragCoord();
@@ -94,7 +160,7 @@ void main() {
   // removes the visible flicker that used to happen whenever the
   // smoothed focal's tiny epsilon noise crossed the threshold.
 
-  float activeF = clamp(uSampleCount, 2.0, kMaxSamplesF);
+  float requestedSamples = clamp(uSampleCount, 2.0, kMaxSamplesF);
 
   // Motion = radial (scale change, centred on focal) + translation
   // (rigid pan, same for every pixel). Each term is the camera's
@@ -104,33 +170,88 @@ void main() {
   // stays sharp during a pure zoom ramp; the translation term is
   // uniform across the frame so a pure pan smears every pixel
   // equally.
-  vec2 motion = (fragCoord - uFocal) * uScaleDelta + uTranslation;
-  if (uHasProjective > 0.5) {
-    float safeDpr = max(uDevicePixelRatio, 0.001);
-    vec3 logicalPoint = vec3(fragCoord / safeDpr, 1.0);
-    vec3 projected = vec3(
-      dot(uProjectiveRow0, logicalPoint),
-      dot(uProjectiveRow1, logicalPoint),
-      dot(uProjectiveRow2, logicalPoint)
+  vec2 endpointPast = cameraPastPosition(
+    fragCoord,
+    uScaleDelta,
+    uTranslation,
+    uHasProjective,
+    uProjectiveRow0,
+    uProjectiveRow1,
+    uProjectiveRow2,
+    uProjectiveScaleDelta,
+    uProjectiveTranslation
+  );
+  vec2 motion = fragCoord - endpointPast;
+  vec2 knot1Past = fragCoord;
+  vec2 knot2Past = fragCoord;
+  vec2 knot3Past = fragCoord;
+  if (uHasTrajectory > 0.5) {
+    knot1Past = cameraPastPosition(
+      fragCoord,
+      uKnot1ScaleDelta,
+      uKnot1Translation,
+      uKnot1HasProjective,
+      uKnot1ProjectiveRow0,
+      uKnot1ProjectiveRow1,
+      uKnot1ProjectiveRow2,
+      uKnot1ProjectiveScaleDelta,
+      uKnot1ProjectiveTranslation
     );
-    if (abs(projected.z) > 0.000001) {
-      vec2 projectivePast = projected.xy / projected.z * safeDpr;
-      vec2 baselineMotion =
-          (fragCoord - uFocal) * uProjectiveScaleDelta +
-          uProjectiveTranslation;
-      vec2 baselinePast = fragCoord - baselineMotion;
-      vec2 projectiveResidual = projectivePast - baselinePast;
-      motion -= projectiveResidual;
-    }
+    knot2Past = cameraPastPosition(
+      fragCoord,
+      uKnot2ScaleDelta,
+      uKnot2Translation,
+      uKnot2HasProjective,
+      uKnot2ProjectiveRow0,
+      uKnot2ProjectiveRow1,
+      uKnot2ProjectiveRow2,
+      uKnot2ProjectiveScaleDelta,
+      uKnot2ProjectiveTranslation
+    );
+    knot3Past = cameraPastPosition(
+      fragCoord,
+      uKnot3ScaleDelta,
+      uKnot3Translation,
+      uKnot3HasProjective,
+      uKnot3ProjectiveRow0,
+      uKnot3ProjectiveRow1,
+      uKnot3ProjectiveRow2,
+      uKnot3ProjectiveScaleDelta,
+      uKnot3ProjectiveTranslation
+    );
   }
-  // Apply the speed curve. p == 1 leaves motion untouched (linear).
-  // p > 1 boosts large motions and dampens small motions relative
-  // to a reference magnitude.
+  // Apply the speed curve to the largest excursion, not only the endpoint.
+  // An out-and-back camera move can have a static endpoint but still travel
+  // significantly inside the shutter.
   float motionMag = length(motion);
-  if (motionMag > 0.001 && uSpeedCurveExp != 1.0 && uSpeedCurveRefPx > 0.001) {
-    float scale = pow(motionMag / uSpeedCurveRefPx, uSpeedCurveExp - 1.0);
-    motion *= scale;
+  float pathLength = motionMag;
+  if (uHasTrajectory > 0.5) {
+    motionMag = max(motionMag, length(fragCoord - knot1Past));
+    motionMag = max(motionMag, length(fragCoord - knot2Past));
+    motionMag = max(motionMag, length(fragCoord - knot3Past));
+    pathLength =
+        length(fragCoord - knot1Past) +
+        length(knot1Past - knot2Past) +
+        length(knot2Past - knot3Past) +
+        length(knot3Past - endpointPast);
   }
+  float trajectoryScale = 1.0;
+  if (motionMag > 0.001 && uSpeedCurveExp != 1.0 && uSpeedCurveRefPx > 0.001) {
+    trajectoryScale = pow(
+      motionMag / uSpeedCurveRefPx,
+      uSpeedCurveExp - 1.0
+    );
+    motion *= trajectoryScale;
+  }
+  // Keep taps about two physical pixels apart. The previous fixed 64-tap
+  // loop sampled the same texels dozens of times during subtle motion and
+  // made software export needlessly expensive. Fast motion still receives
+  // the full requested budget; small motion uses only the taps it can resolve.
+  float activeF = clamp(
+    min(requestedSamples, ceil(pathLength * trajectoryScale / 2.0) + 1.0),
+    2.0,
+    kMaxSamplesF
+  );
   vec4 sum = vec4(0.0);
   float weightSum = 0.0;
   for (int i = 0; i < kMaxSamples; i++) {
@@ -140,7 +261,24 @@ void main() {
     // from a uniform.
     if (fi < activeF) {
       float t = fi / (activeF - 1.0);
-      vec2 samplePos = fragCoord - motion * t;
+      vec2 samplePos;
+      if (uHasTrajectory > 0.5) {
+        if (t <= 0.25) {
+          samplePos = mix(fragCoord, knot1Past, t * 4.0);
+        } else if (t <= 0.5) {
+          samplePos = mix(knot1Past, knot2Past, (t - 0.25) * 4.0);
+        } else if (t <= 0.75) {
+          samplePos = mix(knot2Past, knot3Past, (t - 0.5) * 4.0);
+        } else {
+          samplePos = mix(knot3Past, endpointPast, (t - 0.75) * 4.0);
+        }
+        // Keep the user-tunable speed response without flattening the path:
+        // scale each actual trajectory offset around the current pixel.
+        samplePos = fragCoord +
+            (samplePos - fragCoord) * trajectoryScale;
+      } else {
+        samplePos = fragCoord - motion * t;
+      }
       vec2 sampleUv = samplePos / uOutputSize;
       // Skip out-of-bound samples (don't contribute, don't count).
       // The result at an edge pixel comes from only its in-bound
