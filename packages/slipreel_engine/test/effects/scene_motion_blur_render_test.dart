@@ -48,6 +48,39 @@ void main() {
       }
     },
   );
+
+  test(
+    'moving foreground edge produces a directional coverage trail',
+    () async {
+      final source = await _hardEdgeImage();
+      final program = await SceneMotionBlurShader.ensureLoaded();
+      try {
+        const signal = SceneMotionBlurSignal(
+          scaleDelta: 0,
+          translation: Offset(12, 0),
+        );
+        final bytes = await _render(source, program, signal);
+
+        int alphaAt(int x, int y) => bytes[(y * 64 + x) * 4 + 3];
+
+        expect(alphaAt(32, 32), 255);
+        expect(
+          alphaAt(48, 32),
+          allOf(greaterThan(0), lessThan(255)),
+          reason:
+              'the swept edge must retain partial temporal coverage outside '
+              'the current sharp silhouette instead of being dstIn-clipped',
+        );
+        expect(
+          alphaAt(48, 8),
+          0,
+          reason: 'coverage may extend only along the actual motion path',
+        );
+      } finally {
+        source.dispose();
+      }
+    },
+  );
 }
 
 Future<ui.Image> _stripedImage() async {
@@ -64,6 +97,22 @@ Future<ui.Image> _stripedImage() async {
       Paint()..color = const ui.Color(0xFFF0F0F0),
     );
   }
+  final picture = recorder.endRecording();
+  try {
+    return await picture.toImage(size.toInt(), size.toInt());
+  } finally {
+    picture.dispose();
+  }
+}
+
+Future<ui.Image> _hardEdgeImage() async {
+  const size = 64.0;
+  final recorder = ui.PictureRecorder();
+  final canvas = ui.Canvas(recorder, const Rect.fromLTWH(0, 0, size, size));
+  canvas.drawRect(
+    const Rect.fromLTWH(20, 16, 24, 32),
+    Paint()..color = const ui.Color(0xFF70D8A0),
+  );
   final picture = recorder.endRecording();
   try {
     return await picture.toImage(size.toInt(), size.toInt());

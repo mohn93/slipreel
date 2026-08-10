@@ -582,10 +582,10 @@ class FrameCompositor {
             }
             if (blurActive) {
               // Smear the moving CONTENT only, painted straight onto the
-              // compose canvas — paintSceneMotionBlur isolates itself
-              // (saveLayer + dstIn mask), so no intermediate full-res
-              // toImage round-trip is needed. The crisp chrome (shadow)
-              // and sticky wallpaper stay un-blurred beneath it.
+              // compose canvas, so no intermediate full-res toImage
+              // round-trip is needed. Its premultiplied temporal coverage
+              // composites naturally over the crisp chrome and sticky
+              // wallpaper, including the directional trail at a moving edge.
               // devicePixelRatio carries the canvas→render scale exactly
               // like the preview's logical→physical DPR: the sampler
               // image is at renderSize while the canvas coordinates and

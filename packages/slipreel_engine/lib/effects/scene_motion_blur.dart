@@ -1,5 +1,5 @@
 import 'dart:ui' as ui;
-import 'dart:ui' show BlendMode, Canvas, Offset, Paint, Rect, Size;
+import 'dart:ui' show Canvas, Offset, Paint, Rect, Size;
 
 import 'package:flutter/rendering.dart' show CustomPainter, Matrix4;
 
@@ -542,30 +542,18 @@ void paintSceneMotionBlur({
   setTrajectoryKnot(41, hasTrajectory ? signal.trajectory[1] : null);
   setTrajectoryKnot(57, hasTrajectory ? signal.trajectory[2] : null);
 
-  // Draw the smear into an isolated offscreen layer so we can clip it
-  // to the foreground footprint at the end. The shader fills the
-  // whole `size` rect; without clipping, pixels at the trailing edge
-  // of the smear bleed into the padding area (where the captured
-  // image was transparent), producing translucent foreground-coloured
-  // streaks on top of the sticky wallpaper. dstIn with the original
-  // image's alpha zeroes any pixel outside the foreground.
-  final dstRect = Rect.fromLTWH(0, 0, size.width, size.height);
-  canvas.saveLayer(dstRect, Paint());
-
+  // Draw the premultiplied accumulation directly over the background.
+  // Transparent samples beyond the current foreground edge represent time
+  // during which the moving screen did not cover that pixel. Preserving that
+  // coverage creates the physically expected leading/trailing edge. Clipping
+  // the result back to the current image alpha (the old dstIn pass) deleted
+  // the outside trail and left a broad inward feather that looked like a
+  // Gaussian blur along the screen boundary.
   canvas.save();
   canvas.scale(1.0 / dpr);
   canvas.drawRect(
     Rect.fromLTWH(0, 0, size.width * dpr, size.height * dpr),
     Paint()..shader = shader,
   );
-  canvas.restore();
-
-  canvas.drawImageRect(
-    image,
-    Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-    dstRect,
-    Paint()..blendMode = BlendMode.dstIn,
-  );
-
   canvas.restore();
 }
