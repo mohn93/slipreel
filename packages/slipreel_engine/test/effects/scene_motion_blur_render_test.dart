@@ -11,46 +11,31 @@ import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test(
-    'shader renders an out-and-back trajectory with a static endpoint',
-    () async {
-      final source = await _stripedImage();
-      final program = await SceneMotionBlurShader.ensureLoaded();
-      try {
-        const still = SceneMotionBlurSignal(
-          scaleDelta: 0,
-          translation: Offset.zero,
-        );
-        const outAndBack = SceneMotionBlurSignal(
-          scaleDelta: 0,
-          translation: Offset.zero,
-          trajectory: <SceneMotionBlurKnot>[
-            SceneMotionBlurKnot(scaleDelta: 0, translation: Offset(-12, 0)),
-            SceneMotionBlurKnot(scaleDelta: 0, translation: Offset.zero),
-            SceneMotionBlurKnot(scaleDelta: 0, translation: Offset(12, 0)),
-            SceneMotionBlurKnot(scaleDelta: 0, translation: Offset.zero),
-          ],
-        );
+  test('zero camera motion does not introduce a second image', () async {
+    final source = await _stripedImage();
+    final program = await SceneMotionBlurShader.ensureLoaded();
+    try {
+      const still = SceneMotionBlurSignal(
+        scaleDelta: 0,
+        translation: Offset.zero,
+      );
+      final sourceBytes = await _imageBytes(source);
+      final stillBytes = await _render(source, program, still);
 
-        expect(outAndBack.hasMotion, isTrue);
-        final stillBytes = await _render(source, program, still);
-        final trajectoryBytes = await _render(source, program, outAndBack);
-
-        expect(
-          trajectoryBytes,
-          isNot(orderedEquals(stillBytes)),
-          reason:
-              'intermediate camera poses must affect the output even when the '
-              'shutter endpoint returns to the current pose',
-        );
-      } finally {
-        source.dispose();
-      }
-    },
-  );
+      expect(
+        stillBytes,
+        orderedEquals(sourceBytes),
+        reason:
+            'a static camera must not create readable ghost copies or alter '
+            'the captured scene',
+      );
+    } finally {
+      source.dispose();
+    }
+  });
 
   test(
-    'moving foreground edge produces a directional coverage trail',
+    'moving foreground keeps a clean silhouette without an edge gradient',
     () async {
       final source = await _hardEdgeImage();
       final program = await SceneMotionBlurShader.ensureLoaded();
@@ -64,23 +49,32 @@ void main() {
         int alphaAt(int x, int y) => bytes[(y * 64 + x) * 4 + 3];
 
         expect(alphaAt(32, 32), 255);
+        expect(alphaAt(43, 32), 255);
         expect(
           alphaAt(48, 32),
-          allOf(greaterThan(0), lessThan(255)),
-          reason:
-              'the swept edge must retain partial temporal coverage outside '
-              'the current sharp silhouette instead of being dstIn-clipped',
+          0,
+          reason: 'motion blur must not create a translucent outer curtain',
         );
         expect(
           alphaAt(48, 8),
           0,
           reason: 'coverage may extend only along the actual motion path',
         );
+        expect(
+          alphaAt(52, 32),
+          0,
+          reason: 'the current card silhouette remains the outer aperture',
+        );
       } finally {
         source.dispose();
       }
     },
   );
+}
+
+Future<Uint8List> _imageBytes(ui.Image image) async {
+  final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  return Uint8List.fromList(data!.buffer.asUint8List());
 }
 
 Future<ui.Image> _stripedImage() async {
@@ -136,8 +130,6 @@ Future<Uint8List> _render(
     size: size,
     signal: signal,
     sampleCount: 32,
-    speedCurveExp: 1,
-    speedCurveRefPx: 48,
     devicePixelRatio: 1,
   );
   final picture = recorder.endRecording();

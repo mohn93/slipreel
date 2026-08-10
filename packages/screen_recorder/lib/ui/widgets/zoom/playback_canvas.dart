@@ -187,12 +187,26 @@ Widget buildInternalSceneBlurTree({
   Widget? cameraOverlay,
   Widget? captionOverlay,
   Widget? stickyBackground,
+  Widget? sceneUnderlay,
 }) {
   return Stack(
     fit: StackFit.expand,
     children: [
       if (stickyBackground != null) stickyBackground,
-      RepaintBoundary(key: boundaryKey, child: body),
+      if (sceneUnderlay != null) sceneUnderlay,
+      if (blurOverlay == null)
+        RepaintBoundary(key: boundaryKey, child: body)
+      else
+        // The boundary still captures the unfiltered moving scene, while the
+        // ancestor filter suppresses its sharp on-screen copy. The blurred
+        // pass therefore replaces the scene instead of double-exposing it.
+        ColorFiltered(
+          colorFilter: const ColorFilter.mode(
+            Colors.transparent,
+            BlendMode.srcIn,
+          ),
+          child: RepaintBoundary(key: boundaryKey, child: body),
+        ),
       if (blurOverlay != null) blurOverlay,
       if (cursorOverlay != null) cursorOverlay,
       if (keystrokeOverlay != null) keystrokeOverlay,
@@ -498,8 +512,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
   double get _sceneBlurExposureMs => _tuning.sceneBlurExposureMs;
   double get _sceneBlurMaxTranslation => _tuning.sceneBlurMaxTranslation;
   int get _sceneBlurSampleCount => _tuning.sceneBlurSampleCount;
-  double get _sceneBlurSpeedCurveExp => _tuning.sceneBlurSpeedCurveExp;
-  double get _sceneBlurSpeedCurveRefPx => _tuning.sceneBlurSpeedCurveRefPx;
   int get _pauseStabilizeThresholdMicros =>
       _tuning.pauseStabilizeThreshold.inMicroseconds;
 
@@ -1242,16 +1254,26 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
             // both the video and the bezel PNG as a single widget subtree that
             // is placed inside this Stack.  That Stack becomes the scene-blur
             // capture target (RepaintBoundary below), so the bezel is captured
-            // by the scene-blur shader and smears during zoom ramps — just like
-            // the drop-shadow in the standard chrome path.  The export
+            // by the scene-blur shader and smears during zoom ramps. The export
             // compositor (FrameCompositor._composeDeviceFrame) draws the bezel
             // in a separate crisp layer AFTER the motion-blur pass, so the
             // export bezel is always crisp.  This is the same accepted
-            // preview-only divergence as the drop-shadow smear; revisit if
-            // runtime testing shows it's objectionable.
+            // remaining preview-only divergence; standard frame chrome is
+            // split into [frameChrome] below to match export.
+            final isDeviceFrame = deviceLayout != null && deviceAsset != null;
+            final Widget? frameChrome = isDeviceFrame
+                ? null
+                : CustomPaint(
+                    size: totalSize,
+                    painter: FramePainter(
+                      frame: currentFrame,
+                      videoSize: videoSize,
+                      aspect: widget.outputAspect,
+                    ),
+                  );
             final composition = Stack(
               children: [
-                if (deviceLayout != null && deviceAsset != null)
+                if (isDeviceFrame)
                   SizedBox(
                     width: effTotalSize.width,
                     height: effTotalSize.height,
@@ -1261,15 +1283,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                       bezel: AssetImage(deviceAsset.asset),
                     ),
                   )
-                else ...[
-                  CustomPaint(
-                    size: totalSize,
-                    painter: FramePainter(
-                      frame: currentFrame,
-                      videoSize: videoSize,
-                      aspect: widget.outputAspect,
-                    ),
-                  ),
+                else
                   Positioned(
                     left: videoOriginX,
                     top: videoOriginY,
@@ -1284,7 +1298,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                       ),
                     ),
                   ),
-                ],
                 if (widget.showZoomDebug)
                   Positioned(
                     left: currentFrame.padding.left,
@@ -1371,6 +1384,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                 cameraOverlayWidget: cameraOverlayWidget,
                 captionOverlayWidget: captionOverlayWidget,
                 stickyBackground: stickyBackground,
+                sceneUnderlay: frameChrome,
                 position: pos,
                 // effTotalSize is the composition's actual canvas (device
                 // canvas when a frame is active, else == totalSize). The pass's
@@ -1500,6 +1514,13 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                         alignment: Alignment.center,
                         child: cursorOverlay,
                       );
+                final transformedFrameChrome = frameChrome == null
+                    ? null
+                    : Transform(
+                        transform: transform,
+                        alignment: Alignment.center,
+                        child: frameChrome,
+                      );
                 return _buildSceneMotionBlurPass(
                   body: transformed,
                   cursorOverlay: transformedCursor,
@@ -1510,6 +1531,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   // Caption overlay is also canvas-fixed (NOT zoomed).
                   captionOverlayWidget: captionOverlayWidget,
                   stickyBackground: stickyBackground,
+                  sceneUnderlay: transformedFrameChrome,
                   position: pos,
                   // See note at the other call site: effTotalSize keeps the
                   // scene-blur canvas + zoom pivot lock-step with the
@@ -1539,6 +1561,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     Widget? cameraOverlayWidget,
     Widget? captionOverlayWidget,
     Widget? stickyBackground,
+    Widget? sceneUnderlay,
     required Duration position,
     required Size totalSize,
     required Size videoSize,
@@ -1551,6 +1574,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
     Widget bodyWithCursor() {
       final layers = <Widget>[
         if (stickyBackground != null) stickyBackground,
+        if (sceneUnderlay != null) sceneUnderlay,
         body,
         if (cursorOverlay != null) cursorOverlay,
         if (keystrokeOverlayWidget != null) keystrokeOverlayWidget,
@@ -1629,8 +1653,6 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               program: program,
               signal: _capturedSceneSignal,
               sampleCount: _sceneBlurSampleCount,
-              speedCurveExp: _sceneBlurSpeedCurveExp,
-              speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
               devicePixelRatio: MediaQuery.of(context).devicePixelRatio,
             ),
             size: totalSize,
@@ -1667,6 +1689,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       cameraOverlay: cameraOverlayWidget,
       captionOverlay: captionOverlayWidget,
       stickyBackground: stickyBackground,
+      sceneUnderlay: sceneUnderlay,
     );
   }
 

@@ -17,10 +17,10 @@ double sceneBlurExposureScale({
 
 /// Which scene-level motion-blur pipeline to use.
 enum SceneBlurMode {
-  /// Projective trajectory shader. Four exact camera states across the
-  /// shutter are reduced to z=0 homographies and interpolated per tap. This
-  /// follows nonlinear zoom easing, cursor-following curves, and 3D Sweep
-  /// while retaining one captured image and one GPU pass.
+  /// Short-shutter projective shader. The current camera pose and one prior
+  /// pose are reduced to a z=0 homography, then sampled along one bounded
+  /// exposure interval. This keeps pan, zoom, and 3D Sweep directional while
+  /// avoiding the readable multi-frame ghosts produced by a long trajectory.
   shader,
 
   /// True frame accumulation. The captured composition is re-stamped at
@@ -226,7 +226,6 @@ class SceneMotionBlurSignal {
     this.projectiveTransform,
     this.projectiveScaleDelta = 0,
     this.projectiveTranslation = Offset.zero,
-    this.trajectory = const <SceneMotionBlurKnot>[],
   });
 
   static const zero = SceneMotionBlurSignal(
@@ -246,37 +245,6 @@ class SceneMotionBlurSignal {
   final double projectiveScaleDelta;
   final Offset projectiveTranslation;
 
-  /// Exact camera states at 25%, 50%, 75%, and 100% of the shutter.
-  ///
-  /// The endpoint fields above remain the public compatibility surface and
-  /// the fallback for hand-built signals. Production signals also carry this
-  /// trajectory so the shader follows camera easing, cursor-following curves,
-  /// and 3D Sweep motion instead of drawing one straight endpoint vector.
-  final List<SceneMotionBlurKnot> trajectory;
-
-  bool get hasMotion =>
-      scaleDelta.abs() > 0.00005 ||
-      translation.distance > 0.01 ||
-      (projectiveTransform != null && !projectiveTransform!.isIdentity) ||
-      trajectory.any((knot) => knot.hasMotion);
-}
-
-/// One exact control point on a scene-blur shutter trajectory.
-class SceneMotionBlurKnot {
-  const SceneMotionBlurKnot({
-    required this.scaleDelta,
-    required this.translation,
-    this.projectiveTransform,
-    this.projectiveScaleDelta = 0,
-    this.projectiveTranslation = Offset.zero,
-  });
-
-  final double scaleDelta;
-  final Offset translation;
-  final SceneProjectiveTransform? projectiveTransform;
-  final double projectiveScaleDelta;
-  final Offset projectiveTranslation;
-
   bool get hasMotion =>
       scaleDelta.abs() > 0.00005 ||
       translation.distance > 0.01 ||
@@ -285,8 +253,8 @@ class SceneMotionBlurKnot {
 
 /// Stateless scene-motion-blur signal compute.
 ///
-/// The shader signal contains exact camera knots plus compatibility endpoint
-/// values. They are a pure function of
+/// The shader signal contains the current-to-previous camera step. It is a
+/// pure function of
 /// `(position, sampleAt, exposure, maxTranslation)` — no history, no EMA, no
 /// `smooth:` flag. Determinism is the contract:
 /// the editor preview (pause, play, scrub) and the export pipeline
@@ -322,58 +290,36 @@ class SceneMotionBlurController {
         samples.putIfAbsent(time.inMicroseconds, () => sampleAt(time));
 
     final current = cachedSampleAt(position);
-    SceneMotionBlurKnot knotAt(double fraction) {
-      final movementPrevious = movementExposure <= Duration.zero
-          ? null
-          : cachedSampleAt(
-              current.position - _scaleDuration(movementExposure, fraction),
-            );
-      final projectivePrevious = zoomExposure <= Duration.zero
-          ? null
-          : cachedSampleAt(
-              current.position - _scaleDuration(zoomExposure, fraction),
-            );
-      final projectiveTransform =
-          current.transform == null || projectivePrevious?.transform == null
-          ? null
-          : SceneProjectiveTransform.between(
-              current: current.transform!,
-              previous: projectivePrevious!.transform!,
-              origin: current.transformOrigin,
-            );
-      return SceneMotionBlurKnot(
-        scaleDelta: _scaleDeltaBetween(current, projectivePrevious),
-        translation: _translationBetween(
-          current,
-          movementPrevious,
-          maxTranslation,
-        ),
-        projectiveTransform: projectiveTransform,
-        projectiveScaleDelta: _scaleDeltaBetween(current, projectivePrevious),
-        projectiveTranslation: _translationBetween(
-          current,
-          projectivePrevious,
-          double.infinity,
-        ),
-      );
-    }
-
-    final trajectory = List<SceneMotionBlurKnot>.unmodifiable(
-      const <double>[0.25, 0.5, 0.75, 1.0].map(knotAt),
-    );
-    final endpoint = trajectory.last;
+    final movementPrevious = movementExposure <= Duration.zero
+        ? null
+        : cachedSampleAt(current.position - movementExposure);
+    final projectivePrevious = zoomExposure <= Duration.zero
+        ? null
+        : cachedSampleAt(current.position - zoomExposure);
+    final projectiveTransform =
+        current.transform == null || projectivePrevious?.transform == null
+        ? null
+        : SceneProjectiveTransform.between(
+            current: current.transform!,
+            previous: projectivePrevious!.transform!,
+            origin: current.transformOrigin,
+          );
     return SceneMotionBlurSignal(
-      scaleDelta: endpoint.scaleDelta,
-      translation: endpoint.translation,
-      projectiveTransform: endpoint.projectiveTransform,
-      projectiveScaleDelta: endpoint.projectiveScaleDelta,
-      projectiveTranslation: endpoint.projectiveTranslation,
-      trajectory: trajectory,
+      scaleDelta: _scaleDeltaBetween(current, projectivePrevious),
+      translation: _translationBetween(
+        current,
+        movementPrevious,
+        maxTranslation,
+      ),
+      projectiveTransform: projectiveTransform,
+      projectiveScaleDelta: _scaleDeltaBetween(current, projectivePrevious),
+      projectiveTranslation: _translationBetween(
+        current,
+        projectivePrevious,
+        double.infinity,
+      ),
     );
   }
-
-  static Duration _scaleDuration(Duration duration, double fraction) =>
-      Duration(microseconds: (duration.inMicroseconds * fraction).round());
 
   static double _scaleDeltaBetween(
     SceneCameraSample current,
@@ -404,8 +350,9 @@ class SceneMotionBlurPainter extends CustomPainter {
     required this.program,
     required this.signal,
     required this.sampleCount,
-    required this.speedCurveExp,
-    required this.speedCurveRefPx,
+    // Accepted for source compatibility with the former speed-curve shader.
+    double? speedCurveExp,
+    double? speedCurveRefPx,
     required this.devicePixelRatio,
   });
 
@@ -413,8 +360,6 @@ class SceneMotionBlurPainter extends CustomPainter {
   final ui.FragmentProgram program;
   final SceneMotionBlurSignal signal;
   final int sampleCount;
-  final double speedCurveExp;
-  final double speedCurveRefPx;
   final double devicePixelRatio;
 
   @override
@@ -426,8 +371,6 @@ class SceneMotionBlurPainter extends CustomPainter {
       size: size,
       signal: signal,
       sampleCount: sampleCount,
-      speedCurveExp: speedCurveExp,
-      speedCurveRefPx: speedCurveRefPx,
       devicePixelRatio: devicePixelRatio,
     );
   }
@@ -441,10 +384,7 @@ class SceneMotionBlurPainter extends CustomPainter {
         old.signal.projectiveTransform != signal.projectiveTransform ||
         old.signal.projectiveScaleDelta != signal.projectiveScaleDelta ||
         old.signal.projectiveTranslation != signal.projectiveTranslation ||
-        old.signal.trajectory != signal.trajectory ||
         old.sampleCount != sampleCount ||
-        old.speedCurveExp != speedCurveExp ||
-        old.speedCurveRefPx != speedCurveRefPx ||
         old.devicePixelRatio != devicePixelRatio;
   }
 }
@@ -467,8 +407,9 @@ void paintSceneMotionBlur({
   required Size size,
   required SceneMotionBlurSignal signal,
   required int sampleCount,
-  required double speedCurveExp,
-  required double speedCurveRefPx,
+  // Accepted for source compatibility with the former speed-curve shader.
+  double? speedCurveExp,
+  double? speedCurveRefPx,
   required double devicePixelRatio,
 }) {
   final dpr = devicePixelRatio <= 0 ? 1.0 : devicePixelRatio;
@@ -490,65 +431,30 @@ void paintSceneMotionBlur({
     ..setFloat(5, sampleCount.toDouble())
     ..setFloat(6, signal.translation.dx * dpr)
     ..setFloat(7, signal.translation.dy * dpr)
-    ..setFloat(8, speedCurveExp)
-    ..setFloat(9, speedCurveRefPx * dpr);
+    ..setFloat(8, signal.projectiveTransform == null ? 0.0 : 1.0);
 
   final projective = signal.projectiveTransform;
   final projectiveValues =
       projective?.values ?? SceneProjectiveTransform.identity.values;
   shader
-    ..setFloat(10, projective == null ? 0.0 : 1.0)
-    ..setFloat(11, projectiveValues[0])
-    ..setFloat(12, projectiveValues[1])
-    ..setFloat(13, projectiveValues[2])
-    ..setFloat(14, projectiveValues[3])
-    ..setFloat(15, projectiveValues[4])
-    ..setFloat(16, projectiveValues[5])
-    ..setFloat(17, projectiveValues[6])
-    ..setFloat(18, projectiveValues[7])
-    ..setFloat(19, projectiveValues[8])
-    ..setFloat(20, signal.projectiveScaleDelta)
-    ..setFloat(21, signal.projectiveTranslation.dx * dpr)
-    ..setFloat(22, signal.projectiveTranslation.dy * dpr)
-    ..setFloat(23, dpr);
+    ..setFloat(9, projectiveValues[0])
+    ..setFloat(10, projectiveValues[1])
+    ..setFloat(11, projectiveValues[2])
+    ..setFloat(12, projectiveValues[3])
+    ..setFloat(13, projectiveValues[4])
+    ..setFloat(14, projectiveValues[5])
+    ..setFloat(15, projectiveValues[6])
+    ..setFloat(16, projectiveValues[7])
+    ..setFloat(17, projectiveValues[8])
+    ..setFloat(18, signal.projectiveScaleDelta)
+    ..setFloat(19, signal.projectiveTranslation.dx * dpr)
+    ..setFloat(20, signal.projectiveTranslation.dy * dpr)
+    ..setFloat(21, dpr);
 
-  final hasTrajectory = signal.trajectory.length == 4;
-  shader.setFloat(24, hasTrajectory ? 1.0 : 0.0);
-
-  void setTrajectoryKnot(int start, SceneMotionBlurKnot? knot) {
-    final projective = knot?.projectiveTransform;
-    final values =
-        projective?.values ?? SceneProjectiveTransform.identity.values;
-    shader
-      ..setFloat(start, knot?.scaleDelta ?? 0.0)
-      ..setFloat(start + 1, (knot?.translation.dx ?? 0.0) * dpr)
-      ..setFloat(start + 2, (knot?.translation.dy ?? 0.0) * dpr)
-      ..setFloat(start + 3, projective == null ? 0.0 : 1.0)
-      ..setFloat(start + 4, values[0])
-      ..setFloat(start + 5, values[1])
-      ..setFloat(start + 6, values[2])
-      ..setFloat(start + 7, values[3])
-      ..setFloat(start + 8, values[4])
-      ..setFloat(start + 9, values[5])
-      ..setFloat(start + 10, values[6])
-      ..setFloat(start + 11, values[7])
-      ..setFloat(start + 12, values[8])
-      ..setFloat(start + 13, knot?.projectiveScaleDelta ?? 0.0)
-      ..setFloat(start + 14, (knot?.projectiveTranslation.dx ?? 0.0) * dpr)
-      ..setFloat(start + 15, (knot?.projectiveTranslation.dy ?? 0.0) * dpr);
-  }
-
-  setTrajectoryKnot(25, hasTrajectory ? signal.trajectory[0] : null);
-  setTrajectoryKnot(41, hasTrajectory ? signal.trajectory[1] : null);
-  setTrajectoryKnot(57, hasTrajectory ? signal.trajectory[2] : null);
-
-  // Draw the premultiplied accumulation directly over the background.
-  // Transparent samples beyond the current foreground edge represent time
-  // during which the moving screen did not cover that pixel. Preserving that
-  // coverage creates the physically expected leading/trailing edge. Clipping
-  // the result back to the current image alpha (the old dstIn pass) deleted
-  // the outside trail and left a broad inward feather that looked like a
-  // Gaussian blur along the screen boundary.
+  // Draw the premultiplied accumulation directly. The shader normalises blur
+  // colour by sampled coverage and reapplies the current scene alpha, keeping
+  // the screen/card silhouette stable without the inward feather caused by a
+  // post-process dstIn mask.
   canvas.save();
   canvas.scale(1.0 / dpr);
   canvas.drawRect(

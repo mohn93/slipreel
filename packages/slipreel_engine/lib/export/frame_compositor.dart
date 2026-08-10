@@ -313,8 +313,6 @@ class FrameCompositor {
   double get _sceneBlurExposureMs => motionTuning.sceneBlurExposureMs;
   double get _sceneBlurMaxTranslation => motionTuning.sceneBlurMaxTranslation;
   int get _sceneBlurSampleCount => motionTuning.sceneBlurSampleCount;
-  double get _sceneBlurSpeedCurveExp => motionTuning.sceneBlurSpeedCurveExp;
-  double get _sceneBlurSpeedCurveRefPx => motionTuning.sceneBlurSpeedCurveRefPx;
 
   WindowFrame get _frame => projectState.windowFrame;
 
@@ -597,8 +595,6 @@ class FrameCompositor {
                 size: totalSize,
                 signal: sceneSignal,
                 sampleCount: _sceneBlurSampleCount,
-                speedCurveExp: _sceneBlurSpeedCurveExp,
-                speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
                 devicePixelRatio: _renderScale,
               );
             } else {
@@ -944,8 +940,6 @@ class FrameCompositor {
               size: totalSize,
               signal: sceneSignal,
               sampleCount: _sceneBlurSampleCount,
-              speedCurveExp: _sceneBlurSpeedCurveExp,
-              speedCurveRefPx: _sceneBlurSpeedCurveRefPx,
               devicePixelRatio: _renderScale,
             );
           } else {

@@ -18,12 +18,11 @@ void main() {
       expect(t.cursorFeedforwardStrength, 0.5);
       expect(t.cursorFeedforwardFadeStartPxPerSec, 200.0);
       expect(t.cursorFeedforwardFullSpeedPxPerSec, 800.0);
-      // Scene-blur knobs: restored production calibration. The master slider
-      // is capped at 0.5 and cubically shaped, so a 16 ms base made the scene
-      // effectively invisible next to the cursor's 150 ms base.
-      expect(t.sceneBlurExposureMs, 80.0);
-      expect(t.sceneBlurMaxTranslation, 160.0);
-      expect(t.sceneBlurSampleCount, 48);
+      // Scene-blur knobs: short-shutter calibration. The master slider is
+      // capped at 0.5, so this reaches at most one 60 fps frame of exposure.
+      expect(t.sceneBlurExposureMs, 32.0);
+      expect(t.sceneBlurMaxTranslation, 64.0);
+      expect(t.sceneBlurSampleCount, 21);
       expect(t.sceneBlurSpeedCurveExp, 1.0);
       expect(t.sceneBlurSpeedCurveRefPx, 10.0);
       expect(t.pauseStabilizeThreshold.inMilliseconds, 100);
@@ -120,7 +119,7 @@ void main() {
       expect(tuning.dtCap, MotionTuning.defaults.dtCap);
     });
 
-    test('legacy sidecar defaults migrate to restored scene calibration', () {
+    test('legacy sidecar defaults migrate to short-shutter calibration', () {
       final tuning = MotionTuning.fromJson(<String, dynamic>{
         'cursorAtRestPxPerSec': 60,
         'cursorFeedforwardStrength': 0.75,
@@ -130,8 +129,31 @@ void main() {
 
       expect(tuning.cursorAtRestPxPerSec, 60);
       expect(tuning.cursorFeedforwardStrength, 0.75);
-      expect(tuning.sceneBlurExposureMs, 80);
-      expect(tuning.sceneBlurMaxTranslation, 160);
+      expect(tuning.sceneBlurExposureMs, 32);
+      expect(tuning.sceneBlurMaxTranslation, 64);
+      expect(tuning.sceneBlurSampleCount, 21);
+    });
+
+    test('schema 2 long-shutter defaults migrate without changing customs', () {
+      final defaults = MotionTuning.fromJson(<String, dynamic>{
+        'schemaVersion': 2,
+        'sceneBlurExposureMs': 80,
+        'sceneBlurMaxTranslation': 160,
+        'sceneBlurSampleCount': 48,
+      });
+      final custom = MotionTuning.fromJson(<String, dynamic>{
+        'schemaVersion': 2,
+        'sceneBlurExposureMs': 16,
+        'sceneBlurMaxTranslation': 60,
+        'sceneBlurSampleCount': 17,
+      });
+
+      expect(defaults.sceneBlurExposureMs, 32);
+      expect(defaults.sceneBlurMaxTranslation, 64);
+      expect(defaults.sceneBlurSampleCount, 21);
+      expect(custom.sceneBlurExposureMs, 16);
+      expect(custom.sceneBlurMaxTranslation, 60);
+      expect(custom.sceneBlurSampleCount, 17);
     });
 
     test('versioned custom 16/60 calibration remains untouched', () {

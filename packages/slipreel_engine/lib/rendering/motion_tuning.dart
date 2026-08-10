@@ -27,9 +27,9 @@ class MotionTuning {
     this.cursorFeedforwardFadeStartPxPerSec = 200.0,
     this.cursorFeedforwardFullSpeedPxPerSec = 800.0,
     this.keepInViewEdgeMargin = 0.04,
-    this.sceneBlurExposureMs = 80.0,
-    this.sceneBlurMaxTranslation = 160.0,
-    this.sceneBlurSampleCount = 48,
+    this.sceneBlurExposureMs = 32.0,
+    this.sceneBlurMaxTranslation = 64.0,
+    this.sceneBlurSampleCount = 21,
     this.sceneBlurSpeedCurveExp = 1.0,
     this.sceneBlurSpeedCurveRefPx = 10.0,
     this.pauseStabilizeThreshold = const Duration(milliseconds: 100),
@@ -86,31 +86,27 @@ class MotionTuning {
 
   /// Base virtual-shutter window for the scene-blur shader before
   /// the user-facing motion-blur and sub-blur sliders modulate it.
-  /// 80 ms gives the cubically-shaped 0..0.5 master control enough authority:
-  /// its maximum produces a 40 ms shutter while the common 0.25 setting lands
-  /// at 5 ms. This restores the production calibration used before the scene
-  /// pass moved inside PlaybackCanvas.
+  /// 32 ms gives the cubically-shaped 0..0.5 master control a one-frame
+  /// maximum shutter at 60 fps (16 ms), while the common 0.25 setting lands
+  /// at 2 ms. That reads as exposure blur rather than duplicated frames.
   final double sceneBlurExposureMs;
 
   /// Hard cap (px) on the scene-blur shader's translation magnitude.
   /// Without it a fast camera pan would smear the frame end-to-end
-  /// and the cursor would visually skate. 160 px preserves headroom for fast
-  /// follow-camera and 3D Sweep motion
-  /// without flattening the upper half of the slider against an early cap.
+  /// and the cursor would visually skate. 64 px preserves a directional
+  /// streak without allowing a fast follow-camera or 3D Sweep to span a
+  /// readable portion of the frame.
   final double sceneBlurMaxTranslation;
 
   /// Number of stamps the scene-blur shader takes across the
   /// exposure window. Higher = smoother trail at higher GPU cost.
   final int sceneBlurSampleCount;
 
-  /// Exponent applied to the camera-speed → exposure curve. 1.0 =
-  /// linear; >1 attenuates slow motion (only fast pans smear); <1
-  /// boosts slow motion (even small pans get noticeable trails).
+  /// Legacy sidecar field retained for backwards-compatible JSON round trips.
+  /// The short-shutter shader uses measured camera displacement directly.
   final double sceneBlurSpeedCurveExp;
 
-  /// Reference speed (px/frame) used to normalise the exposure
-  /// curve. At this speed the curve reads its full input value;
-  /// faster scales above, slower scales below.
+  /// Legacy sidecar field retained for backwards-compatible JSON round trips.
   final double sceneBlurSpeedCurveRefPx;
 
   /// Maximum drift between consecutive paused-playhead reads before
@@ -126,8 +122,9 @@ class MotionTuning {
   static const MotionTuning defaults = MotionTuning();
 
   /// Persistence schema for the optional app-wide motion-tuning sidecar.
-  /// Version 2 restores the production scene shutter/cap from 16/60 to 80/160.
-  static const int currentSchemaVersion = 2;
+  /// Version 3 replaces the long multi-frame scene shutter with the bounded
+  /// short-shutter calibration used by the single-interval shader.
+  static const int currentSchemaVersion = 3;
 
   /// Tighter, more responsive feel. Drops the at-rest threshold so
   /// the gate releases sooner, bumps feedforward closer to full lag
@@ -248,6 +245,10 @@ class MotionTuning {
       'sceneBlurMaxTranslation',
       d.sceneBlurMaxTranslation,
     );
+    var sceneBlurSampleCount = intOr(
+      'sceneBlurSampleCount',
+      d.sceneBlurSampleCount,
+    );
     // Older sidecars serialized every field, including the then-default weak
     // scene calibration. Without a migration those persisted 16/60 values
     // override the restored defaults forever. Upgrade only exact legacy
@@ -258,6 +259,22 @@ class MotionTuning {
       }
       if (sceneBlurMaxTranslation == 60.0) {
         sceneBlurMaxTranslation = d.sceneBlurMaxTranslation;
+      }
+    }
+    // Schema 2's 80 ms / 160 px / 48 tap calibration intentionally produced
+    // a long camera trail. Move its exact shipped defaults to the
+    // short-shutter values. The schema-1 block above already handles the
+    // older unversioned 16/60 sidecar without rewriting a schema-2 user's
+    // deliberate 16/60 choice.
+    if (schemaVersion < 3) {
+      if (sceneBlurExposureMs == 80.0) {
+        sceneBlurExposureMs = d.sceneBlurExposureMs;
+      }
+      if (sceneBlurMaxTranslation == 160.0) {
+        sceneBlurMaxTranslation = d.sceneBlurMaxTranslation;
+      }
+      if (sceneBlurSampleCount == 48) {
+        sceneBlurSampleCount = d.sceneBlurSampleCount;
       }
     }
 
@@ -297,10 +314,7 @@ class MotionTuning {
       ),
       sceneBlurExposureMs: sceneBlurExposureMs,
       sceneBlurMaxTranslation: sceneBlurMaxTranslation,
-      sceneBlurSampleCount: intOr(
-        'sceneBlurSampleCount',
-        d.sceneBlurSampleCount,
-      ),
+      sceneBlurSampleCount: sceneBlurSampleCount,
       sceneBlurSpeedCurveExp: doubleOr(
         'sceneBlurSpeedCurveExp',
         d.sceneBlurSpeedCurveExp,

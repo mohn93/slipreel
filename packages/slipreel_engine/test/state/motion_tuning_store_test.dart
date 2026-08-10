@@ -51,8 +51,9 @@ void main() {
 
       expect(loaded, isNotNull);
       expect(loaded!.cursorAtRestPxPerSec, 60);
-      expect(loaded.sceneBlurExposureMs, 80);
-      expect(loaded.sceneBlurMaxTranslation, 160);
+      expect(loaded.sceneBlurExposureMs, 32);
+      expect(loaded.sceneBlurMaxTranslation, 64);
+      expect(loaded.sceneBlurSampleCount, 21);
     });
 
     test(

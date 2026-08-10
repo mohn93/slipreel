@@ -1,8 +1,6 @@
 @TestOn('vm')
 library;
 
-import 'dart:math' as math;
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/rendering.dart' show Matrix4;
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
@@ -37,14 +35,14 @@ void main() {
   test(
     'production slider range yields a visible but bounded scene shutter',
     () {
-      const baseExposureMs = 80.0;
+      const baseExposureMs = 32.0;
       final commonMs =
           baseExposureMs * sceneBlurExposureScale(master: 0.25, channel: 1.0);
       final maximumMs =
           baseExposureMs * sceneBlurExposureScale(master: 0.5, channel: 1.0);
 
-      expect(commonMs, closeTo(5.0, 1e-12));
-      expect(maximumMs, closeTo(40.0, 1e-12));
+      expect(commonMs, closeTo(2.0, 1e-12));
+      expect(maximumMs, closeTo(16.0, 1e-12));
     },
   );
 
@@ -229,7 +227,7 @@ void main() {
     expect(signal.scaleDelta, closeTo(0.01067, 0.001));
   });
 
-  test('trajectory samples the real nonlinear camera path at four knots', () {
+  test('camera blur uses one current-to-previous shutter interval', () {
     SceneCameraSample acceleratingPan(Duration t) {
       final seconds = t.inMicroseconds / 1e6;
       return SceneCameraSample(
@@ -247,20 +245,15 @@ void main() {
       maxTranslation: 1000,
     );
 
-    expect(signal.trajectory, hasLength(4));
-    expect(signal.trajectory[0].translation.dx, closeTo(-43.75, 1e-9));
-    expect(signal.trajectory[1].translation.dx, closeTo(-75, 1e-9));
-    expect(signal.trajectory[2].translation.dx, closeTo(-93.75, 1e-9));
-    expect(signal.trajectory[3].translation.dx, closeTo(-100, 1e-9));
-    expect(signal.translation, signal.trajectory.last.translation);
+    expect(signal.translation.dx, closeTo(-100, 1e-9));
   });
 
-  test('out-and-back camera path blurs even when endpoints match', () {
+  test('matching shutter endpoints do not create intermediate ghosts', () {
     SceneCameraSample loopPan(Duration t) {
       final seconds = t.inMicroseconds / 1e6;
       return SceneCameraSample(
         position: t,
-        focal: Offset(math.sin(seconds * math.pi * 2) * 100, 0),
+        focal: Offset(seconds == 0.5 ? 100 : 0, 0),
         scale: 1,
       );
     }
@@ -274,9 +267,7 @@ void main() {
     );
 
     expect(signal.translation.distance, lessThan(1e-9));
-    expect(signal.trajectory[0].translation.distance, closeTo(100, 1e-9));
-    expect(signal.trajectory[2].translation.distance, closeTo(100, 1e-9));
-    expect(signal.hasMotion, isTrue);
+    expect(signal.hasMotion, isFalse);
   });
 
   test('shared movement/zoom timestamps are sampled only once', () {
@@ -298,7 +289,7 @@ void main() {
       maxTranslation: 160,
     );
 
-    expect(calls, 5); // current + four shared shutter knots
+    expect(calls, 2); // current + one shared prior pose
   });
 
   test('projective camera delta detects pure 3D tilt motion', () {
@@ -334,14 +325,6 @@ void main() {
     expect(signal.hasMotion, isTrue);
     expect(
       signal.projectiveTransform!.transformPoint(const Offset(850, 500)),
-      isNot(const Offset(850, 500)),
-    );
-    expect(signal.trajectory, hasLength(4));
-    expect(signal.trajectory.take(3), everyElement(isA<SceneMotionBlurKnot>()));
-    expect(
-      signal.trajectory[1].projectiveTransform!.transformPoint(
-        const Offset(850, 500),
-      ),
       isNot(const Offset(850, 500)),
     );
   });
