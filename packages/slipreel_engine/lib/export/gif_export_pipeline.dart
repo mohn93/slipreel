@@ -152,6 +152,17 @@ class GifExportPipeline {
     void Function(double progress)? onProgress,
     CancelToken? cancelToken,
   }) async {
+    var lastReportedProgress = 0.0;
+    void reportProgress(double progress) {
+      final callback = onProgress;
+      if (callback == null) return;
+      final bounded = progress.clamp(0.0, 1.0).toDouble();
+      if (bounded > lastReportedProgress) {
+        lastReportedProgress = bounded;
+      }
+      callback(lastReportedProgress);
+    }
+
     if (cancelToken?.isCancelled ?? false) {
       throw const ExportCancelledException();
     }
@@ -504,7 +515,7 @@ class GifExportPipeline {
             skippedFrames += decodeStartFrame;
             final progress = passProgress(sourceMicros);
             if (progress != null) {
-              onProgress?.call((progress * 0.5).clamp(0.0, 0.5));
+              reportProgress((progress * 0.5).clamp(0.0, 0.5));
             }
           }
           final decodeFuture = () async {
@@ -611,7 +622,9 @@ class GifExportPipeline {
               if (onProgress != null) {
                 final tsMicros = (1000000 * composed.sourceIndex) ~/ fps;
                 final p = passProgress(tsMicros);
-                if (p != null) onProgress((p * 0.5).clamp(0.0, 0.5));
+                if (p != null) {
+                  reportProgress((p * 0.5).clamp(0.0, 0.5));
+                }
               }
             }
           }();
@@ -710,7 +723,7 @@ class GifExportPipeline {
           // 50% and then jumps straight to completion.
           final estimatedFrames = (editedMicros * fps / 1000000).round();
           final denominator = estimatedFrames < 2 ? 2 : estimatedFrames;
-          onProgress(0.5 + 0.5 / denominator);
+          reportProgress(0.5 + 0.5 / denominator);
         }
         final stderr2Buffer = StringBuffer();
         final stderr2Done = proc2.stderr
@@ -730,7 +743,7 @@ class GifExportPipeline {
               );
               if (micros == null) return;
               final p = (micros / editedMicros).clamp(0.0, 1.0);
-              onProgress((0.5 + p * 0.5).clamp(0.5, 1.0));
+              reportProgress((0.5 + p * 0.5).clamp(0.5, 1.0));
             });
         try {
           final exit2 = await proc2.exitCode;
@@ -756,7 +769,7 @@ class GifExportPipeline {
           rethrow;
         }
 
-        if (onProgress != null) onProgress(1.0);
+        reportProgress(1.0);
 
         wallSw.stop();
         final wallSec = wallSw.elapsedMilliseconds / 1000.0;
