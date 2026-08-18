@@ -230,6 +230,28 @@ function mount(fn) {
   }
 }
 
+// The hero <video> autoplays, which the browser does regardless of the user's
+// motion preference. Every other motion effect on the page is gated behind
+// `prefers-reduced-motion`, so gate this one too: when reduce is requested,
+// pause on the poster frame instead of looping. Reacts to live preference
+// changes so toggling the OS setting takes effect without a reload.
+function mountHeroMotion() {
+  const video = document.querySelector('.hero__media');
+  if (!video) return;
+  const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const apply = () => {
+    if (query.matches) {
+      video.removeAttribute('autoplay');
+      video.pause();
+    } else if (video.paused) {
+      video.play().catch(() => {});
+    }
+  };
+  apply();
+  query.addEventListener('change', apply);
+}
+
 mount(mountTheater);
 mount(mountReveals);
 mount(mountCursorTrail);
+mount(mountHeroMotion);
