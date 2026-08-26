@@ -49,7 +49,11 @@ npm run build && node dist/server.js
   into `sites-enabled/`, then `certbot --nginx -d api.slipreel.app` and
   `nginx -t && systemctl reload nginx`.
 - Postgres: create the `slipreel` role + database on the box; point `DATABASE_URL`
-  at it. Requires the `citext` extension (migration `0001` enables it).
+  at it. Requires the `citext` extension (migration `0001` enables it) — migration
+  `0001` runs `CREATE EXTENSION IF NOT EXISTS citext`, which needs a role with
+  privilege to create extensions (superuser, or a role granted it) on first migrate.
+- The app binds `127.0.0.1` by default (nginx reaches it locally). If you ever set
+  `HOST=0.0.0.0`, add a firewall rule (`ufw deny 8080`) so only nginx/443 is public.
 
 ## Env vars
 See `.env.example`. `DATABASE_URL` is required; `PORT` (8080) and `LOG_LEVEL`

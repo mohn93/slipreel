@@ -33,3 +33,21 @@ describe('GET /health', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+describe('GET /health when the database is unreachable', () => {
+  it('returns 503 and db: down', async () => {
+    const brokenPool = testPool();
+    await brokenPool.end();
+
+    const app = buildApp({ pool: brokenPool, logger: false });
+    await app.ready();
+
+    try {
+      const res = await app.inject({ method: 'GET', url: '/health' });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toEqual({ status: 'degraded', db: 'down' });
+    } finally {
+      await app.close();
+    }
+  });
+});

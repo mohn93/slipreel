@@ -16,8 +16,8 @@ export type AppDeps = {
 export function buildApp(deps: AppDeps): FastifyInstance {
   const app = Fastify({
     logger: deps.logger ?? true,
-    // Trust the nginx reverse proxy for correct client IPs / protocol.
-    trustProxy: true,
+    // Trust X-Forwarded-* only from the co-located nginx on loopback.
+    trustProxy: 'loopback',
   });
 
   app.decorate('pool', deps.pool);

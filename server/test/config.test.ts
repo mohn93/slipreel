@@ -24,6 +24,16 @@ describe('loadConfig', () => {
     expect(cfg.nodeEnv).toBe('development');
   });
 
+  it('defaults HOST to 127.0.0.1 when absent', () => {
+    const cfg = loadConfig(base);
+    expect(cfg.host).toBe('127.0.0.1');
+  });
+
+  it('respects an explicit HOST', () => {
+    const cfg = loadConfig({ ...base, HOST: '0.0.0.0' });
+    expect(cfg.host).toBe('0.0.0.0');
+  });
+
   it('throws when DATABASE_URL is missing', () => {
     expect(() => loadConfig({ NODE_ENV: 'test' })).toThrow(/DATABASE_URL/);
   });
