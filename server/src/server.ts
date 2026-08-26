@@ -4,6 +4,8 @@ import { runMigrations } from './migrate.js';
 import { buildApp } from './app.js';
 import { loadBillingConfig } from './billing/config.js';
 import { createStripeClient } from './billing/stripe.js';
+import { loadTokenConfig } from './tokens/config.js';
+import { createTokenSigner } from './tokens/signer.js';
 
 const config = loadConfig();
 const pool = createPool(config);
@@ -21,15 +23,29 @@ try {
   stripe = undefined;
 }
 
+// Licensing (entitlement tokens) is optional at boot too: if the Ed25519 env
+// isn't set, start without token/auth routes rather than crashing.
+let tokenSigner;
+try {
+  tokenSigner = await createTokenSigner(loadTokenConfig());
+} catch (err) {
+  tokenSigner = undefined;
+}
+
 const app = buildApp({
   pool,
   stripe,
   billing,
+  tokenSigner,
   logger: { level: config.logLevel },
 });
 
 if (!billing) {
   app.log.warn('billing disabled: Stripe env not fully configured (set STRIPE_* to enable checkout/webhook)');
+}
+
+if (!tokenSigner) {
+  app.log.warn('licensing disabled: entitlement keys not set (set ENTITLEMENT_ED25519_* to enable /v1/token, /v1/auth/*)');
 }
 
 async function start(): Promise<void> {

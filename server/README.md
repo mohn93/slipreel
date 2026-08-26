@@ -95,3 +95,31 @@ All of this is test mode (`sk_test_…`). Nothing here touches live mode.
 Notes: the webhook verifies Stripe's signature over the raw body and is
 idempotent (re-delivered events are no-ops). `stripe login` (once) is required
 before `stripe listen`/`stripe trigger`.
+
+## Licensing (auth + entitlement tokens)
+
+Passwordless. A user is authenticated by reusing their completed Stripe Checkout
+session, or by a single-use magic link. An authenticated request to `/v1/token`
+registers the device (2 seats) and returns an Ed25519-signed entitlement token
+the desktop app verifies offline.
+
+Setup (test/dev):
+1. Generate the dedicated entitlement keypair and paste the two lines into `.env`:
+   ```bash
+   npm run gen:entitlement-keys
+   ```
+2. Start the server (`npm run dev`). With the keys set it enables the licensing
+   routes; without them it logs "licensing disabled" and serves only the base +
+   billing routes.
+
+Endpoints:
+- `POST /v1/auth/session-from-checkout` `{ checkout_session_id }` → sets a session cookie for the buyer.
+- `POST /v1/auth/magic-link` `{ email }` → issues a single-use link (email delivery stubbed; in non-production the response includes `debug_token`). `POST /v1/auth/magic-link/verify` `{ token }` → sets a session cookie.
+- `POST /v1/token` (session cookie) `{ fingerprint, device_name? }` → `{ token, refresh_token, device_id }`. A 3rd device → 409 `{ error: 'seat_limit', devices }`.
+- `POST /v1/token/refresh` `{ refresh_token, device_id }` → `{ token }` (no cookie needed).
+- `GET /v1/devices` / `DELETE /v1/devices/:id` (session cookie) → list / deactivate.
+- `GET /v1/entitlement/public-key` → the PEM the app embeds to verify tokens.
+
+Token claims: `sub, iss, iat, exp` (~14d), `plan` (subscription|onetime|free),
+`export`, `status`, `updates_until`, `device_id`, `seat_limit`. The private key is
+env-only; never commit it and never reuse the Sparkle key.
