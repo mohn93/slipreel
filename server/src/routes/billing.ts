@@ -12,7 +12,7 @@ const checkoutBody = z.object({
 const portalBody = z.object({ email: z.string().email() });
 
 export async function billingRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/v1/checkout', async (req, reply) => {
+  app.post('/v1/checkout', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = checkoutBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid request', detail: parsed.error.issues });

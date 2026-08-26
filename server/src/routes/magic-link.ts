@@ -16,7 +16,7 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
   // Request a sign-in link. Always 200 (don't leak which emails exist).
   // Email delivery is stubbed: the link is logged, and the token is returned
   // ONLY in non-production so the flow is testable until a provider is wired.
-  app.post('/v1/auth/magic-link', async (req, reply) => {
+  app.post('/v1/auth/magic-link', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = requestBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid request' });
 

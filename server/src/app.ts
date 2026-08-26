@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import rawBody from 'fastify-raw-body';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import type pg from 'pg';
 import type Stripe from 'stripe';
 import { healthRoutes } from './routes/health.js';
@@ -46,6 +47,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   if (deps.corsOrigins && deps.corsOrigins.length > 0) {
     app.register(cors, { origin: deps.corsOrigins, credentials: true });
   }
+
+  app.register(rateLimit, { global: false });
 
   app.decorate('pool', deps.pool);
   app.register(healthRoutes);

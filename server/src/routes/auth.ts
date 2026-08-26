@@ -8,7 +8,7 @@ const fromCheckout = z.object({ checkout_session_id: z.string().min(1) });
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   // Reuse a completed Stripe Checkout session to log the buyer in (no password).
-  app.post('/v1/auth/session-from-checkout', async (req, reply) => {
+  app.post('/v1/auth/session-from-checkout', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = fromCheckout.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid request' });
 
