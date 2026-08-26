@@ -7,6 +7,7 @@ import { healthRoutes } from './routes/health.js';
 import { stripeWebhookRoutes } from './routes/stripe-webhook.js';
 import { billingRoutes } from './routes/billing.js';
 import { authRoutes } from './routes/auth.js';
+import { magicLinkRoutes } from './routes/magic-link.js';
 import type { BillingConfig } from './billing/config.js';
 import type { TokenSigner } from './tokens/signer.js';
 
@@ -54,6 +55,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     app.decorate('tokenSigner', deps.tokenSigner);
     app.register(cookie);
     app.register(authRoutes);
+    app.register(magicLinkRoutes);
   }
 
   return app;
