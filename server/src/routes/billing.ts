@@ -5,6 +5,9 @@ import { findOrCreateUserByEmail } from '../billing/customers.js';
 const checkoutBody = z.object({
   email: z.string().email(),
   plan: z.enum(['monthly', 'yearly', 'onetime']),
+  device: z.string().optional(),
+  device_name: z.string().optional(),
+  state: z.string().optional(),
 });
 const portalBody = z.object({ email: z.string().email() });
 
@@ -18,12 +21,17 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     const { stripeCustomerId } = await findOrCreateUserByEmail(app.pool, app.stripe, email);
     const price = app.billing.prices[plan];
     const mode = plan === 'onetime' ? 'payment' : 'subscription';
+    const metadata: Record<string, string> = {};
+    if (parsed.data.device) metadata.device = parsed.data.device;
+    if (parsed.data.device_name) metadata.device_name = parsed.data.device_name;
+    if (parsed.data.state) metadata.state = parsed.data.state;
     const session = await app.stripe.checkout.sessions.create({
       customer: stripeCustomerId,
       mode,
       line_items: [{ price, quantity: 1 }],
       success_url: app.billing.successUrl,
       cancel_url: app.billing.cancelUrl,
+      metadata,
     });
     return reply.send({ url: session.url });
   });

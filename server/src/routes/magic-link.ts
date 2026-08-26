@@ -4,7 +4,12 @@ import { createMagicLink, consumeMagicLink } from '../auth/magic_link.js';
 import { createSession } from '../auth/sessions.js';
 import { setSessionCookie } from '../auth/cookie.js';
 
-const requestBody = z.object({ email: z.string().email() });
+const requestBody = z.object({
+  email: z.string().email(),
+  device: z.string().optional(),
+  device_name: z.string().optional(),
+  state: z.string().optional(),
+});
 const verifyBody = z.object({ token: z.string().min(1) });
 
 export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
@@ -21,7 +26,11 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
     );
     const user = rows[0];
     if (user) {
-      const { token } = await createMagicLink(app.pool, user.id);
+      const { token } = await createMagicLink(app.pool, user.id, {
+        device: parsed.data.device ?? null,
+        deviceName: parsed.data.device_name ?? null,
+        state: parsed.data.state ?? null,
+      });
       const link = `${app.billing.siteUrl}/login?token=${token}`;
       if (app.email) {
         try {
@@ -53,6 +62,11 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
     );
     const { token, expiresAt } = await createSession(app.pool, consumed.userId);
     setSessionCookie(reply, token, expiresAt);
-    return reply.send({ user: rows[0] ? { id: rows[0].id, email: rows[0].email } : { id: consumed.userId } });
+    return reply.send({
+      user: rows[0] ? { id: rows[0].id, email: rows[0].email } : { id: consumed.userId },
+      device: consumed.device,
+      device_name: consumed.deviceName,
+      state: consumed.state,
+    });
   });
 }

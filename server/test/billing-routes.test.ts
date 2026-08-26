@@ -103,4 +103,13 @@ describe('billing routes', () => {
     expect(res.statusCode).toBe(404);
     await app.close();
   });
+
+  it('checkout forwards device/state into the session metadata', async () => {
+    const { stripe, calls } = fakeStripe();
+    const app = await make(stripe);
+    await app.inject({ method: 'POST', url: '/v1/checkout',
+      payload: { email: 'g@example.com', plan: 'yearly', device: 'fp-1', device_name: 'Mac', state: 'nonce-1' } });
+    expect(calls.checkout.metadata).toEqual({ device: 'fp-1', device_name: 'Mac', state: 'nonce-1' });
+    await app.close();
+  });
 });

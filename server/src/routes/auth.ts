@@ -46,7 +46,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     const { token, expiresAt } = await createSession(app.pool, user.id);
     setSessionCookie(reply, token, expiresAt);
-    return reply.send({ user: { id: user.id, email: user.email } });
+    const md = (cs.metadata ?? {}) as Record<string, string | undefined>;
+    return reply.send({
+      user: { id: user.id, email: user.email },
+      device: md.device ?? null,
+      device_name: md.device_name ?? null,
+      state: md.state ?? null,
+    });
   });
 
   app.post('/v1/auth/logout', { preHandler: requireSession(app) }, async (req, reply) => {

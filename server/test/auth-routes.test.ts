@@ -62,6 +62,18 @@ describe('auth routes', () => {
     await app.close();
   });
 
+  it('session-from-checkout returns the device/state from metadata', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const { app } = await makeLicensingApp(pool, { session: {
+      status: 'complete', customer: 'cus_c', created: now,
+      metadata: { device: 'fp-9', device_name: 'Air', state: 'nonce-9' },
+    } });
+    const res = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout', payload: { checkout_session_id: 'cs_md' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ device: 'fp-9', device_name: 'Air', state: 'nonce-9' });
+    await app.close();
+  });
+
   it('logout requires a session (401 without cookie) and clears it with one', async () => {
     const { app } = await makeLicensingApp(pool, {
       session: { status: 'complete', customer: 'cus_c', created: Math.floor(Date.now() / 1000) },

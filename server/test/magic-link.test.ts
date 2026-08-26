@@ -65,6 +65,17 @@ describe('magic link', () => {
     await app.close();
   });
 
+  it('round-trips device/state from request to verify', async () => {
+    const { app } = await makeLicensingApp(pool);
+    const req = await app.inject({ method: 'POST', url: '/v1/auth/magic-link',
+      payload: { email: 'm@e.com', device: 'fp-7', device_name: 'Studio', state: 'nonce-7' } });
+    const token = req.json().debug_token as string;
+    const ver = await app.inject({ method: 'POST', url: '/v1/auth/magic-link/verify', payload: { token } });
+    expect(ver.statusCode).toBe(200);
+    expect(ver.json()).toMatchObject({ device: 'fp-7', device_name: 'Studio', state: 'nonce-7' });
+    await app.close();
+  });
+
   it('unknown email does not send', async () => {
     const sent: string[] = [];
     const email = { sendMagicLink: async (to: string) => { sent.push(to); } };
