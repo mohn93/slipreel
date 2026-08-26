@@ -9,6 +9,7 @@ import { billingRoutes } from './routes/billing.js';
 import { authRoutes } from './routes/auth.js';
 import { magicLinkRoutes } from './routes/magic-link.js';
 import { tokenRoutes } from './routes/token.js';
+import { deviceRoutes } from './routes/devices.js';
 import type { BillingConfig } from './billing/config.js';
 import type { TokenSigner } from './tokens/signer.js';
 
@@ -58,6 +59,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     app.register(authRoutes);
     app.register(magicLinkRoutes);
     app.register(tokenRoutes);
+    app.register(deviceRoutes);
   }
 
   return app;
