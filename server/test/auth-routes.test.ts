@@ -10,6 +10,7 @@ describe('auth routes', () => {
   afterAll(async () => { await pool.end(); });
   beforeEach(async () => {
     await pool.query('DELETE FROM sessions'); await pool.query('DELETE FROM users');
+    await pool.query('DELETE FROM consumed_checkout_sessions');
     await pool.query("INSERT INTO users (id, email, stripe_customer_id) VALUES ('u_c','c@e.com','cus_c')");
   });
 
@@ -48,6 +49,16 @@ describe('auth routes', () => {
     const res = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
       payload: { checkout_session_id: 'cs_stale' } });
     expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('is single-use: the same checkout session cannot log in twice', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const { app } = await makeLicensingApp(pool, { session: { status: 'complete', customer: 'cus_c', created: now } });
+    const first = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout', payload: { checkout_session_id: 'cs_once' } });
+    expect(first.statusCode).toBe(200);
+    const second = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout', payload: { checkout_session_id: 'cs_once' } });
+    expect(second.statusCode).toBe(409);
     await app.close();
   });
 

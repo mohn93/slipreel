@@ -18,6 +18,7 @@ describe('token routes', () => {
   beforeEach(async () => {
     await pool.query('DELETE FROM devices'); await pool.query('DELETE FROM sessions');
     await pool.query('DELETE FROM entitlements'); await pool.query('DELETE FROM users');
+    await pool.query('DELETE FROM consumed_checkout_sessions');
     await pool.query("INSERT INTO users (id, email, stripe_customer_id) VALUES ('u1','u1@e.com','cus_1')");
     await pool.query(
       `INSERT INTO entitlements (id, user_id, plan, status, stripe_subscription_id, current_period_end)

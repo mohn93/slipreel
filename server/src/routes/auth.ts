@@ -17,12 +17,21 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     // Freshness window: a checkout_session_id can leak via the success URL, browser
     // history, or logs, and would otherwise be replayable to log in as the buyer
-    // indefinitely. Reject stale sessions. Full single-use consumption of the
-    // checkout session and binding it to a `state` nonce are deferred to the
-    // web-pages phase, where the redirect flow that carries this id is built.
+    // indefinitely. Reject stale sessions. Binding this id to a `state` nonce is
+    // deferred to the web-pages phase, where the redirect flow that carries it is built.
     const MAX_AGE_S = 30 * 60;
     if (typeof cs.created === 'number' && Date.now() / 1000 - cs.created > MAX_AGE_S) {
       return reply.code(400).send({ error: 'checkout session expired' });
+    }
+
+    // Single-use: claim the session id so a leaked checkout_session_id cannot be
+    // replayed to log in a second time.
+    const claim = await app.pool.query(
+      'INSERT INTO consumed_checkout_sessions (session_id) VALUES ($1) ON CONFLICT DO NOTHING RETURNING session_id',
+      [parsed.data.checkout_session_id],
+    );
+    if (claim.rowCount === 0) {
+      return reply.code(409).send({ error: 'checkout session already used' });
     }
 
     const customer = typeof cs.customer === 'string' ? cs.customer : cs.customer?.id;
