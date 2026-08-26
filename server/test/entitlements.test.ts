@@ -139,4 +139,61 @@ describe('handleStripeEvent', () => {
     const { rows } = await pool.query(`SELECT count(*)::int AS n FROM entitlements`);
     expect(rows[0].n).toBe(0);
   });
+
+  it('rolls back the claim when a dispatch write fails (no swallowed event)', async () => {
+    await seedUser(pool, 'cus_fail');
+    // A pool-like object whose connect() hands back a real test client, but
+    // whose query() throws once the SQL text reaches the entitlements write —
+    // simulating a failure in the dispatch step, after the idempotency claim
+    // has already been inserted (but not yet committed) on the same client.
+    const realClient = await pool.connect();
+    const badPool = {
+      connect: async () =>
+        new Proxy(realClient, {
+          get(target, prop, receiver) {
+            if (prop === 'query') {
+              return (sql: unknown, ...args: unknown[]) => {
+                const text = typeof sql === 'string' ? sql : (sql as { text: string }).text;
+                if (text.includes('INSERT INTO entitlements')) {
+                  throw new Error('boom');
+                }
+                return Reflect.get(target, 'query', target).apply(target, [sql, ...args]);
+              };
+            }
+            const value = Reflect.get(target, prop, receiver);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        }),
+    };
+
+    await expect(
+      handleStripeEvent(
+        badPool as unknown as pg.Pool,
+        event('evt_fail', 'checkout.session.completed', {
+          mode: 'payment', customer: 'cus_fail', payment_intent: 'pi_fail',
+        }),
+      ),
+    ).rejects.toThrow('boom');
+
+    // The failed dispatch must not have left the event marked processed —
+    // otherwise Stripe's retry would be silently dropped.
+    const { rows } = await pool.query(
+      `SELECT event_id FROM processed_stripe_events WHERE event_id = 'evt_fail'`,
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('rejects a second onetime entitlement row for the same user (partial unique index)', async () => {
+    const userId = await seedUser(pool, 'cus_dupe');
+    await handleStripeEvent(pool, event('evt_dupe1', 'checkout.session.completed',
+      { mode: 'payment', customer: 'cus_dupe', payment_intent: 'pi_dupe1' }));
+
+    await expect(
+      pool.query(
+        `INSERT INTO entitlements (id, user_id, plan, status, updates_until)
+         VALUES ('ent_dupe_manual', $1, 'onetime', 'active', now() + interval '1 year')`,
+        [userId],
+      ),
+    ).rejects.toThrow();
+  });
 });
