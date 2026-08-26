@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "migrate": "tsx src/migrate-cli.ts",
+    "stripe:bootstrap": "tsx scripts/bootstrap-stripe.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -17,7 +18,9 @@
   },
   "dependencies": {
     "fastify": "^5.2.0",
+    "fastify-raw-body": "^5.0.0",
     "pg": "^8.13.1",
+    "stripe": "^17.5.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
