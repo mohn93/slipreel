@@ -58,3 +58,40 @@ npm run build && node dist/server.js
 ## Env vars
 See `.env.example`. `DATABASE_URL` is required; `PORT` (8080) and `LOG_LEVEL`
 (info) have defaults.
+
+## Stripe (test mode)
+
+All of this is test mode (`sk_test_…`). Nothing here touches live mode.
+
+1. Put your test secret key in `server/.env` as `STRIPE_SECRET_KEY=sk_test_...`.
+2. Create the products/prices (idempotent) and copy the printed ids into `.env`:
+   ```bash
+   env $(grep -v '^#' .env | xargs) npm run stripe:bootstrap
+   ```
+3. Forward webhooks to the local server and copy the `whsec_...` it prints into
+   `.env` as `STRIPE_WEBHOOK_SECRET`:
+   ```bash
+   stripe listen --forward-to localhost:8080/v1/stripe/webhook
+   ```
+4. Start the server (`npm run dev`) — with the Stripe env set it enables
+   `/v1/checkout`, `/v1/portal`, and `/v1/stripe/webhook`. Without it, the
+   server logs "billing disabled" and serves only the base routes.
+5. Exercise it:
+   - Create a checkout session:
+     ```bash
+     curl -s localhost:8080/v1/checkout \
+       -H 'content-type: application/json' \
+       -d '{"email":"you@example.com","plan":"yearly"}'
+     ```
+     Open the returned `url`, pay with test card `4242 4242 4242 4242` (any
+     future expiry / CVC). Decline testing: `4000 0000 0000 0002`.
+   - Or drive the webhook directly:
+     ```bash
+     stripe trigger checkout.session.completed
+     stripe trigger customer.subscription.deleted
+     ```
+   Then check the DB: `psql "$DATABASE_URL" -c 'select plan,status,updates_until,current_period_end from entitlements'`.
+
+Notes: the webhook verifies Stripe's signature over the raw body and is
+idempotent (re-delivered events are no-ops). `stripe login` (once) is required
+before `stripe listen`/`stripe trigger`.

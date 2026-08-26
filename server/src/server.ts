@@ -2,14 +2,35 @@ import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { runMigrations } from './migrate.js';
 import { buildApp } from './app.js';
+import { loadBillingConfig } from './billing/config.js';
+import { createStripeClient } from './billing/stripe.js';
 
 const config = loadConfig();
 const pool = createPool(config);
 
+// Billing is optional at boot: if the Stripe env isn't set, start without the
+// billing routes (only /health etc.) rather than crashing. This keeps a keyless
+// dev box working while a fully-configured box gets checkout/portal/webhook.
+let stripe;
+let billing;
+try {
+  billing = loadBillingConfig();
+  stripe = createStripeClient(billing.secretKey);
+} catch (err) {
+  billing = undefined;
+  stripe = undefined;
+}
+
 const app = buildApp({
   pool,
+  stripe,
+  billing,
   logger: { level: config.logLevel },
 });
+
+if (!billing) {
+  app.log.warn('billing disabled: Stripe env not fully configured (set STRIPE_* to enable checkout/webhook)');
+}
 
 async function start(): Promise<void> {
   const applied = await runMigrations(pool);
