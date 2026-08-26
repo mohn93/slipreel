@@ -37,6 +37,7 @@ const app = buildApp({
   stripe,
   billing,
   tokenSigner,
+  corsOrigins: config.corsOrigins,
   logger: { level: config.logLevel },
 });
 

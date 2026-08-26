@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import rawBody from 'fastify-raw-body';
 import cookie from '@fastify/cookie';
+import cors from '@fastify/cors';
 import type pg from 'pg';
 import type Stripe from 'stripe';
 import { healthRoutes } from './routes/health.js';
@@ -29,6 +30,7 @@ export type AppDeps = {
   stripe?: Stripe;
   billing?: BillingConfig;
   tokenSigner?: TokenSigner;
+  corsOrigins?: string[];
 };
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -37,6 +39,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     // Trust X-Forwarded-* only from the co-located nginx on loopback.
     trustProxy: 'loopback',
   });
+
+  if (deps.corsOrigins && deps.corsOrigins.length > 0) {
+    app.register(cors, { origin: deps.corsOrigins, credentials: true });
+  }
 
   app.decorate('pool', deps.pool);
   app.register(healthRoutes);

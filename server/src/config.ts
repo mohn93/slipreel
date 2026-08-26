@@ -8,6 +8,7 @@ const schema = z.object({
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  CORS_ORIGINS: z.string().default('https://slipreel.app'),
 });
 
 export type Config = {
@@ -16,6 +17,7 @@ export type Config = {
   host: string;
   databaseUrl: string;
   logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
+  corsOrigins: string[];
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -33,5 +35,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: e.HOST,
     databaseUrl: e.DATABASE_URL,
     logLevel: e.LOG_LEVEL,
+    corsOrigins: e.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
   };
 }
