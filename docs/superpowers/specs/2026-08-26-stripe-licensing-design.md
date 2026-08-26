@@ -117,11 +117,17 @@ from the release pipeline) so the one-time version-ceiling check needs no networ
 Base: `https://api.slipreel.app`. JSON. Auth via HttpOnly session cookie (web) and a
 device-scoped refresh token (app). Rate-limited; all Stripe secrets server-side only.
 
-Auth / account:
-- `POST /v1/auth/signup` — email + password (argon2id), email verification.
-- `POST /v1/auth/login` — sets session cookie.
+Auth / account (PASSWORDLESS — revised 2026-08-26; supersedes the earlier
+email+password design. See the Phase 3 plan
+docs/superpowers/plans/2026-08-26-entitlement-tokens-and-auth.md):
+- `POST /v1/auth/session-from-checkout` — `{ checkout_session_id }`. Reuses a
+  completed Stripe Checkout session to log the buyer in (no password); sets an
+  HttpOnly session cookie.
+- `POST /v1/auth/magic-link` — `{ email }`. Issues a single-use sign-in link
+  (email delivery via a provider TBD; stubbed for the test phase).
+  `POST /v1/auth/magic-link/verify` — `{ token }` → sets the session cookie.
 - `POST /v1/auth/logout`.
-- `POST /v1/auth/password-reset` (request + confirm).
+- (No password signup/login/reset; `users.password_hash` stays nullable/unused.)
 
 Purchase:
 - `POST /v1/checkout` — body `{ price_id, device_id?, state? }` → creates Stripe
