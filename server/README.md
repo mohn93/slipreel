@@ -123,3 +123,22 @@ Endpoints:
 Token claims: `sub, iss, iat, exp` (~14d), `plan` (subscription|onetime|free),
 `export`, `status`, `updates_until`, `device_id`, `seat_limit`. The private key is
 env-only; never commit it and never reuse the Sparkle key.
+
+## Web flow (Phase 4a — backend)
+
+The marketing site (`slipreel.app`) calls the API (`api.slipreel.app`) with credentials.
+Backend support:
+- **CORS** — `CORS_ORIGINS` (comma-separated) allows those origins with credentials.
+- **Email** — magic links are sent via Resend when `RESEND_API_KEY` is set; otherwise
+  they are logged and (non-production only) returned as `debug_token`. Verify the
+  `slipreel.app` sender domain in Resend before real sends.
+- **Single-use login** — `session-from-checkout` consumes the checkout session
+  (a leaked `checkout_session_id` works at most once, within 30 minutes).
+- **Device/state threading** — `POST /v1/checkout` accepts `device`, `device_name`,
+  `state`; they ride in the Stripe session metadata and are returned by
+  `session-from-checkout`. `POST /v1/auth/magic-link` accepts the same and returns
+  them from `.../verify`, so the web pages can mint a device token and deep-link back.
+- **Rate limits** — magic-link 5/min, checkout + session-from-checkout 20/min per IP
+  (in-memory; single-instance).
+
+The static pages that drive this flow are Phase 4b.
