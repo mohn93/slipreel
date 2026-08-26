@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16
+    container_name: slipreel-db
+    environment:
+      POSTGRES_USER: slipreel
+      POSTGRES_PASSWORD: slipreel
+      POSTGRES_DB: slipreel
+    ports:
+      - "5433:5432"
+    volumes:
+      - slipreel_pgdata:/var/lib/postgresql/data
+      - ./initdb.d:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slipreel -d slipreel"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  slipreel_pgdata:
