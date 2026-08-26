@@ -42,17 +42,40 @@ function mountTheater() {
   const theater = document.querySelector('[data-theater]');
   if (!theater) return;
   const beats = [...theater.querySelectorAll('[data-beat]')];
-  const imgs = [...theater.querySelectorAll('[data-beat-img]')];
-  if (!beats.length || !imgs.length) return;
+  const media = [...theater.querySelectorAll('[data-beat-img]')];
+  if (!beats.length || !media.length) return;
 
+  // The five beat illustrations are muted <video> loops. Only the active beat
+  // -- the one the observer has scrolled to -- plays, and only while the
+  // theater is on screen, so at most one video ever decodes at a time.
+  // prefers-reduced-motion pauses all of them and leaves the poster frames
+  // showing, matching how the rest of the section gates motion.
+  const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
   let active = -1;
+  let inView = false;
+
+  const syncPlayback = () => {
+    const play = inView && !reduceMQ.matches;
+    media.forEach((v) => {
+      if (typeof v.play !== 'function') return;
+      if (play && +v.dataset.beatImg === active) v.play().catch(() => {});
+      else v.pause();
+    });
+  };
+
   const setActive = (n) => {
     if (n === active) return;
     active = n;
-    imgs.forEach((img) => img.classList.toggle('is-active', +img.dataset.beatImg === n));
+    media.forEach((v) => v.classList.toggle('is-active', +v.dataset.beatImg === n));
     beats.forEach((b) => b.classList.toggle('is-active', +b.dataset.beat === n));
+    // Restart the newly-active clip so each beat plays from its start when you
+    // scroll to it.
+    const el = media.find((v) => +v.dataset.beatImg === n);
+    if (el) { try { el.currentTime = 0; } catch { /* not ready yet */ } }
+    syncPlayback();
   };
 
+  // Which beat is active: the copy block nearest the middle of the viewport.
   const io = new IntersectionObserver(
     (entries) => {
       const visible = entries.filter((e) => e.isIntersecting);
@@ -63,6 +86,15 @@ function mountTheater() {
     { rootMargin: '-45% 0px -45% 0px', threshold: [0, 0.5, 1] },
   );
   beats.forEach((b) => io.observe(b));
+
+  // Play only while the theater itself is on screen.
+  const visObserver = new IntersectionObserver(
+    (entries) => { inView = entries.some((e) => e.isIntersecting); syncPlayback(); },
+    { threshold: 0 },
+  );
+  visObserver.observe(theater);
+
+  reduceMQ.addEventListener('change', syncPlayback);
   setActive(0);
 }
 
