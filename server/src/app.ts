@@ -4,6 +4,7 @@ import type pg from 'pg';
 import type Stripe from 'stripe';
 import { healthRoutes } from './routes/health.js';
 import { stripeWebhookRoutes } from './routes/stripe-webhook.js';
+import { billingRoutes } from './routes/billing.js';
 import type { BillingConfig } from './billing/config.js';
 
 declare module 'fastify' {
@@ -39,6 +40,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     // Raw body needed so the webhook can verify Stripe's signature over bytes.
     app.register(rawBody, { field: 'rawBody', global: false, encoding: 'utf8', runFirst: true });
     app.register(stripeWebhookRoutes);
+    app.register(billingRoutes);
   }
 
   return app;
