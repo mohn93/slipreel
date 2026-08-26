@@ -104,6 +104,15 @@ describe('billing routes', () => {
     await app.close();
   });
 
+  it('POST /v1/checkout rejects an oversized state value with 400', async () => {
+    const { stripe } = fakeStripe();
+    const app = await make(stripe);
+    const res = await app.inject({ method: 'POST', url: '/v1/checkout',
+      payload: { email: 'h@example.com', plan: 'yearly', state: 'x'.repeat(1000) } });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
   it('checkout forwards device/state into the session metadata', async () => {
     const { stripe, calls } = fakeStripe();
     const app = await make(stripe);

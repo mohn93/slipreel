@@ -6,16 +6,16 @@ import { setSessionCookie } from '../auth/cookie.js';
 
 const requestBody = z.object({
   email: z.string().email(),
-  device: z.string().optional(),
-  device_name: z.string().optional(),
-  state: z.string().optional(),
+  device: z.string().max(200).optional(),
+  device_name: z.string().max(120).optional(),
+  state: z.string().max(200).optional(),
 });
 const verifyBody = z.object({ token: z.string().min(1) });
 
 export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
-  // Request a sign-in link. Always 200 (don't leak which emails exist).
-  // Email delivery is stubbed: the link is logged, and the token is returned
-  // ONLY in non-production so the flow is testable until a provider is wired.
+  // Request a sign-in link. Sends it via the injected email sender when
+  // configured; always returns 200 (no email-existence leak); in
+  // non-production the token is also returned as debug_token.
   app.post('/v1/auth/magic-link', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = requestBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid request' });

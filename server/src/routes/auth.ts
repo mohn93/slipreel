@@ -24,16 +24,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: 'checkout session expired' });
     }
 
-    // Single-use: claim the session id so a leaked checkout_session_id cannot be
-    // replayed to log in a second time.
-    const claim = await app.pool.query(
-      'INSERT INTO consumed_checkout_sessions (session_id) VALUES ($1) ON CONFLICT DO NOTHING RETURNING session_id',
-      [parsed.data.checkout_session_id],
-    );
-    if (claim.rowCount === 0) {
-      return reply.code(409).send({ error: 'checkout session already used' });
-    }
-
     const customer = typeof cs.customer === 'string' ? cs.customer : cs.customer?.id;
     if (!customer) return reply.code(400).send({ error: 'no customer on session' });
 
@@ -43,6 +33,19 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     );
     const user = rows[0];
     if (!user) return reply.code(404).send({ error: 'no user for customer' });
+
+    // Single-use: claim the session id so a leaked checkout_session_id cannot be
+    // replayed to log in a second time. Claimed only once we know the login will
+    // succeed, so a race against the webhook that creates the user (success page
+    // loads before checkout.session.completed lands) doesn't permanently burn the
+    // session id on a retryable 404.
+    const claim = await app.pool.query(
+      'INSERT INTO consumed_checkout_sessions (session_id) VALUES ($1) ON CONFLICT DO NOTHING RETURNING session_id',
+      [parsed.data.checkout_session_id],
+    );
+    if (claim.rowCount === 0) {
+      return reply.code(409).send({ error: 'checkout session already used' });
+    }
 
     const { token, expiresAt } = await createSession(app.pool, user.id);
     setSessionCookie(reply, token, expiresAt);

@@ -74,6 +74,23 @@ describe('auth routes', () => {
     await app.close();
   });
 
+  it('does not burn the checkout session id on a 404 (user not yet created)', async () => {
+    const { app } = await makeLicensingApp(pool, {
+      session: { status: 'complete', customer: 'cus_missing', created: Math.floor(Date.now() / 1000) },
+    });
+    const first = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
+      payload: { checkout_session_id: 'cs_race' } });
+    expect(first.statusCode).toBe(404);
+
+    await pool.query("INSERT INTO users (id, email, stripe_customer_id) VALUES ('u_race','race@e.com','cus_missing')");
+
+    const second = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
+      payload: { checkout_session_id: 'cs_race' } });
+    expect(second.statusCode).toBe(200);
+    expect(second.json().user).toEqual({ id: 'u_race', email: 'race@e.com' });
+    await app.close();
+  });
+
   it('logout requires a session (401 without cookie) and clears it with one', async () => {
     const { app } = await makeLicensingApp(pool, {
       session: { status: 'complete', customer: 'cus_c', created: Math.floor(Date.now() / 1000) },

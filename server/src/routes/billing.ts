@@ -5,9 +5,9 @@ import { findOrCreateUserByEmail } from '../billing/customers.js';
 const checkoutBody = z.object({
   email: z.string().email(),
   plan: z.enum(['monthly', 'yearly', 'onetime']),
-  device: z.string().optional(),
-  device_name: z.string().optional(),
-  state: z.string().optional(),
+  device: z.string().max(200).optional(),
+  device_name: z.string().max(120).optional(),
+  state: z.string().max(200).optional(),
 });
 const portalBody = z.object({ email: z.string().email() });
 
