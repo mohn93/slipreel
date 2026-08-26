@@ -6,6 +6,8 @@ import { loadBillingConfig } from './billing/config.js';
 import { createStripeClient } from './billing/stripe.js';
 import { loadTokenConfig } from './tokens/config.js';
 import { createTokenSigner } from './tokens/signer.js';
+import { loadEmailConfig } from './email/config.js';
+import { createResendSender } from './email/resend.js';
 
 const config = loadConfig();
 const pool = createPool(config);
@@ -32,11 +34,21 @@ try {
   tokenSigner = undefined;
 }
 
+// Email delivery (magic-link sends) is optional at boot too: if RESEND_API_KEY
+// isn't set, start without a sender — magic links are logged instead of sent.
+let email;
+try {
+  email = createResendSender(loadEmailConfig());
+} catch (err) {
+  email = undefined;
+}
+
 const app = buildApp({
   pool,
   stripe,
   billing,
   tokenSigner,
+  email,
   corsOrigins: config.corsOrigins,
   logger: { level: config.logLevel },
 });
@@ -48,6 +60,8 @@ if (!billing) {
 if (!tokenSigner) {
   app.log.warn('licensing disabled: entitlement keys not set (set ENTITLEMENT_ED25519_* to enable /v1/token, /v1/auth/*)');
 }
+
+if (!email) app.log.warn('email delivery disabled: RESEND_API_KEY not set (magic links log only)');
 
 async function start(): Promise<void> {
   const applied = await runMigrations(pool);

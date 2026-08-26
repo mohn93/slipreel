@@ -16,6 +16,7 @@ export type BillingConfig = {
   successUrl: string;
   cancelUrl: string;
   portalReturnUrl: string;
+  siteUrl: string;
 };
 
 export function loadBillingConfig(env: NodeJS.ProcessEnv = process.env): BillingConfig {
@@ -35,5 +36,6 @@ export function loadBillingConfig(env: NodeJS.ProcessEnv = process.env): Billing
     successUrl: `${site}/success?session_id={CHECKOUT_SESSION_ID}`,
     cancelUrl: `${site}/pricing`,
     portalReturnUrl: `${site}/account`,
+    siteUrl: site,
   };
 }

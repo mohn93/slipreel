@@ -31,14 +31,14 @@ const billing: BillingConfig = {
  */
 export async function makeLicensingApp(
   pool: pg.Pool,
-  opts: { session?: unknown } = {},
-): Promise<{ app: FastifyInstance; signer: TokenSigner; stripeState: { session: unknown } }> {
+  opts: { session?: unknown; email?: import('../../src/email/sender.js').EmailSender } = {},
+): Promise<{ app: FastifyInstance; signer: TokenSigner; stripeState: { session: unknown }; email?: import('../../src/email/sender.js').EmailSender }> {
   const signer = await makeTestSigner();
   const stripeState: { session: unknown } = { session: opts.session ?? null };
   const stripe = {
     checkout: { sessions: { retrieve: async (_id: string) => stripeState.session } },
   } as unknown as Stripe;
-  const app = buildApp({ pool, stripe, billing, tokenSigner: signer, logger: false });
+  const app = buildApp({ pool, stripe, billing, tokenSigner: signer, email: opts.email, logger: false });
   await app.ready();
-  return { app, signer, stripeState };
+  return { app, signer, stripeState, email: opts.email };
 }

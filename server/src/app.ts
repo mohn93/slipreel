@@ -14,6 +14,7 @@ import { deviceRoutes } from './routes/devices.js';
 import { entitlementPubkeyRoutes } from './routes/entitlement-pubkey.js';
 import type { BillingConfig } from './billing/config.js';
 import type { TokenSigner } from './tokens/signer.js';
+import type { EmailSender } from './email/sender.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -21,6 +22,7 @@ declare module 'fastify' {
     stripe: Stripe;
     billing: BillingConfig;
     tokenSigner: TokenSigner;
+    email?: EmailSender;
   }
 }
 
@@ -30,6 +32,7 @@ export type AppDeps = {
   stripe?: Stripe;
   billing?: BillingConfig;
   tokenSigner?: TokenSigner;
+  email?: EmailSender;
   corsOrigins?: string[];
 };
 
@@ -61,6 +64,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // Licensing (auth + tokens) is optional: registered only when a token signer
   // is provided (alongside stripe+billing, which session-from-checkout needs).
   if (deps.tokenSigner && deps.stripe && deps.billing) {
+    if (deps.email) app.decorate('email', deps.email);
     app.decorate('tokenSigner', deps.tokenSigner);
     app.register(cookie);
     app.register(authRoutes);

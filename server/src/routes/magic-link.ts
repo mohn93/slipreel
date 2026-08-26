@@ -22,7 +22,16 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
     const user = rows[0];
     if (user) {
       const { token } = await createMagicLink(app.pool, user.id);
-      app.log.info({ email: parsed.data.email }, 'magic link issued (email delivery stubbed)');
+      const link = `${app.billing.siteUrl}/login?token=${token}`;
+      if (app.email) {
+        try {
+          await app.email.sendMagicLink(parsed.data.email, link);
+        } catch (err) {
+          app.log.error({ err }, 'magic link email send failed');
+        }
+      } else {
+        app.log.info({ email: parsed.data.email }, 'magic link issued (email delivery not configured)');
+      }
       if (process.env.NODE_ENV !== 'production') {
         return reply.send({ sent: true, debug_token: token });
       }

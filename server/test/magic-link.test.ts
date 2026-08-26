@@ -51,4 +51,26 @@ describe('magic link', () => {
     expect(res.statusCode).toBe(401);
     await app.close();
   });
+
+  it('sends the magic-link email via the injected sender', async () => {
+    const sent: Array<{ to: string; link: string }> = [];
+    const email = { sendMagicLink: async (to: string, link: string) => { sent.push({ to, link }); } };
+    const { app } = await makeLicensingApp(pool, { email });
+    const res = await app.inject({ method: 'POST', url: '/v1/auth/magic-link', payload: { email: 'm@e.com' } });
+    expect(res.statusCode).toBe(200);
+    const token = res.json().debug_token as string;
+    expect(sent).toHaveLength(1);
+    expect(sent[0].to).toBe('m@e.com');
+    expect(sent[0].link).toContain(`/login?token=${token}`);
+    await app.close();
+  });
+
+  it('unknown email does not send', async () => {
+    const sent: string[] = [];
+    const email = { sendMagicLink: async (to: string) => { sent.push(to); } };
+    const { app } = await makeLicensingApp(pool, { email });
+    await app.inject({ method: 'POST', url: '/v1/auth/magic-link', payload: { email: 'nobody@e.com' } });
+    expect(sent).toHaveLength(0);
+    await app.close();
+  });
 });
