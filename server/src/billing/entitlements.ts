@@ -123,7 +123,15 @@ async function upsertSubscription(
   sub: Stripe.Subscription,
 ): Promise<void> {
   const status = mapSubscriptionStatus(sub.status);
-  const periodEnd = new Date(sub.current_period_end * 1000);
+  // Webhook payloads are rendered at the connected account's API version, not
+  // the SDK's pinned default — accounts on API version 2025-03-31.basil or
+  // later omit the top-level current_period_end and carry it on the first
+  // subscription item instead. Read both shapes defensively; a missing value
+  // becomes null (the column is nullable) rather than an Invalid Date that
+  // would throw on write.
+  const rawEnd =
+    (sub as any).current_period_end ?? (sub as any).items?.data?.[0]?.current_period_end;
+  const periodEnd = typeof rawEnd === 'number' ? new Date(rawEnd * 1000) : null;
   await client.query(
     `INSERT INTO entitlements
        (id, user_id, plan, status, stripe_subscription_id, current_period_end)

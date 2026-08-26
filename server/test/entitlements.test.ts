@@ -96,6 +96,26 @@ describe('handleStripeEvent', () => {
     expect(Math.abs(new Date(rows[0].current_period_end).getTime() - periodEnd * 1000)).toBeLessThan(2000);
   });
 
+  it('subscription.created reads current_period_end from items when the top-level field is absent (basil shape)', async () => {
+    await seedUser(pool, 'cus_sub_basil');
+    const periodEnd = Math.floor(Date.now() / 1000) + 30 * 86_400;
+    await handleStripeEvent(pool, event('evt_s1_basil', 'customer.subscription.created', {
+      id: 'sub_basil_1',
+      customer: 'cus_sub_basil',
+      status: 'active',
+      // No top-level current_period_end — matches API version
+      // 2025-03-31.basil and later, where it moved onto the item.
+      items: { data: [{ current_period_end: periodEnd }] },
+    }));
+    const { rows } = await pool.query(
+      `SELECT plan, status, stripe_subscription_id, current_period_end
+       FROM entitlements WHERE stripe_subscription_id = 'sub_basil_1'`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].plan).toBe('subscription');
+    expect(rows[0].status).toBe('active');
+    expect(Math.abs(new Date(rows[0].current_period_end).getTime() - periodEnd * 1000)).toBeLessThan(2000);
+  });
+
   it('subscription.updated to past_due moves status to grace (no duplicate row)', async () => {
     await seedUser(pool, 'cus_sub');
     const pe = Math.floor(Date.now() / 1000) + 30 * 86_400;
