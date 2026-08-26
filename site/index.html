@@ -133,10 +133,11 @@
 
       <article class="theater__beat reveal" data-beat="2">
         <p class="theater__step" aria-hidden="true">03</p>
-        <h2>Put it in a frame worth looking at</h2>
+        <h2>Frame it for any screen</h2>
         <p class="theater__copy">
-          Drop your recording into a real device bezel, pick a wallpaper, set any
-          aspect ratio. Preview matches export exactly.
+          Wrap your recording in a real Mac, iPhone, or iPad bezel, drop it on any
+          background, and dial in padding, corners, and aspect ratio. What you
+          preview is exactly what exports.
         </p>
       </article>
 
@@ -162,21 +163,41 @@
     </div>
 
     <figure class="theater__visual" data-theater-visual>
-      <img class="theater__img" data-beat-img="0"
-           src="assets/img/beat-zoom.webp" width="1600" height="1000" decoding="async"
-           alt="The Slipreel editor with an automatic zoom pushed in on a click, and the zoom lane visible on the timeline.">
-      <img class="theater__img" data-beat-img="1"
-           src="assets/img/beat-cursor.webp" width="1600" height="1000" loading="lazy" decoding="async"
-           alt="A recording playing back with Slipreel's smoothed cursor path and a highlighted click.">
-      <img class="theater__img" data-beat-img="2"
-           src="assets/img/beat-frames.webp" width="1600" height="1000" loading="lazy" decoding="async"
-           alt="A recording placed in a MacBook bezel over a wallpaper, with the aspect ratio picker open.">
-      <img class="theater__img" data-beat-img="3"
-           src="assets/img/beat-keystrokes.webp" width="1600" height="1000" loading="lazy" decoding="async"
-           alt="The keystroke overlay drawn over a recording, with its editable lane on the timeline.">
-      <img class="theater__img" data-beat-img="4"
-           src="assets/img/beat-captions.webp" width="1600" height="1000" loading="lazy" decoding="async"
-           alt="Captions burned over a recording, with the caption text open for editing in the inspector.">
+      <video class="theater__img" data-beat-img="0"
+             poster="assets/img/beat-zoom-poster.webp" width="1280" height="720"
+             muted loop playsinline preload="none"
+             aria-label="The Slipreel editor with automatic zoom regions on the timeline and the preview pushing in on a click.">
+        <source src="assets/video/beat-zoom.webm" type="video/webm">
+        <source src="assets/video/beat-zoom.mp4" type="video/mp4">
+      </video>
+      <video class="theater__img" data-beat-img="1"
+             poster="assets/img/beat-cursor-poster.webp" width="1280" height="720"
+             muted loop playsinline preload="none"
+             aria-label="The Slipreel editor with the cursor animation style set to Smooth, playing back a smoothed cursor path.">
+        <source src="assets/video/beat-cursor.webm" type="video/webm">
+        <source src="assets/video/beat-cursor.mp4" type="video/mp4">
+      </video>
+      <video class="theater__img" data-beat-img="2"
+             poster="assets/img/beat-frames-poster.webp" width="1280" height="720"
+             muted loop playsinline preload="none"
+             aria-label="The Slipreel editor wrapping a mobile recording in an iPhone device frame over a background.">
+        <source src="assets/video/beat-frames.webm" type="video/webm">
+        <source src="assets/video/beat-frames.mp4" type="video/mp4">
+      </video>
+      <video class="theater__img" data-beat-img="3"
+             poster="assets/img/beat-keystrokes-poster.webp" width="1280" height="720"
+             muted loop playsinline preload="none"
+             aria-label="The Slipreel editor showing keystroke overlays on the preview and a keystroke lane on the timeline.">
+        <source src="assets/video/beat-keystrokes.webm" type="video/webm">
+        <source src="assets/video/beat-keystrokes.mp4" type="video/mp4">
+      </video>
+      <video class="theater__img" data-beat-img="4"
+             poster="assets/img/beat-captions-poster.webp" width="1280" height="720"
+             muted loop playsinline preload="none"
+             aria-label="The Slipreel editor with captions burned into the preview and the transcript open for editing.">
+        <source src="assets/video/beat-captions.webm" type="video/webm">
+        <source src="assets/video/beat-captions.mp4" type="video/mp4">
+      </video>
     </figure>
   </div>
 </section>

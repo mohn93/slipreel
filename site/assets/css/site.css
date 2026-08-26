@@ -784,6 +784,7 @@ a {
 
 /* The shots. In the stacked state each one is its own framed card. */
 .theater__img {
+  display: block;
   width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
