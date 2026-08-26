@@ -68,4 +68,14 @@ describe('resolveEffectiveEntitlement', () => {
     const e = await resolveEffectiveEntitlement(pool, 'u_co');
     expect(e.plan).toBe('free'); expect(e.export).toBe(false);
   });
+
+  it('a canceled one-time row (no subscription) does not grant export', async () => {
+    await seedUser(pool, 'u_ot_canceled');
+    await pool.query(
+      `INSERT INTO entitlements (id, user_id, plan, status, updates_until)
+       VALUES ($1, $2, 'onetime', 'canceled', now() + interval '200 days')`,
+      ['ent_u_ot_canceled_o', 'u_ot_canceled']);
+    const e = await resolveEffectiveEntitlement(pool, 'u_ot_canceled');
+    expect(e).toEqual({ plan: 'free', status: 'none', updatesUntil: null, export: false });
+  });
 });

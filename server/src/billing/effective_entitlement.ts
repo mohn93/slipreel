@@ -30,7 +30,7 @@ export async function resolveEffectiveEntitlement(
     return { plan: 'subscription', status: sub.status as 'active' | 'grace', updatesUntil: null, export: true };
   }
 
-  const onetime = rows.find((r) => r.plan === 'onetime');
+  const onetime = rows.find((r) => r.plan === 'onetime' && r.status === 'active');
   if (onetime) {
     return {
       plan: 'onetime',

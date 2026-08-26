@@ -15,6 +15,16 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const cs = await app.stripe.checkout.sessions.retrieve(parsed.data.checkout_session_id);
     if (cs.status !== 'complete') return reply.code(400).send({ error: 'checkout not complete' });
 
+    // Freshness window: a checkout_session_id can leak via the success URL, browser
+    // history, or logs, and would otherwise be replayable to log in as the buyer
+    // indefinitely. Reject stale sessions. Full single-use consumption of the
+    // checkout session and binding it to a `state` nonce are deferred to the
+    // web-pages phase, where the redirect flow that carries this id is built.
+    const MAX_AGE_S = 30 * 60;
+    if (typeof cs.created === 'number' && Date.now() / 1000 - cs.created > MAX_AGE_S) {
+      return reply.code(400).send({ error: 'checkout session expired' });
+    }
+
     const customer = typeof cs.customer === 'string' ? cs.customer : cs.customer?.id;
     if (!customer) return reply.code(400).send({ error: 'no customer on session' });
 

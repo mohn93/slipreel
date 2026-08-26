@@ -15,7 +15,7 @@ describe('auth routes', () => {
 
   it('session-from-checkout on a complete session sets a cookie and returns the user', async () => {
     const { app } = await makeLicensingApp(pool, {
-      session: { status: 'complete', customer: 'cus_c' },
+      session: { status: 'complete', customer: 'cus_c', created: Math.floor(Date.now() / 1000) },
     });
     const res = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
       payload: { checkout_session_id: 'cs_1' } });
@@ -41,8 +41,20 @@ describe('auth routes', () => {
     await app.close();
   });
 
+  it('rejects a stale checkout session (created over 30 minutes ago) with 400', async () => {
+    const { app } = await makeLicensingApp(pool, {
+      session: { status: 'complete', customer: 'cus_c', created: Math.floor(Date.now() / 1000) - 3600 },
+    });
+    const res = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
+      payload: { checkout_session_id: 'cs_stale' } });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
   it('logout requires a session (401 without cookie) and clears it with one', async () => {
-    const { app } = await makeLicensingApp(pool, { session: { status: 'complete', customer: 'cus_c' } });
+    const { app } = await makeLicensingApp(pool, {
+      session: { status: 'complete', customer: 'cus_c', created: Math.floor(Date.now() / 1000) },
+    });
     // no cookie -> 401
     const no = await app.inject({ method: 'POST', url: '/v1/auth/logout' });
     expect(no.statusCode).toBe(401);

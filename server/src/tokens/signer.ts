@@ -34,7 +34,7 @@ export async function createTokenSigner(config: TokenConfig): Promise<TokenSigne
         .sign(privateKey);
     },
     async verify(jwt) {
-      const { payload } = await jwtVerify(jwt, publicKey, { issuer: config.issuer });
+      const { payload } = await jwtVerify(jwt, publicKey, { issuer: config.issuer, algorithms: ['EdDSA'] });
       return payload;
     },
   };
