@@ -1,0 +1,24 @@
+[Unit]
+Description=Slipreel API
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=slipreel-api
+Group=slipreel-api
+WorkingDirectory=/opt/slipreel-api
+# Secrets and DATABASE_URL live here, root-owned 0600, never in git.
+EnvironmentFile=/etc/slipreel-api.env
+ExecStart=/usr/bin/node /opt/slipreel-api/dist/server.js
+Restart=always
+RestartSec=2
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/slipreel-api
+
+[Install]
+WantedBy=multi-user.target
