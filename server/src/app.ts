@@ -1,17 +1,21 @@
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import rawBody from 'fastify-raw-body';
+import cookie from '@fastify/cookie';
 import type pg from 'pg';
 import type Stripe from 'stripe';
 import { healthRoutes } from './routes/health.js';
 import { stripeWebhookRoutes } from './routes/stripe-webhook.js';
 import { billingRoutes } from './routes/billing.js';
+import { authRoutes } from './routes/auth.js';
 import type { BillingConfig } from './billing/config.js';
+import type { TokenSigner } from './tokens/signer.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
     pool: pg.Pool;
     stripe: Stripe;
     billing: BillingConfig;
+    tokenSigner: TokenSigner;
   }
 }
 
@@ -20,6 +24,7 @@ export type AppDeps = {
   logger?: FastifyServerOptions['logger'];
   stripe?: Stripe;
   billing?: BillingConfig;
+  tokenSigner?: TokenSigner;
 };
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -41,6 +46,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     app.register(rawBody, { field: 'rawBody', global: false, encoding: 'utf8', runFirst: true });
     app.register(stripeWebhookRoutes);
     app.register(billingRoutes);
+  }
+
+  // Licensing (auth + tokens) is optional: registered only when a token signer
+  // is provided (alongside stripe+billing, which session-from-checkout needs).
+  if (deps.tokenSigner && deps.stripe && deps.billing) {
+    app.decorate('tokenSigner', deps.tokenSigner);
+    app.register(cookie);
+    app.register(authRoutes);
   }
 
   return app;
