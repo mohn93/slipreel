@@ -62,3 +62,13 @@ packages/screen_recorder/lib/main_dev.dart
 
 # Local MCP server config (has absolute paths and targets the gitignored dev entry point)
 .mcp.json
+
+# Node backend (server/)
+server/node_modules/
+server/dist/
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
