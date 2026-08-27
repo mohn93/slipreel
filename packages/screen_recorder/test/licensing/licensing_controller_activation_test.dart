@@ -4,7 +4,6 @@ import 'package:screen_recorder/licensing/entitlement.dart';
 import 'package:screen_recorder/licensing/entitlement_claims.dart';
 import 'package:screen_recorder/licensing/entitlement_verifier.dart';
 import 'package:screen_recorder/licensing/auth_state_store.dart';
-import 'package:screen_recorder/licensing/device_fingerprint.dart';
 import 'package:screen_recorder/licensing/license_store.dart';
 import 'package:screen_recorder/licensing/licensing_api.dart';
 import 'package:screen_recorder/licensing/licensing_controller.dart';

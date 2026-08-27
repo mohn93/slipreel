@@ -96,7 +96,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
   }
 
   /// Start the browser purchase/sign-in flow. Generates a fresh nonce, then
-  /// opens ${site}/pricing?device=<fp>&state=<nonce>. Returns whether the
+  /// opens `${site}/pricing?device=<fp>&state=<nonce>`. Returns whether the
   /// browser launch was requested (false if url_launcher declined).
   Future<bool> unlockExport() async {
     final fp = await _fingerprint.compute();
