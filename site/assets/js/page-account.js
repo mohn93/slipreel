@@ -34,6 +34,7 @@ function renderDevices(devices) {
 }
 
 async function load() {
+  statusEl.className = 'status hidden';
   const r = await api.devices();
   if (r.status === 401) {
     sub.textContent = '';
@@ -51,6 +52,7 @@ async function load() {
 }
 
 document.getElementById('portal').addEventListener('click', async () => {
+  statusEl.className = 'status hidden';
   const email = /** @type {HTMLInputElement} */ (document.getElementById('email')).value.trim();
   if (!email) return err('Enter the email you purchased with.');
   const r = await api.portal(email);
