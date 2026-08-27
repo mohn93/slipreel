@@ -14,8 +14,10 @@ class _FakeController extends StateNotifier<EntitlementState>
   _FakeController() : super(const EntitlementSignedOut());
   int unlockCalls = 0;
   int signInCalls = 0;
+  bool throwOnUnlock = false;
   @override
   Future<bool> unlockExport() async {
+    if (throwOnUnlock) throw Exception('no hw id');
     unlockCalls++;
     return true;
   }
@@ -93,5 +95,21 @@ void main() {
     PaywallSheet.show(ctx, reason: PaywallReason.updateCeiling);
     await tester.pumpAndSettle();
     expect(find.textContaining('update'), findsWidgets);
+  });
+
+  testWidgets('a throwing unlock does not crash the sheet', (tester) async {
+    final c = _FakeController()..throwOnUnlock = true;
+    await tester.pumpWidget(_host(c, onOpen: () {}));
+    final ctx = tester.element(find.text('open'));
+    // ignore: unawaited_futures
+    PaywallSheet.show(ctx, reason: PaywallReason.needsPurchase);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Unlock export'));
+    await tester.pump(); // run the async catch
+    // Drain AppAlerts' auto-dismiss timer (6s for errors; no overlay is
+    // attached in this test host, so nothing else fires it) so the test
+    // doesn't end with a pending Timer.
+    await tester.pump(const Duration(seconds: 7));
+    expect(tester.takeException(), isNull); // the throw was caught, not propagated
   });
 }

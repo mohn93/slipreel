@@ -76,6 +76,10 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
       if (!ok && mounted) {
         AppAlerts.error('Could not open the browser. Try again.');
       }
+    } catch (_) {
+      if (mounted) {
+        AppAlerts.error('Could not start checkout on this device.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
