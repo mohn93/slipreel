@@ -24,6 +24,13 @@ class ExportCancelled extends ExportOutcome {
   const ExportCancelled();
 }
 
+/// Export was attempted without an active entitlement. A UI-level gate should
+/// have caught this first; this is the pipeline's fail-closed backstop so no
+/// path encodes unpaid.
+class ExportNotEntitled extends ExportOutcome {
+  const ExportNotEntitled();
+}
+
 /// Signature for running the chosen export pipeline. Injected so the widget
 /// passes a closure that builds the right `ExportPipeline`/`GifExportPipeline`
 /// and the test passes a fake.
@@ -35,18 +42,26 @@ typedef RunPipeline = Future<ExportPerfSummary> Function({
 /// Runs an export pipeline and delivers the output, returning a typed outcome.
 /// Contains NO UI — dialogs/snackbars stay in the widget.
 class ExportController {
-  ExportController({required this.runPipeline});
+  ExportController({
+    required this.runPipeline,
+    required this.isExportEntitled,
+  });
 
   final RunPipeline runPipeline;
+  final bool Function() isExportEntitled;
   final CancelToken cancelToken = CancelToken();
 
   /// Runs the pipeline (reporting progress), then delivers via [handler].
-  /// Returns [ExportSuccess], [ExportFailure], or [ExportCancelled].
+  /// Returns [ExportSuccess], [ExportFailure], [ExportCancelled], or
+  /// [ExportNotEntitled].
   Future<ExportOutcome> run({
     required String outputPath,
     required DestinationHandler handler,
     required void Function(double progress) onProgress,
   }) async {
+    if (!isExportEntitled()) {
+      return const ExportNotEntitled();
+    }
     try {
       final summary = await runPipeline(
         onProgress: onProgress,
