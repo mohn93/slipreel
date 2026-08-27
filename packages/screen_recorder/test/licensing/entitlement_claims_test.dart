@@ -30,6 +30,20 @@ void main() {
     expect(c.updatesUntil, DateTime.utc(2027, 8, 1));
   });
 
+  test('parses a bare-date updates_until as UTC', () {
+    final c = EntitlementClaims.fromJson({
+      'sub': 'u', 'iss': 'x', 'iat': 1750000000, 'exp': 1751209600,
+      'plan': 'onetime', 'export': true, 'status': 'active',
+      'updates_until': '2027-08-27', 'device_id': 'd', 'seat_limit': 2,
+    });
+    expect(c.updatesUntil!.isUtc, true);
+    // Compared via the same local->UTC conversion rather than a fixed
+    // DateTime.utc(2027, 8, 27) literal, so this test is not tied to the
+    // machine's local timezone offset (a bare date has no offset of its
+    // own, so DateTime.parse interprets it as local midnight first).
+    expect(c.updatesUntil, DateTime.parse('2027-08-27').toUtc());
+  });
+
   test('applies safe defaults for missing optional fields', () {
     final c = EntitlementClaims.fromJson({
       'sub': 'usr_3', 'iss': 'x', 'iat': 1750000000, 'exp': 1751209600, 'plan': 'free',

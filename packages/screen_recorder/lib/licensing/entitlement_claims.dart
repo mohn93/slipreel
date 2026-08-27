@@ -31,7 +31,7 @@ class EntitlementClaims {
       plan: json['plan'] as String,
       exportEntitled: json['export'] as bool? ?? false,
       status: json['status'] as String? ?? 'none',
-      updatesUntil: rawUntil == null ? null : DateTime.parse(rawUntil as String),
+      updatesUntil: rawUntil == null ? null : DateTime.parse(rawUntil as String).toUtc(),
       deviceId: json['device_id'] as String? ?? '',
       seatLimit: (json['seat_limit'] as num?)?.toInt() ?? 0,
       issuedAt: fromEpochSeconds(json['iat']),
