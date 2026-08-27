@@ -74,6 +74,11 @@ dependencies:
   # SHA-256 verification for downloaded whisper model binary.
   crypto: ^3.0.3
 
+  # Licensing: slipreel:// deep-link handling for the Stripe checkout return.
+  app_links: ^6.3.0
+  # Licensing: HTTP client for the licensing server API.
+  http: ^1.2.0
+
   # Injectable wall-clock so AppAlertsController's auto-dismiss timers stay
   # testable; imported directly in lib (depend_on_referenced_packages).
   clock: ^1.1.1

@@ -30,6 +30,17 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.slipreel.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>slipreel</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Slipreel needs microphone access to record narration alongside your screen.</string>
 	<key>NSCameraUsageDescription</key>
