@@ -114,20 +114,20 @@ git commit -m "feat(app): register slipreel:// scheme, add app_links + http deps
 - Consumes: nothing.
 - Produces:
   - `const List<int> kEntitlementPublicKey` (raw 32-byte Ed25519 key).
-  - `const DateTime buildReleaseDate` (UTC).
+  - `final DateTime buildReleaseDate` (UTC; `final` not `const` — see Step 3).
   - `class LicensingConfig` with `static const String apiBase`, `static const String siteBase`, `static String get apiBaseResolved` / `siteBaseResolved` (honor `--dart-define`).
 
 - [ ] **Step 1: Extract the raw public key bytes from the server key**
 
-The server's `ENTITLEMENT_ED25519_PUBLIC_KEY` (in `server/.env`) is base64 of the SPKI DER. For Ed25519 the SPKI DER is 44 bytes: a 12-byte prefix + the 32-byte raw key. Extract the raw 32 bytes:
+The server's `ENTITLEMENT_ED25519_PUBLIC_KEY` (in `server/.env`) is set by `server/scripts/gen-entitlement-keys.ts`, which does `Buffer.from(await exportSPKI(publicKey)).toString('base64')` — i.e. the value is base64 of the **PEM text** (`-----BEGIN PUBLIC KEY-----\n...`), NOT base64 of raw DER. So: outer-base64-decode → PEM text → inner-base64-decode the body → 44-byte SPKI DER (12-byte prefix `302a300506032b6570032100` + 32-byte raw key) → take the last 32 bytes.
 
 Run (from repo root):
 
 ```bash
-node -e 'const b=process.env.PK; if(!b){console.error("set PK");process.exit(1)} const d=Buffer.from(b,"base64"); const raw=d.subarray(d.length-32); console.log(JSON.stringify([...raw]))' PK="$(grep -E "^ENTITLEMENT_ED25519_PUBLIC_KEY=" server/.env | cut -d= -f2-)"
+node -e 'const b=process.env.PK; if(!b){console.error("set PK");process.exit(1)} const pem=Buffer.from(b,"base64").toString("utf8"); const body=pem.replace(/-----[^-]+-----/g,"").replace(/\s+/g,""); const der=Buffer.from(body,"base64"); console.log(JSON.stringify([...der.subarray(der.length-32)]))' PK="$(grep -E "^ENTITLEMENT_ED25519_PUBLIC_KEY=" server/.env | cut -d= -f2-)"
 ```
 
-Expected: prints a JSON array of 32 integers. If `server/.env` is absent locally, generate a throwaway keypair with `npm --prefix server run gen:entitlement-keys` and use its public line (this is TEST mode; the production key is baked at release time). Record which key was used.
+Expected: prints a JSON array of 32 integers. If `server/.env` is absent or lacks the key locally, generate a throwaway keypair with `npm --prefix server run gen:entitlement-keys` and use its printed public line (this is TEST mode; the production key is baked at release time). Record which key was used and the exact base64 you extracted from.
 
 - [ ] **Step 2: Write the baked key file**
 
@@ -154,11 +154,19 @@ Create `packages/screen_recorder/lib/licensing/build_release_date.g.dart`:
 // this build's release date against the token's `updates_until`. The release
 // pipeline overwrites this with the actual publish date; the checked-in value
 // is the date this build was cut.
-const DateTime buildReleaseDate = _buildReleaseDate;
-final DateTime _buildReleaseDate = DateTime.utc(2026, 8, 27);
+// A top-level `const DateTime` cannot call `DateTime.utc(...)` (not a const
+// constructor), so this is exposed as `final` instead.
+final DateTime buildReleaseDate = DateTime.utc(2026, 8, 27);
 ```
 
-Note: a top-level `const DateTime` cannot call `DateTime.utc(...)` (not a const constructor), so expose it via a `final`. Consumers read `buildReleaseDate`.
+Note: `buildReleaseDate` is `final`, not `const` (`DateTime.utc(...)` is not a const constructor). Consumers (Phase 6 export gate) must read it as a value, never in a `const` context.
+
+Also: the repo's blanket `*.g.dart` .gitignore rule will block committing the two baked files. Add negation exceptions (mirroring the existing `!packages/video_player_avfoundation/lib/src/messages.g.dart` precedent):
+
+```
+!packages/screen_recorder/lib/licensing/entitlement_public_key.g.dart
+!packages/screen_recorder/lib/licensing/build_release_date.g.dart
+```
 
 - [ ] **Step 4: Write the failing config test**
 
