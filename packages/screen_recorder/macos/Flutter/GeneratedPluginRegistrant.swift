@@ -7,6 +7,7 @@ import Foundation
 
 import auto_updater_macos
 import file_selector_macos
+import flutter_secure_storage_macos
 import package_info_plus
 import path_provider_foundation
 import screen_recorder_macos
@@ -17,6 +18,7 @@ import video_player_avfoundation
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   AutoUpdaterMacosPlugin.register(with: registry.registrar(forPlugin: "AutoUpdaterMacosPlugin"))
   FileSelectorPlugin.register(with: registry.registrar(forPlugin: "FileSelectorPlugin"))
+  FlutterSecureStoragePlugin.register(with: registry.registrar(forPlugin: "FlutterSecureStoragePlugin"))
   FPPPackageInfoPlusPlugin.register(with: registry.registrar(forPlugin: "FPPPackageInfoPlusPlugin"))
   PathProviderPlugin.register(with: registry.registrar(forPlugin: "PathProviderPlugin"))
   ScreenRecorderMacosPlugin.register(with: registry.registrar(forPlugin: "ScreenRecorderMacosPlugin"))
