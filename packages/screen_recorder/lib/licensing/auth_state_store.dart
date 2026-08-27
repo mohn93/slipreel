@@ -46,4 +46,17 @@ class AuthStateStore {
       queryParameters: {'device': deviceFingerprint, 'state': state},
     );
   }
+
+  /// `${siteBase}/login?device=<fp>&state=<nonce>` — the sign-in page for a
+  /// returning/already-purchased user (vs [pricingUrl] which shows plans).
+  Uri loginUrl({
+    required String deviceFingerprint,
+    required String state,
+  }) {
+    final base = Uri.parse(LicensingConfig.siteBaseResolved);
+    return base.replace(
+      path: '/login',
+      queryParameters: {'device': deviceFingerprint, 'state': state},
+    );
+  }
 }

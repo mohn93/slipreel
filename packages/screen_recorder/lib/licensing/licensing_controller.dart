@@ -105,6 +105,15 @@ class LicensingController extends StateNotifier<EntitlementState> {
     return _openUrl(url);
   }
 
+  /// Like [unlockExport] but opens the sign-in page instead of the plans page,
+  /// for a user who has already purchased (another device, or after sign-out).
+  Future<bool> openSignIn() async {
+    final fp = await _fingerprint.compute();
+    final nonce = await _authState.begin();
+    final url = _authState.loginUrl(deviceFingerprint: fp, state: nonce);
+    return _openUrl(url);
+  }
+
   /// Clear local credentials and the pending nonce; revert to signed-out.
   /// (Server-side seat release via DELETE /v1/devices/:id is done from the web
   /// account page; a native call can be added later.)

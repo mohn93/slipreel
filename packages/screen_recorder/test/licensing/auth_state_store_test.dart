@@ -41,4 +41,12 @@ void main() {
     expect(url.queryParameters['device'], 'fp_abc');
     expect(url.queryParameters['state'], 'n1');
   });
+
+  test('loginUrl carries device + state', () {
+    final store = AuthStateStore(InMemorySecureKV());
+    final url = store.loginUrl(deviceFingerprint: 'fp_abc', state: 'n1');
+    expect(url.path, '/login');
+    expect(url.queryParameters['device'], 'fp_abc');
+    expect(url.queryParameters['state'], 'n1');
+  });
 }

@@ -119,6 +119,28 @@ void main() {
     expect(await auth.matches(opened!.queryParameters['state']!), isTrue);
   });
 
+  test('openSignIn opens the login url with device + state', () async {
+    messenger.setMockMethodCallHandler(
+        channel, (call) async => 'HW-UUID-123');
+    Uri? opened;
+    final auth = AuthStateStore(InMemorySecureKV());
+    final c = LicensingController(
+      store: InMemoryLicenseStore(),
+      verifier: _FakeVerifier(const {}),
+      api: LicensingApi(baseUrl: 'https://x.test'),
+      authState: auth,
+      openUrl: (u) async {
+        opened = u;
+        return true;
+      },
+    );
+    final ok = await c.openSignIn();
+    expect(ok, isTrue);
+    expect(opened!.path, '/login');
+    expect(opened!.queryParameters['device'], isNotEmpty);
+    expect(await auth.matches(opened!.queryParameters['state']!), isTrue);
+  });
+
   test('signOut clears the store and state', () async {
     final store = InMemoryLicenseStore();
     await store.save(const LicenseTokens(
