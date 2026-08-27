@@ -26,6 +26,14 @@ void main() {
     expect(await store.matches('anything'), isFalse);
   });
 
+  test('clear removes the pending nonce', () async {
+    final store = AuthStateStore(InMemorySecureKV());
+    final nonce = await store.begin();
+    expect(await store.matches(nonce), isTrue);
+    await store.clear();
+    expect(await store.matches(nonce), isFalse);
+  });
+
   test('pricingUrl carries device + state', () {
     final store = AuthStateStore(InMemorySecureKV());
     final url = store.pricingUrl(deviceFingerprint: 'fp_abc', state: 'n1');
