@@ -1,5 +1,6 @@
 import Cocoa
 import FlutterMacOS
+import IOKit
 
 private final class GearMenuTarget: NSObject {
   var selected: String?
@@ -49,6 +50,18 @@ class MainFlutterWindow: NSWindow {
         }
         self?.setBarSize(width: CGFloat(width), height: CGFloat(height))
         result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let deviceChannel = FlutterMethodChannel(
+      name: "slipreel/device",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    deviceChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "hardwareId":
+        result(Self.hardwareUUID())
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -125,6 +138,19 @@ class MainFlutterWindow: NSWindow {
     if let event = NSApp.currentEvent {
       performDrag(with: event)
     }
+  }
+
+  /// The Mac's stable hardware UUID (IOPlatformUUID). Survives reinstalls and
+  /// app updates; changes only with a logic-board swap. Returns nil if the
+  /// registry lookup fails (the Dart side treats nil as "unavailable").
+  private static func hardwareUUID() -> String? {
+    let service = IOServiceGetMatchingService(
+      kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+    guard service != 0 else { return nil }
+    defer { IOObjectRelease(service) }
+    let cf = IORegistryEntryCreateCFProperty(
+      service, kIOPlatformUUIDKey as CFString, kCFAllocatorDefault, 0)
+    return cf?.takeRetainedValue() as? String
   }
 
   private func configureFloating(width: CGFloat, height: CGFloat, cornerRadius: CGFloat) {
