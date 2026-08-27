@@ -228,10 +228,14 @@ needed (Checkout is hosted).
    `url_launcher`.
 2. User authenticates + (if needed) pays on the web. The `/app-auth` page, once the
    session is authed and entitled, calls `POST /v1/token` and redirects to
-   `slipreel://auth?token=<jwt>&refresh=<rt>&state=<nonce>`.
+   `slipreel://auth?token=<jwt>&refresh=<rt>&device_id=<dev_...>&state=<nonce>`.
+   (Revised 2026-08-27: `device_id` — the server-assigned `dev_...` id, distinct from
+   the app's local hardware fingerprint — is included so the app can call
+   `POST /v1/token/refresh {refresh_token, device_id}`. The Phase 4b web pages already
+   emit it; the Phase 5b app requires all four params present and non-empty.)
 3. The app receives the deep link (via `app_links`), checks `state` matches, verifies
-   the JWT signature with the embedded public key, and stores `{token, refresh}` in the
-   macOS Keychain (`flutter_secure_storage`).
+   the JWT signature with the embedded public key, and stores `{token, refresh, device_id}`
+   in the macOS Keychain (`flutter_secure_storage`).
 4. `slipreel://` is registered as a `CFBundleURLTypes` scheme in the macOS `Info.plist`.
 
 Sign-out clears the Keychain and calls `DELETE /v1/devices/:id` to free the seat.
