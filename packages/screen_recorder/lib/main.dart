@@ -17,6 +17,13 @@ import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/state/motion_tuning_store.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 import 'debug/debug_probe.dart';
+import 'licensing/auth_state_store.dart';
+import 'licensing/deep_link_listener.dart';
+import 'licensing/entitlement_public_key.g.dart';
+import 'licensing/entitlement_verifier.dart';
+import 'licensing/license_store.dart';
+import 'licensing/licensing_api.dart';
+import 'licensing/licensing_controller.dart';
 import 'platform/native_deps.dart';
 import 'platform/window_chrome_channel.dart';
 import 'onboarding/onboarding_store.dart';
@@ -183,6 +190,24 @@ Future<void> main() async {
     unawaited(updaterService.init());
   }
 
+  // Licensing: load the cached entitlement token, verify it offline, and wire
+  // the slipreel:// deep-link handoff. Constructed here (like UpdaterService)
+  // so the same instance is shared via the provider override below.
+  final licensingStore = SecureLicenseStore(FlutterSecureKV());
+  final licensingController = LicensingController(
+    store: licensingStore,
+    verifier: EntitlementVerifier(kEntitlementPublicKey),
+    api: LicensingApi(),
+    authState: AuthStateStore(FlutterSecureKV()),
+  );
+  await licensingController.load();
+  final deepLinkListener = DeepLinkListener(licensingController);
+  unawaited(deepLinkListener.start());
+  if (Platform.isMacOS) {
+    // Refresh in the background on launch (best-effort; offline keeps cache).
+    unawaited(licensingController.refreshNow());
+  }
+
   runApp(ProviderScope(
     overrides: [
       motionTuningProvider.overrideWith(
@@ -232,6 +257,7 @@ Future<void> main() async {
         ),
       ),
       updaterServiceProvider.overrideWithValue(updaterService),
+      licensingControllerProvider.overrideWith((ref) => licensingController),
     ],
     child: MyApp(
       onboardingDone: onboardingDone,

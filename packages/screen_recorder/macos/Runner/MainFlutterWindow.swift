@@ -61,7 +61,7 @@ class MainFlutterWindow: NSWindow {
     deviceChannel.setMethodCallHandler { call, result in
       switch call.method {
       case "hardwareId":
-        result(Self.hardwareUUID())
+        result(MainFlutterWindow.hardwareUUID())
       default:
         result(FlutterMethodNotImplemented)
       }
