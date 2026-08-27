@@ -142,3 +142,28 @@ Backend support:
   (in-memory; single-instance).
 
 The static pages that drive this flow are Phase 4b.
+
+## Local end-to-end (web flow)
+
+Run the API and the static site together to click through the pages
+(`site/pricing.html`, `success.html`, `login.html`, `account.html`):
+
+1. Boot the API with local-friendly config in `server/.env` (test mode):
+   - `CORS_ORIGINS=http://localhost:4173`
+   - Stripe test keys + price ids (`npm run stripe:bootstrap`), entitlement keys
+     (`npm run gen:entitlement-keys`), and optionally `RESEND_API_KEY`.
+   - Then `npm run dev`.
+2. Serve the site on the origin you allowed:
+   ```bash
+   npx --yes serve site -l 4173      # or: (cd site && python3 -m http.server 4173)
+   ```
+3. The pages auto-resolve the API base from the hostname: `slipreel.app` -> `https://api.slipreel.app`,
+   otherwise `http://<host>:8080`. To point at a different local API, add
+   `<meta name="slipreel-api-base" content="http://localhost:8080">` to the page `<head>`
+   for local testing only (do not commit it).
+4. Open `http://localhost:4173/pricing.html`, pay with Stripe test card
+   `4242 4242 4242 4242`, and follow the redirect back to `/success.html`.
+
+Deploy: `scripts/deploy-site.sh` rsyncs the whole `site/` tree (new pages ship
+automatically). Serve clean URLs (`/pricing`, `/success`, `/login`, `/account`)
+with `server/deploy/nginx-site.conf` (a `try_files $uri $uri.html` rule).
