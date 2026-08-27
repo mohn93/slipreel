@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Slipreel — Pricing</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/site.css">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main class="flow">
+  <h1 class="flow__title">Unlock export</h1>
+  <p class="flow__sub">Record, edit, and preview are free. Export needs Slipreel Pro.</p>
+
+  <div class="card">
+    <label class="field">
+      <span class="field__label">Email</span>
+      <input class="input" id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+    </label>
+    <div class="plans">
+      <button class="btn btn--primary plan" data-plan="monthly"><span>Monthly</span><span class="plan__price">$9 / mo</span></button>
+      <button class="btn btn--primary plan" data-plan="yearly"><span>Yearly</span><span class="plan__price">$79 / yr</span></button>
+      <button class="btn btn--primary plan" data-plan="onetime"><span>One-time</span><span class="plan__price">$99</span></button>
+    </div>
+    <div class="status hidden" id="status" role="alert"></div>
+  </div>
+  <p class="muted">Secure checkout by Stripe. One-time includes 1 year of updates.</p>
+</main>
+<script type="module" src="assets/js/page-pricing.js"></script>
+</body>
+</html>

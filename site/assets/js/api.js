@@ -2,12 +2,19 @@
 // Every call sends the session cookie (credentials:'include').
 export function createApi(baseUrl, fetchImpl = fetch) {
   async function call(method, path, body) {
-    const res = await fetchImpl(baseUrl + path, {
-      method,
-      credentials: 'include',
-      headers: body ? { 'Content-Type': 'application/json' } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let res;
+    try {
+      res = await fetchImpl(baseUrl + path, {
+        method,
+        credentials: 'include',
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch {
+      // Network error (API unreachable, DNS, CORS-blocked): surface as a failure
+      // the caller can render, never an unhandled rejection. status 0 = no response.
+      return { ok: false, status: 0, data: null };
+    }
     let data = null;
     try { data = await res.json(); } catch { data = null; }
     return { ok: res.ok, status: res.status, data };

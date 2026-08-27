@@ -1,0 +1,23 @@
+/* Flow pages: forms, cards, device rows, status banners. Uses site.css tokens. */
+.flow { max-width: 560px; margin: 0 auto; padding: 96px 20px 80px; }
+.flow__title { font-size: clamp(1.6rem, 4vw, 2.2rem); margin: 0 0 8px; }
+.flow__sub { color: var(--ink-dim); margin: 0 0 28px; }
+.card { background: var(--bg-card); border: 1px solid rgba(255,255,255,.08);
+  border-radius: var(--radius-lg); padding: 22px; margin-bottom: 16px; }
+.field { display: block; margin: 0 0 14px; }
+.field__label { display: block; font-size: .85rem; color: var(--ink-dim); margin-bottom: 6px; }
+.input { width: 100%; padding: 12px 14px; border-radius: var(--radius);
+  border: 1px solid rgba(255,255,255,.14); background: var(--bg-elev); color: inherit;
+  font: inherit; box-sizing: border-box; }
+.input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plans { display: grid; gap: 12px; margin-top: 8px; }
+.plan { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.plan__price { font-weight: 600; }
+.status { padding: 12px 14px; border-radius: var(--radius); margin-top: 16px; font-size: .95rem; }
+.status--err { background: rgba(255,80,80,.12); border: 1px solid rgba(255,80,80,.3); }
+.status--ok { background: rgba(90,200,120,.12); border: 1px solid rgba(90,200,120,.3); }
+.device-row { display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+.muted { color: var(--ink-dim); font-size: .85rem; }
+.btn--block { width: 100%; justify-content: center; }
+.hidden { display: none; }

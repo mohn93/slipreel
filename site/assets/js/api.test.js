@@ -57,3 +57,9 @@ test('non-2xx and non-JSON bodies surface as {ok:false} with null data', async (
   const r = await api.token({ fingerprint: 'fp' });
   assert.equal(r.ok, false); assert.equal(r.status, 409); assert.equal(r.data, null);
 });
+
+test('a network error (fetch throws) surfaces as {ok:false, status:0} not a rejection', async () => {
+  const api = createApi('https://x', async () => { throw new TypeError('Failed to fetch'); });
+  const r = await api.checkout({ email: 'a@b.com', plan: 'yearly' });
+  assert.deepEqual(r, { ok: false, status: 0, data: null });
+});
