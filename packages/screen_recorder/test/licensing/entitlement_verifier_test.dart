@@ -87,7 +87,7 @@ void main() {
   test('ignoreExpiry allows an expired but otherwise valid token', () async {
     final jwt = await _makeJwt(kp, payload: _claims(exp: 1750100000));
     final claims = await EntitlementVerifier(pub)
-        .verify(jwt, now: DateTime.utc(2025, 6, 1), ignoreExpiry: true);
+        .verify(jwt, now: DateTime.utc(2025, 6, 20), ignoreExpiry: true);
     expect(claims, isNotNull);
   });
 }
