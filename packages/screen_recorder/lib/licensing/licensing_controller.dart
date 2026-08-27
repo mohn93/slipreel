@@ -1,14 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart' as launcher;
 
 import 'auth_state_store.dart';
+import 'deep_link.dart';
+import 'device_fingerprint.dart';
 import 'entitlement.dart';
 import 'entitlement_verifier.dart';
 import 'license_store.dart';
 import 'licensing_api.dart';
 
 /// Owns the entitlement lifecycle: loads the cached token on launch, verifies
-/// it offline, and re-mints via /v1/token/refresh. Deep-link activation and
-/// the browser handoff are added in Task 7.
+/// it offline, and re-mints via /v1/token/refresh. Also handles deep-link
+/// activation and the browser handoff (Task 7).
 class LicensingController extends StateNotifier<EntitlementState> {
   LicensingController({
     required LicenseStore store,
@@ -16,19 +19,27 @@ class LicensingController extends StateNotifier<EntitlementState> {
     required LicensingApi api,
     required AuthStateStore authState,
     DateTime Function() now = DateTime.now,
+    DeviceFingerprint? fingerprint,
+    Future<bool> Function(Uri url)? openUrl,
   })  : _store = store,
         _verifier = verifier,
         _api = api,
         _authState = authState,
         _now = now,
+        _fingerprint = fingerprint ?? DeviceFingerprint(),
+        _openUrl = openUrl ?? _defaultOpen,
         super(const EntitlementLoading());
 
   final LicenseStore _store;
   final EntitlementVerifier _verifier;
   final LicensingApi _api;
-  // ignore: unused_field
-  final AuthStateStore _authState; // used starting Task 7 (deep-link activation)
+  final AuthStateStore _authState;
   final DateTime Function() _now;
+  final DeviceFingerprint _fingerprint;
+  final Future<bool> Function(Uri url) _openUrl;
+
+  static Future<bool> _defaultOpen(Uri url) =>
+      launcher.launchUrl(url, mode: launcher.LaunchMode.externalApplication);
 
   /// Read the Keychain token, verify it, publish loaded/signed-out. Called once
   /// at startup before the UI reads entitlement.
@@ -63,6 +74,44 @@ class LicensingController extends StateNotifier<EntitlementState> {
       deviceId: tokens.deviceId,
     ));
     state = EntitlementLoaded(claims);
+  }
+
+  /// Handle a slipreel:// callback. Ignores anything that is not a valid auth
+  /// link whose `state` matches the nonce we last generated (guards against a
+  /// forged/stray deep link activating a token). On success: verify, persist,
+  /// consume the nonce, publish loaded.
+  Future<void> handleDeepLink(Uri uri) async {
+    final link = AuthDeepLink.parse(uri);
+    if (link == null) return;
+    if (!await _authState.matches(link.state)) return;
+    final claims = await _verifier.verify(link.token, now: _now());
+    if (claims == null) return;
+    await _store.save(LicenseTokens(
+      token: link.token,
+      refreshToken: link.refresh,
+      deviceId: link.deviceId,
+    ));
+    await _authState.clear();
+    state = EntitlementLoaded(claims);
+  }
+
+  /// Start the browser purchase/sign-in flow. Generates a fresh nonce, then
+  /// opens ${site}/pricing?device=<fp>&state=<nonce>. Returns whether the
+  /// browser launch was requested (false if url_launcher declined).
+  Future<bool> unlockExport() async {
+    final fp = await _fingerprint.compute();
+    final nonce = await _authState.begin();
+    final url = _authState.pricingUrl(deviceFingerprint: fp, state: nonce);
+    return _openUrl(url);
+  }
+
+  /// Clear local credentials and the pending nonce; revert to signed-out.
+  /// (Server-side seat release via DELETE /v1/devices/:id is done from the web
+  /// account page; a native call can be added later.)
+  Future<void> signOut() async {
+    await _store.clear();
+    await _authState.clear();
+    state = const EntitlementSignedOut();
   }
 }
 
