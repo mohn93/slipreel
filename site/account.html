@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Slipreel — Account</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/site.css">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main class="flow">
+  <h1 class="flow__title">Your account</h1>
+  <p class="flow__sub" id="sub">Loading…</p>
+
+  <div class="card hidden" id="signedout">
+    <p>You're not signed in.</p>
+    <a class="btn btn--primary btn--block" href="login.html">Sign in</a>
+  </div>
+
+  <div class="card hidden" id="billing">
+    <label class="field">
+      <span class="field__label">Email</span>
+      <input class="input" id="email" type="email" autocomplete="email" placeholder="you@example.com">
+    </label>
+    <button class="btn btn--primary btn--block" id="portal">Manage billing</button>
+    <p class="muted">Opens the Stripe customer portal to change plan, update card, or cancel.</p>
+  </div>
+
+  <div class="card hidden" id="devices">
+    <h2 style="margin:0 0 8px;font-size:1rem;">Devices</h2>
+    <div id="deviceList"></div>
+  </div>
+
+  <div class="status hidden" id="status" role="alert"></div>
+  <p><a class="muted" href="#" id="logout">Sign out</a></p>
+</main>
+<script type="module" src="assets/js/page-account.js"></script>
+</body>
+</html>
