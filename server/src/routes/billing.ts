@@ -32,7 +32,11 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
       success_url: app.billing.successUrl,
       cancel_url: app.billing.cancelUrl,
       metadata,
-    });
+      // Opt out of Stripe Managed Payments (we don't use Stripe Tax); otherwise
+      // accounts with Managed Payments on by default reject checkout unless every
+      // product carries a tax_code.
+      managed_payments: { enabled: false },
+    } as Parameters<typeof app.stripe.checkout.sessions.create>[0]);
     return reply.send({ url: session.url });
   });
 
