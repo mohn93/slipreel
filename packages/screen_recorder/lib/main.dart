@@ -192,13 +192,19 @@ Future<void> main() async {
 
   // Licensing: load the cached entitlement token, verify it offline, and wire
   // the slipreel:// deep-link handoff. Constructed here (like UpdaterService)
-  // so the same instance is shared via the provider override below.
-  final licensingStore = SecureLicenseStore(FlutterSecureKV());
+  // so the same instance is shared via the provider override below. Storage is
+  // a file in the app-support dir (not the Keychain): flutter_secure_storage
+  // needs a keychain-access-groups entitlement that forces provisioning-profile
+  // signing. A file is fine for the offline-license threat model (spec 12).
+  final licensingKv = FileSecureKV(
+    p.join((await getApplicationSupportDirectory()).path, 'licensing.json'),
+  );
+  final licensingStore = SecureLicenseStore(licensingKv);
   final licensingController = LicensingController(
     store: licensingStore,
     verifier: EntitlementVerifier(kEntitlementPublicKey),
     api: LicensingApi(),
-    authState: AuthStateStore(FlutterSecureKV()),
+    authState: AuthStateStore(licensingKv),
   );
   await licensingController.load();
   final deepLinkListener = DeepLinkListener(licensingController);

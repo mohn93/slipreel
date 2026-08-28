@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -71,6 +72,61 @@ class InMemorySecureKV implements SecureKV {
   Future<void> write(String key, String value) async => _map[key] = value;
   @override
   Future<void> delete(String key) async => _map.remove(key);
+}
+
+/// File-backed [SecureKV] persisting a JSON map at [path] (typically inside the
+/// app-support directory). Used on macOS instead of the Keychain: the platform
+/// Keychain (flutter_secure_storage) requires a `keychain-access-groups`
+/// entitlement, which forces provisioning-profile signing that a locally-signed
+/// / Developer ID build can't carry without extra Apple-portal setup. Storing
+/// the token in the user's app-support dir is consistent with the offline
+/// licensing threat model (spec §12: the client is inherently patchable).
+/// Reads/writes are serialized through an in-memory cache; corrupt/missing
+/// files load as empty.
+class FileSecureKV implements SecureKV {
+  FileSecureKV(this._path);
+  final String _path;
+  Map<String, String>? _cache;
+
+  Future<Map<String, String>> _loaded() async {
+    if (_cache != null) return _cache!;
+    try {
+      final file = File(_path);
+      if (await file.exists()) {
+        final decoded = jsonDecode(await file.readAsString());
+        _cache = <String, String>{
+          for (final e in (decoded as Map<String, dynamic>).entries)
+            e.key: e.value as String,
+        };
+      } else {
+        _cache = <String, String>{};
+      }
+    } catch (_) {
+      _cache = <String, String>{};
+    }
+    return _cache!;
+  }
+
+  Future<void> _flush() async {
+    final file = File(_path);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(jsonEncode(_cache));
+  }
+
+  @override
+  Future<String?> read(String key) async => (await _loaded())[key];
+
+  @override
+  Future<void> write(String key, String value) async {
+    (await _loaded())[key] = value;
+    await _flush();
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    (await _loaded()).remove(key);
+    await _flush();
+  }
 }
 
 /// Keychain-backed license store (via [SecureKV]). Corrupt data loads as null.
