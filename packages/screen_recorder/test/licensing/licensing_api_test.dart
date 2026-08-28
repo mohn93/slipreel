@@ -5,7 +5,7 @@ import 'package:http/testing.dart';
 import 'package:screen_recorder/licensing/licensing_api.dart';
 
 void main() {
-  test('refresh posts refresh_token + device_id and returns token', () async {
+  test('refresh posts refresh_token + device_id and returns RefreshOk', () async {
     late http.Request seen;
     final client = MockClient((req) async {
       seen = req;
@@ -13,9 +13,10 @@ void main() {
           headers: {'content-type': 'application/json'});
     });
     final api = LicensingApi(baseUrl: 'https://api.example.test', client: client);
-    final token = await api.refresh(refreshToken: 'rt_123', deviceId: 'dev_9');
+    final result = await api.refresh(refreshToken: 'rt_123', deviceId: 'dev_9');
 
-    expect(token, 'new.jwt.here');
+    expect(result, isA<RefreshOk>());
+    expect((result as RefreshOk).token, 'new.jwt.here');
     expect(seen.url.toString(), 'https://api.example.test/v1/token/refresh');
     expect(seen.method, 'POST');
     final body = jsonDecode(seen.body) as Map<String, dynamic>;
@@ -24,23 +25,41 @@ void main() {
     expect(seen.headers['content-type'], contains('application/json'));
   });
 
-  test('refresh returns null on 401', () async {
+  test('refresh is RefreshRevoked on 401 (seat deactivated)', () async {
     final client = MockClient((req) async =>
         http.Response(jsonEncode({'error': 'invalid refresh token'}), 401));
     final api = LicensingApi(baseUrl: 'https://api.example.test', client: client);
-    expect(await api.refresh(refreshToken: 'x', deviceId: 'y'), isNull);
+    expect(await api.refresh(refreshToken: 'x', deviceId: 'y'),
+        isA<RefreshRevoked>());
   });
 
-  test('refresh returns null on network error', () async {
+  test('refresh is RefreshRevoked on 403', () async {
+    final client = MockClient((req) async => http.Response('forbidden', 403));
+    final api = LicensingApi(baseUrl: 'https://api.example.test', client: client);
+    expect(await api.refresh(refreshToken: 'x', deviceId: 'y'),
+        isA<RefreshRevoked>());
+  });
+
+  test('refresh is RefreshTransient on network error', () async {
     final client = MockClient((req) async => throw http.ClientException('down'));
     final api = LicensingApi(baseUrl: 'https://api.example.test', client: client);
-    expect(await api.refresh(refreshToken: 'x', deviceId: 'y'), isNull);
+    expect(await api.refresh(refreshToken: 'x', deviceId: 'y'),
+        isA<RefreshTransient>());
   });
 
-  test('refresh returns null when body has no token', () async {
+  test('refresh is RefreshTransient on 5xx (server error, not a revocation)',
+      () async {
+    final client = MockClient((req) async => http.Response('boom', 503));
+    final api = LicensingApi(baseUrl: 'https://api.example.test', client: client);
+    expect(await api.refresh(refreshToken: 'x', deviceId: 'y'),
+        isA<RefreshTransient>());
+  });
+
+  test('refresh is RefreshTransient when a 200 body has no token', () async {
     final client =
         MockClient((req) async => http.Response(jsonEncode({'ok': true}), 200));
     final api = LicensingApi(baseUrl: 'https://api.example.test', client: client);
-    expect(await api.refresh(refreshToken: 'x', deviceId: 'y'), isNull);
+    expect(await api.refresh(refreshToken: 'x', deviceId: 'y'),
+        isA<RefreshTransient>());
   });
 }

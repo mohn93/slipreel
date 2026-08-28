@@ -20,10 +20,10 @@ class _FakeVerifier extends EntitlementVerifier {
 // An api stub returning a queued refresh result.
 class _FakeApi extends LicensingApi {
   _FakeApi(this.result) : super(baseUrl: 'https://x.test');
-  String? result;
+  RefreshResult result;
   String? lastRefreshToken;
   @override
-  Future<String?> refresh(
+  Future<RefreshResult> refresh(
       {required String refreshToken, required String deviceId}) async {
     lastRefreshToken = refreshToken;
     return result;
@@ -48,7 +48,7 @@ void main() {
     return LicensingController(
       store: store ?? InMemoryLicenseStore(),
       verifier: verifier ?? _FakeVerifier(const {}),
-      api: api ?? _FakeApi(null),
+      api: api ?? _FakeApi(const RefreshTransient()),
       authState: AuthStateStore(InMemorySecureKV()),
     );
   }
@@ -85,7 +85,7 @@ void main() {
     final store = InMemoryLicenseStore();
     await store.save(const LicenseTokens(
         token: 'old', refreshToken: 'rt', deviceId: 'dev_1'));
-    final api = _FakeApi('fresh');
+    final api = _FakeApi(const RefreshOk('fresh'));
     final c = build(
       store: store,
       verifier: _FakeVerifier({'fresh': _claims(device: 'dev_1')}),
@@ -107,18 +107,37 @@ void main() {
     expect(c.state, isA<EntitlementSignedOut>());
   });
 
-  test('refreshNow failure keeps existing state', () async {
+  test('refreshNow transient failure keeps existing state (offline grace)',
+      () async {
     final store = InMemoryLicenseStore();
     await store.save(const LicenseTokens(
         token: 'good', refreshToken: 'rt', deviceId: 'dev_1'));
     final c = build(
       store: store,
       verifier: _FakeVerifier({'good': _claims(device: 'dev_1')}),
-      api: _FakeApi(null), // refresh fails
+      api: _FakeApi(const RefreshTransient()), // offline / server error
     );
     await c.load();
     expect(c.state, isA<EntitlementLoaded>());
     await c.refreshNow();
     expect(c.state, isA<EntitlementLoaded>()); // unchanged
+    expect(await store.load(), isNotNull); // credentials kept
+  });
+
+  test('refreshNow revoked -> signed out and credentials cleared '
+      '(device deactivated server-side)', () async {
+    final store = InMemoryLicenseStore();
+    await store.save(const LicenseTokens(
+        token: 'good', refreshToken: 'rt', deviceId: 'dev_1'));
+    final c = build(
+      store: store,
+      verifier: _FakeVerifier({'good': _claims(device: 'dev_1')}),
+      api: _FakeApi(const RefreshRevoked()), // seat deactivated
+    );
+    await c.load();
+    expect(c.state, isA<EntitlementLoaded>());
+    await c.refreshNow();
+    expect(c.state, isA<EntitlementSignedOut>()); // locked
+    expect(await store.load(), isNull); // credentials cleared
   });
 }
