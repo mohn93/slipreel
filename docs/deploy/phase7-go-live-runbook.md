@@ -227,8 +227,8 @@ The checked-in `packages/screen_recorder/lib/licensing/entitlement_public_key.g.
 Extract the 32 ints (uses the corrected decode: outer base64 -> PEM text -> inner base64 -> SPKI DER -> last 32 bytes). Put the production `ENTITLEMENT_ED25519_PUBLIC_KEY` value into `PK`:
 
 ```bash
-node -e 'const b=process.env.PK; if(!b){console.error("set PK");process.exit(1)} const pem=Buffer.from(b,"base64").toString("utf8"); const body=pem.replace(/-----[^-]+-----/g,"").replace(/\s+/g,""); const der=Buffer.from(body,"base64"); console.log(JSON.stringify([...der.subarray(der.length-32)]))' \
-  PK='PASTE_THE_PRODUCTION_PUBLIC_KEY_BASE64'
+PK='PASTE_THE_PRODUCTION_PUBLIC_KEY_BASE64' \
+node -e 'const b=process.env.PK; if(!b){console.error("set PK");process.exit(1)} const pem=Buffer.from(b,"base64").toString("utf8"); const body=pem.replace(/-----[^-]+-----/g,"").replace(/\s+/g,""); const der=Buffer.from(body,"base64"); console.log(JSON.stringify([...der.subarray(der.length-32)]))'
 ```
 
 Paste the resulting 32 integers into `kEntitlementPublicKey` in `packages/screen_recorder/lib/licensing/entitlement_public_key.g.dart` (replacing the current bytes). Also set the real ship date in `build_release_date.g.dart` if this build is the public release (it drives the one-time version ceiling).
