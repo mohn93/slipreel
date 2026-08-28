@@ -18,6 +18,7 @@ export async function registerDevice(
   fingerprint: string,
   name: string | null,
   seatLimit: number,
+  location: string | null = null,
 ): Promise<
   | { ok: true; deviceId: string; refreshToken: string }
   | { ok: false; reason: 'seat_limit'; devices: DeviceInfo[] }
@@ -31,8 +32,8 @@ export async function registerDevice(
   if (existing.rows[0]) {
     const id = existing.rows[0].id;
     await pool.query(
-      'UPDATE devices SET refresh_token_hash = $1, name = COALESCE($2, name), last_seen_at = now() WHERE id = $3',
-      [hash, name, id],
+      'UPDATE devices SET refresh_token_hash = $1, name = COALESCE($2, name), location = COALESCE($3, location), last_seen_at = now() WHERE id = $4',
+      [hash, name, location, id],
     );
     return { ok: true, deviceId: id, refreshToken: token };
   }
@@ -55,21 +56,22 @@ export async function registerDevice(
 
   const id = newId('dev');
   await pool.query(
-    'INSERT INTO devices (id, user_id, fingerprint, name, refresh_token_hash, last_seen_at) VALUES ($1,$2,$3,$4,$5,now())',
-    [id, userId, fingerprint, name, hash],
+    'INSERT INTO devices (id, user_id, fingerprint, name, location, refresh_token_hash, last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,now())',
+    [id, userId, fingerprint, name, location, hash],
   );
   return { ok: true, deviceId: id, refreshToken: token };
 }
 
-/** Validate a device refresh token; on success bump last_seen and return the owner. */
+/** Validate a device refresh token; on success bump last_seen (+ location) and return the owner. */
 export async function refreshDevice(
   pool: pg.Pool,
   deviceId: string,
   refreshToken: string,
+  location: string | null = null,
 ): Promise<{ userId: string } | null> {
   const { rows } = await pool.query<{ user_id: string }>(
-    'UPDATE devices SET last_seen_at = now() WHERE id = $1 AND refresh_token_hash = $2 RETURNING user_id',
-    [deviceId, hashToken(refreshToken)],
+    'UPDATE devices SET last_seen_at = now(), location = COALESCE($3, location) WHERE id = $1 AND refresh_token_hash = $2 RETURNING user_id',
+    [deviceId, hashToken(refreshToken), location],
   );
   return rows[0] ? { userId: rows[0].user_id } : null;
 }

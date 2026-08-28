@@ -1,8 +1,19 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { requireSession } from '../auth/require_session.js';
 import { registerDevice, refreshDevice, SEAT_LIMIT } from '../auth/devices.js';
 import { resolveEffectiveEntitlement } from '../billing/effective_entitlement.js';
+
+/** Coarse location (country) from Cloudflare's IP-geo header, or null. */
+function locationFromRequest(req: FastifyRequest): string | null {
+  const cc = req.headers['cf-ipcountry'];
+  if (typeof cc !== 'string' || !cc || cc === 'XX' || cc === 'T1') return null;
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(cc) ?? cc;
+  } catch {
+    return cc;
+  }
+}
 
 // device_name is nullish: the web success/login pages post `device_name: null`
 // when the app didn't supply one, so accept null as well as omitted.
@@ -29,6 +40,7 @@ export async function tokenRoutes(app: FastifyInstance): Promise<void> {
 
     const reg = await registerDevice(
       app.pool, req.userId!, parsed.data.fingerprint, parsed.data.device_name ?? null, SEAT_LIMIT,
+      locationFromRequest(req),
     );
     if (!reg.ok) return reply.code(409).send({ error: 'seat_limit', devices: reg.devices });
 
@@ -40,7 +52,9 @@ export async function tokenRoutes(app: FastifyInstance): Promise<void> {
     const parsed = refreshReq.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid request' });
 
-    const dev = await refreshDevice(app.pool, parsed.data.device_id, parsed.data.refresh_token);
+    const dev = await refreshDevice(
+      app.pool, parsed.data.device_id, parsed.data.refresh_token, locationFromRequest(req),
+    );
     if (!dev) return reply.code(401).send({ error: 'invalid refresh token' });
 
     const token = await mintFor(app, dev.userId, parsed.data.device_id);

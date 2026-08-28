@@ -3,13 +3,13 @@ import { requireSession } from '../auth/require_session.js';
 
 export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   app.get('/v1/devices', { preHandler: requireSession(app) }, async (req, reply) => {
-    const { rows } = await app.pool.query<{ id: string; name: string | null; last_seen_at: Date | null; created_at: Date }>(
-      'SELECT id, name, last_seen_at, created_at FROM devices WHERE user_id = $1 ORDER BY created_at',
+    const { rows } = await app.pool.query<{ id: string; name: string | null; location: string | null; last_seen_at: Date | null; created_at: Date }>(
+      'SELECT id, name, location, last_seen_at, created_at FROM devices WHERE user_id = $1 ORDER BY created_at',
       [req.userId!],
     );
     return reply.send({
       devices: rows.map((r) => ({
-        id: r.id, name: r.name,
+        id: r.id, name: r.name, location: r.location,
         last_seen_at: r.last_seen_at?.toISOString() ?? null,
         created_at: r.created_at.toISOString(),
       })),
