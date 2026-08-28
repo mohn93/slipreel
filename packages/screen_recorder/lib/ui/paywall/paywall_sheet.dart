@@ -76,7 +76,8 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
       if (!ok && mounted) {
         AppAlerts.error('Could not open the browser. Try again.');
       }
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[paywall] checkout action failed: $e\n$st');
       if (mounted) {
         AppAlerts.error('Could not start checkout on this device.');
       }
@@ -120,6 +121,7 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
                       ref.read(licensingControllerProvider.notifier).unlockExport),
               style: ElevatedButton.styleFrom(
                   backgroundColor: palette.accent,
+                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14)),
               child: Text(widget.reason == PaywallReason.needsPurchase
                   ? 'Unlock export'
