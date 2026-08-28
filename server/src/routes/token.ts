@@ -4,7 +4,9 @@ import { requireSession } from '../auth/require_session.js';
 import { registerDevice, refreshDevice, SEAT_LIMIT } from '../auth/devices.js';
 import { resolveEffectiveEntitlement } from '../billing/effective_entitlement.js';
 
-const tokenBody = z.object({ fingerprint: z.string().min(1), device_name: z.string().optional() });
+// device_name is nullish: the web success/login pages post `device_name: null`
+// when the app didn't supply one, so accept null as well as omitted.
+const tokenBody = z.object({ fingerprint: z.string().min(1), device_name: z.string().nullish() });
 const refreshReq = z.object({ refresh_token: z.string().min(1), device_id: z.string().min(1) });
 
 async function mintFor(app: FastifyInstance, userId: string, deviceId: string): Promise<string> {
