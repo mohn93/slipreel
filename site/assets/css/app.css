@@ -76,3 +76,8 @@
 .pw__trust svg { color: var(--ink-faint); }
 .pw__fine { text-align: center; color: var(--ink-faint); font-size: .8rem; line-height: 1.5; margin: 16px auto 0; max-width: 520px; }
 .pw__fine a { color: var(--ink-dim); }
+
+/* Two-line device rows (account page): name + "location · last active". */
+.device-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.device-name { color: var(--ink); font-weight: 500; }
+.device-sub { color: var(--ink-dim); font-size: .82rem; }
