@@ -55,25 +55,35 @@ class LicensingController extends StateNotifier<EntitlementState> {
         : EntitlementLoaded(claims);
   }
 
-  /// Re-mint from the stored refresh token. No-op without cached tokens; keeps
-  /// current state if the network/auth call fails (offline grace lives in the
-  /// cached token's own exp).
+  /// Re-mint from the stored refresh token. No-op without cached tokens.
+  ///
+  /// - [RefreshOk]: verify + persist the fresh token, publish loaded.
+  /// - [RefreshRevoked]: the seat was deactivated server-side (this device was
+  ///   removed from the account) — clear credentials and lock (signed-out).
+  /// - [RefreshTransient]: offline/unknown — keep the current state; offline
+  ///   grace lives in the cached token's own exp.
   Future<void> refreshNow() async {
     final tokens = await _store.load();
     if (tokens == null) return;
-    final fresh = await _api.refresh(
+    final result = await _api.refresh(
       refreshToken: tokens.refreshToken,
       deviceId: tokens.deviceId,
     );
-    if (fresh == null) return;
-    final claims = await _verifier.verify(fresh, now: _now());
-    if (claims == null) return;
-    await _store.save(LicenseTokens(
-      token: fresh,
-      refreshToken: tokens.refreshToken,
-      deviceId: tokens.deviceId,
-    ));
-    state = EntitlementLoaded(claims);
+    switch (result) {
+      case RefreshOk(:final token):
+        final claims = await _verifier.verify(token, now: _now());
+        if (claims == null) return;
+        await _store.save(LicenseTokens(
+          token: token,
+          refreshToken: tokens.refreshToken,
+          deviceId: tokens.deviceId,
+        ));
+        state = EntitlementLoaded(claims);
+      case RefreshRevoked():
+        await signOut();
+      case RefreshTransient():
+        return;
+    }
   }
 
   /// Handle a slipreel:// callback. Ignores anything that is not a valid auth
