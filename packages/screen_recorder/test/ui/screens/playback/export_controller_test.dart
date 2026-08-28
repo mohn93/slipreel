@@ -41,6 +41,7 @@ void main() {
   test('run reports progress, delivers, returns success', () async {
     final progress = <double>[];
     final c = ExportController(
+      isExportEntitled: () => true,
       runPipeline: ({required onProgress, required cancelToken}) async {
         onProgress(0.5);
         onProgress(1.0);
@@ -60,6 +61,7 @@ void main() {
   test('run returns failure when delivery throws (pipeline succeeded)',
       () async {
     final c = ExportController(
+      isExportEntitled: () => true,
       runPipeline: ({required onProgress, required cancelToken}) async {
         onProgress(1.0);
         return _summary();
@@ -75,6 +77,7 @@ void main() {
 
   test('run returns failure when the pipeline throws', () async {
     final c = ExportController(
+      isExportEntitled: () => true,
       runPipeline: ({required onProgress, required cancelToken}) async {
         throw Exception('boom');
       },
@@ -89,6 +92,7 @@ void main() {
 
   test('run returns cancelled on ExportCancelledException', () async {
     final c = ExportController(
+      isExportEntitled: () => true,
       runPipeline: ({required onProgress, required cancelToken}) async {
         throw const ExportCancelledException();
       },

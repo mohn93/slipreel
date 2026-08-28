@@ -46,6 +46,12 @@ pubspec.lock
 # macOS release build fails ("messages.g.dart: No such file or directory").
 !packages/video_player_avfoundation/lib/src/messages.g.dart
 
+# Exception: baked licensing constants (public key + release date) are
+# generated at release time but must be committed so debug/dev builds have
+# them present. See packages/screen_recorder/lib/licensing/*.g.dart.
+!packages/screen_recorder/lib/licensing/entitlement_public_key.g.dart
+!packages/screen_recorder/lib/licensing/build_release_date.g.dart
+
 # Coverage
 coverage/
 .test_coverage/
@@ -62,3 +68,13 @@ packages/screen_recorder/lib/main_dev.dart
 
 # Local MCP server config (has absolute paths and targets the gitignored dev entry point)
 .mcp.json
+
+# Node backend (server/)
+server/node_modules/
+server/dist/
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example

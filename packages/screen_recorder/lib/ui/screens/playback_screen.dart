@@ -81,6 +81,10 @@ import 'package:slipreel_engine/timeline/slice_navigation.dart'
     show NavDirection;
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
+import 'package:screen_recorder/licensing/build_release_date.g.dart';
+import 'package:screen_recorder/licensing/export_gate.dart';
+import 'package:screen_recorder/licensing/licensing_controller.dart';
+import 'package:screen_recorder/ui/paywall/paywall_sheet.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 import 'package:screen_recorder/ui/widgets/command_palette/command_palette.dart';
@@ -1858,6 +1862,18 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
       if (!mounted) return;
 
+      // Export gate (spec §2/§9). If not entitled, show the paywall instead of
+      // the export dialog. The sheet auto-advances (returns true) if the user
+      // becomes entitled via the browser flow while it's open.
+      final entitlementState = ref.read(entitlementProvider);
+      if (!canExportNow(entitlementState, appReleaseDate: buildReleaseDate)) {
+        final reason =
+            paywallReasonFor(entitlementState, appReleaseDate: buildReleaseDate)!;
+        final becameEntitled = await PaywallSheet.show(context, reason: reason);
+        if (!becameEntitled || !mounted) return;
+        // fall through to the export dialog now that export is unlocked
+      }
+
       settings = await showDialog<ExportSettings>(
         context: context,
         builder: (_) => ExportDialog(
@@ -1999,6 +2015,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // pipeline is picked by format inside the injected closure; this widget
       // keeps all dialogs/snackbars/Navigator and maps the typed outcome to UI.
       final exportController = ExportController(
+        isExportEntitled: () =>
+            canExportNow(ref.read(entitlementProvider), appReleaseDate: buildReleaseDate),
         runPipeline: ({required onProgress, required cancelToken}) {
           return settings!.format == ExportFormat.gif
               ? GifExportPipeline(
@@ -2085,6 +2103,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           surfaceExportWarnings(summary, (m) => AppAlerts.warning(m));
         case ExportFailure(:final error):
           AppAlerts.error('Export failed: $error');
+        case ExportNotEntitled():
+          AppAlerts.error('Export needs an active license.');
         case ExportCancelled():
           // No snackbar — user-initiated. (Today there's no cancel UI; this
           // arm is here for when a cancel button is wired to

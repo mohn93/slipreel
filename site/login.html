@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Slipreel — Sign in</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/site.css">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<main class="flow">
+  <h1 class="flow__title" id="title">Sign in</h1>
+  <p class="flow__sub" id="sub">We'll email you a sign-in link.</p>
+
+  <div class="card" id="request">
+    <label class="field">
+      <span class="field__label">Email</span>
+      <input class="input" id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+    </label>
+    <button class="btn btn--primary btn--block" id="send">Email me a link</button>
+  </div>
+
+  <div class="card hidden" id="panel"></div>
+  <div class="status hidden" id="status" role="alert"></div>
+</main>
+<script type="module" src="assets/js/page-login.js?v=2"></script>
+</body>
+</html>

@@ -847,7 +847,7 @@ void main() {
               expect(signal.projectiveTransform, isNotNull);
               expect(signal.projectiveTransform!.isIdentity, isFalse);
             }
-            return compositor.compose(
+            return await compositor.compose(
               videoFrameBgra: _twoTone(320, 240),
               position: const Duration(milliseconds: 220),
             );

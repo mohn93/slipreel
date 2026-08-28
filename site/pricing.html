@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Slipreel — Unlock export</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/site.css">
+<link rel="stylesheet" href="assets/css/app.css?v=2">
+</head>
+<body>
+<main class="pw">
+  <header class="pw__head">
+    <p class="pw__eyebrow">Slipreel Pro</p>
+    <h1 class="pw__title">Unlock export</h1>
+    <p class="pw__sub">Recording, editing, auto-zoom, captions, and preview are free forever. Pick a plan to export your videos in full quality.</p>
+  </header>
+
+  <div class="pw__plans" id="plans" role="radiogroup" aria-label="Choose a plan">
+    <button type="button" class="pw__plan" data-plan="monthly" role="radio" aria-checked="false">
+      <span class="pw__name"><span class="pw__radio" aria-hidden="true"></span>Monthly</span>
+      <span class="pw__price"><span class="pw__amount">$9</span><span class="pw__per">/ month</span></span>
+      <p class="pw__note">Billed monthly. Cancel anytime.</p>
+    </button>
+
+    <button type="button" class="pw__plan pw__plan--best is-selected" data-plan="yearly" role="radio" aria-checked="true">
+      <span class="pw__badge">Best value · Save 27%</span>
+      <span class="pw__name"><span class="pw__radio" aria-hidden="true"></span>Yearly</span>
+      <span class="pw__price"><span class="pw__amount">$79</span><span class="pw__per">/ year</span></span>
+      <p class="pw__save">Just $6.58/mo — two months free</p>
+      <p class="pw__note">Billed yearly. Cancel anytime.</p>
+    </button>
+
+    <button type="button" class="pw__plan" data-plan="onetime" role="radio" aria-checked="false">
+      <span class="pw__name"><span class="pw__radio" aria-hidden="true"></span>One-time</span>
+      <span class="pw__price"><span class="pw__amount">$99</span><span class="pw__per">once</span></span>
+      <p class="pw__note">Yours forever, plus one year of updates.</p>
+    </button>
+  </div>
+
+  <section class="pw__included" aria-label="What's included">
+    <h2>Everything in Pro</h2>
+    <ul class="pw__features">
+      <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Unlimited full-quality exports</li>
+      <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>MP4 &amp; GIF, in the resolution you recorded</li>
+      <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Auto-zoom, captions &amp; device frames</li>
+      <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Wallpapers, 3D tilt &amp; motion blur</li>
+      <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Use on 2 Macs</li>
+      <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>100% on your Mac — nothing uploaded</li>
+    </ul>
+  </section>
+
+  <div class="pw__buy card">
+    <label class="field">
+      <span class="field__label">Email</span>
+      <input class="input" id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+    </label>
+    <button class="btn btn--primary pw__cta" id="continue">Continue to checkout</button>
+    <div class="status hidden" id="status" role="alert"></div>
+    <div class="pw__trust">
+      <span>
+        <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V8a6 6 0 0112 0v2m-13 0h14a1 1 0 011 1v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Secure checkout by Stripe
+      </span>
+      <span>Cancel anytime</span>
+      <span>macOS 13+</span>
+    </div>
+  </div>
+
+  <p class="pw__fine">One-time includes one year of updates; your paid version keeps exporting after that. Prices in USD. Questions? <a href="mailto:hello@slipreel.app">hello@slipreel.app</a></p>
+</main>
+<script type="module" src="assets/js/page-pricing.js?v=2"></script>
+</body>
+</html>

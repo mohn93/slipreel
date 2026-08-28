@@ -13,14 +13,17 @@ violation() { echo "site-lint: $1" >&2; rc=1; }
 [[ -d "$SITE" ]] || { echo "site-lint: no such dir: $SITE" >&2; exit 1; }
 
 # 1. External hosts. Namespace URIs in XML/JSON-LD are declarations, not
-#    requests, so a small allowlist is permitted.
-allow='slipreel\.app|schema\.org|www\.w3\.org|purl\.org|andymatuschak\.org'
+#    requests, so a small allowlist is permitted. First-party subdomains of
+#    slipreel.app (e.g. api.slipreel.app) are ours. Test files hold fixture
+#    URLs that never ship, so they are excluded from the scan entirely.
+allow='([a-z0-9-]+\.)*slipreel\.app|schema\.org|www\.w3\.org|purl\.org|andymatuschak\.org'
 while IFS= read -r url; do
   [[ -z "$url" ]] && continue
   grep -qE "^https?://($allow)" <<<"$url" || violation "external request: $url"
 done < <(grep -rhoE 'https?://[A-Za-z0-9.:-]+' \
            --include='*.html' --include='*.css' --include='*.js' \
-           "$SITE" 2>/dev/null | grep -v '\.test\.js' | sort -u)
+           --exclude='*.test.js' \
+           "$SITE" 2>/dev/null | sort -u)
 
 # 2. Local assets referenced from HTML must exist on disk.
 while IFS= read -r ref; do
