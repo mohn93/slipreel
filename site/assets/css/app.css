@@ -81,3 +81,9 @@
 .device-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .device-name { color: var(--ink); font-weight: 500; }
 .device-sub { color: var(--ink-dim); font-size: .82rem; }
+
+/* Honor reduced-motion: drop the plan-card hover/transition motion. */
+@media (prefers-reduced-motion: reduce) {
+  .pw__plan, .pw__radio { transition: none; }
+  .pw__plan:hover { transform: none; }
+}
