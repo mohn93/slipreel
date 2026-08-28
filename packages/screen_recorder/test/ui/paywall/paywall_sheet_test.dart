@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,11 +17,16 @@ class _FakeController extends StateNotifier<EntitlementState>
   int unlockCalls = 0;
   int signInCalls = 0;
   bool throwOnUnlock = false;
+  bool unlockReturns = true;
+  // When set, unlockExport awaits this gate — lets a test hold the action
+  // in-flight to assert the busy/spinner state, then release it.
+  Completer<bool>? unlockGate;
   @override
   Future<bool> unlockExport() async {
     if (throwOnUnlock) throw Exception('no hw id');
     unlockCalls++;
-    return true;
+    if (unlockGate != null) return unlockGate!.future;
+    return unlockReturns;
   }
 
   @override
@@ -111,5 +118,83 @@ void main() {
     // doesn't end with a pending Timer.
     await tester.pump(const Duration(seconds: 7));
     expect(tester.takeException(), isNull); // the throw was caught, not propagated
+  });
+
+  testWidgets('subscriptionLapsed shows Continue and calls unlockExport',
+      (tester) async {
+    final c = _FakeController();
+    await tester.pumpWidget(_host(c, onOpen: () {}));
+    final ctx = tester.element(find.text('open'));
+    // ignore: unawaited_futures
+    PaywallSheet.show(ctx, reason: PaywallReason.subscriptionLapsed);
+    await tester.pumpAndSettle();
+
+    // The primary CTA reads "Continue" for a lapsed subscription, not "Unlock".
+    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Unlock export'), findsNothing);
+    await tester.tap(find.text('Continue'));
+    await tester.pump();
+    expect(c.unlockCalls, 1);
+  });
+
+  testWidgets('"Already purchased? Sign in" calls openSignIn', (tester) async {
+    final c = _FakeController();
+    await tester.pumpWidget(_host(c, onOpen: () {}));
+    final ctx = tester.element(find.text('open'));
+    // ignore: unawaited_futures
+    PaywallSheet.show(ctx, reason: PaywallReason.needsPurchase);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Already purchased? Sign in'));
+    await tester.pump();
+    expect(c.signInCalls, 1);
+    expect(c.unlockCalls, 0);
+  });
+
+  testWidgets('unlock returning false keeps the sheet open (browser did not open)',
+      (tester) async {
+    final c = _FakeController()..unlockReturns = false;
+    bool? result;
+    await tester.pumpWidget(_host(c, onOpen: () {}));
+    final ctx = tester.element(find.text('open'));
+    unawaited(PaywallSheet.show(ctx, reason: PaywallReason.needsPurchase)
+        .then((r) => result = r));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Unlock export'));
+    await tester.pump(); // run the async result handling
+    // Drain AppAlerts' error auto-dismiss timer (no overlay in this host).
+    await tester.pump(const Duration(seconds: 7));
+    expect(tester.takeException(), isNull);
+    // Sheet stays open, not auto-dismissed, so the user can retry.
+    expect(find.text('Unlock export'), findsOneWidget);
+    expect(result, isNull);
+  });
+
+  testWidgets('shows a spinner and disables the button while the action is in flight',
+      (tester) async {
+    final c = _FakeController()..unlockGate = Completer<bool>();
+    await tester.pumpWidget(_host(c, onOpen: () {}));
+    final ctx = tester.element(find.text('open'));
+    // ignore: unawaited_futures
+    PaywallSheet.show(ctx, reason: PaywallReason.needsPurchase);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Unlock export'));
+    await tester.pump(); // enter the busy state (gate not yet completed)
+
+    // Spinner is up; the label is gone and the button is disabled.
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('Unlock export'), findsNothing);
+    final btn = tester.widget<ElevatedButton>(find.ancestor(
+        of: find.byType(CircularProgressIndicator),
+        matching: find.byType(ElevatedButton)));
+    expect(btn.onPressed, isNull);
+
+    // Release the action: spinner clears, label returns.
+    c.unlockGate!.complete(false);
+    await tester.pump(const Duration(seconds: 7)); // also drains the error timer
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Unlock export'), findsOneWidget);
   });
 }
