@@ -35,28 +35,27 @@ class AuthStateStore {
 
   Future<void> clear() => _kv.delete(_key);
 
-  /// `${siteBase}/pricing?device=<fp>&state=<nonce>`.
+  /// `${siteBase}/pricing?device=<fp>&state=<nonce>[&device_name=...]`.
   Uri pricingUrl({
     required String deviceFingerprint,
     required String state,
-  }) {
-    final base = Uri.parse(LicensingConfig.siteBaseResolved);
-    return base.replace(
-      path: '/pricing',
-      queryParameters: {'device': deviceFingerprint, 'state': state},
-    );
-  }
+    String? deviceName,
+  }) =>
+      _authUrl('/pricing', deviceFingerprint, state, deviceName);
 
-  /// `${siteBase}/login?device=<fp>&state=<nonce>` — the sign-in page for a
-  /// returning/already-purchased user (vs [pricingUrl] which shows plans).
+  /// `${siteBase}/login?device=<fp>&state=<nonce>[&device_name=...]` — the
+  /// sign-in page for a returning/already-purchased user (vs [pricingUrl]).
   Uri loginUrl({
     required String deviceFingerprint,
     required String state,
-  }) {
+    String? deviceName,
+  }) =>
+      _authUrl('/login', deviceFingerprint, state, deviceName);
+
+  Uri _authUrl(String path, String fingerprint, String state, String? name) {
     final base = Uri.parse(LicensingConfig.siteBaseResolved);
-    return base.replace(
-      path: '/login',
-      queryParameters: {'device': deviceFingerprint, 'state': state},
-    );
+    final query = <String, String>{'device': fingerprint, 'state': state};
+    if (name != null && name.isNotEmpty) query['device_name'] = name;
+    return base.replace(path: path, queryParameters: query);
   }
 }

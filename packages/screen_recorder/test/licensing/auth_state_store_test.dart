@@ -49,4 +49,13 @@ void main() {
     expect(url.queryParameters['device'], 'fp_abc');
     expect(url.queryParameters['state'], 'n1');
   });
+
+  test('device_name is included when provided, omitted otherwise', () {
+    final store = AuthStateStore(InMemorySecureKV());
+    final withName = store.pricingUrl(
+        deviceFingerprint: 'fp', state: 'n', deviceName: 'My Mac · macOS 15.1');
+    expect(withName.queryParameters['device_name'], 'My Mac · macOS 15.1');
+    final without = store.loginUrl(deviceFingerprint: 'fp', state: 'n');
+    expect(without.queryParameters.containsKey('device_name'), isFalse);
+  });
 }

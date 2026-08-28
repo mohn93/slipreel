@@ -62,6 +62,10 @@ class MainFlutterWindow: NSWindow {
       switch call.method {
       case "hardwareId":
         result(MainFlutterWindow.hardwareUUID())
+      case "deviceName":
+        // The Mac's sharing name (e.g. "Mohanned's MacBook Pro"), which by
+        // default already contains the model type. Falls back to the hostname.
+        result(Host.current().localizedName ?? ProcessInfo.processInfo.hostName)
       default:
         result(FlutterMethodNotImplemented)
       }

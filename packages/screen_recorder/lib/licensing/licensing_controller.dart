@@ -100,8 +100,10 @@ class LicensingController extends StateNotifier<EntitlementState> {
   /// browser launch was requested (false if url_launcher declined).
   Future<bool> unlockExport() async {
     final fp = await _fingerprint.compute();
+    final name = await _fingerprint.describe();
     final nonce = await _authState.begin();
-    final url = _authState.pricingUrl(deviceFingerprint: fp, state: nonce);
+    final url = _authState.pricingUrl(
+        deviceFingerprint: fp, state: nonce, deviceName: name);
     return _openUrl(url);
   }
 
@@ -109,8 +111,10 @@ class LicensingController extends StateNotifier<EntitlementState> {
   /// for a user who has already purchased (another device, or after sign-out).
   Future<bool> openSignIn() async {
     final fp = await _fingerprint.compute();
+    final name = await _fingerprint.describe();
     final nonce = await _authState.begin();
-    final url = _authState.loginUrl(deviceFingerprint: fp, state: nonce);
+    final url = _authState.loginUrl(
+        deviceFingerprint: fp, state: nonce, deviceName: name);
     return _openUrl(url);
   }
 

@@ -32,4 +32,21 @@ void main() {
     expect(DeviceFingerprint().compute(),
         throwsA(isA<DeviceFingerprintUnavailable>()));
   });
+
+  test('describe combines the device name with a macOS label', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'deviceName') return "Mohanned's MacBook Pro";
+      return null;
+    });
+    final label = await DeviceFingerprint().describe();
+    expect(label, contains("Mohanned's MacBook Pro"));
+    expect(label, contains('macOS'));
+  });
+
+  test('describe falls back to the OS label when the name is unavailable',
+      () async {
+    messenger.setMockMethodCallHandler(channel, (call) async => null);
+    final label = await DeviceFingerprint().describe();
+    expect(label, contains('macOS'));
+  });
 }
