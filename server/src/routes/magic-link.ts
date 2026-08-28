@@ -34,7 +34,9 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
       const link = `${app.billing.siteUrl}/login?token=${token}`;
       if (app.email) {
         try {
-          await app.email.sendMagicLink(parsed.data.email, link);
+          const result = await app.email.sendMagicLink(parsed.data.email, link);
+          const emailId = result && typeof result === 'object' ? result.id : undefined;
+          app.log.info({ emailId, to: parsed.data.email }, 'magic link email sent');
         } catch (err) {
           app.log.error({ err }, 'magic link email send failed');
         }

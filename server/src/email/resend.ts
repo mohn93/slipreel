@@ -19,12 +19,14 @@ export function createResendSender(
           to: [to],
           subject: 'Your Slipreel sign-in link',
           html: `<p>Click to sign in to Slipreel:</p><p><a href="${link}">${link}</a></p>`
-            + `<p>This link expires in 15 minutes. If you didn't request it, ignore this email.</p>`,
+            + `<p>This link expires in 30 minutes. If you didn't request it, ignore this email.</p>`,
         }),
       });
       if (!res.ok) {
         throw new Error(`resend send failed: ${res.status}`);
       }
+      const data = (await res.json().catch(() => ({}))) as { id?: string };
+      return { id: data.id };
     },
   };
 }

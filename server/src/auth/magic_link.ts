@@ -12,7 +12,7 @@ export async function createMagicLink(
   pool: pg.Pool,
   userId: string,
   ctx: MagicLinkContext = {},
-  ttlMinutes = 15,
+  ttlMinutes = 30,
 ): Promise<{ token: string }> {
   const { token, hash } = newSecretToken();
   const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
