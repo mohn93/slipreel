@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { findOrCreateUserByEmail } from '../billing/customers.js';
+import { requireSession } from '../auth/require_session.js';
 
 const checkoutBody = z.object({
   email: z.string().email(),
@@ -9,7 +10,6 @@ const checkoutBody = z.object({
   device_name: z.string().max(120).optional(),
   state: z.string().max(200).optional(),
 });
-const portalBody = z.object({ email: z.string().email() });
 
 export async function billingRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/checkout', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
@@ -40,19 +40,16 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ url: session.url });
   });
 
-  // NOTE: email-keyed for this phase; a later auth phase scopes this to the
-  // authenticated user instead of trusting a posted email.
-  app.post('/v1/portal', async (req, reply) => {
-    const parsed = portalBody.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: 'invalid request' });
-    }
+  // Session-scoped: opens the billing portal for the logged-in user only.
+  // (Never trust a posted email here — that would let anyone open any
+  // customer's portal.)
+  app.post('/v1/portal', { preHandler: requireSession(app) }, async (req, reply) => {
     const { rows } = await app.pool.query<{ stripe_customer_id: string | null }>(
-      'SELECT stripe_customer_id FROM users WHERE email = $1',
-      [parsed.data.email],
+      'SELECT stripe_customer_id FROM users WHERE id = $1',
+      [req.userId!],
     );
     const customer = rows[0]?.stripe_customer_id;
-    if (!customer) return reply.code(404).send({ error: 'no customer for email' });
+    if (!customer) return reply.code(404).send({ error: 'no billing account' });
     const session = await app.stripe.billingPortal.sessions.create({
       customer,
       return_url: app.billing.portalReturnUrl,

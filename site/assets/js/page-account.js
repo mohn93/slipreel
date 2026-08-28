@@ -20,7 +20,7 @@ function renderDevices(devices) {
     const row = document.createElement('div');
     row.className = 'device-row';
     const name = document.createElement('span');
-    name.textContent = d.name || 'Unnamed device';
+    name.textContent = d.name || ('Device · added ' + new Date(d.created_at).toLocaleDateString());
     const btn = document.createElement('button');
     btn.className = 'btn'; btn.textContent = 'Deactivate';
     btn.addEventListener('click', async () => {
@@ -53,11 +53,12 @@ async function load() {
 
 document.getElementById('portal').addEventListener('click', async () => {
   statusEl.className = 'status hidden';
-  const email = /** @type {HTMLInputElement} */ (document.getElementById('email')).value.trim();
-  if (!email) return err('Enter the email you purchased with.');
-  const r = await api.portal(email);
+  const btn = document.getElementById('portal');
+  btn.setAttribute('disabled', 'true');
+  const r = await api.portal();
   if (r.ok && r.data?.url) { location.href = r.data.url; return; }
-  err(r.status === 404 ? 'No billing account for that email.' : 'Could not open billing.');
+  btn.removeAttribute('disabled');
+  err(r.status === 404 ? 'No billing found for your account yet.' : 'Could not open billing.');
 });
 
 document.getElementById('logout').addEventListener('click', async (e) => {
