@@ -183,7 +183,15 @@ class _ExportDialogState extends State<ExportDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: kDialogBackground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      // A visible border + real shadow so the dialog lifts off the near-black
+      // editor background instead of fusing with it.
+      elevation: 24,
+      shadowColor: Colors.black,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: kBorderSubtle, width: 1),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: ConstrainedBox(
