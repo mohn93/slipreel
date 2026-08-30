@@ -516,6 +516,31 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         colorScheme: palette.toColorScheme(),
         extensions: [palette],
         useMaterial3: true,
+        // Dialogs and modal sheets default to a surface near the near-black
+        // app background with no border, so they blend in. Give them a clearly
+        // elevated surface, a visible border, a real shadow, and a stronger
+        // scrim so they read as distinct layers. Palette-derived so it holds
+        // across all three palettes.
+        dialogTheme: DialogThemeData(
+          backgroundColor: Color.lerp(palette.surfaceCard, Colors.white, 0.06),
+          surfaceTintColor: Colors.transparent,
+          elevation: 24,
+          shadowColor: Colors.black,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: palette.dividerStrong, width: 1),
+          ),
+        ),
+        bottomSheetTheme: BottomSheetThemeData(
+          backgroundColor: Color.lerp(palette.surfaceCard, Colors.white, 0.06),
+          surfaceTintColor: Colors.transparent,
+          modalBarrierColor: Colors.black.withValues(alpha: 0.6),
+          elevation: 24,
+          shape: RoundedRectangleBorder(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            side: BorderSide(color: palette.dividerStrong, width: 1),
+          ),
+        ),
       ),
       debugShowCheckedModeBanner: false,
       // Lets agent-wires resolve routes so the agent can call

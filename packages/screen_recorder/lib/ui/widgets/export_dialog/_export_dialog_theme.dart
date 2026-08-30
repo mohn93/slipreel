@@ -6,7 +6,11 @@ import 'package:flutter/material.dart';
 
 const kBgUnselected = Color(0xFF22232C);
 const kBgSelected = Color(0xFF1F1A2E);
-const kDialogBackground = Color(0xFF0E0E10);
+// A clearly elevated surface (aligned with the inspector panels, kInspectorBg
+// 0xFF1A1A26) so the dialog reads as a distinct layer instead of blending into
+// the near-black editor background (0xFF050507). Paired with a visible border
+// on the Dialog itself.
+const kDialogBackground = Color(0xFF1C1C28);
 const kAccent = Color(0xFF8B5CF6);
 const kTextPrimary = Color(0xFFE8E8EA);
 const kTextSecondary = Color(0xFF8C8C95);

@@ -24,7 +24,8 @@ class PaywallSheet {
       context: context,
       isDismissible: true,
       showDragHandle: true,
-      backgroundColor: context.palette.surfaceElevated,
+      // Inherits the elevated surface + border + stronger scrim from
+      // bottomSheetTheme so it stands off the near-black background.
       builder: (_) => _PaywallBody(reason: reason),
     );
     return result ?? false;
