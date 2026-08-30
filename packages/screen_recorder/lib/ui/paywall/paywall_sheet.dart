@@ -123,9 +123,15 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
                   backgroundColor: palette.accent,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14)),
-              child: Text(widget.reason == PaywallReason.needsPurchase
-                  ? 'Unlock export'
-                  : 'Continue'),
+              child: _busy
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Text(widget.reason == PaywallReason.needsPurchase
+                      ? 'Unlock export'
+                      : 'Continue'),
             ),
             const SizedBox(height: 8),
             TextButton(

@@ -37,6 +37,10 @@ void main() {
       final s = EntitlementLoaded(_claims(plan: 'subscription', status: 'active'));
       expect(canExportNow(s, appReleaseDate: release), isTrue);
     });
+    test('grace subscription -> true (dunning window still exports)', () {
+      final s = EntitlementLoaded(_claims(plan: 'subscription', status: 'grace'));
+      expect(canExportNow(s, appReleaseDate: release), isTrue);
+    });
     test('one-time within ceiling -> true', () {
       final s = EntitlementLoaded(_claims(
           plan: 'onetime',
@@ -64,6 +68,10 @@ void main() {
           EntitlementLoaded(_claims(plan: 'subscription', status: 'canceled'));
       expect(paywallReasonFor(s, appReleaseDate: release),
           PaywallReason.subscriptionLapsed);
+    });
+    test('grace subscription -> null (still entitled, no paywall)', () {
+      final s = EntitlementLoaded(_claims(plan: 'subscription', status: 'grace'));
+      expect(paywallReasonFor(s, appReleaseDate: release), isNull);
     });
     test('one-time past update ceiling -> updateCeiling', () {
       final s = EntitlementLoaded(_claims(
