@@ -56,7 +56,10 @@ class _BackdropPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final fill = Paint()..color = const Color(0x99000000);
+    // ~72% black scrim so the callout clearly reads as a modal over the editor
+    // (60% left the near-black midnight background barely separated from the
+    // card).
+    final fill = Paint()..color = const Color(0xB8000000);
     final cutoutRRect =
         RRect.fromRectAndRadius(anchorRect.inflate(6), const Radius.circular(10));
     final path = Path()
@@ -157,11 +160,24 @@ class _Callout extends StatelessWidget {
       top: top,
       left: 16,
       right: 16,
+      // A lighter surface + a visible accent border + a real drop shadow so the
+      // callout clearly lifts off the near-black editor background. (The editor
+      // overlay sits over an opaque window, so — unlike the recording-bar tip —
+      // the shadow renders cleanly here.)
       child: Material(
-        elevation: 8,
+        type: MaterialType.card,
+        elevation: 12,
+        shadowColor: Colors.black.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(12),
-        color: scheme.surfaceContainerHigh,
-        child: Padding(
+        color: scheme.surfaceContainerHighest,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: scheme.primary.withValues(alpha: 0.45),
+              width: 1,
+            ),
+          ),
           padding: const EdgeInsets.all(16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
