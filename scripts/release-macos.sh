@@ -75,6 +75,11 @@ resolve_notary_args   # validates credentials are present (populates NOTARY_ARGS
 mkdir -p "$DIST"
 
 # --- stage 1: build ----------------------------------------------------------
+# Stamp the real publish date into build_release_date.g.dart FIRST, so the
+# compiled app carries today's date for the one-time export ceiling (spec
+# §2/§4) instead of the stale checked-in value.
+log "stamping build release date"
+"$ROOT/scripts/stamp-build-date.sh" || die "failed to stamp build release date"
 log "building Slipreel $VERSION (clean release)"
 log "release $VERSION -> CFBundleShortVersionString $VERSION, CFBundleVersion $BUILD_NUMBER"
 ( cd "$APP_PKG" && $FLUTTER clean >/dev/null \
