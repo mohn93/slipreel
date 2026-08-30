@@ -1,21 +1,29 @@
 /**
- * One-time (idempotent) creation of Slipreel's Stripe TEST-mode products and
- * prices. Run with your test secret key set:
- *   STRIPE_SECRET_KEY=sk_test_... npm run stripe:bootstrap
- * It prints the three price ids to paste into server/.env. Safe to re-run:
- * it looks up prices by lookup_key and only creates missing ones.
+ * Idempotent creation of Slipreel's Stripe products and prices in whichever
+ * mode the key belongs to. Run with the secret key set:
+ *   STRIPE_SECRET_KEY=sk_test_... npm run stripe:bootstrap   # test products
+ *   STRIPE_SECRET_KEY=sk_live_... npm run stripe:bootstrap   # LIVE products
+ * It prints the three price ids to paste into the env. Safe to re-run: it
+ * looks up prices by lookup_key and only creates missing ones.
  *
- * Placeholder amounts (USD) — adjust before go-live:
- *   monthly 900 ($9), yearly 7900 ($79), one-time 9900 ($99).
+ * Amounts (USD cents): monthly 1200 ($12), yearly 8900 ($89), one-time 12900
+ * ($129). These MUST match the prices shown on the site (pricing.html +
+ * index.html). A price's amount is immutable in Stripe — to change a live
+ * price, create a new one (new lookup_key) and repoint STRIPE_PRICE_*.
  */
 import Stripe from 'stripe';
 
 const key = process.env.STRIPE_SECRET_KEY;
-if (!key || !key.startsWith('sk_test_')) {
-  console.error('Set STRIPE_SECRET_KEY to a sk_test_ key first (test mode only).');
+const isTest = !!key && key.startsWith('sk_test_');
+const isLive = !!key && key.startsWith('sk_live_');
+if (!isTest && !isLive) {
+  console.error('Set STRIPE_SECRET_KEY to a sk_test_ or sk_live_ key first.');
   process.exit(1);
 }
-const stripe = new Stripe(key);
+if (isLive) {
+  console.error('LIVE MODE: creating real products/prices on the live account.');
+}
+const stripe = new Stripe(key!);
 
 type Spec = {
   lookupKey: string;
@@ -25,9 +33,9 @@ type Spec = {
 };
 
 const specs: Spec[] = [
-  { lookupKey: 'slipreel_monthly', productName: 'Slipreel Pro (Monthly)', amount: 900, recurring: 'month' },
-  { lookupKey: 'slipreel_yearly', productName: 'Slipreel Pro (Yearly)', amount: 7900, recurring: 'year' },
-  { lookupKey: 'slipreel_onetime', productName: 'Slipreel Pro (One-time, 1 year of updates)', amount: 9900 },
+  { lookupKey: 'slipreel_monthly', productName: 'Slipreel Pro (Monthly)', amount: 1200, recurring: 'month' },
+  { lookupKey: 'slipreel_yearly', productName: 'Slipreel Pro (Yearly)', amount: 8900, recurring: 'year' },
+  { lookupKey: 'slipreel_onetime', productName: 'Slipreel Pro (One-time, 1 year of updates)', amount: 12900 },
 ];
 
 async function ensurePrice(spec: Spec): Promise<string> {
