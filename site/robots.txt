@@ -1,0 +1,58 @@
+# slipreel.app — https://slipreel.app
+#
+# Search and AI answer engines are welcome to crawl and cite Slipreel.
+# App/account pages carry no public content and are disallowed below; they
+# are also marked noindex at the page level.
+
+User-agent: *
+Allow: /
+Disallow: /account.html
+Disallow: /login.html
+Disallow: /success.html
+Disallow: /cancel.html
+
+# AI answer engines (search grounding + citations) — explicitly allowed.
+User-agent: GPTBot
+Allow: /
+Disallow: /account.html
+Disallow: /login.html
+Disallow: /success.html
+Disallow: /cancel.html
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+Sitemap: https://slipreel.app/sitemap.xml
