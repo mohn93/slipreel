@@ -466,6 +466,20 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         if (now && !was) analytics.capture(AnalyticsEvents.entitlementActivated);
       },
     );
+
+    // Attribution: identify by the entitlement's user id (`sub`) so app events
+    // join the same PostHog person as the web (which identifies by the same id
+    // and supplies the email). fireImmediately covers an entitlement already
+    // loaded at startup; identify() no-ops once identified.
+    ref.listenManual<EntitlementState>(
+      entitlementProvider,
+      (prev, next) {
+        if (next is EntitlementLoaded && next.claims.sub.isNotEmpty) {
+          analytics.identify(next.claims.sub);
+        }
+      },
+      fireImmediately: true,
+    );
   }
 
   @override

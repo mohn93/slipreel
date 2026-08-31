@@ -44,7 +44,7 @@ class AnalyticsService {
         _now = now;
 
   final AnalyticsQueueStore _store;
-  final String _distinctId;
+  String _distinctId; // mutable: becomes the user id after identify()
   final http.Client _client;
   final String _projectKey;
   final String _host;
@@ -79,6 +79,27 @@ class AnalyticsService {
       name: event,
       timestamp: _now(),
       properties: {..._superProperties, ...?properties},
+    ));
+    unawaited(_store.save(_queue));
+    _scheduleFlush();
+  }
+
+  /// Attribution: link this install's anonymous, device-keyed person to a
+  /// stable [userId] (the entitlement token's `sub`) so app + web events unify
+  /// into one PostHog person. [setProps] sets person properties. No-ops when
+  /// disabled/unconfigured or already identified as [userId].
+  void identify(String userId, {Map<String, Object?>? setProps}) {
+    if (!_enabled || !_configured) return;
+    if (userId.isEmpty || _distinctId == userId) return;
+    final anonId = _distinctId;
+    _distinctId = userId; // the $identify below (and later events) use the new id
+    _queue.add(AnalyticsEvent(
+      name: r'$identify',
+      timestamp: _now(),
+      properties: {
+        r'$anon_distinct_id': anonId,
+        if (setProps != null && setProps.isNotEmpty) r'$set': setProps,
+      },
     ));
     unawaited(_store.save(_queue));
     _scheduleFlush();

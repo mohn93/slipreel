@@ -164,4 +164,57 @@ void main() {
     final batch = (jsonDecode(seen!.body) as Map<String, dynamic>)['batch'] as List;
     expect((batch.first as Map<String, dynamic>)['event'], 'leftover');
   });
+
+  test(r'identify emits $identify (anon->user + $set) and switches distinct_id',
+      () async {
+    http.Request? seen;
+    final client = MockClient((req) async {
+      seen = req;
+      return http.Response('{}', 200);
+    });
+    final a = svc(client: client);
+    a.identify('user_42', setProps: {'email': 'u@e.com'});
+    a.capture('after_identify');
+    await a.flush();
+
+    final batch =
+        (jsonDecode(seen!.body) as Map<String, dynamic>)['batch'] as List;
+    final idEvent = batch.firstWhere((e) => e['event'] == r'$identify')
+        as Map<String, dynamic>;
+    expect(idEvent['distinct_id'], 'user_42');
+    final props = idEvent['properties'] as Map<String, dynamic>;
+    expect(props[r'$anon_distinct_id'], 'device_hash');
+    expect((props[r'$set'] as Map)['email'], 'u@e.com');
+    // Events after identify carry the identified id.
+    final after = batch.firstWhere((e) => e['event'] == 'after_identify')
+        as Map<String, dynamic>;
+    expect(after['distinct_id'], 'user_42');
+  });
+
+  test(r'identify twice to the same id emits only one $identify', () async {
+    http.Request? seen;
+    final client = MockClient((req) async {
+      seen = req;
+      return http.Response('{}', 200);
+    });
+    final a = svc(client: client);
+    a.identify('user_1');
+    a.identify('user_1');
+    await a.flush();
+    final batch =
+        (jsonDecode(seen!.body) as Map<String, dynamic>)['batch'] as List;
+    expect(batch.where((e) => e['event'] == r'$identify').length, 1);
+  });
+
+  test('identify no-ops when disabled', () async {
+    var calls = 0;
+    final client = MockClient((req) async {
+      calls++;
+      return http.Response('{}', 200);
+    });
+    final a = svc(client: client, enabled: false);
+    a.identify('user_1');
+    await a.flush();
+    expect(calls, 0);
+  });
 }
