@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:screen_recorder/analytics/analytics_events.dart';
+import 'package:screen_recorder/analytics/analytics_service.dart';
 import 'package:screen_recorder/onboarding/onboarding_store.dart';
 import 'package:screen_recorder/state/window_mode_controller.dart';
 import 'package:screen_recorder/ui/bar/recording_bar_screen.dart';
@@ -24,6 +26,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   void initState() {
     super.initState();
+    ref.captureAnalytics(AnalyticsEvents.screenViewed,
+        properties: {'screen': 'onboarding'});
     // Default app window is the 68px-tall recording bar; onboarding needs the
     // full panel chrome so its pages aren't clipped. RecordingBarScreen
     // restores `bar` mode in its own initState after _finish navigates.

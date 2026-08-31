@@ -406,6 +406,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     super.initState();
     _initializeVideo();
     HardwareKeyboard.instance.addHandler(_onKey);
+    ref.captureAnalytics(AnalyticsEvents.screenViewed,
+        properties: {'screen': 'editor'});
   }
 
   /// Global Cmd+K → split at the current playhead's edited time.
@@ -1823,6 +1825,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   }
 
   Future<void> _exportBody() async {
+    // Funnel entry: the user initiated an export (before any paywall/dialog).
+    ref.captureAnalytics(AnalyticsEvents.exportOpened);
     // ── Phase 1: pre-dialog setup (probe + dialog) ─────────────────────
     // Any exception here (bad codec, missing metadata, probe failure)
     // shows a snackbar rather than dying silently.

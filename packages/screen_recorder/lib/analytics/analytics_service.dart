@@ -150,3 +150,16 @@ class AnalyticsService {
 final analyticsServiceProvider = Provider<AnalyticsService>(
   (ref) => throw UnimplementedError('Override analyticsServiceProvider in main()'),
 );
+
+/// Widget-friendly capture that no-ops if the provider isn't overridden — e.g.
+/// a widget test that pumps a screen without wiring analytics. Use this from
+/// `initState`/build paths so instrumentation can't crash a screen.
+extension AnalyticsWidgetRef on WidgetRef {
+  void captureAnalytics(String event, {Map<String, Object?>? properties}) {
+    try {
+      read(analyticsServiceProvider).capture(event, properties: properties);
+    } catch (_) {
+      /* analytics not wired in this context */
+    }
+  }
+}
