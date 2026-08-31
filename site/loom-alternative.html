@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#08080C">
+<title>Slipreel — the Loom alternative for polished demos</title>
+<meta name="description" content="A Loom alternative for macOS: auto-zoom, smoothed cursor, device frames, and local MP4 or GIF export — a finished demo, not just a share link.">
+<link rel="canonical" href="https://slipreel.app/loom-alternative">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" sizes="48x48" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Slipreel">
+<meta property="og:locale" content="en_US">
+<meta property="og:url" content="https://slipreel.app/loom-alternative">
+<meta property="og:title" content="Slipreel — the Loom alternative for polished demos">
+<meta property="og:description" content="Cinematic auto-zoom, device frames, and local MP4 or GIF export — for when you need a finished demo, not just a share link.">
+<meta property="og:image" content="https://slipreel.app/assets/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Slipreel — a macOS screen recorder and editor.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Slipreel — the Loom alternative for polished demos">
+<meta name="twitter:description" content="Cinematic auto-zoom, device frames, and local MP4 or GIF export — for when you need a finished demo, not just a share link.">
+<meta name="twitter:image" content="https://slipreel.app/assets/img/og.png">
+<link rel="preload" href="assets/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Slipreel", "item": "https://slipreel.app/" },
+    { "@type": "ListItem", "position": 2, "name": "Loom alternative", "item": "https://slipreel.app/loom-alternative" }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is Slipreel a good Loom alternative?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, if you want polished, edited demos you own. Slipreel adds automatic zoom, a smoothed cursor, device frames, and local MP4 or GIF export. Loom is the better pick when you want instant cloud sharing, cross-platform recording, and a team video library for quick async messages."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel work like Loom's instant share links?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Not exactly. Slipreel exports a finished MP4 or GIF file to your Mac rather than hosting videos behind a link. You then share that file however you like. Loom is built around instantly shareable hosted links."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is Slipreel cheaper than Loom?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Slipreel is $12/month, $89/year, or $129 once. Loom is free for up to 25 short videos, then $18 per user per month for Business. For one person producing finished demos, Slipreel's one-time license is cheaper over time."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel upload my recordings to the cloud like Loom?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Recording, editing, and captions all run on your Mac and nothing is uploaded. You share the exported file yourself, so you decide where it goes."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel have automatic zoom that Loom doesn't?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Slipreel detects your clicks and pushes in on them automatically, and smooths the cursor path. Loom does not do cinematic auto-zoom."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel run on Windows like Loom?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Slipreel is macOS 13 or later, on Apple Silicon or Intel. Loom is cross-platform across Mac, Windows, and mobile."
+      }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="aurora" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<nav class="nav" aria-label="Primary">
+  <div class="container nav__inner">
+    <a class="nav__brand" href="/">
+      <svg class="nav__mark" viewBox="0 0 512 512" width="28" height="28" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="slipreel-mark-fill" x1="0" y1="0" x2="0.85" y2="1">
+            <stop offset="0" stop-color="var(--accent)"></stop>
+            <stop offset="1" stop-color="var(--accent-deep)"></stop>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="114" fill="url(#slipreel-mark-fill)"></rect>
+        <g fill="var(--on-accent)">
+          <rect x="72" y="212" width="62" height="88" rx="31" opacity="0.20"></rect>
+          <rect x="118" y="212" width="74" height="88" rx="37" opacity="0.36"></rect>
+          <rect x="164" y="212" width="86" height="88" rx="43" opacity="0.58"></rect>
+          <rect x="208" y="212" width="98" height="88" rx="44" opacity="0.84"></rect>
+          <circle cx="316" cy="256" r="100"></circle>
+        </g>
+        <circle cx="316" cy="256" r="34" fill="none" stroke="var(--accent-deep)" stroke-width="24"></circle>
+      </svg>
+      <span class="nav__wordmark">Slipreel</span>
+    </a>
+
+    <ul class="nav__links">
+      <li><a class="nav__link" href="/#features">Features</a></li>
+      <li><a class="nav__link" href="/#pricing">Pricing</a></li>
+      <li><a class="nav__link" href="/#faq">FAQ</a></li>
+    </ul>
+
+    <a class="btn btn--primary nav__cta"
+       href="https://slipreel.app/download/latest.dmg"
+       data-download-link>Download</a>
+  </div>
+</nav>
+
+<main id="main">
+<header class="section page-hero">
+  <div class="container">
+    <div class="page-hero__inner">
+      <p class="eyebrow">Slipreel vs Loom</p>
+      <h1>The Loom alternative for demos worth keeping.</h1>
+      <p class="page-hero__sub">
+        Loom is built for firing off quick async videos. Slipreel is built for
+        the polished, edited demo &mdash; automatic zoom, smoothed cursor,
+        device frames, and captions &mdash; exported as an MP4 or GIF that lives
+        on your Mac.
+      </p>
+      <div class="page-hero__cta">
+        <a class="btn btn--primary"
+           href="https://slipreel.app/download/latest.dmg"
+           data-download-link>Download for macOS</a>
+        <a class="btn btn--ghost" href="#compare">See how they compare</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="section">
+  <div class="container prose">
+    <p>
+      Loom and Slipreel solve different halves of the same job. Loom is a
+      cross-platform, cloud-first way to record a quick video and drop a share
+      link into Slack &mdash; great for async updates. Slipreel is a native
+      macOS tool for producing a genuinely polished demo: it auto-zooms on your
+      clicks, smooths the cursor, frames the app on a background, and burns in
+      captions, then exports a finished MP4 or GIF that never leaves your Mac
+      unless you choose to upload it.
+    </p>
+    <p>
+      If your goal is a produced-looking demo you own, here is how the two stack
+      up &mdash; and when Loom is still the right call.
+    </p>
+  </div>
+</section>
+
+<section class="section" id="compare">
+  <div class="container">
+    <h2 class="visually-hidden">Slipreel versus Loom, feature by feature</h2>
+    <div class="ctable-wrap">
+      <table class="ctable">
+        <thead>
+          <tr>
+            <th scope="col">Feature</th>
+            <th scope="col">Slipreel</th>
+            <th scope="col">Loom</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Platform</th>
+            <td>macOS 13+ (Apple Silicon &amp; Intel)</td>
+            <td>Mac, Windows, iOS, Android, web</td>
+          </tr>
+          <tr>
+            <th scope="row">Built for</th>
+            <td>Polished, edited demos</td>
+            <td>Quick async video messages</td>
+          </tr>
+          <tr>
+            <th scope="row">Automatic zoom on clicks</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__no">&mdash;</td>
+          </tr>
+          <tr>
+            <th scope="row">Smoothed cursor + motion blur</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__no">&mdash;</td>
+          </tr>
+          <tr>
+            <th scope="row">Device frames + backgrounds</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__no">&mdash;</td>
+          </tr>
+          <tr>
+            <th scope="row">Captions</th>
+            <td>On-device (Whisper)</td>
+            <td>Cloud transcript</td>
+          </tr>
+          <tr>
+            <th scope="row">Timeline editing (cut / trim / speed)</th>
+            <td class="ctable__yes">Yes</td>
+            <td>Basic trim</td>
+          </tr>
+          <tr>
+            <th scope="row">MP4 + GIF export</th>
+            <td class="ctable__yes">Yes</td>
+            <td>MP4 download</td>
+          </tr>
+          <tr>
+            <th scope="row">Instant shareable link + hosting</th>
+            <td class="ctable__no">&mdash;</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Team library + viewer analytics</th>
+            <td class="ctable__no">&mdash;</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Runs fully on your Mac (no cloud)</th>
+            <td class="ctable__yes">Yes</td>
+            <td>Cloud-based</td>
+          </tr>
+          <tr>
+            <th scope="row">Pricing</th>
+            <td>$12/mo, $89/yr, or $129 once</td>
+            <td>Free tier; Business $18/user/mo</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="compare-split">
+      <article class="compare-note">
+        <h3>Why people choose Slipreel</h3>
+        <ul>
+          <li>Cinematic polish automatically &mdash; auto-zoom, smoothed cursor, device frames &mdash; without manual editing.</li>
+          <li>A finished MP4 or GIF you own, that plays anywhere, not just behind a share link.</li>
+          <li>Everything runs on your Mac; nothing is uploaded unless you decide to.</li>
+          <li>A one-time $129 license instead of a per-seat monthly subscription.</li>
+        </ul>
+      </article>
+      <article class="compare-note">
+        <h3>When Loom is the better fit</h3>
+        <ul>
+          <li>You want to record and share instantly with a link, and hosting and viewer analytics matter more than production polish.</li>
+          <li>You need cross-platform recording (Windows, mobile) or a shared team library.</li>
+          <li>You're sending quick async updates to teammates rather than producing a demo.</li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section faq" id="faq">
+  <div class="container faq__inner">
+    <h2 class="faq__heading">Slipreel vs Loom: common questions</h2>
+
+    <div class="faq__list">
+      <details class="faq__item">
+        <summary class="faq__question">Is Slipreel a good Loom alternative?</summary>
+        <p class="faq__answer">
+          Yes, if you want polished, edited demos you own. Slipreel adds
+          automatic zoom, a smoothed cursor, device frames, and local MP4 or GIF
+          export. Loom is the better pick when you want instant cloud sharing,
+          cross-platform recording, and a team video library for quick async
+          messages.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel work like Loom's instant share links?</summary>
+        <p class="faq__answer">
+          Not exactly. Slipreel exports a finished MP4 or GIF file to your Mac
+          rather than hosting videos behind a link. You then share that file
+          however you like. Loom is built around instantly shareable hosted
+          links.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Is Slipreel cheaper than Loom?</summary>
+        <p class="faq__answer">
+          Slipreel is $12/month, $89/year, or $129 once. Loom is free for up to
+          25 short videos, then $18 per user per month for Business. For one
+          person producing finished demos, Slipreel's one-time license is
+          cheaper over time.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel upload my recordings to the cloud like Loom?</summary>
+        <p class="faq__answer">
+          No. Recording, editing, and captions all run on your Mac and nothing
+          is uploaded. You share the exported file yourself, so you decide where
+          it goes.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel have automatic zoom that Loom doesn't?</summary>
+        <p class="faq__answer">
+          Yes. Slipreel detects your clicks and pushes in on them automatically,
+          and smooths the cursor path. Loom does not do cinematic auto-zoom.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel run on Windows like Loom?</summary>
+        <p class="faq__answer">
+          No. Slipreel is macOS 13 or later, on Apple Silicon or Intel. Loom is
+          cross-platform across Mac, Windows, and mobile.
+        </p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="section cta-band">
+  <div class="container">
+    <div class="cta-band__card">
+      <h2 class="cta-band__heading">Make a demo, not just a quick share.</h2>
+      <a class="btn btn--primary cta-band__button"
+         href="https://slipreel.app/download/latest.dmg"
+         data-download-link>Download for macOS</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <nav class="footer-compare" aria-label="Compare Slipreel">
+      <span class="footer-compare__label">Compare Slipreel</span>
+      <a href="/screen-studio-alternative">vs Screen Studio</a>
+      <a href="/loom-alternative">vs Loom</a>
+      <a href="/screenflow-alternative">vs ScreenFlow</a>
+      <a href="/quicktime-alternative">vs QuickTime</a>
+    </nav>
+    <div class="site-footer__inner">
+      <span class="site-footer__wordmark">Slipreel</span>
+      <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
+      <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
+    </div>
+  </div>
+</footer>
+
+<script type="module" src="assets/js/site.js"></script>
+</body>
+</html>

@@ -25,13 +25,23 @@ done < <(grep -rhoE 'https?://[A-Za-z0-9.:-]+' \
            --exclude='*.test.js' \
            "$SITE" 2>/dev/null | sort -u)
 
-# 2. Local assets referenced from HTML must exist on disk.
+# 2. Local assets referenced from HTML must exist on disk. References resolve
+#    the way the production nginx serves them (try_files $uri $uri.html $uri/):
+#    a root-relative clean URL like /loom-alternative is backed by
+#    loom-alternative.html, and / is backed by index.html.
 while IFS= read -r ref; do
   [[ -z "$ref" ]] && continue
   case "$ref" in http*|//*|\#*|mailto:*|data:*) continue ;; esac
   path="${ref%%\#*}"; path="${path%%\?*}"
   [[ -z "$path" ]] && continue
-  [[ -f "$SITE/$path" ]] || violation "missing local asset: $path"
+  rel="${path#/}"
+  if [[ -z "$rel" ]]; then
+    [[ -f "$SITE/index.html" ]] || violation "missing local asset: $path"
+  elif [[ -f "$SITE/$rel" || -f "$SITE/$rel.html" || -f "$SITE/$rel/index.html" ]]; then
+    :
+  else
+    violation "missing local asset: $path"
+  fi
 done < <(grep -rhoE '(src|href)="[^"]+"' --include='*.html' "$SITE" 2>/dev/null \
            | sed -E 's/^(src|href)="//; s/"$//' | sort -u)
 

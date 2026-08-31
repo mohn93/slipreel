@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#08080C">
+<title>Slipreel — the QuickTime alternative for Mac screen recording</title>
+<meta name="description" content="A QuickTime alternative for Mac: turn a screen recording into a polished demo with auto-zoom, device frames, captions, and MP4 or GIF export.">
+<link rel="canonical" href="https://slipreel.app/quicktime-alternative">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" sizes="48x48" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Slipreel">
+<meta property="og:locale" content="en_US">
+<meta property="og:url" content="https://slipreel.app/quicktime-alternative">
+<meta property="og:title" content="Slipreel — the QuickTime alternative for Mac screen recording">
+<meta property="og:description" content="Everything QuickTime screen recording leaves out — automatic zoom, smoothed cursor, device frames, captions, system audio, and MP4 or GIF export.">
+<meta property="og:image" content="https://slipreel.app/assets/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Slipreel — a macOS screen recorder and editor.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Slipreel — the QuickTime alternative for Mac screen recording">
+<meta name="twitter:description" content="Everything QuickTime screen recording leaves out — automatic zoom, smoothed cursor, device frames, captions, system audio, and MP4 or GIF export.">
+<meta name="twitter:image" content="https://slipreel.app/assets/img/og.png">
+<link rel="preload" href="assets/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Slipreel", "item": "https://slipreel.app/" },
+    { "@type": "ListItem", "position": 2, "name": "QuickTime alternative", "item": "https://slipreel.app/quicktime-alternative" }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is Slipreel better than QuickTime for screen recording?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "For polished demos, yes. Slipreel adds automatic zoom, cursor smoothing, device frames, captions, system-audio capture, and MP4 or GIF export that QuickTime does not have. For a quick raw capture you won't edit, QuickTime is fine and free."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can Slipreel record system audio when QuickTime can't?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Slipreel captures system audio as its own track. QuickTime needs extra third-party software to record internal sound."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel export GIFs when QuickTime doesn't?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Slipreel exports both MP4 and GIF, in six aspect ratios. QuickTime exports .mov video only."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is Slipreel free like QuickTime?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Slipreel is free to download and fully functional to record and edit; export requires a license ($12/month, $89/year, or $129 once). QuickTime is entirely free and built into macOS."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel add automatic zoom to a recording?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Slipreel detects your clicks and zooms in on them automatically, and smooths the cursor path. QuickTime cannot do this."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel run on my Mac like QuickTime?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Slipreel runs on macOS 13 or later, Apple Silicon or Intel, and everything runs locally on your Mac."
+      }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="aurora" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<nav class="nav" aria-label="Primary">
+  <div class="container nav__inner">
+    <a class="nav__brand" href="/">
+      <svg class="nav__mark" viewBox="0 0 512 512" width="28" height="28" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="slipreel-mark-fill" x1="0" y1="0" x2="0.85" y2="1">
+            <stop offset="0" stop-color="var(--accent)"></stop>
+            <stop offset="1" stop-color="var(--accent-deep)"></stop>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="114" fill="url(#slipreel-mark-fill)"></rect>
+        <g fill="var(--on-accent)">
+          <rect x="72" y="212" width="62" height="88" rx="31" opacity="0.20"></rect>
+          <rect x="118" y="212" width="74" height="88" rx="37" opacity="0.36"></rect>
+          <rect x="164" y="212" width="86" height="88" rx="43" opacity="0.58"></rect>
+          <rect x="208" y="212" width="98" height="88" rx="44" opacity="0.84"></rect>
+          <circle cx="316" cy="256" r="100"></circle>
+        </g>
+        <circle cx="316" cy="256" r="34" fill="none" stroke="var(--accent-deep)" stroke-width="24"></circle>
+      </svg>
+      <span class="nav__wordmark">Slipreel</span>
+    </a>
+
+    <ul class="nav__links">
+      <li><a class="nav__link" href="/#features">Features</a></li>
+      <li><a class="nav__link" href="/#pricing">Pricing</a></li>
+      <li><a class="nav__link" href="/#faq">FAQ</a></li>
+    </ul>
+
+    <a class="btn btn--primary nav__cta"
+       href="https://slipreel.app/download/latest.dmg"
+       data-download-link>Download</a>
+  </div>
+</nav>
+
+<main id="main">
+<header class="section page-hero">
+  <div class="container">
+    <div class="page-hero__inner">
+      <p class="eyebrow">Slipreel vs QuickTime</p>
+      <h1>Everything QuickTime screen recording leaves out.</h1>
+      <p class="page-hero__sub">
+        QuickTime captures a raw screen recording. Slipreel captures it and
+        makes it look produced &mdash; automatic zoom, smoothed cursor, device
+        frames, captions, system audio, and MP4 or GIF export.
+      </p>
+      <div class="page-hero__cta">
+        <a class="btn btn--primary"
+           href="https://slipreel.app/download/latest.dmg"
+           data-download-link>Download for macOS</a>
+        <a class="btn btn--ghost" href="#compare">See how they compare</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="section">
+  <div class="container prose">
+    <p>
+      QuickTime Player is free, built into every Mac, and perfect for grabbing a
+      raw screen recording. What it can't do is make that recording look good:
+      there's no zoom, no cursor polish, no framing, no captions, no system
+      audio, and no GIF export. Slipreel is the step up &mdash; it records with
+      the same one-click simplicity, then automatically turns the capture into a
+      polished demo, while still running entirely on your Mac.
+    </p>
+    <p>
+      Here is what you gain moving from QuickTime to Slipreel &mdash; and when
+      QuickTime is still all you need.
+    </p>
+  </div>
+</section>
+
+<section class="section" id="compare">
+  <div class="container">
+    <h2 class="visually-hidden">Slipreel versus QuickTime, feature by feature</h2>
+    <div class="ctable-wrap">
+      <table class="ctable">
+        <thead>
+          <tr>
+            <th scope="col">Feature</th>
+            <th scope="col">Slipreel</th>
+            <th scope="col">QuickTime</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Price</th>
+            <td>$12/mo, $89/yr, or $129 once</td>
+            <td>Free (built into macOS)</td>
+          </tr>
+          <tr>
+            <th scope="row">Screen + microphone recording</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">System audio recording</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__no">Needs extra software</td>
+          </tr>
+          <tr>
+            <th scope="row">Automatic zoom on clicks</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__no">&mdash;</td>
+          </tr>
+          <tr>
+            <th scope="row">Smoothed cursor + motion blur</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__no">&mdash;</td>
+          </tr>
+          <tr>
+            <th scope="row">Device frames + backgrounds</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__no">&mdash;</td>
+          </tr>
+          <tr>
+            <th scope="row">Captions</th>
+            <td>On-device (Whisper)</td>
+            <td class="ctable__no">&mdash;</td>
+          </tr>
+          <tr>
+            <th scope="row">Webcam overlay, in sync</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__no">Separate recording</td>
+          </tr>
+          <tr>
+            <th scope="row">Timeline editing (cut / trim / speed)</th>
+            <td class="ctable__yes">Yes</td>
+            <td>Basic trim</td>
+          </tr>
+          <tr>
+            <th scope="row">Export</th>
+            <td>MP4 + GIF, six aspect ratios</td>
+            <td>.mov only</td>
+          </tr>
+          <tr>
+            <th scope="row">Runs fully on your Mac</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="compare-split">
+      <article class="compare-note">
+        <h3>Why people upgrade to Slipreel</h3>
+        <ul>
+          <li>Turns a plain capture into a polished, produced-looking demo automatically.</li>
+          <li>Records system audio, syncs a webcam, and adds captions &mdash; things QuickTime can't do alone.</li>
+          <li>Exports MP4 and GIF, not just .mov.</li>
+          <li>Still one-click simple to record, and free to try before you buy.</li>
+        </ul>
+      </article>
+      <article class="compare-note">
+        <h3>When QuickTime is all you need</h3>
+        <ul>
+          <li>You just need a quick raw capture you won't polish or edit.</li>
+          <li>You don't want to install anything &mdash; it's already on your Mac and free.</li>
+          <li>Simplicity matters more than production quality.</li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section faq" id="faq">
+  <div class="container faq__inner">
+    <h2 class="faq__heading">Slipreel vs QuickTime: common questions</h2>
+
+    <div class="faq__list">
+      <details class="faq__item">
+        <summary class="faq__question">Is Slipreel better than QuickTime for screen recording?</summary>
+        <p class="faq__answer">
+          For polished demos, yes. Slipreel adds automatic zoom, cursor
+          smoothing, device frames, captions, system-audio capture, and MP4 or
+          GIF export that QuickTime does not have. For a quick raw capture you
+          won't edit, QuickTime is fine and free.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Can Slipreel record system audio when QuickTime can't?</summary>
+        <p class="faq__answer">
+          Yes. Slipreel captures system audio as its own track. QuickTime needs
+          extra third-party software to record internal sound.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel export GIFs when QuickTime doesn't?</summary>
+        <p class="faq__answer">
+          Yes. Slipreel exports both MP4 and GIF, in six aspect ratios. QuickTime
+          exports .mov video only.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Is Slipreel free like QuickTime?</summary>
+        <p class="faq__answer">
+          Slipreel is free to download and fully functional to record and edit;
+          export requires a license ($12/month, $89/year, or $129 once).
+          QuickTime is entirely free and built into macOS.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel add automatic zoom to a recording?</summary>
+        <p class="faq__answer">
+          Yes. Slipreel detects your clicks and zooms in on them automatically,
+          and smooths the cursor path. QuickTime cannot do this.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel run on my Mac like QuickTime?</summary>
+        <p class="faq__answer">
+          Yes. Slipreel runs on macOS 13 or later, Apple Silicon or Intel, and
+          everything runs locally on your Mac.
+        </p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="section cta-band">
+  <div class="container">
+    <div class="cta-band__card">
+      <h2 class="cta-band__heading">Give your screen recordings a finish.</h2>
+      <a class="btn btn--primary cta-band__button"
+         href="https://slipreel.app/download/latest.dmg"
+         data-download-link>Download for macOS</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <nav class="footer-compare" aria-label="Compare Slipreel">
+      <span class="footer-compare__label">Compare Slipreel</span>
+      <a href="/screen-studio-alternative">vs Screen Studio</a>
+      <a href="/loom-alternative">vs Loom</a>
+      <a href="/screenflow-alternative">vs ScreenFlow</a>
+      <a href="/quicktime-alternative">vs QuickTime</a>
+    </nav>
+    <div class="site-footer__inner">
+      <span class="site-footer__wordmark">Slipreel</span>
+      <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
+      <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
+    </div>
+  </div>
+</footer>
+
+<script type="module" src="assets/js/site.js"></script>
+</body>
+</html>

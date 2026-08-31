@@ -1,0 +1,40 @@
+# Slipreel
+
+> Slipreel is a macOS screen recorder and editor that turns a raw screen capture into a polished product demo. The moment you stop recording it automatically zooms in on your clicks, smooths the cursor path, wraps the footage in a device frame on a background, and can transcribe captions on-device — then exports to MP4 or GIF.
+
+Slipreel is a native macOS app (macOS 13 or later, Apple Silicon or Intel), signed with an Apple Developer ID and notarized by Apple, distributed directly from slipreel.app (not the Mac App Store). It is made by Becoming Ventures, LLC. The app is free to download and fully functional for recording and editing; a paid license only unlocks export.
+
+Privacy: recording, editing, captions, and export all run on the user's Mac — recordings never leave the machine. The only network calls the app makes are the one-time download of the speech-recognition model and license activation (which sends nothing from recordings).
+
+## Who it is for
+
+- Founders, product and marketing teams, developer advocates, educators, and support teams
+- Anyone making product demos, tutorials, or feature walkthroughs on a Mac who wants a finished, edited-looking video without opening a full video editor
+
+## Features
+
+- Automatic zoom: detects every click and pushes in on it, anticipating cursor movement; each zoom is an editable timeline region, and you can add your own
+- Cursor smoothing: smooths the cursor path, adds motion blur, and highlights clicks, keeping timing honest through sped-up cuts
+- Device frames: wrap the recording in an iPhone or iPad bezel, or a macOS window frame, over a wallpaper or solid-color background, with adjustable padding, corners, and aspect ratio
+- Keystroke overlays: records what you typed and renders it on its own timeline lane; any keystroke can be muted
+- On-device captions: the Whisper transcription engine ships inside the app and runs locally; the speech model downloads once on first use and is cached; edit the text and burn it in on export
+- Audio: microphone and system audio captured as independent tracks, mixed down on export
+- Camera: record a webcam track alongside the screen, kept in sync
+- Timeline editing: split at the playhead (Cmd+K), with per-slice trim and speed, snapping to clicks and zoom edges; waveforms render in the slice
+- Capture modes: full display, a single window, or a region
+- Export: MP4 and GIF, in six aspect ratios; the preview and export run the same canvas math, so what you approve is what ships
+- Also: 3-2-1 countdown, pause/resume, global hotkeys, 3D tilt, zoom movements, crash recovery, duration warnings, automatic signed updates
+
+## Pricing
+
+- Monthly: $12/month
+- Yearly: $89/year
+- Lifetime: $129 once (includes one year of updates; the app keeps working forever)
+- 14-day refund: email hello@slipreel.app
+
+## Links
+
+- [Home](https://slipreel.app/): product overview, feature demos, pricing, and FAQ
+- [Download](https://slipreel.app/download/latest.dmg): free macOS download (DMG), signed and notarized
+- [Pricing and checkout](https://slipreel.app/pricing.html): the three license options
+- [Contact](mailto:hello@slipreel.app): support and refunds

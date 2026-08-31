@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#08080C">
+<title>Slipreel — the Screen Studio alternative you own outright</title>
+<meta name="description" content="A Screen Studio alternative for macOS: the same auto-zoom, smoothed cursor, and device frames — with a one-time license and on-device captions.">
+<link rel="canonical" href="https://slipreel.app/screen-studio-alternative">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" sizes="48x48" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Slipreel">
+<meta property="og:locale" content="en_US">
+<meta property="og:url" content="https://slipreel.app/screen-studio-alternative">
+<meta property="og:title" content="Slipreel — the Screen Studio alternative you own outright">
+<meta property="og:description" content="Same automatic zoom, smoothed cursor, and device frames — with a one-time license and fully on-device processing.">
+<meta property="og:image" content="https://slipreel.app/assets/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Slipreel — a macOS screen recorder and editor.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Slipreel — the Screen Studio alternative you own outright">
+<meta name="twitter:description" content="Same automatic zoom, smoothed cursor, and device frames — with a one-time license and fully on-device processing.">
+<meta name="twitter:image" content="https://slipreel.app/assets/img/og.png">
+<link rel="preload" href="assets/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Slipreel", "item": "https://slipreel.app/" },
+    { "@type": "ListItem", "position": 2, "name": "Screen Studio alternative", "item": "https://slipreel.app/screen-studio-alternative" }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is Slipreel a good Screen Studio alternative?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Slipreel covers the same core as Screen Studio on macOS — automatic zoom on your clicks, a smoothed cursor with motion blur, device frames on custom backgrounds, on-device captions, and MP4 or GIF export — and adds a one-time lifetime license and fully local processing. The main thing Screen Studio has that Slipreel does not is built-in shareable links for hosting a recording without exporting a file."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel have automatic zoom like Screen Studio?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Slipreel detects every click and pushes in on it, anticipating where the cursor is heading. Each zoom is a normal timeline region you can move, resize, retime, or delete, and you can add your own."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is Slipreel cheaper than Screen Studio?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Slipreel is $12/month, $89/year, or $129 once for a lifetime license. Screen Studio is subscription only, at $20/month or $9/month billed yearly (about $108/year). So Slipreel is lower yearly and is the only one of the two with a one-time purchase option."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do Slipreel's captions upload my recording?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. The Whisper transcription engine ships inside the app and runs on your Mac; the speech model downloads once on first use and is cached. Your recording never leaves the machine."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I try Slipreel before paying?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Slipreel is free to download and fully functional to record and edit before you buy. Payment only unlocks export."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel run on Windows?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Slipreel is macOS 13 or later, on Apple Silicon or Intel — the same Mac-only footprint as Screen Studio."
+      }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="aurora" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<nav class="nav" aria-label="Primary">
+  <div class="container nav__inner">
+    <a class="nav__brand" href="/">
+      <svg class="nav__mark" viewBox="0 0 512 512" width="28" height="28" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="slipreel-mark-fill" x1="0" y1="0" x2="0.85" y2="1">
+            <stop offset="0" stop-color="var(--accent)"></stop>
+            <stop offset="1" stop-color="var(--accent-deep)"></stop>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="114" fill="url(#slipreel-mark-fill)"></rect>
+        <g fill="var(--on-accent)">
+          <rect x="72" y="212" width="62" height="88" rx="31" opacity="0.20"></rect>
+          <rect x="118" y="212" width="74" height="88" rx="37" opacity="0.36"></rect>
+          <rect x="164" y="212" width="86" height="88" rx="43" opacity="0.58"></rect>
+          <rect x="208" y="212" width="98" height="88" rx="44" opacity="0.84"></rect>
+          <circle cx="316" cy="256" r="100"></circle>
+        </g>
+        <circle cx="316" cy="256" r="34" fill="none" stroke="var(--accent-deep)" stroke-width="24"></circle>
+      </svg>
+      <span class="nav__wordmark">Slipreel</span>
+    </a>
+
+    <ul class="nav__links">
+      <li><a class="nav__link" href="/#features">Features</a></li>
+      <li><a class="nav__link" href="/#pricing">Pricing</a></li>
+      <li><a class="nav__link" href="/#faq">FAQ</a></li>
+    </ul>
+
+    <a class="btn btn--primary nav__cta"
+       href="https://slipreel.app/download/latest.dmg"
+       data-download-link>Download</a>
+  </div>
+</nav>
+
+<main id="main">
+<header class="section page-hero">
+  <div class="container">
+    <div class="page-hero__inner">
+      <p class="eyebrow">Slipreel vs Screen Studio</p>
+      <h1>The Screen Studio alternative you own outright.</h1>
+      <p class="page-hero__sub">
+        Slipreel gives you the same automatic zooms, smoothed cursor, and
+        device frames on macOS &mdash; with a one-time lifetime license
+        instead of a subscription, and captions that never leave your Mac.
+      </p>
+      <div class="page-hero__cta">
+        <a class="btn btn--primary"
+           href="https://slipreel.app/download/latest.dmg"
+           data-download-link>Download for macOS</a>
+        <a class="btn btn--ghost" href="#compare">See how they compare</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="section">
+  <div class="container prose">
+    <p>
+      Screen Studio set the bar for automatic, cinematic screen recordings on
+      the Mac, and it is a genuinely great app. Slipreel covers the same core
+      &mdash; auto-zoom on your clicks, a smoothed cursor with motion blur,
+      device frames on custom backgrounds, on-device captions, and MP4 or GIF
+      export &mdash; and differs in two ways that matter to a lot of people:
+      you can buy it once and keep it, and everything runs locally on your Mac.
+    </p>
+    <p>
+      Here is where the two overlap and where they don't, including the places
+      Screen Studio is the better pick.
+    </p>
+  </div>
+</section>
+
+<section class="section" id="compare">
+  <div class="container">
+    <h2 class="visually-hidden">Slipreel versus Screen Studio, feature by feature</h2>
+    <div class="ctable-wrap">
+      <table class="ctable">
+        <thead>
+          <tr>
+            <th scope="col">Feature</th>
+            <th scope="col">Slipreel</th>
+            <th scope="col">Screen Studio</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Platform</th>
+            <td>macOS 13+ (Apple Silicon &amp; Intel)</td>
+            <td>macOS 13.1+</td>
+          </tr>
+          <tr>
+            <th scope="row">Automatic zoom on clicks</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Smoothed cursor + motion blur</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Device frames + backgrounds</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Webcam + mic + system audio</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Captions / transcript</th>
+            <td>On-device (Whisper)</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Keystrokes on screen</th>
+            <td>Editable timeline lane</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">MP4 + GIF export</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Built-in shareable links / hosting</th>
+            <td class="ctable__no">&mdash;</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Recording stays on your Mac</th>
+            <td class="ctable__yes">Yes</td>
+            <td>Local, with optional cloud sharing</td>
+          </tr>
+          <tr>
+            <th scope="row">One-time / lifetime license</th>
+            <td class="ctable__yes">Yes &mdash; $129 once</td>
+            <td class="ctable__no">Subscription only</td>
+          </tr>
+          <tr>
+            <th scope="row">Pricing</th>
+            <td>$12/mo, $89/yr, or $129 once</td>
+            <td>$20/mo, or $9/mo billed yearly</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="compare-split">
+      <article class="compare-note">
+        <h3>Why people choose Slipreel</h3>
+        <ul>
+          <li>Buy once and keep it &mdash; a $129 lifetime license, no subscription.</li>
+          <li>Everything runs on your Mac: recording, editing, and captions are local, and your recordings never leave the machine.</li>
+          <li>Free to download and fully usable to record and edit before you pay &mdash; a license only unlocks export.</li>
+          <li>Lower yearly price ($89 vs about $108), with a $12 monthly option.</li>
+        </ul>
+      </article>
+      <article class="compare-note">
+        <h3>When Screen Studio is the better fit</h3>
+        <ul>
+          <li>You want built-in shareable links to send a recording without exporting a file &mdash; Slipreel exports locally and doesn't host.</li>
+          <li>You're already settled in Screen Studio's workflow and happy on a subscription.</li>
+          <li>It's a mature, highly polished tool with a long track record; if hosted sharing matters more to you than owning the app, it's a great choice.</li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section faq" id="faq">
+  <div class="container faq__inner">
+    <h2 class="faq__heading">Slipreel vs Screen Studio: common questions</h2>
+
+    <div class="faq__list">
+      <details class="faq__item">
+        <summary class="faq__question">Is Slipreel a good Screen Studio alternative?</summary>
+        <p class="faq__answer">
+          Yes. Slipreel covers the same core as Screen Studio on macOS &mdash;
+          automatic zoom on your clicks, a smoothed cursor with motion blur,
+          device frames on custom backgrounds, on-device captions, and MP4 or
+          GIF export &mdash; and adds a one-time lifetime license and fully
+          local processing. The main thing Screen Studio has that Slipreel does
+          not is built-in shareable links for hosting a recording without
+          exporting a file.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel have automatic zoom like Screen Studio?</summary>
+        <p class="faq__answer">
+          Yes. Slipreel detects every click and pushes in on it, anticipating
+          where the cursor is heading. Each zoom is a normal timeline region you
+          can move, resize, retime, or delete, and you can add your own.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Is Slipreel cheaper than Screen Studio?</summary>
+        <p class="faq__answer">
+          Slipreel is $12/month, $89/year, or $129 once for a lifetime license.
+          Screen Studio is subscription only, at $20/month or $9/month billed
+          yearly (about $108/year). So Slipreel is lower yearly and is the only
+          one of the two with a one-time purchase option.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Do Slipreel's captions upload my recording?</summary>
+        <p class="faq__answer">
+          No. The Whisper transcription engine ships inside the app and runs on
+          your Mac; the speech model downloads once on first use and is cached.
+          Your recording never leaves the machine.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Can I try Slipreel before paying?</summary>
+        <p class="faq__answer">
+          Yes. Slipreel is free to download and fully functional to record and
+          edit before you buy. Payment only unlocks export.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel run on Windows?</summary>
+        <p class="faq__answer">
+          No. Slipreel is macOS 13 or later, on Apple Silicon or Intel &mdash;
+          the same Mac-only footprint as Screen Studio.
+        </p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="section cta-band">
+  <div class="container">
+    <div class="cta-band__card">
+      <h2 class="cta-band__heading">Try Slipreel free, then own it for good.</h2>
+      <a class="btn btn--primary cta-band__button"
+         href="https://slipreel.app/download/latest.dmg"
+         data-download-link>Download for macOS</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <nav class="footer-compare" aria-label="Compare Slipreel">
+      <span class="footer-compare__label">Compare Slipreel</span>
+      <a href="/screen-studio-alternative">vs Screen Studio</a>
+      <a href="/loom-alternative">vs Loom</a>
+      <a href="/screenflow-alternative">vs ScreenFlow</a>
+      <a href="/quicktime-alternative">vs QuickTime</a>
+    </nav>
+    <div class="site-footer__inner">
+      <span class="site-footer__wordmark">Slipreel</span>
+      <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
+      <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
+    </div>
+  </div>
+</footer>
+
+<script type="module" src="assets/js/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#08080C">
+<title>Slipreel — the ScreenFlow alternative that edits itself</title>
+<meta name="description" content="A lighter, cheaper ScreenFlow alternative for Mac: automatic zoom, smoothed cursor, and device frames, exported to MP4 or GIF, with a one-time $129 license.">
+<link rel="canonical" href="https://slipreel.app/screenflow-alternative">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" sizes="48x48" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Slipreel">
+<meta property="og:locale" content="en_US">
+<meta property="og:url" content="https://slipreel.app/screenflow-alternative">
+<meta property="og:title" content="Slipreel — the ScreenFlow alternative that edits itself">
+<meta property="og:description" content="A polished demo automatically — auto-zoom, smoothed cursor, device frames, on-device captions — for a lower one-time price, with no timeline to wrangle.">
+<meta property="og:image" content="https://slipreel.app/assets/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Slipreel — a macOS screen recorder and editor.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Slipreel — the ScreenFlow alternative that edits itself">
+<meta name="twitter:description" content="A polished demo automatically — auto-zoom, smoothed cursor, device frames, on-device captions — for a lower one-time price, with no timeline to wrangle.">
+<meta name="twitter:image" content="https://slipreel.app/assets/img/og.png">
+<link rel="preload" href="assets/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Slipreel", "item": "https://slipreel.app/" },
+    { "@type": "ListItem", "position": 2, "name": "ScreenFlow alternative", "item": "https://slipreel.app/screenflow-alternative" }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is Slipreel a good ScreenFlow alternative?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, for product demos. Slipreel produces a polished result automatically — auto-zoom, a smoothed cursor, device frames, and on-device captions — for a lower one-time price. ScreenFlow is the better pick if you need a full multi-track video editor with transitions, animations, and ProRes export."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel have automatic zoom that ScreenFlow doesn't?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Slipreel detects your clicks and zooms in automatically. In ScreenFlow you add and keyframe each zoom by hand on the timeline."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is Slipreel cheaper than ScreenFlow?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Slipreel is $129 once, with a year of updates included. ScreenFlow is $199 as a one-time purchase, and its stock media library is a further $99 per year."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can Slipreel edit like ScreenFlow?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Slipreel has focused timeline editing — cut at the playhead, with per-slice trim and speed — but it is not a full multi-track editor. For transitions, text and motion animations, nested clips, and ProRes, ScreenFlow does far more."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do Slipreel's captions require manual work like ScreenFlow's?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Slipreel transcribes on-device automatically, then lets you edit the text and burn it in on export. It runs on your Mac and your recording is never uploaded."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Slipreel run on Windows?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Slipreel is macOS 13 or later, on Apple Silicon or Intel — the same Mac-only footprint as ScreenFlow."
+      }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="aurora" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<nav class="nav" aria-label="Primary">
+  <div class="container nav__inner">
+    <a class="nav__brand" href="/">
+      <svg class="nav__mark" viewBox="0 0 512 512" width="28" height="28" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="slipreel-mark-fill" x1="0" y1="0" x2="0.85" y2="1">
+            <stop offset="0" stop-color="var(--accent)"></stop>
+            <stop offset="1" stop-color="var(--accent-deep)"></stop>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="114" fill="url(#slipreel-mark-fill)"></rect>
+        <g fill="var(--on-accent)">
+          <rect x="72" y="212" width="62" height="88" rx="31" opacity="0.20"></rect>
+          <rect x="118" y="212" width="74" height="88" rx="37" opacity="0.36"></rect>
+          <rect x="164" y="212" width="86" height="88" rx="43" opacity="0.58"></rect>
+          <rect x="208" y="212" width="98" height="88" rx="44" opacity="0.84"></rect>
+          <circle cx="316" cy="256" r="100"></circle>
+        </g>
+        <circle cx="316" cy="256" r="34" fill="none" stroke="var(--accent-deep)" stroke-width="24"></circle>
+      </svg>
+      <span class="nav__wordmark">Slipreel</span>
+    </a>
+
+    <ul class="nav__links">
+      <li><a class="nav__link" href="/#features">Features</a></li>
+      <li><a class="nav__link" href="/#pricing">Pricing</a></li>
+      <li><a class="nav__link" href="/#faq">FAQ</a></li>
+    </ul>
+
+    <a class="btn btn--primary nav__cta"
+       href="https://slipreel.app/download/latest.dmg"
+       data-download-link>Download</a>
+  </div>
+</nav>
+
+<main id="main">
+<header class="section page-hero">
+  <div class="container">
+    <div class="page-hero__inner">
+      <p class="eyebrow">Slipreel vs ScreenFlow</p>
+      <h1>The ScreenFlow alternative that edits itself.</h1>
+      <p class="page-hero__sub">
+        ScreenFlow is a full manual video editor. Slipreel gives you a polished
+        demo automatically &mdash; auto-zoom, smoothed cursor, device frames,
+        and captions &mdash; for a lower one-time price, without a timeline to
+        wrangle.
+      </p>
+      <div class="page-hero__cta">
+        <a class="btn btn--primary"
+           href="https://slipreel.app/download/latest.dmg"
+           data-download-link>Download for macOS</a>
+        <a class="btn btn--ghost" href="#compare">See how they compare</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="section">
+  <div class="container prose">
+    <p>
+      ScreenFlow is a powerful, mature screen recorder and multi-track video
+      editor for the Mac &mdash; if you want to hand-edit, animate, and mix a
+      video, it does far more than Slipreel. Slipreel takes the opposite
+      approach: it produces the polished result automatically. It detects your
+      clicks and zooms in, smooths the cursor, wraps the app in a device frame,
+      and transcribes captions on-device &mdash; so a clean demo falls out
+      without keyframing anything.
+    </p>
+    <p>
+      Here is how they compare, and when ScreenFlow's depth is worth it.
+    </p>
+  </div>
+</section>
+
+<section class="section" id="compare">
+  <div class="container">
+    <h2 class="visually-hidden">Slipreel versus ScreenFlow, feature by feature</h2>
+    <div class="ctable-wrap">
+      <table class="ctable">
+        <thead>
+          <tr>
+            <th scope="col">Feature</th>
+            <th scope="col">Slipreel</th>
+            <th scope="col">ScreenFlow</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Platform</th>
+            <td>macOS 13+ (Apple Silicon &amp; Intel)</td>
+            <td>macOS (Apple Silicon &amp; Intel)</td>
+          </tr>
+          <tr>
+            <th scope="row">Automatic zoom on clicks</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__no">Manual keyframing</td>
+          </tr>
+          <tr>
+            <th scope="row">Automatic cursor smoothing</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__no">&mdash;</td>
+          </tr>
+          <tr>
+            <th scope="row">Captions</th>
+            <td>Automatic, on-device</td>
+            <td>Manual caption editor</td>
+          </tr>
+          <tr>
+            <th scope="row">Webcam + mic + system audio</th>
+            <td class="ctable__yes">Yes</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Multi-track timeline editing</th>
+            <td>Cut, trim, and speed per slice</td>
+            <td class="ctable__yes">Full multi-track editor</td>
+          </tr>
+          <tr>
+            <th scope="row">Transitions + animations + motion graphics</th>
+            <td class="ctable__no">&mdash;</td>
+            <td class="ctable__yes">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Built-in stock media library</th>
+            <td class="ctable__no">&mdash;</td>
+            <td>Yes ($99/yr add-on)</td>
+          </tr>
+          <tr>
+            <th scope="row">Export</th>
+            <td>MP4 + GIF</td>
+            <td>ProRes, MP4, GIF</td>
+          </tr>
+          <tr>
+            <th scope="row">Learning curve</th>
+            <td>Minimal</td>
+            <td>Full editor</td>
+          </tr>
+          <tr>
+            <th scope="row">Pricing</th>
+            <td>$129 once (1 year of updates)</td>
+            <td>$199 once (+ $99/yr media)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="compare-split">
+      <article class="compare-note">
+        <h3>Why people choose Slipreel</h3>
+        <ul>
+          <li>A polished demo automatically &mdash; auto-zoom, smoothed cursor, device frames &mdash; with no manual timeline work.</li>
+          <li>On-device automatic captions, with no separate transcription step.</li>
+          <li>Lower one-time price: $129 versus $199, and no $99/year media add-on.</li>
+          <li>Fast: record, and it is essentially done.</li>
+        </ul>
+      </article>
+      <article class="compare-note">
+        <h3>When ScreenFlow is the better fit</h3>
+        <ul>
+          <li>You need a real multi-track video editor &mdash; transitions, text and motion animations, nested clips, ProRes export.</li>
+          <li>You want a built-in stock media library.</li>
+          <li>You're editing longer, more produced videos, not just quick demos.</li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section faq" id="faq">
+  <div class="container faq__inner">
+    <h2 class="faq__heading">Slipreel vs ScreenFlow: common questions</h2>
+
+    <div class="faq__list">
+      <details class="faq__item">
+        <summary class="faq__question">Is Slipreel a good ScreenFlow alternative?</summary>
+        <p class="faq__answer">
+          Yes, for product demos. Slipreel produces a polished result
+          automatically &mdash; auto-zoom, a smoothed cursor, device frames, and
+          on-device captions &mdash; for a lower one-time price. ScreenFlow is
+          the better pick if you need a full multi-track video editor with
+          transitions, animations, and ProRes export.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel have automatic zoom that ScreenFlow doesn't?</summary>
+        <p class="faq__answer">
+          Yes. Slipreel detects your clicks and zooms in automatically. In
+          ScreenFlow you add and keyframe each zoom by hand on the timeline.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Is Slipreel cheaper than ScreenFlow?</summary>
+        <p class="faq__answer">
+          Yes. Slipreel is $129 once, with a year of updates included. ScreenFlow
+          is $199 as a one-time purchase, and its stock media library is a
+          further $99 per year.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Can Slipreel edit like ScreenFlow?</summary>
+        <p class="faq__answer">
+          Slipreel has focused timeline editing &mdash; cut at the playhead, with
+          per-slice trim and speed &mdash; but it is not a full multi-track
+          editor. For transitions, text and motion animations, nested clips, and
+          ProRes, ScreenFlow does far more.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Do Slipreel's captions require manual work like ScreenFlow's?</summary>
+        <p class="faq__answer">
+          No. Slipreel transcribes on-device automatically, then lets you edit
+          the text and burn it in on export. It runs on your Mac and your
+          recording is never uploaded.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Does Slipreel run on Windows?</summary>
+        <p class="faq__answer">
+          No. Slipreel is macOS 13 or later, on Apple Silicon or Intel &mdash;
+          the same Mac-only footprint as ScreenFlow.
+        </p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="section cta-band">
+  <div class="container">
+    <div class="cta-band__card">
+      <h2 class="cta-band__heading">Skip the timeline. Ship the demo.</h2>
+      <a class="btn btn--primary cta-band__button"
+         href="https://slipreel.app/download/latest.dmg"
+         data-download-link>Download for macOS</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <nav class="footer-compare" aria-label="Compare Slipreel">
+      <span class="footer-compare__label">Compare Slipreel</span>
+      <a href="/screen-studio-alternative">vs Screen Studio</a>
+      <a href="/loom-alternative">vs Loom</a>
+      <a href="/screenflow-alternative">vs ScreenFlow</a>
+      <a href="/quicktime-alternative">vs QuickTime</a>
+    </nav>
+    <div class="site-footer__inner">
+      <span class="site-footer__wordmark">Slipreel</span>
+      <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
+      <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
+    </div>
+  </div>
+</footer>
+
+<script type="module" src="assets/js/site.js"></script>
+</body>
+</html>

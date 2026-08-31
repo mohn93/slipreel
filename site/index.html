@@ -49,7 +49,7 @@
   "featureList": [
     "Automatic zoom on clicks with editable timeline regions",
     "Cursor smoothing with motion blur and click highlights",
-    "Device frames for Mac, iPhone and iPad over custom backgrounds",
+    "Device frames for iPhone and iPad, plus a macOS window frame, over custom backgrounds",
     "Keystroke overlays on their own timeline lane",
     "On-device captions via Whisper, burned in on export",
     "Independent microphone and system audio tracks",
@@ -181,6 +181,67 @@
   ]
 }
 </script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "VideoObject",
+      "name": "Slipreel — automatic zoom and smoothed cursor",
+      "description": "Slipreel automatically zooms in on a click and glides the cursor across an analytics dashboard.",
+      "thumbnailUrl": "https://slipreel.app/assets/img/hero-poster.webp",
+      "uploadDate": "2026-08-30",
+      "contentUrl": "https://slipreel.app/assets/video/hero.mp4",
+      "publisher": { "@id": "https://slipreel.app/#org" }
+    },
+    {
+      "@type": "VideoObject",
+      "name": "Zooms that write themselves",
+      "description": "The Slipreel editor with automatic zoom regions on the timeline and the preview pushing in on a click.",
+      "thumbnailUrl": "https://slipreel.app/assets/img/beat-zoom-poster.webp",
+      "uploadDate": "2026-08-30",
+      "contentUrl": "https://slipreel.app/assets/video/beat-zoom.mp4",
+      "publisher": { "@id": "https://slipreel.app/#org" }
+    },
+    {
+      "@type": "VideoObject",
+      "name": "A cursor that moves like it's on rails",
+      "description": "The Slipreel editor with the cursor animation style set to Smooth, playing back a smoothed cursor path.",
+      "thumbnailUrl": "https://slipreel.app/assets/img/beat-cursor-poster.webp",
+      "uploadDate": "2026-08-30",
+      "contentUrl": "https://slipreel.app/assets/video/beat-cursor.mp4",
+      "publisher": { "@id": "https://slipreel.app/#org" }
+    },
+    {
+      "@type": "VideoObject",
+      "name": "Frame it for any screen",
+      "description": "The Slipreel editor wrapping a mobile recording in an iPhone device frame over a background.",
+      "thumbnailUrl": "https://slipreel.app/assets/img/beat-frames-poster.webp",
+      "uploadDate": "2026-08-30",
+      "contentUrl": "https://slipreel.app/assets/video/beat-frames.mp4",
+      "publisher": { "@id": "https://slipreel.app/#org" }
+    },
+    {
+      "@type": "VideoObject",
+      "name": "Every keystroke, on the timeline",
+      "description": "The Slipreel editor showing keystroke overlays on the preview and a keystroke lane on the timeline.",
+      "thumbnailUrl": "https://slipreel.app/assets/img/beat-keystrokes-poster.webp",
+      "uploadDate": "2026-08-30",
+      "contentUrl": "https://slipreel.app/assets/video/beat-keystrokes.mp4",
+      "publisher": { "@id": "https://slipreel.app/#org" }
+    },
+    {
+      "@type": "VideoObject",
+      "name": "Captions, without the upload",
+      "description": "The Slipreel editor with captions burned into the preview and the transcript open for editing.",
+      "thumbnailUrl": "https://slipreel.app/assets/img/beat-captions-poster.webp",
+      "uploadDate": "2026-08-30",
+      "contentUrl": "https://slipreel.app/assets/video/beat-captions.mp4",
+      "publisher": { "@id": "https://slipreel.app/#org" }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -283,9 +344,9 @@
         <p class="theater__step" aria-hidden="true">03</p>
         <h2>Frame it for any screen</h2>
         <p class="theater__copy">
-          Wrap your recording in a real Mac, iPhone, or iPad bezel, drop it on any
-          background, and dial in padding, corners, and aspect ratio. What you
-          preview is exactly what exports.
+          Wrap your recording in an iPhone or iPad bezel or a macOS window frame,
+          drop it on any background, and dial in padding, corners, and aspect
+          ratio. What you preview is exactly what exports.
         </p>
       </article>
 
@@ -678,10 +739,19 @@
 </main>
 
 <footer class="site-footer">
-  <div class="container site-footer__inner">
-    <span class="site-footer__wordmark">Slipreel</span>
-    <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
-    <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
+  <div class="container">
+    <nav class="footer-compare" aria-label="Compare Slipreel">
+      <span class="footer-compare__label">Compare Slipreel</span>
+      <a href="/screen-studio-alternative">vs Screen Studio</a>
+      <a href="/loom-alternative">vs Loom</a>
+      <a href="/screenflow-alternative">vs ScreenFlow</a>
+      <a href="/quicktime-alternative">vs QuickTime</a>
+    </nav>
+    <div class="site-footer__inner">
+      <span class="site-footer__wordmark">Slipreel</span>
+      <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
+      <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
+    </div>
   </div>
 </footer>
 
