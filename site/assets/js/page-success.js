@@ -32,6 +32,10 @@ async function run() {
     return;
   }
   if (r.account) {
+    // Attribution: tie this visitor (and their web session) to the user id the
+    // app also identifies by, and attach the email. Safe if PostHog is still
+    // idle-loading — the identify is queued and applied on init.
+    window.slipreelIdentify?.(r.account.userId, { email: r.account.email });
     title.textContent = "You're all set";
     sub.textContent = `Signed in as ${r.account.email}. Export is unlocked in Slipreel.`;
     panel.className = 'card';

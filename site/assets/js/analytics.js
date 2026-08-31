@@ -83,7 +83,25 @@ function initPostHog() {
     person_profiles: 'identified_only', // anonymous pageviews stay cheap
     persistence: 'localStorage', // no analytics cookie -> no consent banner
   });
+  applyPendingIdentify();
 }
+
+// Attribution: identify the visitor by their stable user id (the same id the
+// app's entitlement token carries as `sub`), so web + app events unify into one
+// PostHog person. Callable before PostHog finishes its idle-load — the identify
+// is stashed and applied once init completes.
+function applyPendingIdentify() {
+  const p = window.__slipreelIdentify;
+  if (p && window.posthog && window.posthog.__loaded) {
+    window.posthog.identify(p.userId, p.setProps);
+    window.__slipreelIdentify = null;
+  }
+}
+window.slipreelIdentify = function (userId, setProps) {
+  if (!userId) return;
+  window.__slipreelIdentify = { userId: String(userId), setProps: setProps || {} };
+  applyPendingIdentify();
+};
 
 // Only load once configured, and never on the critical path.
 if (typeof POSTHOG_KEY === 'string' && POSTHOG_KEY.startsWith('phc_')) {

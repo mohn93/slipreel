@@ -26,7 +26,7 @@ async function afterSession(api, ctx) {
     if (!t.ok) return { error: t.data?.error || 'token_failed', status: t.status };
     return { deeplink: buildDeeplink({ ...t.data, state: ctx.state }) };
   }
-  return { account: { email: ctx.email } };
+  return { account: { email: ctx.email, userId: ctx.userId } };
 }
 
 export async function completeCheckout(api, sessionId) {
@@ -34,7 +34,7 @@ export async function completeCheckout(api, sessionId) {
   if (!s.ok) return { error: s.data?.error || 'session_failed', status: s.status };
   return afterSession(api, {
     device: s.data.device, device_name: s.data.device_name, state: s.data.state,
-    email: s.data.user?.email,
+    email: s.data.user?.email, userId: s.data.user?.id,
   });
 }
 
@@ -43,7 +43,7 @@ export async function completeMagicLink(api, token) {
   if (!v.ok) return { error: v.data?.error || 'verify_failed', status: v.status };
   return afterSession(api, {
     device: v.data.device, device_name: v.data.device_name, state: v.data.state,
-    email: v.data.user?.email,
+    email: v.data.user?.email, userId: v.data.user?.id,
   });
 }
 

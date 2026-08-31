@@ -7,9 +7,9 @@ const okToken = { ok: true, status: 200, data: { token: 'jwt', refresh_token: 'r
 function apiStub(overrides = {}) {
   return {
     checkout: async () => ({ ok: true, status: 200, data: { url: 'https://checkout.stripe/x' } }),
-    sessionFromCheckout: async () => ({ ok: true, status: 200, data: { user: { email: 'u@e.com' }, device: null, device_name: null, state: null } }),
+    sessionFromCheckout: async () => ({ ok: true, status: 200, data: { user: { id: 'user_1', email: 'u@e.com' }, device: null, device_name: null, state: null } }),
     token: async () => okToken,
-    magicLinkVerify: async () => ({ ok: true, status: 200, data: { user: { email: 'u@e.com' }, device: null, device_name: null, state: null } }),
+    magicLinkVerify: async () => ({ ok: true, status: 200, data: { user: { id: 'user_1', email: 'u@e.com' }, device: null, device_name: null, state: null } }),
     magicLink: async () => ({ ok: true, status: 200, data: { sent: true } }),
     ...overrides,
   };
@@ -44,7 +44,7 @@ test('completeCheckout with a device mints a token and returns a deeplink', asyn
 
 test('completeCheckout without a device routes to account', async () => {
   const r = await completeCheckout(apiStub(), 'cs_1');
-  assert.deepEqual(r, { account: { email: 'u@e.com' } });
+  assert.deepEqual(r, { account: { email: 'u@e.com', userId: 'user_1' } });
 });
 
 test('completeCheckout surfaces a seat-limit 409', async () => {

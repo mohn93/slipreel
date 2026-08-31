@@ -67,6 +67,20 @@ open → record → export → purchase. Names are in
 Every event also carries super properties: `source: 'app'` and
 `platform` (`macos` / `windows`).
 
+## Attribution (identify)
+
+Analytics start anonymous. Once a user has an account, both surfaces call
+`identify` with the **same user id** (the entitlement token's `sub`, which is
+the `users` table id), so web + app events unify into one PostHog person:
+
+- **Web** (`page-success.js` after checkout): `slipreelIdentify(userId, {email})`
+  — supplies the **email** (the token/app never see it).
+- **App** (`main.dart`, on `EntitlementLoaded`): `analytics.identify(sub)` — user
+  id only, no PII. Gated by the opt-out toggle like everything else.
+
+Name isn't captured (not stored anywhere). Email reaches PostHog only from the
+web, post-purchase — note it in the privacy policy.
+
 ## Where events fire
 
 Instrumentation is centralized where practical: `main.dart` watches provider
