@@ -7,7 +7,7 @@
 //      is one fewer DNS/TLS handshake, and is not dropped by tracker blockers.
 //      Because of that invariant there must be NO literal posthog.com URL in
 //      this file: the host is built from location.origin at runtime.
-//   2. Cheap. autocapture and session replay are OFF (they attach listeners /
+//   2. Lean-ish. autocapture is OFF (it attaches listeners /
 //      record the DOM); we send pageviews + a few explicit events instead.
 //   3. Off the critical path. Loaded on requestIdleCallback so it never
 //      competes with LCP.
@@ -76,7 +76,9 @@ function initPostHog() {
     autocapture: false, // no blanket click/input listeners
     capture_pageview: true, // one pageview per full page load (this is an MPA)
     capture_pageleave: true, // bounce / time-on-page
-    disable_session_recording: true, // replay is the heaviest feature; off
+    disable_session_recording: false, // session replay ON (full) — requires
+    // "Record user sessions" enabled in PostHog Project Settings > Session Replay.
+    // Inputs are masked by default (maskAllInputs) so typed text isn't captured.
     disable_surveys: true,
     person_profiles: 'identified_only', // anonymous pageviews stay cheap
     persistence: 'localStorage', // no analytics cookie -> no consent banner
