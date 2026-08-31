@@ -1559,3 +1559,25 @@ a {
   border-radius: 50%;
   background-color: var(--accent);
 }
+
+/* Footer "Compare" row — the internal links between the comparison pages. */
+.footer-compare {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 20px;
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-sm);
+}
+
+.footer-compare__label {
+  color: var(--ink-faint);
+  font-weight: 580;
+}
+
+.footer-compare a {
+  color: var(--ink-dim);
+  text-decoration: none;
+}
