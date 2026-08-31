@@ -1539,6 +1539,8 @@ a {
 
 .compare-note ul {
   margin: 0;
+  padding: 0;
+  list-style: none;
   display: grid;
   gap: 0.7em;
 }
@@ -1580,4 +1582,78 @@ a {
 .footer-compare a {
   color: var(--ink-dim);
   text-decoration: none;
+}
+
+
+/* 23. Nav "Compare" dropdown =============================================
+   A native <details> disclosure in the nav — the same zero-JS pattern as the
+   FAQ. The nav is desktop-only (it folds away below 720px, see section 10),
+   so this never has to solve touch dropdowns. Click the summary to open;
+   following a link (or reloading) resets it closed.
+   ------------------------------------------------------------------------ */
+
+.nav__dropdown {
+  position: relative;
+}
+
+/* inline-flex also removes the default list-item disclosure marker. */
+.nav__link--menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  list-style: none;
+  cursor: pointer;
+}
+
+.nav__link--menu::-webkit-details-marker {
+  display: none;
+}
+
+.nav__link--menu::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.nav__dropdown[open] .nav__link--menu::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+
+.nav__menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 210px;
+  margin: 0;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  background-color: var(--nav-bg-opaque);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lift);
+}
+
+.nav__menu a {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 9px;
+  color: var(--ink-dim);
+  font-size: var(--fs-sm);
+  font-weight: 520;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .nav__menu a:hover {
+    background-color: var(--line);
+    color: var(--ink);
+  }
 }
