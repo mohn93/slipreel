@@ -12,8 +12,11 @@
 //   3. Off the critical path. Loaded on requestIdleCallback so it never
 //      competes with LCP.
 
-// Public project (write-only) key. Safe to ship in client code. Region: US.
-const POSTHOG_KEY = 'phc_REPLACE_ME';
+// Public project (write-only) key. Region: US. It is not a secret, but it lives
+// in its own file so it can be supplied from site/.env at deploy time rather
+// than hardcoded here — see ph-config.js and scripts/deploy-site.sh. Empty in
+// the committed source, so a plain checkout no-ops until deployed/configured.
+import { POSTHOG_KEY } from './ph-config.js';
 
 // Same-origin proxy base. nginx routes /ingest/static/* to PostHog's asset CDN
 // and /ingest/* to the US ingestion API. location.origin keeps this correct on
@@ -81,7 +84,7 @@ function initPostHog() {
 }
 
 // Only load once configured, and never on the critical path.
-if (POSTHOG_KEY.startsWith('phc_') && POSTHOG_KEY !== 'phc_REPLACE_ME') {
+if (typeof POSTHOG_KEY === 'string' && POSTHOG_KEY.startsWith('phc_')) {
   if ('requestIdleCallback' in window) {
     window.requestIdleCallback(initPostHog, { timeout: 3000 });
   } else {

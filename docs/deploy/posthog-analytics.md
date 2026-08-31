@@ -10,7 +10,10 @@ requests (site-lint rule #1) and tracker blockers can't drop the data.
   snippet. Autocapture and session replay are **off**; it captures pageviews +
   pageleave only, loads on `requestIdleCallback` (off the LCP path), and posts
   to `/ingest` on the current origin. No `posthog.com` URL literal (the host is
-  built from `location.origin`).
+  built from `location.origin`). It reads the key from `ph-config.js`.
+- [`site/assets/js/ph-config.js`](../../site/assets/js/ph-config.js) — exports
+  the (public) project key. Committed value is empty; the real key is injected
+  at deploy time from `site/.env`.
 - A `<script type="module" src="assets/js/analytics.js">` tag on every page.
 - The `/ingest/` reverse-proxy blocks in
   [`server/deploy/nginx-site.conf`](../../server/deploy/nginx-site.conf) (the
@@ -18,12 +21,22 @@ requests (site-lint rule #1) and tracker blockers can't drop the data.
 
 ## Two things you must do to make it live
 
-### 1. Set the project API key `[you]`
+### 1. Set the project API key via env `[you]`
 
-Edit `site/assets/js/analytics.js` and replace `phc_REPLACE_ME` with your
-project's **public** key (Project Settings → API keys → "Project API Key",
-starts with `phc_`). It is write-only and safe to commit / ship in client code.
-Until it's set, the module no-ops (nothing loads).
+Copy `site/.env.example` to `site/.env` (gitignored) and set your project's
+**public** key (Project Settings → API keys → "Project API Key", starts with
+`phc_`):
+
+```bash
+cp site/.env.example site/.env
+# edit site/.env:  SITE_POSTHOG_KEY=phc_your_real_key
+```
+
+On the next `scripts/deploy-site.sh`, the key is validated and written into the
+*deployed* `assets/js/ph-config.js` — it never enters git, and the committed
+source stays an empty no-op. (The key is public/write-only, so this is about
+keeping it in one editable place, not secrecy.) Local dev with an empty key
+just no-ops, which also keeps local page loads out of your real analytics.
 
 ### 2. Add the proxy to the LIVE nginx config `[you]`
 
