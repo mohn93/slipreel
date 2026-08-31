@@ -4,12 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#08080C">
 <title>Slipreel — screen recordings that look like they took a week</title>
 <meta name="description" content="Slipreel is a macOS screen recorder that auto-zooms, smooths your cursor, frames your app, and captions it — the moment you stop recording.">
+<link rel="canonical" href="https://slipreel.app/">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon.png" sizes="48x48" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Slipreel">
+<meta property="og:locale" content="en_US">
 <meta property="og:url" content="https://slipreel.app/">
 <meta property="og:title" content="Slipreel — screen recordings that look like they took a week">
 <meta property="og:description" content="Auto-zoom, smoothed cursor, device frames, on-device captions. A macOS screen recorder and editor.">
@@ -19,24 +25,160 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Slipreel — screen recordings that look like they took a week. A dashboard recording shown in the Slipreel editor.">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Slipreel — screen recordings that look like they took a week">
+<meta name="twitter:description" content="Auto-zoom, smoothed cursor, device frames, on-device captions. A macOS screen recorder and editor.">
 <meta name="twitter:image" content="https://slipreel.app/assets/img/og.png">
+<meta name="twitter:image:alt" content="Slipreel — screen recordings that look like they took a week. A dashboard recording shown in the Slipreel editor.">
 <link rel="preload" href="assets/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/css/site.css">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
+  "@id": "https://slipreel.app/#app",
   "name": "Slipreel",
+  "description": "Slipreel is a macOS screen recorder and editor that turns a raw screen capture into a polished product demo. When you stop recording it automatically zooms in on your clicks, smooths the cursor, wraps the footage in a device frame on a background, and transcribes captions on-device, then exports to MP4 or GIF.",
   "applicationCategory": "MultimediaApplication",
+  "applicationSubCategory": "Screen Recorder",
   "operatingSystem": "macOS 13.0 or later",
   "url": "https://slipreel.app/",
   "downloadUrl": "https://slipreel.app/download/latest.dmg",
-  "offers": [
-    { "@type": "Offer", "price": "12.00", "priceCurrency": "USD", "name": "Monthly" },
-    { "@type": "Offer", "price": "89.00", "priceCurrency": "USD", "name": "Yearly" },
-    { "@type": "Offer", "price": "129.00", "priceCurrency": "USD", "name": "One-time" }
+  "image": "https://slipreel.app/assets/img/og.png",
+  "screenshot": "https://slipreel.app/assets/img/deep-timeline.webp",
+  "softwareRequirements": "macOS 13 or later, Apple Silicon or Intel",
+  "featureList": [
+    "Automatic zoom on clicks with editable timeline regions",
+    "Cursor smoothing with motion blur and click highlights",
+    "Device frames for Mac, iPhone and iPad over custom backgrounds",
+    "Keystroke overlays on their own timeline lane",
+    "On-device captions via Whisper, burned in on export",
+    "Independent microphone and system audio tracks",
+    "Synced webcam recording",
+    "Timeline editing with per-slice trim and speed",
+    "MP4 and GIF export with six aspect ratios",
+    "Full display, window or region capture"
   ],
-  "publisher": { "@type": "Organization", "name": "Becoming Ventures, LLC" }
+  "offers": {
+    "@type": "AggregateOffer",
+    "priceCurrency": "USD",
+    "lowPrice": "12.00",
+    "highPrice": "129.00",
+    "offerCount": "3",
+    "offers": [
+      { "@type": "Offer", "price": "12.00", "priceCurrency": "USD", "name": "Monthly", "url": "https://slipreel.app/pricing.html" },
+      { "@type": "Offer", "price": "89.00", "priceCurrency": "USD", "name": "Yearly", "url": "https://slipreel.app/pricing.html" },
+      { "@type": "Offer", "price": "129.00", "priceCurrency": "USD", "name": "Lifetime", "url": "https://slipreel.app/pricing.html" }
+    ]
+  },
+  "publisher": { "@id": "https://slipreel.app/#org" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "@id": "https://slipreel.app/#org",
+  "name": "Slipreel",
+  "legalName": "Becoming Ventures, LLC",
+  "url": "https://slipreel.app/",
+  "logo": "https://slipreel.app/apple-touch-icon.png",
+  "email": "hello@slipreel.app"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is Slipreel?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Slipreel is a macOS screen recorder and editor that turns a raw screen capture into a polished product demo. The moment you stop recording it adds automatic zoom-ins on your clicks, smooths the cursor path, wraps the footage in a device frame on a background, and can transcribe captions on-device — then exports to MP4 or GIF. It records the full display, a single window, or a region, along with the microphone, system audio, and your webcam."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Who is Slipreel for?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Anyone who makes product demos, tutorials, or feature walkthroughs on a Mac — founders, product and marketing teams, developer advocates, educators, and support teams — who want a finished, edited-looking video without opening a full video editor."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I unlock export after buying?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Export unlocks instantly after checkout — your purchase activates on this Mac automatically, and you can sign in on a second device from your account page. The app is free to download and fully functional to record and edit before you buy; payment only unlocks export."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What happens after the first year on a lifetime license?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The app keeps working forever, and every version released in your first year stays yours. Updates after that are a separate, optional renewal."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What do I need to run it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "macOS 13 or later, on Apple Silicon or Intel."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do my recordings get uploaded anywhere?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Recording, editing, captions, and export all run on your Mac — your recordings never leave the machine. The only thing that talks to a server is license activation, which sends nothing from your recordings."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do captions work offline?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The Whisper transcription engine ships inside the app and runs on your Mac. The speech model itself is downloaded once on first use and cached; after that, captions work with no network at all, and your recording is never uploaded."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is it safe to install?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Slipreel is signed with an Apple Developer ID and notarized by Apple. Updates are cryptographically verified before they install."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I edit the automatic zooms?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Every auto-detected zoom is a normal timeline region you can move, resize, retime, or delete, and you can add your own."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does it record system audio?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, as its own track, separate from the microphone, so you can mix them independently."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I get a refund?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Email hello@slipreel.app within 14 days and you will get your money back."
+      }
+    }
+  ]
 }
 </script>
 </head>
@@ -418,6 +560,29 @@
     <div class="faq__list reveal">
 
       <details class="faq__item">
+        <summary class="faq__question">What is Slipreel?</summary>
+        <p class="faq__answer">
+          Slipreel is a macOS screen recorder and editor that turns a raw screen
+          capture into a polished product demo. The moment you stop recording it
+          adds automatic zoom-ins on your clicks, smooths the cursor path, wraps
+          the footage in a device frame on a background, and can transcribe
+          captions on-device &mdash; then exports to MP4 or GIF. It records the
+          full display, a single window, or a region, along with the microphone,
+          system audio, and your webcam.
+        </p>
+      </details>
+
+      <details class="faq__item">
+        <summary class="faq__question">Who is Slipreel for?</summary>
+        <p class="faq__answer">
+          Anyone who makes product demos, tutorials, or feature walkthroughs on a
+          Mac &mdash; founders, product and marketing teams, developer advocates,
+          educators, and support teams &mdash; who want a finished, edited-looking
+          video without opening a full video editor.
+        </p>
+      </details>
+
+      <details class="faq__item">
         <summary class="faq__question">How do I unlock export after buying?</summary>
         <p class="faq__answer">
           Export unlocks instantly after checkout &mdash; your purchase
@@ -445,8 +610,10 @@
       <details class="faq__item">
         <summary class="faq__question">Do my recordings get uploaded anywhere?</summary>
         <p class="faq__answer">
-          No. Recording, editing, captions, and export all run on your Mac.
-          Slipreel has no account system and no server.
+          No. Recording, editing, captions, and export all run on your Mac
+          &mdash; your recordings never leave the machine. The only thing that
+          talks to a server is license activation, which sends nothing from your
+          recordings.
         </p>
       </details>
 
