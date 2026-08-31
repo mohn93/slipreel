@@ -13,6 +13,12 @@ class GlobalPreferencesController extends StateNotifier<GlobalPreferences> {
         : state.copyWith(defaultSaveLocation: path);
     await store.save(state);
   }
+
+  Future<void> setShareAnalytics(bool value) async {
+    if (state.shareAnalytics == value) return;
+    state = state.copyWith(shareAnalytics: value);
+    await store.save(state);
+  }
 }
 
 final globalPreferencesStoreProvider = Provider<GlobalPreferencesStore>(

@@ -105,6 +105,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _saveLocationCard(),
             const SizedBox(height: 32),
 
+            _title('Privacy'),
+            const SizedBox(height: 12),
+            _privacyCard(),
+            const SizedBox(height: 32),
+
             _title('Keyboard shortcuts'),
             const SizedBox(height: 12),
             _shortcutsCard(),
@@ -182,6 +187,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
       );
+
+  Widget _privacyCard() {
+    final on = ref.watch(
+        globalPreferencesControllerProvider.select((p) => p.shareAnalytics));
+    return _card(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text('Share anonymous usage data',
+            style: TextStyle(color: context.palette.textPrimary)),
+        subtitle: Text(
+          'Helps improve Slipreel. Never includes your recordings, file names, '
+          'or screen contents — only which features get used.',
+          style: TextStyle(color: context.palette.textSecondary),
+        ),
+        value: on,
+        onChanged: (v) => ref
+            .read(globalPreferencesControllerProvider.notifier)
+            .setShareAnalytics(v),
+      ),
+    );
+  }
 
   Widget _permissionsCard() {
     final snap = ref.watch(permissionsControllerProvider);

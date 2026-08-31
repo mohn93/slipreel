@@ -5,31 +5,44 @@ import 'package:slipreel_engine/utils/app_logger.dart';
 
 /// Global, app-wide preferences (not per-project). Grows over time.
 class GlobalPreferences {
-  const GlobalPreferences({this.defaultSaveLocation});
+  const GlobalPreferences({
+    this.defaultSaveLocation,
+    this.shareAnalytics = true,
+  });
 
   /// Absolute folder path used as the default recording/export destination.
   /// `null` means "ask each time / use the OS Documents directory".
   final String? defaultSaveLocation;
 
+  /// Whether anonymous usage analytics may be sent. Opt-out: on by default,
+  /// flipped off from Settings → Privacy. Absent in an older prefs file means
+  /// "on" (existing users keep the default).
+  final bool shareAnalytics;
+
   GlobalPreferences copyWith({
     String? defaultSaveLocation,
     bool clearSaveLocation = false,
+    bool? shareAnalytics,
   }) =>
       GlobalPreferences(
         defaultSaveLocation:
             clearSaveLocation ? null : (defaultSaveLocation ?? this.defaultSaveLocation),
+        shareAnalytics: shareAnalytics ?? this.shareAnalytics,
       );
 
   Map<String, dynamic> toJson() => {
         if (defaultSaveLocation != null) 'defaultSaveLocation': defaultSaveLocation,
+        'shareAnalytics': shareAnalytics,
       };
 
   static const defaults = GlobalPreferences();
 
   static GlobalPreferences fromJson(Map<String, dynamic> json) {
     final raw = json['defaultSaveLocation'];
+    final analytics = json['shareAnalytics'];
     return GlobalPreferences(
       defaultSaveLocation: raw is String && raw.isNotEmpty ? raw : null,
+      shareAnalytics: analytics is bool ? analytics : true,
     );
   }
 }
