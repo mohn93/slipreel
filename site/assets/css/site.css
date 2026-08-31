@@ -1395,3 +1395,167 @@ a {
   white-space: nowrap;
   border: 0;
 }
+
+
+/* 22. Comparison pages ===================================================
+   Shared by the "<competitor> alternative" pages. Reuses the site tokens
+   and the nav / faq / cta / footer components verbatim; only the centered
+   page header, the feature table, and the two-up notes are page-specific.
+   ------------------------------------------------------------------------ */
+
+.page-hero {
+  padding-top: calc(var(--nav-h) + clamp(28px, 7vw, 72px));
+  padding-bottom: 0;
+  text-align: center;
+}
+
+.page-hero__inner {
+  max-width: 60ch;
+  margin-inline: auto;
+}
+
+.page-hero .eyebrow {
+  justify-content: center;
+}
+
+.page-hero h1 {
+  margin-top: 0.5em;
+  font-size: var(--fs-3xl);
+}
+
+.page-hero__sub {
+  margin-top: 1em;
+  color: var(--ink-dim);
+  font-size: var(--fs-md);
+}
+
+.page-hero__cta {
+  margin-top: 2em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.prose {
+  max-width: 68ch;
+}
+
+.prose p + p {
+  margin-top: 1em;
+}
+
+.prose p {
+  color: var(--ink-dim);
+  font-size: var(--fs-md);
+}
+
+/* Feature table. Wrapped in .ctable-wrap so it scrolls on its own on narrow
+   screens without the page body ever scrolling sideways. */
+.ctable-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.ctable {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-sm);
+}
+
+.ctable th,
+.ctable td {
+  padding: 0.85em 1.1em;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.ctable tr:last-child th,
+.ctable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ctable thead th {
+  color: var(--ink);
+  font-weight: 620;
+  white-space: nowrap;
+  border-bottom-color: var(--line-strong);
+}
+
+.ctable tbody th {
+  color: var(--ink-dim);
+  font-weight: 500;
+}
+
+.ctable td {
+  color: var(--ink);
+}
+
+/* Highlight the Slipreel column (2nd). Explicit rgba (not color-mix) to match
+   the rest of the stylesheet's approach to accent tints. */
+.ctable th:nth-child(2),
+.ctable td:nth-child(2) {
+  background-color: rgba(108, 92, 231, 0.1);
+}
+
+.ctable__yes {
+  color: var(--accent);
+  font-weight: 580;
+}
+
+.ctable__no {
+  color: var(--ink-faint);
+}
+
+/* Two-up: why switch / when the other wins. */
+.compare-split {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 760px) {
+  .compare-split {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.compare-note {
+  padding: clamp(20px, 3vw, 30px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+}
+
+.compare-note h3 {
+  font-size: var(--fs-lg);
+  margin-bottom: 0.75em;
+}
+
+.compare-note ul {
+  margin: 0;
+  display: grid;
+  gap: 0.7em;
+}
+
+.compare-note li {
+  position: relative;
+  padding-left: 1.4em;
+  color: var(--ink-dim);
+}
+
+.compare-note li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.62em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent);
+}
