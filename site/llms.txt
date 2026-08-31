@@ -15,7 +15,7 @@ Privacy: recording, editing, captions, and export all run on the user's Mac — 
 
 - Automatic zoom: detects every click and pushes in on it, anticipating cursor movement; each zoom is an editable timeline region, and you can add your own
 - Cursor smoothing: smooths the cursor path, adds motion blur, and highlights clicks, keeping timing honest through sped-up cuts
-- Device frames: wrap the recording in a real Mac, iPhone, or iPad bezel over a wallpaper or solid-color background, with adjustable padding, corners, and aspect ratio
+- Device frames: wrap the recording in an iPhone or iPad bezel, or a macOS window frame, over a wallpaper or solid-color background, with adjustable padding, corners, and aspect ratio
 - Keystroke overlays: records what you typed and renders it on its own timeline lane; any keystroke can be muted
 - On-device captions: the Whisper transcription engine ships inside the app and runs locally; the speech model downloads once on first use and is cached; edit the text and burn it in on export
 - Audio: microphone and system audio captured as independent tracks, mixed down on export
