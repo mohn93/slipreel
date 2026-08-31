@@ -1,23 +1,18 @@
 # slipreel.app — https://slipreel.app
 #
 # Search and AI answer engines are welcome to crawl and cite Slipreel.
-# App/account pages carry no public content and are disallowed below; they
-# are also marked noindex at the page level.
+# The app/account pages (account, login, success, cancel, pricing) carry no
+# public content and are marked noindex at the page level. They are left
+# crawlable on purpose: a page blocked here would never be fetched, so its
+# noindex could never be seen. Crawlable + noindex is what reliably keeps them
+# out of the index.
 
 User-agent: *
 Allow: /
-Disallow: /account.html
-Disallow: /login.html
-Disallow: /success.html
-Disallow: /cancel.html
 
 # AI answer engines (search grounding + citations) — explicitly allowed.
 User-agent: GPTBot
 Allow: /
-Disallow: /account.html
-Disallow: /login.html
-Disallow: /success.html
-Disallow: /cancel.html
 
 User-agent: OAI-SearchBot
 Allow: /
