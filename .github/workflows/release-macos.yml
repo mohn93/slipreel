@@ -73,6 +73,8 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
           SPARKLE_ED_KEY_FILE: ${{ runner.temp }}/sparkle_ed_priv
+          # Public PostHog project key baked into the build via --dart-define.
+          SLIPREEL_POSTHOG_KEY: ${{ secrets.SLIPREEL_POSTHOG_KEY }}
         run: |
           printf '%s' "${{ secrets.SPARKLE_ED_PRIVATE_KEY }}" > "$SPARKLE_ED_KEY_FILE"
           scripts/release-macos.sh "${{ steps.ver.outputs.version }}"

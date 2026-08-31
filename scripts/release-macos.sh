@@ -82,9 +82,21 @@ log "stamping build release date"
 "$ROOT/scripts/stamp-build-date.sh" || die "failed to stamp build release date"
 log "building Slipreel $VERSION (clean release)"
 log "release $VERSION -> CFBundleShortVersionString $VERSION, CFBundleVersion $BUILD_NUMBER"
+# Bake in the public PostHog project key when provided (CI supplies it from the
+# SLIPREEL_POSTHOG_KEY secret). Left empty -> the app's analytics no-op, so
+# local/unkeyed release builds still work. Unquoted expansion so an empty value
+# disappears; the phc_ key contains no spaces. Never logs the key itself.
+PH_DEFINE=""
+if [[ -n "${SLIPREEL_POSTHOG_KEY:-}" ]]; then
+  PH_DEFINE="--dart-define=SLIPREEL_POSTHOG_KEY=$SLIPREEL_POSTHOG_KEY"
+  log "analytics: baking in PostHog key"
+else
+  log "analytics: SLIPREEL_POSTHOG_KEY unset — analytics disabled in this build"
+fi
 ( cd "$APP_PKG" && $FLUTTER clean >/dev/null \
     && $FLUTTER build macos --release \
-        --build-name="$VERSION" --build-number="$BUILD_NUMBER" ) \
+        --build-name="$VERSION" --build-number="$BUILD_NUMBER" \
+        $PH_DEFINE ) \
   || die "flutter build macos --release failed"
 [[ -d "$APP" ]] || die "expected app not found at $APP"
 
