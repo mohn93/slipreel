@@ -39,6 +39,32 @@ if SITE_DIR="$tmp" bash "$LINT" >/dev/null 2>&1; then
   fail "site-lint.sh must reject a reference to a missing local asset"
 fi
 
+# A clean URL (no extension) resolves to <name>.html, and / to index.html.
+rm -rf "${tmp:?}"/*
+mkdir -p "$tmp/assets/css"
+cat > "$tmp/index.html" <<'HTML'
+<!doctype html><html><head><link rel="stylesheet" href="assets/css/site.css"></head>
+<body><a href="/">home</a><a href="/loom-alternative">loom</a></body></html>
+HTML
+cat > "$tmp/loom-alternative.html" <<'HTML'
+<!doctype html><html><head><link rel="stylesheet" href="assets/css/site.css"></head><body></body></html>
+HTML
+printf '@media (prefers-reduced-motion: reduce){*{animation:none}}\n' > "$tmp/assets/css/site.css"
+SITE_DIR="$tmp" bash "$LINT" >/dev/null 2>&1 \
+  || fail "site-lint.sh must accept clean URLs backed by <name>.html and / by index.html"
+
+# A clean URL with no backing file must still be caught.
+rm -rf "${tmp:?}"/*
+mkdir -p "$tmp/assets/css"
+cat > "$tmp/index.html" <<'HTML'
+<!doctype html><html><head><link rel="stylesheet" href="assets/css/site.css"></head>
+<body><a href="/ghost-page">ghost</a></body></html>
+HTML
+printf '@media (prefers-reduced-motion: reduce){*{animation:none}}\n' > "$tmp/assets/css/site.css"
+if SITE_DIR="$tmp" bash "$LINT" >/dev/null 2>&1; then
+  fail "site-lint.sh must reject a clean URL with no backing .html"
+fi
+
 # A stylesheet with no reduced-motion block must be caught.
 rm -rf "${tmp:?}"/*
 mkdir -p "$tmp/assets/css"
