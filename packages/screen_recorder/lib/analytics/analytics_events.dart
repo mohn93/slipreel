@@ -3,9 +3,12 @@
 /// open -> record -> export -> purchase.
 abstract class AnalyticsEvents {
   static const appOpened = 'app_opened';
+  static const screenViewed = 'screen_viewed';
   static const recordingStarted = 'recording_started';
   static const recordingCompleted = 'recording_completed';
   static const zoomAdded = 'zoom_added';
+  // Export funnel: opened (intent) -> [paywall_shown] -> started -> completed/failed.
+  static const exportOpened = 'export_opened';
   static const exportStarted = 'export_started';
   static const exportCompleted = 'export_completed';
   static const exportFailed = 'export_failed';

@@ -6,6 +6,8 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
     hide RecordingSettings;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../analytics/analytics_events.dart';
+import '../../analytics/analytics_service.dart';
 import '../../state/global_preferences_controller.dart';
 import '../../state/permissions_controller.dart';
 import '../../state/recording_settings_controller.dart';
@@ -59,6 +61,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    ref.captureAnalytics(AnalyticsEvents.screenViewed,
+        properties: {'screen': 'settings'});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       try {

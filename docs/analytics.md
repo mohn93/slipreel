@@ -53,9 +53,11 @@ open → record → export → purchase. Names are in
 | Event | Properties |
 |-------|-----------|
 | `app_opened` | (super props only) |
+| `screen_viewed` | `screen` = onboarding / editor / settings |
 | `recording_started` | — |
 | `recording_completed` | `duration_s` |
 | `zoom_added` | `mode` = manual *(auto-placement not yet instrumented)* |
+| `export_opened` | — (funnel entry: user initiated an export) |
 | `paywall_shown` | `reason` (needsPurchase / subscriptionLapsed / updateCeiling) |
 | `export_started` | `format`, `resolution`, `fps`, `compression`, `destination` |
 | `export_completed` | `format`, `resolution`, `fps`, `realtime_multiple` |
