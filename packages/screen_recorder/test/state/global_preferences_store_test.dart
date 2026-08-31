@@ -41,4 +41,19 @@ void main() {
     expect(a.copyWith(clearSaveLocation: true).defaultSaveLocation, isNull);
     expect(a.copyWith().defaultSaveLocation, '/x');
   });
+
+  test('shareAnalytics defaults on, and an older prefs file (absent) reads on',
+      () async {
+    expect(GlobalPreferences.defaults.shareAnalytics, isTrue);
+    // A prefs file written before the field existed.
+    File(path()).writeAsStringSync('{"defaultSaveLocation":"/x"}');
+    expect((await GlobalPreferencesStore(path: path()).load()).shareAnalytics,
+        isTrue);
+  });
+
+  test('shareAnalytics round-trips false', () async {
+    final store = GlobalPreferencesStore(path: path());
+    await store.save(const GlobalPreferences(shareAnalytics: false));
+    expect((await store.load()).shareAnalytics, isFalse);
+  });
 }

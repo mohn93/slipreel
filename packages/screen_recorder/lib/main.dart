@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
+import 'dart:math' show Random;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -16,9 +17,16 @@ import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/state/motion_tuning_store.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
+import 'analytics/analytics_events.dart';
+import 'analytics/analytics_queue_store.dart';
+import 'analytics/analytics_service.dart';
 import 'debug/debug_probe.dart';
 import 'licensing/auth_state_store.dart';
+import 'licensing/build_release_date.g.dart';
 import 'licensing/deep_link_listener.dart';
+import 'licensing/device_fingerprint.dart';
+import 'licensing/entitlement.dart';
+import 'licensing/export_gate.dart';
 import 'licensing/entitlement_public_key.g.dart';
 import 'licensing/entitlement_verifier.dart';
 import 'licensing/license_store.dart';
@@ -214,6 +222,26 @@ Future<void> main() async {
     unawaited(licensingController.refreshNow());
   }
 
+  // Product analytics (opt-out: on unless the user turned it off in Settings).
+  // No-ops entirely unless a project key was baked in via --dart-define. The
+  // distinct_id reuses the device fingerprint (already a one-way hash that
+  // never exposes the raw hardware id); if the platform can't supply one we
+  // fall back to a persisted random id so events still stitch into a funnel.
+  final appSupportPath = (await getApplicationSupportDirectory()).path;
+  final analyticsService = AnalyticsService(
+    store: AnalyticsQueueStore(
+      path: p.join(appSupportPath, 'analytics_queue.json'),
+    ),
+    distinctId: await _resolveAnalyticsDistinctId(appSupportPath),
+    enabled: initialGlobalPreferences.shareAnalytics,
+    superProperties: {
+      'source': 'app',
+      'platform': Platform.operatingSystem,
+    },
+  );
+  await analyticsService.load();
+  analyticsService.capture(AnalyticsEvents.appOpened);
+
   runApp(ProviderScope(
     overrides: [
       motionTuningProvider.overrideWith(
@@ -264,6 +292,7 @@ Future<void> main() async {
       ),
       updaterServiceProvider.overrideWithValue(updaterService),
       licensingControllerProvider.overrideWith((ref) => licensingController),
+      analyticsServiceProvider.overrideWithValue(analyticsService),
     ],
     child: MyApp(
       onboardingDone: onboardingDone,
@@ -344,6 +373,33 @@ String _playbackStateJson() {
       '"durationMs": ${v.duration.inMilliseconds}}';
 }
 
+/// distinct_id for analytics: prefer the device fingerprint (a sha256 of the
+/// hardware id — anonymous, stable per machine). If the platform can't supply
+/// one, persist a random id in a sidecar so events from this install still
+/// group together. Falls back to a constant only if even that write fails.
+Future<String> _resolveAnalyticsDistinctId(String appSupportPath) async {
+  try {
+    return await DeviceFingerprint().compute();
+  } catch (_) {
+    try {
+      final file = File(p.join(appSupportPath, 'analytics_id'));
+      if (file.existsSync()) {
+        final existing = (await file.readAsString()).trim();
+        if (existing.isNotEmpty) return existing;
+      }
+      final rnd = Random.secure();
+      final id = List<int>.generate(16, (_) => rnd.nextInt(256))
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
+      await file.create(recursive: true);
+      await file.writeAsString(id);
+      return id;
+    } catch (_) {
+      return 'anonymous';
+    }
+  }
+}
+
 class MyApp extends ConsumerStatefulWidget {
   const MyApp({
     super.key,
@@ -370,6 +426,46 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _initRecordingSurfaces());
+    _wireAnalyticsObservers();
+  }
+
+  /// Centralized instrumentation: watch provider state instead of threading an
+  /// analytics dependency through every controller. Covers the opt-out toggle,
+  /// recording lifecycle (button + hotkey + sleep-observer all land here), and
+  /// entitlement becoming active. Export/paywall/zoom events fire from the
+  /// playback screen directly, where the metadata lives.
+  void _wireAnalyticsObservers() {
+    final analytics = ref.read(analyticsServiceProvider);
+
+    ref.listenManual<bool>(
+      globalPreferencesControllerProvider.select((p) => p.shareAnalytics),
+      (prev, next) => analytics.setEnabled(next),
+    );
+
+    ref.listenManual<RecordingStatus>(
+      recordingControllerProvider.select((s) => s.status),
+      (prev, next) {
+        if (prev == next) return;
+        if (next == RecordingStatus.recording &&
+            prev != RecordingStatus.paused) {
+          analytics.capture(AnalyticsEvents.recordingStarted);
+        } else if (next == RecordingStatus.completed) {
+          analytics.capture(AnalyticsEvents.recordingCompleted, properties: {
+            'duration_s': ref.read(recordingControllerProvider).duration.inSeconds,
+          });
+        }
+      },
+    );
+
+    ref.listenManual<EntitlementState>(
+      entitlementProvider,
+      (prev, next) {
+        final was = prev != null &&
+            canExportNow(prev, appReleaseDate: buildReleaseDate);
+        final now = canExportNow(next, appReleaseDate: buildReleaseDate);
+        if (now && !was) analytics.capture(AnalyticsEvents.entitlementActivated);
+      },
+    );
   }
 
   @override
@@ -489,6 +585,10 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // User may have flipped a permission in System Settings; re-probe.
       ref.read(permissionsControllerProvider.notifier).refreshAll();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      // Best-effort deliver anything buffered before we lose foreground.
+      unawaited(ref.read(analyticsServiceProvider).flush());
     }
   }
 

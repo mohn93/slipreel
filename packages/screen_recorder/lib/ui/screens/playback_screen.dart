@@ -79,6 +79,8 @@ import 'package:screen_recorder/state/snap_preference_controller.dart';
 import '../../state/global_preferences_controller.dart';
 import 'package:slipreel_engine/timeline/slice_navigation.dart'
     show NavDirection;
+import 'package:screen_recorder/analytics/analytics_events.dart';
+import 'package:screen_recorder/analytics/analytics_service.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 import 'package:screen_recorder/licensing/build_release_date.g.dart';
@@ -1718,6 +1720,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
     final paddingBefore = _projectController.current.windowFrame.padding.left;
     _projectController.addZoom(zoomRegion, videoSize: videoSize);
+    ref.read(analyticsServiceProvider).capture(
+      AnalyticsEvents.zoomAdded,
+      properties: {'mode': 'manual'},
+    );
     final paddingAfter = _projectController.current.windowFrame.padding.left;
     if (paddingAfter > paddingBefore) {
       AppAlerts.info(
@@ -1869,6 +1875,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       if (!canExportNow(entitlementState, appReleaseDate: buildReleaseDate)) {
         final reason =
             paywallReasonFor(entitlementState, appReleaseDate: buildReleaseDate)!;
+        ref.read(analyticsServiceProvider).capture(
+          AnalyticsEvents.paywallShown,
+          properties: {'reason': reason.name},
+        );
         final becameEntitled = await PaywallSheet.show(context, reason: reason);
         if (!becameEntitled || !mounted) return;
         // fall through to the export dialog now that export is unlocked
@@ -2045,6 +2055,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         },
       );
 
+      ref.read(analyticsServiceProvider).capture(
+        AnalyticsEvents.exportStarted,
+        properties: {
+          'format': settings.format.name,
+          'resolution': settings.resolution.name,
+          'fps': settings.frameRate,
+          'compression': settings.compression.name,
+          'destination': settings.destination.name,
+        },
+      );
+
       final outcome = await exportController.run(
         outputPath: outPath,
         handler: handler,
@@ -2056,6 +2077,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
       switch (outcome) {
         case ExportSuccess(:final summary, :final result):
+          ref.read(analyticsServiceProvider).capture(
+            AnalyticsEvents.exportCompleted,
+            properties: {
+              'format': settings.format.name,
+              'resolution': settings.resolution.name,
+              'fps': settings.frameRate,
+              'realtime_multiple': summary.realtimeMultiple,
+            },
+          );
           // Persist settings minus the title (plan rule 5).
           await store.save(settings.copyWith(clearTitle: true));
 
@@ -2102,8 +2132,21 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           );
           surfaceExportWarnings(summary, (m) => AppAlerts.warning(m));
         case ExportFailure(:final error):
+          // Only the error's type — never the message, which can contain file
+          // paths.
+          ref.read(analyticsServiceProvider).capture(
+            AnalyticsEvents.exportFailed,
+            properties: {
+              'format': settings.format.name,
+              'error_type': error.runtimeType.toString(),
+            },
+          );
           AppAlerts.error('Export failed: $error');
         case ExportNotEntitled():
+          ref.read(analyticsServiceProvider).capture(
+            AnalyticsEvents.exportFailed,
+            properties: {'reason': 'not_entitled'},
+          );
           AppAlerts.error('Export needs an active license.');
         case ExportCancelled():
           // No snackbar — user-initiated. (Today there's no cancel UI; this
