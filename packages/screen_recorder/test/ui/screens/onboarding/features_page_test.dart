@@ -14,8 +14,9 @@ Future<void> _pump(WidgetTester tester, {required VoidCallback onNext}) async {
 }
 
 Future<void> _teardown(WidgetTester tester) async {
-  // Replace the tree so FeaturesPage.dispose() cancels its auto-advance timer,
-  // otherwise the test fails with a pending Timer.
+  // Replace the tree so the tab strip's State.dispose() disposes its
+  // auto-advance AnimationController; otherwise the test fails with an active
+  // ticker still running at the end.
   await tester.pumpWidget(const SizedBox());
   await tester.pump();
 }
@@ -52,4 +53,33 @@ void main() {
     expect(find.text('Keystroke overlays'), findsOneWidget);
     await _teardown(tester);
   });
+
+  testWidgets('auto-advances to the next feature after the dwell',
+      (tester) async {
+    await _pump(tester, onNext: () {});
+    expect(find.text('Automatic zoom'), findsOneWidget);
+
+    // Let the fill/dwell controller (5.4s) complete, then the caption switch.
+    await tester.pump(const Duration(milliseconds: 5500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Polished cursor'), findsOneWidget);
+    await _teardown(tester);
+  });
+
+  testWidgets('inactive page does not auto-advance', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(body: FeaturesPage(onNext: _noop, active: false)),
+    ));
+    await tester.pump();
+    expect(find.text('Automatic zoom'), findsOneWidget);
+
+    // With the page inactive the trace is frozen, so no advance happens.
+    await tester.pump(const Duration(milliseconds: 6000));
+
+    expect(find.text('Automatic zoom'), findsOneWidget);
+    await _teardown(tester);
+  });
 }
+
+void _noop() {}

@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 
 class ReadyPage extends StatelessWidget {
-  const ReadyPage({super.key, required this.onFinish});
+  const ReadyPage({super.key, required this.onFinish, this.active = true});
   final VoidCallback onFinish;
+
+  /// Whether this is the visible onboarding step; drives when the success
+  /// check plays its entrance so it lands on arrival, not while pre-built.
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +22,7 @@ class ReadyPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Spacer(),
-              const _SuccessCheck(),
+              _SuccessCheck(play: active),
               const SizedBox(height: 28),
               Text("You're all set", style: theme.textTheme.displaySmall),
               const SizedBox(height: 12),
@@ -86,7 +90,10 @@ class ReadyPage extends StatelessWidget {
 
 /// A green success badge that springs and fades in when the page appears.
 class _SuccessCheck extends StatefulWidget {
-  const _SuccessCheck();
+  const _SuccessCheck({required this.play});
+
+  /// Play the entrance now (true once the page is the visible step).
+  final bool play;
 
   @override
   State<_SuccessCheck> createState() => _SuccessCheckState();
@@ -102,7 +109,15 @@ class _SuccessCheckState extends State<_SuccessCheck>
     _c = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 720),
-    )..forward();
+    );
+    if (widget.play) _c.forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SuccessCheck old) {
+    super.didUpdateWidget(old);
+    // Fire the entrance when the page becomes visible.
+    if (widget.play && !old.play) _c.forward(from: 0);
   }
 
   @override

@@ -48,6 +48,10 @@ class _OnboardingVideoState extends State<OnboardingVideo> {
       await c.setLooping(true);
       await c.setVolume(0);
       if (!mounted) {
+        // Null the field first so the widget's dispose() doesn't dispose this
+        // same controller a second time (which would trip ChangeNotifier's
+        // "used after being disposed" assertion).
+        _controller = null;
         await c.dispose();
         return;
       }

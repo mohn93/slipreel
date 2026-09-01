@@ -53,8 +53,13 @@ const _features = <_Feature>[
 ];
 
 class FeaturesPage extends StatefulWidget {
-  const FeaturesPage({super.key, required this.onNext});
+  const FeaturesPage({super.key, required this.onNext, this.active = true});
   final VoidCallback onNext;
+
+  /// Whether this page is the visible onboarding step. When false, the
+  /// auto-advance/fill animation is paused so it isn't cycling (and
+  /// repainting) off-screen while retained in the PageView cache.
+  final bool active;
 
   @override
   State<FeaturesPage> createState() => _FeaturesPageState();
@@ -120,9 +125,11 @@ class _FeaturesPageState extends State<FeaturesPage> {
                   builder: (context, child) {
                     // Incoming enters from the right; outgoing leaves to the
                     // left (opposite direction), both at a 6% offset.
+                    // Only `reverse` marks the outgoing child; `dismissed` is
+                    // excluded so an incoming child's first (value 0) frame
+                    // isn't mistaken for a leaving one and slid the wrong way.
                     final leaving =
-                        animation.status == AnimationStatus.reverse ||
-                            animation.status == AnimationStatus.dismissed;
+                        animation.status == AnimationStatus.reverse;
                     final dx = (1 - slide.value) * 0.06 * (leaving ? -1 : 1);
                     return Opacity(
                       opacity: fade.value.clamp(0.0, 1.0),
@@ -181,6 +188,7 @@ class _FeaturesPageState extends State<FeaturesPage> {
           _FeatureTabs(
             labels: [for (final f in _features) f.tab],
             index: _index,
+            active: widget.active,
             onSelect: _select,
             onAdvance: _advance,
           ),
@@ -209,12 +217,14 @@ class _FeatureTabs extends StatefulWidget {
   const _FeatureTabs({
     required this.labels,
     required this.index,
+    required this.active,
     required this.onSelect,
     required this.onAdvance,
   });
 
   final List<String> labels;
   final int index;
+  final bool active;
   final ValueChanged<int> onSelect;
   final VoidCallback onAdvance;
 
@@ -242,14 +252,19 @@ class _FeatureTabsState extends State<_FeatureTabs>
         if (s == AnimationStatus.completed) widget.onAdvance();
       });
     WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
-    _c.forward();
+    if (widget.active) _c.forward();
   }
 
   @override
   void didUpdateWidget(covariant _FeatureTabs old) {
     super.didUpdateWidget(old);
-    // Active chip changed (auto-advance or a manual pick): restart the trace.
-    if (old.index != widget.index) {
+    if (!widget.active) {
+      // Page went off-screen: freeze the trace so it isn't cycling/repainting
+      // in the PageView cache.
+      if (old.active) _c.stop();
+    } else if (!old.active || old.index != widget.index) {
+      // Arrived (restart the showcase fresh), or the active chip changed via
+      // auto-advance / a manual pick: restart the trace.
       _c.forward(from: 0);
     }
   }

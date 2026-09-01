@@ -41,6 +41,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   // Material-3 "emphasized" easing: quick to leave, luxuriously slow to settle.
   static const _pageCurve = Cubic(0.05, 0.7, 0.1, 1.0);
 
+  // The live scroll position as a page index (fractional mid-transition),
+  // falling back to the settled page before the viewport has dimensions.
+  double _currentPage() {
+    if (_pageController.hasClients &&
+        _pageController.position.haveDimensions) {
+      return _pageController.page ?? _page.toDouble();
+    }
+    return _page.toDouble();
+  }
+
   void _next() {
     _pageController.animateToPage(
       _page + 1,
@@ -56,11 +66,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       animation: _pageController,
       child: child,
       builder: (context, child) {
-        var page = _page.toDouble();
-        if (_pageController.hasClients &&
-            _pageController.position.haveDimensions) {
-          page = _pageController.page ?? page;
-        }
+        final page = _currentPage();
         final delta = index - page; // 0 centered, ±1 fully off to a side
         final t = delta.abs().clamp(0.0, 1.0);
         final eased = Curves.easeOutCubic.transform(1 - t); // 1 centered → 0
@@ -116,12 +122,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             child: AnimatedBuilder(
               animation: _pageController,
               builder: (context, _) {
-                var page = _page.toDouble();
-                if (_pageController.hasClients &&
-                    _pageController.position.haveDimensions) {
-                  page = _pageController.page ?? page;
-                }
-                final opacity = (1 - page).clamp(0.0, 1.0);
+                final opacity = (1 - _currentPage()).clamp(0.0, 1.0);
                 if (opacity <= 0) return const SizedBox.shrink();
                 return Opacity(
                   opacity: opacity,
@@ -139,9 +140,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               onPageChanged: (i) => setState(() => _page = i),
               children: [
                 _pageFx(0, WelcomePage(onNext: _next)),
-                _pageFx(1, FeaturesPage(onNext: _next)),
+                _pageFx(1, FeaturesPage(onNext: _next, active: _page == 1)),
                 _pageFx(2, PermissionsPage(onNext: _next)),
-                _pageFx(3, ReadyPage(onFinish: _finish)),
+                _pageFx(3, ReadyPage(onFinish: _finish, active: _page == 3)),
               ],
             ),
           ),
