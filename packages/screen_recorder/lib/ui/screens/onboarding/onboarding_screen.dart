@@ -8,6 +8,7 @@ import 'package:screen_recorder/onboarding/onboarding_store.dart';
 import 'package:screen_recorder/state/window_mode_controller.dart';
 import 'package:screen_recorder/ui/bar/recording_bar_screen.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
+import 'pages/features_page.dart';
 import 'pages/permissions_page.dart';
 import 'pages/ready_page.dart';
 import 'pages/welcome_page.dart';
@@ -81,6 +82,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               onPageChanged: (i) => setState(() => _page = i),
               children: [
                 WelcomePage(onNext: _next),
+                FeaturesPage(onNext: _next),
                 PermissionsPage(onNext: _next),
                 ReadyPage(onFinish: _finish),
               ],
@@ -90,7 +92,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             padding: const EdgeInsets.only(bottom: 24, top: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(3, (i) {
+              children: List.generate(4, (i) {
                 final active = i == _page;
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
