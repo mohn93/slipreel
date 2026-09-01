@@ -8,6 +8,7 @@ import 'package:screen_recorder/onboarding/onboarding_store.dart';
 import 'package:screen_recorder/state/window_mode_controller.dart';
 import 'package:screen_recorder/ui/bar/recording_bar_screen.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
+import 'pages/features_page.dart';
 import 'pages/permissions_page.dart';
 import 'pages/ready_page.dart';
 import 'pages/welcome_page.dart';
@@ -37,11 +38,52 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     });
   }
 
+  // Material-3 "emphasized" easing: quick to leave, luxuriously slow to settle.
+  static const _pageCurve = Cubic(0.05, 0.7, 0.1, 1.0);
+
+  // The live scroll position as a page index (fractional mid-transition),
+  // falling back to the settled page before the viewport has dimensions.
+  double _currentPage() {
+    if (_pageController.hasClients &&
+        _pageController.position.haveDimensions) {
+      return _pageController.page ?? _page.toDouble();
+    }
+    return _page.toDouble();
+  }
+
   void _next() {
     _pageController.animateToPage(
       _page + 1,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
+      duration: const Duration(milliseconds: 560),
+      curve: _pageCurve,
+    );
+  }
+
+  // Per-page fade + scale + gentle parallax driven by the scroll offset, so
+  // pages don't just slide flatly — the incoming one settles in with depth.
+  Widget _pageFx(int index, Widget child) {
+    return AnimatedBuilder(
+      animation: _pageController,
+      child: child,
+      builder: (context, child) {
+        final page = _currentPage();
+        final delta = index - page; // 0 centered, ±1 fully off to a side
+        final t = delta.abs().clamp(0.0, 1.0);
+        final eased = Curves.easeOutCubic.transform(1 - t); // 1 centered → 0
+        final opacity = eased;
+        final scale = 0.90 + 0.10 * eased;
+        final dx = delta * 28.0; // subtle parallax: content trails the slide
+        return Opacity(
+          opacity: opacity,
+          child: Transform.translate(
+            offset: Offset(dx, 0),
+            child: Transform.scale(
+              scale: scale,
+              child: child,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -72,7 +114,24 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
+      body: Stack(
+        children: [
+          // Welcome wallpaper, full-bleed behind everything (page-dot strip
+          // included), fading out as the user leaves the first page.
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _pageController,
+              builder: (context, _) {
+                final opacity = (1 - _currentPage()).clamp(0.0, 1.0);
+                if (opacity <= 0) return const SizedBox.shrink();
+                return Opacity(
+                  opacity: opacity,
+                  child: const WelcomeBackground(),
+                );
+              },
+            ),
+          ),
+          Column(
         children: [
           Expanded(
             child: PageView(
@@ -80,9 +139,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               physics: const NeverScrollableScrollPhysics(),
               onPageChanged: (i) => setState(() => _page = i),
               children: [
-                WelcomePage(onNext: _next),
-                PermissionsPage(onNext: _next),
-                ReadyPage(onFinish: _finish),
+                _pageFx(0, WelcomePage(onNext: _next)),
+                _pageFx(1, FeaturesPage(onNext: _next, active: _page == 1)),
+                _pageFx(2, PermissionsPage(onNext: _next)),
+                _pageFx(3, ReadyPage(onFinish: _finish, active: _page == 3)),
               ],
             ),
           ),
@@ -90,7 +150,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             padding: const EdgeInsets.only(bottom: 24, top: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(3, (i) {
+              children: List.generate(4, (i) {
                 final active = i == _page;
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
@@ -105,6 +165,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               }),
             ),
           ),
+        ],
+      ),
         ],
       ),
     );

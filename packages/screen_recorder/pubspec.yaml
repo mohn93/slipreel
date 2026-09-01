@@ -134,6 +134,9 @@ flutter:
   assets:
     - assets/cursors/default_cursor.png
     - assets/cursors/click_cursor.png
+    # Onboarding feature-showcase clips + poster fallbacks (reused from the
+    # slipreel.app landing page "beats").
+    - assets/onboarding/
     - assets/wallpapers/macos/
     - assets/wallpapers/spring/
     - assets/wallpapers/sunset/
