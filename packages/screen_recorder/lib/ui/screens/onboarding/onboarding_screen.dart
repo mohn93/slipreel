@@ -38,11 +38,46 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     });
   }
 
+  // Material-3 "emphasized" easing: quick to leave, luxuriously slow to settle.
+  static const _pageCurve = Cubic(0.05, 0.7, 0.1, 1.0);
+
   void _next() {
     _pageController.animateToPage(
       _page + 1,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
+      duration: const Duration(milliseconds: 560),
+      curve: _pageCurve,
+    );
+  }
+
+  // Per-page fade + scale + gentle parallax driven by the scroll offset, so
+  // pages don't just slide flatly — the incoming one settles in with depth.
+  Widget _pageFx(int index, Widget child) {
+    return AnimatedBuilder(
+      animation: _pageController,
+      child: child,
+      builder: (context, child) {
+        var page = _page.toDouble();
+        if (_pageController.hasClients &&
+            _pageController.position.haveDimensions) {
+          page = _pageController.page ?? page;
+        }
+        final delta = index - page; // 0 centered, ±1 fully off to a side
+        final t = delta.abs().clamp(0.0, 1.0);
+        final eased = Curves.easeOutCubic.transform(1 - t); // 1 centered → 0
+        final opacity = eased;
+        final scale = 0.90 + 0.10 * eased;
+        final dx = delta * 28.0; // subtle parallax: content trails the slide
+        return Opacity(
+          opacity: opacity,
+          child: Transform.translate(
+            offset: Offset(dx, 0),
+            child: Transform.scale(
+              scale: scale,
+              child: child,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -73,7 +108,29 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
+      body: Stack(
+        children: [
+          // Welcome wallpaper, full-bleed behind everything (page-dot strip
+          // included), fading out as the user leaves the first page.
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _pageController,
+              builder: (context, _) {
+                var page = _page.toDouble();
+                if (_pageController.hasClients &&
+                    _pageController.position.haveDimensions) {
+                  page = _pageController.page ?? page;
+                }
+                final opacity = (1 - page).clamp(0.0, 1.0);
+                if (opacity <= 0) return const SizedBox.shrink();
+                return Opacity(
+                  opacity: opacity,
+                  child: const WelcomeBackground(),
+                );
+              },
+            ),
+          ),
+          Column(
         children: [
           Expanded(
             child: PageView(
@@ -81,10 +138,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               physics: const NeverScrollableScrollPhysics(),
               onPageChanged: (i) => setState(() => _page = i),
               children: [
-                WelcomePage(onNext: _next),
-                FeaturesPage(onNext: _next),
-                PermissionsPage(onNext: _next),
-                ReadyPage(onFinish: _finish),
+                _pageFx(0, WelcomePage(onNext: _next)),
+                _pageFx(1, FeaturesPage(onNext: _next)),
+                _pageFx(2, PermissionsPage(onNext: _next)),
+                _pageFx(3, ReadyPage(onFinish: _finish)),
               ],
             ),
           ),
@@ -107,6 +164,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               }),
             ),
           ),
+        ],
+      ),
         ],
       ),
     );

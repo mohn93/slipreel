@@ -37,13 +37,13 @@ void main() {
     await _teardown(tester);
   });
 
-  testWidgets('tapping a dot switches the highlighted feature', (tester) async {
+  testWidgets('tapping a tab switches the highlighted feature', (tester) async {
     await _pump(tester, onNext: () {});
     expect(find.text('Automatic zoom'), findsOneWidget);
 
-    // Keyed dots; index 2 is the keystrokes beat.
-    expect(find.byKey(const ValueKey('feature-dot-0')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('feature-dot-2')));
+    // Tab labels are short names; 'Keystrokes' is the third feature. (Its
+    // detail title is 'Keystroke overlays', so the tab text is unambiguous.)
+    await tester.tap(find.text('Keystrokes'));
     await tester.pump(const Duration(milliseconds: 300));
 
     // The keystrokes beat is now the highlighted feature. (The outgoing title
