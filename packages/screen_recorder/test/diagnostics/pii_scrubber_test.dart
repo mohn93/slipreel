@@ -62,6 +62,50 @@ void main() {
       expect(out, isNot(contains('in.mov')));
       expect(out, isNot(contains('out file.mp4')));
     });
+
+    test('redacts a spaced filename with a LONG extension', () {
+      // e.g. .screenflow (10), .photoslibrary (13) — beyond the old {1,6} cap.
+      final out = s.scrub('/Users/bob/My Recording.screenflow failed');
+      expect(out, isNot(contains('Recording.screenflow')));
+      expect(out, isNot(contains('bob')));
+      expect(out, contains('failed'));
+    });
+
+    test('redacts a spaced path trailed by a colon (not whitespace)', () {
+      final out = s.scrub("path = '/Volumes/EXT/My Clip.mov': No such file");
+      expect(out, isNot(contains('My Clip.mov')));
+      expect(out, isNot(contains('EXT')));
+      expect(out, contains('No such file'));
+    });
+
+    test('redacts an unquoted spaced path trailed by a colon', () {
+      final out = s.scrub('/Volumes/EXT/My Clip.mov: No such file');
+      expect(out, isNot(contains('My Clip.mov')));
+      expect(out, contains('No such file'));
+    });
+  });
+
+  group('ReDoS / large input', () {
+    test('caps input before the regex passes (no super-linear stall)', () {
+      final sw = Stopwatch()..start();
+      final out = s.scrub('/x ' * 40000); // 120KB of path-like tokens
+      sw.stop();
+      expect(out.length, lessThanOrEqualTo(500));
+      expect(sw.elapsedMilliseconds, lessThan(1000));
+    });
+  });
+
+  group('documented residual (spaced basename, no extension)', () {
+    // Regex cannot distinguish this from a path followed by prose without
+    // destroying error context. The username is still redacted; only a
+    // space-containing folder/basename word after the redaction survives.
+    // Pinned so a future change to the residual is a deliberate, visible edit.
+    test('leaves the post-space fragment of a spaced no-extension path', () {
+      final out = s.scrub('/Volumes/John Smith/clip');
+      expect(out, isNot(contains('/Volumes')));
+      expect(out, isNot(contains('John')));
+      expect(out, contains('Smith/clip')); // known residual
+    });
   });
 
   group('does NOT over-redact non-paths', () {
