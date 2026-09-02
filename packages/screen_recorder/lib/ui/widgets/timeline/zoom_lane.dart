@@ -71,6 +71,7 @@ class ZoomLane extends StatefulWidget {
     this.onZoomDeleted,
     this.onZoomAdded,
     this.onBarPointerDown,
+    this.onBarSuppressSeek,
     this.trimDragging = false,
     this.animateLayout = true,
   });
@@ -92,11 +93,16 @@ class ZoomLane extends StatefulWidget {
   final ValueChanged<int>? onZoomDeleted;
   final void Function(Duration start, Duration end)? onZoomAdded;
 
-  /// Fires on pointer-down anywhere on a zoom pill (body, handles, delete).
-  /// The timeline uses it to suppress its tap-seek for that gesture so a
-  /// pill press selects/drags WITHOUT the tap-seek committing a seek that
-  /// would immediately deselect the just-selected pill.
+  /// Fires on pointer-down anywhere on a zoom pill. The timeline uses it to
+  /// route a pill-body tap through its keep-selection seek — the tap moves the
+  /// playhead AND the pill's own handler selects it, in one click.
   final VoidCallback? onBarPointerDown;
+
+  /// Fires on pointer-down on a pill CONTROL (delete button, resize handle)
+  /// that must not seek at all. Takes precedence over [onBarPointerDown] so
+  /// e.g. clicking the delete X removes the region without also jumping the
+  /// playhead to the X's position.
+  final VoidCallback? onBarSuppressSeek;
 
   /// True while ANY slice's trim handle is being dragged anywhere in
   /// the timeline. Drives the zoom-pill position tween's duration —
@@ -266,6 +272,7 @@ class _ZoomLaneState extends State<ZoomLane> {
               onDeleted: widget.onZoomDeleted,
               onSeek: widget.onSeek,
               onBarPointerDown: widget.onBarPointerDown,
+              onBarSuppressSeek: widget.onBarSuppressSeek,
               trimDragging: widget.trimDragging,
               animateLayout: widget.animateLayout,
             ),
@@ -353,6 +360,7 @@ class _ZoomPill extends StatefulWidget {
     this.onSelected,
     this.onDeleted,
     this.onBarPointerDown,
+    this.onBarSuppressSeek,
     this.trimDragging = false,
     this.animateLayout = true,
   });
@@ -370,6 +378,7 @@ class _ZoomPill extends StatefulWidget {
   final ValueChanged<int?>? onSelected;
   final ValueChanged<int>? onDeleted;
   final VoidCallback? onBarPointerDown;
+  final VoidCallback? onBarSuppressSeek;
   final bool trimDragging;
   final bool animateLayout;
 
@@ -669,13 +678,18 @@ class _ZoomPillState extends State<_ZoomPill> {
               top: zoomBadgeAreaHeight,
               width: handleHitWidth,
               height: pillBodyHeight,
-              child: _PillEdgeHandle(
-                alignment: Alignment.centerLeft,
-                showHandle: _hovered,
-                onDragStart: () => _beginMode(_ZoomDragMode.leftEdge),
-                onDragUpdate: _update,
-                onDragEnd: _endDrag,
-                onTap: () => widget.onSelected?.call(widget.index),
+              // A resize handle is a drag affordance, not a seek target — a
+              // bare tap on it selects but must not move the playhead.
+              child: Listener(
+                onPointerDown: (_) => widget.onBarSuppressSeek?.call(),
+                child: _PillEdgeHandle(
+                  alignment: Alignment.centerLeft,
+                  showHandle: _hovered,
+                  onDragStart: () => _beginMode(_ZoomDragMode.leftEdge),
+                  onDragUpdate: _update,
+                  onDragEnd: _endDrag,
+                  onTap: () => widget.onSelected?.call(widget.index),
+                ),
               ),
             ),
             // Right resize handle.
@@ -684,13 +698,16 @@ class _ZoomPillState extends State<_ZoomPill> {
               top: zoomBadgeAreaHeight,
               width: handleHitWidth,
               height: pillBodyHeight,
-              child: _PillEdgeHandle(
-                alignment: Alignment.centerRight,
-                showHandle: _hovered,
-                onDragStart: () => _beginMode(_ZoomDragMode.rightEdge),
-                onDragUpdate: _update,
-                onDragEnd: _endDrag,
-                onTap: () => widget.onSelected?.call(widget.index),
+              child: Listener(
+                onPointerDown: (_) => widget.onBarSuppressSeek?.call(),
+                child: _PillEdgeHandle(
+                  alignment: Alignment.centerRight,
+                  showHandle: _hovered,
+                  onDragStart: () => _beginMode(_ZoomDragMode.rightEdge),
+                  onDragUpdate: _update,
+                  onDragEnd: _endDrag,
+                  onTap: () => widget.onSelected?.call(widget.index),
+                ),
               ),
             ),
             // Delete affordance sits at the pill's top-right corner,
@@ -704,8 +721,13 @@ class _ZoomPillState extends State<_ZoomPill> {
               Positioned(
                 top: -6,
                 right: -6,
-                child: _ZoomDeleteButton(
-                  onPressed: () => widget.onDeleted!(widget.index),
+                // Delete is its own action — suppress the tap-seek so removing
+                // a pill doesn't also jump the playhead to the X's position.
+                child: Listener(
+                  onPointerDown: (_) => widget.onBarSuppressSeek?.call(),
+                  child: _ZoomDeleteButton(
+                    onPressed: () => widget.onDeleted!(widget.index),
+                  ),
                 ),
               ),
           ],
