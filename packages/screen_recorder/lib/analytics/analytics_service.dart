@@ -41,7 +41,6 @@ class AnalyticsService {
           host: host ?? AnalyticsConfig.hostResolved,
           client: client,
           flushDebounce: flushDebounce,
-          now: now,
         );
 
   final PostHogSink _sink;
@@ -91,6 +90,10 @@ class AnalyticsService {
 
   /// Delivers everything currently queued in one PostHog /batch/ request. On
   /// failure the queue is left intact for the next attempt.
+  ///
+  /// Safe to delegate without an `_enabled` check: `setEnabled(false)` clears
+  /// the sink queue synchronously, and `capture`/`identify` are
+  /// `_enabled`-gated, so a disabled service's sink is always empty.
   Future<void> flush() => _sink.flush();
 
   /// Toggles capture. Turning it off discards buffered events (opt-out means

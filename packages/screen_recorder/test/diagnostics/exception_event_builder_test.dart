@@ -47,4 +47,13 @@ void main() {
     expect(builder.fingerprintFor(ArgumentError('x'), st),
         builder.fingerprintFor(ArgumentError('y'), st));
   });
+
+  test('scrubs home dir out of context string values', () {
+    final e = builder.fromDart(StateError('x'), null, handled: true,
+        context: {'path': '/Users/alice/secret.mov', 'count': 3});
+    final ctx = e.properties['context'] as Map;
+    expect(ctx['path'], isNot(contains('/Users/alice')));
+    expect(ctx['path'], contains('~'));
+    expect(ctx['count'], 3); // non-strings untouched
+  });
 }

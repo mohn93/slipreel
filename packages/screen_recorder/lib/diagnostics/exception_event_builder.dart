@@ -33,7 +33,9 @@ class ExceptionEventBuilder {
         r'$exception_fingerprint': fingerprintFor(error, stack),
         ...meta,
         'breadcrumbs': breadcrumbs,
-        if (context != null && context.isNotEmpty) 'context': context,
+        if (context != null && context.isNotEmpty)
+          'context': context.map(
+              (k, v) => MapEntry(k, v is String ? scrubber.scrub(v) : v)),
       },
     );
   }

@@ -19,14 +19,12 @@ class PostHogSink {
     required String host,
     http.Client? client,
     Duration flushDebounce = const Duration(seconds: 5),
-    DateTime Function() now = DateTime.now,
   })  : _store = store,
         _distinctId = distinctId,
         _projectKey = projectKey,
         _host = host,
         _client = client ?? http.Client(),
-        _flushDebounce = flushDebounce,
-        _now = now;
+        _flushDebounce = flushDebounce;
 
   final AnalyticsQueueStore _store;
   String _distinctId;
@@ -34,7 +32,6 @@ class PostHogSink {
   final String _host;
   final http.Client _client;
   final Duration _flushDebounce;
-  final DateTime Function() _now;
 
   final List<PostHogEvent> _queue = [];
   bool _flushing = false;
