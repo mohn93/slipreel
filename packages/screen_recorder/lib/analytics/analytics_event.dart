@@ -1,3 +1,7 @@
+/// A generic PostHog event. `AnalyticsEvent` predates the split into product
+/// analytics vs diagnostics vs feedback; all three now share this shape.
+typedef PostHogEvent = AnalyticsEvent;
+
 /// One captured product-analytics event, awaiting delivery to PostHog.
 ///
 /// Deliberately content-free: `name` plus cheap, non-identifying `properties`
