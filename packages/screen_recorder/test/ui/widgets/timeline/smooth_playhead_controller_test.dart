@@ -151,6 +151,150 @@ void main() {
     });
   });
 
+  group('SmoothPlayheadController pause hold', () {
+    late VideoPlayerPlatform previousPlatform;
+    late _DelayedSeekVideoPlatform platform;
+    late VideoPlayerController video;
+    late SmoothPlayheadController smooth;
+
+    setUp(() async {
+      previousPlatform = VideoPlayerPlatform.instance;
+      platform = _DelayedSeekVideoPlatform();
+      VideoPlayerPlatform.instance = platform;
+      video = VideoPlayerController.networkUrl(
+        Uri.parse('https://example.invalid/test.mp4'),
+      );
+      await video.initialize();
+      video.value = video.value.copyWith(
+        position: const Duration(seconds: 5),
+        isPlaying: true,
+      );
+      smooth = SmoothPlayheadController(
+        videoController: video,
+        vsync: const TestVSync(),
+      );
+    });
+
+    tearDown(() async {
+      smooth.dispose();
+      await video.dispose();
+      VideoPlayerPlatform.instance = previousPlatform;
+    });
+
+    test('pausing holds the smoothed playhead, not the stale position poll',
+        () {
+      expect(smooth.position, const Duration(seconds: 5));
+
+      // video_player's 100ms poll lags real playback, so its last sample
+      // lands slightly behind. While playing this small backward drift is
+      // ignored as decode jitter.
+      video.value = video.value.copyWith(
+        position: const Duration(milliseconds: 4900),
+      );
+      expect(smooth.position, const Duration(seconds: 5));
+
+      // Pause: the playhead must stay where the user saw it (5s), NOT snap
+      // back to the stale 4.9s poll (the reported "small backward nudge").
+      video.value = video.value.copyWith(isPlaying: false);
+      expect(smooth.position, const Duration(seconds: 5),
+          reason: 'pause must not nudge the playhead to the stale poll');
+
+      // An incidental controller update while still paused (e.g. a volume
+      // change) must not re-snap it to the stale poll either.
+      video.value = video.value.copyWith(volume: 0.5);
+      expect(smooth.position, const Duration(seconds: 5));
+    });
+
+    test('resuming from pause does not snap back to the stale poll', () {
+      video.value = video.value.copyWith(
+        position: const Duration(milliseconds: 4900),
+        isPlaying: false,
+      );
+      expect(smooth.position, const Duration(seconds: 5)); // held
+
+      // Resume. The base must anchor to the held 5s, not the stale 4.9s poll
+      // (video_player doesn't refresh it until ~100ms after play), so the
+      // playhead continues from 5s rather than snapping back then playing.
+      video.value = video.value.copyWith(isPlaying: true);
+      expect(smooth.position, const Duration(seconds: 5),
+          reason: 'resume must not snap the playhead back to the stale poll');
+    });
+
+    test('our seekTo while paused clears the hold and lands on the frame',
+        () async {
+      video.value = video.value.copyWith(
+        position: const Duration(milliseconds: 4900),
+        isPlaying: false,
+      );
+      expect(smooth.position, const Duration(seconds: 5)); // held
+
+      final seek = smooth.seekTo(const Duration(seconds: 3));
+      expect(smooth.position, const Duration(seconds: 3));
+      platform.seekCompleters.single.complete();
+      await seek;
+
+      // The hold is cleared and video_player has published the accurate
+      // seeked position, so the playhead sits on it — not the old held 5s.
+      expect(smooth.position.inMilliseconds,
+          closeTo(const Duration(seconds: 3).inMilliseconds, 20));
+
+      // And the hold really is gone: a later paused report is now trusted
+      // (would stay frozen at 3s if the hold had leaked).
+      video.value = video.value.copyWith(
+        position: const Duration(milliseconds: 3500),
+      );
+      expect(smooth.position, const Duration(milliseconds: 3500));
+    });
+
+    test('a direct player seek while paused moves the playhead (not frozen)',
+        () {
+      // Regression: some sites call videoController.seekTo directly (slice
+      // nav, add-zoom/camera, trim parking), bypassing our seekTo. The pause
+      // hold must not swallow those — the frozen pause-time poll is what we
+      // hold against, so a NEW v.position means the player really moved.
+      video.value = video.value.copyWith(
+        position: const Duration(milliseconds: 4900),
+        isPlaying: false,
+      );
+      expect(smooth.position, const Duration(seconds: 5)); // held
+
+      // Simulate a direct seek landing: video_player publishes a new position.
+      video.value = video.value.copyWith(
+        position: const Duration(seconds: 8),
+      );
+      expect(smooth.position, const Duration(seconds: 8),
+          reason: 'a direct paused seek must move the marker, not freeze it');
+    });
+
+    test('pausing at end-of-clip pins the playhead to duration', () async {
+      // A controller sitting at 9.95s (within the 100ms end-of-clip tolerance
+      // of the 10s duration) — construction seeds _smoothed to that position.
+      final endVideo = VideoPlayerController.networkUrl(
+        Uri.parse('https://example.invalid/end.mp4'),
+      );
+      await endVideo.initialize();
+      endVideo.value = endVideo.value.copyWith(
+        position: const Duration(milliseconds: 9950),
+        isPlaying: true,
+      );
+      final endSmooth = SmoothPlayheadController(
+        videoController: endVideo,
+        vsync: const TestVSync(),
+      );
+      addTearDown(() async {
+        endSmooth.dispose();
+        await endVideo.dispose();
+      });
+      expect(endSmooth.position, const Duration(milliseconds: 9950));
+
+      // Pause: resolvePausedPosition(_smoothed) must pin to duration so the
+      // playhead lands exactly on the end, not one frame short.
+      endVideo.value = endVideo.value.copyWith(isPlaying: false);
+      expect(endSmooth.position, const Duration(seconds: 10),
+          reason: 'end-of-clip pause should pin to duration');
+    });
+  });
+
   group('SmoothPlayheadController.rebaseBaseOnSpeedChange', () {
     // The boundary-jump audit (2026-06-03) tracked a visible "jump
     // then slow back" at slice seams to a stale `_basePosition` not

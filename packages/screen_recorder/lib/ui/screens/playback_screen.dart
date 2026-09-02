@@ -2184,7 +2184,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // controller drops the update while hovering). Driven by the player
   // listener — intentionally does NOT setState (mirrors the old
   // _trackIntendedPosition).
-  void _onHoverTrack() => _hover.track(_controller.value.position);
+  // Track the SMOOTHED playhead, not the controller's raw position poll. The
+  // poll lags playback and freezes on pause, so anchoring the hover position
+  // to it makes the playhead snap backward when a hover preview starts (the
+  // marker renders at the anchor while hovering) and when it restores on hover
+  // end. The smoothed value is the accurate, held position. On pause the
+  // smooth controller updates _smoothed before this fires (it listens first),
+  // so the anchor captured here is the frozen-at-pause position.
+  void _onHoverTrack() =>
+      _hover.track(_smoothPlayhead?.position ?? _controller.value.position);
 
   void _seekToStart() {
     setState(() => _hover.seekToStart());

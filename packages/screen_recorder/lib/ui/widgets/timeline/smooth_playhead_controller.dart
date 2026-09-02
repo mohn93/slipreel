@@ -63,6 +63,20 @@ class SmoothPlayheadController extends ChangeNotifier
   bool _applicationSeekPending = false;
   bool _disposed = false;
 
+  // True while the playhead is frozen at the position it held the instant the
+  // user paused, rather than tracking `v.position`. `video_player` only polls
+  // the native position every ~100 ms and stops polling on pause, so its last
+  // sample lags real playback and never catches up — snapping to it nudges the
+  // playhead backward from where the user just saw it. We hold the smoothed
+  // estimate instead. Cleared by any authoritative move (resume, our seekTo,
+  // snapForward) and by a direct videoController.seekTo detected through
+  // [_heldPollBaseline].
+  bool _holdPausedPlayhead = false;
+  // The video_player position poll captured at the pause instant — the value
+  // we hold AGAINST. This poll is frozen while paused, so if v.position later
+  // differs, an external (direct) seek moved the player and the hold releases.
+  Duration _heldPollBaseline = Duration.zero;
+
   /// Forward drift this large means video_player jumped ahead of our
   /// extrapolation — almost certainly a forward seek; re-base immediately.
   static const _forwardSeekThreshold = Duration(milliseconds: 250);
@@ -156,6 +170,8 @@ class SmoothPlayheadController extends ChangeNotifier
     _baseTimestamp = DateTime.now();
     _suppressBackwardDriftBelow = target;
     _smoothed = target;
+    // This is an authoritative move — the paused-hold no longer applies.
+    _holdPausedPlayhead = false;
     notifyListeners();
   }
 
@@ -176,8 +192,11 @@ class SmoothPlayheadController extends ChangeNotifier
         : target;
     final generation = ++_applicationSeekGeneration;
     _applicationSeekPending = true;
-    // An explicit user seek supersedes any trim-gap forward-snap latch.
+    // An explicit user seek supersedes any trim-gap forward-snap latch and the
+    // paused-hold — the seeked position is authoritative, so once it lands the
+    // paused branch should trust the reported (now-accurate) position again.
     _suppressBackwardDriftBelow = null;
+    _holdPausedPlayhead = false;
     _basePosition = clamped;
     _baseTimestamp = DateTime.now();
     if (_smoothed != clamped) {
@@ -253,12 +272,23 @@ class SmoothPlayheadController extends ChangeNotifier
     }
 
     if (isPlaying != _wasPlaying) {
+      // Both edges anchor to the smoothed estimate, never video_player's
+      // position poll. That poll lags playback by up to a poll interval, is
+      // frozen while paused, and (on resume) is not refreshed until ~100ms
+      // after play() restarts the poll timer — so anchoring to it snaps the
+      // playhead visibly backward both when pausing and when resuming. The
+      // smoothed value is our continuous best estimate across the transition.
       final pos = isPlaying
-          ? v.position
-          : resolvePausedPosition(v.position, v.duration);
+          ? _smoothed
+          : resolvePausedPosition(_smoothed, v.duration);
       _basePosition = pos;
       _baseTimestamp = DateTime.now();
       _wasPlaying = isPlaying;
+      _holdPausedPlayhead = !isPlaying;
+      // Remember the poll value we're choosing to ignore. While paused, this
+      // is the only thing video_player keeps reporting; a change away from it
+      // means an external seek landed (see the paused branch below).
+      if (!isPlaying) _heldPollBaseline = v.position;
       _syncTickerToPlayState();
       if (!isPlaying && _smoothed != pos) {
         _smoothed = pos;
@@ -294,11 +324,23 @@ class SmoothPlayheadController extends ChangeNotifier
       // Else: small backward drift is decode jitter — keep extrapolating
       // forward rather than snapping the playhead backward.
     } else {
-      // While paused the controller is the source of truth — except at
-      // end-of-clip, where the controller reports the last decoded
-      // frame's timestamp (slightly below duration). [resolvePausedPosition]
-      // pins to duration in that narrow window so the playhead doesn't
-      // walk backward on the final frame.
+      // While paused we hold the position captured at the pause instant (see
+      // _holdPausedPlayhead) rather than re-snapping to video_player's stale,
+      // frozen position poll on incidental controller updates.
+      if (_holdPausedPlayhead) {
+        // ...but a direct videoController.seekTo while paused (one that
+        // bypasses our own seekTo — e.g. slice-nav, add-zoom, trim parking)
+        // changes v.position to a genuinely new value the player just sought
+        // to. That IS authoritative: drop the hold and reconcile so the
+        // marker follows the seeked frame instead of freezing. The frozen
+        // pause-time poll never changes, so an unchanged value stays held.
+        if (v.position == _heldPollBaseline) return;
+        _holdPausedPlayhead = false;
+      }
+      // The controller is the source of truth — except at end-of-clip, where
+      // it reports the last decoded frame's timestamp (slightly below
+      // duration). [resolvePausedPosition] pins to duration in that narrow
+      // window so the playhead doesn't walk backward on the final frame.
       final pos = resolvePausedPosition(v.position, v.duration);
       if (_smoothed != pos) {
         _smoothed = pos;
