@@ -25,12 +25,14 @@ void main() {
     expect(item['stacktrace'], isNotNull);
   });
 
-  test('scrubs the home dir out of the exception message', () {
+  test('redacts a file path out of the exception message', () {
     final e = builder.fromDart(
       StateError('/Users/alice/secret.mov failed'), null, handled: true);
     final item = (e.properties[r'$exception_list'] as List).single as Map;
     expect(item['value'], isNot(contains('/Users/alice')));
-    expect(item['value'], contains('~'));
+    expect(item['value'], isNot(contains('secret.mov')));
+    // Non-path context around the path survives.
+    expect(item['value'], contains('failed'));
   });
 
   test('attaches meta and breadcrumbs and a fingerprint', () {
@@ -60,12 +62,12 @@ void main() {
     expect(item['value'], isNot(contains('secret.mov')));
   });
 
-  test('scrubs home dir out of context string values', () {
+  test('redacts file paths in context string values', () {
     final e = builder.fromDart(StateError('x'), null, handled: true,
         context: {'path': '/Users/alice/secret.mov', 'count': 3});
     final ctx = e.properties['context'] as Map;
     expect(ctx['path'], isNot(contains('/Users/alice')));
-    expect(ctx['path'], contains('~'));
+    expect(ctx['path'], isNot(contains('secret.mov')));
     expect(ctx['count'], 3); // non-strings untouched
   });
 }
