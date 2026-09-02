@@ -309,3 +309,26 @@ v1b:
 - `lib/diagnostics/native_crash_report.dart` (parsed model)
 - `main.dart` scanner wiring
 - `test/diagnostics/native_crash_scanner_test.dart` + `.ips` fixtures
+
+## 13. As-built notes (v1a, implemented 2026-09-02)
+
+Two intentional deviations from this spec, decided during implementation:
+
+- **No `runZonedGuarded` wrap (supersedes §9 step 6).** Global async error capture is
+  provided by `PlatformDispatcher.instance.onError` (installed in
+  `installGlobalErrorHandlers`), which since Flutter 3.3 is the documented replacement for
+  `runZonedGuarded`. Wrapping only `runApp` while `WidgetsFlutterBinding.ensureInitialized()`
+  runs in the root zone would cause a zone/binding mismatch, so `runApp` is left unwrapped.
+- **Breadcrumbs live in `slipreel_engine`** (`packages/slipreel_engine/lib/utils/breadcrumbs.dart`),
+  not the app package, because `AppLogger` is engine-level and the engine must not depend on
+  the app package.
+
+Known limitation (data-quality only): the anon→`sub` person merge is carried by
+`AnalyticsService.identify()`, which is gated by `shareAnalytics`. If a user has
+`shareAnalytics = false` but `shareDiagnostics = true`, no `$identify` is emitted, so their
+already-flushed anonymous `$exception`/feedback events do not merge into their `sub` person.
+Events still send and are still scrubbed; only cross-source person continuity is affected.
+Acceptable for v1a; revisit if diagnostics-only users become common.
+
+Still pending before merge (manual gate): live validation that a real `$exception` groups
+into a PostHog Error Tracking issue (§5 verification requirement) — cannot be done in-repo.
