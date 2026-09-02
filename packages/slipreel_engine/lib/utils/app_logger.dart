@@ -1,5 +1,7 @@
 import 'package:logger/logger.dart';
 
+import 'breadcrumbs.dart';
+
 /// Log zones for different parts of the application
 enum LogZone {
   platform('Platform'),
@@ -86,7 +88,7 @@ class AppLogger {
     for (final zone in LogZone.values) {
       _loggers[zone] = Logger(
         printer: ZoneLogPrinter(zone),
-        output: ZoneLogOutput(),
+        output: MultiOutput([ZoneLogOutput(), BreadcrumbLogOutput(zone.name)]),
         level: level,
       );
     }
