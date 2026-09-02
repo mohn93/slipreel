@@ -1763,6 +1763,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _controller.seekTo(start);
   }
 
+  /// Maps an edited-timeline position from [EditorTimeline] to the underlying
+  /// source-media position the playback controller seeks against.
+  Duration _editedSeekToSource(Duration editedNext) {
+    final clips = ref.read(editorProjectControllerProvider).timeline.clips;
+    return clips.isEmpty ? editedNext : seekFromEditedTime(clips, editedNext);
+  }
+
   void _checkZoomMarkerClick(Duration position) {
     // Find zoom region near clicked position (within 0.5 seconds).
     const tolerance = Duration(milliseconds: 500);
@@ -2872,27 +2879,29 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   // EditorTimeline emits edited-time positions; convert
                   // to source before feeding the controller-bound hover
                   // chain so the controller seeks to the correct frame.
-                  final clips = ref
-                      .read(editorProjectControllerProvider)
-                      .timeline
-                      .clips;
-                  final sourceNext = clips.isEmpty
-                      ? editedNext
-                      : seekFromEditedTime(clips, editedNext);
+                  final sourceNext = _editedSeekToSource(editedNext);
                   setState(() {
                     _hover.seek(sourceNext);
-                    // A committed seek (tap on the ruler or the empty
-                    // zoom lane area) is a "click anywhere in the
-                    // timeline" — deselect slice, zoom, and camera so
-                    // the inspector returns to its default state. A tap
-                    // ON a slice is routed through onSliceSelected
-                    // directly and never gets here.
+                    // A committed seek on empty timeline (ruler or the
+                    // empty lane area) is a "click anywhere" — deselect
+                    // slice, zoom, and camera so the inspector returns to
+                    // its default state. A tap ON a bar routes through
+                    // onSeekKeepSelection instead and preserves selection.
                     _selectedSliceIndex = null;
                     _selectedZoomIndex = null;
                     _selectedCameraIndex = null;
                   });
                   _refreshPlayheadEditedPos();
                   _checkZoomMarkerClick(sourceNext);
+                },
+                onSeekKeepSelection: (editedNext) {
+                  // A tap that landed ON a slice/zoom/camera bar: the bar's
+                  // own handler selects it; here we only move the playhead,
+                  // so one click both seeks and selects. Leave selection and
+                  // the zoom-marker check to the bar's handler.
+                  final sourceNext = _editedSeekToSource(editedNext);
+                  setState(() => _hover.seek(sourceNext));
+                  _refreshPlayheadEditedPos();
                 },
                 onHoverSeek: (editedNext) {
                   // Mark hover active so the listener stops updating

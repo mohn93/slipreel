@@ -96,11 +96,12 @@ void main() {
     _expectSeek(seeked, const Duration(seconds: 2));
   });
 
-  testWidgets('tapping a zoom pill does NOT seek (no select-then-deselect)', (
+  testWidgets('tapping a zoom pill seeks via the keep-selection path', (
     tester,
   ) async {
     final tips = await _freshTips();
     Duration? seeked;
+    Duration? keepSeeked;
 
     await tester.pumpWidget(
       _host(
@@ -116,6 +117,7 @@ void main() {
             ),
           ],
           onSeek: (t) => seeked = t,
+          onSeekKeepSelection: (t) => keepSeeked = t,
           onZoomSelected: (_) {},
         ),
         tips,
@@ -123,19 +125,60 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Press the pill body. Its pointer-down Listener must suppress the
-    // timeline tap-seek for this gesture — a pill tap selects the pill and
-    // must NOT commit a seek (which would immediately deselect it, the
-    // reported select-then-deselect flicker). Contrast with the
-    // 'tapping empty zoom lane seeks' test above, which DOES seek.
+    // Press the pill body. A click on a bar now moves the playhead AND
+    // selects the bar: the seek routes through onSeekKeepSelection (which
+    // leaves selection to the pill's own handler) and must NOT go through
+    // onSeek, whose "click anywhere" path would clear the selection.
     await tester.tap(
       find.byKey(const ValueKey('zoom-pill-body-0')),
       kind: PointerDeviceKind.mouse,
     );
     await tester.pump();
 
+    expect(keepSeeked, isNotNull,
+        reason: 'a pill tap should move the playhead');
     expect(seeked, isNull,
-        reason: 'a press on a zoom pill must not trigger the tap-seek');
+        reason: 'a pill tap must use the keep-selection seek, not onSeek');
+  });
+
+  testWidgets('seek commits at the pressed x, not the release x', (
+    tester,
+  ) async {
+    final tips = await _freshTips();
+    Duration? seeked;
+
+    await tester.pumpWidget(
+      _host(
+        EditorTimeline(
+          duration: const Duration(seconds: 10),
+          position: ValueNotifier<Duration>(Duration.zero),
+          onSeek: (t) => seeked = t,
+          onZoomAdded: (_, __) {},
+        ),
+        tips,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Press in the empty lane area at the 2s mark, then drift a few px (still
+    // within the 8px tap slop, so it stays a tap) before releasing. The
+    // committed seek must land on the PRESS x — this guards the fix where a
+    // seek that was committing at the release frame drifted during playback.
+    final zoomLaneTopLeft = tester.getTopLeft(find.byType(ZoomLane));
+    final downPos = zoomLaneTopLeft + const Offset(112, 22);
+    final gesture = await tester.startGesture(
+      downPos,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    await gesture.moveBy(const Offset(5, 0));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+
+    // 5px ≈ 89ms at this scale — well past the 35ms tolerance, so a
+    // release-x commit (~2089ms) would fail this. The press x is 2000ms.
+    _expectSeek(seeked, const Duration(seconds: 2));
   });
 
   testWidgets('tapping a seam marker seeks the playhead', (tester) async {
