@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:screen_recorder_macos/screen_recorder_macos.dart';
@@ -17,9 +18,17 @@ import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:slipreel_engine/state/motion_tuning_store.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
+import 'package:slipreel_engine/utils/breadcrumbs.dart';
+import 'analytics/analytics_config.dart';
 import 'analytics/analytics_events.dart';
 import 'analytics/analytics_queue_store.dart';
 import 'analytics/analytics_service.dart';
+import 'analytics/posthog_sink.dart';
+import 'diagnostics/diagnostics_service.dart';
+import 'diagnostics/exception_event_builder.dart';
+import 'diagnostics/global_error_handlers.dart';
+import 'diagnostics/pii_scrubber.dart';
+import 'feedback/feedback_service.dart';
 import 'debug/debug_probe.dart';
 import 'licensing/auth_state_store.dart';
 import 'licensing/build_release_date.g.dart';
@@ -228,11 +237,14 @@ Future<void> main() async {
   // never exposes the raw hardware id); if the platform can't supply one we
   // fall back to a persisted random id so events still stitch into a funnel.
   final appSupportPath = (await getApplicationSupportDirectory()).path;
+  // Resolved once here and shared across analytics, diagnostics, and feedback
+  // so all three stitch to the same PostHog person.
+  final distinctId = await _resolveAnalyticsDistinctId(appSupportPath);
   final analyticsService = AnalyticsService(
     store: AnalyticsQueueStore(
       path: p.join(appSupportPath, 'analytics_queue.json'),
     ),
-    distinctId: await _resolveAnalyticsDistinctId(appSupportPath),
+    distinctId: distinctId,
     enabled: initialGlobalPreferences.shareAnalytics,
     superProperties: {
       'source': 'app',
@@ -241,6 +253,57 @@ Future<void> main() async {
   );
   await analyticsService.load();
   analyticsService.capture(AnalyticsEvents.appOpened);
+
+  // Diagnostics (crash/exception reporting) + feedback, gated by the user's
+  // diagnostics opt-out. Shared meta rides on every event; the PII scrubber and
+  // breadcrumb buffer are reused across both services. All best-effort: a
+  // failure here never blocks app startup.
+  final packageInfo = await PackageInfo.fromPlatform();
+  final appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
+  final diagnosticsMeta = <String, Object?>{
+    'source': 'app',
+    'platform': Platform.operatingSystem,
+    'app_version': appVersion,
+  };
+  final scrubber = PiiScrubber.forCurrentUser();
+
+  final diagnosticsService = DiagnosticsService(
+    sink: PostHogSink(
+      store: AnalyticsQueueStore(
+        path: p.join(appSupportPath, 'diagnostics_queue.json'),
+      ),
+      distinctId: distinctId,
+      projectKey: AnalyticsConfig.projectKey,
+      host: AnalyticsConfig.hostResolved,
+    ),
+    builder: ExceptionEventBuilder(scrubber: scrubber, meta: diagnosticsMeta),
+    breadcrumbs: Breadcrumbs.instance,
+    scrubber: scrubber,
+    enabled: initialGlobalPreferences.shareDiagnostics,
+  );
+  await diagnosticsService.load();
+
+  final feedbackService = FeedbackService(
+    sink: PostHogSink(
+      store: AnalyticsQueueStore(
+        path: p.join(appSupportPath, 'feedback_queue.json'),
+      ),
+      distinctId: distinctId,
+      projectKey: AnalyticsConfig.projectKey,
+      host: AnalyticsConfig.hostResolved,
+    ),
+    breadcrumbs: Breadcrumbs.instance,
+    scrubber: scrubber,
+    meta: diagnosticsMeta,
+  );
+  await feedbackService.load();
+
+  // Route Flutter framework + async errors to the diagnostics sink. Installed
+  // before runApp so early build/async failures are captured. Async capture is
+  // handled by PlatformDispatcher.onError inside this call (the documented
+  // replacement for runZonedGuarded since Flutter 3.3), so runApp stays
+  // unwrapped to avoid a zone/binding mismatch.
+  installGlobalErrorHandlers(onCapture: diagnosticsService.captureException);
 
   runApp(ProviderScope(
     overrides: [
@@ -293,6 +356,8 @@ Future<void> main() async {
       updaterServiceProvider.overrideWithValue(updaterService),
       licensingControllerProvider.overrideWith((ref) => licensingController),
       analyticsServiceProvider.overrideWithValue(analyticsService),
+      diagnosticsServiceProvider.overrideWithValue(diagnosticsService),
+      feedbackServiceProvider.overrideWithValue(feedbackService),
     ],
     child: MyApp(
       onboardingDone: onboardingDone,
@@ -442,6 +507,11 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       (prev, next) => analytics.setEnabled(next),
     );
 
+    ref.listenManual<bool>(
+      globalPreferencesControllerProvider.select((p) => p.shareDiagnostics),
+      (prev, next) => ref.read(diagnosticsServiceProvider).setEnabled(next),
+    );
+
     ref.listenManual<RecordingStatus>(
       recordingControllerProvider.select((s) => s.status),
       (prev, next) {
@@ -476,6 +546,8 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       (prev, next) {
         if (next is EntitlementLoaded && next.claims.sub.isNotEmpty) {
           analytics.identify(next.claims.sub);
+          ref.read(diagnosticsServiceProvider).setDistinctId(next.claims.sub);
+          ref.read(feedbackServiceProvider).setDistinctId(next.claims.sub);
         }
       },
       fireImmediately: true,
@@ -603,6 +675,8 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         state == AppLifecycleState.hidden) {
       // Best-effort deliver anything buffered before we lose foreground.
       unawaited(ref.read(analyticsServiceProvider).flush());
+      unawaited(ref.read(diagnosticsServiceProvider).flush());
+      unawaited(ref.read(feedbackServiceProvider).dispose());
     }
   }
 

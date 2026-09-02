@@ -80,6 +80,7 @@ import 'package:slipreel_engine/timeline/slice_navigation.dart'
     show NavDirection;
 import 'package:screen_recorder/analytics/analytics_events.dart';
 import 'package:screen_recorder/analytics/analytics_service.dart';
+import 'package:screen_recorder/diagnostics/diagnostics_service.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 import 'package:screen_recorder/licensing/build_release_date.g.dart';
@@ -2150,6 +2151,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               'format': settings.format.name,
               'error_type': error.runtimeType.toString(),
             },
+          );
+          ref.read(diagnosticsServiceProvider).captureException(
+            error,
+            StackTrace.current,
+            handled: true,
+            context: {'phase': 'export', 'format': settings.format.name},
           );
           AppAlerts.error('Export failed: $error');
         case ExportNotEntitled():
