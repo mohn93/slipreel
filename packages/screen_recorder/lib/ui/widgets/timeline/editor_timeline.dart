@@ -179,7 +179,12 @@ class EditorTimeline extends ConsumerStatefulWidget {
   /// A committed seek that must NOT disturb the current bar selection. Fired
   /// (instead of [onSeek]) when a body tap lands ON a slice/zoom/camera bar:
   /// the bar's own handler selects it, and this just moves the playhead, so a
-  /// single click both seeks and selects. Falls back to [onSeek] when null.
+  /// single click both seeks and selects.
+  ///
+  /// Falls back to [onSeek] when null — which clears selection. That fallback
+  /// only preserves selection because the outer tap-seek Listener fires before
+  /// the bar's gesture-arena selection, so the bar re-selects after the clear.
+  /// Supply this callback for any bar whose selection you actually want kept.
   final ValueChanged<Duration>? onSeekKeepSelection;
   final List<ZoomRegion> zoomRegions;
   final int? selectedZoomIndex;
@@ -456,6 +461,10 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   // next tap-seek pointer-down to route the seek through the keep-selection
   // callback, so a click on a clip both moves the playhead and selects it.
   bool _barPointerDownPending = false;
+  // Set by a bar CONTROL (delete button, resize handle) whose press must not
+  // seek at all. Takes precedence over _barPointerDownPending — e.g. tapping a
+  // pill's delete X removes it without also jumping the playhead to the X.
+  bool _barSeekSuppressPending = false;
   // True between onScaleEnd and the ticker settling onto the final
   // target. Keeps the ticker applying (so the scale lands exactly on
   // the user's intended zoom) until converged, then stops.
@@ -922,7 +931,9 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     // consume it now, before the early returns, so it can't leak into a later
     // gesture.
     final barPressed = _barPointerDownPending;
+    final seekSuppressed = _barSeekSuppressPending;
     _barPointerDownPending = false;
+    _barSeekSuppressPending = false;
     if (!_isPrimaryTapSeekPointer(event)) return;
     if (_tapSeekPointer != null) {
       _tapSeekBlocked = true;
@@ -938,7 +949,9 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     // the keep-selection path so the bar's own handler owns selection — one
     // click both seeks and selects. Only genuine drags/pinches (below) abort.
     _tapSeekOnBar = barPressed;
-    _tapSeekBlocked = false;
+    // A press on a bar CONTROL (delete/resize) must not seek at all — it is a
+    // distinct action, not a scrub. Suppression wins over the bar-body seek.
+    _tapSeekBlocked = seekSuppressed;
   }
 
   void _onTapSeekPointerMove(PointerMoveEvent event) {
@@ -952,9 +965,13 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
 
   void _onTapSeekPointerUp(PointerUpEvent event) {
     if (event.pointer != _tapSeekPointer) return;
+    // Judge lane eligibility by where the user PRESSED, matching the pressed-x
+    // commit below — a tap that began in the seekable body but drifted a few
+    // px (within slop) into the keystroke lane or ruler must still count as a
+    // body tap.
+    final downLocal = _tapSeekDownLocal ?? event.localPosition;
     final laneTop = _keystrokeLaneTopY;
-    final inKeystrokeLane =
-        laneTop != null && event.localPosition.dy >= laneTop;
+    final inKeystrokeLane = laneTop != null && downLocal.dy >= laneTop;
     final shouldSeek =
         !_tapSeekBlocked &&
         !_tapSeekMoved &&
@@ -962,11 +979,11 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
         !_trackpadPanActive &&
         !_trimDragging &&
         !inKeystrokeLane &&
-        event.localPosition.dy >= rulerHeight;
+        downLocal.dy >= rulerHeight;
     // Commit at the position the user PRESSED, in the scroll frame that was
     // live at press time — not the up-time frame, which auto-follow may have
     // scrolled out from under a stationary finger during playback.
-    final x = (_tapSeekDownLocal ?? event.localPosition).dx;
+    final x = downLocal.dx;
     final downOffset = _tapSeekDownOffset;
     final keepSelection = _tapSeekOnBar;
     _resetTapSeekTracking();
@@ -1811,6 +1828,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                                       onSeek: widget.onSeek,
                                       onBarPointerDown: () =>
                                           _barPointerDownPending = true,
+                                      onBarSuppressSeek: () =>
+                                          _barSeekSuppressPending = true,
                                       trimDragging: _trimDragging,
                                       animateLayout: animateTimelineLayout,
                                     ),
