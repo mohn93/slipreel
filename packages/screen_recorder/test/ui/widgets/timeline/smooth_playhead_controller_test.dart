@@ -220,7 +220,7 @@ void main() {
           reason: 'resume must not snap the playhead back to the stale poll');
     });
 
-    test('a seek while paused clears the hold and lands on the seeked frame',
+    test('our seekTo while paused clears the hold and lands on the frame',
         () async {
       video.value = video.value.copyWith(
         position: const Duration(milliseconds: 4900),
@@ -237,6 +237,61 @@ void main() {
       // seeked position, so the playhead sits on it — not the old held 5s.
       expect(smooth.position.inMilliseconds,
           closeTo(const Duration(seconds: 3).inMilliseconds, 20));
+
+      // And the hold really is gone: a later paused report is now trusted
+      // (would stay frozen at 3s if the hold had leaked).
+      video.value = video.value.copyWith(
+        position: const Duration(milliseconds: 3500),
+      );
+      expect(smooth.position, const Duration(milliseconds: 3500));
+    });
+
+    test('a direct player seek while paused moves the playhead (not frozen)',
+        () {
+      // Regression: some sites call videoController.seekTo directly (slice
+      // nav, add-zoom/camera, trim parking), bypassing our seekTo. The pause
+      // hold must not swallow those — the frozen pause-time poll is what we
+      // hold against, so a NEW v.position means the player really moved.
+      video.value = video.value.copyWith(
+        position: const Duration(milliseconds: 4900),
+        isPlaying: false,
+      );
+      expect(smooth.position, const Duration(seconds: 5)); // held
+
+      // Simulate a direct seek landing: video_player publishes a new position.
+      video.value = video.value.copyWith(
+        position: const Duration(seconds: 8),
+      );
+      expect(smooth.position, const Duration(seconds: 8),
+          reason: 'a direct paused seek must move the marker, not freeze it');
+    });
+
+    test('pausing at end-of-clip pins the playhead to duration', () async {
+      // A controller sitting at 9.95s (within the 100ms end-of-clip tolerance
+      // of the 10s duration) — construction seeds _smoothed to that position.
+      final endVideo = VideoPlayerController.networkUrl(
+        Uri.parse('https://example.invalid/end.mp4'),
+      );
+      await endVideo.initialize();
+      endVideo.value = endVideo.value.copyWith(
+        position: const Duration(milliseconds: 9950),
+        isPlaying: true,
+      );
+      final endSmooth = SmoothPlayheadController(
+        videoController: endVideo,
+        vsync: const TestVSync(),
+      );
+      addTearDown(() async {
+        endSmooth.dispose();
+        await endVideo.dispose();
+      });
+      expect(endSmooth.position, const Duration(milliseconds: 9950));
+
+      // Pause: resolvePausedPosition(_smoothed) must pin to duration so the
+      // playhead lands exactly on the end, not one frame short.
+      endVideo.value = endVideo.value.copyWith(isPlaying: false);
+      expect(endSmooth.position, const Duration(seconds: 10),
+          reason: 'end-of-clip pause should pin to duration');
     });
   });
 
