@@ -43,7 +43,9 @@ class DiagnosticsService {
   }
 
   void captureException(Object error, StackTrace? stack,
-      {bool handled = true, Map<String, Object?>? context}) {
+      {bool handled = true,
+      Map<String, Object?>? context,
+      String? messageOverride}) {
     try {
       if (!_enabled || !_sink.isConfigured) return;
       if (_sessionCount >= maxPerSession) return;
@@ -55,7 +57,11 @@ class DiagnosticsService {
       _sessionCount++;
       final crumbs = _scrubber.scrubAll(_breadcrumbs.snapshot());
       _sink.enqueue(_builder.fromDart(error, stack,
-          handled: handled, breadcrumbs: crumbs, context: context, now: t));
+          handled: handled,
+          breadcrumbs: crumbs,
+          context: context,
+          messageOverride: messageOverride,
+          now: t));
     } catch (_) {
       // Best-effort: capturing an exception must never break the app.
     }

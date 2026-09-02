@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -43,26 +44,30 @@ void main() {
   });
 
   test('sends a \$exception when enabled', () async {
-    var calls = 0;
+    String? body;
     final svc = build(enabled: true,
         client: MockClient((req) async {
-          calls++;
-          expect(req.body, contains(r'$exception'));
+          body = req.body;
           return http.Response('{}', 200);
         }));
     svc.captureException(StateError('x'), StackTrace.current, handled: false);
     await svc.flush();
-    expect(calls, 1);
+    expect(body, isNotNull);
+    expect(body, contains(r'$exception'));
   });
 
   test('collapses identical fingerprints within the dedupe window', () async {
-    var batches = 0;
+    String? body;
     final svc = build(enabled: true,
-        client: MockClient((_) async { batches++; return http.Response('{}', 200); }));
+        client: MockClient((req) async {
+          body = req.body;
+          return http.Response('{}', 200);
+        }));
     final st = StackTrace.current;
     svc.captureException(StateError('a'), st);
     svc.captureException(StateError('b'), st); // same type + top frame -> collapsed
     await svc.flush();
-    expect(batches, 1); // one batch, and it should carry a single event
+    final batch = jsonDecode(body!)['batch'] as List;
+    expect(batch.length, 1);
   });
 }

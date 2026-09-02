@@ -130,6 +130,21 @@ void main() {
     expect(await store.load(), isEmpty);
   });
 
+  test('disabled service never flushes a stale on-disk queue', () async {
+    await store.save([
+      AnalyticsEvent(name: 'stale', timestamp: DateTime.now()),
+    ]);
+    var calls = 0;
+    final client = MockClient((req) async {
+      calls++;
+      return http.Response('{}', 200);
+    });
+    final a = svc(client: client, enabled: false);
+    await a.load();
+    await a.flush();
+    expect(calls, 0);
+  });
+
   test('no-op when unconfigured (empty project key)', () async {
     var calls = 0;
     final client = MockClient((req) async {

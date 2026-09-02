@@ -16,12 +16,13 @@ class ExceptionEventBuilder {
     required bool handled,
     List<String> breadcrumbs = const [],
     Map<String, Object?>? context,
+    String? messageOverride,
     DateTime? now,
   }) {
     final frames = _frames(stack);
     final item = <String, Object?>{
       'type': error.runtimeType.toString(),
-      'value': scrubber.scrub(error.toString()),
+      'value': scrubber.scrub(messageOverride ?? error.toString()),
       'mechanism': {'handled': handled, 'type': 'flutter'},
       'stacktrace': {'type': 'raw', 'frames': frames},
     };

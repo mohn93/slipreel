@@ -55,7 +55,10 @@ class AnalyticsService {
   /// Loads events left over from a previous run into the in-memory queue. Call
   /// once at startup. Delivery is not forced here; the `app_opened` capture
   /// that follows in main() schedules a flush that carries these along too.
-  Future<void> load() => _sink.load();
+  Future<void> load() async {
+    if (!_enabled) return;
+    await _sink.load();
+  }
 
   /// Records an event. Cheap and synchronous from the caller's view: it
   /// enqueues, mirrors to disk, and schedules a debounced flush.
@@ -89,12 +92,13 @@ class AnalyticsService {
   }
 
   /// Delivers everything currently queued in one PostHog /batch/ request. On
-  /// failure the queue is left intact for the next attempt.
-  ///
-  /// Safe to delegate without an `_enabled` check: `setEnabled(false)` clears
-  /// the sink queue synchronously, and `capture`/`identify` are
-  /// `_enabled`-gated, so a disabled service's sink is always empty.
-  Future<void> flush() => _sink.flush();
+  /// failure the queue is left intact for the next attempt. Gated on [_enabled]
+  /// so a service that starts disabled (or a stale on-disk queue) can never send
+  /// after opt-out.
+  Future<void> flush() async {
+    if (!_enabled) return;
+    await _sink.flush();
+  }
 
   /// Toggles capture. Turning it off discards buffered events (opt-out means
   /// "don't send what I did before either"); turning it on starts fresh.

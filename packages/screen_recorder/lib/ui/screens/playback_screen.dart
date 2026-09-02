@@ -2142,7 +2142,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 : null,
           );
           surfaceExportWarnings(summary, (m) => AppAlerts.warning(m));
-        case ExportFailure(:final error):
+        case ExportFailure(:final error, :final stackTrace):
           // Only the error's type — never the message, which can contain file
           // paths.
           ref.read(analyticsServiceProvider).capture(
@@ -2154,8 +2154,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           );
           ref.read(diagnosticsServiceProvider).captureException(
             error,
-            StackTrace.current,
+            stackTrace ?? StackTrace.current,
             handled: true,
+            messageOverride: error.runtimeType.toString(),
             context: {'phase': 'export', 'format': settings.format.name},
           );
           AppAlerts.error('Export failed: $error');

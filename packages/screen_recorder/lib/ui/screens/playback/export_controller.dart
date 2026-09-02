@@ -16,8 +16,9 @@ class ExportSuccess extends ExportOutcome {
 }
 
 class ExportFailure extends ExportOutcome {
-  const ExportFailure(this.error);
+  const ExportFailure(this.error, [this.stackTrace]);
   final Object error;
+  final StackTrace? stackTrace;
 }
 
 class ExportCancelled extends ExportOutcome {
@@ -78,7 +79,7 @@ class ExportController {
       // here preserves diagnosability so genuine bugs (TypeError, etc.) aren't
       // silently downgraded to a plain "Export failed" message with no trace.
       AppLogger.ffmpeg.e('Export run failed', error: e, stackTrace: stackTrace);
-      return ExportFailure(e);
+      return ExportFailure(e, stackTrace);
     }
   }
 

@@ -48,6 +48,18 @@ void main() {
         builder.fingerprintFor(ArgumentError('y'), st));
   });
 
+  test('messageOverride redacts the raw error message', () {
+    final e = builder.fromDart(
+      StateError('/Users/alice/secret.mov failed'),
+      null,
+      handled: true,
+      messageOverride: 'StateError',
+    );
+    final item = (e.properties[r'$exception_list'] as List).single as Map;
+    expect(item['value'], 'StateError');
+    expect(item['value'], isNot(contains('secret.mov')));
+  });
+
   test('scrubs home dir out of context string values', () {
     final e = builder.fromDart(StateError('x'), null, handled: true,
         context: {'path': '/Users/alice/secret.mov', 'count': 3});
