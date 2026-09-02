@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../feedback/feedback_service.dart';
 import '../app_alerts/app_alerts.dart';
 import '../theme/app_palette.dart';
+import '../theme/app_palette_context.dart';
 
 /// In-app feedback form: an idea/problem picker, a required message, an
 /// optional email, and an opt-in diagnostics attachment. Submitting is
@@ -29,6 +30,7 @@ class _FeedbackBody extends ConsumerStatefulWidget {
 }
 
 class _FeedbackBodyState extends ConsumerState<_FeedbackBody> {
+  bool _busy = false;
   FeedbackType _type = FeedbackType.problem;
   bool _attachDiagnostics = false;
   final _messageController = TextEditingController();
@@ -48,8 +50,10 @@ class _FeedbackBodyState extends ConsumerState<_FeedbackBody> {
   }
 
   void _send() {
+    if (_busy) return;
     final message = _messageController.text.trim();
     if (message.isEmpty) return;
+    _busy = true;
     final email = _emailController.text.trim();
     ref.read(feedbackServiceProvider).submit(FeedbackReport(
           type: _type,
@@ -63,11 +67,7 @@ class _FeedbackBodyState extends ConsumerState<_FeedbackBody> {
 
   @override
   Widget build(BuildContext context) {
-    // The app installs an AppPalette extension at the root (see main.dart),
-    // so this is always populated in a real run. The fallback keeps this
-    // sheet safe for hosts that don't set one up (e.g. minimal widget tests).
-    final palette =
-        Theme.of(context).extension<AppPalette>() ?? AppPalette.midnight;
+    final palette = context.palette;
     // Reflects emptiness for the button's look, but Send itself always stays
     // tappable and re-checks the live text at press time (see _send) — the
     // TextField's own onChanged notification lands via a listener rebuild

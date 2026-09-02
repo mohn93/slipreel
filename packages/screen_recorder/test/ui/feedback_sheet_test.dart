@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder/feedback/feedback_service.dart';
 import 'package:screen_recorder/ui/feedback/feedback_sheet.dart';
+import 'package:screen_recorder/ui/theme/app_palette.dart';
 
 class _FakeFeedback implements FeedbackService {
   FeedbackReport? submitted;
@@ -24,6 +25,7 @@ void main() {
     await tester.pumpWidget(ProviderScope(
       overrides: [feedbackServiceProvider.overrideWithValue(fake)],
       child: MaterialApp(
+        theme: ThemeData(extensions: const [AppPalette.midnight]),
         home: Builder(builder: (context) => Scaffold(
           body: ElevatedButton(
             onPressed: () => FeedbackSheet.show(context),
