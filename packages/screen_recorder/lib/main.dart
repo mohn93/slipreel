@@ -676,7 +676,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       // Best-effort deliver anything buffered before we lose foreground.
       unawaited(ref.read(analyticsServiceProvider).flush());
       unawaited(ref.read(diagnosticsServiceProvider).flush());
-      unawaited(ref.read(feedbackServiceProvider).dispose());
+      unawaited(ref.read(feedbackServiceProvider).flush());
     }
   }
 

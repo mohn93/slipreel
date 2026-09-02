@@ -62,6 +62,8 @@ class FeedbackService {
 
   void setDistinctId(String id) => _sink.setDistinctId(id);
 
+  Future<void> flush() => _sink.flush();
+
   Future<void> dispose() => _sink.dispose();
 }
 
