@@ -8,6 +8,7 @@ class GlobalPreferences {
   const GlobalPreferences({
     this.defaultSaveLocation,
     this.shareAnalytics = true,
+    this.shareDiagnostics = true,
   });
 
   /// Absolute folder path used as the default recording/export destination.
@@ -19,20 +20,28 @@ class GlobalPreferences {
   /// "on" (existing users keep the default).
   final bool shareAnalytics;
 
+  /// Whether diagnostic data may be sent. Opt-out: on by default,
+  /// flipped off from Settings → Privacy. Absent in an older prefs file means
+  /// "on" (existing users keep the default).
+  final bool shareDiagnostics;
+
   GlobalPreferences copyWith({
     String? defaultSaveLocation,
     bool clearSaveLocation = false,
     bool? shareAnalytics,
+    bool? shareDiagnostics,
   }) =>
       GlobalPreferences(
         defaultSaveLocation:
             clearSaveLocation ? null : (defaultSaveLocation ?? this.defaultSaveLocation),
         shareAnalytics: shareAnalytics ?? this.shareAnalytics,
+        shareDiagnostics: shareDiagnostics ?? this.shareDiagnostics,
       );
 
   Map<String, dynamic> toJson() => {
         if (defaultSaveLocation != null) 'defaultSaveLocation': defaultSaveLocation,
         'shareAnalytics': shareAnalytics,
+        'shareDiagnostics': shareDiagnostics,
       };
 
   static const defaults = GlobalPreferences();
@@ -40,9 +49,11 @@ class GlobalPreferences {
   static GlobalPreferences fromJson(Map<String, dynamic> json) {
     final raw = json['defaultSaveLocation'];
     final analytics = json['shareAnalytics'];
+    final diagnostics = json['shareDiagnostics'];
     return GlobalPreferences(
       defaultSaveLocation: raw is String && raw.isNotEmpty ? raw : null,
       shareAnalytics: analytics is bool ? analytics : true,
+      shareDiagnostics: diagnostics is bool ? diagnostics : true,
     );
   }
 }
