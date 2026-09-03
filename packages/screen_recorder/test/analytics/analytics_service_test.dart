@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:screen_recorder/analytics/analytics_event.dart';
 import 'package:screen_recorder/analytics/analytics_queue_store.dart';
 import 'package:screen_recorder/analytics/analytics_service.dart';
+import 'package:slipreel_engine/utils/breadcrumbs.dart';
 
 void main() {
   late Directory dir;
@@ -230,6 +231,34 @@ void main() {
     final a = svc(client: client, enabled: false);
     a.identify('user_1');
     await a.flush();
+    expect(calls, 0);
+  });
+
+  test(
+      'capture drops a breadcrumb even when disabled and unconfigured, '
+      'without posting anything', () async {
+    var calls = 0;
+    final client = MockClient((req) async {
+      calls++;
+      return http.Response('{}', 200);
+    });
+    final breadcrumbs = Breadcrumbs();
+    final a = AnalyticsService(
+      store: store,
+      distinctId: 'device_hash',
+      enabled: false,
+      client: client,
+      projectKey: '',
+      host: 'https://ph.example.test',
+      breadcrumbs: breadcrumbs,
+    );
+    created.add(a);
+
+    a.capture('recording_started', properties: {'duration_s': 3});
+
+    final snap = breadcrumbs.snapshot();
+    expect(snap, hasLength(1));
+    expect(snap.single, contains('recording_started'));
     expect(calls, 0);
   });
 }

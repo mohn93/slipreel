@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:slipreel_engine/utils/breadcrumbs.dart';
 
 import 'analytics_config.dart';
 import 'analytics_event.dart';
@@ -30,10 +31,12 @@ class AnalyticsService {
     Map<String, Object?> superProperties = const {},
     Duration flushDebounce = const Duration(seconds: 5),
     DateTime Function() now = DateTime.now,
+    Breadcrumbs? breadcrumbs,
   })  : _enabled = enabled,
         _distinctId = distinctId,
         _superProperties = superProperties,
         _now = now,
+        _breadcrumbs = breadcrumbs ?? Breadcrumbs.instance,
         _sink = PostHogSink(
           store: store,
           distinctId: distinctId,
@@ -47,6 +50,7 @@ class AnalyticsService {
   String _distinctId; // mutable: becomes the user id after identify()
   final Map<String, Object?> _superProperties;
   final DateTime Function() _now;
+  final Breadcrumbs _breadcrumbs;
 
   bool _enabled;
 
@@ -63,6 +67,11 @@ class AnalyticsService {
   /// Records an event. Cheap and synchronous from the caller's view: it
   /// enqueues, mirrors to disk, and schedules a debounced flush.
   void capture(String event, {Map<String, Object?>? properties}) {
+    // Breadcrumbs must accrue even when analytics is opted out or
+    // unconfigured — they only ever leave the machine attached to a
+    // diagnostics report (gated by shareDiagnostics) or an explicit
+    // feedback submission.
+    _breadcrumbs.dropEvent(event, props: properties);
     if (!_enabled || !_sink.isConfigured) return;
     _sink.enqueue(PostHogEvent(
       name: event,
