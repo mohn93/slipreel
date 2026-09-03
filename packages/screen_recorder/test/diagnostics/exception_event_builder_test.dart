@@ -111,4 +111,16 @@ void main() {
     expect(ctx['path'], isNot(contains('secret.mov')));
     expect(ctx['count'], 3); // non-strings untouched
   });
+
+  test('recursively redacts paths nested in context maps/lists', () {
+    final e = builder.fromDart(StateError('x'), null, handled: true, context: {
+      'nested': {'p': '/Users/alice/deep.mov'},
+      'items': ['/Users/alice/a.mov', 'plain'],
+    });
+    final ctx = e.properties['context'] as Map;
+    expect((ctx['nested'] as Map)['p'], isNot(contains('deep.mov')));
+    final items = (ctx['items'] as List).cast<String>();
+    expect(items[0], isNot(contains('a.mov')));
+    expect(items[1], 'plain');
+  });
 }

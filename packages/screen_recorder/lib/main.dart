@@ -258,8 +258,15 @@ Future<void> main() async {
   // diagnostics opt-out. Shared meta rides on every event; the PII scrubber and
   // breadcrumb buffer are reused across both services. All best-effort: a
   // failure here never blocks app startup.
-  final packageInfo = await PackageInfo.fromPlatform();
-  final appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
+  // Best-effort: a PackageInfo failure must not block launch (mirrors the
+  // guarded call in settings_screen.dart).
+  String appVersion;
+  try {
+    final packageInfo = await PackageInfo.fromPlatform();
+    appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
+  } catch (_) {
+    appVersion = '0.0.0+0';
+  }
   final diagnosticsMeta = <String, Object?>{
     'source': 'app',
     'platform': Platform.operatingSystem,
