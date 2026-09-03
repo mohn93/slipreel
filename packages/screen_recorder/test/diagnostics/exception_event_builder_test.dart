@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_recorder/analytics/analytics_event.dart';
 import 'package:screen_recorder/diagnostics/exception_event_builder.dart';
 import 'package:screen_recorder/diagnostics/pii_scrubber.dart';
 

@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/foundation.dart';
 
 typedef CaptureFn = void Function(Object error, StackTrace? stack, {bool handled});
