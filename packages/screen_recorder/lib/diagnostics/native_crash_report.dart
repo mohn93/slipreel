@@ -116,7 +116,7 @@ NativeCrashReport? _parseIps(String contents,
     frames: frames,
     reportFileName: fileName,
     osVersion: os == null ? null : scrubber.scrub(os),
-    appVersion: appVersion,
+    appVersion: appVersion == null ? null : scrubber.scrub(appVersion),
     crashedAt: ts == null ? null : DateTime.tryParse(ts.replaceFirst(' ', 'T')),
   );
 }
