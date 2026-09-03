@@ -81,6 +81,7 @@ import 'package:slipreel_engine/timeline/slice_navigation.dart'
 import 'package:screen_recorder/analytics/analytics_events.dart';
 import 'package:screen_recorder/analytics/analytics_service.dart';
 import 'package:screen_recorder/diagnostics/diagnostics_service.dart';
+import 'package:screen_recorder/diagnostics/persistent_crumb_store.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 import 'package:screen_recorder/licensing/build_release_date.g.dart';
@@ -2077,6 +2078,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         },
       );
 
+      // Right before the native handoff (ffmpeg/gif pipeline spawn below),
+      // so a crash in that subprocess is captured with this activity set.
+      ref.read(crumbStoreProvider).setActivity({
+        'op': 'export',
+        'format': settings.format.name,
+        'resolution': settings.resolution.name,
+      });
+      ref.read(crumbStoreProvider).flushNow();
+
       final outcome = await exportController.run(
         outputPath: outPath,
         handler: handler,
@@ -2173,6 +2183,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           break;
       }
     } finally {
+      // Covers every exit from the encode phase (success, failure, cancel,
+      // not-entitled, or an uncaught exception) — the export op has ended.
+      ref.read(crumbStoreProvider).setActivity(null);
       progress.dispose();
     }
   }

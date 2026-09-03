@@ -605,10 +605,18 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         if (next == RecordingStatus.recording &&
             prev != RecordingStatus.paused) {
           analytics.capture(AnalyticsEvents.recordingStarted);
+          // Fires synchronously as part of the same state transition that
+          // precedes the native ScreenCaptureKit start (VideoEncoder.start),
+          // so a crash in that handoff is captured with this activity set.
+          ref.read(crumbStoreProvider).setActivity({'op': 'recording'});
+          ref.read(crumbStoreProvider).flushNow();
         } else if (next == RecordingStatus.completed) {
           analytics.capture(AnalyticsEvents.recordingCompleted, properties: {
             'duration_s': ref.read(recordingControllerProvider).duration.inSeconds,
           });
+          ref.read(crumbStoreProvider).setActivity(null);
+        } else if (next == RecordingStatus.error) {
+          ref.read(crumbStoreProvider).setActivity(null);
         }
       },
     );

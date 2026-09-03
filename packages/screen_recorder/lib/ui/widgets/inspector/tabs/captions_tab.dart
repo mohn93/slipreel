@@ -6,6 +6,7 @@ import 'package:slipreel_engine/export/ffmpeg_probe.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 
+import '../../../../diagnostics/persistent_crumb_store.dart';
 import '../../../../state/caption_generation_controller.dart';
 import '../../../../state/whisper_model_store.dart';
 import '../inspector_widgets.dart';
@@ -64,6 +65,17 @@ class _CaptionsTabState extends ConsumerState<CaptionsTab> {
       editorProjectControllerProvider.select((s) => s.captions.isNotEmpty),
     );
 
+    // The generate() run covers two native handoffs (ffmpeg audio extract,
+    // whisper-cli transcribe) with no provider access at that depth — clear
+    // the activity here, at the nearest boundary, once the run reaches a
+    // terminal status.
+    ref.listen<CaptionGenerationStatus>(captionGenerationControllerProvider,
+        (prev, next) {
+      if (next is CaptionDone || next is CaptionError || next is CaptionCancelled) {
+        ref.read(crumbStoreProvider).setActivity(null);
+      }
+    });
+
     return ListView(
       padding: const EdgeInsets.only(right: 12),
       clipBehavior: Clip.none,
@@ -112,12 +124,20 @@ class _CaptionsTabState extends ConsumerState<CaptionsTab> {
                       ? () => ref
                           .read(captionGenerationControllerProvider.notifier)
                           .cancel()
-                      : () => ref
-                          .read(captionGenerationControllerProvider.notifier)
-                          .generate(
-                            videoPath: widget.videoPath,
-                            source: selected,
-                          ),
+                      : () {
+                          // Right before the native handoffs inside
+                          // generate() (ffmpeg extract, then whisper-cli).
+                          ref
+                              .read(crumbStoreProvider)
+                              .setActivity({'op': 'transcribe'});
+                          ref.read(crumbStoreProvider).flushNow();
+                          ref
+                              .read(captionGenerationControllerProvider.notifier)
+                              .generate(
+                                videoPath: widget.videoPath,
+                                source: selected,
+                              );
+                        },
                   icon: Icon(
                     busy ? Icons.stop : Icons.closed_caption,
                     size: 18,
