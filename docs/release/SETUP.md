@@ -124,7 +124,7 @@ The appcast and the DMGs are served from `https://slipreel.app` — that is the
 `SUFeedURL` in Info.plist and the enclosure base (`DOWNLOAD_BASE`) in
 `release-macos.sh`. Hosting is a VPS running nginx, fronted by Cloudflare.
 
-One-time server setup (current box: VPS `94.156.144.73`, user `deploy`, webroot
+One-time server setup (current box: VPS `185.203.116.117`, user `deploy`, webroot
 `/var/www/slipreel`; documented for reproducibility):
 
 - A `deploy` user whose `~/.ssh/authorized_keys` holds the PUBLIC half of the

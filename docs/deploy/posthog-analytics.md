@@ -46,7 +46,7 @@ certbot rewrote the live config into a `listen 443` server block, so the two
 live block on the VPS:
 
 ```bash
-# on 94.156.144.73
+# on 185.203.116.117
 sudo nano /etc/nginx/sites-enabled/slipreel   # or wherever the site vhost lives
 # paste the two `location ^~ /ingest/static/` and `location ^~ /ingest/` blocks
 # into the server{} that has `listen 443 ssl` for slipreel.app
