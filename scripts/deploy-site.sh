@@ -27,7 +27,7 @@ SITE="${SITE_DIR:-$ROOT/site}"
 # and a release deploy leave the shared webroot owned consistently. Overridable
 # via DEPLOY_TARGET. (Do not default to a personal SSH host alias: those live
 # only in one machine's ~/.ssh/config and several resolve to root.)
-TARGET="${DEPLOY_TARGET:-deploy@94.156.144.73}"
+TARGET="${DEPLOY_TARGET:-deploy@185.203.116.117}"
 REMOTE_ROOT="${DEPLOY_ROOT:-/var/www/slipreel}"
 
 [[ -f "$SITE/index.html" ]] || {

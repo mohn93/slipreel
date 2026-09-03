@@ -12,7 +12,7 @@ This is a runbook YOU execute against your VPS and accounts. It touches a produc
 
 ## Prerequisites
 
-- SSH access to the VPS `94.156.144.73` (the box already hosts `slipreel.app` + the Sparkle appcast/DMGs).
+- SSH access to the VPS `185.203.116.117` (the box already hosts `slipreel.app` + the Sparkle appcast/DMGs).
 - DNS control for `slipreel.app`.
 - A Stripe account in **test mode** (the "Becoming Ventures" test account; `acct_1U8gSqJa6q311aT7`). Test price IDs already exist (§7).
 - A Resend account (for magic-link email).
@@ -28,13 +28,13 @@ Note on paths: the Flutter app lives under `packages/screen_recorder/` — the b
 Add an A record so the API has a hostname (the site already resolves):
 
 ```
-api.slipreel.app.   A   94.156.144.73
+api.slipreel.app.   A   185.203.116.117
 ```
 
 Verify before continuing (TLS issuance in §5 needs it resolving):
 
 ```bash
-dig +short api.slipreel.app    # -> 94.156.144.73
+dig +short api.slipreel.app    # -> 185.203.116.117
 ```
 
 ## 2. VPS: app dir, service user, Postgres `[you]`
@@ -207,7 +207,7 @@ Until the domain is verified you can test with Resend's `onboarding@resend.dev` 
 
 ## 9. Deploy the web pages `[run]`
 
-From the repo root (the script rsyncs `site/` -> `deploy@94.156.144.73:/var/www/slipreel`, excluding `package.json`/tests, with no removal or permission flags):
+From the repo root (the script rsyncs `site/` -> `deploy@185.203.116.117:/var/www/slipreel`, excluding `package.json`/tests, with no removal or permission flags):
 
 ```bash
 scripts/deploy-site.sh

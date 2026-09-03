@@ -106,7 +106,7 @@ jobs:
 
       - name: Deploy DMG + appcast to slipreel.app
         env:
-          DEPLOY_HOST: 94.156.144.73
+          DEPLOY_HOST: 185.203.116.117
           DEPLOY_USER: deploy
           DEPLOY_ROOT: /var/www/slipreel
           KEEP_DMGS: "3"
@@ -115,7 +115,7 @@ jobs:
           printf '%s\n' "${{ secrets.SLIPREEL_DEPLOY_SSH_KEY }}" > ~/.ssh/slipreel_deploy
           chmod 600 ~/.ssh/slipreel_deploy
           # Pin the origin host key (no trust-on-first-use).
-          echo '94.156.144.73 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINgv/ZSk87k7WKXNKkCMZQu8oYm+rBZIDKNaere0Ch81' >> ~/.ssh/known_hosts
+          echo '185.203.116.117 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH9evyxQejMTUdRGWuE3OsBu2z6lV0HVST1Vxif7gKAo' >> ~/.ssh/known_hosts
           SSH="ssh -i $HOME/.ssh/slipreel_deploy -o IdentitiesOnly=yes"
           DMG="$(ls dist/Slipreel-*.dmg)"
           # DMG first, then the appcast that references it, so the live feed
