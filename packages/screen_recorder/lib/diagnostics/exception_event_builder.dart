@@ -23,7 +23,8 @@ class ExceptionEventBuilder {
     final item = <String, Object?>{
       'type': error.runtimeType.toString(),
       'value': scrubber.scrub(messageOverride ?? error.toString()),
-      'mechanism': {'handled': handled, 'type': 'flutter'},
+      // PostHog's mechanism is {handled, synthetic}; there is no `type` field.
+      'mechanism': {'handled': handled, 'synthetic': false},
       'stacktrace': {'type': 'raw', 'frames': frames},
     };
     return PostHogEvent(
@@ -57,6 +58,13 @@ class ExceptionEventBuilder {
     return lines.take(30).map((line) {
       final scrubbed = scrubber.scrub(line.trim());
       return <String, Object?>{
+        // PostHog requires `platform` and `lang` on every frame; `custom`
+        // marks a client-sent frame that PostHog should not try to symbolicate,
+        // so we also mark it resolved. `function` carries the scrubbed frame
+        // text as-is (Dart frames aren't parsed into function/file/line).
+        'platform': 'custom',
+        'lang': 'dart',
+        'resolved': true,
         'function': scrubbed,
         'in_app': !scrubbed.contains('dart:') &&
             !scrubbed.contains('package:flutter/'),

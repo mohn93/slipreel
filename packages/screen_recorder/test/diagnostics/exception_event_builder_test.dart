@@ -21,8 +21,14 @@ void main() {
     final item = list.single as Map<String, Object?>;
     expect(item['type'], 'RangeError');
     expect((item['mechanism'] as Map)['handled'], false);
-    expect((item['mechanism'] as Map)['type'], 'flutter');
-    expect(item['stacktrace'], isNotNull);
+    expect((item['mechanism'] as Map)['synthetic'], false);
+    final frames = (item['stacktrace'] as Map)['frames'] as List;
+    expect(frames, isNotEmpty);
+    // PostHog requires platform + lang on every frame for ingestion/grouping.
+    final frame = frames.first as Map;
+    expect(frame['platform'], 'custom');
+    expect(frame['lang'], 'dart');
+    expect(frame['resolved'], true);
   });
 
   test('redacts a file path out of the exception message', () {
