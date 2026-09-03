@@ -37,14 +37,18 @@ class PersistentCrumbStore {
   })  : _breadcrumbs = breadcrumbs,
         _scrubber = scrubber,
         _enabled = enabled,
-        _now = now;
+        _launchedAt = now();
 
   final String path;
   final String sessionId;
   final Breadcrumbs _breadcrumbs;
   final PiiScrubber _scrubber;
   final bool _enabled;
-  final DateTime Function() _now;
+  // Captured once at construction, not re-read per write: `launched_at` is a
+  // property of the session, not of the write. Keeping it fixed also lets the
+  // dirty check in `writeIfDirty` work — a payload that varied with the clock
+  // on every serialize would never compare equal across calls.
+  final DateTime _launchedAt;
   final Duration flushInterval;
 
   Map<String, Object?>? _activity;
@@ -57,8 +61,16 @@ class PersistentCrumbStore {
       final f = File(path);
       if (!f.existsSync()) return null;
       final json = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
-      final crumbs = (json['breadcrumbs'] as List?)?.cast<String>() ?? const [];
-      final activity = (json['activity'] as Map?)?.cast<String, Object?>();
+      // Materialize eagerly (not a lazy `.cast`): a wrong-typed element would
+      // otherwise throw later, at iteration, outside this try/catch — a
+      // malformed file must return null here, never throw.
+      final crumbs = (json['breadcrumbs'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [];
+      final rawActivity = json['activity'] as Map?;
+      final activity =
+          rawActivity == null ? null : Map<String, Object?>.from(rawActivity);
       return PersistedSession(
         sessionId: json['session_id']?.toString() ?? 'unknown',
         breadcrumbs: crumbs,
@@ -90,7 +102,12 @@ class PersistentCrumbStore {
       if (payload == _lastWritten) return; // nothing changed
       final f = File(path);
       f.parent.createSync(recursive: true);
-      f.writeAsStringSync(payload, flush: true);
+      // Write via a temp file + rename so a crash mid-write can never leave
+      // truncated JSON at `path` — that would read back as "no previous
+      // session" and lose the very crash trail this store exists to keep.
+      final tmp = File('$path.tmp');
+      tmp.writeAsStringSync(payload, flush: true);
+      tmp.renameSync(path);
       _lastWritten = payload;
     } catch (_) {
       // Best-effort: persisting crumbs must never break the app.
@@ -112,7 +129,7 @@ class PersistentCrumbStore {
         _activity?.map((k, v) => MapEntry(k, _scrubValue(v)));
     return jsonEncode({
       'session_id': sessionId,
-      'launched_at': _now().toUtc().toIso8601String(),
+      'launched_at': _launchedAt.toUtc().toIso8601String(),
       'breadcrumbs': crumbs,
       if (activity != null) 'activity': activity,
     });
