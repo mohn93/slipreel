@@ -169,6 +169,33 @@ void main() {
         'SIGSEGV|ffmpeg|0x1234');
   });
 
+  test(
+      'fromNative never inherits the current launch\'s session_id from meta',
+      () {
+    final builderWithCurrentSession = ExceptionEventBuilder(
+      scrubber: PiiScrubber(homeDir: '/Users/alice'),
+      meta: {'source': 'app', 'session_id': 'current-launch'},
+    );
+    const report = NativeCrashReport(
+      signal: 'SIGSEGV',
+      faultingBinary: 'ffmpeg',
+      frames: [NativeFrame(binary: 'ffmpeg', offset: '0x1234')],
+      reportFileName: 'a.ips',
+    );
+
+    // Subprocess-crash case: the crashed session's id is unknown (its
+    // session.json was deleted on clean exit). Must NOT fall back to the
+    // current scanning launch's session_id.
+    final noSession =
+        builderWithCurrentSession.fromNative(report, sessionId: null);
+    expect(noSession.properties.containsKey('session_id'), false);
+
+    // In-process-crash case: the crashed session's own id is known and used.
+    final withSession =
+        builderWithCurrentSession.fromNative(report, sessionId: 'crashed');
+    expect(withSession.properties['session_id'], 'crashed');
+  });
+
   test('fromNative omits context when no activity', () {
     final e = builder.fromNative(const NativeCrashReport(
         signal: 'SIGABRT',

@@ -69,6 +69,12 @@ class ExceptionEventBuilder {
       'mechanism': {'handled': false, 'synthetic': false},
       'stacktrace': {'type': 'raw', 'frames': frames},
     };
+    // meta carries the CURRENT launch's session_id, which is wrong here: a
+    // native crash belongs to a different (crashed) session. Strip it and set
+    // session_id explicitly from the crashed session below, omitting it
+    // entirely when unknown (subprocess-crash case) rather than falling back
+    // to the scanning launch's own id.
+    final nativeMeta = Map<String, Object?>.from(meta)..remove('session_id');
     return PostHogEvent(
       name: r'$exception',
       timestamp: now ?? report.crashedAt ?? DateTime.now(),
@@ -77,7 +83,7 @@ class ExceptionEventBuilder {
         r'$exception_fingerprint': fingerprintForNative(report),
         'exception_platform': 'native',
         if (report.osVersion != null) 'native_os': report.osVersion,
-        ...meta,
+        ...nativeMeta,
         if (sessionId != null) 'session_id': sessionId,
         'breadcrumbs': breadcrumbs,
         if (activity != null && activity.isNotEmpty)

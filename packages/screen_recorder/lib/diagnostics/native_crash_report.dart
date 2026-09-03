@@ -22,6 +22,7 @@ class NativeCrashReport {
     this.osVersion,
     this.appVersion,
     this.crashedAt,
+    this.responsibleWithinBundle = false,
   });
 
   final String signal;
@@ -31,6 +32,11 @@ class NativeCrashReport {
   final String? osVersion;
   final String? appVersion;
   final DateTime? crashedAt;
+
+  /// Whether the RESPONSIBLE PROCESS's raw (pre-scrub) path was inside our
+  /// app bundle. Computed from the path, never the path itself — the path is
+  /// never stored on this model or forwarded anywhere.
+  final bool responsibleWithinBundle;
 }
 
 const int _maxFrames = 15;
@@ -40,21 +46,29 @@ const int _maxFrames = 15;
 /// rather than throwing, so a format we cannot read is skipped, never fatal.
 /// Every stored string is scrubbed.
 NativeCrashReport? parseCrashReport(String contents,
-    {required String fileName, required PiiScrubber scrubber}) {
+    {required String fileName,
+    required PiiScrubber scrubber,
+    String appBundleName = 'Slipreel'}) {
   try {
     final trimmed = contents.trimLeft();
     if (trimmed.startsWith('{')) {
-      final r = _parseIps(contents, fileName: fileName, scrubber: scrubber);
+      final r = _parseIps(contents,
+          fileName: fileName,
+          scrubber: scrubber,
+          appBundleName: appBundleName);
       if (r != null) return r;
     }
-    return _parseLegacy(contents, fileName: fileName, scrubber: scrubber);
+    return _parseLegacy(contents,
+        fileName: fileName, scrubber: scrubber, appBundleName: appBundleName);
   } catch (_) {
     return null;
   }
 }
 
 NativeCrashReport? _parseIps(String contents,
-    {required String fileName, required PiiScrubber scrubber}) {
+    {required String fileName,
+    required PiiScrubber scrubber,
+    required String appBundleName}) {
   final lines = const LineSplitter().convert(contents);
   if (lines.isEmpty) return null;
   Map<String, dynamic>? summary;
@@ -79,6 +93,12 @@ NativeCrashReport? _parseIps(String contents,
       : null;
   final procName = body['procName']?.toString();
   if (signal == null || procName == null) return null;
+
+  // Read the RAW (pre-scrub) responsible-process path only to test bundle
+  // membership; never store or forward the raw path itself.
+  final rawProcPath = body['procPath']?.toString();
+  final responsibleWithinBundle =
+      rawProcPath != null && rawProcPath.contains('$appBundleName.app');
 
   final images = (body['usedImages'] as List?) ?? const [];
   String imageName(int i) {
@@ -118,6 +138,7 @@ NativeCrashReport? _parseIps(String contents,
     osVersion: os == null ? null : scrubber.scrub(os),
     appVersion: appVersion == null ? null : scrubber.scrub(appVersion),
     crashedAt: ts == null ? null : DateTime.tryParse(ts.replaceFirst(' ', 'T')),
+    responsibleWithinBundle: responsibleWithinBundle,
   );
 }
 
@@ -128,18 +149,25 @@ String? _train(Map<String, dynamic> body) {
 
 // Legacy plain-text `.crash`: scan for the labelled lines and the frame table.
 final RegExp _procLine = RegExp(r'^Process:\s+(\S+)');
+final RegExp _pathLine = RegExp(r'^Path:\s+(.+)$');
 final RegExp _excLine = RegExp(r'^Exception Type:\s+\S+\s*\((SIG\w+)\)');
 final RegExp _osLine = RegExp(r'^OS Version:\s+(.+)$');
 final RegExp _frameLine =
     RegExp(r'^\s*\d+\s+(\S+)\s+(0x[0-9a-fA-F]+)\s');
 
 NativeCrashReport? _parseLegacy(String contents,
-    {required String fileName, required PiiScrubber scrubber}) {
+    {required String fileName,
+    required PiiScrubber scrubber,
+    required String appBundleName}) {
   final lines = const LineSplitter().convert(contents);
   String? proc, signal, os;
+  // RAW (pre-scrub) responsible-process path — used only to test bundle
+  // membership; never stored or forwarded.
+  String? rawPath;
   final frames = <NativeFrame>[];
   for (final line in lines) {
     proc ??= _procLine.firstMatch(line)?.group(1);
+    rawPath ??= _pathLine.firstMatch(line)?.group(1);
     signal ??= _excLine.firstMatch(line)?.group(1);
     os ??= _osLine.firstMatch(line)?.group(1);
     final fm = _frameLine.firstMatch(line);
@@ -157,5 +185,7 @@ NativeCrashReport? _parseLegacy(String contents,
     frames: frames,
     reportFileName: fileName,
     osVersion: os == null ? null : scrubber.scrub(os),
+    responsibleWithinBundle:
+        rawPath != null && rawPath.contains('$appBundleName.app'),
   );
 }

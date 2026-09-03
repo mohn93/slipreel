@@ -780,10 +780,11 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     } else if (state == AppLifecycleState.detached) {
       // detached is the reliable "app is really exiting" signal — mark this
       // as a clean exit so the next-launch scanner doesn't mistake it for a
-      // crash. (If detached isn't delivered on this platform/build, a
-      // surviving session.json is harmless: the scanner only attaches crumbs
-      // to a crash report that actually exists, and the next session's first
-      // write resets the file regardless.)
+      // crash. (If detached isn't delivered on this platform/build,
+      // session.json survives and could attach this session's crumb trail to
+      // a SUBSEQUENT helper crash at next launch — mild over-attribution,
+      // accepted vs. losing the trail entirely; to be confirmed in live
+      // validation.)
       ref.read(crumbStoreProvider).clearOnCleanExit();
     }
   }

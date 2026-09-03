@@ -113,14 +113,14 @@ class NativeCrashScanner {
         } catch (_) {
           continue;
         }
-        final report =
-            parseCrashReport(contents, fileName: name, scrubber: scrubber);
+        final report = parseCrashReport(contents,
+            fileName: name, scrubber: scrubber, appBundleName: appBundleName);
         if (report == null) {
           // Unparseable: record it so we don't retry every launch.
           watermarkStore.record(name, null);
           continue;
         }
-        if (!_isOurs(report, contents)) {
+        if (!_isOurs(report)) {
           watermarkStore.record(name, report.crashedAt);
           continue;
         }
@@ -132,10 +132,10 @@ class NativeCrashScanner {
     }
   }
 
-  bool _isOurs(NativeCrashReport report, String contents) =>
+  bool _isOurs(NativeCrashReport report) =>
       ownProcesses.contains(report.faultingBinary) ||
       report.faultingBinary == appBundleName ||
-      contents.contains('$appBundleName.app');
+      report.responsibleWithinBundle;
 
   String _basename(File f) => f.path.split(Platform.pathSeparator).last;
 }

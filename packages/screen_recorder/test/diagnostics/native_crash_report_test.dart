@@ -73,4 +73,45 @@ void main() {
             fileName: 'garbage.ips', scrubber: scrubber),
         isNull);
   });
+
+  test('responsibleWithinBundle is true when the raw .ips procPath is '
+      'inside our bundle', () {
+    final r = parseCrashReport(fixture('ips_sigsegv.ips'),
+        fileName: 'ips_sigsegv.ips', scrubber: scrubber)!;
+    expect(r.responsibleWithinBundle, true);
+  });
+
+  test('responsibleWithinBundle is false when the raw .ips procPath is '
+      'outside our bundle', () {
+    const contents =
+        '{"app_name":"Google Chrome","timestamp":"2026-09-01 12:00:00.00 +0000"}\n'
+        '{"procName":"Google Chrome",'
+        '"procPath":"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",'
+        '"exception":{"signal":"SIGSEGV"},'
+        '"usedImages":[{"index":0,"name":"Google Chrome"}],'
+        '"threads":[{"triggered":true,"frames":[{"imageIndex":0,"imageOffset":1}]}]}';
+    final r = parseCrashReport(contents,
+        fileName: 'foreign.ips', scrubber: scrubber)!;
+    expect(r.responsibleWithinBundle, false);
+  });
+
+  test('responsibleWithinBundle is true for the legacy fixture\'s in-bundle '
+      'Path: line', () {
+    final r = parseCrashReport(fixture('legacy.crash'),
+        fileName: 'legacy.crash', scrubber: scrubber)!;
+    expect(r.responsibleWithinBundle, true);
+  });
+
+  test('responsibleWithinBundle is false when the legacy Path: line is '
+      'outside our bundle', () {
+    const contents = 'Process:               Google Chrome [123]\n'
+        'Path:                  /Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n'
+        'OS Version:            macOS 13.2 (22D49)\n'
+        'Exception Type:        EXC_BAD_ACCESS (SIGSEGV)\n'
+        'Thread 0 Crashed:\n'
+        '0   Google Chrome 0x0000000100000000 0x100000000 + 0\n';
+    final r = parseCrashReport(contents,
+        fileName: 'foreign.crash', scrubber: scrubber)!;
+    expect(r.responsibleWithinBundle, false);
+  });
 }

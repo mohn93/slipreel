@@ -83,4 +83,43 @@ void main() {
     expect(() => make(out).scan(), returnsNormally);
     expect(out, isEmpty);
   });
+
+  test('forwards an in-process crash whose responsible process is our app',
+      () {
+    // Shaped like a real in-process crash: procName is the app executable,
+    // procPath sits inside the bundle.
+    File('${reports.path}/inproc.ips').writeAsStringSync(
+      '{"app_name":"Slipreel","timestamp":"2026-09-01 12:00:00.00 +0000",'
+      '"os_version":"macOS 15.5"}\n'
+      '{"procName":"Slipreel",'
+      '"procPath":"/Users/alice/Applications/Slipreel.app/Contents/MacOS/Slipreel",'
+      '"exception":{"signal":"SIGSEGV"},'
+      '"usedImages":[{"index":0,"name":"Slipreel"}],'
+      '"threads":[{"triggered":true,"frames":[{"imageIndex":0,"imageOffset":10}]}]}',
+    );
+    final out = <NativeCrashReport>[];
+    make(out).scan();
+    expect(out.map((r) => r.faultingBinary), ['Slipreel']);
+  });
+
+  test(
+      'does not forward a foreign process crash that merely references our '
+      'bundle in its file contents', () {
+    // The responsible process (Google Chrome) is NOT ours, but one of the
+    // report's images/frames happens to reference our bundle path — a
+    // whole-file substring match would wrongly treat this as ours.
+    File('${reports.path}/foreign.ips').writeAsStringSync(
+      '{"app_name":"Google Chrome","timestamp":"2026-09-01 12:00:00.00 +0000",'
+      '"os_version":"macOS 15.5"}\n'
+      '{"procName":"Google Chrome",'
+      '"procPath":"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",'
+      '"exception":{"signal":"SIGSEGV"},'
+      '"usedImages":[{"index":0,"name":"Google Chrome"},'
+      '{"index":1,"name":"/Users/alice/Applications/Slipreel.app/Contents/Frameworks/SomeFramework.framework/SomeFramework"}],'
+      '"threads":[{"triggered":true,"frames":[{"imageIndex":1,"imageOffset":10}]}]}',
+    );
+    final out = <NativeCrashReport>[];
+    make(out).scan();
+    expect(out, isEmpty);
+  });
 }
