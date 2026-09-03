@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'dart:io' show File, Platform;
+import 'dart:io' show Directory, File, Platform;
 import 'dart:math' show Random;
 
 import 'package:flutter/foundation.dart';
@@ -27,6 +27,8 @@ import 'analytics/posthog_sink.dart';
 import 'diagnostics/diagnostics_service.dart';
 import 'diagnostics/exception_event_builder.dart';
 import 'diagnostics/global_error_handlers.dart';
+import 'diagnostics/native_crash_scanner.dart';
+import 'diagnostics/persistent_crumb_store.dart';
 import 'diagnostics/pii_scrubber.dart';
 import 'feedback/feedback_service.dart';
 import 'debug/debug_probe.dart';
@@ -267,10 +269,19 @@ Future<void> main() async {
   } catch (_) {
     appVersion = '0.0.0+0';
   }
+  // Per-launch session id, shared by diagnosticsMeta (so handled Dart events
+  // carry it) and the persistent crumb store (so a next-launch native-crash
+  // scan can correlate a crashed session's crumbs back to it). Same 16-byte-hex
+  // Random.secure() mechanism as _resolveAnalyticsDistinctId's fallback id.
+  final sessionRnd = Random.secure();
+  final sessionId = List<int>.generate(16, (_) => sessionRnd.nextInt(256))
+      .map((b) => b.toRadixString(16).padLeft(2, '0'))
+      .join();
   final diagnosticsMeta = <String, Object?>{
     'source': 'app',
     'platform': Platform.operatingSystem,
     'app_version': appVersion,
+    'session_id': sessionId,
   };
   final scrubber = PiiScrubber.forCurrentUser();
 
@@ -311,6 +322,51 @@ Future<void> main() async {
   // replacement for runZonedGuarded since Flutter 3.3), so runApp stays
   // unwrapped to avoid a zone/binding mismatch.
   installGlobalErrorHandlers(onCapture: diagnosticsService.captureException);
+
+  // Persistent crumb trail for the native crash scanner (v1b): mirrors the
+  // in-memory breadcrumb ring to disk so a full-app crash (which never runs
+  // Dart shutdown code) still leaves a trail for the next launch to attach to
+  // the parsed crash report. A surviving session.json at next launch means
+  // this session didn't exit cleanly; clearOnCleanExit() is what erases it on
+  // every clean-exit path (see shareDiagnostics listener + lifecycle flush
+  // below) so "survived" reliably means "crashed".
+  final crumbStore = PersistentCrumbStore(
+    path: p.join(appSupportPath, 'diagnostics', 'session.json'),
+    sessionId: sessionId,
+    breadcrumbs: Breadcrumbs.instance,
+    scrubber: scrubber,
+    enabled: initialGlobalPreferences.shareDiagnostics,
+  );
+  // Read the previous (possibly crashed) session BEFORE this session writes.
+  final previousSession = crumbStore.readPrevious();
+
+  // After first frame: forward any native crash reports from macOS's crash
+  // reporter, then start mirroring this session's crumbs. Best-effort; never
+  // blocks launch.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    try {
+      if (initialGlobalPreferences.shareDiagnostics) {
+        NativeCrashScanner(
+          reportsDir: Directory(p.join(Platform.environment['HOME'] ?? '',
+              'Library', 'Logs', 'DiagnosticReports')),
+          watermarkStore: NativeCrashWatermarkStore(
+              path: p.join(appSupportPath, 'diagnostics',
+                  'native_crash_watermark.json')),
+          scrubber: scrubber,
+          onCrash: (report) => diagnosticsService.captureNativeCrash(
+            report,
+            breadcrumbs: previousSession?.breadcrumbs ?? const [],
+            activity: previousSession?.activity,
+            sessionId: previousSession?.sessionId,
+          ),
+        ).scan();
+      }
+      // Start this session's trail (the first write resets session.json for
+      // the new session, replacing whatever the scanner above just read).
+      crumbStore.start();
+      crumbStore.writeIfDirty();
+    } catch (_) {}
+  });
 
   runApp(ProviderScope(
     overrides: [
@@ -364,6 +420,7 @@ Future<void> main() async {
       licensingControllerProvider.overrideWith((ref) => licensingController),
       analyticsServiceProvider.overrideWithValue(analyticsService),
       diagnosticsServiceProvider.overrideWithValue(diagnosticsService),
+      crumbStoreProvider.overrideWithValue(crumbStore),
       feedbackServiceProvider.overrideWithValue(feedbackService),
     ],
     child: MyApp(
@@ -516,7 +573,10 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
     ref.listenManual<bool>(
       globalPreferencesControllerProvider.select((p) => p.shareDiagnostics),
-      (prev, next) => ref.read(diagnosticsServiceProvider).setEnabled(next),
+      (prev, next) {
+        ref.read(diagnosticsServiceProvider).setEnabled(next);
+        if (!next) ref.read(crumbStoreProvider).clearOnCleanExit();
+      },
     );
 
     ref.listenManual<RecordingStatus>(
@@ -684,6 +744,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       unawaited(ref.read(analyticsServiceProvider).flush());
       unawaited(ref.read(diagnosticsServiceProvider).flush());
       unawaited(ref.read(feedbackServiceProvider).flush());
+      ref.read(crumbStoreProvider).clearOnCleanExit();
     }
   }
 

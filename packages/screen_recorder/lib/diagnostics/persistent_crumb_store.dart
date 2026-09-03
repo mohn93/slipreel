@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/utils/breadcrumbs.dart';
 
 import 'pii_scrubber.dart';
@@ -142,3 +143,7 @@ class PersistentCrumbStore {
     return v;
   }
 }
+
+final crumbStoreProvider = Provider<PersistentCrumbStore>(
+  (ref) => throw UnimplementedError('Override crumbStoreProvider in main()'),
+);
