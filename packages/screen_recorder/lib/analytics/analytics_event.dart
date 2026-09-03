@@ -2,11 +2,15 @@
 /// analytics vs diagnostics vs feedback; all three now share this shape.
 typedef PostHogEvent = AnalyticsEvent;
 
-/// One captured product-analytics event, awaiting delivery to PostHog.
+/// One PostHog event awaiting delivery — a `name`, a `timestamp`, and a
+/// `properties` map. Aliased as [PostHogEvent] (above) because it now backs
+/// product analytics, diagnostics (`$exception`), and feedback alike.
 ///
-/// Deliberately content-free: `name` plus cheap, non-identifying `properties`
-/// (durations, formats, counts). Never put file paths, window titles, captured
-/// pixels, or any recording content in here — this is a screen recorder.
+/// Product-analytics events stay deliberately content-free (cheap,
+/// non-identifying props — durations, formats, counts). Diagnostics and
+/// feedback events may carry richer content (stack frames, breadcrumbs, a typed
+/// message), but always scrubbed by `PiiScrubber` before it lands here — never
+/// raw file paths, window titles, or recording content.
 class AnalyticsEvent {
   const AnalyticsEvent({
     required this.name,

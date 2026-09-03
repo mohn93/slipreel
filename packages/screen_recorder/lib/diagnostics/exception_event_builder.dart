@@ -36,10 +36,18 @@ class ExceptionEventBuilder {
         ...meta,
         'breadcrumbs': breadcrumbs,
         if (context != null && context.isNotEmpty)
-          'context': context.map(
-              (k, v) => MapEntry(k, v is String ? scrubber.scrub(v) : v)),
+          'context': _scrubValue(context),
       },
     );
+  }
+
+  // Recursively scrubs every String inside a context value — nested maps and
+  // lists included — so a path can't ride through inside a collection.
+  Object? _scrubValue(Object? v) {
+    if (v is String) return scrubber.scrub(v);
+    if (v is Map) return v.map((k, val) => MapEntry(k, _scrubValue(val)));
+    if (v is List) return v.map(_scrubValue).toList();
+    return v;
   }
 
   String fingerprintFor(Object error, StackTrace? stack) {
