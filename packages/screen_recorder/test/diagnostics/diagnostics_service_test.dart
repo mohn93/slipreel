@@ -8,6 +8,7 @@ import 'package:screen_recorder/analytics/analytics_queue_store.dart';
 import 'package:screen_recorder/analytics/posthog_sink.dart';
 import 'package:screen_recorder/diagnostics/diagnostics_service.dart';
 import 'package:screen_recorder/diagnostics/exception_event_builder.dart';
+import 'package:screen_recorder/diagnostics/native_crash_report.dart';
 import 'package:screen_recorder/diagnostics/pii_scrubber.dart';
 import 'package:slipreel_engine/utils/breadcrumbs.dart';
 
@@ -69,5 +70,41 @@ void main() {
     await svc.flush();
     final batch = jsonDecode(body!)['batch'] as List;
     expect(batch.length, 1);
+  });
+
+  test('captureNativeCrash sends a native \$exception when enabled', () async {
+    String? body;
+    final svc = build(enabled: true,
+        client: MockClient((req) async {
+          body = req.body;
+          return http.Response('{}', 200);
+        }));
+    svc.captureNativeCrash(
+      const NativeCrashReport(
+        signal: 'SIGSEGV',
+        faultingBinary: 'ffmpeg',
+        frames: [NativeFrame(binary: 'ffmpeg', offset: '0x1234')],
+        reportFileName: 'x.ips',
+      ),
+      breadcrumbs: ['event:export_started'],
+      sessionId: 'sess-1',
+    );
+    await svc.flush();
+    expect(body, isNotNull);
+    final batch = jsonDecode(body!)['batch'] as List;
+    final props = (batch.single as Map)['properties'] as Map;
+    expect((batch.single as Map)['event'], r'$exception');
+    expect(props['exception_platform'], 'native');
+    expect(props['session_id'], 'sess-1');
+  });
+
+  test('captureNativeCrash sends nothing when diagnostics disabled', () async {
+    var calls = 0;
+    final svc = build(enabled: false,
+        client: MockClient((_) async { calls++; return http.Response('{}', 200); }));
+    svc.captureNativeCrash(const NativeCrashReport(
+        signal: 'SIGSEGV', faultingBinary: 'ffmpeg', frames: [], reportFileName: 'x.ips'));
+    await svc.flush();
+    expect(calls, 0);
   });
 }
