@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'dart:io' show File, Platform;
+import 'dart:io' show Directory, File, Platform;
 import 'dart:math' show Random;
 
 import 'package:flutter/foundation.dart';
@@ -27,6 +27,8 @@ import 'analytics/posthog_sink.dart';
 import 'diagnostics/diagnostics_service.dart';
 import 'diagnostics/exception_event_builder.dart';
 import 'diagnostics/global_error_handlers.dart';
+import 'diagnostics/native_crash_scanner.dart';
+import 'diagnostics/persistent_crumb_store.dart';
 import 'diagnostics/pii_scrubber.dart';
 import 'feedback/feedback_service.dart';
 import 'debug/debug_probe.dart';
@@ -267,10 +269,19 @@ Future<void> main() async {
   } catch (_) {
     appVersion = '0.0.0+0';
   }
+  // Per-launch session id, shared by diagnosticsMeta (so handled Dart events
+  // carry it) and the persistent crumb store (so a next-launch native-crash
+  // scan can correlate a crashed session's crumbs back to it). Same 16-byte-hex
+  // Random.secure() mechanism as _resolveAnalyticsDistinctId's fallback id.
+  final sessionRnd = Random.secure();
+  final sessionId = List<int>.generate(16, (_) => sessionRnd.nextInt(256))
+      .map((b) => b.toRadixString(16).padLeft(2, '0'))
+      .join();
   final diagnosticsMeta = <String, Object?>{
     'source': 'app',
     'platform': Platform.operatingSystem,
     'app_version': appVersion,
+    'session_id': sessionId,
   };
   final scrubber = PiiScrubber.forCurrentUser();
 
@@ -311,6 +322,77 @@ Future<void> main() async {
   // replacement for runZonedGuarded since Flutter 3.3), so runApp stays
   // unwrapped to avoid a zone/binding mismatch.
   installGlobalErrorHandlers(onCapture: diagnosticsService.captureException);
+
+  // Persistent crumb trail for the native crash scanner (v1b): mirrors the
+  // in-memory breadcrumb ring to disk so a full-app crash (which never runs
+  // Dart shutdown code) still leaves a trail for the next launch to attach to
+  // the parsed crash report. A surviving session.json at next launch means
+  // this session didn't exit cleanly; clearOnCleanExit() is what erases it on
+  // every clean-exit path (see shareDiagnostics listener + lifecycle flush
+  // below) so "survived" reliably means "crashed".
+  // Constructing the store and reading the previous session are wrapped
+  // together: a failure here must never leave `crumbStore` unusable for the
+  // provider override / lifecycle hooks below, so the fallback on error is a
+  // disabled store (never writes) rather than no store at all.
+  final crumbStorePath = p.join(appSupportPath, 'diagnostics', 'session.json');
+  late final PersistentCrumbStore crumbStore;
+  PersistedSession? previousSession;
+  try {
+    crumbStore = PersistentCrumbStore(
+      path: crumbStorePath,
+      sessionId: sessionId,
+      breadcrumbs: Breadcrumbs.instance,
+      scrubber: scrubber,
+      enabled: initialGlobalPreferences.shareDiagnostics,
+    );
+    // Read the previous (possibly crashed) session BEFORE this session writes.
+    previousSession = crumbStore.readPrevious();
+  } catch (_) {
+    crumbStore = PersistentCrumbStore(
+      path: crumbStorePath,
+      sessionId: sessionId,
+      breadcrumbs: Breadcrumbs.instance,
+      scrubber: scrubber,
+      enabled: false,
+    );
+  }
+
+  // After first frame: forward any native crash reports from macOS's crash
+  // reporter, then start mirroring this session's crumbs. Best-effort; never
+  // blocks launch.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    try {
+      if (initialGlobalPreferences.shareDiagnostics) {
+        NativeCrashScanner(
+          reportsDir: Directory(p.join(Platform.environment['HOME'] ?? '',
+              'Library', 'Logs', 'DiagnosticReports')),
+          watermarkStore: NativeCrashWatermarkStore(
+              path: p.join(appSupportPath, 'diagnostics',
+                  'native_crash_watermark.json')),
+          scrubber: scrubber,
+          onCrash: (report) {
+            // Attach the crashed session's crumb trail ONLY to a report that
+            // plausibly belongs to that session's lifetime. A backlog crash
+            // (older than this session's launch, or with unknown timestamps)
+            // is forwarded crumb-less, exactly like the subprocess case, so it
+            // can't inherit an unrelated session's trail.
+            final attach = crumbTrailAppliesTo(previousSession, report);
+            diagnosticsService.captureNativeCrash(
+              report,
+              breadcrumbs:
+                  attach ? (previousSession?.breadcrumbs ?? const []) : const [],
+              activity: attach ? previousSession?.activity : null,
+              sessionId: attach ? previousSession?.sessionId : null,
+            );
+          },
+        ).scan();
+      }
+      // Start this session's trail (the first write resets session.json for
+      // the new session, replacing whatever the scanner above just read).
+      crumbStore.start();
+      crumbStore.writeIfDirty();
+    } catch (_) {}
+  });
 
   runApp(ProviderScope(
     overrides: [
@@ -364,6 +446,7 @@ Future<void> main() async {
       licensingControllerProvider.overrideWith((ref) => licensingController),
       analyticsServiceProvider.overrideWithValue(analyticsService),
       diagnosticsServiceProvider.overrideWithValue(diagnosticsService),
+      crumbStoreProvider.overrideWithValue(crumbStore),
       feedbackServiceProvider.overrideWithValue(feedbackService),
     ],
     child: MyApp(
@@ -516,7 +599,12 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
     ref.listenManual<bool>(
       globalPreferencesControllerProvider.select((p) => p.shareDiagnostics),
-      (prev, next) => ref.read(diagnosticsServiceProvider).setEnabled(next),
+      (prev, next) {
+        ref.read(diagnosticsServiceProvider).setEnabled(next);
+        // Symmetric: opt-out gates writes + deletes the on-disk trail; opt-in
+        // (back on mid-session) resumes periodic persistence.
+        ref.read(crumbStoreProvider).setEnabled(next);
+      },
     );
 
     ref.listenManual<RecordingStatus>(
@@ -526,10 +614,18 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         if (next == RecordingStatus.recording &&
             prev != RecordingStatus.paused) {
           analytics.capture(AnalyticsEvents.recordingStarted);
+          // Fires synchronously as part of the same state transition that
+          // precedes the native ScreenCaptureKit start (VideoEncoder.start),
+          // so a crash in that handoff is captured with this activity set.
+          ref.read(crumbStoreProvider).setActivity({'op': 'recording'});
+          ref.read(crumbStoreProvider).flushNow();
         } else if (next == RecordingStatus.completed) {
           analytics.capture(AnalyticsEvents.recordingCompleted, properties: {
             'duration_s': ref.read(recordingControllerProvider).duration.inSeconds,
           });
+          ref.read(crumbStoreProvider).setActivity(null);
+        } else if (next == RecordingStatus.error) {
+          ref.read(crumbStoreProvider).setActivity(null);
         }
       },
     );
@@ -678,12 +774,33 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // User may have flipped a permission in System Settings; re-probe.
       ref.read(permissionsControllerProvider.notifier).refreshAll();
+      // Restart crumb persistence in case a transient `detached` (engine
+      // detach / window close without a real quit) already stopped the timer
+      // via clearOnCleanExit(); otherwise crumb capture would stay off for the
+      // rest of the run. start() is idempotent (`_timer ??=`) and early-returns
+      // when disabled, so this is safe unconditionally.
+      ref.read(crumbStoreProvider).start();
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       // Best-effort deliver anything buffered before we lose foreground.
+      // NOTE: paused/hidden fire on mere backgrounding (window hidden,
+      // minimized, Space switch), not just true termination — so this must
+      // only persist the crumb trail, never delete it or stop the timer.
+      // Deleting here would silently kill crumb capture for the rest of the
+      // session on the very first backgrounding.
       unawaited(ref.read(analyticsServiceProvider).flush());
       unawaited(ref.read(diagnosticsServiceProvider).flush());
       unawaited(ref.read(feedbackServiceProvider).flush());
+      ref.read(crumbStoreProvider).flushNow();
+    } else if (state == AppLifecycleState.detached) {
+      // detached is the reliable "app is really exiting" signal — mark this
+      // as a clean exit so the next-launch scanner doesn't mistake it for a
+      // crash. (If detached isn't delivered on this platform/build,
+      // session.json survives and could attach this session's crumb trail to
+      // a SUBSEQUENT helper crash at next launch — mild over-attribution,
+      // accepted vs. losing the trail entirely; to be confirmed in live
+      // validation.)
+      ref.read(crumbStoreProvider).clearOnCleanExit();
     }
   }
 

@@ -1,0 +1,23 @@
+Process:               whisper-cli [123]
+Path:                  /Users/alice/Slipreel.app/Contents/Helpers/whisper-cli
+OS Version:            macOS 13.2 (22D49)
+Exception Type:        EXC_BAD_ACCESS (SIGSEGV)
+Thread 0 Crashed:
+0   whisper-cli   0x0000000100000000 0x100000000 + 0
+1   whisper-cli   0x0000000100000001 0x100000000 + 1
+2   whisper-cli   0x0000000100000002 0x100000000 + 2
+3   whisper-cli   0x0000000100000003 0x100000000 + 3
+4   whisper-cli   0x0000000100000004 0x100000000 + 4
+5   whisper-cli   0x0000000100000005 0x100000000 + 5
+6   whisper-cli   0x0000000100000006 0x100000000 + 6
+7   whisper-cli   0x0000000100000007 0x100000000 + 7
+8   whisper-cli   0x0000000100000008 0x100000000 + 8
+9   whisper-cli   0x0000000100000009 0x100000000 + 9
+10  whisper-cli   0x000000010000000a 0x100000000 + 10
+11  whisper-cli   0x000000010000000b 0x100000000 + 11
+12  whisper-cli   0x000000010000000c 0x100000000 + 12
+13  whisper-cli   0x000000010000000d 0x100000000 + 13
+14  whisper-cli   0x000000010000000e 0x100000000 + 14
+15  whisper-cli   0x000000010000000f 0x100000000 + 15
+16  whisper-cli   0x0000000100000010 0x100000000 + 16
+17  whisper-cli   0x0000000100000011 0x100000000 + 17

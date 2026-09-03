@@ -1,4 +1,5 @@
 import '../analytics/analytics_event.dart' show PostHogEvent;
+import 'native_crash_report.dart';
 import 'pii_scrubber.dart';
 
 /// Turns a Dart error + stack into a PostHog `$exception` event. Pure and
@@ -40,6 +41,84 @@ class ExceptionEventBuilder {
       },
     );
   }
+
+  /// Builds a native `$exception` from a parsed crash report. Marked native by
+  /// per-frame `lang: 'native'` and the top-level `exception_platform`; the
+  /// `mechanism` keeps v1a's `{handled, synthetic}` shape. Crumbs + activity +
+  /// session id come from the crashed session (persisted across the crash).
+  PostHogEvent fromNative(
+    NativeCrashReport report, {
+    List<String> breadcrumbs = const [],
+    Map<String, Object?>? activity,
+    String? sessionId,
+    DateTime? now,
+  }) {
+    final frames = report.frames
+        .map((f) => <String, Object?>{
+              'platform': 'custom',
+              'lang': 'native',
+              'resolved': false,
+              'function': f.binary,
+              'instruction_addr': '${f.binary}+${f.offset}',
+              'in_app': _isBundledBinary(f.binary),
+            })
+        .toList();
+    final item = <String, Object?>{
+      'type': report.signal,
+      'value': scrubber.scrub('${report.signal} in ${report.faultingBinary}'),
+      'mechanism': {'handled': false, 'synthetic': false},
+      'stacktrace': {'type': 'raw', 'frames': frames},
+    };
+    // meta carries the CURRENT launch's session_id, which is wrong here: a
+    // native crash belongs to a different (crashed) session. Strip it and set
+    // session_id explicitly from the crashed session below, omitting it
+    // entirely when unknown (subprocess-crash case) rather than falling back
+    // to the scanning launch's own id.
+    final nativeMeta = Map<String, Object?>.from(meta)..remove('session_id');
+    return PostHogEvent(
+      name: r'$exception',
+      timestamp: now ?? report.crashedAt ?? DateTime.now(),
+      properties: {
+        r'$exception_list': [item],
+        r'$exception_fingerprint': fingerprintForNative(report),
+        'exception_platform': 'native',
+        if (report.osVersion != null) 'native_os': report.osVersion,
+        // The version that was RUNNING when it crashed — distinct from meta's
+        // `app_version` (the current launch). A Sparkle auto-update between the
+        // crash and the relaunch that scans it would otherwise misattribute the
+        // crash to the newer version.
+        if (report.appVersion != null) 'crashed_app_version': report.appVersion,
+        ...nativeMeta,
+        if (sessionId != null) 'session_id': sessionId,
+        'breadcrumbs': breadcrumbs,
+        if (activity != null && activity.isNotEmpty)
+          'context': _scrubValue(activity),
+      },
+    );
+  }
+
+  String fingerprintForNative(NativeCrashReport report) {
+    // Prefer the FIRST in-app frame (a bundled helper or the app itself):
+    // distinct bugs that share a generic top frame (libc `abort` /
+    // `__pthread_kill`) would otherwise collapse into a single PostHog issue.
+    // Fall back to the top frame, then to `'no-frame'`.
+    NativeFrame? chosen;
+    for (final f in report.frames) {
+      if (_isBundledBinary(f.binary)) {
+        chosen = f;
+        break;
+      }
+    }
+    chosen ??= report.frames.isNotEmpty ? report.frames.first : null;
+    final offset = chosen?.offset ?? 'no-frame';
+    return '${report.signal}|${report.faultingBinary}|$offset';
+  }
+
+  static bool _isBundledBinary(String name) =>
+      name == 'ffmpeg' ||
+      name == 'ffprobe' ||
+      name == 'whisper-cli' ||
+      name == kAppBundleName;
 
   // Recursively scrubs every String inside a context value — nested maps and
   // lists included — so a path can't ride through inside a collection.

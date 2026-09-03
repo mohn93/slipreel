@@ -81,6 +81,7 @@ import 'package:slipreel_engine/timeline/slice_navigation.dart'
 import 'package:screen_recorder/analytics/analytics_events.dart';
 import 'package:screen_recorder/analytics/analytics_service.dart';
 import 'package:screen_recorder/diagnostics/diagnostics_service.dart';
+import 'package:screen_recorder/diagnostics/persistent_crumb_store.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 import 'package:screen_recorder/licensing/build_release_date.g.dart';
@@ -1991,6 +1992,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
     if (!mounted) return;
 
+    // Capture the crumb store BEFORE the awaited export below. If the screen
+    // is popped mid-export, `ref.read` in the `finally` would throw (element
+    // defunct) — skipping progress.dispose() and leaking the notifier. A
+    // reference captured here (mirroring captions_tab.dart) stays usable.
+    final crumbStore = ref.read(crumbStoreProvider);
+
     final progress = ValueNotifier<double?>(null);
     try {
       // Fire-and-forget: the dialog is dismissed via Navigator.pop below;
@@ -2076,6 +2083,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           'destination': settings.destination.name,
         },
       );
+
+      // Right before the native handoff (ffmpeg/gif pipeline spawn below),
+      // so a crash in that subprocess is captured with this activity set.
+      crumbStore.setActivity({
+        'op': 'export',
+        'format': settings.format.name,
+        'resolution': settings.resolution.name,
+      });
+      crumbStore.flushNow();
 
       final outcome = await exportController.run(
         outputPath: outPath,
@@ -2173,7 +2189,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           break;
       }
     } finally {
+      // Covers every exit from the encode phase (success, failure, cancel,
+      // not-entitled, or an uncaught exception) — the export op has ended.
+      // Dispose the notifier FIRST and unconditionally so it can never be
+      // skipped (and leaked) by a throw from the crumb-store call. `crumbStore`
+      // was captured before the await, so it stays valid even if this screen
+      // was popped mid-export.
       progress.dispose();
+      crumbStore.setActivity(null);
     }
   }
 

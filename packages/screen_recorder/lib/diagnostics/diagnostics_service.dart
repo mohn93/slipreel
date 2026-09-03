@@ -3,6 +3,7 @@ import 'package:slipreel_engine/utils/breadcrumbs.dart';
 
 import '../analytics/posthog_sink.dart';
 import 'exception_event_builder.dart';
+import 'native_crash_report.dart';
 import 'pii_scrubber.dart';
 
 /// Sends Dart exceptions to PostHog Error Tracking, gated by the user's
@@ -64,6 +65,36 @@ class DiagnosticsService {
           now: t));
     } catch (_) {
       // Best-effort: capturing an exception must never break the app.
+    }
+  }
+
+  /// Forwards a parsed native crash (from the next-launch scanner) as a native
+  /// `$exception`. Same gating, cap, and dedupe as [captureException]; the
+  /// crumbs/activity/session id belong to the crashed (previous) session.
+  void captureNativeCrash(NativeCrashReport report,
+      {List<String> breadcrumbs = const [],
+      Map<String, Object?>? activity,
+      String? sessionId}) {
+    try {
+      if (!_enabled || !_sink.isConfigured) return;
+      if (_sessionCount >= maxPerSession) return;
+      final fp = _builder.fingerprintForNative(report);
+      final last = _lastSeen[fp];
+      final t = _now();
+      if (last != null && t.difference(last) < dedupeWindow) return;
+      _lastSeen[fp] = t;
+      _sessionCount++;
+      // Stamp the event at the CRASH's own time, not this scan's time (which
+      // could be days later). `fromNative`'s `now ?? report.crashedAt ??
+      // DateTime.now()` fallback still does the right thing when crashedAt is
+      // null; `t` above stays the in-memory dedupe clock only.
+      _sink.enqueue(_builder.fromNative(report,
+          breadcrumbs: breadcrumbs,
+          activity: activity,
+          sessionId: sessionId,
+          now: report.crashedAt));
+    } catch (_) {
+      // Best-effort: forwarding a native crash must never break the app.
     }
   }
 
