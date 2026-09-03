@@ -50,6 +50,42 @@ void main() {
     expect(e.properties[r'$exception_fingerprint'], isNotEmpty);
   });
 
+  test('parses VM frames into function/filename/lineno/colno', () {
+    final stack = StackTrace.fromString(
+      '#0      Foo.bar.<anonymous closure> (package:screen_recorder/x.dart:12:3)\n'
+      '#1      _rootRun (dart:async/zone.dart:1391:47)\n'
+      '#2      NoColumn.method (package:screen_recorder/y.dart:5)\n'
+      '<asynchronous suspension>',
+    );
+    final e = builder.fromDart(StateError('x'), stack, handled: false);
+    final frames =
+        ((e.properties[r'$exception_list'] as List).single
+            as Map)['stacktrace'] as Map;
+    final f = (frames['frames'] as List).cast<Map>();
+
+    expect(f[0]['function'], 'Foo.bar.<anonymous closure>');
+    expect(f[0]['filename'], 'package:screen_recorder/x.dart');
+    expect(f[0]['lineno'], 12);
+    expect(f[0]['colno'], 3);
+    expect(f[0]['in_app'], true);
+    // Every frame still carries the PostHog-required fields.
+    expect(f[0]['platform'], 'custom');
+    expect(f[0]['lang'], 'dart');
+
+    // dart: frame is not in-app.
+    expect(f[1]['filename'], 'dart:async/zone.dart');
+    expect(f[1]['lineno'], 1391);
+    expect(f[1]['in_app'], false);
+
+    // line without a column: lineno set, colno absent.
+    expect(f[2]['lineno'], 5);
+    expect(f[2].containsKey('colno'), false);
+
+    // Unparseable line (async gap) falls back to the whole line as function.
+    expect(f[3]['function'], contains('asynchronous suspension'));
+    expect(f[3].containsKey('filename'), false);
+  });
+
   test('fingerprint is stable for the same error type + top frame', () {
     final st = StackTrace.current;
     expect(builder.fingerprintFor(ArgumentError('x'), st),
