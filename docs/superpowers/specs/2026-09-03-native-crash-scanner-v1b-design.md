@@ -1,7 +1,7 @@
 # Native Crash Scanner (v1b) — Design
 
 Date: 2026-09-03
-Status: Draft for review
+Status: As-built (implemented on `feat/native-crash-scanner`) — see §12 for deviations
 Branch: `feat/native-crash-scanner`
 Follows: `2026-09-02-error-tracking-feedback-design.md` (v1a, shipped — PRs #84/#85 merged to main)
 
@@ -205,8 +205,12 @@ native crash group into one issue.
 2. App later exits cleanly → `session.json` deleted.
 3. Next launch: scanner finds the helper `.ips`, `session.json` absent → native event
    stands alone (signal + helper frames), **no** stale trail attached.
-4. Correlation in PostHog: the handled failure and the native crash share the same
-   `session_id` and near timestamps — they line up without double-attributing crumbs.
+4. Correlation in PostHog: **as-built correction** — a subprocess native event *cannot*
+   carry the crashed session's `session_id`, because `session.json` (which holds that id)
+   is deleted on the clean exit that precedes the next-launch scan. So the subprocess
+   native event **omits** `session_id` and correlates to the v1a handled failure by
+   `distinct_id` + near timestamps + fingerprint. Only the in-process case (surviving
+   `session.json`) carries the crashed session's `session_id`. See §12.
 
 ## 6. Privacy & consent
 
@@ -289,3 +293,56 @@ New tests (`packages/screen_recorder/test/diagnostics/`):
   not deep debugging. Symbolication is a possible v1c.
 - **~2s crumb loss window** — crumbs dropped in the final unflushed debounce interval
   before an in-process crash are not persisted (mitigated by the pre-handoff sync flush).
+
+## 12. As-built notes & deviations
+
+Implemented on `feat/native-crash-scanner` (subagent-driven, TDD, per-task + whole-branch
+review). Full app suite green (978 passing). Deviations from the design/plan above:
+
+- **session_id correlation (§5 correction).** Subprocess (helper) native events omit
+  `session_id` — the crashed session's id is gone with the deleted `session.json` by scan
+  time; they correlate by `distinct_id` + timestamp + fingerprint. In-process events carry
+  the crashed session's `session_id` from the surviving file. `fromNative` strips the
+  current-launch `session_id` out of the shared `meta` so a native event can never be
+  mis-tagged to the scanning launch (a whole-branch-review Critical fix).
+- **Ownership is by responsible-process path, not a whole-file scan.** The parser derives
+  a `responsibleWithinBundle` bool from the raw (pre-scrub) `procPath`/`Path:` vs
+  `Slipreel.app`; the raw path is used only for that check and is never stored on the model
+  or forwarded. This replaced an initial `contents.contains('Slipreel.app')` whole-file
+  match that would have forwarded foreign crashes merely referencing our bundle (spec §2
+  non-goal). In-process ownership is now covered by tests.
+- **Two defects in the plan's own reference snippets, fixed in the shipped code:**
+  (a) `PersistentCrumbStore` originally recomputed `launched_at` inside the payload the
+  dirty-check diffs, breaking "no-op when unchanged" under any clock gap → the launch
+  timestamp is now captured once at construction; (b) `PersistentCrumbStore.writeIfDirty`
+  and `NativeCrashWatermarkStore.record` wrote non-atomically → both now write to a temp
+  file + `rename` (a crash mid-write can't corrupt `session.json`/`wm.json`).
+- **Lifecycle discriminator.** `clearOnCleanExit()` fires only on
+  `AppLifecycleState.detached`; `paused`/`hidden` (macOS backgrounding) calls `flushNow()`
+  and leaves the timer running. If macOS does not deliver `detached` on a clean quit, a
+  surviving `session.json` could attach a stale trail to a *subsequent* helper crash (mild
+  over-attribution) — an accepted tradeoff vs. total trail loss; confirm in live validation.
+- **Opt-out is reactive.** `PersistentCrumbStore` gained `setEnabled(bool)`; the
+  `shareDiagnostics` listener calls it, so a mid-session opt-out stops on-disk writes and
+  deletes `session.json` immediately (honors §6 "off means silent"), and opt-in resumes.
+- **Activity clearing.** Transcribe activity is cleared on captions-tab `dispose()` (store
+  cached in `initState` — `ref.read` in `dispose` is unusable in this Riverpod version).
+- **`crumbStoreProvider`** lives in `persistent_crumb_store.dart`.
+- **`instruction_addr`** is `"<binary>+<offset>"` (the §4.5 example showed `base+offset`);
+  harmless — the `function` field also carries the binary.
+
+Deferred minors (non-blocking, noted for a future pass): `fingerprintForNative` /
+captions-tab long lines (style); the `no-frame` fingerprint fallback and
+`captureNativeCrash`'s `activity` param are not directly unit-tested (activity is covered
+via `fromNative`); the watermark `timestamp` field is stored but unused (the basename
+seen-set is the skip mechanism); the crashed report's `appVersion` is parsed/scrubbed but
+not forwarded (the current-launch `app_version` is sent instead); `_scrubValue` is
+duplicated across the builder and the store.
+
+**Live validation still required (§10), now with these specific checks:** force an ffmpeg
+SIGSEGV mid-export and an in-process crash, relaunch, and confirm in PostHog — (a) one
+grouped native issue each with `exception_platform: 'native'` / `lang: 'native'` frames;
+(b) the in-process event carries the crashed session's `session_id` + crumb trail;
+(c) the subprocess event omits `session_id`; (d) macOS actually delivers
+`AppLifecycleState.detached` on Cmd+Q for this build (the clean-exit discriminator depends
+on it).
