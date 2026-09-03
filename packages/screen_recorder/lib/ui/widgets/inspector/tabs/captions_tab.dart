@@ -56,6 +56,38 @@ class CaptionsTab extends ConsumerStatefulWidget {
 class _CaptionsTabState extends ConsumerState<CaptionsTab> {
   CaptionAudioSource? _selected;
 
+  // Captured eagerly in initState (NOT a lazy `late final = ref.read(...)`
+  // initializer — that would only run on first access, and if dispose() is
+  // the first access, ref.read would throw; see below). ref.read throws
+  // ("Cannot use ref after the widget was disposed") if called from
+  // dispose() — Flutter's StatefulElement.unmount() marks the element
+  // defunct via super.unmount() *before* invoking State.dispose(), so by the
+  // time our dispose() body runs, ref is already unusable. crumbStoreProvider
+  // is a plain Provider<PersistentCrumbStore> overridden once at app start
+  // (not autoDispose, not scoped to this widget), so caching the instance in
+  // initState is safe for the widget's whole lifetime.
+  late final PersistentCrumbStore _crumbStore;
+
+  @override
+  void initState() {
+    super.initState();
+    _crumbStore = ref.read(crumbStoreProvider);
+  }
+
+  @override
+  void dispose() {
+    // Covers the "navigate away mid-run" gap the terminal-status listener
+    // below can't: CaptionGenerationController is autoDispose and its
+    // _setState only writes `if (mounted)`, so if this tab closes while
+    // generate() is still running (a real case — whisper on a long
+    // recording runs for minutes), the controller never reaches a terminal
+    // status after this widget is gone, the ref.listen clear never fires,
+    // and the activity would otherwise stay 'transcribe' for the rest of
+    // the session — misattributing a later, unrelated crash.
+    _crumbStore.setActivity(null);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = ref.watch(captionGenerationControllerProvider);
@@ -72,7 +104,7 @@ class _CaptionsTabState extends ConsumerState<CaptionsTab> {
     ref.listen<CaptionGenerationStatus>(captionGenerationControllerProvider,
         (prev, next) {
       if (next is CaptionDone || next is CaptionError || next is CaptionCancelled) {
-        ref.read(crumbStoreProvider).setActivity(null);
+        _crumbStore.setActivity(null);
       }
     });
 
@@ -127,10 +159,8 @@ class _CaptionsTabState extends ConsumerState<CaptionsTab> {
                       : () {
                           // Right before the native handoffs inside
                           // generate() (ffmpeg extract, then whisper-cli).
-                          ref
-                              .read(crumbStoreProvider)
-                              .setActivity({'op': 'transcribe'});
-                          ref.read(crumbStoreProvider).flushNow();
+                          _crumbStore.setActivity({'op': 'transcribe'});
+                          _crumbStore.flushNow();
                           ref
                               .read(captionGenerationControllerProvider.notifier)
                               .generate(
