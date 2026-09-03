@@ -44,7 +44,7 @@ class PersistentCrumbStore {
   final String sessionId;
   final Breadcrumbs _breadcrumbs;
   final PiiScrubber _scrubber;
-  final bool _enabled;
+  bool _enabled;
   // Captured once at construction, not re-read per write: `launched_at` is a
   // property of the session, not of the write. Keeping it fixed also lets the
   // dirty check in `writeIfDirty` work — a payload that varied with the clock
@@ -83,6 +83,19 @@ class PersistentCrumbStore {
   }
 
   void setActivity(Map<String, Object?>? activity) => _activity = activity;
+
+  /// Reacts to the user flipping `shareDiagnostics` mid-session. Opting out
+  /// must immediately gate writes and delete any on-disk trail (spec §6:
+  /// "off means silent") — opting back in resumes periodic persistence.
+  void setEnabled(bool value) {
+    if (value == _enabled) return;
+    _enabled = value;
+    if (!value) {
+      clearOnCleanExit(); // stops the timer + deletes session.json
+    } else {
+      start(); // resume periodic persistence
+    }
+  }
 
   void start() {
     if (!_enabled) return;

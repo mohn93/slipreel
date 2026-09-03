@@ -123,4 +123,31 @@ void main() {
     store.clearOnCleanExit();
     expect(File(path).existsSync(), false);
   });
+
+  test('setEnabled(false) mid-session deletes the trail and gates further '
+      'writes; setEnabled(true) resumes persistence', () {
+    // Regression guard for spec §6 ("off means silent"): flipping the
+    // shareDiagnostics toggle off mid-session must not just delete
+    // session.json once — it must also stop honoring later writes (e.g. a
+    // backgrounding flushNow()) until the user opts back in.
+    final b = Breadcrumbs()..dropEvent('a');
+    final store = make(b);
+    store.writeIfDirty();
+    expect(File(path).existsSync(), true);
+
+    store.setEnabled(false);
+    expect(File(path).existsSync(), false);
+
+    // Simulate a later backgrounding flush: must stay a no-op while disabled.
+    b.dropEvent('b');
+    store.flushNow();
+    store.writeIfDirty();
+    expect(File(path).existsSync(), false);
+
+    store.setEnabled(true);
+    store.writeIfDirty();
+    expect(File(path).existsSync(), true);
+    final json = jsonDecode(File(path).readAsStringSync()) as Map;
+    expect((json['breadcrumbs'] as List), contains('event:b'));
+  });
 }

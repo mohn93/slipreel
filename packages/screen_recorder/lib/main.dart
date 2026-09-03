@@ -330,15 +330,32 @@ Future<void> main() async {
   // this session didn't exit cleanly; clearOnCleanExit() is what erases it on
   // every clean-exit path (see shareDiagnostics listener + lifecycle flush
   // below) so "survived" reliably means "crashed".
-  final crumbStore = PersistentCrumbStore(
-    path: p.join(appSupportPath, 'diagnostics', 'session.json'),
-    sessionId: sessionId,
-    breadcrumbs: Breadcrumbs.instance,
-    scrubber: scrubber,
-    enabled: initialGlobalPreferences.shareDiagnostics,
-  );
-  // Read the previous (possibly crashed) session BEFORE this session writes.
-  final previousSession = crumbStore.readPrevious();
+  // Constructing the store and reading the previous session are wrapped
+  // together: a failure here must never leave `crumbStore` unusable for the
+  // provider override / lifecycle hooks below, so the fallback on error is a
+  // disabled store (never writes) rather than no store at all.
+  final crumbStorePath = p.join(appSupportPath, 'diagnostics', 'session.json');
+  late final PersistentCrumbStore crumbStore;
+  PersistedSession? previousSession;
+  try {
+    crumbStore = PersistentCrumbStore(
+      path: crumbStorePath,
+      sessionId: sessionId,
+      breadcrumbs: Breadcrumbs.instance,
+      scrubber: scrubber,
+      enabled: initialGlobalPreferences.shareDiagnostics,
+    );
+    // Read the previous (possibly crashed) session BEFORE this session writes.
+    previousSession = crumbStore.readPrevious();
+  } catch (_) {
+    crumbStore = PersistentCrumbStore(
+      path: crumbStorePath,
+      sessionId: sessionId,
+      breadcrumbs: Breadcrumbs.instance,
+      scrubber: scrubber,
+      enabled: false,
+    );
+  }
 
   // After first frame: forward any native crash reports from macOS's crash
   // reporter, then start mirroring this session's crumbs. Best-effort; never
@@ -575,7 +592,9 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       globalPreferencesControllerProvider.select((p) => p.shareDiagnostics),
       (prev, next) {
         ref.read(diagnosticsServiceProvider).setEnabled(next);
-        if (!next) ref.read(crumbStoreProvider).clearOnCleanExit();
+        // Symmetric: opt-out gates writes + deletes the on-disk trail; opt-in
+        // (back on mid-session) resumes periodic persistence.
+        ref.read(crumbStoreProvider).setEnabled(next);
       },
     );
 
