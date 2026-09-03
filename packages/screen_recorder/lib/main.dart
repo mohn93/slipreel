@@ -741,9 +741,22 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       // Best-effort deliver anything buffered before we lose foreground.
+      // NOTE: paused/hidden fire on mere backgrounding (window hidden,
+      // minimized, Space switch), not just true termination — so this must
+      // only persist the crumb trail, never delete it or stop the timer.
+      // Deleting here would silently kill crumb capture for the rest of the
+      // session on the very first backgrounding.
       unawaited(ref.read(analyticsServiceProvider).flush());
       unawaited(ref.read(diagnosticsServiceProvider).flush());
       unawaited(ref.read(feedbackServiceProvider).flush());
+      ref.read(crumbStoreProvider).flushNow();
+    } else if (state == AppLifecycleState.detached) {
+      // detached is the reliable "app is really exiting" signal — mark this
+      // as a clean exit so the next-launch scanner doesn't mistake it for a
+      // crash. (If detached isn't delivered on this platform/build, a
+      // surviving session.json is harmless: the scanner only attaches crumbs
+      // to a crash report that actually exists, and the next session's first
+      // write resets the file regardless.)
       ref.read(crumbStoreProvider).clearOnCleanExit();
     }
   }
