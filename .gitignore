@@ -78,3 +78,9 @@ server/dist/
 server/.env
 server/.env.*
 !server/.env.example
+
+# Local PostHog build-time defines (contain the project key; injected in CI).
+# The .example.json template is committed; real files are not.
+packages/screen_recorder/dart_defines/posthog.json
+packages/screen_recorder/dart_defines/posthog.local.json
+packages/screen_recorder/dart_defines/*.local.json

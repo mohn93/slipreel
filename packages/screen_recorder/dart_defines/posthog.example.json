@@ -1,0 +1,4 @@
+{
+  "SLIPREEL_POSTHOG_KEY": "phc_REPLACE_WITH_YOUR_PROJECT_KEY",
+  "SLIPREEL_POSTHOG_HOST": "https://us.i.posthog.com"
+}
