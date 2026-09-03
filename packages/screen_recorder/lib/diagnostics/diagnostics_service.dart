@@ -84,11 +84,15 @@ class DiagnosticsService {
       if (last != null && t.difference(last) < dedupeWindow) return;
       _lastSeen[fp] = t;
       _sessionCount++;
+      // Stamp the event at the CRASH's own time, not this scan's time (which
+      // could be days later). `fromNative`'s `now ?? report.crashedAt ??
+      // DateTime.now()` fallback still does the right thing when crashedAt is
+      // null; `t` above stays the in-memory dedupe clock only.
       _sink.enqueue(_builder.fromNative(report,
           breadcrumbs: breadcrumbs,
           activity: activity,
           sessionId: sessionId,
-          now: t));
+          now: report.crashedAt));
     } catch (_) {
       // Best-effort: forwarding a native crash must never break the app.
     }

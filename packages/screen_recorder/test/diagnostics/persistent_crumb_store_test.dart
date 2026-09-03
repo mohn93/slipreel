@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/utils/breadcrumbs.dart';
 import 'package:screen_recorder/diagnostics/persistent_crumb_store.dart';
@@ -89,6 +90,58 @@ void main() {
     expect(prev.sessionId, 'old');
     expect(prev.breadcrumbs, ['event:recording_started']);
     expect(prev.activity!['op'], 'record');
+  });
+
+  test('readPrevious parses launched_at into the session', () {
+    File(path).writeAsStringSync(jsonEncode({
+      'session_id': 'old',
+      'launched_at': '2026-09-01T00:00:00.000Z',
+      'breadcrumbs': const <String>[],
+    }));
+    final prev = make(Breadcrumbs()).readPrevious()!;
+    expect(prev.launchedAt, DateTime.utc(2026, 9, 1));
+  });
+
+  test('readPrevious leaves launchedAt null when launched_at is absent or '
+      'unparseable', () {
+    File(path).writeAsStringSync(jsonEncode({
+      'session_id': 'old',
+      'launched_at': 'not-a-date',
+      'breadcrumbs': const <String>[],
+    }));
+    expect(make(Breadcrumbs()).readPrevious()!.launchedAt, isNull);
+  });
+
+  // T4: non-JSON garbage in session.json must degrade to null, not throw.
+  test('readPrevious returns null for non-JSON garbage, without throwing', () {
+    File(path).writeAsStringSync('this is not json at all {{{');
+    PersistedSession? prev;
+    expect(() => prev = make(Breadcrumbs()).readPrevious(), returnsNormally);
+    expect(prev, isNull);
+  });
+
+  // T3: the periodic-timer path (start() -> Timer.periodic -> writeIfDirty)
+  // actually writes without any manual flush.
+  test('start() writes automatically once flushInterval elapses', () {
+    fakeAsync((async) {
+      final b = Breadcrumbs()..dropEvent('a');
+      final store = PersistentCrumbStore(
+        path: path,
+        sessionId: 'sess-1',
+        breadcrumbs: b,
+        scrubber: scrubber,
+        enabled: true,
+        flushInterval: const Duration(seconds: 2),
+      );
+      store.start();
+      expect(File(path).existsSync(), false); // nothing written yet
+      async.elapse(const Duration(seconds: 3)); // past one flushInterval tick
+      expect(File(path).existsSync(), true);
+      final json = jsonDecode(File(path).readAsStringSync()) as Map;
+      expect((json['breadcrumbs'] as List), contains('event:a'));
+      // Stop the periodic timer so fakeAsync has no pending timers at teardown.
+      store.stop();
+    });
   });
 
   test('readPrevious returns null for syntactically-valid but wrong-typed '

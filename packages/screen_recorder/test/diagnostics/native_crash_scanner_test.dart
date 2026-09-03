@@ -18,12 +18,15 @@ void main() {
     state.deleteSync(recursive: true);
   });
 
-  NativeCrashScanner make(List<NativeCrashReport> out) => NativeCrashScanner(
+  NativeCrashScanner make(List<NativeCrashReport> out,
+          {int maxReportsPerScan = 50}) =>
+      NativeCrashScanner(
         reportsDir: reports,
         watermarkStore:
             NativeCrashWatermarkStore(path: '${state.path}/wm.json'),
         scrubber: scrubber,
         onCrash: out.add,
+        maxReportsPerScan: maxReportsPerScan,
       );
 
   void writeReport(String name, String procName) {
@@ -34,6 +37,54 @@ void main() {
       '"threads":[{"triggered":true,"frames":[{"imageIndex":0,"imageOffset":10}]}]}',
     );
   }
+
+  // I3: only the newest maxReportsPerScan reports are forwarded; the rest are
+  // recorded as seen (deferred) so a later scan re-processes nothing.
+  test('caps work per scan to the newest N, deferring the rest', () {
+    // Four ours reports with distinct, increasing mtimes.
+    final base = DateTime(2026, 9, 1, 12);
+    for (var i = 0; i < 4; i++) {
+      final name = 'ours$i.ips';
+      writeReport(name, 'ffmpeg');
+      File('${reports.path}/$name')
+          .setLastModifiedSync(base.add(Duration(minutes: i)));
+    }
+    final out = <NativeCrashReport>[];
+    make(out, maxReportsPerScan: 2).scan();
+    // Only the two newest (ours3, ours2) are forwarded.
+    expect(out.length, 2);
+    expect(out.map((r) => r.reportFileName).toSet(), {'ours3.ips', 'ours2.ips'});
+
+    // A second scan (fresh scanner, same watermark) forwards nothing: the
+    // newest two are forwarded-seen and the older two are skipped-seen.
+    final out2 = <NativeCrashReport>[];
+    make(out2, maxReportsPerScan: 2).scan();
+    expect(out2, isEmpty);
+  });
+
+  // I7: a forwarded ("ours") name is never evicted, even when many skipped
+  // names pile up past the skipped cap.
+  test('a forwarded name survives eviction pressure from many skipped names',
+      () {
+    final wm = NativeCrashWatermarkStore(path: '${state.path}/wm.json');
+    wm.record('ours-real-crash.ips', DateTime(2026, 9, 1), forwarded: true);
+    // Push far past the skipped cap (500) with foreign names.
+    for (var i = 0; i < 700; i++) {
+      wm.record('foreign$i.ips', null, forwarded: false);
+    }
+    // Fresh store reading the same file: the forwarded name is still present.
+    final reloaded = NativeCrashWatermarkStore(path: '${state.path}/wm.json');
+    expect(reloaded.seenFiles(), contains('ours-real-crash.ips'));
+  });
+
+  // T4: garbage wm.json must degrade to empty/null, never throw.
+  test('a garbage watermark file degrades to empty without throwing', () {
+    File('${state.path}/wm.json').writeAsStringSync('not json at all {{{');
+    final wm = NativeCrashWatermarkStore(path: '${state.path}/wm.json');
+    expect(() => wm.seenFiles(), returnsNormally);
+    expect(wm.seenFiles(), isEmpty);
+    expect(wm.watermark(), isNull);
+  });
 
   test('forwards only our processes', () {
     writeReport('ours.ips', 'ffmpeg');

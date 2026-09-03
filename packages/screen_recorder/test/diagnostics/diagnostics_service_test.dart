@@ -17,7 +17,12 @@ void main() {
   setUp(() => dir = Directory.systemTemp.createTempSync('diag'));
   tearDown(() => dir.deleteSync(recursive: true));
 
-  DiagnosticsService build({required bool enabled, required MockClient client}) {
+  DiagnosticsService build({
+    required bool enabled,
+    required MockClient client,
+    int maxPerSession = 50,
+    DateTime Function() now = DateTime.now,
+  }) {
     final scrubber = PiiScrubber(homeDir: '/Users/alice');
     return DiagnosticsService(
       sink: PostHogSink(
@@ -32,6 +37,8 @@ void main() {
       breadcrumbs: Breadcrumbs(capacity: 5),
       scrubber: scrubber,
       enabled: enabled,
+      maxPerSession: maxPerSession,
+      now: now,
     );
   }
 
@@ -106,5 +113,76 @@ void main() {
         signal: 'SIGSEGV', faultingBinary: 'ffmpeg', frames: [], reportFileName: 'x.ips'));
     await svc.flush();
     expect(calls, 0);
+  });
+
+  // C2: the emitted native event is stamped at CRASH time, not scan time.
+  test('captureNativeCrash stamps the event at the crash timestamp', () async {
+    String? body;
+    // `now` (scan time) is deliberately far from the crash time so a
+    // scan-time stamp would be obvious.
+    final svc = build(enabled: true,
+        now: () => DateTime.utc(2030, 1, 1),
+        client: MockClient((req) async {
+          body = req.body;
+          return http.Response('{}', 200);
+        }));
+    final crashedAt = DateTime.utc(2026, 9, 1, 12);
+    svc.captureNativeCrash(NativeCrashReport(
+      signal: 'SIGSEGV',
+      faultingBinary: 'ffmpeg',
+      frames: const [NativeFrame(binary: 'ffmpeg', offset: '0x1')],
+      reportFileName: 'x.ips',
+      crashedAt: crashedAt,
+    ));
+    await svc.flush();
+    final batch = jsonDecode(body!)['batch'] as List;
+    expect((batch.single as Map)['timestamp'], crashedAt.toIso8601String());
+  });
+
+  // T1: dedupe — two reports that fingerprint identically within the window
+  // send only one event.
+  test('captureNativeCrash collapses identical fingerprints within the window',
+      () async {
+    String? body;
+    final svc = build(enabled: true,
+        client: MockClient((req) async {
+          body = req.body;
+          return http.Response('{}', 200);
+        }));
+    NativeCrashReport r() => const NativeCrashReport(
+        signal: 'SIGSEGV',
+        faultingBinary: 'ffmpeg',
+        frames: [NativeFrame(binary: 'ffmpeg', offset: '0x1234')],
+        reportFileName: 'x.ips');
+    svc.captureNativeCrash(r());
+    svc.captureNativeCrash(r()); // same fingerprint -> collapsed
+    await svc.flush();
+    final batch = jsonDecode(body!)['batch'] as List;
+    expect(batch.length, 1);
+  });
+
+  // T1: a native crash is dropped once maxPerSession is hit (shared counter).
+  test('captureNativeCrash stops sending after maxPerSession is reached',
+      () async {
+    var batchItems = 0;
+    final svc = build(enabled: true,
+        maxPerSession: 1,
+        client: MockClient((req) async {
+          batchItems += (jsonDecode(req.body)['batch'] as List).length;
+          return http.Response('{}', 200);
+        }));
+    // First distinct crash is sent; a second distinct crash exceeds the cap.
+    svc.captureNativeCrash(const NativeCrashReport(
+        signal: 'SIGSEGV',
+        faultingBinary: 'ffmpeg',
+        frames: [NativeFrame(binary: 'ffmpeg', offset: '0x1')],
+        reportFileName: 'a.ips'));
+    svc.captureNativeCrash(const NativeCrashReport(
+        signal: 'SIGABRT',
+        faultingBinary: 'whisper-cli',
+        frames: [NativeFrame(binary: 'whisper-cli', offset: '0x2')],
+        reportFileName: 'b.ips'));
+    await svc.flush();
+    expect(batchItems, 1);
   });
 }

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/utils/breadcrumbs.dart';
 
+import 'native_crash_report.dart';
 import 'pii_scrubber.dart';
 
 /// The trail a crashed session left behind, read at next launch.
@@ -13,10 +14,32 @@ class PersistedSession {
     required this.sessionId,
     required this.breadcrumbs,
     this.activity,
+    this.launchedAt,
   });
   final String sessionId;
   final List<String> breadcrumbs;
   final Map<String, Object?>? activity;
+
+  /// When the crashed session launched (from its `launched_at`). Used to
+  /// time-bound crumb attribution: a crash report from BEFORE this time
+  /// belongs to an earlier/backlog crash, not this session, so it must not
+  /// inherit this session's trail. Null when the field was absent/unparseable.
+  final DateTime? launchedAt;
+}
+
+/// Whether [report]'s crumb trail may be attached to [previous] (the crashed
+/// session read at this launch). A report whose crash happened BEFORE the
+/// session launched is an older/backlog crash — on first launch the crash dir
+/// can hold weeks of unrelated `.ips` files — and must NOT inherit this
+/// session's trail. Conservative on nulls: if either timestamp is unknown,
+/// treat the report as backlog and do not attach.
+bool crumbTrailAppliesTo(PersistedSession? previous, NativeCrashReport report) {
+  final launchedAt = previous?.launchedAt;
+  final crashedAt = report.crashedAt;
+  if (previous == null || launchedAt == null || crashedAt == null) {
+    return false;
+  }
+  return !crashedAt.isBefore(launchedAt);
 }
 
 /// Mirrors the in-memory breadcrumb ring plus a small "current activity" record
@@ -72,10 +95,13 @@ class PersistentCrumbStore {
       final rawActivity = json['activity'] as Map?;
       final activity =
           rawActivity == null ? null : Map<String, Object?>.from(rawActivity);
+      final rawLaunchedAt = json['launched_at']?.toString();
       return PersistedSession(
         sessionId: json['session_id']?.toString() ?? 'unknown',
         breadcrumbs: crumbs,
         activity: activity,
+        launchedAt:
+            rawLaunchedAt == null ? null : DateTime.tryParse(rawLaunchedAt),
       );
     } catch (_) {
       return null;

@@ -370,12 +370,21 @@ Future<void> main() async {
               path: p.join(appSupportPath, 'diagnostics',
                   'native_crash_watermark.json')),
           scrubber: scrubber,
-          onCrash: (report) => diagnosticsService.captureNativeCrash(
-            report,
-            breadcrumbs: previousSession?.breadcrumbs ?? const [],
-            activity: previousSession?.activity,
-            sessionId: previousSession?.sessionId,
-          ),
+          onCrash: (report) {
+            // Attach the crashed session's crumb trail ONLY to a report that
+            // plausibly belongs to that session's lifetime. A backlog crash
+            // (older than this session's launch, or with unknown timestamps)
+            // is forwarded crumb-less, exactly like the subprocess case, so it
+            // can't inherit an unrelated session's trail.
+            final attach = crumbTrailAppliesTo(previousSession, report);
+            diagnosticsService.captureNativeCrash(
+              report,
+              breadcrumbs:
+                  attach ? (previousSession?.breadcrumbs ?? const []) : const [],
+              activity: attach ? previousSession?.activity : null,
+              sessionId: attach ? previousSession?.sessionId : null,
+            );
+          },
         ).scan();
       }
       // Start this session's trail (the first write resets session.json for
@@ -765,6 +774,12 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // User may have flipped a permission in System Settings; re-probe.
       ref.read(permissionsControllerProvider.notifier).refreshAll();
+      // Restart crumb persistence in case a transient `detached` (engine
+      // detach / window close without a real quit) already stopped the timer
+      // via clearOnCleanExit(); otherwise crumb capture would stay off for the
+      // rest of the run. start() is idempotent (`_timer ??=`) and early-returns
+      // when disabled, so this is safe unconditionally.
+      ref.read(crumbStoreProvider).start();
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       // Best-effort deliver anything buffered before we lose foreground.

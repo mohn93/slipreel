@@ -83,6 +83,11 @@ class ExceptionEventBuilder {
         r'$exception_fingerprint': fingerprintForNative(report),
         'exception_platform': 'native',
         if (report.osVersion != null) 'native_os': report.osVersion,
+        // The version that was RUNNING when it crashed — distinct from meta's
+        // `app_version` (the current launch). A Sparkle auto-update between the
+        // crash and the relaunch that scans it would otherwise misattribute the
+        // crash to the newer version.
+        if (report.appVersion != null) 'crashed_app_version': report.appVersion,
         ...nativeMeta,
         if (sessionId != null) 'session_id': sessionId,
         'breadcrumbs': breadcrumbs,
@@ -93,12 +98,27 @@ class ExceptionEventBuilder {
   }
 
   String fingerprintForNative(NativeCrashReport report) {
-    final top = report.frames.isNotEmpty ? report.frames.first.offset : 'no-frame';
-    return '${report.signal}|${report.faultingBinary}|$top';
+    // Prefer the FIRST in-app frame (a bundled helper or the app itself):
+    // distinct bugs that share a generic top frame (libc `abort` /
+    // `__pthread_kill`) would otherwise collapse into a single PostHog issue.
+    // Fall back to the top frame, then to `'no-frame'`.
+    NativeFrame? chosen;
+    for (final f in report.frames) {
+      if (_isBundledBinary(f.binary)) {
+        chosen = f;
+        break;
+      }
+    }
+    chosen ??= report.frames.isNotEmpty ? report.frames.first : null;
+    final offset = chosen?.offset ?? 'no-frame';
+    return '${report.signal}|${report.faultingBinary}|$offset';
   }
 
   static bool _isBundledBinary(String name) =>
-      name == 'ffmpeg' || name == 'ffprobe' || name == 'whisper-cli';
+      name == 'ffmpeg' ||
+      name == 'ffprobe' ||
+      name == 'whisper-cli' ||
+      name == kAppBundleName;
 
   // Recursively scrubs every String inside a context value — nested maps and
   // lists included — so a path can't ride through inside a collection.

@@ -204,4 +204,79 @@ void main() {
         reportFileName: 'a.ips'));
     expect(e.properties.containsKey('context'), false);
   });
+
+  // I5: genuine in-process (app) frames must be marked in_app.
+  test('a native frame in the app binary is in_app: true', () {
+    final e = builder.fromNative(const NativeCrashReport(
+        signal: 'SIGSEGV',
+        faultingBinary: 'Slipreel',
+        frames: [NativeFrame(binary: 'Slipreel', offset: '0x1')],
+        reportFileName: 'a.ips'));
+    final st = ((e.properties[r'$exception_list'] as List).single
+        as Map)['stacktrace'] as Map;
+    expect((st['frames'] as List).first['in_app'], true);
+  });
+
+  // I4: the crashed app version is forwarded distinctly and never overwrites
+  // the current launch's app_version (which comes from meta).
+  test('fromNative forwards the crashed app version distinctly from app_version',
+      () {
+    final e = builder.fromNative(const NativeCrashReport(
+        signal: 'SIGSEGV',
+        faultingBinary: 'ffmpeg',
+        frames: [NativeFrame(binary: 'ffmpeg', offset: '0x1')],
+        reportFileName: 'a.ips',
+        appVersion: '0.9.0+3'));
+    expect(e.properties['crashed_app_version'], '0.9.0+3');
+    // The current launch's app_version (from meta) is untouched.
+    expect(e.properties['app_version'], '1.0.0+1');
+  });
+
+  test('fromNative omits crashed_app_version when the report has none', () {
+    final e = builder.fromNative(const NativeCrashReport(
+        signal: 'SIGSEGV',
+        faultingBinary: 'ffmpeg',
+        frames: [NativeFrame(binary: 'ffmpeg', offset: '0x1')],
+        reportFileName: 'a.ips'));
+    expect(e.properties.containsKey('crashed_app_version'), false);
+  });
+
+  // I6: fingerprint by the first in-app frame so distinct bugs that share a
+  // generic top frame (libc abort/__pthread_kill) don't collapse into one.
+  test(
+      'fromNative fingerprints by the first in-app frame, not the generic top',
+      () {
+    NativeCrashReport withInApp(String offset) => NativeCrashReport(
+          signal: 'SIGABRT',
+          faultingBinary: 'Slipreel',
+          frames: [
+            const NativeFrame(binary: 'libsystem_kernel.dylib', offset: '0x1'),
+            const NativeFrame(binary: 'libsystem_c.dylib', offset: '0x2'),
+            NativeFrame(binary: 'Slipreel', offset: offset),
+          ],
+          reportFileName: 'a.ips',
+        );
+    final a =
+        builder.fromNative(withInApp('0xaaa')).properties[r'$exception_fingerprint'];
+    final b =
+        builder.fromNative(withInApp('0xbbb')).properties[r'$exception_fingerprint'];
+    // Same signal + faulting binary + generic top frame, but different bugs.
+    expect(a, isNot(b));
+    // The chosen offset is the first in-app frame's, not the libc top frame's.
+    expect(a, 'SIGABRT|Slipreel|0xaaa');
+  });
+
+  test(
+      'fromNative fingerprint falls back to the top frame when no in-app frame '
+      'exists, and is stable for the same crash', () {
+    NativeCrashReport r() => const NativeCrashReport(
+        signal: 'SIGSEGV',
+        faultingBinary: 'Google Chrome',
+        frames: [NativeFrame(binary: 'libsystem.dylib', offset: '0x9')],
+        reportFileName: 'a.ips');
+    expect(builder.fromNative(r()).properties[r'$exception_fingerprint'],
+        builder.fromNative(r()).properties[r'$exception_fingerprint']);
+    expect(builder.fromNative(r()).properties[r'$exception_fingerprint'],
+        'SIGSEGV|Google Chrome|0x9');
+  });
 }

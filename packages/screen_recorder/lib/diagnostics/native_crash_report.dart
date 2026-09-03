@@ -2,6 +2,11 @@ import 'dart:convert';
 
 import 'pii_scrubber.dart';
 
+/// The app's bundle/executable name. Shared so the scanner (which reports it as
+/// the faulting binary), the parser, and the event builder (which marks its
+/// frames in-app) all agree on how an in-process app frame is recognised.
+const String kAppBundleName = 'Slipreel';
+
 /// One resolved-but-unsymbolicated native frame: the image (binary) it lives in
 /// and a hex offset within it. No function name — native reports carry only
 /// binary + offset unless a dSYM is applied, which we do not do.
@@ -48,7 +53,7 @@ const int _maxFrames = 15;
 NativeCrashReport? parseCrashReport(String contents,
     {required String fileName,
     required PiiScrubber scrubber,
-    String appBundleName = 'Slipreel'}) {
+    String appBundleName = kAppBundleName}) {
   try {
     final trimmed = contents.trimLeft();
     if (trimmed.startsWith('{')) {
