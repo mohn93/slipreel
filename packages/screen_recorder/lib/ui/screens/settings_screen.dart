@@ -12,6 +12,7 @@ import '../../state/global_preferences_controller.dart';
 import '../../state/permissions_controller.dart';
 import '../../state/recording_settings_controller.dart';
 import '../../update/updater_service.dart';
+import '../feedback/feedback_sheet.dart';
 import '../theme/app_palette_context.dart';
 import '../widgets/permission_denied_sheet.dart';
 import '../widgets/permission_status_row.dart';
@@ -193,23 +194,56 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
 
   Widget _privacyCard() {
-    final on = ref.watch(
+    final shareAnalytics = ref.watch(
         globalPreferencesControllerProvider.select((p) => p.shareAnalytics));
+    final shareDiagnostics = ref.watch(
+        globalPreferencesControllerProvider.select((p) => p.shareDiagnostics));
     return _card(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text('Share anonymous usage data',
-            style: TextStyle(color: context.palette.textPrimary)),
-        subtitle: Text(
-          'Helps improve Slipreel. Never includes your recordings, file names, '
-          'or screen contents — only which features get used.',
-          style: TextStyle(color: context.palette.textSecondary),
-        ),
-        value: on,
-        onChanged: (v) => ref
-            .read(globalPreferencesControllerProvider.notifier)
-            .setShareAnalytics(v),
+      child: Column(
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text('Share anonymous usage data',
+                style: TextStyle(color: context.palette.textPrimary)),
+            subtitle: Text(
+              'Helps improve Slipreel. Never includes your recordings, file names, '
+              'or screen contents — only which features get used.',
+              style: TextStyle(color: context.palette.textSecondary),
+            ),
+            value: shareAnalytics,
+            onChanged: (v) => ref
+                .read(globalPreferencesControllerProvider.notifier)
+                .setShareAnalytics(v),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text('Send crash & error reports',
+                style: TextStyle(color: context.palette.textPrimary)),
+            subtitle: Text(
+              'Sends anonymized error and crash reports so we can fix '
+              'problems. File paths are stripped and your recordings are '
+              'never included.',
+              style: TextStyle(color: context.palette.textSecondary),
+            ),
+            value: shareDiagnostics,
+            onChanged: (v) => ref
+                .read(globalPreferencesControllerProvider.notifier)
+                .setShareDiagnostics(v),
+          ),
+          ListTile(
+            leading: Icon(Icons.feedback_outlined,
+                color: context.palette.textPrimary),
+            title: Text('Send feedback',
+                style: TextStyle(color: context.palette.textPrimary)),
+            subtitle: Text('Share an idea or report a problem',
+                style: TextStyle(color: context.palette.textSecondary)),
+            trailing: Icon(Icons.chevron_right,
+                color: context.palette.textSecondary),
+            contentPadding: EdgeInsets.zero,
+            onTap: () => FeedbackSheet.show(context),
+          ),
+        ],
       ),
     );
   }
