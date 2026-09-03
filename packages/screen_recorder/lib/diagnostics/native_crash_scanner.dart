@@ -50,7 +50,12 @@ class NativeCrashWatermarkStore {
     try {
       final f = File(path);
       f.parent.createSync(recursive: true);
-      f.writeAsStringSync(
+      // Write via a temp file + rename so a crash mid-write can never leave
+      // truncated JSON at `path` — that would fail to decode on the next
+      // load and silently reset the seen-set, re-forwarding every
+      // previously-seen report.
+      final tmp = File('$path.tmp');
+      tmp.writeAsStringSync(
         jsonEncode({
           'seen': _seen.toList(),
           if (_watermark != null)
@@ -58,6 +63,7 @@ class NativeCrashWatermarkStore {
         }),
         flush: true,
       );
+      tmp.renameSync(path);
     } catch (_) {
       // Best-effort: persisting the watermark must never break the caller.
     }
@@ -92,7 +98,7 @@ class NativeCrashScanner {
           .listSync()
           .whereType<File>()
           .where((f) {
-            final n = f.path.split(Platform.pathSeparator).last;
+            final n = _basename(f);
             return (n.endsWith('.ips') || n.endsWith('.crash')) &&
                 !seen.contains(n);
           })
@@ -100,7 +106,7 @@ class NativeCrashScanner {
         ..sort((a, b) => a.path.compareTo(b.path));
 
       for (final f in files) {
-        final name = f.path.split(Platform.pathSeparator).last;
+        final name = _basename(f);
         String contents;
         try {
           contents = f.readAsStringSync();
@@ -130,4 +136,6 @@ class NativeCrashScanner {
       ownProcesses.contains(report.faultingBinary) ||
       report.faultingBinary == appBundleName ||
       contents.contains('$appBundleName.app');
+
+  String _basename(File f) => f.path.split(Platform.pathSeparator).last;
 }

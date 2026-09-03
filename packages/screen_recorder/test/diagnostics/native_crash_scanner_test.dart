@@ -61,6 +61,22 @@ void main() {
     expect(out2, isEmpty);
   });
 
+  test(
+      'a non-ours report is recorded in the watermark but never forwarded',
+      () {
+    writeReport('other.ips', 'Google Chrome');
+    final out = <NativeCrashReport>[];
+    make(out).scan();
+    expect(out, isEmpty);
+
+    // A second scan (fresh scanner, same watermark file) must not re-process
+    // it either — proving it was recorded in the seen-set, not just skipped
+    // by the ownProcesses filter on this one pass.
+    final out2 = <NativeCrashReport>[];
+    make(out2).scan();
+    expect(out2, isEmpty);
+  });
+
   test('a garbage file is skipped without throwing', () {
     File('${reports.path}/bad.ips').writeAsStringSync('not a report');
     final out = <NativeCrashReport>[];
