@@ -1,4 +1,5 @@
 import '../analytics/analytics_event.dart' show PostHogEvent;
+import 'native_crash_report.dart';
 import 'pii_scrubber.dart';
 
 /// Turns a Dart error + stack into a PostHog `$exception` event. Pure and
@@ -40,6 +41,58 @@ class ExceptionEventBuilder {
       },
     );
   }
+
+  /// Builds a native `$exception` from a parsed crash report. Marked native by
+  /// per-frame `lang: 'native'` and the top-level `exception_platform`; the
+  /// `mechanism` keeps v1a's `{handled, synthetic}` shape. Crumbs + activity +
+  /// session id come from the crashed session (persisted across the crash).
+  PostHogEvent fromNative(
+    NativeCrashReport report, {
+    List<String> breadcrumbs = const [],
+    Map<String, Object?>? activity,
+    String? sessionId,
+    DateTime? now,
+  }) {
+    final frames = report.frames
+        .map((f) => <String, Object?>{
+              'platform': 'custom',
+              'lang': 'native',
+              'resolved': false,
+              'function': f.binary,
+              'instruction_addr': '${f.binary}+${f.offset}',
+              'in_app': _isBundledBinary(f.binary),
+            })
+        .toList();
+    final item = <String, Object?>{
+      'type': report.signal,
+      'value': scrubber.scrub('${report.signal} in ${report.faultingBinary}'),
+      'mechanism': {'handled': false, 'synthetic': false},
+      'stacktrace': {'type': 'raw', 'frames': frames},
+    };
+    return PostHogEvent(
+      name: r'$exception',
+      timestamp: now ?? report.crashedAt ?? DateTime.now(),
+      properties: {
+        r'$exception_list': [item],
+        r'$exception_fingerprint': fingerprintForNative(report),
+        'exception_platform': 'native',
+        if (report.osVersion != null) 'native_os': report.osVersion,
+        ...meta,
+        if (sessionId != null) 'session_id': sessionId,
+        'breadcrumbs': breadcrumbs,
+        if (activity != null && activity.isNotEmpty)
+          'context': _scrubValue(activity),
+      },
+    );
+  }
+
+  String fingerprintForNative(NativeCrashReport report) {
+    final top = report.frames.isNotEmpty ? report.frames.first.offset : 'no-frame';
+    return '${report.signal}|${report.faultingBinary}|$top';
+  }
+
+  static bool _isBundledBinary(String name) =>
+      name == 'ffmpeg' || name == 'ffprobe' || name == 'whisper-cli';
 
   // Recursively scrubs every String inside a context value — nested maps and
   // lists included — so a path can't ride through inside a collection.

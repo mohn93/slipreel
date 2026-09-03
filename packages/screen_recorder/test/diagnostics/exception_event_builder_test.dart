@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/diagnostics/exception_event_builder.dart';
+import 'package:screen_recorder/diagnostics/native_crash_report.dart';
 import 'package:screen_recorder/diagnostics/pii_scrubber.dart';
 
 void main() {
@@ -122,5 +123,58 @@ void main() {
     final items = (ctx['items'] as List).cast<String>();
     expect(items[0], isNot(contains('a.mov')));
     expect(items[1], 'plain');
+  });
+
+  test('fromNative builds a native \$exception with v1a mechanism shape', () {
+    final report = NativeCrashReport(
+      signal: 'SIGSEGV',
+      faultingBinary: 'ffmpeg',
+      frames: const [
+        NativeFrame(binary: 'ffmpeg', offset: '0x1234'),
+        NativeFrame(binary: 'libsystem.dylib', offset: '0x1'),
+      ],
+      reportFileName: 'x.ips',
+      osVersion: 'macOS 15.5',
+    );
+    final e = builder.fromNative(report,
+        breadcrumbs: ['event:export_started'],
+        activity: {'op': 'export'},
+        sessionId: 'sess-1');
+    expect(e.name, r'$exception');
+    expect(e.properties['exception_platform'], 'native');
+    expect(e.properties['session_id'], 'sess-1');
+    expect(e.properties['breadcrumbs'], ['event:export_started']);
+    expect((e.properties['context'] as Map)['op'], 'export');
+    final item = (e.properties[r'$exception_list'] as List).single as Map;
+    expect(item['type'], 'SIGSEGV');
+    expect(item['mechanism'], {'handled': false, 'synthetic': false});
+    final frames = (item['stacktrace'] as Map)['frames'] as List;
+    final f0 = frames.first as Map;
+    expect(f0['platform'], 'custom');
+    expect(f0['lang'], 'native');
+    expect(f0['resolved'], false);
+    expect(f0['function'], 'ffmpeg');
+    expect(f0['instruction_addr'], contains('0x1234'));
+  });
+
+  test('fromNative fingerprint is stable for same signal+binary+top offset', () {
+    NativeCrashReport r() => const NativeCrashReport(
+        signal: 'SIGSEGV',
+        faultingBinary: 'ffmpeg',
+        frames: [NativeFrame(binary: 'ffmpeg', offset: '0x1234')],
+        reportFileName: 'a.ips');
+    expect(builder.fromNative(r()).properties[r'$exception_fingerprint'],
+        builder.fromNative(r()).properties[r'$exception_fingerprint']);
+    expect(builder.fromNative(r()).properties[r'$exception_fingerprint'],
+        'SIGSEGV|ffmpeg|0x1234');
+  });
+
+  test('fromNative omits context when no activity', () {
+    final e = builder.fromNative(const NativeCrashReport(
+        signal: 'SIGABRT',
+        faultingBinary: 'whisper-cli',
+        frames: [],
+        reportFileName: 'a.ips'));
+    expect(e.properties.containsKey('context'), false);
   });
 }
