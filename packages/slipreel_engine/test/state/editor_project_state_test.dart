@@ -3,6 +3,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
+import 'package:slipreel_engine/models/zoom_look.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
@@ -220,6 +221,29 @@ void main() {
       final patched = original.copyWith(timeline: replacement);
       expect(identical(patched.timeline, replacement), isTrue);
       expect(patched.zoomRegions.first.zoomLevel, 1.7);
+    });
+
+    test('defaultZoomLook defaults to classic and round-trips', () {
+      final defaults = EditorProjectState.defaults();
+      expect(defaults.defaultZoomLook, ZoomLook.classic);
+
+      final original = defaults.copyWith(defaultZoomLook: ZoomLook.showcase);
+      final restored = EditorProjectState.fromJson(
+        original.toJson(),
+        videoDuration: const Duration(seconds: 60),
+      );
+      expect(restored.defaultZoomLook, ZoomLook.showcase);
+      expect(restored, original);
+    });
+
+    test('a sidecar without defaultZoomLook loads the classic look', () {
+      final json = EditorProjectState.defaults().toJson()
+        ..remove('defaultZoomLook');
+      final restored = EditorProjectState.fromJson(
+        json,
+        videoDuration: const Duration(seconds: 60),
+      );
+      expect(restored.defaultZoomLook, ZoomLook.classic);
     });
 
     test('timeline round-trips through toJson/fromJson', () {

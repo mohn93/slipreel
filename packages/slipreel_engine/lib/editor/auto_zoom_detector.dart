@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import '../models/cursor_recording.dart';
-import '../models/tilt3d.dart';
+import '../models/zoom_look.dart';
 import '../models/zoom_region.dart';
 import 'cursor_interaction.dart';
 import 'interaction_classifier.dart';
@@ -60,10 +60,13 @@ class AutoZoomDetector {
 
   final InteractionClassifier classifier;
 
+  /// [look] is the tilt + movement every emitted region is created with;
+  /// callers pass the project's `defaultZoomLook`.
   List<ZoomRegion> detect({
     required CursorRecording cursor,
     required Size videoSize,
     required Duration videoDuration,
+    ZoomLook look = ZoomLook.classic,
   }) {
     final interactions = classifier
         .classify(cursor, videoSize)
@@ -72,7 +75,7 @@ class AutoZoomDetector {
 
     final regions = <ZoomRegion>[];
     for (final group in _cluster(interactions, videoSize)) {
-      final region = _buildRegion(group, videoSize, videoDuration);
+      final region = _buildRegion(group, videoSize, videoDuration, look);
       if (region != null) regions.add(region);
     }
     return _mergeAdjacent(regions, videoSize);
@@ -178,6 +181,7 @@ class AutoZoomDetector {
     List<CursorInteraction> group,
     Size videoSize,
     Duration videoDuration,
+    ZoomLook look,
   ) {
     final double regionZoom;
     final Offset center;
@@ -269,7 +273,8 @@ class AutoZoomDetector {
       exitDuration: exit,
       videoBounds: videoSize,
       followCursor: follow,
-      tilt: const Tilt3D(style: ZoomTiltStyle.subtle),
+      tilt: look.tilt,
+      movement: look.movement,
     );
   }
 

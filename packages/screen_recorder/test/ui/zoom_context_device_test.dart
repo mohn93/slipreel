@@ -52,6 +52,13 @@ void main() {
   testWidgets('normal zoom inspector keeps the cursor-follow toggle',
       (tester) async {
     await tester.pumpWidget(_host(_inspector(isDevice: false)));
+    // The Look section above pushes the toggle below the host's fold.
+    await tester.scrollUntilVisible(
+      find.text('Auto-zoom on cursor'),
+      200.0,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
 
     expect(find.text('Auto-zoom on cursor'), findsOneWidget);
     expect(find.textContaining('position the zoom manually'), findsNothing);

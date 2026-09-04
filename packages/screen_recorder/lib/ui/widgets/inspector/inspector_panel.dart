@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
+import 'package:slipreel_engine/models/zoom_look.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
@@ -43,6 +44,8 @@ class InspectorPanel extends StatefulWidget {
     this.clipDuration = Duration.zero,
     this.onZoomChanged,
     this.onZoomDeleted,
+    this.onZoomLookAppliedToAll,
+    this.onZoomEffectChanged,
     this.onSelectionCleared,
     this.onSliceRemoved,
     this.canHideCursor = false,
@@ -106,6 +109,14 @@ class InspectorPanel extends StatefulWidget {
 
   /// Delete a zoom region.
   final void Function(int index)? onZoomDeleted;
+
+  /// Restyle every zoom with [look] and make it the project default for
+  /// new zooms. The inspector hides its button when this is null.
+  final void Function(ZoomLook look)? onZoomLookAppliedToAll;
+
+  /// A zoom's look / tilt / movement changed; the editor may move the
+  /// playhead so the effect is visible.
+  final void Function(int index)? onZoomEffectChanged;
 
   /// User asked to leave context mode (X button).
   final VoidCallback? onSelectionCleared;
@@ -249,6 +260,10 @@ class _InspectorPanelState extends State<InspectorPanel> {
       onChanged: (next) => widget.onZoomChanged?.call(index, next),
       onDelete: () => widget.onZoomDeleted?.call(index),
       onClose: () => widget.onSelectionCleared?.call(),
+      onApplyLookToAll: widget.onZoomLookAppliedToAll,
+      onEffectChanged: widget.onZoomEffectChanged == null
+          ? null
+          : () => widget.onZoomEffectChanged!(index),
       curveLibrary: widget.curveLibrary,
       onCurveOverrideChanged: (curve) {
         final next = curve == null

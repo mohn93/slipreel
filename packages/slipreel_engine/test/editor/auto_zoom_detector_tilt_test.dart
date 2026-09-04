@@ -5,6 +5,8 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import 'package:slipreel_engine/editor/auto_zoom_detector.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/tilt3d.dart';
+import 'package:slipreel_engine/models/zoom_look.dart';
+import 'package:slipreel_engine/models/zoom_movement.dart';
 
 // Helpers mirrored from auto_zoom_detector_test.dart
 CursorPosition _p({
@@ -59,5 +61,25 @@ void main() {
 
     expect(regions, isNotEmpty);
     expect(regions.first.tilt, const Tilt3D(style: ZoomTiltStyle.subtle));
+    expect(regions.first.movement, const ZoomMovement());
+  });
+
+  test('auto-detected zooms carry the requested look', () {
+    const detector = AutoZoomDetector();
+    const videoSize = Size(1920, 1080);
+    const videoDuration = Duration(seconds: 30);
+
+    final cursor = _rec(_clickAt(atMs: 5000, x: 800, y: 600));
+    final regions = detector.detect(
+      cursor: cursor,
+      videoSize: videoSize,
+      videoDuration: videoDuration,
+      look: ZoomLook.showcase,
+    );
+
+    expect(regions, isNotEmpty);
+    for (final r in regions) {
+      expect(ZoomLook.of(r), ZoomLook.showcase);
+    }
   });
 }

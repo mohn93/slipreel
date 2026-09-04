@@ -1,6 +1,7 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
+import 'package:slipreel_engine/models/zoom_look.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
@@ -19,6 +20,47 @@ void main() {
       expect(controller.state.cursorStyle, CursorStyle.classic);
       expect(controller.state.motionBlur, 0);
       expect(controller.state.zoomRegions, isEmpty);
+    });
+
+    test('applyLookToAllZooms restyles every zoom and sets the default', () {
+      final controller = EditorProjectController();
+      ZoomRegion at(int seconds) => ZoomRegion(
+        rect: const Rect.fromLTWH(0, 0, 100, 100),
+        startTime: Duration(seconds: seconds),
+        duration: const Duration(seconds: 2),
+        zoomLevel: 2,
+      );
+      controller.replaceZoomRegions([at(0), at(5), at(10)]);
+      final ids = controller.state.zoomRegions.map((z) => z.id).toList();
+
+      controller.applyLookToAllZooms(ZoomLook.showcase);
+
+      final zooms = controller.state.zoomRegions;
+      expect(zooms.map((z) => z.id).toList(), ids);
+      for (final z in zooms) {
+        expect(ZoomLook.of(z), ZoomLook.showcase);
+        expect(z.zoomLevel, 2);
+      }
+      expect(controller.state.defaultZoomLook, ZoomLook.showcase);
+    });
+
+    test('setDefaultZoomLook leaves existing zooms alone', () {
+      final controller = EditorProjectController();
+      controller.addZoom(
+        ZoomRegion(
+          rect: const Rect.fromLTWH(0, 0, 100, 100),
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 2),
+          zoomLevel: 2,
+        ),
+      );
+      controller.setDefaultZoomLook(ZoomLook.flat);
+      expect(controller.state.defaultZoomLook, ZoomLook.flat);
+      expect(ZoomLook.of(controller.state.zoomRegions.single), ZoomLook.flat);
+
+      controller.setDefaultZoomLook(ZoomLook.cinematic);
+      expect(controller.state.defaultZoomLook, ZoomLook.cinematic);
+      expect(ZoomLook.of(controller.state.zoomRegions.single), ZoomLook.flat);
     });
 
     test('replace() swaps the entire state', () {
