@@ -151,8 +151,13 @@ void main() {
         framing: framing,
       );
 
-      // smoothstep(0.8)=0.896; 5deg * 0.896 * exitGate(0.5)=1.12deg.
-      expect(yawRadians(matrix).abs(), closeTo(1.12 * math.pi / 180, 1.2e-3));
+      // smoothstep(0.8)=0.896; 5deg * 0.896 * exitGate(0.5)=1.12deg, then
+      // scaled by the 1s hold (below the full-strength threshold).
+      final holdScale = 1.0 / kMovementFullHoldSeconds;
+      expect(
+        yawRadians(matrix).abs(),
+        closeTo(1.12 * holdScale * math.pi / 180, 1.2e-3 * holdScale),
+      );
     });
 
     test('manual placement direction is not ramp-compensated', () {
@@ -461,5 +466,138 @@ void main() {
         expectIdentity(atEnd);
       },
     );
+  });
+
+  group('combined yaw cap', () {
+    const deg2rad = math.pi / 180.0;
+    // Manual placement (static direction, no focal-ramp compensation), long
+    // enough that the movement hold-length scaling is at full strength.
+    ZoomRegion manual({required Tilt3D tilt, required ZoomMovement movement}) =>
+        ZoomRegion(
+          rect: const Rect.fromLTWH(900, 450, 100, 100),
+          startTime: Duration.zero,
+          duration: const Duration(seconds: 4),
+          zoomLevel: 2,
+          enterDuration: Duration.zero,
+          exitDuration: Duration.zero,
+          followCursor: false,
+          tilt: tilt,
+          movement: movement,
+        );
+    // Right at the end of the hold so the sweep envelope is ~1.
+    const nearEnd = Duration(milliseconds: 3999);
+    // Right-edge focal: nx == 1 so auto tilt Y and sweep both reach max.
+    const edgeFocal = Offset(1000, 500);
+
+    double yawOf(ZoomRegion r) => orientation(
+          t.getTransform(
+            position: nearEnd,
+            zoomRegion: r,
+            videoSize: videoSize,
+            focalPoint: edgeFocal,
+            framing: framing,
+          ),
+        ).yaw.abs();
+
+    test('dramatic tilt plus dramatic sweep is capped', () {
+      // Guard: the cap only matters if the presets can exceed it.
+      expect(
+        kTiltDramaticMaxDeg + kSweepDramaticDeg,
+        greaterThan(kMaxCombinedYawDeg),
+      );
+      final yaw = yawOf(
+        manual(
+          tilt: const Tilt3D(style: ZoomTiltStyle.dramatic),
+          movement: const ZoomMovement(
+            kind: ZoomMovementKind.sweep,
+            intensity: ZoomMovementIntensity.dramatic,
+          ),
+        ),
+      );
+      expect(yaw, closeTo(kMaxCombinedYawDeg * deg2rad, 1e-4));
+    });
+
+    test('subtle tilt plus subtle sweep is below the cap and adds up', () {
+      expect(
+        kTiltSubtleMaxDeg + kSweepSubtleDeg,
+        lessThan(kMaxCombinedYawDeg),
+      );
+      final yaw = yawOf(
+        manual(
+          tilt: const Tilt3D(style: ZoomTiltStyle.subtle),
+          movement: const ZoomMovement(kind: ZoomMovementKind.sweep),
+        ),
+      );
+      expect(
+        yaw,
+        closeTo((kTiltSubtleMaxDeg + kSweepSubtleDeg) * deg2rad, 1e-4),
+      );
+    });
+
+    test('a manual angle above the cap is never reduced by the cap', () {
+      final yaw = yawOf(
+        manual(
+          tilt: const Tilt3D(style: ZoomTiltStyle.dramatic, manualAngleY: 20),
+          movement: const ZoomMovement(
+            kind: ZoomMovementKind.sweep,
+            intensity: ZoomMovementIntensity.dramatic,
+          ),
+        ),
+      );
+      expect(yaw, closeTo(20 * deg2rad, 1e-4));
+    });
+  });
+
+  group('orientation focal', () {
+    const deg2rad = math.pi / 180.0;
+    final follow = region(tilt: const Tilt3D(style: ZoomTiltStyle.subtle));
+
+    test('drives the tilt direction instead of the live focal', () {
+      final live = t.getTransform(
+        position: pos,
+        zoomRegion: follow,
+        videoSize: videoSize,
+        focalPoint: const Offset(500, 500),
+        framing: framing,
+      );
+      expect(orientation(live).yaw.abs(), lessThan(1e-9));
+
+      final smoothed = t.getTransform(
+        position: pos,
+        zoomRegion: follow,
+        videoSize: videoSize,
+        focalPoint: const Offset(500, 500),
+        orientationFocalPoint: const Offset(1000, 500),
+        framing: framing,
+      );
+      expect(
+        orientation(smoothed).yaw.abs(),
+        closeTo(kTiltSubtleMaxDeg * deg2rad, 1e-6),
+      );
+    });
+
+    test('exit orientation focal still takes precedence', () {
+      final right = t.getTransform(
+        position: pos,
+        zoomRegion: follow,
+        videoSize: videoSize,
+        focalPoint: const Offset(500, 500),
+        orientationFocalPoint: const Offset(1000, 500),
+        framing: framing,
+      );
+      final exitLeft = t.getTransform(
+        position: pos,
+        zoomRegion: follow,
+        videoSize: videoSize,
+        focalPoint: const Offset(500, 500),
+        orientationFocalPoint: const Offset(1000, 500),
+        exitOrientationFocalPoint: const Offset(0, 500),
+        framing: framing,
+      );
+      expect(
+        orientation(exitLeft).yaw,
+        closeTo(-orientation(right).yaw, 1e-9),
+      );
+    });
   });
 }

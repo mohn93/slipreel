@@ -7,7 +7,7 @@ void main() {
   const dur = Duration(seconds: 10);
 
   test('schema version is current', () {
-    expect(EditorProjectState.currentSchemaVersion, 12);
+    expect(EditorProjectState.currentSchemaVersion, 13);
   });
 
   test('captionStyle + segments round-trip through JSON', () {

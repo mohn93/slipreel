@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/models/tilt3d.dart';
+import 'package:slipreel_engine/models/zoom_look.dart';
 import 'package:slipreel_engine/models/zoom_movement.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/animation_curve.dart';
@@ -83,9 +84,19 @@ class ZoomContextInspector extends ConsumerWidget {
     this.onPlacementCommit,
     this.isDevice = false,
     this.videoPath = '',
+    this.onApplyLookToAll,
+    this.onEffectChanged,
   });
 
   final ZoomRegion zoom;
+
+  /// "Apply to all zooms": restyle every zoom with this zoom's look and make
+  /// it the default for new zooms. The button is hidden when null.
+  final ValueChanged<ZoomLook>? onApplyLookToAll;
+
+  /// Fires after a look / tilt / movement change so the editor can move the
+  /// playhead somewhere the effect is visible.
+  final VoidCallback? onEffectChanged;
 
   /// 1-based label, e.g. "Zoom 1" / "Zoom 2".
   final int zoomNumber;
@@ -124,8 +135,15 @@ class ZoomContextInspector extends ConsumerWidget {
   /// placement box at the zoom's start time. Empty ⇒ no preview.
   final String videoPath;
 
+  /// Commits a look / tilt / movement edit and asks the editor to show it.
+  void _commitEffect(ZoomRegion next) {
+    onChanged(next);
+    onEffectChanged?.call();
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final currentLook = ZoomLook.of(zoom);
     final showPlacement =
         (isDevice || !zoom.followCursor) && !videoSize.isEmpty;
     final ui.Image? placementFrame = showPlacement
@@ -197,11 +215,37 @@ class ZoomContextInspector extends ConsumerWidget {
           subtitle: '${zoom.zoomLevel.toStringAsFixed(1)}×',
         ),
         const InspectorSectionDivider(),
+        const InspectorSectionLabel('Look'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final preset in ZoomLook.presets)
+              InspectorChip(
+                label: preset.presetName!,
+                selected: currentLook == preset,
+                dense: true,
+                onTap: () => _commitEffect(preset.applyTo(zoom)),
+              ),
+          ],
+        ),
+        if (currentLook.presetName == null) ...[
+          const SizedBox(height: 8),
+          const _SubLabel('Custom mix — adjust tilt and movement below'),
+        ],
+        if (onApplyLookToAll != null) ...[
+          const SizedBox(height: 16),
+          _ApplyToAllButton(onPressed: () => onApplyLookToAll!(currentLook)),
+          const SizedBox(height: 6),
+          const _SubLabel('New zooms will use this look too'),
+        ],
+        const SizedBox(height: 16),
         InspectorToggle(
           label: '3D tilt',
-          subtitle: 'Perspective lean as the zoom plays',
+          subtitle: 'Leans toward the side of the frame the zoom targets',
           value: zoom.tilt.is3D,
-          onChanged: (on) => onChanged(
+          onChanged: (on) => _commitEffect(
             zoom.copyWith(
               tilt: on
                   ? (zoom.tilt.is3D
@@ -213,6 +257,7 @@ class ZoomContextInspector extends ConsumerWidget {
         ),
         if (zoom.tilt.is3D) ...[
           const SizedBox(height: 16),
+          const _SubLabel('Intensity'),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -225,7 +270,7 @@ class ZoomContextInspector extends ConsumerWidget {
                   label: entry.$2,
                   selected: zoom.tilt.style == entry.$1,
                   dense: true,
-                  onTap: () => onChanged(
+                  onTap: () => _commitEffect(
                     zoom.copyWith(tilt: zoom.tilt.copyWith(style: entry.$1)),
                   ),
                 ),
@@ -302,7 +347,7 @@ class ZoomContextInspector extends ConsumerWidget {
                 label: entry.$2,
                 selected: zoom.movement.kind == entry.$1,
                 dense: true,
-                onTap: () => onChanged(
+                onTap: () => _commitEffect(
                   zoom.copyWith(
                     movement: zoom.movement.copyWith(kind: entry.$1),
                   ),
@@ -312,6 +357,7 @@ class ZoomContextInspector extends ConsumerWidget {
         ),
         if (zoom.movement.isActive) ...[
           const SizedBox(height: 16),
+          const _SubLabel('Intensity'),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -324,7 +370,7 @@ class ZoomContextInspector extends ConsumerWidget {
                   label: entry.$2,
                   selected: zoom.movement.intensity == entry.$1,
                   dense: true,
-                  onTap: () => onChanged(
+                  onTap: () => _commitEffect(
                     zoom.copyWith(
                       movement: zoom.movement.copyWith(intensity: entry.$1),
                     ),
@@ -752,6 +798,64 @@ class _FollowModeSegmented extends StatelessWidget {
             dense: true,
           ),
       ],
+    );
+  }
+}
+
+/// Small muted caption under a control group (e.g. "Intensity").
+class _SubLabel extends StatelessWidget {
+  const _SubLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: kInspectorMuted,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+}
+
+class _ApplyToAllButton extends StatelessWidget {
+  const _ApplyToAllButton({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SpringHoverButton(
+      onTap: onPressed,
+      borderRadius: 10,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: kInspectorPanel,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: kInspectorBorder),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.select_all, color: Colors.white70, size: 18),
+            SizedBox(width: 8),
+            Text(
+              'Apply to all zooms',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

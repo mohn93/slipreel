@@ -20,6 +20,7 @@ import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
+import 'package:slipreel_engine/models/zoom_look.dart';
 
 /// Minimum uniform padding (px) required while any 3D-tilt zoom is present:
 /// exactly 6% of the video's short side, rounded to the nearest pixel.
@@ -251,6 +252,23 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
       windowFrame: state.windowFrame
           .copyWith(padding: EdgeInsets.all(floor.toDouble()), name: 'Custom'),
     );
+  }
+
+  /// Sets the look new zooms are created with. Existing zooms are untouched.
+  void setDefaultZoomLook(ZoomLook look) {
+    if (state.defaultZoomLook == look) return;
+    state = state.copyWith(defaultZoomLook: look);
+  }
+
+  /// Restyles every zoom on the active track with [look] and makes it the
+  /// default for new zooms, as one undoable step.
+  void applyLookToAllZooms(ZoomLook look, {Size videoSize = Size.zero}) {
+    final next = [for (final z in _activeRegions()) look.applyTo(z)];
+    state = state.copyWith(
+      timeline: _timelineWithActiveRegions(next),
+      defaultZoomLook: look,
+    );
+    _enforce3DPaddingFloor(videoSize);
   }
 
   void removeZoomAt(int index) {

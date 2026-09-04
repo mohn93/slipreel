@@ -4,8 +4,15 @@ import 'dart:ui' show Offset;
 /// Max auto tilt angle (degrees) for the Subtle preset.
 const double kTiltSubtleMaxDeg = 4.0;
 
-/// Max auto tilt angle (degrees) for the Dramatic preset.
-const double kTiltDramaticMaxDeg = 11.0;
+/// Max auto tilt angle (degrees) for the Dramatic preset. UI text starts to
+/// read as sheared past roughly 8°, so this is the upper end of what a
+/// preset should reach on its own; the Advanced sliders go further.
+const double kTiltDramaticMaxDeg = 8.0;
+
+/// Ceiling on the combined yaw (auto/preset tilt Y plus Sweep) the
+/// transformer will apply. A manual angle above this is honoured as-is; the
+/// cap only stops a Sweep from stacking a preset past it.
+const double kMaxCombinedYawDeg = 12.0;
 
 /// The 3D-tilt style of a zoom. [flat] is the 2D case (no tilt); [subtle] and
 /// [dramatic] are 3D presets that set the maximum tilt angle.

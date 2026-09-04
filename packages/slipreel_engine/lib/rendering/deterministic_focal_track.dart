@@ -224,6 +224,56 @@ class DeterministicFocalTrack {
     return focalAt(exitStart);
   }
 
+  /// Width of the centred moving-average window [orientationFocalAt] applies
+  /// to the focal. A camera lean should change over roughly this timescale,
+  /// not at the speed the cursor crosses the frame.
+  static const Duration kOrientationSmoothingWindow = Duration(
+    milliseconds: 700,
+  );
+
+  /// A smoothed, hold-anchored focal that drives the 3D tilt (and Sweep)
+  /// direction for cursor-following zooms. Null for manual placements (their
+  /// focal is already static) and for regions without a hold.
+  ///
+  /// The value is a centred moving average of [focalAt] over
+  /// [kOrientationSmoothingWindow], with the window kept entirely inside the
+  /// hold so it is always the same width (a constant-width average can never
+  /// move faster than the focal it smooths). Inside the ramps it holds the
+  /// nearest hold-edge value, so the enter ramp leans toward the settled
+  /// direction from the first frame. Position-pure like [focalAt]: preview
+  /// scrubbing and export get the same direction for the same `t`.
+  Offset? orientationFocalAt(Duration t) {
+    if (!region.followCursor || _samples.isEmpty) return null;
+    final ramps = region.resolvedRampsUs(rampDurationScale);
+    final holdStartUs = region.startTime.inMicroseconds + ramps.enterUs;
+    final holdEndUs = region.endTime.inMicroseconds - ramps.exitUs;
+    if (holdEndUs <= holdStartUs) return null;
+
+    final windowUs = kOrientationSmoothingWindow.inMicroseconds;
+    final holdUs = holdEndUs - holdStartUs;
+    final int fromUs;
+    final int toUs;
+    if (holdUs <= windowUs) {
+      fromUs = holdStartUs;
+      toUs = holdEndUs;
+    } else {
+      final halfUs = windowUs ~/ 2;
+      final centerUs = t.inMicroseconds.clamp(
+        holdStartUs + halfUs,
+        holdEndUs - halfUs,
+      );
+      fromUs = centerUs - halfUs;
+      toUs = centerUs + halfUs;
+    }
+    var sum = Offset.zero;
+    var n = 0;
+    for (var us = fromUs; us <= toUs; us += _stepMicros) {
+      sum += focalAt(Duration(microseconds: us));
+      n++;
+    }
+    return sum / n.toDouble();
+  }
+
   /// True when this track was built from inputs equal to the given set —
   /// used by callers to decide whether to rebuild after a widget update.
   /// [cursorRecording] is compared by identity (the shell swaps the whole

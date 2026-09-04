@@ -5,9 +5,16 @@ import 'dart:ui' show Offset;
 const double kPushInSubtleExtra = 0.06;
 const double kPushInDramaticExtra = 0.12;
 
-/// Sweep yaw magnitude (degrees) reached at full hold.
+/// Sweep yaw magnitude (degrees) reached at full hold. Dramatic stays under
+/// `kMaxCombinedYawDeg` when stacked on a Subtle tilt.
 const double kSweepSubtleDeg = 5.0;
-const double kSweepDramaticDeg = 10.0;
+const double kSweepDramaticDeg = 8.0;
+
+/// Hold length (seconds) at which a movement plays at full preset strength.
+/// Shorter holds scale the magnitude down linearly so a short auto-zoom gets
+/// a proportionally smaller move instead of the whole move compressed into a
+/// flick.
+const double kMovementFullHoldSeconds = 2.5;
 
 /// Drift focal offset reached at full hold, as a fraction of the video size.
 const double kDriftSubtleFrac = 0.04;
@@ -84,12 +91,16 @@ class ZoomMovement {
     return x < 0.0 ? -eased : eased;
   }
 
+  /// [holdDuration] is the length of the settled hold the move plays across.
+  /// Holds shorter than [kMovementFullHoldSeconds] scale the magnitude down
+  /// linearly; null (legacy callers) keeps full strength.
   ZoomMovementSample resolveAt({
     required double holdProgress,
     required double rampGate,
     required Offset normalizedFocal,
     bool followCursor = false,
     double? orientationRampGate,
+    Duration? holdDuration,
   }) {
     if (!isActive) return ZoomMovementSample.identity;
     // Scale/drift stay locked to the zoom ramp. Sweep is an orientation
@@ -99,7 +110,11 @@ class ZoomMovement {
         ? (orientationRampGate ?? rampGate)
         : rampGate;
     if (channelGate <= 0.0) return ZoomMovementSample.identity;
-    final env = _ease(holdProgress) * channelGate.clamp(0.0, 1.0);
+    final holdScale = holdDuration == null
+        ? 1.0
+        : (holdDuration.inMicroseconds / (kMovementFullHoldSeconds * 1e6))
+            .clamp(0.0, 1.0);
+    final env = _ease(holdProgress) * channelGate.clamp(0.0, 1.0) * holdScale;
     if (env <= 0.0) return ZoomMovementSample.identity;
 
     switch (kind) {

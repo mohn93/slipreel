@@ -23,8 +23,8 @@ void main() {
     });
 
     test('schemaVersion is current', () {
-      expect(EditorProjectState.currentSchemaVersion, 12);
-      expect(EditorProjectState.defaults().toJson()['schemaVersion'], 12);
+      expect(EditorProjectState.currentSchemaVersion, 13);
+      expect(EditorProjectState.defaults().toJson()['schemaVersion'], 13);
     });
 
     test('json round-trips cameraSettings + cameraRegions', () {

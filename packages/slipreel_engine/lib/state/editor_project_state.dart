@@ -6,6 +6,7 @@ import 'package:slipreel_engine/models/keystroke_overlay_settings.dart';
 import 'package:slipreel_engine/models/output_aspect.dart';
 import 'package:slipreel_engine/models/window_frame.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/models/zoom_look.dart';
 import 'package:slipreel_engine/rendering/animation_config.dart';
 import 'package:slipreel_engine/rendering/animation_style.dart';
 import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
@@ -46,6 +47,7 @@ class EditorProjectState {
     this.keystrokeOverlay = const KeystrokeOverlaySettings(),
     this.cameraSettings = const CameraSettings(),
     this.captionStyle = const CaptionStyle(),
+    this.defaultZoomLook = ZoomLook.classic,
   });
 
   /// Sensible blank slate for a freshly-loaded recording with no saved
@@ -164,6 +166,12 @@ class EditorProjectState {
   /// mirroring the keystrokeOverlay/cameraSettings split.
   final CaptionStyle captionStyle;
 
+  /// Tilt + movement applied to zooms created after this was set (manual
+  /// click-to-add and auto-detected alike). Existing zooms keep their own
+  /// look; "Apply to all zooms" in the inspector restyles them and updates
+  /// this in one step.
+  final ZoomLook defaultZoomLook;
+
   /// Segments on the active caption track, or empty. Mirrors [zoomRegions].
   List<CaptionSegment> get captions => timeline.activeCaptions;
 
@@ -172,7 +180,7 @@ class EditorProjectState {
 
   /// Bumped whenever the on-disk JSON shape changes incompatibly. A
   /// loader can refuse to parse newer versions instead of guessing.
-  static const int currentSchemaVersion = 12;
+  static const int currentSchemaVersion = 13;
 
   /// Returns a new instance with the named fields replaced.
   ///
@@ -204,6 +212,7 @@ class EditorProjectState {
     List<CameraRegion>? cameraRegions,
     CameraSettings? cameraSettings,
     CaptionStyle? captionStyle,
+    ZoomLook? defaultZoomLook,
     List<CaptionSegment>? captionSegments,
     CaptionAudioSource? captionSource,
   }) {
@@ -302,6 +311,7 @@ class EditorProjectState {
       keystrokeOverlay: keystrokeOverlay ?? this.keystrokeOverlay,
       cameraSettings: cameraSettings ?? this.cameraSettings,
       captionStyle: captionStyle ?? this.captionStyle,
+      defaultZoomLook: defaultZoomLook ?? this.defaultZoomLook,
     );
   }
 
@@ -328,6 +338,7 @@ class EditorProjectState {
     'keystrokeOverlay': keystrokeOverlay.toJson(),
     'cameraSettings': cameraSettings.toJson(),
     'captionStyle': captionStyle.toJson(),
+    'defaultZoomLook': defaultZoomLook.toJson(),
     // pendingScaleAnchor is transient; not serialized.
   };
 
@@ -452,6 +463,11 @@ class EditorProjectState {
         CaptionStyle.fromJson,
         const CaptionStyle(),
       ),
+      defaultZoomLook: _section(
+        json['defaultZoomLook'],
+        ZoomLook.fromJson,
+        ZoomLook.classic,
+      ),
       // pendingScaleAnchor is transient; always null after load.
     );
   }
@@ -524,7 +540,8 @@ class EditorProjectState {
         other.timelineScale == timelineScale &&
         other.keystrokeOverlay == keystrokeOverlay &&
         other.cameraSettings == cameraSettings &&
-        other.captionStyle == captionStyle;
+        other.captionStyle == captionStyle &&
+        other.defaultZoomLook == defaultZoomLook;
     // pendingScaleAnchor intentionally excluded.
   }
 
@@ -551,6 +568,7 @@ class EditorProjectState {
     keystrokeOverlay,
     cameraSettings,
     captionStyle,
+    defaultZoomLook,
     // pendingScaleAnchor intentionally excluded.
   ]);
 }
@@ -744,6 +762,11 @@ _schemaMigrations = [
   // bounded and predictive values are intentionally NOT rewritten: preserving
   // them keeps legacy camera trajectories stable until the user opts in.
   (json, _) => {...json, 'schemaVersion': 12},
+  // v12 → v13: add the per-project `defaultZoomLook` (tilt + movement for
+  // new zooms). Additive: fromJson fills ZoomLook.classic when the key is
+  // absent, which matches what new zooms were hard-coded to before, so the
+  // migration only bumps the version marker.
+  (json, _) => {...json, 'schemaVersion': 13},
 ];
 
 /// Walks [json] forward through [_schemaMigrations] until its

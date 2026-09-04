@@ -101,7 +101,7 @@ void main() {
       final timeline = migrated['timeline'] as Map<String, dynamic>;
       final tracks = timeline['zoomTracks'] as List;
       final regions = (tracks.first as Map)['regions'] as List;
-      expect(migrated['schemaVersion'], 12);
+      expect(migrated['schemaVersion'], 13);
       expect((regions[0] as Map)['followMode'], 'bounded');
       expect((regions[1] as Map)['followMode'], 'predictive');
     });

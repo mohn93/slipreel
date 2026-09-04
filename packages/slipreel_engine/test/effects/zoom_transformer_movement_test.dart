@@ -57,6 +57,49 @@ void main() {
     expect(none.storage, bare.storage);
   });
 
+  test('movement magnitude scales with the region hold length', () {
+    // 1s ramps each side: a 4s region holds for 2s, a 6s region for 4s.
+    ZoomRegion withHold(Duration duration, ZoomMovement movement) =>
+        ZoomRegion(
+          rect: const Rect.fromLTWH(600, 600, 100, 100),
+          startTime: Duration.zero,
+          duration: duration,
+          zoomLevel: 2,
+          enterDuration: const Duration(seconds: 1),
+          exitDuration: const Duration(seconds: 1),
+          followCursor: false,
+          movement: movement,
+        );
+    const push = ZoomMovement(kind: ZoomMovementKind.pushIn);
+    double extraAt(Duration duration, Duration position) {
+      final none = t.getTransform(
+        position: position,
+        zoomRegion: withHold(duration, const ZoomMovement()),
+        videoSize: videoSize,
+        framing: framing,
+      );
+      final pushed = t.getTransform(
+        position: position,
+        zoomRegion: withHold(duration, push),
+        videoSize: videoSize,
+        framing: framing,
+      );
+      return scaleX(pushed) / scaleX(none) - 1.0;
+    }
+
+    // Sample 1ms before each hold ends so holdProgress ~= 1 on both.
+    final short = extraAt(
+      const Duration(seconds: 4),
+      const Duration(milliseconds: 2999),
+    );
+    final long = extraAt(
+      const Duration(seconds: 6),
+      const Duration(milliseconds: 4999),
+    );
+    expect(long, closeTo(kPushInSubtleExtra, 1e-4));
+    expect(short, closeTo(long * (2.0 / kMovementFullHoldSeconds), 1e-4));
+  });
+
   test('push-in enlarges the effective scale versus none', () {
     final withPush = t.getTransform(
       position: midHold,
@@ -138,7 +181,11 @@ void main() {
       );
       magnitudes.add(transform.storage[2].abs());
     }
-    final expectedFull = 2.0 * math.sin(kSweepSubtleDeg * math.pi / 180.0);
+    // The resolved hold is 1s, below the full-strength threshold, so the
+    // sweep plays at a proportionally reduced angle.
+    final holdScale = 1.0 / kMovementFullHoldSeconds;
+    final expectedFull =
+        2.0 * math.sin(kSweepSubtleDeg * holdScale * math.pi / 180.0);
 
     expect(magnitudes[1], closeTo(expectedFull, 1e-9));
     expect(magnitudes[0], lessThanOrEqualTo(magnitudes[1]));

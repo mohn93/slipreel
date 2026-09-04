@@ -3,6 +3,7 @@ import 'dart:ui' show Offset, Size;
 
 import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/rendering.dart' show Matrix4;
+import 'package:slipreel_engine/models/tilt3d.dart' show kMaxCombinedYawDeg;
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/rendering/zoom_framing.dart';
 
@@ -38,6 +39,7 @@ class ZoomTransformer {
     required Size videoSize,
     Offset? focalPoint,
     Offset? exitOrientationFocalPoint,
+    Offset? orientationFocalPoint,
     Curve rampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
     ZoomFraming? framing,
@@ -99,8 +101,16 @@ class ZoomTransformer {
     // track therefore supplies the exit-start focal captured before recentering.
     // Keep the division as the compatibility fallback for callers that do not
     // yet provide that anchor.
+    //
+    // [orientationFocalPoint] is a smoothed, hold-anchored direction supplied by
+    // the deterministic focal track (see
+    // [DeterministicFocalTrack.orientationFocalAt]). It is already a settled
+    // direction, so it needs no ramp compensation; the exit anchor still wins
+    // during the exit ramp.
     final directionalFocal = exitOrientationFocalPoint != null
         ? f.normalizedFocalOffset(exitOrientationFocalPoint)
+        : orientationFocalPoint != null
+        ? f.normalizedFocalOffset(orientationFocalPoint)
         : zoomRegion.followCursor && rampGate > 1e-6
         ? Offset(
             (normalizedFocal.dx / rampGate).clamp(-1.0, 1.0),
@@ -117,6 +127,7 @@ class ZoomTransformer {
       normalizedFocal: directionalFocal,
       followCursor: zoomRegion.followCursor,
       orientationRampGate: orientationGate,
+      holdDuration: _holdSpan(zoomRegion, ramps),
     );
     final zEff = z * mv.scaleMul;
     final focalEff = mv.focalDriftFrac == Offset.zero
@@ -164,7 +175,14 @@ class ZoomTransformer {
       progress: orientationGate,
     );
     final axRad = angles.xRad + mv.extraTiltXRad;
-    final ayRad = angles.yRad + mv.extraTiltYRad;
+    // Sweep stacks on the tilt's Y axis in the same direction. Cap the sum so
+    // Dramatic + Dramatic cannot reach a keystone that makes text unreadable,
+    // but never below an angle the user dialled in manually.
+    final yawLimit = math.max(
+      angles.yRad.abs(),
+      kMaxCombinedYawDeg * math.pi / 180.0,
+    );
+    final ayRad = (angles.yRad + mv.extraTiltYRad).clamp(-yawLimit, yawLimit);
     if (axRad == 0.0 && ayRad == 0.0) return base;
     return f.perspectiveTilt(axRad, ayRad).multiplied(base);
   }
@@ -307,6 +325,13 @@ class ZoomTransformer {
     }
     return 1.0;
   }
+}
+
+/// Length of a region's HOLD window (between the resolved enter and exit
+/// ramps). Zero when the ramps consume the whole region.
+Duration _holdSpan(ZoomRegion r, _ResolvedZoomRamps ramps) {
+  final spanUs = r.duration.inMicroseconds - ramps.enterUs - ramps.exitUs;
+  return spanUs <= 0 ? Duration.zero : Duration(microseconds: spanUs);
 }
 
 /// Normalized position within a region's HOLD window (between the enter and

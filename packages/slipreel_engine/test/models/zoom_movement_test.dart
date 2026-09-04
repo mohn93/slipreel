@@ -217,4 +217,64 @@ void main() {
       expect(u.kind, ZoomMovementKind.none);
     });
   });
+
+  group('hold-length scaling', () {
+    const push = ZoomMovement(kind: ZoomMovementKind.pushIn);
+    const sweep = ZoomMovement(kind: ZoomMovementKind.sweep);
+    final fullHold = Duration(
+      microseconds: (kMovementFullHoldSeconds * 1e6).round(),
+    );
+
+    test('no hold duration keeps full strength (legacy callers)', () {
+      expect(resolve(push).scaleMul, closeTo(1.0 + kPushInSubtleExtra, 1e-9));
+    });
+
+    test('a hold at or above the threshold plays the full move', () {
+      final atThreshold = push.resolveAt(
+        holdProgress: 1.0,
+        rampGate: 1.0,
+        normalizedFocal: focalRight,
+        holdDuration: fullHold,
+      );
+      final longHold = push.resolveAt(
+        holdProgress: 1.0,
+        rampGate: 1.0,
+        normalizedFocal: focalRight,
+        holdDuration: const Duration(seconds: 12),
+      );
+      expect(atThreshold.scaleMul, closeTo(1.0 + kPushInSubtleExtra, 1e-9));
+      expect(longHold.scaleMul, closeTo(1.0 + kPushInSubtleExtra, 1e-9));
+    });
+
+    test('a short hold scales the move down proportionally', () {
+      final oneSecond = push.resolveAt(
+        holdProgress: 1.0,
+        rampGate: 1.0,
+        normalizedFocal: focalRight,
+        holdDuration: const Duration(seconds: 1),
+      );
+      final expected = 1.0 + kPushInSubtleExtra * (1.0 / kMovementFullHoldSeconds);
+      expect(oneSecond.scaleMul, closeTo(expected, 1e-9));
+
+      final yaw = sweep.resolveAt(
+        holdProgress: 1.0,
+        rampGate: 1.0,
+        normalizedFocal: focalRight,
+        holdDuration: const Duration(seconds: 1),
+      );
+      final expectedYaw =
+          kSweepSubtleDeg * math.pi / 180.0 * (1.0 / kMovementFullHoldSeconds);
+      expect(yaw.extraTiltYRad, closeTo(expectedYaw, 1e-9));
+    });
+
+    test('a zero-length hold is the identity', () {
+      final none = push.resolveAt(
+        holdProgress: 1.0,
+        rampGate: 1.0,
+        normalizedFocal: focalRight,
+        holdDuration: Duration.zero,
+      );
+      expect(none.scaleMul, 1.0);
+    });
+  });
 }

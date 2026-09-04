@@ -15,7 +15,6 @@ import 'package:slipreel_engine/effects/motion_blur_tuning.dart';
 import 'package:slipreel_engine/effects/scene_motion_blur.dart';
 import 'package:slipreel_engine/models/trim_selection.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
-import 'package:slipreel_engine/models/tilt3d.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
@@ -705,6 +704,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               _metadata!.heightPx.toDouble(),
             ),
             videoDuration: _controller.value.duration,
+            look: saved.defaultZoomLook,
           );
           if (detected.isNotEmpty) {
             restored = saved.copyWith(zoomRegions: detected);
@@ -1281,6 +1281,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   _metadata!.heightPx.toDouble(),
                 ),
                 videoDuration: _controller.value.duration,
+                look: _projectController.current.defaultZoomLook,
               );
               final vs = _videoSize();
               final paddingBefore =
@@ -1718,7 +1719,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // zooms must be manual — otherwise the focal chases nonexistent cursor
       // data and the placement rect (the only control we show) is ignored.
       followCursor: _metadata?.isDeviceCapture != true,
-      tilt: const Tilt3D(style: ZoomTiltStyle.subtle),
+      tilt: _projectController.current.defaultZoomLook.tilt,
+      movement: _projectController.current.defaultZoomLook.movement,
     );
 
     final paddingBefore = _projectController.current.windowFrame.padding.left;
@@ -1740,6 +1742,27 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       _selectedSliceIndex = null;
     });
     _controller.seekTo(start);
+  }
+
+  /// After a look / tilt / movement edit on zoom [index], move the paused
+  /// playhead to a frame where the effect is visible (60% into the settled
+  /// hold) unless it is already inside the zoom. Never seeks during playback.
+  void _revealZoomEffect(int index) {
+    if (!_isInitialized || _controller.value.isPlaying) return;
+    final regions = _project.zoomRegions;
+    if (index < 0 || index >= regions.length) return;
+    final zoom = regions[index];
+    final position = _controller.value.position;
+    if (position >= zoom.startTime && position <= zoom.endTime) return;
+
+    final ramps = zoom.resolvedRampsUs(
+      _project.screenAnimationConfig.rampDurationScale,
+    );
+    final holdUs = zoom.duration.inMicroseconds - ramps.enterUs - ramps.exitUs;
+    final intoUs = holdUs > 0
+        ? ramps.enterUs + (holdUs * 0.6).round()
+        : zoom.duration.inMicroseconds ~/ 2;
+    _controller.seekTo(zoom.startTime + Duration(microseconds: intoUs));
   }
 
   /// Click-to-add a camera region from the lane ghost. Places it at the
@@ -2500,6 +2523,37 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                             _projectController.removeZoomAt(index);
                             _setSelectedZoomIndex(null);
                           },
+                          onZoomLookAppliedToAll: (look) {
+                            _zoomPreviewOverride.value = null;
+                            final vs = _videoSize();
+                            final paddingBefore = _projectController
+                                .current
+                                .windowFrame
+                                .padding
+                                .left;
+                            _projectController.applyLookToAllZooms(
+                              look,
+                              videoSize: vs,
+                            );
+                            final paddingAfter = _projectController
+                                .current
+                                .windowFrame
+                                .padding
+                                .left;
+                            if (paddingAfter > paddingBefore) {
+                              AppAlerts.info(
+                                '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px',
+                              );
+                            }
+                            final count = _projectController
+                                .current
+                                .zoomRegions
+                                .length;
+                            AppAlerts.success(
+                              'Applied to $count zoom${count == 1 ? '' : 's'}. New zooms will use this look.',
+                            );
+                          },
+                          onZoomEffectChanged: _revealZoomEffect,
                           onSelectionCleared: () {
                             _zoomPreviewOverride.value = null;
                             setState(() {

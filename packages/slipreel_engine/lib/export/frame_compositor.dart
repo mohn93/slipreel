@@ -398,8 +398,9 @@ class FrameCompositor {
           liveFocal: focalUpdate.focal,
           position: position,
         );
+        final track = _trackFor(focalUpdate.zoom);
         final exitOrientationFocal =
-            _trackFor(focalUpdate.zoom)?.exitOrientationFocalAt(position) ??
+            track?.exitOrientationFocalAt(position) ??
             focalUpdate.exitOrientationFocal;
         zoomTransform = _zoomTransformer.getTransform(
           position: position,
@@ -407,6 +408,7 @@ class FrameCompositor {
           videoSize: videoSize,
           focalPoint: renderFocal,
           exitOrientationFocalPoint: exitOrientationFocal,
+          orientationFocalPoint: track?.orientationFocalAt(position),
           rampCurve: ramp,
           rampDurationScale:
               projectState.screenAnimationConfig.rampDurationScale,
@@ -1234,6 +1236,7 @@ class FrameCompositor {
 
     Offset focal;
     Offset? exitOrientationFocal;
+    Offset? orientationFocal;
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
@@ -1241,6 +1244,7 @@ class FrameCompositor {
       if (track != null) {
         focal = track.focalAt(t);
         exitOrientationFocal = track.exitOrientationFocalAt(t);
+        orientationFocal = track.orientationFocalAt(t);
       } else {
         final s = cursorAtFiltered(
           cursorRecording,
@@ -1263,6 +1267,7 @@ class FrameCompositor {
       videoSize: videoSize,
       focalPoint: focal,
       exitOrientationFocalPoint: exitOrientationFocal,
+      orientationFocalPoint: orientationFocal,
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
           projectState.screenAnimationConfig.rampCurve,
