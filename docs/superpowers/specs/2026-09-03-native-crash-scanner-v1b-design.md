@@ -317,11 +317,15 @@ review). Full app suite green (978 passing). Deviations from the design/plan abo
   timestamp is now captured once at construction; (b) `PersistentCrumbStore.writeIfDirty`
   and `NativeCrashWatermarkStore.record` wrote non-atomically → both now write to a temp
   file + `rename` (a crash mid-write can't corrupt `session.json`/`wm.json`).
-- **Lifecycle discriminator.** `clearOnCleanExit()` fires only on
+- **Lifecycle discriminator.** The Dart side calls `clearOnCleanExit()` on
   `AppLifecycleState.detached`; `paused`/`hidden` (macOS backgrounding) calls `flushNow()`
-  and leaves the timer running. If macOS does not deliver `detached` on a clean quit, a
-  surviving `session.json` could attach a stale trail to a *subsequent* helper crash (mild
-  over-attribution) — an accepted tradeoff vs. total trail loss; confirm in live validation.
+  and leaves the timer running. **Live validation found `detached` is NOT delivered on a
+  real Cmd+Q on this macOS build** (a known Flutter-desktop limitation), so a clean quit
+  would leave `session.json` behind and look like a crash. Fixed by marking the clean exit
+  from **native** code: `AppDelegate.applicationWillTerminate` (AppKit-guaranteed on any
+  orderly termination, never on a crash) deletes `session.json`. Verified live: Cmd+Q now
+  deletes the file, a `SIGKILL` leaves it. The Dart `detached` path stays as a harmless
+  redundant backstop.
 - **Opt-out is reactive.** `PersistentCrumbStore` gained `setEnabled(bool)`; the
   `shareDiagnostics` listener calls it, so a mid-session opt-out stops on-disk writes and
   deletes `session.json` immediately (honors §6 "off means silent"), and opt-in resumes.
@@ -339,10 +343,15 @@ seen-set is the skip mechanism); the crashed report's `appVersion` is parsed/scr
 not forwarded (the current-launch `app_version` is sent instead); `_scrubValue` is
 duplicated across the builder and the store.
 
-**Live validation still required (§10), now with these specific checks:** force an ffmpeg
-SIGSEGV mid-export and an in-process crash, relaunch, and confirm in PostHog — (a) one
-grouped native issue each with `exception_platform: 'native'` / `lang: 'native'` frames;
-(b) the in-process event carries the crashed session's `session_id` + crumb trail;
-(c) the subprocess event omits `session_id`; (d) macOS actually delivers
-`AppLifecycleState.detached` on Cmd+Q for this build (the clean-exit discriminator depends
-on it).
+**Live validation — DONE (2026-09-04)** against a local capture server with the real
+debug build (the v1a wire-shape technique): the scanner correctly forwarded crafted
+`ffmpeg` `.ips` reports and skipped real foreign crash reports (EdgeUpdater/etc.) present
+in `~/Library/Logs/DiagnosticReports`; native events carried `exception_platform:
+'native'` / `lang: 'native'` frames, `mechanism {handled,synthetic}`, per-report
+`crashed_app_version`, and crash-time timestamps; an in-window crash carried the crashed
+session's `session_id` + crumb trail while a backlog crash (dated before the session)
+carried neither (the C1 fix). Point (d) — `detached` on Cmd+Q — was found NOT delivered
+and fixed with the native `applicationWillTerminate` marker above (Cmd+Q deletes
+`session.json`, `SIGKILL` leaves it). Still only confirmable against the real PostHog
+dashboard (needs the project account), not in-repo: that the two forwarded native events
+render as grouped issues in Error Tracking.
