@@ -35,15 +35,27 @@ void main() {
   });
 
   test('startDeviceRecording forwards args over the channel', () async {
+    const mic = MicrophoneConfig(
+      deviceUid: 'mic-1',
+      deviceLabel: 'User microphone',
+      reduceNoise: true,
+      disableAgc: true,
+    );
     await platform.startDeviceRecording(
         deviceId: 'uid-1',
         captureDeviceAudio: true,
-        captureMic: false,
+        microphone: mic,
         outputPath: '/tmp/out.mp4');
     final call = log.firstWhere((c) => c.method == 'startDeviceRecording');
     expect(call.arguments['deviceId'], 'uid-1');
     expect(call.arguments['captureDeviceAudio'], true);
-    expect(call.arguments['captureMic'], false);
+    expect(call.arguments['microphone'], mic.toJson());
     expect(call.arguments['outputPath'], '/tmp/out.mp4');
+  });
+
+  test('showScreenRecordingPermissionGuide invokes native guide', () async {
+    await platform.showScreenRecordingPermissionGuide();
+    expect(log.single.method, 'showScreenRecordingPermissionGuide');
+    expect(log.single.arguments, isNull);
   });
 }

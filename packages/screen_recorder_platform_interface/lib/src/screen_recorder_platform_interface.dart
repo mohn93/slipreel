@@ -126,6 +126,10 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   Future<PermissionStatus> requestScreenRecordingPermission() async =>
       PermissionStatus.unsupported;
 
+  /// Shows a temporary native helper beside macOS System Settings while the
+  /// user enables Screen Recording. No-op on unsupported platforms.
+  Future<void> showScreenRecordingPermissionGuide() async {}
+
   /// Whether the host process is currently trusted by the macOS
   /// Accessibility system. Required for cursor-state detection
   /// (I-beam, pointing hand, resize, etc.) — without it the recorder
@@ -241,11 +245,12 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
     throw UnsupportedError('listDevices() is not supported on this platform.');
   }
 
-  /// Start recording the given device to [outputPath].
+  /// Start recording the given device to [outputPath]. [microphone] is the
+  /// exact host input to capture, or null when narration is disabled.
   Future<void> startDeviceRecording({
     required String deviceId,
     required bool captureDeviceAudio,
-    required bool captureMic,
+    required MicrophoneConfig? microphone,
     required String outputPath,
   }) {
     throw UnsupportedError(

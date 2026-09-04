@@ -30,6 +30,8 @@ class _FakeRouter implements RecordingActionRouter {
   Future<void> stop() async => actions.stops++;
   @override
   Future<void> pauseOrResume() async => actions.pauses++;
+  @override
+  Future<bool> ensureScreenRecording(BuildContext _) async => true;
 }
 
 void main() {

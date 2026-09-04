@@ -48,14 +48,14 @@ class VideoEncoder {
   Future<void> startDevice({
     required String deviceId,
     required bool captureDeviceAudio,
-    required bool captureMic,
+    required MicrophoneConfig? microphone,
     required String outputPath,
   }) async {
     _outputPath = outputPath;
     await ScreenRecorderPlatform.instance.startDeviceRecording(
       deviceId: deviceId,
       captureDeviceAudio: captureDeviceAudio,
-      captureMic: captureMic,
+      microphone: microphone,
       outputPath: outputPath,
     );
     _isActive = true;

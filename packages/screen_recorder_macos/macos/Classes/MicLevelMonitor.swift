@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import CoreAudio
 import QuartzCore
 
 /// Lightweight live mic monitor: taps the selected input device, computes a
@@ -18,7 +19,16 @@ final class MicLevelMonitor {
   private var reduceNoise = false
   private var disableAgc = false
   private var configObserver: NSObjectProtocol?
+  private var pendingConfigRestart: DispatchWorkItem?
   private var lastStart: CFTimeInterval = 0
+  private var healthTimer: DispatchSourceTimer?
+  private var lastBufferAt: CFTimeInterval = 0
+  private var healthProblemReported = false
+  private var expectedDeviceID: AudioDeviceID?
+
+  // Audio amplitude can legitimately be zero. Health is based on whether the
+  // tap continues delivering buffers, regardless of their sample values.
+  private static let bufferTimeout: CFTimeInterval = 2.5
 
   /// Start monitoring [deviceUid] (nil → default input). [reduceNoise] mirrors
   /// the recorder so the meter reflects the processed signal.
@@ -33,6 +43,14 @@ final class MicLevelMonitor {
     smoothed = 0
     lastEmit = 0
     do {
+      // Voice processing can rebuild the I/O unit and reset its route, so apply
+      // it before binding and verifying the user's explicit device.
+      try input.setVoiceProcessingEnabled(reduceNoise)
+      if reduceNoise, #available(macOS 14.0, *) {
+        input.isVoiceProcessingAGCEnabled = !disableAgc
+      }
+
+      var selectedDeviceID: AudioDeviceID?
       if let uid = deviceUid {
         // The selected device must still be present. If its UID no longer
         // resolves (e.g. a Continuity mic whose iPhone disconnected), do NOT
@@ -44,14 +62,20 @@ final class MicLevelMonitor {
             domain: "MicLevelMonitor", code: -2,
             userInfo: [NSLocalizedDescriptionKey: "selected input '\(uid)' is unavailable"])
         }
-        do { try input.auAudioUnit.setDeviceID(devID) }
-        catch { NSLog("MicLevelMonitor: setDeviceID(\(uid)) failed: \(error)") }
-      }
-      // Voice processing is sticky on the input node, so set it explicitly both
-      // ways (a previous reduceNoise=true session would otherwise leak in).
-      try input.setVoiceProcessingEnabled(reduceNoise)
-      if reduceNoise, #available(macOS 14.0, *) {
-        input.isVoiceProcessingAGCEnabled = !disableAgc
+        // AVAudioEngine owns a private aggregate for the system-default input
+        // and output. Forcing the physical default input onto its audio unit can
+        // report success while producing no buffers. Leave the default route
+        // alone; the route check after startup confirms its aggregate represents
+        // this physical device. Non-default inputs still need explicit binding.
+        if !AudioDeviceCatalog.isDefaultInputDevice(devID) {
+          try input.auAudioUnit.setDeviceID(devID)
+          guard input.auAudioUnit.deviceID == devID else {
+            throw NSError(
+              domain: "MicLevelMonitor", code: -3,
+              userInfo: [NSLocalizedDescriptionKey: "selected input '\(uid)' was not activated"])
+          }
+        }
+        selectedDeviceID = devID
       }
       // A freshly-switched device can momentarily report an invalid (0 Hz / 0
       // channel) format; installing a tap or starting the engine on it throws,
@@ -66,9 +90,19 @@ final class MicLevelMonitor {
       input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
         self?.process(buffer)
       }
+      engine.prepare()
       try engine.start()
+      if let selectedDeviceID,
+         !AudioDeviceCatalog.route(input.auAudioUnit.deviceID, contains: selectedDeviceID) {
+        throw NSError(
+          domain: "MicLevelMonitor", code: -3,
+          userInfo: [NSLocalizedDescriptionKey: "selected input route changed during startup"])
+      }
       self.engine = engine
       self.isRunning = true
+      self.expectedDeviceID = selectedDeviceID
+      resetBufferHealth(at: CACurrentMediaTime())
+      startHealthWatchdog()
       observeConfigChanges(of: engine)
     } catch {
       NSLog("MicLevelMonitor: start failed: \(error)")
@@ -81,6 +115,9 @@ final class MicLevelMonitor {
   }
 
   func stop() {
+    cancelHealthWatchdog()
+    pendingConfigRestart?.cancel()
+    pendingConfigRestart = nil
     if let obs = configObserver {
       NotificationCenter.default.removeObserver(obs)
       configObserver = nil
@@ -90,6 +127,7 @@ final class MicLevelMonitor {
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
     self.engine = nil
+    expectedDeviceID = nil
     // Clear the meter when monitoring ends (e.g. switching devices) so a stale
     // level never lingers while the next engine spins up.
     DispatchQueue.main.async { [weak self] in self?.onLevel?(0) }
@@ -109,10 +147,23 @@ final class MicLevelMonitor {
       // Ignore the churn that voice-processing setup itself triggers right
       // after a start(), so we don't loop restarting.
       guard CACurrentMediaTime() - self.lastStart > 0.5 else { return }
-      NSLog("MicLevelMonitor: configuration changed — rebuilding tap")
-      self.start(deviceUid: self.deviceUid,
-                 reduceNoise: self.reduceNoise,
-                 disableAgc: self.disableAgc)
+      // Core Audio posts this while constructing/updating AVAudioEngine's
+      // default aggregate. If the engine is still running, rebuilding here
+      // creates a self-sustaining restart loop and the input never settles.
+      guard !engine.isRunning else { return }
+
+      self.pendingConfigRestart?.cancel()
+      let restart = DispatchWorkItem { [weak self, weak engine] in
+        guard let self, let engine,
+              self.engine === engine, !engine.isRunning else { return }
+        NSLog("MicLevelMonitor: stopped after configuration change — rebuilding tap")
+        self.start(deviceUid: self.deviceUid,
+                   reduceNoise: self.reduceNoise,
+                   disableAgc: self.disableAgc)
+      }
+      self.pendingConfigRestart = restart
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + .milliseconds(250), execute: restart)
     }
   }
 
@@ -146,6 +197,60 @@ final class MicLevelMonitor {
     guard now - lastEmit >= 0.05 else { return }
     lastEmit = now
     let out = smoothed
-    DispatchQueue.main.async { [weak self] in self?.onLevel?(out) }
+    DispatchQueue.main.async { [weak self] in self?.receiveBufferLevel(out) }
+  }
+
+  private func resetBufferHealth(at time: CFTimeInterval) {
+    lastBufferAt = time
+    healthProblemReported = false
+  }
+
+  /// Runs on the main queue with the watchdog. A zero [level] still counts as
+  /// healthy because receiving a valid buffer—not its amplitude—is the signal.
+  private func receiveBufferLevel(_ level: Double) {
+    guard isRunning, let engine = engine else { return }
+    if let expectedDeviceID,
+       !AudioDeviceCatalog.route(
+         engine.inputNode.auAudioUnit.deviceID, contains: expectedDeviceID) {
+      return
+    }
+    lastBufferAt = CACurrentMediaTime()
+    healthProblemReported = false
+    onLevel?(level)
+  }
+
+  private func startHealthWatchdog() {
+    cancelHealthWatchdog()
+    let timer = DispatchSource.makeTimerSource(queue: .main)
+    timer.schedule(
+      deadline: .now() + .milliseconds(500),
+      repeating: .milliseconds(500),
+      leeway: .milliseconds(100))
+    timer.setEventHandler { [weak self] in self?.checkBufferHealth() }
+    healthTimer = timer
+    timer.resume()
+  }
+
+  private func cancelHealthWatchdog() {
+    healthTimer?.setEventHandler {}
+    healthTimer?.cancel()
+    healthTimer = nil
+  }
+
+  private func checkBufferHealth() {
+    guard isRunning, let engine = engine else { return }
+    let now = CACurrentMediaTime()
+    // A mismatched route's buffers are rejected by receiveBufferLevel, so it
+    // naturally becomes a timeout. This grace period also gives Core Audio time
+    // to finish publishing a newly-created aggregate's sub-device list.
+    let stalled = !engine.isRunning || now - lastBufferAt > Self.bufferTimeout
+    let shouldReport = stalled && !healthProblemReported
+    healthProblemReported = stalled
+
+    if shouldReport {
+      let actualID = engine.inputNode.auAudioUnit.deviceID
+      NSLog("MicLevelMonitor: selected input route is no longer healthy (expected=\(expectedDeviceID ?? 0), actual=\(actualID))")
+      onLevel?(-1)
+    }
   }
 }

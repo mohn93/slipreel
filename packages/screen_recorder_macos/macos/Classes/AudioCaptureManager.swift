@@ -149,8 +149,9 @@ class AudioCaptureManager: NSObject {
   }
 
   /// Start capturing a specific microphone device with optional voice
-  /// processing. [deviceUid] nil → system default input. Falls back to the
-  /// default input if the UID no longer resolves.
+  /// processing. [deviceUid] nil → system default input. An explicit device is
+  /// never silently replaced by the default: the bar label and recorded input
+  /// must always describe the same hardware.
   func startMicrophoneCapture(deviceUid: String?, reduceNoise: Bool, disableAgc: Bool) throws {
     guard !isCapturing else { throw AudioCaptureError.alreadyCapturing }
     guard checkMicrophonePermission() else { throw AudioCaptureError.permissionDenied }
@@ -158,27 +159,44 @@ class AudioCaptureManager: NSObject {
     let engine = AVAudioEngine()
     let input = engine.inputNode
     do {
-      // Select the chosen device (falls back to default if the UID is gone).
-      if let uid = deviceUid, let devID = AudioDeviceCatalog.deviceID(forUID: uid) {
-        do {
-          try input.auAudioUnit.setDeviceID(devID)
-        } catch {
-          // Device went away between enumeration and capture — fall back to the
-          // engine's default input rather than failing the whole recording.
-        }
-      }
       // Noise suppression + level normalization via voice processing.
-      // Explicitly set both ways — voice processing is sticky on the input node,
-      // so a previous reduceNoise=true session would otherwise leak into this one.
+      // Configure this before selecting the device: toggling voice processing
+      // can rebuild the I/O audio unit and reset it to the system default.
       try input.setVoiceProcessingEnabled(reduceNoise)
       if reduceNoise, #available(macOS 14.0, *) {
         input.isVoiceProcessingAGCEnabled = !disableAgc
       }
+
+      var selectedDeviceID: AudioDeviceID?
+      if let uid = deviceUid {
+        guard let devID = AudioDeviceCatalog.deviceID(forUID: uid) else {
+          throw AudioCaptureError.inputDeviceUnavailable(uid)
+        }
+        // The default input is already represented by AVAudioEngine's private
+        // aggregate. Forcing its physical ID can start without ever delivering
+        // buffers on macOS. Explicitly bind only non-default selections.
+        if !AudioDeviceCatalog.isDefaultInputDevice(devID) {
+          try input.auAudioUnit.setDeviceID(devID)
+          guard input.auAudioUnit.deviceID == devID else {
+            throw AudioCaptureError.inputDeviceUnavailable(uid)
+          }
+        }
+        selectedDeviceID = devID
+      }
+
       let format = input.outputFormat(forBus: 0)
+      guard format.sampleRate > 0, format.channelCount > 0 else {
+        throw AudioCaptureError.invalidInputFormat
+      }
       input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, time in
         self?.processAudioBuffer(buffer, time: time)
       }
+      engine.prepare()
       try engine.start()
+      if let selectedDeviceID,
+         !AudioDeviceCatalog.route(input.auAudioUnit.deviceID, contains: selectedDeviceID) {
+        throw AudioCaptureError.inputDeviceUnavailable(deviceUid ?? "unknown")
+      }
 
       // Commit state only after everything succeeded.
       audioEngine = engine
@@ -268,6 +286,8 @@ enum AudioCaptureError: LocalizedError {
   case notCapturing
   case engineCreationFailed
   case noInputDevice
+  case inputDeviceUnavailable(String)
+  case invalidInputFormat
   case systemAudioNotSupported
 
   var errorDescription: String? {
@@ -282,6 +302,10 @@ enum AudioCaptureError: LocalizedError {
       return "Failed to create audio engine."
     case .noInputDevice:
       return "No audio input device found."
+    case .inputDeviceUnavailable(let uid):
+      return "The selected microphone is unavailable or could not be activated (\(uid))."
+    case .invalidInputFormat:
+      return "The selected microphone did not provide a valid audio format."
     case .systemAudioNotSupported:
       return "Legacy error case retained for API stability. System audio is captured by SystemAudioCaptureManager (ScreenCaptureKit) — this manager handles microphone only."
     }

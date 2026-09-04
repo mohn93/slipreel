@@ -50,6 +50,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   // Mic monitor lifecycle: tracks which config is currently being monitored so
   // we can avoid redundant start/stop calls and detect device changes.
   MicrophoneConfig? _monitoredConfig;
+  bool _micMenuLoading = false;
 
   // Cache the level stream once — the getter returns a fresh
   // receiveBroadcastStream() on each call, so we must not call it per-build.
@@ -142,6 +143,18 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
 
   Future<void> _pickAndRecord(BarSourceMode mode) async {
     final controller = ref.read(recordingControllerProvider.notifier);
+
+    // ScreenCaptureKit source discovery itself requires Screen Recording
+    // permission. Gate before opening the native overlay so denial produces
+    // the actionable permission panel instead of a misleading empty picker.
+    if (mode != BarSourceMode.device) {
+      final router = recordingActionRouterRef;
+      if (router != null && !await router.ensureScreenRecording(context)) {
+        return;
+      }
+      if (!mounted) return;
+    }
+
     switch (mode) {
       case BarSourceMode.display:
       case BarSourceMode.window:
@@ -193,6 +206,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
       micLevelStream: ref.watch(microphoneControllerProvider) != null
           ? _micLevelStream
           : null,
+      micMenuLoading: _micMenuLoading,
     );
   }
 
@@ -235,11 +249,26 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   }
 
   Future<void> _onMicTap() async {
-    final current = ref.read(microphoneControllerProvider);
-    final result =
-        await ScreenRecorderPlatform.instance.showMicrophoneMenu(current);
-    if (!mounted || result.cancelled) return;
-    ref.read(microphoneControllerProvider.notifier).set(result.config);
+    if (_micMenuLoading) return;
+    setState(() => _micMenuLoading = true);
+
+    // Give the spinner one frame to paint before crossing into AppKit. Native
+    // device discovery is off the main queue too, but some CoreAudio drivers
+    // can still take a noticeable moment to answer on first access.
+    await WidgetsBinding.instance.endOfFrame;
+    try {
+      if (!mounted) return;
+      final current = ref.read(microphoneControllerProvider);
+      final result =
+          await ScreenRecorderPlatform.instance.showMicrophoneMenu(current);
+      if (!mounted || result.cancelled) return;
+      ref.read(microphoneControllerProvider.notifier).set(result.config);
+    } catch (e, st) {
+      AppLogger.platform
+          .w('showMicrophoneMenu failed', error: e, stackTrace: st);
+    } finally {
+      if (mounted) setState(() => _micMenuLoading = false);
+    }
   }
 
   Future<void> _onSystemAudioTap() async {

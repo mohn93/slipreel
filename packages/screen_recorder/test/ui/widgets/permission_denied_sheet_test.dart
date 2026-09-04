@@ -34,12 +34,25 @@ class _FakeUrlLauncher extends UrlLauncherPlatform with MockPlatformInterfaceMix
   }
 }
 
+class _FakeScreenRecorderPlatform extends ScreenRecorderPlatform
+    with MockPlatformInterfaceMixin {
+  int screenRecordingGuideCalls = 0;
+
+  @override
+  Future<void> showScreenRecordingPermissionGuide() async {
+    screenRecordingGuideCalls++;
+  }
+}
+
 void main() {
   late _FakeUrlLauncher fake;
+  late _FakeScreenRecorderPlatform fakePlatform;
 
   setUp(() {
     fake = _FakeUrlLauncher();
     UrlLauncherPlatform.instance = fake;
+    fakePlatform = _FakeScreenRecorderPlatform();
+    ScreenRecorderPlatform.instance = fakePlatform;
   });
 
   Future<void> pumpAndShow(WidgetTester tester, PermissionKind kind) async {
@@ -69,6 +82,7 @@ void main() {
       fake.lastUrl,
       'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
     );
+    expect(fakePlatform.screenRecordingGuideCalls, 1);
   });
 
   testWidgets('Microphone: deep-links to Microphone pane', (tester) async {
@@ -79,6 +93,7 @@ void main() {
       fake.lastUrl,
       'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
     );
+    expect(fakePlatform.screenRecordingGuideCalls, 0);
   });
 
   testWidgets('Accessibility: deep-links to Accessibility pane',
@@ -121,5 +136,6 @@ void main() {
     // remain in the tree.
     expect(find.text('Screen Recording permission required'), findsOneWidget);
     expect(find.text('Not now'), findsOneWidget);
+    expect(fakePlatform.screenRecordingGuideCalls, 0);
   });
 }

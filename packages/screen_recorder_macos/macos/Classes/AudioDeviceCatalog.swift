@@ -12,6 +12,11 @@ enum AudioDeviceCatalog {
     for id in allDeviceIDs() where hasInputStreams(id) {
       guard let uid = stringProperty(id, kAudioDevicePropertyDeviceUID),
             let name = stringProperty(id, kAudioObjectPropertyName) else { continue }
+      // AVAudioEngine creates process-local aggregate devices while it joins
+      // the selected input to the current output (and when voice processing is
+      // enabled). They are ephemeral routing details, not microphones a user
+      // can meaningfully select, and disappear when this process exits.
+      guard !isEngineManagedAggregate(uid: uid, name: name) else { continue }
       result.append([
         "id": uid,
         "name": name,
@@ -37,6 +42,28 @@ enum AudioDeviceCatalog {
         &address, inSize, uidPtr, &outSize, &deviceID)
     }
     return (status == noErr && deviceID != 0) ? deviceID : nil
+  }
+
+  static func isDefaultInputDevice(_ id: AudioDeviceID) -> Bool {
+    return id == defaultInputDeviceID()
+  }
+
+  /// Whether [routeID] still represents [selectedID] after AVAudioEngine has
+  /// started. macOS can replace the audio unit's public device ID with a
+  /// process-local aggregate even though that aggregate still routes the exact
+  /// physical input selected before `engine.start()`.
+  static func route(_ routeID: AudioDeviceID, contains selectedID: AudioDeviceID) -> Bool {
+    if routeID == selectedID { return true }
+    if activeSubDeviceIDs(of: routeID).contains(selectedID) { return true }
+
+    // The active-subdevice list can briefly be unavailable while Core Audio is
+    // assembling its private wrapper. The explicit device was already resolved,
+    // set, and verified before engine startup, so this wrapper is a valid route.
+    guard let uid = stringProperty(routeID, kAudioDevicePropertyDeviceUID),
+          let name = stringProperty(routeID, kAudioObjectPropertyName) else {
+      return false
+    }
+    return isEngineManagedAggregate(uid: uid, name: name)
   }
 
   // MARK: - CoreAudio helpers
@@ -65,6 +92,28 @@ enum AudioDeviceCatalog {
     guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &dataSize) == noErr
     else { return false }
     return dataSize > 0
+  }
+
+  private static func activeSubDeviceIDs(of id: AudioDeviceID) -> [AudioDeviceID] {
+    var address = AudioObjectPropertyAddress(
+      mSelector: kAudioAggregateDevicePropertyActiveSubDeviceList,
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain)
+    guard AudioObjectHasProperty(id, &address) else { return [] }
+
+    var dataSize: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &dataSize) == noErr,
+          dataSize >= UInt32(MemoryLayout<AudioDeviceID>.size) else { return [] }
+    let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+    var ids = [AudioDeviceID](repeating: 0, count: count)
+    guard AudioObjectGetPropertyData(id, &address, 0, nil, &dataSize, &ids) == noErr
+    else { return [] }
+    return ids
+  }
+
+  private static func isEngineManagedAggregate(uid: String, name: String) -> Bool {
+    let prefixes = ["CADefaultDeviceAggregate-", "VPAUAggregateAudioDevice-"]
+    return prefixes.contains { uid.hasPrefix($0) || name.hasPrefix($0) }
   }
 
   private static func defaultInputDeviceID() -> AudioDeviceID {

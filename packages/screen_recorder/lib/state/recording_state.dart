@@ -370,7 +370,7 @@ class RecordingController extends StateNotifier<RecordingState> {
       await _videoEncoder.startDevice(
         deviceId: deviceId,
         captureDeviceAudio: captureDeviceAudio,
-        captureMic: micConfig != null,
+        microphone: micConfig,
         outputPath: outputPath,
       );
 

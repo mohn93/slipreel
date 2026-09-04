@@ -87,6 +87,13 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   }
 
   @override
+  Future<void> showScreenRecordingPermissionGuide() async {
+    await _recordingChannel.invokeMethod<void>(
+      ScreenRecorderMethods.showScreenRecordingPermissionGuide,
+    );
+  }
+
+  @override
   Future<bool> isAccessibilityTrusted() async {
     final result = await _recordingChannel.invokeMethod<bool>(
       ScreenRecorderMethods.isAccessibilityTrusted,
@@ -285,7 +292,7 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
   Future<void> startDeviceRecording({
     required String deviceId,
     required bool captureDeviceAudio,
-    required bool captureMic,
+    required MicrophoneConfig? microphone,
     required String outputPath,
   }) async {
     await _recordingChannel.invokeMethod<void>(
@@ -293,7 +300,7 @@ class MethodChannelScreenRecorderMacos extends ScreenRecorderPlatform {
       {
         'deviceId': deviceId,
         'captureDeviceAudio': captureDeviceAudio,
-        'captureMic': captureMic,
+        'microphone': microphone?.toJson(),
         'outputPath': outputPath,
       },
     );
