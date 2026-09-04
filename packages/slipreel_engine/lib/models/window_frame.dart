@@ -116,7 +116,7 @@ class WindowFrame {
   factory WindowFrame.rounded() {
     return const WindowFrame(
       name: 'Rounded',
-      padding: EdgeInsets.all(72),
+      padding: EdgeInsets.all(200),
       cornerRadius: 16.0,
       shadowBlur: 80.0,
       shadowOffset: Offset(0, 28),
@@ -126,6 +126,7 @@ class WindowFrame {
       borderColor: null,
       wallpaperCategory: 'macOS',
       wallpaperIndex: 0,
+      inset: 20.0,
     );
   }
 

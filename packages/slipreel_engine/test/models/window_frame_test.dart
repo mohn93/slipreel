@@ -46,7 +46,7 @@ void main() {
       final frame = WindowFrame.rounded();
 
       expect(frame.name, 'Rounded');
-      expect(frame.padding, const EdgeInsets.all(72));
+      expect(frame.padding, const EdgeInsets.all(200));
       expect(frame.cornerRadius, 16.0);
       expect(frame.shadowBlur, 80.0);
       expect(frame.shadowOffset, const Offset(0, 28));
@@ -54,6 +54,7 @@ void main() {
       expect(frame.backgroundColor, null);
       expect(frame.borderWidth, 0.0);
       expect(frame.borderColor, null);
+      expect(frame.inset, 20.0);
     });
 
     test('should create modern template', () {
@@ -289,9 +290,9 @@ void main() {
       expect(frame.borderColor, null);
     });
 
-    test('inset defaults to 0 and round-trips through JSON', () {
+    test('rounded inset defaults to 20 and round-trips through JSON', () {
       final frame = WindowFrame.rounded().copyWith(inset: 18.5);
-      expect(WindowFrame.rounded().inset, 0);
+      expect(WindowFrame.rounded().inset, 20);
       expect(frame.inset, 18.5);
 
       final reloaded = WindowFrame.fromJson(frame.toJson());

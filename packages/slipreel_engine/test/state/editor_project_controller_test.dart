@@ -15,8 +15,8 @@ void main() {
   group('EditorProjectController', () {
     test('starts with EditorProjectState.defaults()', () {
       final controller = EditorProjectController();
-      expect(controller.state.cursorSize, equals(2.0));
-      expect(controller.state.cursorStyle, CursorStyle.modernDark);
+      expect(controller.state.cursorSize, equals(2.5));
+      expect(controller.state.cursorStyle, CursorStyle.classic);
       expect(controller.state.motionBlur, 0);
       expect(controller.state.zoomRegions, isEmpty);
     });

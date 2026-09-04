@@ -76,8 +76,8 @@ class _CursorTabState extends ConsumerState<CursorTab> {
           min: 0.5,
           max: 8.0,
           onChanged: _notifier.setCursorSize,
-          onReset: () => _notifier.setCursorSize(2.0),
-          canReset: size != 2.0,
+          onReset: () => _notifier.setCursorSize(2.5),
+          canReset: size != 2.5,
           subtitle: '${size.toStringAsFixed(2)}×',
         ),
         const SizedBox(height: 20),
@@ -529,4 +529,3 @@ class _MotionPresetPicker extends StatelessWidget {
     );
   }
 }
-

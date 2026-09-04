@@ -67,7 +67,7 @@ void main() {
           // After window, ONE entry committed.
           expect(history.canUndo, isTrue);
           history.undo();
-          expect(controller.state.cursorSize, equals(2.0),
+          expect(controller.state.cursorSize, equals(2.5),
               reason:
                   'Undo must restore the initial floor (default cursorSize), '
                   'not bounce through intermediate slider positions');
@@ -103,7 +103,7 @@ void main() {
 
         // Undo cursor size change
         history.undo();
-        expect(controller.state.cursorSize, 2.0,
+        expect(controller.state.cursorSize, 2.5,
             reason: 'Cursor size reverts to default (initial floor)');
         expect(history.canUndo, isFalse);
 

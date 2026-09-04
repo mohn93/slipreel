@@ -96,7 +96,7 @@ void main() {
         final original = EditorProjectState.defaults();
         const tighterSpring = ClickSpring(stiffness: 800, damping: 20);
         final swapped = original.copyWith(
-          cursorStyle: CursorStyle.classic,
+          cursorStyle: CursorStyle.modernDark,
           cursorClickEffect: CursorClickEffect.none,
           clickSpring: tighterSpring,
           cursorPostProcess: const CursorPostProcess(
@@ -105,13 +105,13 @@ void main() {
             optimizeChanges: true,
           ),
         );
-        expect(swapped.cursorStyle, CursorStyle.classic);
+        expect(swapped.cursorStyle, CursorStyle.modernDark);
         expect(swapped.cursorClickEffect, CursorClickEffect.none);
         expect(swapped.clickSpring, tighterSpring);
         expect(swapped.cursorPostProcess.endFreezeMs, 200);
 
         // Original is untouched (immutable copyWith).
-        expect(original.cursorStyle, CursorStyle.modernDark);
+        expect(original.cursorStyle, CursorStyle.classic);
         expect(original.cursorClickEffect, CursorClickEffect.ripple);
         expect(original.clickSpring, ClickSpring.snappy);
         expect(original.cursorPostProcess, CursorPostProcess.none);
