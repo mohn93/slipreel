@@ -60,8 +60,8 @@ class EditorProjectState {
     cursorAnimationConfig: const CursorAnimationConfig.preset(
       CursorAnimationStyle.smooth,
     ),
-    cursorSize: 2.0,
-    cursorStyle: CursorStyle.modernDark,
+    cursorSize: 2.5,
+    cursorStyle: CursorStyle.classic,
     cursorClickEffect: CursorClickEffect.ripple,
     hideCursorOverlay: false,
     motionBlur: 0,

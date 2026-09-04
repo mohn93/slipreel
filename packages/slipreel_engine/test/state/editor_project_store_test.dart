@@ -169,8 +169,8 @@ void main() {
       final state =
           await store.load(videoDuration: const Duration(seconds: 30));
       expect(state.zoomRegions, isEmpty);
-      expect(state.cursorSize, 2.0);
-      expect(state.cursorStyle, CursorStyle.modernDark);
+      expect(state.cursorSize, 2.5);
+      expect(state.cursorStyle, CursorStyle.classic);
     });
 
     test('save then load preserves edits', () async {
