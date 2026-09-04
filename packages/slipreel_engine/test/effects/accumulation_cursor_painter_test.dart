@@ -14,6 +14,9 @@ class _StampSizingCanvas implements ui.Canvas {
   final List<Rect> stampDstRects = [];
   final List<bool> stampHasImageFilter = [];
   final List<Rect?> saveLayerBounds = [];
+  final List<double> saveLayerAlphas = [];
+  final List<bool> saveLayerHasImageFilter = [];
+  final List<Offset> scales = [];
 
   @override
   void drawImageRect(ui.Image image, Rect src, Rect dst, Paint paint) {
@@ -24,6 +27,13 @@ class _StampSizingCanvas implements ui.Canvas {
   @override
   void saveLayer(Rect? bounds, Paint paint) {
     saveLayerBounds.add(bounds);
+    saveLayerAlphas.add(paint.color.a);
+    saveLayerHasImageFilter.add(paint.imageFilter != null);
+  }
+
+  @override
+  void scale(double sx, [double? sy]) {
+    scales.add(Offset(sx, sy ?? sx));
   }
 
   @override
@@ -67,8 +77,7 @@ CursorRecording _jitterRecording() {
 
 void main() {
   group('AccumulationCursorPainter zero-exposure fast path', () {
-    test('zero exposure draws exactly ONE stamp regardless of sampleCount',
-        () {
+    test('zero exposure draws exactly ONE stamp regardless of sampleCount', () {
       // With the blur slider at 0 the exposure window collapses: all N
       // sub-frame stamps land on the same visual time, same sample,
       // same position. Drawing N coincident 1/N-alpha stamps through
@@ -89,9 +98,13 @@ void main() {
       final canvas = _StampSizingCanvas();
       painter.paint(canvas, painterSize);
 
-      expect(canvas.stampDstRects.length, 1,
-          reason: 'zero exposure must degenerate to a single sharp '
-              'stamp, not N coincident ones');
+      expect(
+        canvas.stampDstRects.length,
+        1,
+        reason:
+            'zero exposure must degenerate to a single sharp '
+            'stamp, not N coincident ones',
+      );
     });
 
     test('sampleCount 1 also draws exactly one stamp', () {
@@ -112,6 +125,43 @@ void main() {
   });
 
   group('AccumulationCursorPainter layer bounds', () {
+    test('idle transition fades and blurs the whole cursor composition', () {
+      const painterSize = Size(200, 200);
+      final painter = AccumulationCursorPainter(
+        cursorRecording: _staticRecording(withClick: false),
+        position: const Duration(milliseconds: 100),
+        videoSize: painterSize,
+        exposureMs: 0,
+        sampleCount: 1,
+        visibilityReveal: 0.5,
+      );
+
+      final canvas = _StampSizingCanvas();
+      painter.paint(canvas, painterSize);
+
+      expect(canvas.saveLayerAlphas.first, closeTo(0.5, 0.001));
+      expect(canvas.saveLayerHasImageFilter.first, isTrue);
+      expect(canvas.scales.single.dx, closeTo(1.14, 0.001));
+      expect(canvas.scales.single.dy, closeTo(1.14, 0.001));
+      expect(canvas.stampDstRects, isNotEmpty);
+    });
+
+    test('fully hidden idle cursor skips painting', () {
+      const painterSize = Size(200, 200);
+      final painter = AccumulationCursorPainter(
+        cursorRecording: _staticRecording(withClick: false),
+        position: const Duration(milliseconds: 100),
+        videoSize: painterSize,
+        visibilityReveal: 0,
+      );
+
+      final canvas = _StampSizingCanvas();
+      painter.paint(canvas, painterSize);
+
+      expect(canvas.saveLayerBounds, isEmpty);
+      expect(canvas.stampDstRects, isEmpty);
+    });
+
     test('accumulation saveLayer covers the full canvas (measured-faster '
         'than trail bounds under the software rasterizer)', () {
       // A trail-bounded layer was tried and benchmarked ~2x slower
@@ -134,8 +184,10 @@ void main() {
       painter.paint(canvas, painterSize);
 
       expect(canvas.saveLayerBounds, hasLength(1));
-      expect(canvas.saveLayerBounds.single,
-          const Rect.fromLTWH(0, 0, 2000, 2000));
+      expect(
+        canvas.saveLayerBounds.single,
+        const Rect.fromLTWH(0, 0, 2000, 2000),
+      );
     });
   });
 

@@ -112,6 +112,7 @@ class ScenePassBuilder {
   CursorAnimationConfig? _enterTargetConfig;
   CursorPostProcess? _enterTargetPostProcess;
   Duration? _enterTargetDelay;
+  Duration? _enterTargetLoopEnd;
   double? _enterTargetRampScale;
   List<ClipSlice>? _enterTargetClips;
   Size? _enterTargetVideoSize;
@@ -154,6 +155,7 @@ class ScenePassBuilder {
     required bool hasCursorData,
     Duration cursorDelay = Duration.zero,
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
+    Duration? cursorLoopEnd,
 
     /// Clip slices for the current timeline, used to resolve the
     /// playback speed of the slice covering [position] (source time).
@@ -235,6 +237,7 @@ class ScenePassBuilder {
             fps: fps,
             cursorDelay: cursorDelay,
             postProcess: cursorPostProcess,
+            cursorLoopEnd: cursorLoopEnd,
             playbackSpeed: playbackSpeed,
             clipStart: activeRun?.start,
             clipEnd: activeRun?.end,
@@ -266,6 +269,7 @@ class ScenePassBuilder {
             cursorAnimationConfig: cursorAnimationConfig,
             cursorPostProcess: cursorPostProcess,
             cursorDelay: cursorDelay,
+            cursorLoopEnd: cursorLoopEnd,
             rampDurationScale: rampDurationScale,
             clips: clips,
             videoSize: videoSize,
@@ -321,6 +325,7 @@ class ScenePassBuilder {
     required CursorAnimationConfig cursorAnimationConfig,
     required CursorPostProcess cursorPostProcess,
     required Duration cursorDelay,
+    required Duration? cursorLoopEnd,
     required double rampDurationScale,
     required List<ClipSlice> clips,
     required Size videoSize,
@@ -334,6 +339,7 @@ class ScenePassBuilder {
         _enterTargetConfig == cursorAnimationConfig &&
         _enterTargetPostProcess == cursorPostProcess &&
         _enterTargetDelay == cursorDelay &&
+        _enterTargetLoopEnd == cursorLoopEnd &&
         _enterTargetRampScale == rampDurationScale &&
         identical(_enterTargetClips, clips) &&
         _enterTargetVideoSize == videoSize;
@@ -369,7 +375,12 @@ class ScenePassBuilder {
     if (targetUpper != null && queryEnd > targetUpper) queryEnd = targetUpper;
     final sigma = targetConfig.pathSmoothingSigma;
     final raw = sigma <= Duration.zero
-        ? cursorAtFiltered(cursorRecording, queryEnd, cursorPostProcess)
+        ? cursorAtFiltered(
+            cursorRecording,
+            queryEnd,
+            cursorPostProcess,
+            loopEnd: cursorLoopEnd,
+          )
         : smoothedCursorAt(
             cursorRecording,
             queryEnd,
@@ -377,6 +388,7 @@ class ScenePassBuilder {
             sigma,
             lowerBound: targetLower,
             upperBound: targetUpper,
+            loopEnd: cursorLoopEnd,
           );
     final resolved = raw == null
         ? null
@@ -391,6 +403,7 @@ class ScenePassBuilder {
     _enterTargetConfig = cursorAnimationConfig;
     _enterTargetPostProcess = cursorPostProcess;
     _enterTargetDelay = cursorDelay;
+    _enterTargetLoopEnd = cursorLoopEnd;
     _enterTargetRampScale = rampDurationScale;
     // Identity caching is only valid for Timeline's immutable marker list.
     // Direct API callers may reuse and mutate an ordinary List between

@@ -9,9 +9,8 @@ import 'package:slipreel_engine/utils/app_logger.dart';
 /// Used to close the designer-iteration loop for motion-feel tuning:
 /// edit a sidecar JSON, restart the app, see the new feel — without
 /// recompiling. App startup calls [load] and seeds
-/// [motionTuningProvider] via a `ProviderScope` override; the UI
-/// preset picker calls [save] to persist the user's choice across
-/// sessions.
+/// [motionTuningProvider] via a `ProviderScope` override; internal tuning
+/// tools can call [save] to persist a choice across sessions.
 ///
 /// `load()` returns `null` when the file is missing or corrupt — the
 /// caller seeds with [MotionTuning.defaults] in that case. A corrupt
@@ -59,10 +58,7 @@ class MotionTuningStore {
     return _enqueue(() async {
       final tmp = File('$path.tmp');
       try {
-        await tmp.writeAsString(
-          jsonEncode(tuning.toJson()),
-          flush: true,
-        );
+        await tmp.writeAsString(jsonEncode(tuning.toJson()), flush: true);
         await tmp.rename(path);
       } catch (e, stack) {
         AppLogger.ui.w(

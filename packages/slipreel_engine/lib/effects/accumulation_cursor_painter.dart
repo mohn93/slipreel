@@ -59,6 +59,7 @@ class AccumulationCursorPainter extends CustomPainter {
     this.screenPositionAt,
     this.pathSmoothingSigma = Duration.zero,
     this.cursorDelay = Duration.zero,
+    this.cursorLoopEnd,
     this.activeClip,
     this.clips = const <ClipSlice>[],
     this.exposureMs = 40.0,
@@ -78,6 +79,7 @@ class AccumulationCursorPainter extends CustomPainter {
     this.clickEffect = CursorClickEffect.ripple,
     this.clickSpring = ClickSpring.snappy,
     this.cursorShadow = 0,
+    this.visibilityReveal = 1.0,
   }) : cursorRecordingVersion = cursorRecording.version;
 
   final CursorRecording cursorRecording;
@@ -108,6 +110,11 @@ class AccumulationCursorPainter extends CustomPainter {
   /// sub-frame queries on the same shifted timeline prevents the trail from
   /// separating from a delayed cursor sprite.
   final Duration cursorDelay;
+
+  /// End of the cursor timeline in delayed query/source time. When loop
+  /// behavior is enabled, every accumulation stamp uses this same boundary
+  /// as the live cursor spring.
+  final Duration? cursorLoopEnd;
 
   /// Active edited slice. Exposure is measured in wall time within this
   /// slice and never samples across its hard trim boundaries.
@@ -202,8 +209,67 @@ class AccumulationCursorPainter extends CustomPainter {
   /// shader path. Drawn once under the current cursor, not per stamp.
   final double cursorShadow;
 
+  /// Hide-when-idle reveal progress: 1 is sharp/visible, 0 is fully hidden.
+  /// During the transition the complete cursor composition (ripple, shadow,
+  /// and accumulated body) fades and blurs as one unit.
+  final double visibilityReveal;
+
   @override
   void paint(Canvas canvas, Size size) {
+    final reveal = visibilityReveal.clamp(0.0, 1.0);
+    if (reveal <= 0) return;
+    if (reveal >= 0.999) {
+      _paintVisibleCursor(canvas, size);
+      return;
+    }
+
+    final hidden = 1.0 - reveal;
+    final transitionScale = cursorIdleScaleForReveal(reveal);
+    final transitionAnchor = _visibilityTransitionAnchor(size);
+    final transitionPaint = Paint()
+      ..color = const Color(0xFFFFFFFF).withValues(alpha: reveal)
+      ..imageFilter = ui.ImageFilter.blur(
+        sigmaX: hidden * kCursorIdleRevealBlurSigmaPx,
+        sigmaY: hidden * kCursorIdleRevealBlurSigmaPx,
+      );
+    canvas.saveLayer(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      transitionPaint,
+    );
+    canvas.save();
+    canvas.translate(transitionAnchor.dx, transitionAnchor.dy);
+    canvas.scale(transitionScale, transitionScale);
+    canvas.translate(-transitionAnchor.dx, -transitionAnchor.dy);
+    try {
+      _paintVisibleCursor(canvas, size);
+    } finally {
+      canvas.restore();
+      canvas.restore();
+    }
+  }
+
+  Offset _visibilityTransitionAnchor(Size size) {
+    final mapping = videoRect ?? (Offset.zero & size);
+    var screenPosition = currentScreenPos;
+    if (screenPosition == null) {
+      final sample = cursorAtFiltered(
+        cursorRecording,
+        position - cursorDelay,
+        postProcess,
+        loopEnd: cursorLoopEnd,
+      );
+      if (sample != null) {
+        screenPosition = Offset(sample.x, sample.y);
+      }
+    }
+    if (screenPosition == null || videoSize.isEmpty) return mapping.center;
+    return Offset(
+      mapping.left + screenPosition.dx * mapping.width / videoSize.width,
+      mapping.top + screenPosition.dy * mapping.height / videoSize.height,
+    );
+  }
+
+  void _paintVisibleCursor(Canvas canvas, Size size) {
     if (cursorRecording.positions.isEmpty) return;
     if (sampleCount <= 0) return;
 
@@ -251,7 +317,12 @@ class AccumulationCursorPainter extends CustomPainter {
         microseconds: queryMicrosFor(visualTimeMicros, stampClip, run),
       );
       return pathSmoothingSigma <= Duration.zero
-          ? cursorAtFiltered(cursorRecording, query, postProcess)
+          ? cursorAtFiltered(
+              cursorRecording,
+              query,
+              postProcess,
+              loopEnd: cursorLoopEnd,
+            )
           : smoothedCursorAt(
               cursorRecording,
               query,
@@ -259,6 +330,7 @@ class AccumulationCursorPainter extends CustomPainter {
               pathSmoothingSigma,
               lowerBound: run?.start ?? stampClip?.trimStart,
               upperBound: run?.end ?? stampClip?.trimEnd,
+              loopEnd: cursorLoopEnd,
             );
     }
 
@@ -335,13 +407,14 @@ class AccumulationCursorPainter extends CustomPainter {
       // center tap's state through unchanged).
       final springPos =
           (visualMicros == position.inMicroseconds && currentScreenPos != null)
-              ? currentScreenPos
-              : screenPositionAt?.call(Duration(microseconds: visualMicros));
+          ? currentScreenPos
+          : screenPositionAt?.call(Duration(microseconds: visualMicros));
       final sample = springPos != null
           ? cursorAtFiltered(
               cursorRecording,
               Duration(microseconds: queryMicros),
               postProcess,
+              loopEnd: cursorLoopEnd,
             )
           : pathSampleAt(visualMicros, stampClip, run);
       if (sample == null) continue;
@@ -460,11 +533,13 @@ class AccumulationCursorPainter extends CustomPainter {
               cursorRecording,
               Duration(microseconds: ts - 1),
               postProcess,
+              loopEnd: cursorLoopEnd,
             );
             final after = cursorAtFiltered(
               cursorRecording,
               Duration(microseconds: ts + 1),
               postProcess,
+              loopEnd: cursorLoopEnd,
             );
             if (before != null &&
                 after != null &&
@@ -705,6 +780,7 @@ class AccumulationCursorPainter extends CustomPainter {
         old.screenPositionAt != screenPositionAt ||
         old.pathSmoothingSigma != pathSmoothingSigma ||
         old.cursorDelay != cursorDelay ||
+        old.cursorLoopEnd != cursorLoopEnd ||
         old.activeClip != activeClip ||
         !listEquals(old.clips, clips) ||
         old.exposureMs != exposureMs ||
@@ -723,7 +799,8 @@ class AccumulationCursorPainter extends CustomPainter {
         old.postProcess != postProcess ||
         old.clickEffect != clickEffect ||
         old.clickSpring != clickSpring ||
-        old.cursorShadow != cursorShadow;
+        old.cursorShadow != cursorShadow ||
+        old.visibilityReveal != visibilityReveal;
   }
 }
 

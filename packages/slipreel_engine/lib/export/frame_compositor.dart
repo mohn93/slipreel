@@ -322,6 +322,27 @@ class FrameCompositor {
   bool get _hasCursorData =>
       metadata?.isPureSource == true && cursorRecording.count > 0;
 
+  /// Final cursor query timestamp used by the return-to-start behavior.
+  /// This mirrors PlaybackCanvas exactly, including the cursor-delay shift.
+  Duration? get _cursorLoopEnd {
+    if (!projectState.cursorPostProcess.loopPosition ||
+        cursorRecording.count == 0) {
+      return null;
+    }
+    final Duration visualEnd;
+    if (projectState.timeline.clips.isNotEmpty) {
+      visualEnd = projectState.timeline.clips.last.trimEnd;
+    } else if (metadata?.duration != null) {
+      visualEnd = metadata!.duration!;
+    } else {
+      visualEnd = Duration(
+        microseconds: cursorRecording.positions.last.timestampMicros,
+      );
+    }
+    final shifted = visualEnd - projectState.cursorDelay;
+    return shifted.isNegative ? Duration.zero : shifted;
+  }
+
   /// Compose one frame of the export.
   ///
   /// [videoFrameBgra] is the raw BGRA byte buffer for the decoded frame
@@ -353,6 +374,9 @@ class FrameCompositor {
       final activeSlice = projectState.timeline.clips.isEmpty
           ? null
           : clipSliceContaining(projectState.timeline.clips, position);
+      final activeRun = projectState.timeline.clips.isEmpty
+          ? null
+          : contiguousClipRunBounds(projectState.timeline.clips, position);
       final effectiveCursorAnimationConfig = cursorAnimationConfigAt(
         clips: projectState.timeline.clips,
         position: position,
@@ -432,9 +456,21 @@ class FrameCompositor {
       // trajectory blur; feeding it through the camera shader as well would
       // double-smear it and diverge from PlaybackCanvas.
       ui.Picture? cursorPicture;
-      if (motion != null &&
-          !projectState.hideCursorOverlay &&
-          activeSlice?.hideCursor != true) {
+      final cursorReveal =
+          motion != null &&
+              !projectState.hideCursorOverlay &&
+              activeSlice?.hideCursor != true
+          ? cursorRevealAt(
+              cursorRecording,
+              position,
+              projectState.cursorPostProcess,
+              cursorDelay: projectState.cursorDelay,
+              lowerBound: activeRun?.start,
+              upperBound: activeRun?.end,
+              loopEnd: _cursorLoopEnd,
+            )
+          : 0.0;
+      if (motion != null && cursorReveal > 0) {
         final effectiveCursorBlur =
             projectState.motionBlur * projectState.cursorMovementBlur;
         void paintCursor(ui.Canvas canvas) => _paintCursor(
@@ -444,6 +480,7 @@ class FrameCompositor {
           state: motion.state,
           currentScreenPos: motion.screenPos,
           cursorAnimationConfig: effectiveCursorAnimationConfig,
+          visibilityReveal: cursorReveal,
         );
 
         if (sceneSignal.hasMotion) {
@@ -690,6 +727,7 @@ class FrameCompositor {
     cursorAnimationConfig: projectState.cursorAnimationConfig,
     cursorDelay: projectState.cursorDelay,
     cursorPostProcess: projectState.cursorPostProcess,
+    cursorLoopEnd: _cursorLoopEnd,
     cursorRecording: cursorRecording,
     videoSize: videoSize,
     fps: fps,
@@ -1061,6 +1099,7 @@ class FrameCompositor {
       videoSize: videoSize,
       fps: fps,
       cursorDelay: projectState.cursorDelay,
+      cursorLoopEnd: _cursorLoopEnd,
       screenRampCurve: projectState.screenAnimationConfig.rampCurve,
       rampDurationScale: projectState.screenAnimationConfig.rampDurationScale,
       tuning: motionTuning,
@@ -1207,6 +1246,7 @@ class FrameCompositor {
           cursorRecording,
           t,
           projectState.cursorPostProcess,
+          loopEnd: _cursorLoopEnd,
         );
         focal = s == null
             ? videoSize.center(Offset.zero)
@@ -1343,6 +1383,7 @@ class FrameCompositor {
     required CursorState state,
     required Offset currentScreenPos,
     required CursorAnimationConfig cursorAnimationConfig,
+    required double visibilityReveal,
   }) {
     Duration? cachedCameraTime;
     SceneCameraSample? cachedCameraSample;
@@ -1363,6 +1404,7 @@ class FrameCompositor {
       screenPositionAt: _scenePassBuilder.motion.positionAt,
       pathSmoothingSigma: cursorAnimationConfig.pathSmoothingSigma,
       cursorDelay: projectState.cursorDelay,
+      cursorLoopEnd: _cursorLoopEnd,
       activeClip: projectState.timeline.clips.isEmpty
           ? null
           : clipSliceContaining(projectState.timeline.clips, position),
@@ -1379,6 +1421,7 @@ class FrameCompositor {
       sampleCount: kCursorBlurStampCount,
       sizeMultiplier: projectState.cursorSize,
       cursorShadow: projectState.cursorShadow,
+      visibilityReveal: visibilityReveal,
       style: projectState.cursorStyle,
       cursorState: state,
       // Export renders at the metadata's dpr; the painter sizes its

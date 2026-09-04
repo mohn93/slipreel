@@ -222,10 +222,10 @@ class _InspectorPanelState extends State<InspectorPanel> {
       // Zoom manages its own insets so its header bar + scroll divider can run
       // edge-to-edge across the full panel width.
       ZoomSelected(:final index) => _zoomContext(index),
-      SliceSelected(:final index) => Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-          child: _sliceContext(index),
-        ),
+      // Slice does the same: its scaffold owns the insets so the header +
+      // scroll divider span the full panel width and the scroll body clips
+      // below the header.
+      SliceSelected(:final index) => _sliceContext(index),
       CameraSelected(:final index) => Padding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
           child: _cameraContext(index),

@@ -11,7 +11,10 @@ class _RecordingCanvas implements ui.Canvas {
 
   @override
   void saveLayer(Rect? bounds, Paint paint) {
-    calls.add('saveLayer(alpha=${paint.color.a.toStringAsFixed(3)})');
+    calls.add(
+      'saveLayer(alpha=${paint.color.a.toStringAsFixed(3)}, '
+      'blur=${paint.imageFilter != null})',
+    );
   }
 
   @override
@@ -22,6 +25,13 @@ class _RecordingCanvas implements ui.Canvas {
   @override
   void translate(double dx, double dy) {
     calls.add('translate(${dx.toStringAsFixed(2)}, ${dy.toStringAsFixed(2)})');
+  }
+
+  @override
+  void scale(double sx, [double? sy]) {
+    calls.add(
+      'scale(${sx.toStringAsFixed(3)},${(sy ?? sx).toStringAsFixed(3)})',
+    );
   }
 
   @override
@@ -51,30 +61,34 @@ class _RecordingCanvas implements ui.Canvas {
 }
 
 void main() {
-  testWidgets('renders without throwing when given a screen position',
-      (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: SizedBox(
-        width: 200,
-        height: 100,
-        child: CustomPaint(
-          painter: CursorOverlayPainter(
-            cursorRecording: CursorRecording(),
-            position: Duration.zero,
-            screenPos: const Offset(50, 25),
-            videoSize: const Size(200, 100),
-            screenSize: const Size(200, 100),
+  testWidgets('renders without throwing when given a screen position', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 200,
+          height: 100,
+          child: CustomPaint(
+            painter: CursorOverlayPainter(
+              cursorRecording: CursorRecording(),
+              position: Duration.zero,
+              screenPos: const Offset(50, 25),
+              videoSize: const Size(200, 100),
+              screenSize: const Size(200, 100),
+            ),
           ),
         ),
       ),
-    ));
+    );
     expect(find.byType(CustomPaint), findsWidgets);
   });
 
   test('shouldRepaint true when position changes', () {
     final rec = CursorRecording()
-      ..addPosition(const CursorPosition(
-          x: 0, y: 0, timestampMicros: 0, isClicked: false));
+      ..addPosition(
+        const CursorPosition(x: 0, y: 0, timestampMicros: 0, isClicked: false),
+      );
     final a = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 100),
@@ -92,10 +106,29 @@ void main() {
     expect(b.shouldRepaint(a), isTrue);
   });
 
+  test('idle transition fades and blurs the legacy cursor composition', () {
+    final painter = CursorOverlayPainter(
+      cursorRecording: CursorRecording(),
+      position: const Duration(milliseconds: 100),
+      screenPos: const Offset(50, 25),
+      videoSize: const Size(200, 100),
+      screenSize: const Size(200, 100),
+      visibilityReveal: 0.5,
+    );
+    final canvas = _RecordingCanvas();
+
+    painter.paint(canvas, const Size(200, 100));
+
+    expect(canvas.calls.first, 'saveLayer(alpha=0.500, blur=true)');
+    expect(canvas.calls, contains('scale(1.140,1.140)'));
+    expect(canvas.calls.last, 'restore');
+  });
+
   test('motionBlurIntensity 0 → no stamp envelope (single direct paint)', () {
     final rec = CursorRecording()
-      ..addPosition(const CursorPosition(
-          x: 0, y: 0, timestampMicros: 0, isClicked: false));
+      ..addPosition(
+        const CursorPosition(x: 0, y: 0, timestampMicros: 0, isClicked: false),
+      );
     final painter = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 100),
@@ -107,25 +140,29 @@ void main() {
     painter.paint(canvas, const Size(200, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
     final saveLayers = canvas.calls.where((c) => c.startsWith('saveLayer'));
-    expect(drawImages, isEmpty,
-        reason: 'No blur ⇒ painter draws directly, no pre-baked sprite.');
+    expect(
+      drawImages,
+      isEmpty,
+      reason: 'No blur ⇒ painter draws directly, no pre-baked sprite.',
+    );
     expect(saveLayers, isEmpty);
   });
 
-  test(
-      'motionBlurIntensity > 0 with dense recorded displacement → '
+  test('motionBlurIntensity > 0 with dense recorded displacement → '
       'full stamp envelope of 40 draws', () {
     // Dense recording at 10 ms cadence (well under the 50 ms gap
     // threshold) with 20 px between samples → 100 px polyline arc
     // length. count = round(100/2) + 1 = 51, capped at maxStamps = 40.
     final rec = CursorRecording();
     for (var i = 0; i <= 5; i++) {
-      rec.addPosition(CursorPosition(
-        x: i * 20.0,
-        y: 0,
-        timestampMicros: 50000 + i * 10000,
-        isClicked: false,
-      ));
+      rec.addPosition(
+        CursorPosition(
+          x: i * 20.0,
+          y: 0,
+          timestampMicros: 50000 + i * 10000,
+          isClicked: false,
+        ),
+      );
     }
     final painter = CursorOverlayPainter(
       cursorRecording: rec,
@@ -138,12 +175,14 @@ void main() {
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(200, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
-    expect(drawImages.length, 40,
-        reason: 'slider=1 + 100 px polyline → 40 stamps via drawImageRect.');
+    expect(
+      drawImages.length,
+      40,
+      reason: 'slider=1 + 100 px polyline → 40 stamps via drawImageRect.',
+    );
   });
 
-  test(
-      'motionBlurIntensity > 0 with stationary cursor across exposure → '
+  test('motionBlurIntensity > 0 with stationary cursor across exposure → '
       'direct paint (no bake)', () {
     // Dense recording where every sample is at the same (50, 25)
     // position. Polyline arc length = 0, count = 1, painter
@@ -152,12 +191,14 @@ void main() {
     // through a ui.Image and look stepped under upscaling.
     final rec = CursorRecording();
     for (var i = 0; i <= 5; i++) {
-      rec.addPosition(CursorPosition(
-        x: 50,
-        y: 25,
-        timestampMicros: 50000 + i * 10000,
-        isClicked: false,
-      ));
+      rec.addPosition(
+        CursorPosition(
+          x: 50,
+          y: 25,
+          timestampMicros: 50000 + i * 10000,
+          isClicked: false,
+        ),
+      );
     }
     final painter = CursorOverlayPainter(
       cursorRecording: rec,
@@ -170,22 +211,31 @@ void main() {
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(200, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
-    expect(drawImages, isEmpty,
-        reason: 'Zero arc length must skip the bake/stamp path entirely.');
+    expect(
+      drawImages,
+      isEmpty,
+      reason: 'Zero arc length must skip the bake/stamp path entirely.',
+    );
   });
 
-  test(
-      'motionBlurIntensity > 0 but recording has a sample gap > 50ms → '
+  test('motionBlurIntensity > 0 but recording has a sample gap > 50ms → '
       'direct paint (gap-based phantom-path guard)', () {
     // Two samples 100 ms apart with the exposure window (50 ms)
     // landing entirely inside that gap. cursorAt would linearly
     // interpolate between them — fabricating a path through unknown
     // ground — so the painter rejects the trail and draws direct.
     final rec = CursorRecording()
-      ..addPosition(const CursorPosition(
-          x: 0, y: 0, timestampMicros: 0, isClicked: false))
-      ..addPosition(const CursorPosition(
-          x: 200, y: 0, timestampMicros: 100000, isClicked: false));
+      ..addPosition(
+        const CursorPosition(x: 0, y: 0, timestampMicros: 0, isClicked: false),
+      )
+      ..addPosition(
+        const CursorPosition(
+          x: 200,
+          y: 0,
+          timestampMicros: 100000,
+          isClicked: false,
+        ),
+      );
     final painter = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 100),
@@ -197,13 +247,16 @@ void main() {
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(200, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
-    expect(drawImages, isEmpty,
-        reason: 'Wide sample gap must drop the trail to avoid drawing '
-            'stamps along a fabricated linearly-interpolated path.');
+    expect(
+      drawImages,
+      isEmpty,
+      reason:
+          'Wide sample gap must drop the trail to avoid drawing '
+          'stamps along a fabricated linearly-interpolated path.',
+    );
   });
 
-  test(
-      'motionBlurIntensity > 0 with post-idle position warp in window → '
+  test('motionBlurIntensity > 0 with post-idle position warp in window → '
       'direct paint (warp guard)', () {
     // The recording from the user's bug report:
     //   sample[i-2] at t=0    (x, y)
@@ -217,12 +270,30 @@ void main() {
     // the pattern (large displacement preceded by ≥80 ms idle pair)
     // and drops the trail.
     final rec = CursorRecording()
-      ..addPosition(const CursorPosition(
-          x: 1000, y: 0, timestampMicros: 0, isClicked: false))
-      ..addPosition(const CursorPosition(
-          x: 1000, y: 0, timestampMicros: 200000, isClicked: false))
-      ..addPosition(const CursorPosition(
-          x: 1150, y: 0, timestampMicros: 224000, isClicked: false));
+      ..addPosition(
+        const CursorPosition(
+          x: 1000,
+          y: 0,
+          timestampMicros: 0,
+          isClicked: false,
+        ),
+      )
+      ..addPosition(
+        const CursorPosition(
+          x: 1000,
+          y: 0,
+          timestampMicros: 200000,
+          isClicked: false,
+        ),
+      )
+      ..addPosition(
+        const CursorPosition(
+          x: 1150,
+          y: 0,
+          timestampMicros: 224000,
+          isClicked: false,
+        ),
+      );
     final painter = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 250),
@@ -234,15 +305,18 @@ void main() {
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(2000, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
-    expect(drawImages, isEmpty,
-        reason: 'A 150 px jump in a single sample interval right after '
-            '200 ms of idle is a system warp, not real motion. The '
-            'trail must drop to avoid smearing through fabricated '
-            'intermediate positions.');
+    expect(
+      drawImages,
+      isEmpty,
+      reason:
+          'A 150 px jump in a single sample interval right after '
+          '200 ms of idle is a system warp, not real motion. The '
+          'trail must drop to avoid smearing through fabricated '
+          'intermediate positions.',
+    );
   });
 
-  test(
-      'motionBlurIntensity > 0 with sustained fast motion (no idle before) → '
+  test('motionBlurIntensity > 0 with sustained fast motion (no idle before) → '
       'trail draws normally', () {
     // The mirror case: same large per-pair displacement but the
     // preceding pair had a SHORT gap, meaning the cursor was already
@@ -253,12 +327,14 @@ void main() {
     // 100 px large-displacement threshold) so the previous pair gap
     // never triggers the post-idle check.
     for (var i = 0; i <= 5; i++) {
-      rec.addPosition(CursorPosition(
-        x: 1000 + i * 20.0,
-        y: 0,
-        timestampMicros: 50000 + i * 16700,
-        isClicked: false,
-      ));
+      rec.addPosition(
+        CursorPosition(
+          x: 1000 + i * 20.0,
+          y: 0,
+          timestampMicros: 50000 + i * 16700,
+          isClicked: false,
+        ),
+      );
     }
     final painter = CursorOverlayPainter(
       cursorRecording: rec,
@@ -271,14 +347,18 @@ void main() {
     final canvas = _RecordingCanvas();
     painter.paint(canvas, const Size(2000, 100));
     final drawImages = canvas.calls.where((c) => c.startsWith('drawImage'));
-    expect(drawImages, isNotEmpty,
-        reason: 'Dense fast motion is a real flick — trail must draw.');
+    expect(
+      drawImages,
+      isNotEmpty,
+      reason: 'Dense fast motion is a real flick — trail must draw.',
+    );
   });
 
   test('shouldRepaint reflects velocity and intensity changes', () {
     final rec = CursorRecording()
-      ..addPosition(const CursorPosition(
-          x: 0, y: 0, timestampMicros: 0, isClicked: false));
+      ..addPosition(
+        const CursorPosition(x: 0, y: 0, timestampMicros: 0, isClicked: false),
+      );
     final a = CursorOverlayPainter(
       cursorRecording: rec,
       position: const Duration(milliseconds: 100),
