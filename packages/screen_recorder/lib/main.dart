@@ -166,6 +166,7 @@ Future<void> main() async {
 
   final onboardingStore = OnboardingStore();
   final onboardingDone = await onboardingStore.load();
+  final onboardingInitialStep = await onboardingStore.loadStep();
 
   final tipsStore = TipsStore();
   final tipsController = TipsController(tipsStore);
@@ -451,6 +452,7 @@ Future<void> main() async {
     ],
     child: MyApp(
       onboardingDone: onboardingDone,
+      onboardingInitialStep: onboardingInitialStep,
       recoveryCandidates: recoveryCandidates,
     ),
   ));
@@ -559,10 +561,12 @@ class MyApp extends ConsumerStatefulWidget {
   const MyApp({
     super.key,
     required this.onboardingDone,
+    required this.onboardingInitialStep,
     required this.recoveryCandidates,
   });
 
   final bool onboardingDone;
+  final OnboardingStep onboardingInitialStep;
   final List<RecoveryCandidate> recoveryCandidates;
 
   @override
@@ -862,7 +866,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       ],
       home: widget.onboardingDone
           ? const RecordingBarScreen()
-          : const OnboardingScreen(),
+          : OnboardingScreen(initialStep: widget.onboardingInitialStep),
     );
   }
 }
