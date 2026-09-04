@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -3201,14 +3202,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
               // Dev HUD toggle: shows the recorded cursor position
               // overlaid on the video so we can verify the zoom focal
-              // is following it.
-              IconButton(
-                onPressed: () =>
-                    setState(() => _showZoomDebug = !_showZoomDebug),
-                icon: const Icon(Icons.gps_fixed),
-                color: _showZoomDebug ? context.palette.accent : Colors.white38,
-                tooltip: _showZoomDebug ? 'Hide cursor HUD' : 'Show cursor HUD',
-              ),
+              // is following it. Debug builds only.
+              if (kDebugMode)
+                IconButton(
+                  onPressed: () =>
+                      setState(() => _showZoomDebug = !_showZoomDebug),
+                  icon: const Icon(Icons.gps_fixed),
+                  color:
+                      _showZoomDebug ? context.palette.accent : Colors.white38,
+                  tooltip:
+                      _showZoomDebug ? 'Hide cursor HUD' : 'Show cursor HUD',
+                ),
             ],
           ),
         ],
