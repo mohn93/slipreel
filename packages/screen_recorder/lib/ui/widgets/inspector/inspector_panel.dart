@@ -3,6 +3,7 @@ import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
+import 'package:screen_recorder/ui/theme/app_palette_context.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/camera_context_inspector.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/slice_editor.dart';
@@ -183,6 +184,11 @@ class _InspectorPanelState extends State<InspectorPanel> {
             isDevice: widget.isDevice,
             onSelect: (t) => setState(() => _selected = t),
           ),
+        ),
+        VerticalDivider(
+          width: 1,
+          thickness: 1,
+          color: context.palette.dividerSubtle,
         ),
         Expanded(child: _formatContent(selected)),
       ],
