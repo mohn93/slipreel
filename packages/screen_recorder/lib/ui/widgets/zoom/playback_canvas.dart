@@ -979,6 +979,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
             // export). See [shouldUseDeterministicFocal].
             Offset? effectiveFocal = focalUpdate?.focal;
             Offset? exitOrientationFocal = focalUpdate?.exitOrientationFocal;
+            Offset? orientationFocal;
             if (focalUpdate != null &&
                 shouldUseDeterministicFocal(
                   isHoverScrubbing: widget.isHoverScrubbing,
@@ -995,6 +996,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               );
               effectiveFocal = track.focalAt(pos);
               exitOrientationFocal = track.exitOrientationFocalAt(pos);
+              orientationFocal = track.orientationFocalAt(pos);
             }
             final effectiveCursorBlur =
                 widget.motionBlur * widget.cursorMovementBlur;
@@ -1471,6 +1473,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                   videoSize: videoSize,
                   focalPoint: focalForFrame,
                   exitOrientationFocalPoint: exitOrientationFocal,
+                  orientationFocalPoint: orientationFocal,
                   rampCurve:
                       activeZoom.rampCurveOverride?.toFlutterCurve() ??
                       widget.screenAnimationConfig.rampCurve,
@@ -1864,6 +1867,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
 
     Offset focal;
     Offset? exitOrientationFocal;
+    Offset? orientationFocal;
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
@@ -1876,6 +1880,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       );
       focal = track.focalAt(t);
       exitOrientationFocal = track.exitOrientationFocalAt(t);
+      orientationFocal = track.orientationFocalAt(t);
     }
 
     // Production and export both reduce this exact camera matrix to the same
@@ -1888,6 +1893,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       videoSize: videoSize,
       focalPoint: focal,
       exitOrientationFocalPoint: exitOrientationFocal,
+      orientationFocalPoint: orientationFocal,
       framing: framing,
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??
@@ -1926,6 +1932,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
 
     Offset focal;
     Offset? exitOrientationFocal;
+    Offset? orientationFocal;
     if (!active.followCursor) {
       focal = active.rect.center;
     } else {
@@ -1945,13 +1952,15 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               sample.x.toDouble().clamp(0, videoSize.width),
               sample.y.toDouble().clamp(0, videoSize.height),
             );
-      exitOrientationFocal = _focalTrackFor(
+      final track = _focalTrackFor(
         active,
         videoSize,
         widget.metadata?.fps ?? 60,
         widget.cursorAnimationConfig,
         framing,
-      ).exitOrientationFocalAt(t);
+      );
+      exitOrientationFocal = track.exitOrientationFocalAt(t);
+      orientationFocal = track.orientationFocalAt(t);
     }
 
     // Same disabled-but-framing-correct contract as _approxSceneSampleAt:
@@ -1964,6 +1973,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       videoSize: videoSize,
       focalPoint: focal,
       exitOrientationFocalPoint: exitOrientationFocal,
+      orientationFocalPoint: orientationFocal,
       framing: framing,
       rampCurve:
           active.rampCurveOverride?.toFlutterCurve() ??

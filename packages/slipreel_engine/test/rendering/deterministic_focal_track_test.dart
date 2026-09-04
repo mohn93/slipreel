@@ -1,6 +1,8 @@
 @TestOn('vm')
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
@@ -348,5 +350,65 @@ void main() {
       ), // no screenRampCurve
       isTrue,
     );
+  });
+
+  group('orientationFocalAt', () {
+    test('is null for manual placements', () {
+      final manual = DeterministicFocalTrack.build(
+        region: region.copyWith(followCursor: false),
+        cursorRecording: sweep(),
+        cursorAnimationConfig: const CursorAnimationConfig.preset(
+          CursorAnimationStyle.smooth,
+        ),
+        videoSize: videoSize,
+        fps: 60,
+      );
+      expect(
+        manual.orientationFocalAt(const Duration(milliseconds: 3500)),
+        isNull,
+      );
+    });
+
+    test('is a pure function of t', () {
+      final track = buildTrack();
+      final a = track.orientationFocalAt(const Duration(milliseconds: 3500));
+      track.orientationFocalAt(const Duration(milliseconds: 4200));
+      final b = track.orientationFocalAt(const Duration(milliseconds: 3500));
+      expect(a, b);
+    });
+
+    test('never moves faster than the focal it smooths, and does smooth', () {
+      final track = buildTrack();
+      final ramps = region.resolvedRampsUs(1.0);
+      final holdStart = region.startTime + Duration(microseconds: ramps.enterUs);
+      final holdEnd = region.endTime - Duration(microseconds: ramps.exitUs);
+      var maxFocalStep = 0.0;
+      var maxOrientStep = 0.0;
+      var differs = false;
+      const step = Duration(milliseconds: 16);
+      for (var t = holdStart; t + step <= holdEnd; t += step) {
+        final f0 = track.focalAt(t);
+        final f1 = track.focalAt(t + step);
+        final o0 = track.orientationFocalAt(t)!;
+        final o1 = track.orientationFocalAt(t + step)!;
+        maxFocalStep = math.max(maxFocalStep, (f1 - f0).distance);
+        maxOrientStep = math.max(maxOrientStep, (o1 - o0).distance);
+        if ((o0 - f0).distance > 1e-6) differs = true;
+      }
+      expect(maxFocalStep, greaterThan(0.0));
+      expect(maxOrientStep, lessThanOrEqualTo(maxFocalStep + 1e-9));
+      expect(maxOrientStep, lessThan(maxFocalStep));
+      expect(differs, isTrue);
+    });
+
+    test('inside the enter ramp it holds the hold-start direction', () {
+      final track = buildTrack();
+      final ramps = region.resolvedRampsUs(1.0);
+      expect(ramps.enterUs, greaterThan(0));
+      final holdStart = region.startTime + Duration(microseconds: ramps.enterUs);
+      final midEnter =
+          region.startTime + Duration(microseconds: ramps.enterUs ~/ 2);
+      expect(track.orientationFocalAt(midEnter), track.orientationFocalAt(holdStart));
+    });
   });
 }
