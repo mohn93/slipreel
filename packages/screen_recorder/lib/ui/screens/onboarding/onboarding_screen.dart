@@ -14,19 +14,26 @@ import 'pages/ready_page.dart';
 import 'pages/welcome_page.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
-  const OnboardingScreen({super.key});
+  const OnboardingScreen({
+    super.key,
+    this.initialStep = OnboardingStep.welcome,
+  });
+
+  final OnboardingStep initialStep;
 
   @override
   ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
-  final _pageController = PageController();
-  int _page = 0;
+  late final PageController _pageController;
+  late int _page;
 
   @override
   void initState() {
     super.initState();
+    _page = widget.initialStep.index;
+    _pageController = PageController(initialPage: _page);
     ref.captureAnalytics(AnalyticsEvents.screenViewed,
         properties: {'screen': 'onboarding'});
     // Default app window is the 68px-tall recording bar; onboarding needs the
@@ -51,11 +58,31 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return _page.toDouble();
   }
 
-  void _next() {
-    _pageController.animateToPage(
-      _page + 1,
-      duration: const Duration(milliseconds: 560),
-      curve: _pageCurve,
+  Future<void> _next() async {
+    final nextPage = _page + 1;
+    if (nextPage >= OnboardingStep.values.length) return;
+
+    // Persist before moving forward. macOS may terminate and relaunch the app
+    // while a permission is being granted, so the permissions page must
+    // already be durable by the time its Enable buttons can be pressed.
+    try {
+      await ref
+          .read(onboardingStoreProvider)
+          .saveStep(OnboardingStep.values[nextPage]);
+    } catch (_) {
+      if (mounted) {
+        AppAlerts.error(
+          "Couldn't save onboarding progress — you may return to this screen after relaunch.",
+        );
+      }
+    }
+    if (!mounted) return;
+    unawaited(
+      _pageController.animateToPage(
+        nextPage,
+        duration: const Duration(milliseconds: 560),
+        curve: _pageCurve,
+      ),
     );
   }
 
