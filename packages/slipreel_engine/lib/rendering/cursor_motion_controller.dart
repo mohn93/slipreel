@@ -76,6 +76,7 @@ class CursorMotionController {
   MotionTuning? _cachedTuning;
   Duration? _cachedClipStart;
   Duration? _cachedClipEnd;
+  Duration? _cachedLoopEnd;
   CursorMotionUpdate? _cachedResult;
 
   /// A short history of positions actually emitted by the spring. Cursor
@@ -156,6 +157,11 @@ class CursorMotionController {
     Duration? clipStart,
     Duration? clipEnd,
 
+    /// End of the cursor timeline in query/source time. Used by the loop
+    /// behavior so a trimmed video's cursor returns to its opening position
+    /// at the edited end rather than at the discarded source's end.
+    Duration? cursorLoopEnd,
+
     /// Exact elapsed output/wall time since the preceding scene update. When
     /// supplied this replaces the single-speed approximation for spring dt.
     Duration? elapsedWallTime,
@@ -181,6 +187,7 @@ class CursorMotionController {
         (_cachedCursorDelay != cursorDelay ||
             _cachedPostProcess != postProcess ||
             _cachedConfig != config ||
+            _cachedLoopEnd != cursorLoopEnd ||
             ((_cachedClipStart != clipStart || _cachedClipEnd != clipEnd) &&
                 _cachedPosition == position) ||
             !identical(_cachedRecording, cursorRecording) ||
@@ -197,6 +204,7 @@ class CursorMotionController {
         _cachedCursorDelay == cursorDelay &&
         _cachedPostProcess == postProcess &&
         _cachedConfig == config &&
+        _cachedLoopEnd == cursorLoopEnd &&
         _cachedClipStart == clipStart &&
         _cachedClipEnd == clipEnd &&
         identical(_cachedRecording, cursorRecording) &&
@@ -229,7 +237,12 @@ class CursorMotionController {
     // one. sigma == 0 for every other preset — identical to before.
     final sigma = config.pathSmoothingSigma;
     final raw = sigma <= Duration.zero
-        ? cursorAtFiltered(cursorRecording, queryPosition, postProcess)
+        ? cursorAtFiltered(
+            cursorRecording,
+            queryPosition,
+            postProcess,
+            loopEnd: cursorLoopEnd,
+          )
         : smoothedCursorAt(
             cursorRecording,
             queryPosition,
@@ -237,6 +250,7 @@ class CursorMotionController {
             sigma,
             lowerBound: clipStart,
             upperBound: clipEnd,
+            loopEnd: cursorLoopEnd,
           );
     if (raw == null) {
       _cachedPosition = position;
@@ -249,6 +263,7 @@ class CursorMotionController {
       _cachedTuning = tuning;
       _cachedClipStart = clipStart;
       _cachedClipEnd = clipEnd;
+      _cachedLoopEnd = cursorLoopEnd;
       _cachedResult = null;
       return null;
     }
@@ -261,6 +276,7 @@ class CursorMotionController {
       sigma: sigma,
       clipStart: clipStart,
       clipEnd: clipEnd,
+      cursorLoopEnd: cursorLoopEnd,
     );
 
     // Snap mode (None preset / explicit snap spring): land on the
@@ -273,9 +289,11 @@ class CursorMotionController {
     // switch back to a real spring picks up from the right place.
     if (spring.isSnap) {
       // End-freeze still applies — clamp the snap query so the cursor
-      // stops crawling toward the Stop button. Despike / state-debounce
-      // are not applied in snap mode because the preset's whole point is
-      // to land on the literal recorded grid sample.
+      // stops crawling toward the Stop button. Once the nearest grid sample
+      // is known, apply despike/state-debounce at that sample's timestamp.
+      // This preserves the preset's no-interpolation contract without making
+      // the user-facing cleanup controls silently stop working in None mode
+      // (or in a clip with "Disable smooth mouse").
       var snapQuery = queryPosition;
       if (postProcess.endFreezeMs > 0) {
         final last = cursorRecording.positions.last.timestampMicros;
@@ -284,7 +302,21 @@ class CursorMotionController {
           snapQuery = Duration(microseconds: cap);
         }
       }
-      final snapSample = cursorAtNearest(cursorRecording, snapQuery) ?? raw;
+      final loopEndUs =
+          cursorLoopEnd?.inMicroseconds ??
+          cursorRecording.positions.last.timestampMicros;
+      final loopStartUs = loopEndUs - CursorPostProcess.loopDurationMs * 1000;
+      final loopIsActive =
+          postProcess.loopPosition && snapQuery.inMicroseconds >= loopStartUs;
+      final nearest = cursorAtNearest(cursorRecording, snapQuery);
+      final snapSample = loopIsActive || nearest == null
+          ? raw
+          : (cursorAtFiltered(
+                  cursorRecording,
+                  Duration(microseconds: nearest.timestampMicros),
+                  postProcess.copyWith(endFreezeMs: 0, loopPosition: false),
+                ) ??
+                nearest);
       _x = snapSample.x.toDouble();
       _y = snapSample.y.toDouble();
       _vx = 0;
@@ -301,6 +333,7 @@ class CursorMotionController {
       _cachedTuning = tuning;
       _cachedClipStart = clipStart;
       _cachedClipEnd = clipEnd;
+      _cachedLoopEnd = cursorLoopEnd;
       _cachedResult = CursorMotionUpdate(
         screenPos: Offset(_x, _y),
         isClicked: snapSample.isClicked,
@@ -344,6 +377,7 @@ class CursorMotionController {
       _cachedTuning = tuning;
       _cachedClipStart = clipStart;
       _cachedClipEnd = clipEnd;
+      _cachedLoopEnd = cursorLoopEnd;
       _cachedResult = CursorMotionUpdate(
         screenPos: Offset(_x, _y),
         isClicked: raw.isClicked,
@@ -364,6 +398,7 @@ class CursorMotionController {
       _cachedCursorDelay = cursorDelay;
       _cachedPostProcess = postProcess;
       _cachedConfig = config;
+      _cachedLoopEnd = cursorLoopEnd;
       _cachedRecording = cursorRecording;
       _cachedRecordingVersion = cursorRecording.version;
       _cachedPlaybackSpeed = playbackSpeed;
@@ -444,6 +479,7 @@ class CursorMotionController {
     _cachedTuning = tuning;
     _cachedClipStart = clipStart;
     _cachedClipEnd = clipEnd;
+    _cachedLoopEnd = cursorLoopEnd;
     _cachedResult = CursorMotionUpdate(
       screenPos: Offset(_x, _y),
       isClicked: raw.isClicked,
@@ -525,6 +561,7 @@ class CursorMotionController {
     _cachedTuning = null;
     _cachedClipStart = null;
     _cachedClipEnd = null;
+    _cachedLoopEnd = null;
     _cachedResult = null;
     _history.clear();
   }
@@ -544,13 +581,19 @@ class CursorMotionController {
     required Duration sigma,
     Duration? clipStart,
     Duration? clipEnd,
+    Duration? cursorLoopEnd,
   }) {
     if (position < _velocityLookback) return Offset.zero;
     final previousPosition = position - _velocityLookback;
     if (clipStart != null && previousPosition < clipStart) return Offset.zero;
     if (clipEnd != null && position > clipEnd) return Offset.zero;
     CursorPosition? sampleAt(Duration p) => sigma <= Duration.zero
-        ? cursorAtFiltered(cursorRecording, p, postProcess)
+        ? cursorAtFiltered(
+            cursorRecording,
+            p,
+            postProcess,
+            loopEnd: cursorLoopEnd,
+          )
         : smoothedCursorAt(
             cursorRecording,
             p,
@@ -558,6 +601,7 @@ class CursorMotionController {
             sigma,
             lowerBound: clipStart,
             upperBound: clipEnd,
+            loopEnd: cursorLoopEnd,
           );
     final currentSample = sampleAt(position);
     if (currentSample == null) return Offset.zero;

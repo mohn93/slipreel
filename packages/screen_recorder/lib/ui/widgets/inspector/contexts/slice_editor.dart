@@ -20,6 +20,7 @@ class SliceEditor extends ConsumerWidget {
 
   final int sliceIndex;
   final VoidCallback onClose;
+
   /// Fires with [sliceIndex] BEFORE the controller removes the slice.
   /// Used by the parent to migrate its selection index — without it
   /// the parent's `_selectedSliceIndex` would point at a stale slot.
@@ -40,157 +41,133 @@ class SliceEditor extends ConsumerWidget {
     final clip = clips[sliceIndex];
     final canRemove = clips.length > 1;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _SliceInspectorScaffold(
+      header: _Header(
+        icon: Icons.content_cut,
+        title: 'Slice',
+        // Bounds only — speed is shown via the chip + slider rows
+        // below. Keeping a single source of truth here prevents the
+        // header from echoing the same value three times.
+        subtitle: clip.trimmedDuration == Duration.zero
+            ? '${_fmt(clip.trimStart)} – ${_fmt(clip.trimEnd)}'
+            : '${_fmt(clip.trimStart)} – ${_fmt(clip.trimEnd)}  ·  '
+                  'trimmed ${_trimmedSecondsLabel(clip.trimmedDuration)}s',
+        onClose: onClose,
+      ),
+      // Pinned footer so the destructive action stays visible no matter
+      // where the user has scrolled.
+      footer: canRemove
+          ? _RemoveSliceButton(
+              onTap: () {
+                // Fire onRemove BEFORE removing so the parent can migrate
+                // its selection index against the pre-removal indices.
+                onRemove?.call(sliceIndex);
+                notifier.removeSlice(sliceIndex);
+                onClose();
+              },
+            )
+          : null,
       children: [
-        _Header(
-          icon: Icons.content_cut,
-          title: 'Slice',
-          // Bounds only — speed is shown via the chip + slider rows
-          // below. Keeping a single source of truth here prevents the
-          // header from echoing the same value three times.
-          subtitle: clip.trimmedDuration == Duration.zero
-              ? '${_fmt(clip.trimStart)} – ${_fmt(clip.trimEnd)}'
-              : '${_fmt(clip.trimStart)} – ${_fmt(clip.trimEnd)}  ·  trimmed ${_trimmedSecondsLabel(clip.trimmedDuration)}s',
-          onClose: onClose,
+        const InspectorSectionLabel('Speed'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final s in _speedPresets)
+              InspectorChip(
+                label: '${_speedLabel(s)}x',
+                selected: (clip.playbackSpeed - s).abs() < 0.001,
+                onTap: () => notifier.setSliceSpeed(sliceIndex, s),
+              ),
+          ],
         ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.zero,
-            // Let hover lean/tilt overshoot paint past the panel edge.
-            clipBehavior: Clip.none,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const InspectorSectionLabel('Speed'),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final s in _speedPresets)
-                      InspectorChip(
-                        label: '${_speedLabel(s)}x',
-                        selected: (clip.playbackSpeed - s).abs() < 0.001,
-                        onTap: () => notifier.setSliceSpeed(sliceIndex, s),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                InspectorSlider(
-                  label: 'Fine-tune',
-                  // Percent format so this row doesn't echo the "1.5" substring
-                  // used by the preset chip labels; the slider itself rides a
-                  // log position (SpeedScale), not the raw speed.
-                  subtitle:
-                      'Final speed: ${(clip.playbackSpeed * 100).round()}%',
-                  value: SpeedScale.posFromSpeed(clip.playbackSpeed),
-                  min: 0.0,
-                  max: 1.0,
-                  onChanged: (t) => notifier.setSliceSpeed(
-                    sliceIndex,
-                    SpeedScale.snap(SpeedScale.speedFromPos(t)),
-                  ),
-                  onReset: () => notifier.setSliceSpeed(sliceIndex, 1.0),
-                  canReset: clip.playbackSpeed != 1.0,
-                ),
-                const InspectorSectionDivider(),
-                const InspectorSectionLabel('Audio'),
-                if (clip.audioSilencedBySpeed)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Text(
-                      'Muted above '
-                      '${kSpeedAudioMuteThreshold.toStringAsFixed(0)}x',
-                      style: const TextStyle(
-                          color: kInspectorMuted, fontSize: 12),
-                    ),
-                  )
-                else ...[
-                  _GainRow(
-                    label: 'Mic',
-                    percent: clip.micGainPercent,
-                    muted: clip.micMuted,
-                    onPercentChanged: (v) =>
-                        notifier.setSliceMicGain(sliceIndex, v),
-                    onMutedChanged: (v) =>
-                        notifier.setSliceMicMuted(sliceIndex, v),
-                  ),
-                  const SizedBox(height: 12),
-                  _GainRow(
-                    label: 'System',
-                    percent: clip.systemGainPercent,
-                    muted: clip.systemMuted,
-                    onPercentChanged: (v) =>
-                        notifier.setSliceSystemGain(sliceIndex, v),
-                    onMutedChanged: (v) =>
-                        notifier.setSliceSystemMuted(sliceIndex, v),
-                  ),
-                ],
-                const InspectorSectionDivider(),
-                const InspectorSectionLabel('Cursor'),
-                InspectorToggle(
-                  label: 'Hide cursor',
-                  value: clip.hideCursor,
-                  onChanged: (v) =>
-                      notifier.setSliceHideCursor(sliceIndex, v),
-                ),
-                InspectorToggle(
-                  label: 'Disable smooth mouse',
-                  value: clip.disableSmoothMouse,
-                  onChanged: (v) =>
-                      notifier.setSliceDisableSmoothMouse(sliceIndex, v),
-                ),
-                const InspectorSectionDivider(),
-                const InspectorSectionLabel('Fades'),
-                InspectorSlider(
-                  label: 'Fade in',
-                  subtitle:
-                      '${(clip.fadeIn.inMicroseconds / 1000).toInt()} ms',
-                  value: clip.fadeIn.inMicroseconds / 1e6,
-                  min: 0,
-                  max: 2,
-                  onChanged: (s) => notifier.setSliceFadeIn(
-                    sliceIndex,
-                    Duration(microseconds: (s * 1e6).round()),
-                  ),
-                  onReset: () =>
-                      notifier.setSliceFadeIn(sliceIndex, Duration.zero),
-                  canReset: clip.fadeIn != Duration.zero,
-                ),
-                const SizedBox(height: 12),
-                InspectorSlider(
-                  label: 'Fade out',
-                  subtitle:
-                      '${(clip.fadeOut.inMicroseconds / 1000).toInt()} ms',
-                  value: clip.fadeOut.inMicroseconds / 1e6,
-                  min: 0,
-                  max: 2,
-                  onChanged: (s) => notifier.setSliceFadeOut(
-                    sliceIndex,
-                    Duration(microseconds: (s * 1e6).round()),
-                  ),
-                  onReset: () =>
-                      notifier.setSliceFadeOut(sliceIndex, Duration.zero),
-                  canReset: clip.fadeOut != Duration.zero,
-                ),
-                const SizedBox(height: 24),
-              ],
-            ),
+        const SizedBox(height: 12),
+        InspectorSlider(
+          label: 'Fine-tune',
+          // Percent format so this row doesn't echo the "1.5" substring
+          // used by the preset chip labels; the slider itself rides a
+          // log position (SpeedScale), not the raw speed.
+          subtitle: 'Final speed: ${(clip.playbackSpeed * 100).round()}%',
+          value: SpeedScale.posFromSpeed(clip.playbackSpeed),
+          min: 0.0,
+          max: 1.0,
+          onChanged: (t) => notifier.setSliceSpeed(
+            sliceIndex,
+            SpeedScale.snap(SpeedScale.speedFromPos(t)),
           ),
+          onReset: () => notifier.setSliceSpeed(sliceIndex, 1.0),
+          canReset: clip.playbackSpeed != 1.0,
         ),
-        // Pinned footer so the destructive action stays visible no
-        // matter where the user has scrolled.
-        if (canRemove) ...[
+        const InspectorSectionDivider(),
+        const InspectorSectionLabel('Audio'),
+        if (clip.audioSilencedBySpeed)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(
+              'Muted above ${kSpeedAudioMuteThreshold.toStringAsFixed(0)}x',
+              style: const TextStyle(color: kInspectorMuted, fontSize: 12),
+            ),
+          )
+        else ...[
+          _GainRow(
+            label: 'Mic',
+            percent: clip.micGainPercent,
+            muted: clip.micMuted,
+            onPercentChanged: (v) => notifier.setSliceMicGain(sliceIndex, v),
+            onMutedChanged: (v) => notifier.setSliceMicMuted(sliceIndex, v),
+          ),
           const SizedBox(height: 12),
-          _RemoveSliceButton(onTap: () {
-            // Fire onRemove BEFORE removing so the parent can migrate
-            // its selection index against the pre-removal indices.
-            onRemove?.call(sliceIndex);
-            notifier.removeSlice(sliceIndex);
-            onClose();
-          }),
+          _GainRow(
+            label: 'System',
+            percent: clip.systemGainPercent,
+            muted: clip.systemMuted,
+            onPercentChanged: (v) =>
+                notifier.setSliceSystemGain(sliceIndex, v),
+            onMutedChanged: (v) =>
+                notifier.setSliceSystemMuted(sliceIndex, v),
+          ),
         ],
+        const InspectorSectionDivider(),
+        const InspectorSectionLabel('Cursor'),
+        InspectorToggle(
+          label: 'Hide cursor',
+          value: clip.hideCursor,
+          onChanged: (v) => notifier.setSliceHideCursor(sliceIndex, v),
+        ),
+        InspectorToggle(
+          label: 'Disable smooth mouse',
+          value: clip.disableSmoothMouse,
+          onChanged: (v) => notifier.setSliceDisableSmoothMouse(sliceIndex, v),
+        ),
+        const InspectorSectionDivider(),
+        const InspectorSectionLabel('Fades'),
+        InspectorSlider(
+          label: 'Fade in',
+          subtitle: '${(clip.fadeIn.inMicroseconds / 1000).toInt()} ms',
+          value: clip.fadeIn.inMicroseconds / 1e6,
+          min: 0,
+          max: 2,
+          onChanged: (s) => notifier.setSliceFadeIn(
+            sliceIndex,
+            Duration(microseconds: (s * 1e6).round()),
+          ),
+          onReset: () => notifier.setSliceFadeIn(sliceIndex, Duration.zero),
+          canReset: clip.fadeIn != Duration.zero,
+        ),
+        const SizedBox(height: 12),
+        InspectorSlider(
+          label: 'Fade out',
+          subtitle: '${(clip.fadeOut.inMicroseconds / 1000).toInt()} ms',
+          value: clip.fadeOut.inMicroseconds / 1e6,
+          min: 0,
+          max: 2,
+          onChanged: (s) => notifier.setSliceFadeOut(
+            sliceIndex,
+            Duration(microseconds: (s * 1e6).round()),
+          ),
+          onReset: () => notifier.setSliceFadeOut(sliceIndex, Duration.zero),
+          canReset: clip.fadeOut != Duration.zero,
+        ),
       ],
     );
   }
@@ -214,6 +191,90 @@ class SliceEditor extends ConsumerWidget {
     // 0.5 → "0.5", 1.0 → "1", 1.5 → "1.5", 2.0 → "2"
     if (s == s.roundToDouble()) return s.toInt().toString();
     return s.toString();
+  }
+}
+
+/// Header bar + scroll-clipped body + optional pinned footer, matching the
+/// zoom inspector's scaffold: the header and the divider below it span the
+/// full panel width, the divider fades in once the body scrolls, and the
+/// scrolling body clips hard against the header so content never paints up
+/// over it.
+class _SliceInspectorScaffold extends StatefulWidget {
+  const _SliceInspectorScaffold({
+    required this.header,
+    required this.children,
+    this.footer,
+  });
+
+  final Widget header;
+  final List<Widget> children;
+  final Widget? footer;
+
+  @override
+  State<_SliceInspectorScaffold> createState() =>
+      _SliceInspectorScaffoldState();
+}
+
+class _SliceInspectorScaffoldState extends State<_SliceInspectorScaffold> {
+  final ScrollController _controller = ScrollController();
+  bool _scrolled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_handleScroll);
+  }
+
+  void _handleScroll() {
+    final scrolled = _controller.hasClients && _controller.offset > 1.0;
+    if (scrolled != _scrolled) {
+      setState(() => _scrolled = scrolled);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_handleScroll);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final footer = widget.footer;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Header content is inset; the divider below runs edge-to-edge.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: widget.header,
+        ),
+        // Breathing room between the header and the divider.
+        const SizedBox(height: 14),
+        // Edge-to-edge divider: hidden at the top, fades in once scrolled.
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 1,
+          color: _scrolled ? kInspectorBorder : Colors.transparent,
+        ),
+        Expanded(
+          // Inner padding so list items are inset while the header bar and
+          // divider above span the full panel width. Default (hard-edge)
+          // clipping keeps list content strictly below the header.
+          child: ListView(
+            controller: _controller,
+            padding: EdgeInsets.fromLTRB(20, 14, 20, footer == null ? 24 : 12),
+            children: widget.children,
+          ),
+        ),
+        if (footer != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: footer,
+          ),
+      ],
+    );
   }
 }
 

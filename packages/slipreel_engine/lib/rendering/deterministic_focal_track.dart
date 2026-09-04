@@ -35,6 +35,7 @@ class DeterministicFocalTrack {
     required this.cursorAnimationConfig,
     required this.cursorPostProcess,
     required this.cursorDelay,
+    required this.cursorLoopEnd,
     required this.screenRampCurve,
     required this.rampDurationScale,
     required this.tuning,
@@ -65,6 +66,10 @@ class DeterministicFocalTrack {
   /// jump at the play↔scrub boundary). Defaults to zero for callers without a
   /// delayed cursor; preview and export both pass the project value explicitly.
   final Duration cursorDelay;
+
+  /// End of the cursor timeline in query/source time for the optional
+  /// return-to-start behavior.
+  final Duration? cursorLoopEnd;
 
   /// Screen ramp curve forwarded to the replayed [ScenePassBuilder] so the
   /// deterministic enter/exit focal ramps match the live camera's. Default
@@ -115,6 +120,7 @@ class DeterministicFocalTrack {
     required int fps,
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
     Duration cursorDelay = Duration.zero,
+    Duration? cursorLoopEnd,
     Curve screenRampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
     MotionTuning tuning = MotionTuning.defaults,
@@ -134,6 +140,7 @@ class DeterministicFocalTrack {
         zoomRegions: regions,
         cursorAnimationConfig: cursorAnimationConfig,
         cursorDelay: cursorDelay,
+        cursorLoopEnd: cursorLoopEnd,
         cursorPostProcess: cursorPostProcess,
         cursorRecording: cursorRecording,
         videoSize: videoSize,
@@ -166,6 +173,7 @@ class DeterministicFocalTrack {
       cursorAnimationConfig: cursorAnimationConfig,
       cursorPostProcess: cursorPostProcess,
       cursorDelay: cursorDelay,
+      cursorLoopEnd: cursorLoopEnd,
       screenRampCurve: screenRampCurve,
       rampDurationScale: rampDurationScale,
       tuning: tuning,
@@ -231,6 +239,7 @@ class DeterministicFocalTrack {
     required Size videoSize,
     required int fps,
     Duration cursorDelay = Duration.zero,
+    Duration? cursorLoopEnd,
     Curve screenRampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
     MotionTuning tuning = MotionTuning.defaults,
@@ -251,6 +260,7 @@ class DeterministicFocalTrack {
         this.region == region &&
         this.cursorPostProcess == cursorPostProcess &&
         this.cursorDelay == cursorDelay &&
+        this.cursorLoopEnd == cursorLoopEnd &&
         this.screenRampCurve == screenRampCurve &&
         this.rampDurationScale == rampDurationScale &&
         identical(this.tuning, tuning) &&
@@ -296,6 +306,7 @@ class DeterministicFocalTrackCache {
     required int fps,
     CursorPostProcess cursorPostProcess = CursorPostProcess.none,
     Duration cursorDelay = Duration.zero,
+    Duration? cursorLoopEnd,
     Curve screenRampCurve = Curves.easeInOutQuad,
     double rampDurationScale = 1.0,
     MotionTuning tuning = MotionTuning.defaults,
@@ -312,6 +323,7 @@ class DeterministicFocalTrackCache {
         videoSize: videoSize,
         fps: fps,
         cursorDelay: cursorDelay,
+        cursorLoopEnd: cursorLoopEnd,
         screenRampCurve: screenRampCurve,
         rampDurationScale: rampDurationScale,
         tuning: tuning,
@@ -335,6 +347,7 @@ class DeterministicFocalTrackCache {
       videoSize: videoSize,
       fps: fps,
       cursorDelay: cursorDelay,
+      cursorLoopEnd: cursorLoopEnd,
       screenRampCurve: screenRampCurve,
       rampDurationScale: rampDurationScale,
       tuning: tuning,

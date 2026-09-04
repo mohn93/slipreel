@@ -140,6 +140,69 @@ void main() {
       },
     );
 
+    test('None preset still removes a single-sample cursor shake', () {
+      final ctrl = CursorMotionController();
+      final rec = _record([
+        (micros: 0, x: 0, y: 0, clicked: false),
+        (micros: 16000, x: 5, y: 0, clicked: false),
+        (micros: 32000, x: 200, y: 0, clicked: false),
+        (micros: 48000, x: 15, y: 0, clicked: false),
+        (micros: 64000, x: 20, y: 0, clicked: false),
+      ]);
+
+      final out = ctrl.update(
+        position: const Duration(milliseconds: 32),
+        cursorRecording: rec,
+        config: const CursorAnimationConfig.preset(CursorAnimationStyle.none),
+        fps: 60,
+        postProcess: const CursorPostProcess(
+          removeShakes: true,
+          shakeThresholdPx: 20,
+        ),
+      );
+
+      expect(
+        out!.screenPos.dx,
+        closeTo(10, 1e-6),
+        reason:
+            'Snap mode should keep the nearest sample timestamp while '
+            'snapping its spiked coordinates onto the neighbour path '
+            '(midpoint of x=5 and x=15).',
+      );
+    });
+
+    test('None preset preserves the synthetic return-to-start path', () {
+      final ctrl = CursorMotionController();
+      final rec = _record([
+        (micros: 0, x: 0, y: 0, clicked: false),
+        (micros: 1000000, x: 100, y: 0, clicked: false),
+        (micros: 2000000, x: 200, y: 0, clicked: false),
+      ]);
+      const config = CursorAnimationConfig.preset(CursorAnimationStyle.none);
+      const behavior = CursorPostProcess(loopPosition: true);
+      const end = Duration(seconds: 2);
+
+      final middle = ctrl.update(
+        position: const Duration(milliseconds: 1500),
+        cursorRecording: rec,
+        config: config,
+        fps: 60,
+        postProcess: behavior,
+        cursorLoopEnd: end,
+      );
+      final finish = ctrl.update(
+        position: end,
+        cursorRecording: rec,
+        config: config,
+        fps: 60,
+        postProcess: behavior,
+        cursorLoopEnd: end,
+      );
+
+      expect(middle!.screenPos.dx, closeTo(50, 1e-9));
+      expect(finish!.screenPos.dx, 0);
+    });
+
     test('first call primes the spring to the raw position', () {
       // The spring is stateful, so the very first call has no prior
       // (x, vx) to integrate from. The controller seeds itself with

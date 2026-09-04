@@ -110,9 +110,10 @@ class EditorProjectState {
   /// so the sprite visually arrives at UI elements at the same moment
   /// they react in the recording (compensates for the app's UI
   /// redraw lag — most native macOS apps need ~30–80 ms; defaults to
-  /// 50 ms as a universal starting point). Editable from the cursor
-  /// tab's Debug section. Same value drives the export pipeline so
-  /// the rendered MP4/GIF matches what the preview showed.
+  /// 50 ms as a universal starting point). This is retained as internal
+  /// project data for compatibility; it is not exposed in the production
+  /// inspector. The same value drives the export pipeline so the rendered
+  /// MP4/GIF matches what the preview showed.
   final Duration cursorDelay;
 
   final WindowFrame windowFrame;
@@ -395,8 +396,10 @@ class EditorProjectState {
       // their new caps and produce a "screen wipe" instead of motion
       // blur. The clamp is non-destructive — saving rewrites with the
       // clamped value, so subsequent loads are stable.
-      motionBlur:
-          _readDouble(json['motionBlur'], defaults.motionBlur).clamp(0.0, 0.5),
+      motionBlur: _readDouble(
+        json['motionBlur'],
+        defaults.motionBlur,
+      ).clamp(0.0, 0.5),
       cursorMovementBlur: _readDouble(
         json['cursorMovementBlur'],
         defaults.cursorMovementBlur,

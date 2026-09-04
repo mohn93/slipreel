@@ -3,35 +3,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/rendering/motion_tuning.dart';
 import 'package:slipreel_engine/state/motion_tuning_store.dart';
 
-/// Named, shippable [MotionTuning] presets the inspector picker
-/// exposes as buttons. The enum acts as the user-facing label too
-/// (`MotionTuningPreset.snappy.label` → `"Snappy"`).
+/// Named [MotionTuning] presets retained for internal tuning tools and tests.
+/// These are deliberately not exposed in the production inspector.
 enum MotionTuningPreset { defaults, snappy, cinematic }
 
 extension MotionTuningPresetData on MotionTuningPreset {
   String get label => switch (this) {
-        MotionTuningPreset.defaults => 'Default',
-        MotionTuningPreset.snappy => 'Snappy',
-        MotionTuningPreset.cinematic => 'Cinematic',
-      };
+    MotionTuningPreset.defaults => 'Default',
+    MotionTuningPreset.snappy => 'Snappy',
+    MotionTuningPreset.cinematic => 'Cinematic',
+  };
 
   MotionTuning get tuning => switch (this) {
-        MotionTuningPreset.defaults => MotionTuning.defaults,
-        MotionTuningPreset.snappy => MotionTuning.snappy,
-        MotionTuningPreset.cinematic => MotionTuning.cinematic,
-      };
+    MotionTuningPreset.defaults => MotionTuning.defaults,
+    MotionTuningPreset.snappy => MotionTuning.snappy,
+    MotionTuningPreset.cinematic => MotionTuning.cinematic,
+  };
 }
 
-/// Holds the active [MotionTuning] for the app session. Inspector
-/// picker writes here; controllers (focal spring, cursor motion,
-/// scene blur) read via the [motionTuningProvider] so a preset swap
-/// or JSON reload flows through to every consumer.
+/// Holds the active [MotionTuning] for the app session. Controllers (focal
+/// spring, cursor motion, scene blur) read via the [motionTuningProvider] so
+/// an internal preset swap or JSON reload flows through to every consumer.
 ///
 /// Foundation only — wiring the existing controllers to read from
 /// this notifier lands in a follow-up commit (P2-8 phase C-2).
 class MotionTuningController extends StateNotifier<MotionTuning> {
   MotionTuningController({MotionTuning? initial})
-      : super(initial ?? MotionTuning.defaults);
+    : super(initial ?? MotionTuning.defaults);
 
   /// Swap to one of the named presets.
   void usePreset(MotionTuningPreset preset) {
@@ -61,14 +59,12 @@ class MotionTuningController extends StateNotifier<MotionTuning> {
 /// hand-tuned set.
 final motionTuningProvider =
     StateNotifierProvider<MotionTuningController, MotionTuning>(
-  (ref) => MotionTuningController(),
-);
+      (ref) => MotionTuningController(),
+    );
 
-/// Path-aware [MotionTuningStore] hookup. Default throws if read
-/// without an override — app startup is expected to provide one via
-/// `ProviderScope(overrides: [...])` with the path_provider-resolved
-/// path baked in. UI surfaces (preset picker) read this to persist
-/// the user's choice across sessions.
+/// Path-aware [MotionTuningStore] hookup retained for internal tuning tools.
+/// Default throws if read without an override — app startup provides one via
+/// `ProviderScope(overrides: [...])` with the path_provider-resolved path.
 final motionTuningStoreProvider = Provider<MotionTuningStore>(
   (ref) => throw StateError(
     'motionTuningStoreProvider not overridden — app startup must '

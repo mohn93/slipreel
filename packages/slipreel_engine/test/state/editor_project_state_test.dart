@@ -311,6 +311,20 @@ void main() {
         EditorProjectState.currentSchemaVersion);
   });
 
+  test('cursor behavior settings round-trip through project JSON', () {
+    final original = EditorProjectState.defaults().copyWith(
+      cursorPostProcess: const CursorPostProcess(
+        hideWhenIdle: true,
+        loopPosition: true,
+      ),
+    );
+    final restored = EditorProjectState.fromJson(original.toJson(),
+        videoDuration: const Duration(seconds: 60));
+
+    expect(restored.cursorPostProcess.hideWhenIdle, isTrue);
+    expect(restored.cursorPostProcess.loopPosition, isTrue);
+  });
+
   group('outputAspect', () {
     test('defaults to OutputAspect.auto', () {
       final state = EditorProjectState.defaults();

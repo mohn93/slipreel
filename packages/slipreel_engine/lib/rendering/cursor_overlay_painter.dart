@@ -45,13 +45,16 @@ class CursorOverlayPainter extends CustomPainter {
   final double motionBlurIntensity;
   final CursorState cursorState;
   final double cursorShadow;
+
   /// Spring controlling the press-pulse size animation. Tuned in the
   /// Springs section of the cursor tab; default is snappy / critically
   /// damped so the press reads as instant.
   final ClickSpring clickSpring;
+
   /// Live-tunable knobs for the motion-blur path. Defaults match the
   /// values previously hardcoded as `static const` on this class.
   final MotionBlurTuning tuning;
+
   /// Device pixel ratio of the surface this painter renders into.
   /// The motion-blur path bakes the cursor to a `ui.Image`; without
   /// oversampling by [devicePixelRatio] the bake ends up at logical
@@ -76,7 +79,11 @@ class CursorOverlayPainter extends CustomPainter {
     this.clickSpring = ClickSpring.snappy,
     this.tuning = MotionBlurTuning.defaults,
     this.devicePixelRatio = 1.0,
+    this.visibilityReveal = 1.0,
   });
+
+  /// Hide-when-idle reveal progress: 1 is sharp/visible, 0 is fully hidden.
+  final double visibilityReveal;
 
   static ui.FragmentProgram? _motionBlurProgram;
 
@@ -102,6 +109,49 @@ class CursorOverlayPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final reveal = visibilityReveal.clamp(0.0, 1.0);
+    if (reveal <= 0) return;
+    if (reveal >= 0.999) {
+      _paintVisibleCursor(canvas, size);
+      return;
+    }
+
+    final hidden = 1.0 - reveal;
+    final transitionScale = cursorIdleScaleForReveal(reveal);
+    final transitionAnchor = _visibilityTransitionAnchor(size);
+    final transitionPaint = Paint()
+      ..color = const Color(0xFFFFFFFF).withValues(alpha: reveal)
+      ..imageFilter = ui.ImageFilter.blur(
+        sigmaX: hidden * kCursorIdleRevealBlurSigmaPx,
+        sigmaY: hidden * kCursorIdleRevealBlurSigmaPx,
+      );
+    canvas.saveLayer(Offset.zero & size, transitionPaint);
+    canvas.save();
+    canvas.translate(transitionAnchor.dx, transitionAnchor.dy);
+    canvas.scale(transitionScale, transitionScale);
+    canvas.translate(-transitionAnchor.dx, -transitionAnchor.dy);
+    try {
+      _paintVisibleCursor(canvas, size);
+    } finally {
+      canvas.restore();
+      canvas.restore();
+    }
+  }
+
+  Offset _visibilityTransitionAnchor(Size size) {
+    final inVideo = screenToVideoSpace(
+      screenPos: screenPos,
+      screenSize: screenSize,
+      videoSize: videoSize,
+    );
+    if (videoSize.isEmpty) return Offset.zero;
+    return Offset(
+      inVideo.dx * size.width / videoSize.width,
+      inVideo.dy * size.height / videoSize.height,
+    );
+  }
+
+  void _paintVisibleCursor(Canvas canvas, Size size) {
     final inVideo = screenToVideoSpace(
       screenPos: screenPos,
       screenSize: screenSize,
@@ -123,8 +173,10 @@ class CursorOverlayPainter extends CustomPainter {
     // ring would track the cursor as the user moves the mouse mid-
     // ripple, which makes it read as "the cursor is dragging the
     // ring around" instead of "a click happened at this spot".
-    final clickEvent =
-        mostRecentClickEvent(cursorRecording, position.inMicroseconds);
+    final clickEvent = mostRecentClickEvent(
+      cursorRecording,
+      position.inMicroseconds,
+    );
     final int? dt;
     final Offset? rippleWidgetPos;
     if (clickEvent == null) {
@@ -138,15 +190,19 @@ class CursorOverlayPainter extends CustomPainter {
         screenSize: screenSize,
         videoSize: videoSize,
       );
-      rippleWidgetPos =
-          Offset(clickInVideo.dx * scaleX, clickInVideo.dy * scaleY);
+      rippleWidgetPos = Offset(
+        clickInVideo.dx * scaleX,
+        clickInVideo.dy * scaleY,
+      );
     }
     // Release time drives the press-pulse's release-out phase. Until
     // the button releases, the press pulse holds the cursor at the
     // pressed scale so a long click reads as a press for as long as
     // the user holds it (instead of bouncing back after 250ms).
-    final dtRelease =
-        microsSinceRelease(cursorRecording, position.inMicroseconds);
+    final dtRelease = microsSinceRelease(
+      cursorRecording,
+      position.inMicroseconds,
+    );
 
     // Trail vector: the cursor's recorded chord across the virtual
     // shutter window in widget pixels, capped at [_maxTrailPx]. Returns
@@ -161,10 +217,7 @@ class CursorOverlayPainter extends CustomPainter {
     // [_maxSampleGapMicros], cursorAt's interpolation across that gap
     // would fabricate a phantom path — we drop the trail entirely
     // rather than smear through unknown ground.
-    final trailVector = _trailVectorForBlur(
-      scaleX: scaleX,
-      scaleY: scaleY,
-    );
+    final trailVector = _trailVectorForBlur(scaleX: scaleX, scaleY: scaleY);
 
     // Slider all the way down (or recording too sparse / no displacement
     // during the exposure): cheap direct paint, no shader / pre-bake.
@@ -194,9 +247,7 @@ class CursorOverlayPainter extends CustomPainter {
       return;
     }
 
-    final samples = computeMotionBlurSamples(
-      trailVectorPx: trailVector,
-    );
+    final samples = computeMotionBlurSamples(trailVectorPx: trailVector);
 
     // Math collapsed to "no blur" (sub-pixel chord). Direct paint.
     if (samples.count == 1) {
@@ -251,10 +302,11 @@ class CursorOverlayPainter extends CustomPainter {
     // direction. 4 × pxDiameter centred on the tip covers all of
     // those without clipping, even at the inspector slider's maxima.
     final reach = samples.stepPx.distance * (samples.count - 1);
-    final spriteBufferSize =
-        (pxDiameter * 4 + reach * 2).ceil().toDouble();
-    final spriteBufferCenter =
-        Offset(spriteBufferSize / 2, spriteBufferSize / 2);
+    final spriteBufferSize = (pxDiameter * 4 + reach * 2).ceil().toDouble();
+    final spriteBufferCenter = Offset(
+      spriteBufferSize / 2,
+      spriteBufferSize / 2,
+    );
     // Oversample the bake by devicePixelRatio so the texture has
     // enough texels for the shader's bilinear sampling to land a
     // unique value per output device pixel. Without this the bake is
@@ -367,7 +419,9 @@ class CursorOverlayPainter extends CustomPainter {
               scaledSize,
             ),
             Paint()
-              ..color = const Color(0xFFFFFFFF).withValues(alpha: samples.alphas[i])
+              ..color = const Color(
+                0xFFFFFFFF,
+              ).withValues(alpha: samples.alphas[i])
               ..filterQuality = FilterQuality.high,
           );
         }
@@ -411,8 +465,7 @@ class CursorOverlayPainter extends CustomPainter {
     if (raw.length < 2) return Offset.zero;
     final maxSampleGapMicros = (tuning.maxSampleGapMs * 1000).round();
     final largePairDispPx = tuning.largePairDispPx;
-    final postIdleThresholdMicros =
-        (tuning.postIdleThresholdMs * 1000).round();
+    final postIdleThresholdMicros = (tuning.postIdleThresholdMs * 1000).round();
 
     // Walk the consecutive sample pairs that overlap [tStart, tEnd]
     // and reject the trail when either:
@@ -449,8 +502,10 @@ class CursorOverlayPainter extends CustomPainter {
     }
 
     final currentSample = cursorAt(cursorRecording, position);
-    final prevSample =
-        cursorAt(cursorRecording, Duration(microseconds: tStart));
+    final prevSample = cursorAt(
+      cursorRecording,
+      Duration(microseconds: tStart),
+    );
     if (currentSample == null || prevSample == null) return Offset.zero;
 
     // Chord in video pixels, then convert to widget pixels. Direction
@@ -500,7 +555,7 @@ class CursorOverlayPainter extends CustomPainter {
       final lookbackSec = velocityLookbackMicros / 1e6;
       final vRecentMag =
           math.sqrt(vDxWidget * vDxWidget + vDyWidget * vDyWidget) /
-              lookbackSec;
+          lookbackSec;
       final vTLen = vRecentMag * exposureSec;
       if (vTLen < effectiveLen) effectiveLen = vTLen;
     }
@@ -521,14 +576,15 @@ class CursorOverlayPainter extends CustomPainter {
           math.sqrt(gDxWidget * gDxWidget + gDyWidget * gDyWidget) / gateSec;
 
       final triggerSpan =
-          (tuning.vTriggerHighPxPerSec - tuning.vTriggerLowPxPerSec)
-              .abs();
+          (tuning.vTriggerHighPxPerSec - tuning.vTriggerLowPxPerSec).abs();
       // If the user squashes low ≈ high, fall back to a hard
       // threshold (no ramp band) instead of dividing by zero.
       final triggerT = triggerSpan < 1
           ? (vGateMag >= tuning.vTriggerHighPxPerSec ? 1.0 : 0.0)
-          : ((vGateMag - tuning.vTriggerLowPxPerSec) / triggerSpan)
-              .clamp(0.0, 1.0);
+          : ((vGateMag - tuning.vTriggerLowPxPerSec) / triggerSpan).clamp(
+              0.0,
+              1.0,
+            );
       // Smoothstep: 3t² - 2t³. Hermite interpolation, zero
       // derivative at both ends — no visible kink at threshold
       // boundaries while the ramp is active.
@@ -563,7 +619,8 @@ class CursorOverlayPainter extends CustomPainter {
         old.cursorShadow != cursorShadow ||
         old.clickSpring != clickSpring ||
         old.tuning != tuning ||
-        old.devicePixelRatio != devicePixelRatio;
+        old.devicePixelRatio != devicePixelRatio ||
+        old.visibilityReveal != visibilityReveal;
   }
 }
 

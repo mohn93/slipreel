@@ -5,7 +5,6 @@ import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
-import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 
@@ -14,9 +13,8 @@ import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 /// Reads + writes the editor's cursor settings directly via the
 /// [editorProjectControllerProvider]. `canHideCursor` stays as a
 /// constructor prop because it depends on the cursor recording (a
-/// session input, not editor state). Local toggles for not-yet-wired
-/// settings (always-pointer, hide-if-still, loop-position) live on
-/// the state object until they get real model fields.
+/// session input, not editor state). The not-yet-wired always-pointer
+/// option remains local; every functional behavior setting is project state.
 class CursorTab extends ConsumerStatefulWidget {
   const CursorTab({
     super.key,
@@ -39,8 +37,6 @@ class CursorTab extends ConsumerStatefulWidget {
 
 class _CursorTabState extends ConsumerState<CursorTab> {
   bool _alwaysPointer = false;
-  bool _hideIfStill = false;
-  bool _loopPosition = false;
   bool _advancedExpanded = true;
 
   EditorProjectController get _notifier =>
@@ -52,7 +48,8 @@ class _CursorTabState extends ConsumerState<CursorTab> {
       return const InspectorPlaceholder(
         icon: Icons.mouse_outlined,
         title: 'Not available for iPhone/iPad recordings',
-        body: 'Cursor size, style, and click effects need cursor and click '
+        body:
+            'Cursor size, style, and click effects need cursor and click '
             'data, which is not captured when recording a connected iPhone '
             'or iPad over USB.',
       );
@@ -118,8 +115,10 @@ class _CursorTabState extends ConsumerState<CursorTab> {
         const InspectorSectionDivider(),
         InspectorToggle(
           label: 'Hide cursor if not moving',
-          value: _hideIfStill,
-          onChanged: (v) => setState(() => _hideIfStill = v),
+          value: project.cursorPostProcess.hideWhenIdle,
+          onChanged: (v) => _notifier.setCursorPostProcess(
+            project.cursorPostProcess.copyWith(hideWhenIdle: v),
+          ),
         ),
         const SizedBox(height: 20),
         InspectorToggle(
@@ -127,8 +126,10 @@ class _CursorTabState extends ConsumerState<CursorTab> {
           subtitle:
               'Near the end of the video, cursor will move back to its '
               'initial position',
-          value: _loopPosition,
-          onChanged: (v) => setState(() => _loopPosition = v),
+          value: project.cursorPostProcess.loopPosition,
+          onChanged: (v) => _notifier.setCursorPostProcess(
+            project.cursorPostProcess.copyWith(loopPosition: v),
+          ),
         ),
         const SizedBox(height: 20),
         InspectorToggle(
@@ -155,11 +156,7 @@ class _CursorTabState extends ConsumerState<CursorTab> {
         const Text(
           'A press animation always plays on click. Pick what '
           'else happens.',
-          style: TextStyle(
-            color: kInspectorMuted,
-            fontSize: 12,
-            height: 1.4,
-          ),
+          style: TextStyle(color: kInspectorMuted, fontSize: 12, height: 1.4),
         ),
         const SizedBox(height: 12),
         InspectorOptionRow<CursorClickEffect>(
@@ -182,67 +179,10 @@ class _CursorTabState extends ConsumerState<CursorTab> {
         const Text(
           'Stiffness controls how fast each animation chases its target. '
           'Damping below 1.0 adds bounce; 1.0 settles cleanly.',
-          style: TextStyle(
-            color: kInspectorMuted,
-            fontSize: 12,
-            height: 1.4,
-          ),
+          style: TextStyle(color: kInspectorMuted, fontSize: 12, height: 1.4),
         ),
         const SizedBox(height: 16),
         ..._clickSpringSliders(project.clickSpring),
-        const InspectorSectionDivider(),
-        const Text(
-          'Debug',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Experimental controls. Off by default.',
-          style: TextStyle(
-            color: kInspectorMuted,
-            fontSize: 12,
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: 16),
-        _MotionPresetPicker(
-          active: ref.watch(motionTuningProvider.notifier).activePreset,
-          onPick: (preset) {
-            ref.read(motionTuningProvider.notifier).usePreset(preset);
-            // Persist so next launch picks up this choice. Fire-and-
-            // forget — store handles errors internally (logs only).
-            ref
-                .read(motionTuningStoreProvider)
-                .save(preset.tuning);
-          },
-        ),
-        const SizedBox(height: 20),
-        InspectorSlider(
-          label: 'Cursor delay',
-          subtitle: () {
-            final ms = project.cursorDelay.inMilliseconds;
-            if (ms == 0) return 'Off';
-            if (ms > 0) return '$ms ms (lag)';
-            return '${-ms} ms (lead)';
-          }(),
-          // Range goes negative so the cursor can be advanced past the
-          // spring's intrinsic 75-ms lag (useful for apps that
-          // *immediately* respond to cursor events with no animation —
-          // there the sprite should *lead* the recorded UI by a few
-          // frames to look right). 0 = no shift, +N ms = sprite lags
-          // by N ms, −N ms = sprite leads by N ms.
-          value: project.cursorDelay.inMicroseconds / 1000.0,
-          min: -100,
-          max: 500,
-          onChanged: (v) => _notifier.setCursorDelay(
-              Duration(microseconds: (v * 1000).round())),
-          onReset: () => _notifier.setCursorDelay(Duration.zero),
-          canReset: project.cursorDelay != Duration.zero,
-        ),
         const InspectorSectionDivider(),
         ..._advancedSection(project.cursorPostProcess),
         const SizedBox(height: 24),
@@ -292,7 +232,8 @@ class _CursorTabState extends ConsumerState<CursorTab> {
         const SizedBox(height: 16),
         InspectorSlider(
           label: 'Stop cursor movement at the end of the video',
-          subtitle: 'Near the end of the video, the last mouse movement '
+          subtitle:
+              'Near the end of the video, the last mouse movement '
               'often leads to clicking "Stop Recording," which you might '
               'not want to be visible. Adjust how long before the end of '
               'the video the mouse cursor will stop moving.\n'
@@ -303,21 +244,21 @@ class _CursorTabState extends ConsumerState<CursorTab> {
           onChanged: (v) => _notifier.setCursorPostProcess(
             pp.copyWith(endFreezeMs: v.round()),
           ),
-          onReset: () => _notifier.setCursorPostProcess(
-            pp.copyWith(endFreezeMs: 0),
-          ),
+          onReset: () =>
+              _notifier.setCursorPostProcess(pp.copyWith(endFreezeMs: 0)),
           canReset: pp.endFreezeMs != 0,
         ),
         const SizedBox(height: 20),
         InspectorToggle(
           label: 'Remove cursor shakes',
-          subtitle: 'If you use some accessibility apps that can control '
+          subtitle:
+              'If you use some accessibility apps that can control '
               'your mouse, it is possible those apps will cause sudden, '
               'short movements of your mouse. This option allows trying '
               'to detect and remove them.',
           value: pp.removeShakes,
-          onChanged: (v) => _notifier
-              .setCursorPostProcess(pp.copyWith(removeShakes: v)),
+          onChanged: (v) =>
+              _notifier.setCursorPostProcess(pp.copyWith(removeShakes: v)),
         ),
         const SizedBox(height: 20),
         InspectorSlider(
@@ -326,26 +267,26 @@ class _CursorTabState extends ConsumerState<CursorTab> {
           value: pp.shakeThresholdPx,
           min: 5,
           max: 60,
-          onChanged: (v) => _notifier.setCursorPostProcess(
-            pp.copyWith(shakeThresholdPx: v),
-          ),
+          onChanged: (v) =>
+              _notifier.setCursorPostProcess(pp.copyWith(shakeThresholdPx: v)),
           onReset: () => _notifier.setCursorPostProcess(
             pp.copyWith(
               shakeThresholdPx: CursorPostProcess.defaultShakeThresholdPx,
             ),
           ),
-          canReset: pp.shakeThresholdPx !=
-              CursorPostProcess.defaultShakeThresholdPx,
+          canReset:
+              pp.shakeThresholdPx != CursorPostProcess.defaultShakeThresholdPx,
         ),
         const SizedBox(height: 20),
         InspectorToggle(
           label: 'Optimize cursor changes',
-          subtitle: 'Slipreel will try to minimize rapid cursor changes '
+          subtitle:
+              'Slipreel will try to minimize rapid cursor changes '
               '(eg when quickly moving over some elements) when this '
               'option is enabled.',
           value: pp.optimizeChanges,
-          onChanged: (v) => _notifier
-              .setCursorPostProcess(pp.copyWith(optimizeChanges: v)),
+          onChanged: (v) =>
+              _notifier.setCursorPostProcess(pp.copyWith(optimizeChanges: v)),
         ),
       ],
     ];
@@ -360,8 +301,7 @@ class _CursorTabState extends ConsumerState<CursorTab> {
         min: 100,
         max: 1200,
         onChanged: (v) => _notifier.setClickSpring(s.copyWith(stiffness: v)),
-        onReset: () =>
-            _notifier.setClickSpring(s.copyWith(stiffness: 350)),
+        onReset: () => _notifier.setClickSpring(s.copyWith(stiffness: 350)),
         canReset: s.stiffness != 350,
       ),
       const SizedBox(height: 20),
@@ -458,9 +398,7 @@ class _CursorStylePreviewPainter extends CustomPainter {
     final position = isDot
         ? Offset(size.width / 2, size.height / 2)
         : Offset(size.width * 0.15, size.height * 0.15);
-    final diameter = isDot
-        ? size.shortestSide * 0.75
-        : size.height * 0.75;
+    final diameter = isDot ? size.shortestSide * 0.75 : size.height * 0.75;
     paintCursorGlyph(
       canvas,
       position: position,
@@ -472,60 +410,4 @@ class _CursorStylePreviewPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _CursorStylePreviewPainter old) =>
       old.style != style;
-}
-
-/// Compact preset picker for [MotionTuning]. Shown in the cursor
-/// tab's Debug section so designers can A/B presets without
-/// recompiling — pairs with the sidecar JSON load at startup. The
-/// "Custom" row appears only when [active] is null (the current
-/// tuning doesn't match any named preset — e.g. user-edited JSON).
-class _MotionPresetPicker extends StatelessWidget {
-  const _MotionPresetPicker({required this.active, required this.onPick});
-
-  final MotionTuningPreset? active;
-  final ValueChanged<MotionTuningPreset> onPick;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Motion preset',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          active == null
-              ? 'Custom (loaded from motion_tuning.json — pick a preset to '
-                  'override).'
-              : 'Active: ${active!.label}. Affects spring + scene-blur '
-                  'tuning across preview and export.',
-          style: const TextStyle(
-            color: kInspectorMuted,
-            fontSize: 11,
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final p in MotionTuningPreset.values)
-              InspectorChip(
-                label: p.label,
-                selected: active == p,
-                onTap: () => onPick(p),
-                dense: true,
-              ),
-          ],
-        ),
-      ],
-    );
-  }
 }

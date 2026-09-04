@@ -515,6 +515,30 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
   int get _pauseStabilizeThresholdMicros =>
       _tuning.pauseStabilizeThreshold.inMicroseconds;
 
+  /// Final cursor query timestamp used by the return-to-start behavior.
+  /// Positive cursor delay shifts the query backward, so shift the boundary
+  /// by the same amount to make the loop still land exactly at video end.
+  Duration? get _cursorLoopEnd {
+    if (!widget.cursorPostProcess.loopPosition ||
+        widget.cursorRecording.count == 0) {
+      return null;
+    }
+    final Duration visualEnd;
+    if (widget.clips.isNotEmpty) {
+      visualEnd = widget.clips.last.trimEnd;
+    } else if (widget.controller.value.duration > Duration.zero) {
+      visualEnd = widget.controller.value.duration;
+    } else if (widget.metadata?.duration != null) {
+      visualEnd = widget.metadata!.duration!;
+    } else {
+      visualEnd = Duration(
+        microseconds: widget.cursorRecording.positions.last.timestampMicros,
+      );
+    }
+    final shifted = visualEnd - widget.cursorDelay;
+    return shifted.isNegative ? Duration.zero : shifted;
+  }
+
   final ZoomTransformer _zoomTransformer = ZoomTransformer();
 
   /// Cached deterministic focal trajectory for the active follow-cursor zoom
@@ -875,13 +899,27 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
             final activeSlice = widget.clips.isEmpty
                 ? null
                 : clipSliceContaining(widget.clips, pos);
+            final activeRun = widget.clips.isEmpty
+                ? null
+                : contiguousClipRunBounds(widget.clips, pos);
             final effectiveSliceHideCursor =
                 activeSlice?.hideCursor ??
                 (widget.clips.isEmpty ? widget.sliceHideCursor : true);
-            final showCursor =
+            final cursorReveal =
                 hasCursorData &&
-                !widget.hideCursorOverlay &&
-                !effectiveSliceHideCursor;
+                    !widget.hideCursorOverlay &&
+                    !effectiveSliceHideCursor
+                ? cursorRevealAt(
+                    widget.cursorRecording,
+                    pos,
+                    widget.cursorPostProcess,
+                    cursorDelay: widget.cursorDelay,
+                    lowerBound: activeRun?.start,
+                    upperBound: activeRun?.end,
+                    loopEnd: _cursorLoopEnd,
+                  )
+                : 0.0;
+            final showCursor = cursorReveal > 0;
 
             // Single call into the shared scene builder. The export
             // pipeline calls the same builder with the same inputs in
@@ -910,6 +948,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
               cursorAnimationConfig: sceneCursorAnimationConfig,
               cursorDelay: widget.cursorDelay,
               cursorPostProcess: widget.cursorPostProcess,
+              cursorLoopEnd: _cursorLoopEnd,
               cursorRecording: widget.cursorRecording,
               videoSize: videoSize,
               fps: widget.metadata?.fps ?? 60,
@@ -1020,6 +1059,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                         pathSmoothingSigma:
                             effectiveCursorAnimationConfig.pathSmoothingSigma,
                         cursorDelay: widget.cursorDelay,
+                        cursorLoopEnd: _cursorLoopEnd,
                         activeClip: activeSlice,
                         clips: widget.clips,
                         exposureMs:
@@ -1057,6 +1097,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                         clickEffect: widget.cursorClickEffect,
                         clickSpring: widget.clickSpring,
                         cursorShadow: widget.cursorShadow,
+                        visibilityReveal: cursorReveal,
                       ),
                     ),
                   ),
@@ -1093,6 +1134,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
                                 devicePixelRatio: MediaQuery.of(
                                   context,
                                 ).devicePixelRatio,
+                                visibilityReveal: cursorReveal,
                               ),
                             ),
                           ),
@@ -1771,6 +1813,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
       fps: fps,
       cursorPostProcess: widget.cursorPostProcess,
       cursorDelay: widget.cursorDelay,
+      cursorLoopEnd: _cursorLoopEnd,
       screenRampCurve: widget.screenAnimationConfig.rampCurve,
       rampDurationScale: widget.screenAnimationConfig.rampDurationScale,
       tuning: _tuning,
@@ -1894,6 +1937,7 @@ class _PlaybackCanvasState extends ConsumerState<PlaybackCanvas>
         widget.cursorRecording,
         t,
         widget.cursorPostProcess,
+        loopEnd: _cursorLoopEnd,
       );
       focal = sample == null
           ? videoSize.center(Offset.zero)
