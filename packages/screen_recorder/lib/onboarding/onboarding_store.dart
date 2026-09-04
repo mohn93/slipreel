@@ -14,16 +14,16 @@ class OnboardingStore {
 
   Future<OnboardingStep> loadStep() async {
     final prefs = await SharedPreferences.getInstance();
-    final index = prefs.getInt(_stepKey);
-    if (index == null || index < 0 || index >= OnboardingStep.values.length) {
-      return OnboardingStep.welcome;
+    final savedName = prefs.getString(_stepKey);
+    for (final step in OnboardingStep.values) {
+      if (step.name == savedName) return step;
     }
-    return OnboardingStep.values[index];
+    return OnboardingStep.welcome;
   }
 
   Future<void> saveStep(OnboardingStep step) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_stepKey, step.index);
+    await prefs.setString(_stepKey, step.name);
   }
 
   Future<void> markComplete() async {

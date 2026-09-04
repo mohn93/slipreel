@@ -20,6 +20,14 @@ void main() {
     expect(await OnboardingStore().loadStep(), OnboardingStep.permissions);
   });
 
+  test('loadStep falls back to welcome for a stale step name', () async {
+    SharedPreferences.setMockInitialValues({
+      'slipreel.onboarding_step': 'removed_step',
+    });
+
+    expect(await OnboardingStore().loadStep(), OnboardingStep.welcome);
+  });
+
   test('markComplete persists and clears partial progress', () async {
     final store = OnboardingStore();
     await store.saveStep(OnboardingStep.permissions);
