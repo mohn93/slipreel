@@ -35,7 +35,7 @@ class _FakePlatform extends ScreenRecorderPlatform {
   Future<void> startDeviceRecording({
     required String deviceId,
     required bool captureDeviceAudio,
-    required bool captureMic,
+    required MicrophoneConfig? microphone,
     required String outputPath,
   }) async {
     deviceStarted = deviceId;

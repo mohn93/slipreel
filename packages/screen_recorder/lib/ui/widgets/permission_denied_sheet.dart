@@ -23,7 +23,7 @@ const Map<PermissionKind, String> _kTitles = {
 
 const Map<PermissionKind, String> _kBodies = {
   PermissionKind.screenRecording:
-      'Slipreel needs Screen Recording access in System Settings to capture your screen.',
+      'Slipreel needs Screen Recording access to show available screens and windows. Enable it in System Settings, then quit and reopen Slipreel.',
   PermissionKind.microphone:
       'Slipreel needs Microphone access in System Settings to record your voice.',
   PermissionKind.accessibility:
@@ -88,6 +88,19 @@ class _PermissionDeniedBodyState extends State<_PermissionDeniedBody> {
                 }
                 if (!mounted) return;
                 if (ok) {
+                  if (widget.kind == PermissionKind.screenRecording) {
+                    // System Settings is a separate process. Ask the native
+                    // layer to pin a lightweight guide beside its window so the
+                    // user does not lose the next step after this route closes.
+                    try {
+                      await ScreenRecorderPlatform.instance
+                          .showScreenRecordingPermissionGuide();
+                    } catch (_) {
+                      // Settings still opened successfully; the guide is an
+                      // enhancement and must never block the permission flow.
+                    }
+                    if (!mounted) return;
+                  }
                   navigator.pop();
                 } else {
                   setState(() {

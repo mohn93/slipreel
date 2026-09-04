@@ -43,7 +43,7 @@ class RecordingActionRouter {
       // snapshot. Without this, the start path denied even when the permission
       // was granted in System Settings (stale snapshot) and could never
       // re-prompt once the app's entry was removed.
-      if (!await _ensureScreenRecording(context)) return;
+      if (!await ensureScreenRecording(context)) return;
     }
 
     Future<void> doStart() async {
@@ -170,7 +170,11 @@ class RecordingActionRouter {
   ///
   /// If the permissions provider isn't wired (tests), treats recording as
   /// ungated and returns true — matching the controller's own gate.
-  Future<bool> _ensureScreenRecording(BuildContext context) async {
+  /// Public so the bar can gate screen/window/area discovery before opening
+  /// the native source picker. ScreenCaptureKit cannot enumerate sources until
+  /// permission is granted; checking only after selection turns denial into a
+  /// misleading "no windows" empty state.
+  Future<bool> ensureScreenRecording(BuildContext context) async {
     final PermissionsController perms;
     try {
       perms = _container.read(permissionsControllerProvider.notifier);

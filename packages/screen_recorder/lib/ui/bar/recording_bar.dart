@@ -40,6 +40,7 @@ class RecordingBar extends StatelessWidget {
     required this.onCameraTap,
     this.contentKey,
     this.micLevelStream,
+    this.micMenuLoading = false,
   });
 
   final void Function(BarSourceMode mode) onPickMode;
@@ -75,6 +76,9 @@ class RecordingBar extends StatelessWidget {
   /// Live mic level (0..1) stream; when non-null a meter is shown under the mic
   /// control. Null when not monitoring.
   final Stream<double>? micLevelStream;
+
+  /// True while the native microphone device menu is being prepared/opened.
+  final bool micMenuLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +144,8 @@ class RecordingBar extends StatelessWidget {
             _MicControl(
                 microphone: microphone,
                 onTap: onMicTap,
-                levelStream: micLevelStream),
+                levelStream: micLevelStream,
+                menuLoading: micMenuLoading),
             _SystemAudioControl(
                 systemAudio: systemAudio, onTap: onSystemAudioTap),
             const _Divider(),
@@ -216,11 +221,13 @@ class _MicControl extends StatefulWidget {
     required this.microphone,
     required this.onTap,
     this.levelStream,
+    required this.menuLoading,
   });
 
   final MicrophoneConfig? microphone;
   final VoidCallback onTap;
   final Stream<double>? levelStream;
+  final bool menuLoading;
 
   @override
   State<_MicControl> createState() => _MicControlState();
@@ -271,8 +278,20 @@ class _MicControlState extends State<_MicControl> {
                               style: TextStyle(fontSize: 12, color: color)),
                         ),
                         const SizedBox(width: 2),
-                        const Icon(LucideIcons.chevronDown,
-                            size: 13, color: Color(0xFF7E7E86)),
+                        if (widget.menuLoading)
+                          const SizedBox(
+                            key: Key('mic-menu-loading'),
+                            width: 13,
+                            height: 13,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: Color(0xFFAFAFB6),
+                              semanticsLabel: 'Loading microphones',
+                            ),
+                          )
+                        else
+                          const Icon(LucideIcons.chevronDown,
+                              size: 13, color: Color(0xFF7E7E86)),
                       ],
                     );
                   },

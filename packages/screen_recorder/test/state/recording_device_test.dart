@@ -2,8 +2,8 @@
 //
 // Covers RecordingController.startDeviceRecording: it must resolve the output
 // .mp4 under the save dir (same path-resolution the screen path uses), forward
-// deviceId/captureDeviceAudio/captureMic to the platform, and transition the
-// controller into an active device recording. The native side finalizes a
+// deviceId/device audio/the exact microphone config to the platform, and
+// transition the controller into an active device recording. The native side finalizes a
 // device capture through the SAME stopLiveRecording path, so on stop the
 // cursor/keystroke sidecars must be skipped (touch devices have no input
 // tracking) while the metadata sidecar still writes.
@@ -24,19 +24,19 @@ class _FakePlatform extends ScreenRecorderPlatform
     with MockPlatformInterfaceMixin {
   String? deviceId;
   bool? deviceAudio;
-  bool? mic;
+  MicrophoneConfig? microphone;
   String? outputPath;
 
   @override
   Future<void> startDeviceRecording({
     required String deviceId,
     required bool captureDeviceAudio,
-    required bool captureMic,
+    required MicrophoneConfig? microphone,
     required String outputPath,
   }) async {
     this.deviceId = deviceId;
     deviceAudio = captureDeviceAudio;
-    mic = captureMic;
+    this.microphone = microphone;
     this.outputPath = outputPath;
   }
 
@@ -68,7 +68,7 @@ void main() {
 
     expect(platform.deviceId, 'uid-1');
     expect(platform.deviceAudio, true);
-    expect(platform.mic, false);
+    expect(platform.microphone, isNull);
     expect(platform.outputPath, endsWith('.mp4'));
     expect(platform.outputPath, startsWith('/tmp/test-docs/'));
 
@@ -80,20 +80,26 @@ void main() {
     c.dispose();
   });
 
-  test('startDeviceRecording with a microphone sets captureMic true', () async {
+  test('startDeviceRecording forwards the selected microphone config', () async {
     TestWidgetsFlutterBinding.ensureInitialized();
     PathProviderPlatform.instance = _FakePathProvider();
     final platform = _FakePlatform();
     ScreenRecorderPlatform.instance = platform;
 
     final c = RecordingController();
+    const mic = MicrophoneConfig(
+      deviceUid: 'mic-1',
+      deviceLabel: 'User microphone',
+      reduceNoise: true,
+      disableAgc: true,
+    );
     await c.startDeviceRecording(
       deviceId: 'uid-2',
       captureDeviceAudio: false,
-      microphone: const MicrophoneConfig(deviceUid: 'mic-1', deviceLabel: 'Mic'),
+      microphone: mic,
     );
 
-    expect(platform.mic, true);
+    expect(platform.microphone, mic);
     expect(platform.deviceAudio, false);
 
     c.dispose();

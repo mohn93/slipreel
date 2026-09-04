@@ -308,6 +308,11 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       checkPermissions(result: result)
     case "requestScreenRecordingPermission":
       requestScreenRecordingPermission(result: result)
+    case "showScreenRecordingPermissionGuide":
+      Task { @MainActor in
+        ScreenRecordingPermissionGuide.shared.show()
+        result(nil)
+      }
     case "getStockCursorImages":
       getStockCursorImages(result: result)
     case "isAccessibilityTrusted":
@@ -412,10 +417,15 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     let curReduceNoise = current?["reduceNoise"] as? Bool ?? false
     let curDisableAgc = current?["disableAgc"] as? Bool ?? false
 
-    DispatchQueue.main.async {
-      let target = MicMenuTarget()
-      let menu = NSMenu()
-      let status = AVCaptureDevice.authorizationStatus(for: .audio)
+    // Some third-party/Continuity CoreAudio drivers are slow to answer their
+    // properties on first access. Keep that discovery work off AppKit's main
+    // queue so the bar can paint its loading indicator immediately.
+    DispatchQueue.global(qos: .userInitiated).async {
+      let devices = AudioDeviceCatalog.inputDevices()
+      DispatchQueue.main.async {
+        let target = MicMenuTarget()
+        let menu = NSMenu()
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
 
       if status == .denied || status == .restricted {
         let info = NSMenuItem(
@@ -426,7 +436,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         menu.addItem(.separator())
       }
 
-      for dev in AudioDeviceCatalog.inputDevices() {
+      for dev in devices {
         let uid = dev["id"] as? String ?? ""
         let name = dev["name"] as? String ?? uid
         let isDefault = dev["isDefault"] as? Bool ?? false
@@ -502,6 +512,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       case .toggleDisableAgc:
         guard let uid = curUid, let label = current?["deviceLabel"] as? String else { reply(nil); return }
         reply(configMap(uid: uid, label: label, reduceNoise: curReduceNoise, disableAgc: !curDisableAgc))
+        }
       }
     }
   }
@@ -997,7 +1008,8 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       return
     }
     let captureDeviceAudio = (args["captureDeviceAudio"] as? Bool) ?? true
-    let captureMic = (args["captureMic"] as? Bool) ?? false
+    let micArgs = args["microphone"] as? [String: Any]
+    let captureMic = micArgs != nil
 
     Task {
       do {
@@ -1084,13 +1096,16 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         self.liveStartTime = Date()
 
         // Optional microphone track, sourced exactly like the screen path.
-        if captureMic {
+        if let mic = micArgs {
+          let uid = mic["deviceUid"] as? String
+          let reduceNoise = mic["reduceNoise"] as? Bool ?? false
+          let disableAgc = mic["disableAgc"] as? Bool ?? false
           if audioCaptureManager == nil { audioCaptureManager = AudioCaptureManager() }
           audioCaptureManager?.onSampleBufferReceived = { [weak writer] sb in
             writer?.appendAudio(sb, role: .microphone)
           }
           try audioCaptureManager?.startMicrophoneCapture(
-            deviceUid: nil, reduceNoise: false, disableAgc: false)
+            deviceUid: uid, reduceNoise: reduceNoise, disableAgc: disableAgc)
         }
 
         let sampler = PerfSampler()

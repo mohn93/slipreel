@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,12 +8,14 @@ import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:screen_recorder/onboarding/tips_store.dart';
 import 'package:screen_recorder/state/microphone_controller.dart';
 import 'package:screen_recorder/state/permissions_controller.dart';
+import 'package:screen_recorder/state/recording_action_router.dart';
 import 'package:screen_recorder/state/recording_state.dart';
 import 'package:screen_recorder/state/window_mode.dart';
 import 'package:screen_recorder/state/window_mode_controller.dart';
 import 'package:screen_recorder/ui/bar/recording_bar.dart';
 import 'package:screen_recorder/ui/bar/recording_pill.dart';
 import 'package:screen_recorder/ui/bar/recording_bar_screen.dart';
+import 'package:screen_recorder/ui/widgets/permission_denied_sheet.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -39,11 +43,13 @@ class _FakePlatform extends ScreenRecorderPlatform
   final RegionSelection? region;
 
   MicrophoneConfig? menuReturns;
+  Completer<MicrophoneMenuResult>? micMenuCompleter;
   int showMicMenuCalls = 0;
 
   @override
   Future<MicrophoneMenuResult> showMicrophoneMenu(MicrophoneConfig? current) async {
     showMicMenuCalls++;
+    if (micMenuCompleter case final completer?) return completer.future;
     return MicrophoneMenuResult(cancelled: false, config: menuReturns);
   }
 
@@ -54,6 +60,9 @@ class _FakePlatform extends ScreenRecorderPlatform
 
   final List<RecordingSource> pickSourceCalls = [];
   int selectRegionCalls = 0;
+  PermissionStatus screenRecordingPermission = PermissionStatus.granted;
+  PermissionStatus requestedScreenRecordingPermission = PermissionStatus.denied;
+  int requestScreenRecordingCalls = 0;
 
   @override
   Future<PickedSource?> pickSource(RecordingSource kind) async {
@@ -65,6 +74,16 @@ class _FakePlatform extends ScreenRecorderPlatform
   Future<RegionSelection?> selectRegion() async {
     selectRegionCalls++;
     return region;
+  }
+
+  @override
+  Future<PermissionStatus> getScreenRecordingPermission() async =>
+      screenRecordingPermission;
+
+  @override
+  Future<PermissionStatus> requestScreenRecordingPermission() async {
+    requestScreenRecordingCalls++;
+    return requestedScreenRecordingPermission;
   }
 
   final List<MicrophoneConfig> monitorStarts = [];
@@ -137,6 +156,14 @@ Future<Override> _tipsOverride() async {
 }
 
 void main() {
+  setUp(() {
+    recordingActionRouterRef = null;
+  });
+
+  tearDown(() {
+    recordingActionRouterRef = null;
+  });
+
   testWidgets('bar mode renders the RecordingBar', (tester) async {
     _wide(tester);
     await tester.pumpWidget(ProviderScope(
@@ -213,6 +240,44 @@ void main() {
     // startRecording is now routed through recordingActionRouterRef?.start(),
     // which is null in test context — so fakeController.startCalls stays 0.
     expect(fakeController.startCalls, 0);
+  });
+
+  testWidgets(
+      'tapping Window without screen permission shows CTA before source picker',
+      (tester) async {
+    _wide(tester);
+    final fakePlatform = _FakePlatform()
+      ..screenRecordingPermission = PermissionStatus.denied
+      ..requestedScreenRecordingPermission = PermissionStatus.denied;
+    ScreenRecorderPlatform.instance = fakePlatform;
+    final fakeController = _FakeRecordingController();
+    final container = ProviderContainer(overrides: [
+      windowChromeProvider.overrideWithValue(_FakeChrome()),
+      recordingControllerProvider.overrideWith((ref) => fakeController),
+      permissionsControllerProvider.overrideWith(
+          (ref) => PermissionsController(fakePlatform)),
+      await _tipsOverride(),
+    ]);
+    addTearDown(container.dispose);
+    recordingActionRouterRef = RecordingActionRouter(container);
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: RecordingBarScreen()),
+    ));
+    await tester.pump();
+
+    await tester.tap(find.text('Window'));
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.requestScreenRecordingCalls, 1);
+    expect(fakePlatform.pickSourceCalls, isEmpty);
+    expect(find.byType(PermissionDeniedScreen), findsOneWidget);
+    expect(find.text('Screen Recording permission required'), findsOneWidget);
+    expect(find.text('Open System Settings'), findsOneWidget);
+
+    await tester.tap(find.text('Not now'));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('cancelling the picker is a no-op', (tester) async {
@@ -324,6 +389,36 @@ void main() {
     expect(fakePlatform.showMicMenuCalls, 1);
     expect(capturedRef.read(microphoneControllerProvider)?.deviceLabel, 'Mic One');
     expect(find.text('Mic One'), findsOneWidget);
+  });
+
+  testWidgets('shows a spinner while the microphone menu is loading',
+      (tester) async {
+    _wide(tester);
+    final completer = Completer<MicrophoneMenuResult>();
+    final fakePlatform = _FakePlatform()..micMenuCompleter = completer;
+    ScreenRecorderPlatform.instance = fakePlatform;
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        windowChromeProvider.overrideWithValue(_FakeChrome()),
+        await _tipsOverride(),
+      ],
+      child: const MaterialApp(home: RecordingBarScreen()),
+    ));
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('bar-mic')));
+    await tester.pump();
+    expect(find.byKey(const Key('mic-menu-loading')), findsOneWidget);
+
+    // Repeated clicks while discovery is pending must not open extra menus.
+    await tester.tap(find.byKey(const Key('bar-mic')));
+    await tester.pump();
+    expect(fakePlatform.showMicMenuCalls, 1);
+
+    completer.complete(const MicrophoneMenuResult(cancelled: true));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('mic-menu-loading')), findsNothing);
   });
 
   testWidgets('bar auto-sizes its window to the (variable) content size',
