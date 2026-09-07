@@ -61,13 +61,12 @@
   "offers": {
     "@type": "AggregateOffer",
     "priceCurrency": "USD",
-    "lowPrice": "12.00",
-    "highPrice": "129.00",
-    "offerCount": "3",
+    "lowPrice": "9.00",
+    "highPrice": "69.00",
+    "offerCount": "2",
     "offers": [
-      { "@type": "Offer", "price": "12.00", "priceCurrency": "USD", "name": "Monthly", "url": "https://slipreel.app/pricing.html" },
-      { "@type": "Offer", "price": "89.00", "priceCurrency": "USD", "name": "Yearly", "url": "https://slipreel.app/pricing.html" },
-      { "@type": "Offer", "price": "129.00", "priceCurrency": "USD", "name": "Lifetime", "url": "https://slipreel.app/pricing.html" }
+      { "@type": "Offer", "price": "9.00", "priceCurrency": "USD", "name": "Monthly", "url": "https://slipreel.app/pricing.html" },
+      { "@type": "Offer", "price": "69.00", "priceCurrency": "USD", "name": "One-time purchase", "url": "https://slipreel.app/pricing.html" }
     ]
   },
   "publisher": { "@id": "https://slipreel.app/#org" }
@@ -111,7 +110,7 @@
       "name": "How do I unlock export after buying?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Export unlocks instantly after checkout — your purchase activates on this Mac automatically, and you can sign in on a second device from your account page. The app is free to download and fully functional to record and edit before you buy; payment only unlocks export."
+        "text": "Export unlocks instantly after checkout — your purchase activates on this Mac automatically, and you can sign in on a second device from your account page. The app is free to download and fully functional to record and edit before you buy; three full-quality exports are included, then a license unlocks unlimited exports."
       }
     },
     {
@@ -309,6 +308,7 @@
          data-download-link>Download for macOS</a>
       <a class="btn btn--ghost" href="#pricing">See pricing</a>
     </div>
+    <p class="hero__meta">Three free full-quality exports. No account or credit card.</p>
     <p class="hero__meta"><span data-version-badge>Free download</span> &middot; Signed and notarized by Apple</p>
     <figure class="hero__stage">
       <video class="hero__media" width="1280" height="720"
@@ -576,7 +576,7 @@
     <div class="pricing__banner reveal">
       <p>
         <strong>Founding pricing.</strong> Slipreel is live and actively
-        developed. Buy now to lock in these rates &mdash; export unlocks
+        developed. Buy now to lock in these rates &mdash; unlimited exports unlock
         instantly after checkout, and the app is free to download and try
         first.
       </p>
@@ -586,39 +586,41 @@
 
       <article class="pricing-card pricing-card--featured reveal">
         <p class="pricing-card__badge">Recommended</p>
-        <h3 class="pricing-card__name">Lifetime</h3>
+        <h3 class="pricing-card__name">One-time purchase</h3>
         <p class="pricing-card__price">
-          <span class="pricing-card__amount">$129</span> once
+          <span class="pricing-card__amount">$69</span> once
         </p>
         <ul class="pricing-card__features">
-          <li>Yours permanently</li>
+          <li>Keep using your purchased version</li>
           <li>One year of updates included</li>
           <li>All features</li>
           <li>macOS 13+</li>
         </ul>
-        <a class="btn btn--primary pricing-card__cta" href="pricing.html">Get Slipreel for life</a>
+        <a class="btn btn--primary pricing-card__cta" href="pricing.html?plan=onetime">Buy Slipreel once</a>
       </article>
 
       <article class="pricing-card reveal">
-        <h3 class="pricing-card__name">Yearly</h3>
+        <h3 class="pricing-card__name">Monthly</h3>
         <p class="pricing-card__price">
-          <span class="pricing-card__amount">$89</span>/year
+          <span class="pricing-card__amount">$9</span>/month
         </p>
         <ul class="pricing-card__features">
+          <li>For a short project</li>
           <li>Every update while subscribed</li>
           <li>All features</li>
           <li>macOS 13+</li>
           <li>Cancel anytime</li>
         </ul>
-        <a class="btn btn--ghost pricing-card__cta" href="pricing.html">Get Slipreel yearly</a>
+        <a class="btn btn--ghost pricing-card__cta" href="pricing.html?plan=monthly">Subscribe monthly</a>
       </article>
 
     </div>
 
+    <p class="pricing__note reveal">14-day money-back guarantee. Email hello@slipreel.app within 14 days for a refund. One-time includes one year of updates; later updates are an optional paid renewal.</p>
     <p class="pricing__note reveal">
       Prefer to try it first?
       <a href="https://slipreel.app/download/latest.dmg" data-download-link>Download Slipreel free</a>
-      &mdash; no account, no time limit.
+      &mdash; three full-quality exports included. Recording and editing have no time limit.
     </p>
   </div>
 </section>
@@ -660,8 +662,7 @@
           Export unlocks instantly after checkout &mdash; your purchase
           activates on this Mac automatically, and you can sign in on a second
           device from your account page. The app is free to download and fully
-          functional to record and edit before you buy; payment only unlocks
-          export.
+          functional to record and edit before you buy; three full-quality exports are included, then a license unlocks unlimited exports.
         </p>
       </details>
 

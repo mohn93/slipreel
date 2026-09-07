@@ -1,6 +1,7 @@
 import { apiBase } from './config.js';
 import { createApi } from './api.js';
 import { startCheckout } from './flow.js';
+import { checkoutPlan } from './pricing-plan.js?v=6';
 
 const meta = document.querySelector('meta[name="slipreel-api-base"]');
 const api = createApi(apiBase(location.hostname, meta ? meta.content : null));
@@ -14,8 +15,8 @@ const statusEl = document.getElementById('status');
 const emailEl = /** @type {HTMLInputElement} */ (document.getElementById('email'));
 const cta = document.getElementById('continue');
 
-// Yearly is pre-selected in the markup (the anchor / best-value default).
-let selected = 'yearly';
+// Preserve explicit plan links; direct visits recommend the one-time license.
+let selected = checkoutPlan(params);
 
 function selectPlan(plan) {
   selected = plan;
@@ -25,6 +26,8 @@ function selectPlan(plan) {
     b.setAttribute('aria-checked', on ? 'true' : 'false');
   }
 }
+
+selectPlan(selected);
 
 for (const b of plansEl.querySelectorAll('.pw__plan')) {
   b.addEventListener('click', () => selectPlan(b.dataset.plan));

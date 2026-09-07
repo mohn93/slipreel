@@ -2,7 +2,7 @@
 
 > Slipreel is a macOS screen recorder and editor that turns a raw screen capture into a polished product demo. The moment you stop recording it automatically zooms in on your clicks, smooths the cursor path, wraps the footage in a device frame on a background, and can transcribe captions on-device — then exports to MP4 or GIF.
 
-Slipreel is a native macOS app (macOS 13 or later, Apple Silicon or Intel), signed with an Apple Developer ID and notarized by Apple, distributed directly from slipreel.app (not the Mac App Store). It is made by Becoming Ventures, LLC. The app is free to download and fully functional for recording and editing; a paid license only unlocks export.
+Slipreel is a native macOS app (macOS 13 or later, Apple Silicon or Intel), signed with an Apple Developer ID and notarized by Apple, distributed directly from slipreel.app (not the Mac App Store). It is made by Becoming Ventures, LLC. The app is free to download and fully functional for recording and editing; version 1.0.9 and later include three free full-quality exports, then a paid license unlocks unlimited exports.
 
 Privacy: recording, editing, captions, and export all run on the user's Mac — recordings never leave the machine. The only network calls the app makes are the one-time download of the speech-recognition model and license activation (which sends nothing from recordings).
 
@@ -27,14 +27,13 @@ Privacy: recording, editing, captions, and export all run on the user's Mac — 
 
 ## Pricing
 
-- Monthly: $12/month
-- Yearly: $89/year
-- Lifetime: $129 once (includes one year of updates; the app keeps working forever)
+- Monthly: $9/month
+- Lifetime: $69 once (includes one year of updates; the app keeps working forever)
 - 14-day refund: email hello@slipreel.app
 
 ## Links
 
 - [Home](https://slipreel.app/): product overview, feature demos, pricing, and FAQ
 - [Download](https://slipreel.app/download/latest.dmg): free macOS download (DMG), signed and notarized
-- [Pricing and checkout](https://slipreel.app/pricing.html): the three license options
+- [Pricing and checkout](https://slipreel.app/pricing.html): monthly and one-time licenses
 - [Contact](mailto:hello@slipreel.app): support and refunds

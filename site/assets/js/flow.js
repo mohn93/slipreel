@@ -22,8 +22,16 @@ export async function startCheckout(api, { email, plan, device, deviceName, stat
 async function afterSession(api, ctx) {
   if (ctx.device) {
     const t = await api.token({ fingerprint: ctx.device, device_name: ctx.device_name || null });
-    if (t.status === 409) return { seatLimit: t.data?.devices || [] };
-    if (!t.ok) return { error: t.data?.error || 'token_failed', status: t.status };
+    const callbackError = (error) => ctx.state
+      ? { errorDeeplink: 'slipreel://auth?' + new URLSearchParams({ error, state: ctx.state }) }
+      : {};
+    if (t.status === 409) return {
+      seatLimit: t.data?.devices || [], ...callbackError('seat_limit'),
+    };
+    if (!t.ok) return {
+      error: t.data?.error || 'token_failed', status: t.status,
+      phase: 'activation', ...callbackError('activation_failed'),
+    };
     return { deeplink: buildDeeplink({ ...t.data, state: ctx.state }) };
   }
   return { account: { email: ctx.email, userId: ctx.userId } };
