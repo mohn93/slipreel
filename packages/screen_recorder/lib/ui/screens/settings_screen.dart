@@ -22,6 +22,7 @@ import '../feedback/feedback_sheet.dart';
 import '../theme/app_palette_context.dart';
 import '../widgets/permission_denied_sheet.dart';
 import '../widgets/permission_status_row.dart';
+import '../widgets/request_permission.dart';
 import 'theme_playground_screen.dart';
 
 /// Global app preferences: recording defaults, appearance, permissions,
@@ -475,8 +476,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // See PermissionsPage: Screen Recording must fire the request
               // even from a `denied` state so macOS registers the app.
               canRequestWhenDenied: kind == PermissionKind.screenRecording,
-              onGrant: () =>
-                  ref.read(permissionsControllerProvider.notifier).request(kind),
+              // Screen Recording falls back to the deny sheet (Open System
+              // Settings + drag-to-add guide) when Enable can't grant it.
+              onGrant: () => requestPermissionWithGuide(context, ref, kind),
               onOpenSettings: () => PermissionDeniedSheet.show(context, kind),
             ),
         ],
