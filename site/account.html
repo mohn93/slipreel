@@ -9,7 +9,7 @@
 <title>Slipreel — Account</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/css/site.css">
-<link rel="stylesheet" href="assets/css/app.css?v=3">
+<link rel="stylesheet" href="assets/css/app.css?v=4">
 </head>
 <body>
 <main class="flow">
@@ -21,9 +21,25 @@
     <a class="btn btn--primary btn--block" href="login.html">Sign in</a>
   </div>
 
+  <div class="card hidden" id="plan">
+    <div class="plan-status">
+      <span class="plan-dot" id="planDot"></span>
+      <div class="plan-copy">
+        <span class="plan-name" id="planName">…</span>
+        <span class="plan-detail muted" id="planDetail"></span>
+      </div>
+    </div>
+    <a class="btn btn--primary btn--block hidden" id="upgrade" href="pricing.html">Upgrade for unlimited exports</a>
+  </div>
+
   <div class="card hidden" id="billing">
     <button class="btn btn--primary btn--block" id="portal">Manage billing</button>
     <p class="muted">Opens the Stripe customer portal to change plan, update your card, or cancel.</p>
+  </div>
+
+  <div class="card hidden" id="download">
+    <a class="btn btn--ghost btn--block" href="https://slipreel.app/download/latest.dmg">Download Slipreel for macOS</a>
+    <p class="muted">Signed and notarized by Apple. Sign in inside the app to activate a new Mac.</p>
   </div>
 
   <div class="card hidden" id="devices">
@@ -34,7 +50,7 @@
   <div class="status hidden" id="status" role="alert"></div>
   <p><a class="muted" href="#" id="logout">Sign out</a></p>
 </main>
-<script type="module" src="assets/js/page-account.js?v=3"></script>
+<script type="module" src="assets/js/page-account.js?v=4"></script>
 <script type="module" src="assets/js/analytics.js"></script>
 </body>
 </html>

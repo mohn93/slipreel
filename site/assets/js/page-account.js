@@ -6,12 +6,58 @@ const api = createApi(apiBase(location.hostname, meta ? meta.content : null));
 
 const sub = document.getElementById('sub');
 const signedout = document.getElementById('signedout');
+const planCard = document.getElementById('plan');
+const planDot = document.getElementById('planDot');
+const planName = document.getElementById('planName');
+const planDetail = document.getElementById('planDetail');
+const upgrade = document.getElementById('upgrade');
 const billing = document.getElementById('billing');
+const downloadCard = document.getElementById('download');
 const devicesCard = document.getElementById('devices');
 const deviceList = document.getElementById('deviceList');
 const statusEl = document.getElementById('status');
 
 function err(msg) { statusEl.textContent = msg; statusEl.className = 'status status--err'; }
+
+function formatDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d) ? null : d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+// Map an effective entitlement ({ plan, status, updatesUntil }) to the
+// coloured dot, headline, and detail line shown at the top of the account.
+function renderPlan(e) {
+  let dot = 'plan-dot plan-dot--off';
+  let name = 'No active license';
+  let detail = 'Records and edits are free. A license unlocks unlimited exports.';
+  let showUpgrade = true;
+
+  if (e && e.plan === 'subscription') {
+    showUpgrade = false;
+    if (e.status === 'grace') {
+      dot = 'plan-dot plan-dot--warn';
+      name = 'Pro — Monthly';
+      detail = 'Payment issue — update your card to keep exporting.';
+    } else {
+      dot = 'plan-dot plan-dot--ok';
+      name = 'Pro — Monthly';
+      detail = 'Active. Unlimited exports on your devices.';
+    }
+  } else if (e && e.plan === 'onetime') {
+    showUpgrade = false;
+    dot = 'plan-dot plan-dot--ok';
+    name = 'Lifetime license';
+    const until = formatDate(e.updatesUntil);
+    detail = until ? `Active. Free updates through ${until}.` : 'Active. Unlimited exports.';
+  }
+
+  planDot.className = dot;
+  planName.textContent = name;
+  planDetail.textContent = detail;
+  upgrade.className = showUpgrade ? 'btn btn--primary btn--block' : 'btn btn--primary btn--block hidden';
+  planCard.className = 'card';
+}
 
 function relativeTime(iso) {
   if (!iso) return null;
@@ -62,20 +108,24 @@ function renderDevices(devices) {
 
 async function load() {
   statusEl.className = 'status hidden';
-  const r = await api.devices();
-  if (r.status === 401) {
+  const [devicesRes, entRes] = await Promise.all([api.devices(), api.entitlement()]);
+  if (devicesRes.status === 401) {
     sub.textContent = '';
     signedout.className = 'card';
+    planCard.className = 'card hidden';
     billing.className = 'card hidden';
+    downloadCard.className = 'card hidden';
     devicesCard.className = 'card hidden';
     return;
   }
-  if (!r.ok) return err('Could not load your account.');
-  sub.textContent = 'Manage billing and your devices.';
+  if (!devicesRes.ok) return err('Could not load your account.');
+  sub.textContent = 'Your plan, billing, and devices.';
   signedout.className = 'card hidden';
+  renderPlan(entRes.ok ? entRes.data : null);
   billing.className = 'card';
+  downloadCard.className = 'card';
   devicesCard.className = 'card';
-  renderDevices(r.data.devices || []);
+  renderDevices(devicesRes.data.devices || []);
 }
 
 document.getElementById('portal').addEventListener('click', async () => {
