@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 
+import '../../analytics/analytics_events.dart';
+import '../../analytics/analytics_service.dart';
 import '../../onboarding/tips_controller.dart';
 import '../../state/camera_controller.dart';
 import '../../state/microphone_controller.dart';
@@ -364,6 +366,9 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     );
     if (selectedId == null || !mounted) return;
     ref.read(lookTemplateControllerProvider.notifier).select(selectedId);
+    final selected = ref.read(lookTemplateControllerProvider).selected;
+    ref.captureAnalytics(AnalyticsEvents.templateApplied,
+        properties: {'source': 'bar', 'builtIn': selected.builtIn});
   }
 
   Future<void> _onGearTap() async {
