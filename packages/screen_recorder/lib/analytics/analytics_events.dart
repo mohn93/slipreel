@@ -14,4 +14,7 @@ abstract class AnalyticsEvents {
   static const exportFailed = 'export_failed';
   static const paywallShown = 'paywall_shown';
   static const entitlementActivated = 'entitlement_activated';
+  static const templateApplied = 'template_applied';
+  static const templateSaved = 'template_saved';
+  static const templateDeleted = 'template_deleted';
 }
