@@ -36,4 +36,29 @@ void main() {
     final restored = EditorLook.fromJson(look.toJson());
     expect(restored, look);
   });
+
+  test('withoutDeviceFrame clears device-frame fields but nothing else', () {
+    final defaultLook = EditorLook.defaults();
+    final framed = defaultLook.copyWith(
+      windowFrame:
+          defaultLook.windowFrame.copyWith(deviceFrameId: 'iphone-16-pro'),
+      cursorSize: 5.5,
+      defaultZoomLook: ZoomLook.showcase,
+    );
+    expect(framed.windowFrame.deviceFrameId, 'iphone-16-pro');
+
+    final stripped = framed.withoutDeviceFrame();
+
+    expect(stripped.windowFrame.deviceFrameId, isNull);
+    expect(stripped.windowFrame.deviceFrameColor, isNull);
+    // deviceFrameAdjustSize is untouched by clearDeviceFrame (copyWith only
+    // resets it via an explicit new value), so it stays at whatever it was.
+    expect(
+      stripped.windowFrame.deviceFrameAdjustSize,
+      framed.windowFrame.deviceFrameAdjustSize,
+    );
+    // Non-device-frame fields are untouched.
+    expect(stripped.cursorSize, 5.5);
+    expect(stripped.defaultZoomLook, ZoomLook.showcase);
+  });
 }

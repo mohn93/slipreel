@@ -103,8 +103,11 @@ class TemplateRow extends ConsumerWidget {
         final name = await _promptForName(context,
             title: 'Save as new template', confirmLabel: 'Save');
         if (name == null) return;
+        // Snapshots the current project's look as-is — no onApply. The
+        // project already equals the snapshot, so re-applying it would be a
+        // no-op at best and, per applyLook's zoom-flattening side effect,
+        // destructive at worst (see spec §6.3: saving "touches" nothing).
         final t = await notifier.saveNew(name, currentLook());
-        onApply(t.look);
         ref.captureAnalytics(AnalyticsEvents.templateSaved,
             properties: {'kind': 'new'});
         AppAlerts.success('Saved as "${t.name}".');

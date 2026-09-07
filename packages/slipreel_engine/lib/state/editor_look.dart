@@ -132,6 +132,13 @@ class EditorLook {
         defaultZoomLook: defaultZoomLook ?? this.defaultZoomLook,
       );
 
+  /// Returns this look with any device-frame fields cleared. Templates never
+  /// carry a device bezel onto another recording (a device frame is intrinsic
+  /// to a specific device capture, chosen at record time / auto-matched at
+  /// load), so both the apply path and the fresh-recording seed strip it.
+  EditorLook withoutDeviceFrame() =>
+      copyWith(windowFrame: windowFrame.copyWith(clearDeviceFrame: true));
+
   Map<String, dynamic> toJson() => {
         'windowFrame': windowFrame.toJson(),
         'cursorSize': cursorSize,

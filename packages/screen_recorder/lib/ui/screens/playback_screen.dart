@@ -688,7 +688,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       final selectedLook = ref.read(lookTemplateControllerProvider).selected.look;
       final saved = await _projectStore.load(
         videoDuration: _controller.value.duration,
-        seed: EditorProjectState.defaults().withLook(selectedLook),
+        seed: EditorProjectState.defaults()
+            .withLook(selectedLook.withoutDeviceFrame()),
       );
 
       EditorProjectState restored = saved;
