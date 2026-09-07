@@ -24,6 +24,7 @@ import 'analytics/analytics_config.dart';
 import 'analytics/analytics_events.dart';
 import 'app_globals.dart';
 import 'state/app_menu_actions.dart';
+import 'state/permission_prompt_log.dart';
 import 'analytics/analytics_queue_store.dart';
 import 'analytics/analytics_service.dart';
 import 'analytics/posthog_sink.dart';
@@ -235,6 +236,10 @@ Future<void> main() async {
   final trialExports = TrialExports(FileSecureKV(
     p.join((await getApplicationSupportDirectory()).path, 'trial-exports.json'),
   ));
+  final permissionPromptLog = PermissionPromptLog(FileSecureKV(
+    p.join((await getApplicationSupportDirectory()).path,
+        'permission-prompt-log.json'),
+  ));
   final licensingStore = SecureLicenseStore(licensingKv);
   final licensingController = LicensingController(
     store: licensingStore,
@@ -414,6 +419,7 @@ Future<void> main() async {
   runApp(ProviderScope(
     overrides: [
       trialExportsProvider.overrideWith((ref) => trialExports),
+      permissionPromptLogProvider.overrideWithValue(permissionPromptLog),
       motionTuningProvider.overrideWith(
         // New sessions default to the cinematic feedforward baked from the
         // tuned Studio Soft feel (#7); a saved tuning still wins if present.
