@@ -48,14 +48,19 @@ import 'platform/window_chrome_channel.dart';
 import 'onboarding/onboarding_store.dart';
 import 'onboarding/tips_controller.dart';
 import 'onboarding/tips_store.dart';
+import 'state/camera_controller.dart';
 import 'state/hotkey_controller.dart';
 import 'state/long_recording_watcher.dart';
+import 'state/look_template_controller.dart';
+import 'state/look_template_store.dart';
+import 'state/microphone_controller.dart';
 import 'state/permissions_controller.dart';
 import 'state/recording_action_router.dart';
 import 'state/global_preferences_controller.dart';
 import 'state/global_preferences_store.dart';
 import 'state/recording_settings_controller.dart';
 import 'state/recording_settings_store.dart';
+import 'state/system_audio_controller.dart';
 import 'state/sleep_observer.dart';
 import 'state/app_palette_controller.dart';
 import 'state/app_palette_store.dart';
@@ -179,6 +184,9 @@ Future<void> main() async {
     ),
   );
   final initialRecordingSettings = await recordingSettingsStore.load();
+
+  final lookTemplateStore = LookTemplateStore();
+  final initialLookTemplates = await lookTemplateStore.load();
 
   final globalPreferencesStore = GlobalPreferencesStore(
     path: p.join(
@@ -415,6 +423,29 @@ Future<void> main() async {
           RecordingSettingsController(
               store: recordingSettingsStore,
               initial: initialRecordingSettings)),
+      lookTemplateStoreProvider.overrideWithValue(lookTemplateStore),
+      lookTemplateControllerProvider.overrideWith((ref) => LookTemplateController(
+            store: lookTemplateStore,
+            initial: initialLookTemplates,
+          )),
+      microphoneControllerProvider.overrideWith((ref) => MicrophoneController(
+            initial: initialRecordingSettings.microphone,
+            onChanged: (c) => ref
+                .read(recordingSettingsControllerProvider.notifier)
+                .setMicrophone(c),
+          )),
+      systemAudioControllerProvider.overrideWith((ref) => SystemAudioController(
+            initial: initialRecordingSettings.systemAudio,
+            onChanged: (c) => ref
+                .read(recordingSettingsControllerProvider.notifier)
+                .setSystemAudio(c),
+          )),
+      cameraControllerProvider.overrideWith((ref) => CameraController(
+            initial: initialRecordingSettings.camera,
+            onChanged: (c) => ref
+                .read(recordingSettingsControllerProvider.notifier)
+                .setCamera(c),
+          )),
       globalPreferencesStoreProvider.overrideWithValue(globalPreferencesStore),
       globalPreferencesControllerProvider.overrideWith((ref) =>
           GlobalPreferencesController(
