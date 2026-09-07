@@ -44,6 +44,8 @@ RecordingBar _bar(
       onMicTap: onMicTap ?? () {},
       onSystemAudioTap: () {},
       onCameraTap: () {},
+      templateName: 'Clean',
+      onTemplateTap: () {},
       micLevelStream: level,
     );
 

@@ -9,6 +9,7 @@ import 'package:slipreel_engine/utils/app_logger.dart';
 import '../../onboarding/tips_controller.dart';
 import '../../state/camera_controller.dart';
 import '../../state/microphone_controller.dart';
+import '../../state/look_template_controller.dart';
 import '../../state/recording_action_router.dart';
 import '../../state/recording_state.dart';
 import '../../state/system_audio_controller.dart';
@@ -237,6 +238,8 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
       onSystemAudioTap: _onSystemAudioTap,
       camera: ref.watch(cameraControllerProvider),
       onCameraTap: _onCameraTap,
+      templateName: ref.watch(lookTemplateControllerProvider).selected.name,
+      onTemplateTap: _onTemplateTap,
       contentKey: _barContentKey,
       micLevelStream: ref.watch(microphoneControllerProvider) != null
           ? _micLevelStream
@@ -322,6 +325,45 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         await ScreenRecorderPlatform.instance.showCameraMenu(current);
     if (!mounted || result.cancelled) return;
     ref.read(cameraControllerProvider.notifier).set(result.config);
+  }
+
+  /// Opens a picker of the available look templates and applies the pick.
+  /// The bar's other controls (mic/camera/system-audio/gear) all delegate to
+  /// NATIVE menus because Flutter overlays can't escape this tiny borderless
+  /// window without clipping — there is no native look-template menu yet, so
+  /// this uses a Flutter [showMenu] anchored to the bar itself as a fallback.
+  Future<void> _onTemplateTap() async {
+    final templatesState = ref.read(lookTemplateControllerProvider);
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final barBox = context.findRenderObject() as RenderBox?;
+    final anchor = barBox != null
+        ? barBox.localToGlobal(Offset(0, barBox.size.height),
+            ancestor: overlayBox)
+        : Offset.zero;
+    final position = RelativeRect.fromLTRB(
+      anchor.dx,
+      anchor.dy,
+      overlayBox.size.width - anchor.dx,
+      overlayBox.size.height - anchor.dy,
+    );
+    final selectedId = await showMenu<String>(
+      context: context,
+      position: position,
+      color: const Color(0xFF2C2C30),
+      items: [
+        for (final template in templatesState.all)
+          PopupMenuItem<String>(
+            value: template.id,
+            child: Text(
+              template.name,
+              style: const TextStyle(color: Color(0xFFE9E9EC)),
+            ),
+          ),
+      ],
+    );
+    if (selectedId == null || !mounted) return;
+    ref.read(lookTemplateControllerProvider.notifier).select(selectedId);
   }
 
   Future<void> _onGearTap() async {

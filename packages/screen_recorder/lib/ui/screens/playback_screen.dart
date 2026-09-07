@@ -685,8 +685,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // Loaded *before* we mark _isInitialized so the very first
       // build sees the persisted state and the canvas doesn't flash
       // its defaults for a frame.
+      final selectedLook = ref.read(lookTemplateControllerProvider).selected.look;
       final saved = await _projectStore.load(
         videoDuration: _controller.value.duration,
+        seed: EditorProjectState.defaults().withLook(selectedLook),
       );
 
       EditorProjectState restored = saved;

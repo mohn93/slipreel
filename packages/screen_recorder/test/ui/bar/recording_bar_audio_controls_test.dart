@@ -38,6 +38,8 @@ RecordingBar _bar({void Function(BarSourceMode)? onPickMode}) => RecordingBar(
       onMicTap: () {},
       onSystemAudioTap: () {},
       onCameraTap: () {},
+      templateName: 'Clean',
+      onTemplateTap: () {},
     );
 
 void main() {

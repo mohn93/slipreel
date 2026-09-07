@@ -50,6 +50,8 @@ RecordingBar _bar({
       onMicTap: onMicTap ?? () {},
       onSystemAudioTap: onSystemAudioTap ?? () {},
       onCameraTap: onCameraTap ?? () {},
+      templateName: 'Clean',
+      onTemplateTap: () {},
     );
 
 void main() {
