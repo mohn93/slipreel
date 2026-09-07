@@ -3,6 +3,7 @@ import 'package:slipreel_engine/utils/app_logger.dart';
 import 'package:slipreel_engine/utils/perf_summary.dart';
 
 import '../../../services/destination_handlers.dart';
+import '../../../licensing/trial_exports.dart';
 
 /// Headless outcome of an export run. The widget maps these to UI.
 sealed class ExportOutcome {
@@ -27,7 +28,7 @@ class ExportCancelled extends ExportOutcome {
 
 /// Export was attempted without an active entitlement. A UI-level gate should
 /// have caught this first; this is the pipeline's fail-closed backstop so no
-/// path encodes unpaid.
+/// path encodes without a paid license or a reserved trial allowance.
 class ExportNotEntitled extends ExportOutcome {
   const ExportNotEntitled();
 }
@@ -46,8 +47,10 @@ class ExportController {
   ExportController({
     required this.runPipeline,
     required this.isExportEntitled,
+    this.trialExports,
   });
 
+  final TrialExports? trialExports;
   final RunPipeline runPipeline;
   final bool Function() isExportEntitled;
   final CancelToken cancelToken = CancelToken();
@@ -60,15 +63,18 @@ class ExportController {
     required DestinationHandler handler,
     required void Function(double progress) onProgress,
   }) async {
-    if (!isExportEntitled()) {
-      return const ExportNotEntitled();
-    }
+    TrialExportLease? trialLease;
     try {
+      if (!isExportEntitled()) {
+        trialLease = await trialExports?.reserve();
+        if (trialLease == null) return const ExportNotEntitled();
+      }
       final summary = await runPipeline(
         onProgress: onProgress,
         cancelToken: cancelToken,
       );
       final result = await handler.deliver(outputPath);
+      await trialLease?.complete(successful: true);
       return ExportSuccess(summary, result);
     } on ExportCancelledException {
       return const ExportCancelled();
@@ -80,6 +86,8 @@ class ExportController {
       // silently downgraded to a plain "Export failed" message with no trace.
       AppLogger.ffmpeg.e('Export run failed', error: e, stackTrace: stackTrace);
       return ExportFailure(e, stackTrace);
+    } finally {
+      await trialLease?.complete(successful: false);
     }
   }
 

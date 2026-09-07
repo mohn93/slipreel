@@ -5,7 +5,8 @@ import { requireSession } from '../auth/require_session.js';
 
 const checkoutBody = z.object({
   email: z.string().email(),
-  plan: z.enum(['monthly', 'yearly', 'onetime']),
+  // Yearly remains supported for existing subscriptions, not new checkout.
+  plan: z.enum(['monthly', 'onetime']),
   device: z.string().max(200).optional(),
   device_name: z.string().max(120).optional(),
   state: z.string().max(200).optional(),

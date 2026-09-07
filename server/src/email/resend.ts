@@ -1,5 +1,6 @@
 import type { EmailConfig } from './config.js';
 import type { EmailSender } from './sender.js';
+import { renderMagicLinkEmail } from './template.js';
 
 /** Resend-backed sender. `fetchImpl` is injectable so tests never hit the network. */
 export function createResendSender(
@@ -17,9 +18,7 @@ export function createResendSender(
         body: JSON.stringify({
           from: config.from,
           to: [to],
-          subject: 'Your Slipreel sign-in link',
-          html: `<p>Click to sign in to Slipreel:</p><p><a href="${link}">${link}</a></p>`
-            + `<p>This link expires in 30 minutes. If you didn't request it, ignore this email.</p>`,
+          ...renderMagicLinkEmail(link),
         }),
       });
       if (!res.ok) {
