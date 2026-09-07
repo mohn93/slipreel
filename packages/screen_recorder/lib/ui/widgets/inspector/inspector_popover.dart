@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
@@ -49,7 +50,7 @@ class InspectorPopoverItem<T> {
 Future<T?> showInspectorPopover<T>(
   BuildContext anchorContext, {
   required List<InspectorPopoverItem<T>> items,
-  double minWidth = 180,
+  double width = 180,
   bool matchAnchorWidth = false,
   bool alignRight = false,
 }) async {
@@ -61,7 +62,7 @@ Future<T?> showInspectorPopover<T>(
   final anchorTopLeft = anchorBox.localToGlobal(Offset.zero, ancestor: overlayBox);
   final anchorSize = anchorBox.size;
 
-  final width = matchAnchorWidth ? anchorSize.width : minWidth;
+  final panelWidth = matchAnchorWidth ? anchorSize.width : width;
 
   // Estimated panel height for the flip-up decision (row + separators + pad).
   const rowHeight = 34.0;
@@ -76,24 +77,27 @@ Future<T?> showInspectorPopover<T>(
       : anchorTopLeft.dy + anchorSize.height + 6;
 
   double left = alignRight
-      ? anchorTopLeft.dx + anchorSize.width - width
+      ? anchorTopLeft.dx + anchorSize.width - panelWidth
       : anchorTopLeft.dx;
   // Keep the panel on-screen horizontally.
-  left = left.clamp(8.0, (overlaySize.width - width - 8).clamp(8.0, double.infinity));
+  left = left.clamp(8.0, (overlaySize.width - panelWidth - 8).clamp(8.0, double.infinity));
 
   // The panel grows from whichever edge sits against the anchor.
   final grow = openUp ? Alignment.bottomCenter : Alignment.topCenter;
 
   final completer = _SafeCompleter<T?>();
+  var removed = false;
   late final OverlayEntry entry;
   entry = OverlayEntry(
     builder: (context) => _InspectorPopoverLayer<T>(
       left: left,
       top: top,
-      width: width,
+      width: panelWidth,
       grow: grow,
       items: items,
       onClosed: (result) {
+        if (removed) return;
+        removed = true;
         entry.remove();
         completer.complete(result);
       },
@@ -156,6 +160,7 @@ class _InspectorPopoverLayerState<T> extends State<_InspectorPopoverLayer<T>>
     reverseCurve: Curves.easeIn,
   );
 
+  final FocusNode _focusNode = FocusNode(debugLabel: 'InspectorPopover');
   bool _closing = false;
   T? _result;
 
@@ -163,36 +168,52 @@ class _InspectorPopoverLayerState<T> extends State<_InspectorPopoverLayer<T>>
   void initState() {
     super.initState();
     _controller.forward();
+    // Grab focus so Escape (and future key nav) reaches this overlay. Deferred
+    // to after the first frame so the node is attached before the request.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
   }
 
   void _close(T? result) {
     if (_closing) return;
     _closing = true;
     _result = result;
-    _controller.reverse().whenComplete(() => widget.onClosed(_result));
+    _controller.reverse().whenCompleteOrCancel(() => widget.onClosed(_result));
   }
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () => _close(null),
+    return Focus(
+      focusNode: _focusNode,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
+          _close(null);
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => _close(null),
+            ),
           ),
-        ),
-        Positioned(
-          left: widget.left,
-          top: widget.top,
-          width: widget.width,
-          child: AnimatedBuilder(
+          Positioned(
+            left: widget.left,
+            top: widget.top,
+            width: widget.width,
+            child: AnimatedBuilder(
             animation: _controller,
             builder: (context, child) {
               // Grow mostly along the vertical axis (a dropdown "unrolling"),
@@ -210,8 +231,9 @@ class _InspectorPopoverLayerState<T> extends State<_InspectorPopoverLayer<T>>
             },
             child: _PopoverPanel<T>(items: widget.items, onPick: _close),
           ),
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }

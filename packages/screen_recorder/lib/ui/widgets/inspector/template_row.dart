@@ -160,14 +160,17 @@ class _TemplatePicker extends StatelessWidget {
           ),
       ],
     );
-    if (id != null) onSelect(id);
+    if (id != null && anchor.mounted) onSelect(id);
   }
 
   @override
   Widget build(BuildContext context) {
     final selected = state.selected;
     return Builder(
-      builder: (fieldContext) => GestureDetector(
+      builder: (fieldContext) => Semantics(
+        button: true,
+        label: 'Look template: ${selected.name}',
+        child: GestureDetector(
         key: const Key('template-select'),
         behavior: HitTestBehavior.opaque,
         onTap: () => _open(fieldContext),
@@ -194,6 +197,7 @@ class _TemplatePicker extends StatelessWidget {
           ]),
         ),
       ),
+      ),
     );
   }
 }
@@ -208,20 +212,25 @@ class _OverflowButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Builder(
-      builder: (anchor) => GestureDetector(
-        key: const Key('template-overflow'),
-        behavior: HitTestBehavior.opaque,
-        onTap: () => onOpen(anchor),
-        child: Container(
-          height: 32,
-          width: 32,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: kInspectorPanel,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: kInspectorBorder),
+      builder: (anchor) => Semantics(
+        button: true,
+        label: 'Template actions',
+        child: GestureDetector(
+          key: const Key('template-overflow'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onOpen(anchor),
+          child: Container(
+            height: 32,
+            width: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: kInspectorPanel,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: kInspectorBorder),
+            ),
+            child:
+                const Icon(Icons.more_horiz, size: 18, color: kInspectorMuted),
           ),
-          child: const Icon(Icons.more_horiz, size: 18, color: kInspectorMuted),
         ),
       ),
     );

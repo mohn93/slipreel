@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/state/look_template.dart';
@@ -77,5 +78,38 @@ void main() {
     // Selecting applies the picked template's look and updates the selection.
     expect(applied, isNotNull);
     expect(controller.state.selectedId, kBuiltinShowcaseId);
+  });
+
+  testWidgets('Escape dismisses the popover without applying', (tester) async {
+    final store = LookTemplateStore(filePath: '/tmp/template_row_esc_test.json');
+    final controller = LookTemplateController(
+      store: store,
+      initial: const LookTemplateData(templates: [], selectedId: kBuiltinCleanId),
+    );
+    var applyCount = 0;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        lookTemplateControllerProvider.overrideWith((_) => controller),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: TemplateRow(
+            onApply: (_) => applyCount++,
+            currentLook: EditorLook.defaults,
+          ),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.byKey(const Key('template-select')));
+    await tester.pumpAndSettle();
+    expect(find.text('Showcase'), findsOneWidget); // popover open
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    // Popover closed, nothing applied, selection unchanged.
+    expect(find.text('Showcase'), findsNothing);
+    expect(applyCount, 0);
+    expect(controller.state.selectedId, kBuiltinCleanId);
   });
 }
