@@ -2,8 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
+
+/// Hover-highlight fill for the sliding box.
+const Color _kPopoverHover = Color(0x14FFFFFF); // white @ ~8%
+
+/// Fixed row height so the sliding hover highlight can compute exact offsets.
+const double _kRowHeight = 32;
+
+/// Height of the hairline separator drawn above a divided row.
+const double _kDividerHeight = 5;
 
 /// One selectable row in an [showInspectorPopover] panel.
 class InspectorPopoverItem<T> {
@@ -208,14 +216,40 @@ class _InspectorPopoverLayerState<T> extends State<_InspectorPopoverLayer<T>>
   }
 }
 
-class _PopoverPanel<T> extends StatelessWidget {
+/// The panel body. A single hover highlight spring-slides VERTICALLY between
+/// the stacked rows — the same "indicator glides to the active row" motion the
+/// inspector rail uses ([AnimatedIndicatorBar]) — instead of a per-row pill,
+/// which would spring horizontally and fight the vertical list.
+class _PopoverPanel<T> extends StatefulWidget {
   const _PopoverPanel({required this.items, required this.onPick});
 
   final List<InspectorPopoverItem<T>> items;
   final ValueChanged<T> onPick;
 
   @override
+  State<_PopoverPanel<T>> createState() => _PopoverPanelState<T>();
+}
+
+class _PopoverPanelState<T> extends State<_PopoverPanel<T>> {
+  int? _hovered;
+  int _lastHovered = 0;
+
+  /// Top offset (from the rows Stack origin) of row [index]'s highlight.
+  double _rowTop(int index) {
+    var top = 0.0;
+    for (var i = 0; i < index; i++) {
+      if (widget.items[i].dividerBefore) top += _kDividerHeight;
+      top += _kRowHeight;
+    }
+    if (widget.items[index].dividerBefore) top += _kDividerHeight;
+    return top;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final visible = _hovered != null;
+    final highlightTop = _rowTop(_hovered ?? _lastHovered);
+
     return Material(
       color: Colors.transparent,
       child: Container(
@@ -232,32 +266,72 @@ class _PopoverPanel<T> extends StatelessWidget {
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final item in items) ...[
-              if (item.dividerBefore)
-                const Divider(height: 5, thickness: 1, color: kInspectorBorder),
-              _PopoverRow<T>(item: item, onPick: onPick),
+        child: MouseRegion(
+          onExit: (_) => setState(() => _hovered = null),
+          child: Stack(
+            children: [
+              // The sliding highlight — glides on easeOutQuint to the hovered
+              // row, fades out when the cursor leaves the panel.
+              AnimatedPositioned(
+                duration: Duration(milliseconds: visible ? 190 : 0),
+                curve: Curves.easeOutQuint,
+                top: highlightTop,
+                left: 5,
+                right: 5,
+                height: _kRowHeight,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 130),
+                  curve: Curves.easeOutCubic,
+                  opacity: visible ? 1 : 0,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: _kPopoverHover,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < widget.items.length; i++) ...[
+                    if (widget.items[i].dividerBefore)
+                      const Divider(
+                          height: _kDividerHeight,
+                          thickness: 1,
+                          color: kInspectorBorder),
+                    _PopoverRow<T>(
+                      item: widget.items[i],
+                      onEnter: () => setState(() {
+                        _hovered = i;
+                        _lastHovered = i;
+                      }),
+                      onTap: () => widget.onPick(widget.items[i].value),
+                    ),
+                  ],
+                ],
+              ),
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// One row. Hover feedback is delegated to [SpringHoverButton] — the exact
-/// physics the recording bar's controls use — so the highlight springs from
-/// the cursor's entry point, leans magnetically, 3D-tilts the label, and flies
-/// off on exit. The selected row carries a persistent accent tint underneath
-/// (mirroring the bar's "active" buttons), which the spring pill blends over.
+/// One fixed-height row. Transparent — the panel paints the moving highlight
+/// behind it; a selected row adds its own accent tint on top of that.
 class _PopoverRow<T> extends StatelessWidget {
-  const _PopoverRow({required this.item, required this.onPick});
+  const _PopoverRow({
+    required this.item,
+    required this.onEnter,
+    required this.onTap,
+  });
 
   final InspectorPopoverItem<T> item;
-  final ValueChanged<T> onPick;
+  final VoidCallback onEnter;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -265,13 +339,17 @@ class _PopoverRow<T> extends StatelessWidget {
         ? const Color(0xFFFF6B6B)
         : (item.selected ? kInspectorAccent : Colors.white);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 5),
-      child: SpringHoverButton(
-        onTap: () => onPick(item.value),
-        borderRadius: 8,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => onEnter(),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          height: _kRowHeight,
+          margin: const EdgeInsets.symmetric(horizontal: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
             color: item.selected
                 ? kInspectorAccent.withValues(alpha: 0.14)
