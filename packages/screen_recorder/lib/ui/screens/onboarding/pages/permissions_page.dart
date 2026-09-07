@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder/state/permissions_controller.dart';
 import 'package:screen_recorder/ui/widgets/permission_denied_sheet.dart';
 import 'package:screen_recorder/ui/widgets/permission_status_row.dart';
+import 'package:screen_recorder/ui/widgets/request_permission.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
 class PermissionsPage extends ConsumerWidget {
@@ -67,9 +68,9 @@ class PermissionsPage extends ConsumerWidget {
               // in the Screen Recording list. The optional permissions keep the
               // passive Open-Settings path on a real denial.
               canRequestWhenDenied: kind == PermissionKind.screenRecording,
-              onGrant: () => ref
-                  .read(permissionsControllerProvider.notifier)
-                  .request(kind),
+              // Screen Recording falls back to the deny sheet (Open System
+              // Settings + drag-to-add guide) when Enable can't grant it.
+              onGrant: () => requestPermissionWithGuide(context, ref, kind),
               onOpenSettings: () =>
                   PermissionDeniedSheet.show(context, kind),
             ),
