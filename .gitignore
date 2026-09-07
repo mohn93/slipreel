@@ -87,3 +87,9 @@ packages/screen_recorder/dart_defines/*.local.json
 
 # SDD isolated worktrees
 .worktrees/
+
+# Local dev launch config (personal, not committed)
+.claude/launch.json
+
+# Product-mockup / marketing-media scratch (not part of the site build)
+demo-uis/

@@ -9,36 +9,31 @@
 <title>Slipreel — Unlock export</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/css/site.css">
-<link rel="stylesheet" href="assets/css/app.css?v=2">
+<link rel="stylesheet" href="assets/css/app.css?v=3">
 </head>
 <body>
 <main class="pw">
   <header class="pw__head">
     <p class="pw__eyebrow">Slipreel Pro</p>
     <h1 class="pw__title">Unlock export</h1>
-    <p class="pw__sub">Recording, editing, auto-zoom, captions, and preview are free forever. Pick a plan to export your videos in full quality.</p>
+    <p class="pw__sub">Try three full-quality exports free in Slipreel 1.0.9 or later — no account or credit card. Recording and editing have no time limit. Choose a plan for unlimited exports.</p>
   </header>
 
   <div class="pw__plans" id="plans" role="radiogroup" aria-label="Choose a plan">
+    <button type="button" class="pw__plan pw__plan--best is-selected" data-plan="onetime" role="radio" aria-checked="true">
+      <span class="pw__badge">Recommended</span>
+      <span class="pw__name"><span class="pw__radio" aria-hidden="true"></span>One-time purchase</span>
+      <span class="pw__price"><span class="pw__amount">$69</span><span class="pw__per">once</span></span>
+      <p class="pw__note">Keep using your purchased version. Includes one year of updates.</p>
+    </button>
+
     <button type="button" class="pw__plan" data-plan="monthly" role="radio" aria-checked="false">
       <span class="pw__name"><span class="pw__radio" aria-hidden="true"></span>Monthly</span>
-      <span class="pw__price"><span class="pw__amount">$12</span><span class="pw__per">/ month</span></span>
+      <span class="pw__price"><span class="pw__amount">$9</span><span class="pw__per">/ month</span></span>
       <p class="pw__note">Billed monthly. Cancel anytime.</p>
     </button>
 
-    <button type="button" class="pw__plan pw__plan--best is-selected" data-plan="yearly" role="radio" aria-checked="true">
-      <span class="pw__badge">Best value · Save 38%</span>
-      <span class="pw__name"><span class="pw__radio" aria-hidden="true"></span>Yearly</span>
-      <span class="pw__price"><span class="pw__amount">$89</span><span class="pw__per">/ year</span></span>
-      <p class="pw__save">Just $7.42/mo — save 38% vs monthly</p>
-      <p class="pw__note">Billed yearly. Cancel anytime.</p>
-    </button>
 
-    <button type="button" class="pw__plan" data-plan="onetime" role="radio" aria-checked="false">
-      <span class="pw__name"><span class="pw__radio" aria-hidden="true"></span>One-time</span>
-      <span class="pw__price"><span class="pw__amount">$129</span><span class="pw__per">once</span></span>
-      <p class="pw__note">Yours forever, plus one year of updates.</p>
-    </button>
   </div>
 
   <section class="pw__included" aria-label="What's included">
@@ -65,14 +60,14 @@
         <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10V8a6 6 0 0112 0v2m-13 0h14a1 1 0 011 1v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Secure checkout by Stripe
       </span>
-      <span>Cancel anytime</span>
+      <span>14-day money-back guarantee</span>
       <span>macOS 13+</span>
     </div>
   </div>
 
-  <p class="pw__fine">One-time includes one year of updates; your paid version keeps exporting after that. Prices in USD. Questions? <a href="mailto:hello@slipreel.app">hello@slipreel.app</a></p>
+  <p class="pw__fine">One-time includes one year of updates; your paid version keeps exporting after that. Later updates are an optional paid renewal. For a refund, email hello@slipreel.app within 14 days. Prices in USD. Questions? <a href="mailto:hello@slipreel.app">hello@slipreel.app</a></p>
 </main>
-<script type="module" src="assets/js/page-pricing.js?v=2"></script>
+<script type="module" src="assets/js/page-pricing.js?v=6"></script>
 <script type="module" src="assets/js/analytics.js"></script>
 </body>
 </html>

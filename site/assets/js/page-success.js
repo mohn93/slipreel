@@ -1,6 +1,6 @@
 import { apiBase } from './config.js';
 import { createApi } from './api.js';
-import { completeCheckout } from './flow.js';
+import { completeCheckout } from './flow.js?v=5';
 
 const meta = document.querySelector('meta[name="slipreel-api-base"]');
 const api = createApi(apiBase(location.hostname, meta ? meta.content : null));
@@ -23,7 +23,7 @@ async function run() {
   const r = await completeCheckout(api, sessionId);
   if (r.deeplink) {
     title.textContent = 'Opening Slipreel…';
-    sub.textContent = 'Your export is unlocked.';
+    sub.textContent = 'Slipreel will confirm your license and export access.';
     panel.className = 'card';
     panel.innerHTML = "<p>If Slipreel didn't open automatically:</p>"
       + '<a class="btn btn--primary btn--block" id="open">Open Slipreel</a>';
@@ -47,6 +47,14 @@ async function run() {
     sub.textContent = 'You already have 2 activated devices. Remove one, then reopen Slipreel.';
     panel.className = 'card';
     panel.innerHTML = '<a class="btn btn--primary btn--block" href="account.html">Manage devices</a>';
+    if (r.errorDeeplink) {
+      const back = document.createElement('a');
+      back.textContent = 'Return to Slipreel';
+      back.className = 'btn btn--block';
+      back.href = r.errorDeeplink;
+      panel.append(back);
+      location.href = r.errorDeeplink;
+    }
     return;
   }
   fail(r.status === 409

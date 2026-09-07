@@ -1,6 +1,6 @@
 import { apiBase } from './config.js';
 import { createApi } from './api.js';
-import { requestMagicLink, completeMagicLink } from './flow.js';
+import { requestMagicLink, completeMagicLink } from './flow.js?v=5';
 
 const meta = document.querySelector('meta[name="slipreel-api-base"]');
 const api = createApi(apiBase(location.hostname, meta ? meta.content : null));
@@ -43,11 +43,26 @@ async function doVerify() {
   statusEl.className = 'status hidden';
   const r = await completeMagicLink(api, token);
   if (r.deeplink) {
-    title.textContent = 'Opening Slipreel…';
+    title.textContent = 'Signed in — opening Slipreel…';
+    sub.textContent = 'Slipreel will show your license status and whether exports are unlocked.';
     panel.innerHTML = "<p class=\"muted\">If Slipreel didn't open automatically:</p>"
       + '<a class="btn btn--primary btn--block" id="open">Open Slipreel</a>';
     document.getElementById('open').setAttribute('href', r.deeplink);
     location.href = r.deeplink;
+  } else if (r.seatLimit || r.phase === 'activation') {
+    title.textContent = r.seatLimit ? 'Device limit reached' : 'Could not activate this Mac';
+    sub.textContent = r.seatLimit
+      ? 'You are signed in, but your account has reached its device limit. Remove a device, then start sign-in again from Slipreel.'
+      : 'You are signed in to the website, but activation could not finish. Return to Slipreel and try signing in again.';
+    panel.innerHTML = '<a class="btn btn--primary btn--block" href="account.html">Manage account and devices</a>';
+    if (r.errorDeeplink) {
+      const back = document.createElement('a');
+      back.className = 'btn btn--block';
+      back.textContent = 'Return to Slipreel';
+      back.href = r.errorDeeplink;
+      panel.append(back);
+      location.href = r.errorDeeplink;
+    }
   } else if (r.account) {
     title.textContent = "You're signed in";
     sub.textContent = '';
@@ -67,7 +82,8 @@ function requestModeInit() {
     const email = /** @type {HTMLInputElement} */ (document.getElementById('email')).value.trim();
     if (!email) return show(statusEl, 'status status--err', 'Enter your email first.');
     statusEl.className = 'status hidden';
-    await requestMagicLink(api, { email, device, deviceName, state });
+    const result = await requestMagicLink(api, { email, device, deviceName, state });
+    if (!result.sent) return show(statusEl, 'status status--err', 'Could not request a sign-in link. Check your connection and try again.');
     // Always show the same confirmation (no email-existence leak).
     requestCard.className = 'card hidden';
     title.textContent = 'Check your email';

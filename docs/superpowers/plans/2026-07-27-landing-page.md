@@ -1,3 +1,5 @@
+> Deployment target confirmed 2026-09-05: `deploy@185.203.116.117` (the big server), webroot `/var/www/slipreel`. Earlier trader-server references are obsolete. SSH authentication must be configured before deployment.
+
 # Slipreel Landing Page Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -55,7 +57,7 @@ The riskiest thing about this project is deploying into a webroot that holds a l
 - Create: `scripts/deploy-site.sh`, `scripts/deploy-site.test.sh`
 
 **Interfaces:**
-- Produces: `scripts/deploy-site.sh`, honoring env `SITE_DIR` (default `<repo>/site`), `DEPLOY_TARGET` (default `deploy@94.156.144.73`), `DEPLOY_ROOT` (default `/var/www/slipreel`). Exits non-zero if `$SITE_DIR/index.html` is absent.
+- Produces: `scripts/deploy-site.sh`, honoring env `SITE_DIR` (default `<repo>/site`), `DEPLOY_TARGET` (default `deploy@185.203.116.117`), `DEPLOY_ROOT` (default `/var/www/slipreel`). Exits non-zero if `$SITE_DIR/index.html` is absent.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -119,7 +121,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SITE="${SITE_DIR:-$ROOT/site}"
-TARGET="${DEPLOY_TARGET:-trader-vps}"
+TARGET="${DEPLOY_TARGET:-deploy@185.203.116.117}"
 REMOTE_ROOT="${DEPLOY_ROOT:-/var/www/slipreel}"
 
 [[ -f "$SITE/index.html" ]] || {
@@ -1203,7 +1205,7 @@ Task 1's code blocks above are therefore **superseded** by the shipped
 `scripts/deploy-site.sh`:
 
 - rsync runs `-rltv --no-perms --no-owner --no-group`, never bare `-a`
-- `DEPLOY_TARGET` defaults to `deploy@94.156.144.73`, not `trader-vps`
+- `DEPLOY_TARGET` defaults to `deploy@185.203.116.117`, using the Slipreel server deployment account
 - `scripts/deploy-site.test.sh` additionally catches the `--del` and
   `--remove-` aliases and asserts the ownership flags are present
 
