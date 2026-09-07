@@ -2,10 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:screen_recorder/ui/bar/spring_hover_button.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
-
-/// Subtle row hover fill — slightly lighter than [kInspectorPanel].
-const Color _kPopoverHover = Color(0xFF2E2E3D);
 
 /// One selectable row in an [showInspectorPopover] panel.
 class InspectorPopoverItem<T> {
@@ -250,41 +248,35 @@ class _PopoverPanel<T> extends StatelessWidget {
   }
 }
 
-class _PopoverRow<T> extends StatefulWidget {
+/// One row. Hover feedback is delegated to [SpringHoverButton] — the exact
+/// physics the recording bar's controls use — so the highlight springs from
+/// the cursor's entry point, leans magnetically, 3D-tilts the label, and flies
+/// off on exit. The selected row carries a persistent accent tint underneath
+/// (mirroring the bar's "active" buttons), which the spring pill blends over.
+class _PopoverRow<T> extends StatelessWidget {
   const _PopoverRow({required this.item, required this.onPick});
 
   final InspectorPopoverItem<T> item;
   final ValueChanged<T> onPick;
 
   @override
-  State<_PopoverRow<T>> createState() => _PopoverRowState<T>();
-}
-
-class _PopoverRowState<T> extends State<_PopoverRow<T>> {
-  bool _hover = false;
-
-  @override
   Widget build(BuildContext context) {
-    final item = widget.item;
     final labelColor = item.destructive
         ? const Color(0xFFFF6B6B)
         : (item.selected ? kInspectorAccent : Colors.white);
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => widget.onPick(item.value),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOutCubic,
-          margin: const EdgeInsets.symmetric(horizontal: 5),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      child: SpringHoverButton(
+        onTap: () => onPick(item.value),
+        borderRadius: 8,
+        child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
           decoration: BoxDecoration(
-            color: _hover ? _kPopoverHover : Colors.transparent,
-            borderRadius: BorderRadius.circular(_hover ? 8 : 6),
+            color: item.selected
+                ? kInspectorAccent.withValues(alpha: 0.14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
             children: [
