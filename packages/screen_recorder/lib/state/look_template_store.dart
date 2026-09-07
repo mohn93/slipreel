@@ -30,7 +30,7 @@ class LookTemplateStore {
   }
 
   Future<String> _path() async {
-    if (_explicitPath != null) return _explicitPath!;
+    if (_explicitPath != null) return _explicitPath;
     if (_resolvedPath != null) return _resolvedPath!;
     final dir = await getApplicationSupportDirectory();
     final d = Directory(p.join(dir.path, 'slipreel'));
