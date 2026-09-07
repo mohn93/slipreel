@@ -8,6 +8,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../analytics/analytics_events.dart';
 import '../../analytics/analytics_service.dart';
+import '../../licensing/build_release_date.g.dart';
+import '../../licensing/entitlement.dart';
+import '../../licensing/entitlement_claims.dart';
+import '../../licensing/export_gate.dart';
+import '../../licensing/licensing_controller.dart';
 import '../../state/global_preferences_controller.dart';
 import '../../state/permissions_controller.dart';
 import '../../state/recording_settings_controller.dart';
@@ -72,8 +77,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     });
   }
 
+  // Licensing is not wired in every host (e.g. widget tests that don't
+  // override licensingControllerProvider); hide the Account section there
+  // instead of letting the unimplemented provider throw during build.
+  EntitlementState? _watchEntitlement() {
+    try {
+      return ref.watch(entitlementProvider);
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final entitlement = _watchEntitlement();
     return Scaffold(
       backgroundColor: context.palette.appBackground,
       appBar: AppBar(
@@ -90,6 +107,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (entitlement != null) ...[
+              _title('Account'),
+              const SizedBox(height: 12),
+              _accountCard(entitlement),
+              const SizedBox(height: 32),
+            ],
+
             _title('Recording'),
             const SizedBox(height: 12),
             _countdownPicker(),
@@ -152,6 +176,170 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: child,
         ),
       );
+
+  // ---- Account -------------------------------------------------------------
+
+  Widget _accountCard(EntitlementState state) => _card(
+        child: switch (state) {
+          EntitlementLoading() => Row(
+              children: [
+                const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(width: 12),
+                Text('Checking your license…',
+                    style: TextStyle(color: context.palette.textSecondary)),
+              ],
+            ),
+          EntitlementSignedOut() => _accountSignedOut(),
+          EntitlementLoaded(:final claims) => _accountLoaded(state, claims),
+        },
+      );
+
+  Widget _accountSignedOut() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Not signed in',
+              style: TextStyle(
+                  color: context.palette.textPrimary,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text('Sign in to activate this Mac and manage your plan.',
+              style: TextStyle(color: context.palette.textSecondary)),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: _openSignIn,
+            child: const Text('Sign in'),
+          ),
+        ],
+      );
+
+  Widget _accountLoaded(EntitlementState state, EntitlementClaims claims) {
+    final (name, detail, dot) = _accountDisplay(claims);
+    final entitled = canExportNow(state, appReleaseDate: buildReleaseDate);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(top: 5),
+              decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      style: TextStyle(
+                          color: context.palette.textPrimary,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(detail,
+                      style: TextStyle(
+                          color: context.palette.textSecondary, fontSize: 13)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (entitled)
+          FilledButton.tonal(
+            onPressed: _manageAccount,
+            child: const Text('Manage account'),
+          )
+        else
+          Row(
+            children: [
+              FilledButton(
+                onPressed: _upgrade,
+                child: const Text('Upgrade'),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: _manageAccount,
+                child: const Text('Manage account'),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// (headline, detail, status-dot colour) for the current claims — mirrors the
+  /// web account page's states.
+  (String, String, Color) _accountDisplay(EntitlementClaims c) {
+    const green = Color(0xFF4ADE80);
+    const amber = Color(0xFFFBBF24);
+    final grey = context.palette.textSecondary;
+    switch (c.plan) {
+      case 'subscription':
+        if (c.status == 'grace') {
+          return (
+            'Pro — Monthly',
+            'Payment issue — update your card to keep exporting.',
+            amber
+          );
+        }
+        if (c.status == 'active') {
+          return ('Pro — Monthly', 'Active · unlimited exports.', green);
+        }
+        return (
+          'Pro — Monthly',
+          'Inactive — resubscribe to unlock exports.',
+          grey
+        );
+      case 'onetime':
+        final until = c.updatesUntil;
+        if (until != null && buildReleaseDate.isAfter(until)) {
+          return (
+            'Lifetime license',
+            'Updates ended ${_date(until)} — renew to update.',
+            amber
+          );
+        }
+        return (
+          'Lifetime license',
+          until != null
+              ? 'Active · free updates through ${_date(until)}.'
+              : 'Active · unlimited exports.',
+          green
+        );
+      default:
+        return (
+          'No active license',
+          'Records and edits are free. Unlock unlimited exports.',
+          grey
+        );
+    }
+  }
+
+  String _date(DateTime dt) =>
+      MaterialLocalizations.of(context).formatShortDate(dt.toLocal());
+
+  Future<void> _manageAccount() async {
+    try {
+      await ref.read(licensingControllerProvider.notifier).openAccount();
+    } catch (_) {/* browser unavailable — nothing to do */}
+  }
+
+  Future<void> _openSignIn() async {
+    try {
+      await ref.read(licensingControllerProvider.notifier).openSignIn();
+    } catch (_) {/* browser unavailable — nothing to do */}
+  }
+
+  Future<void> _upgrade() async {
+    try {
+      await ref.read(licensingControllerProvider.notifier).unlockExport();
+    } catch (_) {/* browser unavailable — nothing to do */}
+  }
 
   Widget _countdownPicker() {
     final value =

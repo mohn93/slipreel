@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:screen_recorder/licensing/entitlement.dart';
+import 'package:screen_recorder/licensing/entitlement_claims.dart';
+import 'package:screen_recorder/licensing/licensing_controller.dart';
 import 'package:screen_recorder/state/global_preferences_controller.dart';
 import 'package:screen_recorder/state/global_preferences_store.dart';
 import 'package:screen_recorder/state/permissions_controller.dart';
@@ -67,5 +70,64 @@ void main() {
     await tester.pumpWidget(_app(const SettingsScreen(), overrides));
     await tester.pump();
     expect(find.textContaining('Ask each time'), findsOneWidget);
+  });
+
+  // ---- Account section -----------------------------------------------------
+
+  EntitlementClaims claims({
+    required String plan,
+    String status = 'active',
+    DateTime? updatesUntil,
+  }) =>
+      EntitlementClaims(
+        sub: 'u1',
+        plan: plan,
+        exportEntitled: plan != 'free',
+        status: status,
+        updatesUntil: updatesUntil,
+        deviceId: 'dev1',
+        seatLimit: 2,
+        issuedAt: DateTime.utc(2026, 1, 1),
+        expiresAt: DateTime.utc(2099, 1, 1),
+      );
+
+  List<Override> withEntitlement(EntitlementState state) =>
+      [...overrides, entitlementProvider.overrideWithValue(state)];
+
+  testWidgets('hides the Account section when licensing is not wired',
+      (tester) async {
+    await tester.pumpWidget(_app(const SettingsScreen(), overrides));
+    await tester.pump();
+    expect(find.text('Account'), findsNothing);
+  });
+
+  testWidgets('signed out shows a Sign in prompt', (tester) async {
+    await tester.pumpWidget(
+        _app(const SettingsScreen(), withEntitlement(const EntitlementSignedOut())));
+    await tester.pump();
+    expect(find.text('Account'), findsOneWidget);
+    expect(find.text('Not signed in'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Sign in'), findsOneWidget);
+  });
+
+  testWidgets('active subscription shows Pro plan and Manage account',
+      (tester) async {
+    await tester.pumpWidget(_app(const SettingsScreen(),
+        withEntitlement(EntitlementLoaded(claims(plan: 'subscription')))));
+    await tester.pump();
+    expect(find.text('Pro — Monthly'), findsOneWidget);
+    expect(find.textContaining('unlimited exports'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Manage account'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Upgrade'), findsNothing);
+  });
+
+  testWidgets('free plan shows no license and an Upgrade action',
+      (tester) async {
+    await tester.pumpWidget(_app(const SettingsScreen(),
+        withEntitlement(EntitlementLoaded(claims(plan: 'free', status: 'none')))));
+    await tester.pump();
+    expect(find.text('No active license'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Upgrade'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Manage account'), findsOneWidget);
   });
 }

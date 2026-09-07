@@ -6,6 +6,9 @@ import { testPool, resetDatabase } from './helpers/testDb.js';
 import { runMigrations } from '../src/migrate.js';
 import { buildApp } from '../src/app.js';
 import type { BillingConfig } from '../src/billing/config.js';
+import type { TokenSigner } from '../src/tokens/signer.js';
+import { createSession } from '../src/auth/sessions.js';
+import { makeTestSigner } from './helpers/licensing.js';
 
 const billing: BillingConfig = {
   secretKey: 'sk_test_dummy', webhookSecret: 'whsec_x',
@@ -23,9 +26,16 @@ function fakeStripe() {
     customers: { create: async ({ email }: { email: string }) => {
       calls.customerCreated!.push(email); return { id: `cus_${++n}` };
     } },
-    checkout: { sessions: { create: async (args: any) => {
-      calls.checkout = args; return { id: 'cs_1', url: 'https://checkout.stripe.test/cs_1' };
-    } } },
+    checkout: { sessions: {
+      create: async (args: any) => {
+        calls.checkout = args; return { id: 'cs_1', url: 'https://checkout.stripe.test/cs_1' };
+      },
+      // The buyer's first customer is cus_1 (customers.create above), so a
+      // completed session for cus_1 logs that same user in.
+      retrieve: async (_id: string) => ({
+        status: 'complete', customer: 'cus_1', created: Math.floor(Date.now() / 1000),
+      }),
+    } },
     billingPortal: { sessions: { create: async (args: any) => {
       calls.portal = args; return { id: 'bps_1', url: 'https://portal.stripe.test/bps_1' };
     } } },
@@ -35,14 +45,22 @@ function fakeStripe() {
 
 describe('billing routes', () => {
   let pool: pg.Pool;
+  let signer: TokenSigner;
   beforeAll(async () => {
     pool = testPool(); await resetDatabase(pool); await runMigrations(pool);
+    signer = await makeTestSigner();
   });
   afterAll(async () => { await pool.end(); });
-  beforeEach(async () => { await pool.query('DELETE FROM users'); });
+  beforeEach(async () => {
+    await pool.query('DELETE FROM sessions');
+    await pool.query('DELETE FROM consumed_checkout_sessions');
+    await pool.query('DELETE FROM users');
+  });
 
+  // Wire the token signer so auth routes (session-from-checkout) are available:
+  // /v1/portal is session-scoped, so the portal tests need to log a buyer in.
   async function make(stripe: Stripe): Promise<FastifyInstance> {
-    const app = buildApp({ pool, stripe, billing, logger: false });
+    const app = buildApp({ pool, stripe, billing, tokenSigner: signer, logger: false });
     await app.ready();
     return app;
   }
@@ -91,25 +109,39 @@ describe('billing routes', () => {
     await app.close();
   });
 
-  it('POST /v1/portal returns a portal url for a known customer', async () => {
+  it('POST /v1/portal returns a portal url for the logged-in customer', async () => {
     const { stripe, calls } = fakeStripe();
     const app = await make(stripe);
-    // create the user first via a checkout
+    // Create the user (+ cus_1) via checkout, then log in with that session.
     await app.inject({ method: 'POST', url: '/v1/checkout',
       payload: { email: 'f@example.com', plan: 'monthly' } });
-    const res = await app.inject({ method: 'POST', url: '/v1/portal',
-      payload: { email: 'f@example.com' } });
+    const login = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
+      payload: { checkout_session_id: 'cs' } });
+    const cookie = String(login.headers['set-cookie']).split(';')[0];
+
+    const res = await app.inject({ method: 'POST', url: '/v1/portal', headers: { cookie } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ url: 'https://portal.stripe.test/bps_1' });
+    expect(calls.portal.customer).toBe('cus_1');
     expect(calls.portal.return_url).toBe(billing.portalReturnUrl);
     await app.close();
   });
 
-  it('POST /v1/portal 404s for an unknown email', async () => {
+  it('POST /v1/portal requires a session (401)', async () => {
     const { stripe } = fakeStripe();
     const app = await make(stripe);
+    const res = await app.inject({ method: 'POST', url: '/v1/portal' });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('POST /v1/portal 404s when the logged-in user has no Stripe customer', async () => {
+    const { stripe } = fakeStripe();
+    const app = await make(stripe);
+    await pool.query("INSERT INTO users (id, email) VALUES ('u_nocus', 'nocus@example.com')");
+    const { token } = await createSession(pool, 'u_nocus');
     const res = await app.inject({ method: 'POST', url: '/v1/portal',
-      payload: { email: 'nobody@example.com' } });
+      headers: { cookie: `slipreel_session=${token}` } });
     expect(res.statusCode).toBe(404);
     await app.close();
   });

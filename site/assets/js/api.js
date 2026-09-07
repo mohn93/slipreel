@@ -26,6 +26,7 @@ export function createApi(baseUrl, fetchImpl = fetch) {
     magicLink: (b) => call('POST', '/v1/auth/magic-link', b),
     magicLinkVerify: (token) => call('POST', '/v1/auth/magic-link/verify', { token }),
     portal: (email) => call('POST', '/v1/portal', { email }),
+    entitlement: () => call('GET', '/v1/entitlement'),
     devices: () => call('GET', '/v1/devices'),
     deleteDevice: (id) => call('DELETE', '/v1/devices/' + encodeURIComponent(id)),
     logout: () => call('POST', '/v1/auth/logout'),

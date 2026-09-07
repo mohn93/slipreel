@@ -77,6 +77,16 @@
 .pw__fine { text-align: center; color: var(--ink-faint); font-size: .8rem; line-height: 1.5; margin: 16px auto 0; max-width: 520px; }
 .pw__fine a { color: var(--ink-dim); }
 
+/* Plan-status header (account page): coloured dot + plan name + detail line. */
+.plan-status { display: flex; align-items: center; gap: 12px; }
+.plan-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--ink-faint); }
+.plan-dot--ok { background: #4ade80; box-shadow: 0 0 0 4px rgba(74,222,128,.15); }
+.plan-dot--warn { background: #fbbf24; box-shadow: 0 0 0 4px rgba(251,191,36,.15); }
+.plan-dot--off { background: var(--ink-faint); }
+.plan-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.plan-name { color: var(--ink); font-weight: 600; }
+#plan .btn { margin-top: 16px; }
+
 /* Two-line device rows (account page): name + "location · last active". */
 .device-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .device-name { color: var(--ink); font-weight: 500; }
