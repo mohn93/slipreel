@@ -84,3 +84,6 @@ server/.env.*
 packages/screen_recorder/dart_defines/posthog.json
 packages/screen_recorder/dart_defines/posthog.local.json
 packages/screen_recorder/dart_defines/*.local.json
+
+# SDD isolated worktrees
+.worktrees/

@@ -17,6 +17,7 @@ import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
+import 'package:slipreel_engine/state/editor_look.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
@@ -258,6 +259,23 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   void setDefaultZoomLook(ZoomLook look) {
     if (state.defaultZoomLook == look) return;
     state = state.copyWith(defaultZoomLook: look);
+  }
+
+  /// Applies a template look to this recording as one undoable change:
+  /// swaps every look field, preserves the recording's own device-frame
+  /// fields (a template never transfers a device bezel), and restyles every
+  /// zoom to the look's [ZoomLook]. See look-templates design.
+  void applyLook(EditorLook look, {Size videoSize = Size.zero}) {
+    final cur = state.windowFrame;
+    final resolvedFrame = look.windowFrame.copyWith(
+      deviceFrameId: cur.deviceFrameId,
+      deviceFrameColor: cur.deviceFrameColor,
+      deviceFrameAdjustSize: cur.deviceFrameAdjustSize,
+      clearDeviceFrame: cur.deviceFrameId == null,
+    );
+    state = state.withLook(look.copyWith(windowFrame: resolvedFrame));
+    // Restyle existing zooms + set default; reuses the padding-floor logic.
+    applyLookToAllZooms(look.defaultZoomLook, videoSize: videoSize);
   }
 
   /// Restyles every zoom on the active track with [look] and makes it the
