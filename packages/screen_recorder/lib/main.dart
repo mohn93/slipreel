@@ -5,6 +5,7 @@ import 'dart:math' show Random;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -21,6 +22,8 @@ import 'package:slipreel_engine/utils/app_logger.dart';
 import 'package:slipreel_engine/utils/breadcrumbs.dart';
 import 'analytics/analytics_config.dart';
 import 'analytics/analytics_events.dart';
+import 'app_globals.dart';
+import 'state/app_menu_actions.dart';
 import 'analytics/analytics_queue_store.dart';
 import 'analytics/analytics_service.dart';
 import 'analytics/posthog_sink.dart';
@@ -90,10 +93,9 @@ import 'update/updater_backend.dart';
 import 'update/updater_service.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
 
-/// Navigator key used by the recording surface widgets (WakeModal,
-/// RecordingToast) to obtain a valid [BuildContext] outside the normal
-/// widget tree.
-final rootNavigatorKey = GlobalKey<NavigatorState>();
+// rootNavigatorKey moved to app_globals.dart so app-menu actions can import it
+// without a circular dependency on main.dart. Re-exported for existing callers.
+export 'app_globals.dart' show rootNavigatorKey;
 
 /// Application-wide [RecordingHistoryStore] provider.
 /// Exposed here so tests and other entry points can override it via
@@ -617,6 +619,8 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   SleepObserver? _sleepObserver;
   LongRecordingWatcher? _longWatcher;
 
+  static const _menuChannel = MethodChannel('slipreel/menu');
+
   @override
   void initState() {
     super.initState();
@@ -624,6 +628,18 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _initRecordingSurfaces());
     _wireAnalyticsObservers();
+    // Native macOS app-menu items (Settings…, Manage Account) call in here.
+    _menuChannel.setMethodCallHandler((call) async {
+      if (call.method != 'menuAction') return null;
+      final actions = ref.read(appMenuActionsProvider);
+      switch (call.arguments) {
+        case 'settings':
+          await actions.openSettings();
+        case 'account':
+          await actions.manageAccount();
+      }
+      return null;
+    });
     ref.listenManual<SignInFeedback?>(
       signInFeedbackProvider.select((value) => value.pending),
       (_, feedback) {
