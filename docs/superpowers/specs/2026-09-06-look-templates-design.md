@@ -209,10 +209,14 @@ uses `seed ?? EditorProjectState.defaults()` in every branch that today uses
 parse are unaffected.
 
 The playback screen builds the seed as
-`EditorProjectState.defaults().withLook(selectedTemplate.look)`. The seed's frame
-carries no device-frame fields (defaults have none), and device recordings set
-their own frame through the existing auto-match/Device-tab path at load, so no
-special device handling is needed at seed time.
+`EditorProjectState.defaults().withLook(selectedTemplate.look.withoutDeviceFrame())`.
+A template's look can carry a `deviceFrameId` when it was saved while a device
+recording was open, so the seed strips the device-frame fields via
+`EditorLook.withoutDeviceFrame()` — the same "a template never transfers a device
+bezel" rule the apply path enforces (§6.1). This keeps the seed from blocking a
+fresh device recording's own auto-match (guarded by `deviceFrameId == null`) or
+stamping a phone bezel onto a Mac capture. Device recordings then set their own
+frame through the existing auto-match/Device-tab path at load.
 
 Recordings opened from Recents with an existing sidecar are untouched. A Recents
 recording with no sidecar (old or imported) also receives the selected template;

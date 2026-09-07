@@ -13,6 +13,7 @@ import 'package:slipreel_engine/rendering/cursor_click_effect.dart';
 import 'package:slipreel_engine/rendering/cursor_glyph.dart';
 import 'package:slipreel_engine/rendering/spring_config.dart';
 import 'package:slipreel_engine/state/cursor_post_process.dart';
+import 'package:slipreel_engine/state/editor_look.dart';
 import 'package:slipreel_engine/timeline/timeline.dart';
 
 /// Per-recording editor settings that persist across app sessions.
@@ -314,6 +315,32 @@ class EditorProjectState {
       defaultZoomLook: defaultZoomLook ?? this.defaultZoomLook,
     );
   }
+
+  /// Returns a copy with every look field replaced from [look]. Timeline
+  /// content and transient UI (timelineScale, pendingScaleAnchor) are
+  /// untouched. Used by templates (see look-templates design).
+  EditorProjectState withLook(EditorLook look) => copyWith(
+        windowFrame: look.windowFrame,
+        cursorSize: look.cursorSize,
+        cursorStyle: look.cursorStyle,
+        cursorClickEffect: look.cursorClickEffect,
+        cursorShadow: look.cursorShadow,
+        clickSpring: look.clickSpring,
+        cursorPostProcess: look.cursorPostProcess,
+        hideCursorOverlay: look.hideCursorOverlay,
+        cursorDelay: look.cursorDelay,
+        screenAnimationConfig: look.screenAnimationConfig,
+        cursorAnimationConfig: look.cursorAnimationConfig,
+        motionBlur: look.motionBlur,
+        cursorMovementBlur: look.cursorMovementBlur,
+        screenMovementBlur: look.screenMovementBlur,
+        screenZoomBlur: look.screenZoomBlur,
+        outputAspect: look.outputAspect,
+        keystrokeOverlay: look.keystrokeOverlay,
+        cameraSettings: look.cameraSettings,
+        captionStyle: look.captionStyle,
+        defaultZoomLook: look.defaultZoomLook,
+      );
 
   Map<String, dynamic> toJson() => {
     'schemaVersion': currentSchemaVersion,

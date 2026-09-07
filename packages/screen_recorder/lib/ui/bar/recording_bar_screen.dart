@@ -21,6 +21,16 @@ import '../screens/settings_screen.dart';
 import 'recording_bar.dart';
 import 'recording_pill.dart';
 
+/// Whether a restored mic selection should be auto-cleared: the device is
+/// reporting the unavailable sentinel and the user hasn't touched the mic
+/// control yet this session.
+bool shouldClearRestoredMic({
+  required bool hasSelection,
+  required bool userTouchedMic,
+  required double level,
+}) =>
+    hasSelection && !userTouchedMic && level < 0;
+
 /// Root of the app. Hosts the bar/pill and routes Recents/Settings/editor as
 /// panels by morphing the window. Single window, three shapes.
 class RecordingBarScreen extends ConsumerStatefulWidget {
@@ -56,6 +66,16 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   // receiveBroadcastStream() on each call, so we must not call it per-build.
   late final Stream<double> _micLevelStream =
       ScreenRecorderPlatform.instance.micLevelStream;
+
+  // One-shot restored-mic-sentinel guard: a mic selection restored from a
+  // prior launch (Task 8) may point at a now-unavailable device. If the
+  // level stream reports the unavailable sentinel before the user has opened
+  // the mic menu this session, we clear the selection to off. `_userTouchedMic`
+  // disarms the check once the user interacts; `_restoredMicChecked` ensures
+  // it fires at most once (either by clearing or by user interaction).
+  bool _userTouchedMic = false;
+  bool _restoredMicChecked = false;
+  StreamSubscription<double>? _micLevelSub;
 
   @override
   void initState() {
@@ -105,10 +125,31 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
       ref.read(windowModeControllerProvider),
       ref.read(microphoneControllerProvider),
     );
+
+    // One-shot: clear a restored mic selection if it reports the unavailable
+    // sentinel before the user has touched the mic control this session.
+    // Only subscribe when a mic is actually restored — otherwise there is
+    // nothing to clear, and eagerly evaluating _micLevelStream (which touches
+    // ScreenRecorderPlatform.instance) is both unnecessary and breaks the
+    // no-mic bar/pill render paths that register no platform implementation.
+    if (ref.read(microphoneControllerProvider) != null) {
+      _micLevelSub = _micLevelStream.listen((level) {
+        if (_restoredMicChecked || !mounted) return;
+        if (shouldClearRestoredMic(
+          hasSelection: ref.read(microphoneControllerProvider) != null,
+          userTouchedMic: _userTouchedMic,
+          level: level,
+        )) {
+          ref.read(microphoneControllerProvider.notifier).set(null);
+          _restoredMicChecked = true;
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _micLevelSub?.cancel();
     if (_monitoredConfig != null) {
       ScreenRecorderPlatform.instance.stopMicMonitor();
     }
@@ -249,6 +290,8 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   }
 
   Future<void> _onMicTap() async {
+    _userTouchedMic = true;
+    _restoredMicChecked = true;
     if (_micMenuLoading) return;
     setState(() => _micMenuLoading = true);
 

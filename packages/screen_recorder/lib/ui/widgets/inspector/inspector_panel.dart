@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/zoom_look.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
+import 'package:slipreel_engine/state/editor_look.dart';
 import 'package:screen_recorder/onboarding/tip_anchor.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:screen_recorder/ui/theme/app_palette_context.dart';
@@ -19,6 +20,7 @@ import 'package:screen_recorder/ui/widgets/inspector/tabs/device_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/captions_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/cursor_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/tabs/shortcuts_tab.dart';
+import 'package:screen_recorder/ui/widgets/inspector/template_row.dart';
 import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
 import '../animated_indicator_bar.dart';
 import '../springy_icon_button.dart';
@@ -63,6 +65,8 @@ class InspectorPanel extends StatefulWidget {
     this.cameraOriginalAspect = 1.0,
     this.onCameraChanged,
     this.onCameraDeleted,
+    required this.onApplyTemplate,
+    required this.currentLook,
   });
 
   final double width;
@@ -159,6 +163,15 @@ class InspectorPanel extends StatefulWidget {
   /// Delete a camera region.
   final void Function(int index)? onCameraDeleted;
 
+  /// Applies a picked/saved look template to the live project. Owned by
+  /// the playback screen, which alone has the project controller and
+  /// undo history — see `TemplateRow`.
+  final void Function(EditorLook look) onApplyTemplate;
+
+  /// Snapshots the current project's look for the template row's
+  /// save/update actions.
+  final EditorLook Function() currentLook;
+
   @override
   State<InspectorPanel> createState() => _InspectorPanelState();
 }
@@ -175,7 +188,19 @@ class _InspectorPanelState extends State<InspectorPanel> {
         color: kInspectorBg,
         border: Border(left: BorderSide(color: Color(0xFF14141C), width: 1)),
       ),
-      child: selection == null ? _formatMode() : _contextMode(selection),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TemplateRow(
+            onApply: widget.onApplyTemplate,
+            currentLook: widget.currentLook,
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: selection == null ? _formatMode() : _contextMode(selection),
+          ),
+        ],
+      ),
     );
   }
 

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/timeline/edited_time.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_history_controller.dart';
+import 'package:slipreel_engine/state/editor_look.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/state/motion_tuning_controller.dart';
 import 'package:video_player/video_player.dart';
@@ -21,6 +22,7 @@ import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/services/destination_handlers.dart';
+import 'package:screen_recorder/state/look_template_controller.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/state/editor_project_store.dart';
 import 'package:slipreel_engine/state/export_settings_store.dart';
@@ -683,8 +685,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // Loaded *before* we mark _isInitialized so the very first
       // build sees the persisted state and the canvas doesn't flash
       // its defaults for a frame.
+      final selectedLook = ref.read(lookTemplateControllerProvider).selected.look;
       final saved = await _projectStore.load(
         videoDuration: _controller.value.duration,
+        seed: EditorProjectState.defaults()
+            .withLook(selectedLook.withoutDeviceFrame()),
       );
 
       EditorProjectState restored = saved;
@@ -2609,6 +2614,29 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                               : null,
                           onPlacementPreview: _onPlacementPreview,
                           onPlacementCommit: _onPlacementCommit,
+                          currentLook: () =>
+                              EditorLook.fromProject(_projectController.current),
+                          onApplyTemplate: (look) {
+                            final vs = _videoSize();
+                            _projectController.applyLook(look, videoSize: vs);
+                            AppAlerts.success(
+                              'Applied ${ref.read(lookTemplateControllerProvider).selected.name}.',
+                              action: AppAlertAction(
+                                label: 'Undo',
+                                onPressed: () => _history?.undo(),
+                              ),
+                            );
+                            ref.captureAnalytics(
+                              AnalyticsEvents.templateApplied,
+                              properties: {
+                                'source': 'editor',
+                                'builtIn': ref
+                                    .read(lookTemplateControllerProvider)
+                                    .selected
+                                    .builtIn,
+                              },
+                            );
+                          },
                         ),
                     ],
                   ),
