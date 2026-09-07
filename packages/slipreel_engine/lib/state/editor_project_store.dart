@@ -24,15 +24,19 @@ class EditorProjectStore {
 
   String get sidecarPath => '$videoPath.editor.json';
 
-  Future<EditorProjectState> load({required Duration videoDuration}) async {
+  Future<EditorProjectState> load({
+    required Duration videoDuration,
+    EditorProjectState? seed,
+  }) async {
+    final base = seed ?? EditorProjectState.defaults();
     final f = File(sidecarPath);
     if (!await f.exists()) {
-      return _seedSingleSlice(EditorProjectState.defaults(), videoDuration);
+      return _seedSingleSlice(base, videoDuration);
     }
     try {
       final text = await f.readAsString();
       if (text.trim().isEmpty) {
-        return _seedSingleSlice(EditorProjectState.defaults(), videoDuration);
+        return _seedSingleSlice(base, videoDuration);
       }
       final json = jsonDecode(text) as Map<String, dynamic>;
       return EditorProjectState.fromJson(json, videoDuration: videoDuration);
@@ -42,7 +46,7 @@ class EditorProjectStore {
         error: e,
         stackTrace: stack,
       );
-      return _seedSingleSlice(EditorProjectState.defaults(), videoDuration);
+      return _seedSingleSlice(base, videoDuration);
     }
   }
 
