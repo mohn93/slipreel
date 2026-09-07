@@ -13,6 +13,7 @@ import '../../licensing/entitlement.dart';
 import '../../licensing/entitlement_claims.dart';
 import '../../licensing/export_gate.dart';
 import '../../licensing/licensing_controller.dart';
+import '../../licensing/trial_exports.dart';
 import '../../state/global_preferences_controller.dart';
 import '../../state/permissions_controller.dart';
 import '../../state/recording_settings_controller.dart';
@@ -207,6 +208,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 4),
           Text('Sign in to activate this Mac and manage your plan.',
               style: TextStyle(color: context.palette.textSecondary)),
+          _trialLine(),
           const SizedBox(height: 14),
           FilledButton(
             onPressed: _openSignIn,
@@ -214,6 +216,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ],
       );
+
+  // The device-local free-export allowance (mirrors the editor's export
+  // button). Shown only when the user is not entitled; hidden when the trial
+  // provider isn't wired (e.g. widget tests that don't override it).
+  Widget _trialLine() {
+    int? remaining;
+    try {
+      remaining = ref.watch(trialExportsRemainingProvider).valueOrNull;
+    } catch (_) {
+      remaining = null;
+    }
+    if (remaining == null) return const SizedBox.shrink();
+    final text = remaining > 0
+        ? '$remaining of ${TrialExports.limit} free exports left'
+        : 'No free exports left';
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(text,
+          style: TextStyle(color: context.palette.textSecondary, fontSize: 13)),
+    );
+  }
 
   Widget _accountLoaded(EntitlementState state, EntitlementClaims claims) {
     final (name, detail, dot) = _accountDisplay(claims);
@@ -248,6 +271,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ],
         ),
+        if (!entitled) _trialLine(),
         const SizedBox(height: 16),
         if (entitled)
           FilledButton.tonal(

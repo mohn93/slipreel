@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/licensing/entitlement.dart';
 import 'package:screen_recorder/licensing/entitlement_claims.dart';
 import 'package:screen_recorder/licensing/licensing_controller.dart';
+import 'package:screen_recorder/licensing/trial_exports.dart';
 import 'package:screen_recorder/state/global_preferences_controller.dart';
 import 'package:screen_recorder/state/global_preferences_store.dart';
 import 'package:screen_recorder/state/permissions_controller.dart';
@@ -129,5 +130,30 @@ void main() {
     expect(find.text('No active license'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Upgrade'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Manage account'), findsOneWidget);
+  });
+
+  testWidgets('not-entitled account shows the remaining free-export count',
+      (tester) async {
+    await tester.pumpWidget(_app(
+        const SettingsScreen(),
+        [
+          ...withEntitlement(EntitlementLoaded(claims(plan: 'free', status: 'none'))),
+          trialExportsRemainingProvider.overrideWith((ref) async => 2),
+        ]));
+    await tester.pump(); // resolve the FutureProvider
+    expect(find.text('2 of ${TrialExports.limit} free exports left'),
+        findsOneWidget);
+  });
+
+  testWidgets('entitled account does not show a free-export count',
+      (tester) async {
+    await tester.pumpWidget(_app(
+        const SettingsScreen(),
+        [
+          ...withEntitlement(EntitlementLoaded(claims(plan: 'subscription'))),
+          trialExportsRemainingProvider.overrideWith((ref) async => 2),
+        ]));
+    await tester.pump();
+    expect(find.textContaining('free exports left'), findsNothing);
   });
 }
