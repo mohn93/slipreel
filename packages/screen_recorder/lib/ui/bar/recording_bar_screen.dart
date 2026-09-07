@@ -131,17 +131,23 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
 
     // One-shot: clear a restored mic selection if it reports the unavailable
     // sentinel before the user has touched the mic control this session.
-    _micLevelSub = _micLevelStream.listen((level) {
-      if (_restoredMicChecked || !mounted) return;
-      if (shouldClearRestoredMic(
-        hasSelection: ref.read(microphoneControllerProvider) != null,
-        userTouchedMic: _userTouchedMic,
-        level: level,
-      )) {
-        ref.read(microphoneControllerProvider.notifier).set(null);
-        _restoredMicChecked = true;
-      }
-    });
+    // Only subscribe when a mic is actually restored — otherwise there is
+    // nothing to clear, and eagerly evaluating _micLevelStream (which touches
+    // ScreenRecorderPlatform.instance) is both unnecessary and breaks the
+    // no-mic bar/pill render paths that register no platform implementation.
+    if (ref.read(microphoneControllerProvider) != null) {
+      _micLevelSub = _micLevelStream.listen((level) {
+        if (_restoredMicChecked || !mounted) return;
+        if (shouldClearRestoredMic(
+          hasSelection: ref.read(microphoneControllerProvider) != null,
+          userTouchedMic: _userTouchedMic,
+          level: level,
+        )) {
+          ref.read(microphoneControllerProvider.notifier).set(null);
+          _restoredMicChecked = true;
+        }
+      });
+    }
   }
 
   @override
