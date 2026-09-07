@@ -7,16 +7,10 @@ import 'package:screen_recorder/analytics/analytics_service.dart';
 import 'package:screen_recorder/state/look_template.dart';
 import 'package:screen_recorder/state/look_template_controller.dart';
 import 'package:screen_recorder/ui/app_alerts/app_alerts.dart';
+import 'package:screen_recorder/ui/widgets/inspector/inspector_popover.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_widgets.dart';
 
 enum _Action { saveNew, update, duplicate, rename, delete }
-
-const _kMenuShape =
-    RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8)));
-
-Text _menuText(String s, {Color color = Colors.white}) => Text(s,
-    style: TextStyle(color: color, fontSize: 13),
-    overflow: TextOverflow.ellipsis);
 
 /// Row above the inspector's tab strip: pick a look template (applying it
 /// immediately, with an undo toast owned by the caller) and manage
@@ -59,36 +53,43 @@ class TemplateRow extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 8),
-          PopupMenuButton<_Action>(
-            key: const Key('template-overflow'),
-            tooltip: 'Template actions',
-            shape: _kMenuShape,
-            color: kInspectorPanel,
-            icon: const Icon(Icons.more_horiz, size: 18, color: kInspectorMuted),
-            onSelected: (a) => _handleAction(context, ref, a, selected),
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                  value: _Action.saveNew,
-                  child: _menuText('Save as new template…')),
-              if (!selected.builtIn)
-                PopupMenuItem(
-                    value: _Action.update,
-                    child: _menuText('Update "${selected.name}"')),
-              PopupMenuItem(
-                  value: _Action.duplicate, child: _menuText('Duplicate')),
-              if (!selected.builtIn) ...[
-                PopupMenuItem(
-                    value: _Action.rename, child: _menuText('Rename…')),
-                const PopupMenuDivider(height: 1),
-                PopupMenuItem(
-                    value: _Action.delete,
-                    child: _menuText('Delete…', color: Colors.redAccent)),
-              ],
-            ],
+          _OverflowButton(
+            onOpen: (anchor) => _openActions(anchor, ref, selected),
           ),
         ],
       ),
     );
+  }
+
+  /// Opens the custom actions popover and dispatches the chosen action.
+  Future<void> _openActions(
+    BuildContext anchor,
+    WidgetRef ref,
+    LookTemplate selected,
+  ) async {
+    final action = await showInspectorPopover<_Action>(
+      anchor,
+      alignRight: true,
+      items: [
+        const InspectorPopoverItem(
+            value: _Action.saveNew, label: 'Save as new template…'),
+        if (!selected.builtIn)
+          InspectorPopoverItem(
+              value: _Action.update, label: 'Update "${selected.name}"'),
+        const InspectorPopoverItem(
+            value: _Action.duplicate, label: 'Duplicate'),
+        if (!selected.builtIn) ...[
+          const InspectorPopoverItem(value: _Action.rename, label: 'Rename…'),
+          const InspectorPopoverItem(
+              value: _Action.delete,
+              label: 'Delete…',
+              destructive: true,
+              dividerBefore: true),
+        ],
+      ],
+    );
+    if (action == null || !anchor.mounted) return;
+    await _handleAction(anchor, ref, action, selected);
   }
 
   Future<void> _handleAction(
@@ -136,56 +137,92 @@ class TemplateRow extends ConsumerWidget {
   }
 }
 
-/// The template dropdown: current selection with a checkmarked list of
-/// every template (built-ins first, then user templates by name).
+/// The template field: shows the current selection and opens a bespoke dark
+/// popover listing every template (built-ins first, then user templates by
+/// name) with a check on the selected one.
 class _TemplatePicker extends StatelessWidget {
   const _TemplatePicker({required this.state, required this.onSelect});
 
   final LookTemplatesState state;
   final ValueChanged<String> onSelect;
 
+  Future<void> _open(BuildContext anchor) async {
+    final selected = state.selected;
+    final id = await showInspectorPopover<String>(
+      anchor,
+      matchAnchorWidth: true,
+      items: [
+        for (final t in state.all)
+          InspectorPopoverItem(
+            value: t.id,
+            label: t.name,
+            selected: t.id == selected.id,
+          ),
+      ],
+    );
+    if (id != null) onSelect(id);
+  }
+
   @override
   Widget build(BuildContext context) {
     final selected = state.selected;
-    return PopupMenuButton<String>(
-      key: const Key('template-select'),
-      tooltip: '',
-      shape: _kMenuShape,
-      color: kInspectorPanel,
-      onSelected: onSelect,
-      itemBuilder: (context) => [
-        for (final t in state.all)
-          PopupMenuItem<String>(
-            value: t.id,
-            child: Row(children: [
-              SizedBox(
-                  width: 20,
-                  child: t.id == selected.id
-                      ? const Icon(Icons.check, size: 14, color: kInspectorAccent)
-                      : null),
-              Expanded(child: _menuText(t.name)),
-            ]),
+    return Builder(
+      builder: (fieldContext) => GestureDetector(
+        key: const Key('template-select'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _open(fieldContext),
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: kInspectorPanel,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: kInspectorBorder),
           ),
-      ],
-      child: Container(
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: kInspectorPanel,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: kInspectorBorder),
+          child: Row(children: [
+            const Icon(Icons.style_outlined, size: 14, color: kInspectorMuted),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(selected.name,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500),
+                  overflow: TextOverflow.ellipsis),
+            ),
+            const Icon(Icons.expand_more, size: 16, color: kInspectorMuted),
+          ]),
         ),
-        child: Row(children: [
-          const Icon(Icons.style_outlined, size: 14, color: kInspectorMuted),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(selected.name,
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
-                overflow: TextOverflow.ellipsis),
+      ),
+    );
+  }
+}
+
+/// The "⋯" actions trigger. A [Builder] gives [onOpen] a context anchored to
+/// the icon so the popover positions beneath it.
+class _OverflowButton extends StatelessWidget {
+  const _OverflowButton({required this.onOpen});
+
+  final void Function(BuildContext anchor) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Builder(
+      builder: (anchor) => GestureDetector(
+        key: const Key('template-overflow'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => onOpen(anchor),
+        child: Container(
+          height: 32,
+          width: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: kInspectorPanel,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: kInspectorBorder),
           ),
-          const Icon(Icons.expand_more, size: 16, color: kInspectorMuted),
-        ]),
+          child: const Icon(Icons.more_horiz, size: 18, color: kInspectorMuted),
+        ),
       ),
     );
   }

@@ -8,7 +8,6 @@ import '../../onboarding/tip_anchor.dart';
 import '../../onboarding/tips_controller.dart';
 import 'mic_status.dart';
 import 'spring_hover_button.dart';
-import 'template_control.dart';
 
 /// The selectable source modes on the bar. `device` is shown but disabled.
 enum BarSourceMode { display, window, area, device }
@@ -39,8 +38,6 @@ class RecordingBar extends StatelessWidget {
     required this.onSystemAudioTap,
     this.camera,
     required this.onCameraTap,
-    required this.templateName,
-    required this.onTemplateTap,
     this.contentKey,
     this.micLevelStream,
     this.micMenuLoading = false,
@@ -71,12 +68,6 @@ class RecordingBar extends StatelessWidget {
 
   /// Fired when the camera control is tapped (opens the native camera menu).
   final VoidCallback onCameraTap;
-
-  /// Name of the currently-selected look template, shown in [TemplateControl].
-  final String templateName;
-
-  /// Fired when the template chip is tapped (opens the template picker menu).
-  final VoidCallback onTemplateTap;
 
   /// Attached to the inner content [Row] so the host can measure its intrinsic
   /// width and resize the (variable-width) bar window to hug the content.
@@ -148,8 +139,6 @@ class RecordingBar extends StatelessWidget {
               label: 'Device',
               onTap: () => onPickMode(BarSourceMode.device),
             ),
-            const _Divider(),
-            TemplateControl(selectedName: templateName, onTap: onTemplateTap),
             const _Divider(),
             _CameraControl(camera: camera, onTap: onCameraTap),
             _MicControl(

@@ -6,9 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:screen_recorder/onboarding/tips_controller.dart';
 import 'package:screen_recorder/onboarding/tips_store.dart';
-import 'package:screen_recorder/state/look_template.dart';
-import 'package:screen_recorder/state/look_template_controller.dart';
-import 'package:screen_recorder/state/look_template_store.dart';
 import 'package:screen_recorder/state/microphone_controller.dart';
 import 'package:screen_recorder/state/permissions_controller.dart';
 import 'package:screen_recorder/state/recording_action_router.dart';
@@ -158,17 +155,6 @@ Future<Override> _tipsOverride() async {
   return tipsControllerProvider.overrideWith((ref) => c);
 }
 
-/// A LookTemplateController override backed by a store whose `saveAll` is
-/// never exercised in these bar-screen tests (no test taps the template
-/// chip), so a filePath that's never touched is safe.
-Override _lookTemplateOverride() => lookTemplateControllerProvider.overrideWith(
-      (ref) => LookTemplateController(
-        store: LookTemplateStore(filePath: 'unused-look-templates.json'),
-        initial: const LookTemplateData(
-            templates: [], selectedId: kBuiltinCleanId),
-      ),
-    );
-
 void main() {
   setUp(() {
     recordingActionRouterRef = null;
@@ -184,7 +170,6 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -200,7 +185,6 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: MaterialApp(
         home: Consumer(builder: (c, ref, _) {
@@ -240,7 +224,6 @@ void main() {
             (ref) => PermissionsController(ScreenRecorderPlatform.instance)
               ..state = PermissionsSnapshot.initial),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -274,7 +257,6 @@ void main() {
       permissionsControllerProvider.overrideWith(
           (ref) => PermissionsController(fakePlatform)),
       await _tipsOverride(),
-      _lookTemplateOverride(),
     ]);
     addTearDown(container.dispose);
     recordingActionRouterRef = RecordingActionRouter(container);
@@ -309,7 +291,6 @@ void main() {
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         recordingControllerProvider.overrideWith((ref) => fakeController),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -340,7 +321,6 @@ void main() {
             (ref) => PermissionsController(ScreenRecorderPlatform.instance)
               ..state = PermissionsSnapshot.initial),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -369,7 +349,6 @@ void main() {
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         recordingControllerProvider.overrideWith((ref) => fakeController),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -394,7 +373,6 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: MaterialApp(
         home: Consumer(builder: (c, ref, _) {
@@ -424,7 +402,6 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -454,7 +431,6 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(chrome),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -488,7 +464,6 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: const MaterialApp(home: RecordingBarScreen()),
     ));
@@ -508,7 +483,6 @@ void main() {
       overrides: [
         windowChromeProvider.overrideWithValue(_FakeChrome()),
         await _tipsOverride(),
-        _lookTemplateOverride(),
       ],
       child: MaterialApp(
         home: Consumer(builder: (c, r, _) {

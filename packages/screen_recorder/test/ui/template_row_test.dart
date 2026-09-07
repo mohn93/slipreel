@@ -41,4 +41,41 @@ void main() {
     expect(find.text('Rename…'), findsNothing);
     expect(find.text('Delete…'), findsNothing);
   });
+
+  testWidgets('picker popover lists templates and applies the pick',
+      (tester) async {
+    final store = LookTemplateStore(
+      filePath: '/tmp/template_row_picker_test.json',
+    );
+    final controller = LookTemplateController(
+      store: store,
+      initial: const LookTemplateData(templates: [], selectedId: kBuiltinCleanId),
+    );
+    EditorLook? applied;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        lookTemplateControllerProvider.overrideWith((_) => controller),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: TemplateRow(
+            onApply: (look) => applied = look,
+            currentLook: EditorLook.defaults,
+          ),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.byKey(const Key('template-select')));
+    await tester.pumpAndSettle();
+    // The three built-ins are listed in the popover.
+    expect(find.text('Showcase'), findsOneWidget);
+    expect(find.text('Minimal'), findsOneWidget);
+
+    await tester.tap(find.text('Showcase'));
+    await tester.pumpAndSettle();
+    // Selecting applies the picked template's look and updates the selection.
+    expect(applied, isNotNull);
+    expect(controller.state.selectedId, kBuiltinShowcaseId);
+  });
 }
