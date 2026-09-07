@@ -90,6 +90,7 @@ import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 import 'package:screen_recorder/licensing/build_release_date.g.dart';
 import 'package:screen_recorder/licensing/export_gate.dart';
 import 'package:screen_recorder/licensing/licensing_controller.dart';
+import 'package:screen_recorder/ui/paywall/export_nudge_sheet.dart';
 import 'package:screen_recorder/ui/paywall/paywall_sheet.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
@@ -1450,6 +1451,31 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// `isEnabled: false` so the chrome reads complete but every
   /// affordance is honest about being a stub. Undo/redo bind to the
   /// editor history controller's canUndo / canRedo.
+  static const _firstExportNudgeKey = 'first_export_nudge_shown_v1';
+
+  /// Show the soft upsell exactly once (ever), after the first successful
+  /// export by an unentitled user. Persists a flag in the trial store so it
+  /// never reappears; best-effort — a storage error at worst shows it again.
+  Future<void> _maybeShowFirstExportNudge() async {
+    final trial = ref.read(trialExportsProvider);
+    try {
+      if (await trial.store.read(_firstExportNudgeKey) != null) return;
+    } catch (_) {
+      return;
+    }
+    int remaining;
+    try {
+      remaining = await trial.remaining;
+    } catch (_) {
+      remaining = 0;
+    }
+    try {
+      await trial.store.write(_firstExportNudgeKey, '1');
+    } catch (_) {/* best-effort; a failed write only risks showing it again */}
+    if (!mounted) return;
+    await ExportNudgeSheet.show(context, remaining: remaining);
+  }
+
   PreferredSizeWidget _buildTopBar(BuildContext context) {
     final palette = context.palette;
     final paidExport = canExportNow(
@@ -2224,6 +2250,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 : null,
           );
           surfaceExportWarnings(summary, (m) => AppAlerts.warning(m));
+          // Soft, once-ever nudge after an unentitled user's first successful
+          // export. Not a gate — the remaining free exports stay available.
+          if (!canExportNow(ref.read(entitlementProvider),
+              appReleaseDate: buildReleaseDate)) {
+            await _maybeShowFirstExportNudge();
+          }
         case ExportFailure(:final error, :final stackTrace):
           // Only the error's type — never the message, which can contain file
           // paths.
