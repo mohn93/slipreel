@@ -33,11 +33,15 @@ import 'diagnostics/pii_scrubber.dart';
 import 'feedback/feedback_service.dart';
 import 'debug/debug_probe.dart';
 import 'licensing/auth_state_store.dart';
+import 'licensing/sign_in_feedback.dart';
+import 'state/window_mode.dart';
+import 'state/window_mode_controller.dart';
 import 'licensing/build_release_date.g.dart';
 import 'licensing/deep_link_listener.dart';
 import 'licensing/device_fingerprint.dart';
 import 'licensing/entitlement.dart';
 import 'licensing/export_gate.dart';
+import 'licensing/trial_exports.dart';
 import 'licensing/entitlement_public_key.g.dart';
 import 'licensing/entitlement_verifier.dart';
 import 'licensing/license_store.dart';
@@ -68,7 +72,6 @@ import 'state/snap_preference_store.dart';
 import 'state/snap_preference_controller.dart';
 import 'state/wallpaper_favorites_store.dart';
 import 'state/wallpaper_favorites_controller.dart';
-import 'state/window_mode_controller.dart';
 import 'ui/app_alerts/alert_stack_overlay.dart';
 import 'ui/app_alerts/app_alerts.dart';
 import 'ui/app_alerts/app_alerts_controller.dart';
@@ -227,6 +230,9 @@ Future<void> main() async {
   final licensingKv = FileSecureKV(
     p.join((await getApplicationSupportDirectory()).path, 'licensing.json'),
   );
+  final trialExports = TrialExports(FileSecureKV(
+    p.join((await getApplicationSupportDirectory()).path, 'trial-exports.json'),
+  ));
   final licensingStore = SecureLicenseStore(licensingKv);
   final licensingController = LicensingController(
     store: licensingStore,
@@ -405,6 +411,7 @@ Future<void> main() async {
 
   runApp(ProviderScope(
     overrides: [
+      trialExportsProvider.overrideWith((ref) => trialExports),
       motionTuningProvider.overrideWith(
         // New sessions default to the cinematic feedforward baked from the
         // tuned Studio Soft feel (#7); a saved tuning still wins if present.
@@ -617,6 +624,62 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _initRecordingSurfaces());
     _wireAnalyticsObservers();
+    ref.listenManual<SignInFeedback?>(
+      signInFeedbackProvider.select((value) => value.pending),
+      (_, feedback) {
+        if (feedback == null) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_showSignInFeedback(feedback));
+        });
+      },
+      fireImmediately: true,
+    );
+  }
+
+  Future<void> _showSignInFeedback(SignInFeedback feedback) async {
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx == null) return;
+    final notifier = ref.read(signInFeedbackProvider);
+    if (!identical(notifier.pending, feedback)) return;
+    notifier.clear();
+    final licensing = ref.read(licensingControllerProvider.notifier);
+    final window = ref.read(windowModeControllerProvider.notifier);
+    final previousMode = ref.read(windowModeControllerProvider);
+    // A 68px recorder bar cannot display a readable sign-in result.
+    if (previousMode != WindowMode.panel) await window.showPanel();
+    if (!mounted || !ctx.mounted) return;
+    final action = await showDialog<bool>(
+      context: ctx,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(feedback.title),
+        content: SizedBox(width: 420, child: Text(feedback.message)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Done')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(switch (feedback.action) {
+                'signin' => 'Sign in again',
+                'pricing' => 'See plans',
+                _ => 'Manage account',
+              })),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (previousMode == WindowMode.bar) await window.showBar();
+    if (previousMode == WindowMode.pill) await window.showPill();
+    if (action == true) {
+      try {
+        final opened = await switch (feedback.action) {
+          'signin' => licensing.openSignIn(),
+          'pricing' => licensing.unlockExport(),
+          _ => licensing.openAccount(),
+        };
+        if (!opened) AppAlerts.error('Could not open your browser. Please try again.');
+      } catch (_) {
+        AppAlerts.error('Could not open your browser. Please try again.');
+      }
+    }
   }
 
   /// Centralized instrumentation: watch provider state instead of threading an

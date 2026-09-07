@@ -6,8 +6,8 @@
  * It prints the three price ids to paste into the env. Safe to re-run: it
  * looks up prices by lookup_key and only creates missing ones.
  *
- * Amounts (USD cents): monthly 1200 ($12), yearly 8900 ($89), one-time 12900
- * ($129). These MUST match the prices shown on the site (pricing.html +
+ * Amounts (USD cents): monthly 900 ($9), legacy yearly 8900 ($89), one-time 6900
+ * ($69). Yearly is retained for existing subscriptions only. Active offers must match (pricing.html +
  * index.html). A price's amount is immutable in Stripe — to change a live
  * price, create a new one (new lookup_key) and repoint STRIPE_PRICE_*.
  */
@@ -33,14 +33,21 @@ type Spec = {
 };
 
 const specs: Spec[] = [
-  { lookupKey: 'slipreel_monthly', productName: 'Slipreel Pro (Monthly)', amount: 1200, recurring: 'month' },
+  { lookupKey: 'slipreel_monthly_usd9_v1', productName: 'Slipreel Pro (Monthly)', amount: 900, recurring: 'month' },
   { lookupKey: 'slipreel_yearly', productName: 'Slipreel Pro (Yearly)', amount: 8900, recurring: 'year' },
-  { lookupKey: 'slipreel_onetime', productName: 'Slipreel Pro (One-time, 1 year of updates)', amount: 12900 },
+  { lookupKey: 'slipreel_onetime_usd69_v1', productName: 'Slipreel Pro (One-time, 1 year of updates)', amount: 6900 },
 ];
 
 async function ensurePrice(spec: Spec): Promise<string> {
   const existing = await stripe.prices.list({ lookup_keys: [spec.lookupKey], limit: 1 });
-  if (existing.data.length > 0) return existing.data[0]!.id;
+  if (existing.data.length > 0) {
+    const price = existing.data[0]!;
+    if (!price.active || price.unit_amount !== spec.amount || price.currency !== 'usd' ||
+        (price.recurring?.interval ?? undefined) !== spec.recurring) {
+      throw new Error(`Price configuration mismatch for ${spec.lookupKey}`);
+    }
+    return price.id;
+  }
 
   const product = await stripe.products.create({ name: spec.productName });
   const price = await stripe.prices.create({

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:screen_recorder/licensing/trial_exports.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1451,6 +1452,21 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// editor history controller's canUndo / canRedo.
   PreferredSizeWidget _buildTopBar(BuildContext context) {
     final palette = context.palette;
+    final paidExport = canExportNow(
+      ref.watch(entitlementProvider),
+      appReleaseDate: buildReleaseDate,
+    );
+    final freeExports = paidExport
+        ? null
+        : ref.watch(trialExportsRemainingProvider).valueOrNull;
+    final exportLocked = !paidExport && freeExports == 0;
+    final exportLabel = _isExporting
+        ? 'Exporting…'
+        : paidExport || freeExports == null
+            ? 'Export'
+            : exportLocked
+                ? 'Unlock export'
+                : '$freeExports free export${freeExports == 1 ? '' : 's'}';
     final (titleName, titleExt) = _projectTitleParts();
     final canUndo = _history?.canUndo ?? false;
     final canRedo = _history?.canRedo ?? false;
@@ -1560,10 +1576,22 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               onPressed: _isExporting ? null : _export,
               icon: _isExporting
                   ? const CtaSpinner(size: 16)
-                  : const Icon(LucideIcons.upload, size: 16),
-              label: Text(
-                _isExporting ? 'Exporting…' : 'Export',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                  : Icon(
+                      exportLocked ? LucideIcons.crown : LucideIcons.upload,
+                      size: 16,
+                    ),
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    exportLabel,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  if (exportLocked && !_isExporting) ...[
+                    const SizedBox(width: 6),
+                    const Icon(Icons.lock_outline, size: 14),
+                  ],
+                ],
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: palette.accent,
@@ -1913,7 +1941,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // the export dialog. The sheet auto-advances (returns true) if the user
       // becomes entitled via the browser flow while it's open.
       final entitlementState = ref.read(entitlementProvider);
-      if (!canExportNow(entitlementState, appReleaseDate: buildReleaseDate)) {
+      final trial = ref.read(trialExportsProvider);
+      final paid = canExportNow(entitlementState, appReleaseDate: buildReleaseDate);
+      final trialLeft = paid ? 0 : await trial.remaining;
+      if (!mounted) return;
+      if (!paid && trialLeft > 0) {
+        AppAlerts.info('$trialLeft of 3 free full-quality exports remaining. '
+            'Only successful exports count.');
+      }
+      if (!paid && trialLeft == 0) {
         final reason =
             paywallReasonFor(entitlementState, appReleaseDate: buildReleaseDate)!;
         ref.read(analyticsServiceProvider).capture(
@@ -2072,6 +2108,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // pipeline is picked by format inside the injected closure; this widget
       // keeps all dialogs/snackbars/Navigator and maps the typed outcome to UI.
       final exportController = ExportController(
+        trialExports: ref.read(trialExportsProvider),
         isExportEntitled: () =>
             canExportNow(ref.read(entitlementProvider), appReleaseDate: buildReleaseDate),
         runPipeline: ({required onProgress, required cancelToken}) {

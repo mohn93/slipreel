@@ -47,17 +47,27 @@ describe('billing routes', () => {
     return app;
   }
 
-  it('POST /v1/checkout (yearly) creates a subscription session and returns its url', async () => {
+  it('POST /v1/checkout (monthly) creates a subscription session and returns its url', async () => {
     const { stripe, calls } = fakeStripe();
     const app = await make(stripe);
     const res = await app.inject({ method: 'POST', url: '/v1/checkout',
-      payload: { email: 'c@example.com', plan: 'yearly' } });
+      payload: { email: 'c@example.com', plan: 'monthly' } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ url: 'https://checkout.stripe.test/cs_1' });
     expect(calls.checkout.mode).toBe('subscription');
-    expect(calls.checkout.line_items[0].price).toBe('price_y');
+    expect(calls.checkout.line_items[0].price).toBe('price_m');
     expect(calls.checkout.customer).toBe('cus_1');
     expect(calls.checkout.success_url).toBe(billing.successUrl);
+    await app.close();
+  });
+
+  it('rejects new yearly checkout without creating a Stripe session', async () => {
+    const { stripe, calls } = fakeStripe();
+    const app = await make(stripe);
+    const res = await app.inject({ method: 'POST', url: '/v1/checkout',
+      payload: { email: 'retired@example.com', plan: 'yearly' } });
+    expect(res.statusCode).toBe(400);
+    expect(calls.checkout).toBeUndefined();
     await app.close();
   });
 
@@ -108,7 +118,7 @@ describe('billing routes', () => {
     const { stripe } = fakeStripe();
     const app = await make(stripe);
     const res = await app.inject({ method: 'POST', url: '/v1/checkout',
-      payload: { email: 'h@example.com', plan: 'yearly', state: 'x'.repeat(1000) } });
+      payload: { email: 'h@example.com', plan: 'monthly', state: 'x'.repeat(1000) } });
     expect(res.statusCode).toBe(400);
     await app.close();
   });
@@ -117,7 +127,7 @@ describe('billing routes', () => {
     const { stripe, calls } = fakeStripe();
     const app = await make(stripe);
     await app.inject({ method: 'POST', url: '/v1/checkout',
-      payload: { email: 'g@example.com', plan: 'yearly', device: 'fp-1', device_name: 'Mac', state: 'nonce-1' } });
+      payload: { email: 'g@example.com', plan: 'monthly', device: 'fp-1', device_name: 'Mac', state: 'nonce-1' } });
     expect(calls.checkout.metadata).toEqual({ device: 'fp-1', device_name: 'Mac', state: 'nonce-1' });
     await app.close();
   });
