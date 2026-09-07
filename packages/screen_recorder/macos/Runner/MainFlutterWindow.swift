@@ -9,6 +9,20 @@ private final class GearMenuTarget: NSObject {
   }
 }
 
+/// Target for the macOS app-menu items (Settings…, Manage Account). Each
+/// forwards to Flutter over the `slipreel/menu` channel, which the Dart side
+/// routes to the same actions as the editor's in-window menu.
+private final class AppMenuTarget: NSObject {
+  private let channel: FlutterMethodChannel
+  init(channel: FlutterMethodChannel) { self.channel = channel }
+  @objc func openSettings(_ sender: Any?) {
+    channel.invokeMethod("menuAction", arguments: "settings")
+  }
+  @objc func manageAccount(_ sender: Any?) {
+    channel.invokeMethod("menuAction", arguments: "account")
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   // Bar/pill are borderless; borderless windows refuse key/main unless we
   // opt in, which the bar needs to receive clicks (gear menu, mode buttons).
@@ -73,10 +87,60 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    // Wire the macOS app menu (Settings… / Manage Account) to Flutter. The
+    // main menu from MainMenu.xib is loaded by app launch; dispatch async so
+    // it's definitely in place before we mutate it.
+    let menuChannel = FlutterMethodChannel(
+      name: "slipreel/menu",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    let menuTarget = AppMenuTarget(channel: menuChannel)
+    self.appMenuTarget = menuTarget
+    DispatchQueue.main.async { [weak self] in
+      self?.installAppMenuItems(target: menuTarget)
+    }
+
     // Start as the bar.
     applyMode("bar")
 
     super.awakeFromNib()
+  }
+
+  /// Strong reference so the app-menu items' target isn't deallocated.
+  private var appMenuTarget: AppMenuTarget?
+
+  /// Turn the default (dead) "Preferences…" item into a working "Settings…"
+  /// (⌘,) and add "Manage Account" right below it, both in the leftmost
+  /// application menu. Standard AppKit items (About, Services, Hide, Quit,
+  /// and the Edit menu) are left untouched.
+  private func installAppMenuItems(target: AppMenuTarget) {
+    guard let appMenu = NSApp.mainMenu?.items.first?.submenu else { return }
+
+    // Settings: reuse the existing Preferences/Settings slot if present,
+    // otherwise insert one just under "About".
+    let settingsItem: NSMenuItem
+    if let existing = appMenu.items.first(where: {
+      $0.title.contains("Preferences") || $0.title.contains("Settings")
+    }) {
+      settingsItem = existing
+    } else {
+      settingsItem = NSMenuItem(title: "Settings…", action: nil, keyEquivalent: ",")
+      appMenu.insertItem(settingsItem, at: min(1, appMenu.items.count))
+    }
+    settingsItem.title = "Settings…"
+    settingsItem.target = target
+    settingsItem.action = #selector(AppMenuTarget.openSettings(_:))
+    settingsItem.keyEquivalent = ","
+    settingsItem.keyEquivalentModifierMask = [.command]
+
+    // Manage Account, immediately below Settings (no duplicate on re-entry).
+    if !appMenu.items.contains(where: { $0.title == "Manage Account" }) {
+      let accountItem = NSMenuItem(
+        title: "Manage Account",
+        action: #selector(AppMenuTarget.manageAccount(_:)),
+        keyEquivalent: "")
+      accountItem.target = target
+      appMenu.insertItem(accountItem, at: appMenu.index(of: settingsItem) + 1)
+    }
   }
 
   /// Tracks the active mode so `setBarSize` only resizes while we're the bar.

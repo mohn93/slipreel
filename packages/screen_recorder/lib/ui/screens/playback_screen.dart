@@ -23,6 +23,7 @@ import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/rendering/output_canvas_resolver.dart';
 import 'package:slipreel_engine/services/curve_library.dart';
 import 'package:screen_recorder/services/destination_handlers.dart';
+import 'package:screen_recorder/state/app_menu_actions.dart';
 import 'package:screen_recorder/state/look_template_controller.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
 import 'package:slipreel_engine/state/editor_project_store.dart';
@@ -1238,6 +1239,79 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
   }
 
+  /// The editor's Settings & account menu (the gear in the top bar). Routes
+  /// through [appMenuActionsProvider] so it behaves identically to the macOS
+  /// app-menu items.
+  Future<void> _showAppMenu(BuildContext anchorContext) async {
+    final box = anchorContext.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final overlay =
+        Overlay.of(anchorContext).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final btnTL = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final btnBR = box.localToGlobal(
+      box.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
+    const verticalGap = 6.0;
+    final position = RelativeRect.fromLTRB(
+      btnTL.dx,
+      btnBR.dy + verticalGap,
+      overlay.size.width - btnBR.dx,
+      overlay.size.height - btnBR.dy - verticalGap,
+    );
+
+    final palette = anchorContext.palette;
+
+    Widget row(IconData glyph, String label) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            children: [
+              Icon(glyph, size: 15, color: palette.textPrimary),
+              const SizedBox(width: 12),
+              Text(label,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                  )),
+            ],
+          ),
+        );
+
+    final result = await showMenu<_AppMenuAction>(
+      context: anchorContext,
+      position: position,
+      color: palette.surfaceCard,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: palette.dividerSubtle),
+      ),
+      items: [
+        PopupMenuItem<_AppMenuAction>(
+          value: _AppMenuAction.settings,
+          height: 34,
+          child: row(LucideIcons.settings, 'Settings'),
+        ),
+        PopupMenuItem<_AppMenuAction>(
+          value: _AppMenuAction.account,
+          height: 34,
+          child: row(LucideIcons.userRound, 'Manage account'),
+        ),
+      ],
+    );
+
+    if (!mounted || result == null) return;
+    final actions = ref.read(appMenuActionsProvider);
+    switch (result) {
+      case _AppMenuAction.settings:
+        await actions.openSettings();
+      case _AppMenuAction.account:
+        await actions.manageAccount();
+    }
+  }
+
   /// Opens the command palette (the ⌘ icon in the top bar). Groups
   /// are assembled per-invocation from the live project state so
   /// entries like "Restore default zoom ranges" can stay disabled
@@ -1592,6 +1666,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         Builder(
           builder: (ctx) =>
               icon(LucideIcons.eye, 'View options', () => _showViewMenu(ctx)),
+        ),
+        Builder(
+          builder: (ctx) => icon(
+              LucideIcons.settings, 'Settings & account', () => _showAppMenu(ctx)),
         ),
         const SizedBox(width: 12),
         Padding(
@@ -3322,3 +3400,5 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 /// (sidebar / timeline visibility) and an action placeholder for the
 /// future preview mode.
 enum _ViewMenuAction { sidebar, timeline, preview }
+
+enum _AppMenuAction { settings, account }
