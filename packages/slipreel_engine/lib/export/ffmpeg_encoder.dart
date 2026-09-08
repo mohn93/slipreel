@@ -67,6 +67,8 @@ class FfmpegEncoder {
   /// to input `[1]` of the filter graph; ignored when [audioOutLabel] is
   /// null (no audio) or [filterComplex] is null (plain-scale mode).
   final String? audioSourcePath;
+  /// Optional background music input `[2]`; requires the recording input `[1]`.
+  final String? musicSourcePath;
 
   /// Full `-filter_complex` payload. When set, the encoder runs in
   /// filter-graph mode and bypasses the built-in `-vf scale/pad` shim. The
@@ -107,6 +109,7 @@ class FfmpegEncoder {
     required this.fps,
     required this.bitrateKbps,
     this.audioSourcePath,
+    this.musicSourcePath,
     this.filterComplex,
     this.videoOutLabel,
     this.audioOutLabel,
@@ -152,6 +155,7 @@ class FfmpegEncoder {
       if (hasAudio) {
         args.addAll(['-i', audioSourcePath!]);
       }
+      if (musicSourcePath != null) args.addAll(['-i', musicSourcePath!]);
       args.addAll(['-filter_complex', filterComplex!]);
       args.addAll(['-map', videoOutLabel!]);
       if (hasAudio) {

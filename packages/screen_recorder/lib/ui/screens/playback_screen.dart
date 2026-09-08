@@ -1,3 +1,5 @@
+import 'package:screen_recorder/audio/music_library.dart';
+import 'package:screen_recorder/audio/music_preview.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:screen_recorder/licensing/trial_exports.dart';
@@ -35,6 +37,7 @@ import 'package:screen_recorder/ui/widgets/cta_spinner.dart';
 import 'package:screen_recorder/ui/widgets/timeline/editor_timeline.dart';
 import 'package:screen_recorder/ui/widgets/timeline/smooth_playhead_controller.dart';
 import 'package:screen_recorder/ui/widgets/inspector/inspector_panel.dart';
+import 'package:screen_recorder/ui/widgets/inspector/inspector_tab.dart';
 import 'package:screen_recorder/ui/widgets/inspector/contexts/zoom_context_inspector.dart'
     show ZoomPlacementGeometry;
 import 'package:screen_recorder/ui/widgets/inspector/timeline_selection.dart';
@@ -253,6 +256,40 @@ class PlaybackScreen extends ConsumerStatefulWidget {
 class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     with TickerProviderStateMixin {
   late VideoPlayerController _controller;
+  late final MusicPreview _musicPreview = MusicPreview(
+    sourcePath: widget.videoPath,
+    onError: (message) {
+      if (mounted) AppAlerts.error(message);
+    },
+    onReady: _syncMusicPlayer,
+    onActive: (active) {
+      if (mounted && _isInitialized) {
+        _controller.setVolume(
+          active
+              ? 0
+              : previewVolumeForSpeed(
+                  _effectiveClipSpeedAt(_controller.value.position),
+                ),
+        );
+      }
+    },
+    onStatus: (status) {
+      if (mounted) ref.read(musicPreviewStatusProvider.notifier).state = status;
+    },
+  );
+
+  void _syncMusicPlayer() {
+    if (!_isInitialized || !mounted) return;
+    final clips = _project.timeline.clips;
+    final position = _smoothPlayhead?.position ?? _controller.value.position;
+    _musicPreview.sync(
+      sourceToEdited(clips, position),
+      _controller.value.isPlaying,
+      _previewPlaybackSpeed,
+      seekRevision: _smoothPlayhead?.applicationSeekRevision ?? 0,
+    );
+  }
+
   SmoothPlayheadController? _smoothPlayhead;
   DisplayLatencyProbe? _latencyProbe;
   // Single source of truth for the EDITED-time playhead position fed
@@ -302,6 +339,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // lane. Mutually exclusive with [_selectedZoomIndex]: selecting one
   // clears the other. Drives the inspector's context-mode display.
   int? _selectedSliceIndex;
+  InspectorTab _selectedInspectorTab = InspectorTab.background;
 
   // True while the scissors toolbar button is engaged. The timeline
   // mounts a CutOverlay above its clip lane, and any tap on the lane
@@ -404,6 +442,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// [_selectedZoomIndex] / [_selectedSliceIndex].
   int? _selectedCameraIndex;
 
+  /// Whether the music bar is the selected timeline element. Mutually
+  /// exclusive with the slice/zoom/camera selections above.
+  bool _musicSelected = false;
+
   /// Whether this recording has a usable camera sidecar.
   bool get _hasCamera => _cameraMeta != null && _cameraMoviePath != null;
 
@@ -412,8 +454,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     super.initState();
     _initializeVideo();
     HardwareKeyboard.instance.addHandler(_onKey);
-    ref.captureAnalytics(AnalyticsEvents.screenViewed,
-        properties: {'screen': 'editor'});
+    ref.captureAnalytics(
+      AnalyticsEvents.screenViewed,
+      properties: {'screen': 'editor'},
+    );
   }
 
   /// Global Cmd+K → split at the current playhead's edited time.
@@ -577,7 +621,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     if (effective <= 0) return;
     _controller.setPlaybackSpeed(effective);
     // Match the export: drop preview audio for slices sped past the threshold.
-    _controller.setVolume(previewVolumeForSpeed(clipSpeed));
+    _controller.setVolume(
+      _musicPreview.active ? 0 : previewVolumeForSpeed(clipSpeed),
+    );
   }
 
   /// Per-instance shim around the top-level [effectiveClipSpeedAt]
@@ -688,11 +734,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // Loaded *before* we mark _isInitialized so the very first
       // build sees the persisted state and the canvas doesn't flash
       // its defaults for a frame.
-      final selectedLook = ref.read(lookTemplateControllerProvider).selected.look;
+      final selectedLook = ref
+          .read(lookTemplateControllerProvider)
+          .selected
+          .look;
       final saved = await _projectStore.load(
         videoDuration: _controller.value.duration,
-        seed: EditorProjectState.defaults()
-            .withLook(selectedLook.withoutDeviceFrame()),
+        seed: EditorProjectState.defaults().withLook(
+          selectedLook.withoutDeviceFrame(),
+        ),
       );
 
       EditorProjectState restored = saved;
@@ -794,6 +844,24 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // source of truth for everything the inspector edits. The
       // ref.listen wired up in build() will route subsequent changes
       // back into _persistProject().
+      if (isRetiredGeneratedMusic(restored.timeline.music)) {
+        restored = restored.copyWith(
+          timeline: restored.timeline.copyWith(clearMusic: true),
+        );
+        await _projectStore.save(restored);
+        if (!mounted) return;
+      }
+      final restoredMusic = restored.timeline.music;
+      if (restoredMusic != null) {
+        final withoutSilentIntro = skipPresetLeadingSilence(restoredMusic);
+        if (withoutSilentIntro != restoredMusic) {
+          restored = restored.copyWith(
+            timeline: restored.timeline.copyWith(music: withoutSilentIntro),
+          );
+          await _projectStore.save(restored);
+          if (!mounted) return;
+        }
+      }
       _projectController.replace(restored);
 
       // Owns the trim selection + soft-enforces it during playback.
@@ -852,6 +920,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // _isInitialized + _trim.selection are set so the listener never
       // sees a half-initialized state.
       _controller.addListener(_onTrimTick);
+      _controller.addListener(_syncMusicPlayer);
+      _smoothPlayhead!.addListener(_syncMusicPlayer);
+      _musicPreview.update(_project, ref.read(recordingAudioStreamsProvider));
       // Skip removed regions during playback. Wired to BOTH the
       // controller (for paused-state manual seeks landing in a gap)
       // AND the smoothed playhead (for per-frame crossing detection
@@ -890,6 +961,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         if (mounted) {
           ref.read(recordingAudioStreamsProvider.notifier).state =
               probedForAudio.audioStreams;
+          _musicPreview.update(_project, probedForAudio.audioStreams);
         }
       } catch (_) {
         /* leave empty */
@@ -1079,6 +1151,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _playheadEditedPos.dispose();
     _smoothPlayhead?.dispose();
     _latencyProbe?.dispose();
+    _musicPreview.dispose();
+    _controller.removeListener(_syncMusicPlayer);
     _controller.removeListener(_syncCameraPlayer);
     _cameraController?.dispose();
     _controller.dispose();
@@ -1264,20 +1338,22 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final palette = anchorContext.palette;
 
     Widget row(IconData glyph, String label) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
-            children: [
-              Icon(glyph, size: 15, color: palette.textPrimary),
-              const SizedBox(width: 12),
-              Text(label,
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                  )),
-            ],
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Icon(glyph, size: 15, color: palette.textPrimary),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: TextStyle(
+              color: palette.textPrimary,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-        );
+        ],
+      ),
+    );
 
     final result = await showMenu<_AppMenuAction>(
       context: anchorContext,
@@ -1545,7 +1621,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
     try {
       await trial.store.write(_firstExportNudgeKey, '1');
-    } catch (_) {/* best-effort; a failed write only risks showing it again */}
+    } catch (_) {
+      /* best-effort; a failed write only risks showing it again */
+    }
     if (!mounted) return;
     await ExportNudgeSheet.show(context, remaining: remaining);
   }
@@ -1563,10 +1641,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final exportLabel = _isExporting
         ? 'Exporting…'
         : paidExport || freeExports == null
-            ? 'Export'
-            : exportLocked
-                ? 'Unlock export'
-                : '$freeExports free export${freeExports == 1 ? '' : 's'}';
+        ? 'Export'
+        : exportLocked
+        ? 'Unlock export'
+        : '$freeExports free export${freeExports == 1 ? '' : 's'}';
     final (titleName, titleExt) = _projectTitleParts();
     final canUndo = _history?.canUndo ?? false;
     final canRedo = _history?.canRedo ?? false;
@@ -1669,7 +1747,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         ),
         Builder(
           builder: (ctx) => icon(
-              LucideIcons.settings, 'Settings & account', () => _showAppMenu(ctx)),
+            LucideIcons.settings,
+            'Settings & account',
+            () => _showAppMenu(ctx),
+          ),
         ),
         const SizedBox(width: 12),
         Padding(
@@ -1863,10 +1944,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
     final paddingBefore = _projectController.current.windowFrame.padding.left;
     _projectController.addZoom(zoomRegion, videoSize: videoSize);
-    ref.read(analyticsServiceProvider).capture(
-      AnalyticsEvents.zoomAdded,
-      properties: {'mode': 'manual'},
-    );
+    ref
+        .read(analyticsServiceProvider)
+        .capture(AnalyticsEvents.zoomAdded, properties: {'mode': 'manual'});
     final paddingAfter = _projectController.current.windowFrame.padding.left;
     if (paddingAfter > paddingBefore) {
       AppAlerts.info(
@@ -2046,20 +2126,29 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // becomes entitled via the browser flow while it's open.
       final entitlementState = ref.read(entitlementProvider);
       final trial = ref.read(trialExportsProvider);
-      final paid = canExportNow(entitlementState, appReleaseDate: buildReleaseDate);
+      final paid = canExportNow(
+        entitlementState,
+        appReleaseDate: buildReleaseDate,
+      );
       final trialLeft = paid ? 0 : await trial.remaining;
       if (!mounted) return;
       if (!paid && trialLeft > 0) {
-        AppAlerts.info('$trialLeft of 3 free full-quality exports remaining. '
-            'Only successful exports count.');
+        AppAlerts.info(
+          '$trialLeft of 3 free full-quality exports remaining. '
+          'Only successful exports count.',
+        );
       }
       if (!paid && trialLeft == 0) {
-        final reason =
-            paywallReasonFor(entitlementState, appReleaseDate: buildReleaseDate)!;
-        ref.read(analyticsServiceProvider).capture(
-          AnalyticsEvents.paywallShown,
-          properties: {'reason': reason.name},
-        );
+        final reason = paywallReasonFor(
+          entitlementState,
+          appReleaseDate: buildReleaseDate,
+        )!;
+        ref
+            .read(analyticsServiceProvider)
+            .capture(
+              AnalyticsEvents.paywallShown,
+              properties: {'reason': reason.name},
+            );
         final becameEntitled = await PaywallSheet.show(context, reason: reason);
         if (!becameEntitled || !mounted) return;
         // fall through to the export dialog now that export is unlocked
@@ -2073,10 +2162,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           videoDuration: videoDuration,
           // TODO(slice-editor T10): build the AudioMix from the active
           // clip once the editor follows per-slice audio settings.
-          audioBitrateKbps: buildAudioMixArgs(
-            probed.audioStreams,
-            _bridgeAudioMix(ref.read(editorProjectControllerProvider)),
-          ).bitrateKbps,
+          audioBitrateKbps:
+              projectForExport.timeline.music != null &&
+                  !projectForExport.timeline.music!.muted &&
+                  projectForExport.timeline.music!.volume > 0
+              ? kMixedAudioBitrateKbps
+              : buildAudioMixArgs(
+                  probed.audioStreams,
+                  _bridgeAudioMix(ref.read(editorProjectControllerProvider)),
+                ).bitrateKbps,
           estimator: ExportEstimator(
             lastRealtimeMultiplier: persistedMultiplier ?? 0.7,
           ),
@@ -2213,8 +2307,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // keeps all dialogs/snackbars/Navigator and maps the typed outcome to UI.
       final exportController = ExportController(
         trialExports: ref.read(trialExportsProvider),
-        isExportEntitled: () =>
-            canExportNow(ref.read(entitlementProvider), appReleaseDate: buildReleaseDate),
+        isExportEntitled: () => canExportNow(
+          ref.read(entitlementProvider),
+          appReleaseDate: buildReleaseDate,
+        ),
         runPipeline: ({required onProgress, required cancelToken}) {
           return settings!.format == ExportFormat.gif
               ? GifExportPipeline(
@@ -2243,16 +2339,18 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         },
       );
 
-      ref.read(analyticsServiceProvider).capture(
-        AnalyticsEvents.exportStarted,
-        properties: {
-          'format': settings.format.name,
-          'resolution': settings.resolution.name,
-          'fps': settings.frameRate,
-          'compression': settings.compression.name,
-          'destination': settings.destination.name,
-        },
-      );
+      ref
+          .read(analyticsServiceProvider)
+          .capture(
+            AnalyticsEvents.exportStarted,
+            properties: {
+              'format': settings.format.name,
+              'resolution': settings.resolution.name,
+              'fps': settings.frameRate,
+              'compression': settings.compression.name,
+              'destination': settings.destination.name,
+            },
+          );
 
       // Right before the native handoff (ffmpeg/gif pipeline spawn below),
       // so a crash in that subprocess is captured with this activity set.
@@ -2274,15 +2372,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
 
       switch (outcome) {
         case ExportSuccess(:final summary, :final result):
-          ref.read(analyticsServiceProvider).capture(
-            AnalyticsEvents.exportCompleted,
-            properties: {
-              'format': settings.format.name,
-              'resolution': settings.resolution.name,
-              'fps': settings.frameRate,
-              'realtime_multiple': summary.realtimeMultiple,
-            },
-          );
+          ref
+              .read(analyticsServiceProvider)
+              .capture(
+                AnalyticsEvents.exportCompleted,
+                properties: {
+                  'format': settings.format.name,
+                  'resolution': settings.resolution.name,
+                  'fps': settings.frameRate,
+                  'realtime_multiple': summary.realtimeMultiple,
+                },
+              );
           // Persist settings minus the title (plan rule 5).
           await store.save(settings.copyWith(clearTitle: true));
 
@@ -2330,33 +2430,41 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           surfaceExportWarnings(summary, (m) => AppAlerts.warning(m));
           // Soft, once-ever nudge after an unentitled user's first successful
           // export. Not a gate — the remaining free exports stay available.
-          if (!canExportNow(ref.read(entitlementProvider),
-              appReleaseDate: buildReleaseDate)) {
+          if (!canExportNow(
+            ref.read(entitlementProvider),
+            appReleaseDate: buildReleaseDate,
+          )) {
             await _maybeShowFirstExportNudge();
           }
         case ExportFailure(:final error, :final stackTrace):
           // Only the error's type — never the message, which can contain file
           // paths.
-          ref.read(analyticsServiceProvider).capture(
-            AnalyticsEvents.exportFailed,
-            properties: {
-              'format': settings.format.name,
-              'error_type': error.runtimeType.toString(),
-            },
-          );
-          ref.read(diagnosticsServiceProvider).captureException(
-            error,
-            stackTrace ?? StackTrace.current,
-            handled: true,
-            messageOverride: error.runtimeType.toString(),
-            context: {'phase': 'export', 'format': settings.format.name},
-          );
+          ref
+              .read(analyticsServiceProvider)
+              .capture(
+                AnalyticsEvents.exportFailed,
+                properties: {
+                  'format': settings.format.name,
+                  'error_type': error.runtimeType.toString(),
+                },
+              );
+          ref
+              .read(diagnosticsServiceProvider)
+              .captureException(
+                error,
+                stackTrace ?? StackTrace.current,
+                handled: true,
+                messageOverride: error.runtimeType.toString(),
+                context: {'phase': 'export', 'format': settings.format.name},
+              );
           AppAlerts.error('Export failed: $error');
         case ExportNotEntitled():
-          ref.read(analyticsServiceProvider).capture(
-            AnalyticsEvents.exportFailed,
-            properties: {'reason': 'not_entitled'},
-          );
+          ref
+              .read(analyticsServiceProvider)
+              .capture(
+                AnalyticsEvents.exportFailed,
+                properties: {'reason': 'not_entitled'},
+              );
           AppAlerts.error('Export needs an active license.');
         case ExportCancelled():
           // No snackbar — user-initiated. (Today there's no cancel UI; this
@@ -2440,10 +2548,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // debounced save in [_persistProject]. Replaces ~30 inline
     // `_persistProject()` calls scattered through the inspector
     // callbacks.
-    ref.listen<EditorProjectState>(
-      editorProjectControllerProvider,
-      (_, __) => _persistProject(),
-    );
+    ref.listen<EditorProjectState>(editorProjectControllerProvider, (_, next) {
+      _persistProject();
+      if (_isInitialized) {
+        _musicPreview.update(next, ref.read(recordingAudioStreamsProvider));
+      }
+    });
     // When the clip list changes (any slice's speed edited, slices
     // added/removed, trims changed), re-evaluate the player rate
     // against the slice the playhead is currently inside. Force the
@@ -2639,6 +2749,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                         ),
                       if (_isInitialized && _showSidebar)
                         InspectorPanel(
+                          initialTab: _selectedInspectorTab,
+                          onTabChanged: (tab) {
+                            if (tab != _selectedInspectorTab) {
+                              setState(() => _selectedInspectorTab = tab);
+                            }
+                          },
                           selection: _currentSelection(),
                           zoomRegions: project.zoomRegions,
                           clipDuration: _controller.value.duration,
@@ -2698,10 +2814,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                                 '3D zoom needs breathing room — padding set to ${paddingAfter.toStringAsFixed(0)}px',
                               );
                             }
-                            final count = _projectController
-                                .current
-                                .zoomRegions
-                                .length;
+                            final count =
+                                _projectController.current.zoomRegions.length;
                             AppAlerts.success(
                               'Applied to $count zoom${count == 1 ? '' : 's'}. New zooms will use this look.',
                             );
@@ -2761,8 +2875,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                               : null,
                           onPlacementPreview: _onPlacementPreview,
                           onPlacementCommit: _onPlacementCommit,
-                          currentLook: () =>
-                              EditorLook.fromProject(_projectController.current),
+                          currentLook: () => EditorLook.fromProject(
+                            _projectController.current,
+                          ),
                           onApplyTemplate: (look) {
                             final vs = _videoSize();
                             _projectController.applyLook(look, videoSize: vs);
@@ -3159,6 +3274,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     _selectedSliceIndex = null;
                     _selectedZoomIndex = null;
                     _selectedCameraIndex = null;
+                    _musicSelected = false;
                   });
                   _refreshPlayheadEditedPos();
                   _checkZoomMarkerClick(sourceNext);
@@ -3172,6 +3288,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   setState(() => _hover.seek(sourceNext));
                   _refreshPlayheadEditedPos();
                 },
+                onMusicSelected: () {
+                  setState(() {
+                    _selectedSliceIndex = null;
+                    _selectedZoomIndex = null;
+                    _selectedCameraIndex = null;
+                    _musicSelected = true;
+                    _selectedInspectorTab = InspectorTab.audio;
+                  });
+                },
+                musicSelected: _musicSelected,
                 onHoverSeek: (editedNext) {
                   // Mark hover active so the listener stops updating
                   // the anchor. The anchor we'll restore to on
@@ -3200,11 +3326,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   }
                   setState(() {
                     _selectedZoomIndex = i;
-                    // Zoom, slice, and camera selections are mutually
+                    // Zoom, slice, camera, and music selections are mutually
                     // exclusive — selecting a zoom clears the others.
                     if (i != null) {
                       _selectedSliceIndex = null;
                       _selectedCameraIndex = null;
+                      _musicSelected = false;
                     }
                   });
                 },
@@ -3243,6 +3370,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     if (i != null) {
                       _selectedZoomIndex = null;
                       _selectedSliceIndex = null;
+                      _musicSelected = false;
                     }
                   });
                 },
@@ -3272,6 +3400,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     if (idx != null) {
                       _selectedZoomIndex = null;
                       _selectedCameraIndex = null;
+                      _musicSelected = false;
                     }
                   });
                 },
@@ -3383,10 +3512,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                   onPressed: () =>
                       setState(() => _showZoomDebug = !_showZoomDebug),
                   icon: const Icon(Icons.gps_fixed),
-                  color:
-                      _showZoomDebug ? context.palette.accent : Colors.white38,
-                  tooltip:
-                      _showZoomDebug ? 'Hide cursor HUD' : 'Show cursor HUD',
+                  color: _showZoomDebug
+                      ? context.palette.accent
+                      : Colors.white38,
+                  tooltip: _showZoomDebug
+                      ? 'Hide cursor HUD'
+                      : 'Show cursor HUD',
                 ),
             ],
           ),

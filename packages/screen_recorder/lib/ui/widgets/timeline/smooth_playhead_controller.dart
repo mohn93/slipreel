@@ -60,6 +60,10 @@ class SmoothPlayheadController extends ChangeNotifier
   // The generation makes rapid consecutive seeks safe. Completion of an
   // older native seek cannot release the latch owned by the newest click.
   int _applicationSeekGeneration = 0;
+
+  /// Changes for explicit editor seeks, including small scrubs during playback.
+  /// Audio followers use this instead of interpreting native poll jitter as seeks.
+  int get applicationSeekRevision => _applicationSeekGeneration;
   bool _applicationSeekPending = false;
   bool _disposed = false;
 

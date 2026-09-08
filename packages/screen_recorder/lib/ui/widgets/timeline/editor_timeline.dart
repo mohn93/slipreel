@@ -1,3 +1,4 @@
+import 'music_lane.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -163,6 +164,8 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.waveform,
     this.hasMic = false,
     this.hasSystem = false,
+    this.onMusicSelected,
+    this.musicSelected = false,
   });
 
   final Duration duration;
@@ -327,6 +330,8 @@ class EditorTimeline extends ConsumerStatefulWidget {
   final WaveformPeaks? waveform;
   final bool hasMic;
   final bool hasSystem;
+  final VoidCallback? onMusicSelected;
+  final bool musicSelected;
 
   @override
   ConsumerState<EditorTimeline> createState() => _EditorTimelineState();
@@ -963,6 +968,8 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
     }
   }
 
+  double? _musicLaneTopY;
+
   void _onTapSeekPointerUp(PointerUpEvent event) {
     if (event.pointer != _tapSeekPointer) return;
     // Judge lane eligibility by where the user PRESSED, matching the pressed-x
@@ -979,6 +986,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
         !_trackpadPanActive &&
         !_trimDragging &&
         !inKeystrokeLane &&
+        (_musicLaneTopY == null || downLocal.dy < _musicLaneTopY!) &&
         downLocal.dy >= rulerHeight;
     // Commit at the position the user PRESSED, in the scroll frame that was
     // live at press time — not the up-time frame, which auto-follow may have
@@ -1403,6 +1411,9 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
 
   @override
   Widget build(BuildContext context) {
+    final music = ref.watch(
+      editorProjectControllerProvider.select((s) => s.timeline.music),
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -1442,12 +1453,12 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
         // on a bar (those toggle the bar instead of seeking).
         _keystrokeLaneTopY = showKeystrokeLane
             ? rulerHeight +
-                rulerToLaneGap +
-                CutMarker.kHitHeight +
-                laneHeight +
-                laneSpacing +
-                zoomLaneHeight +
-                cameraLaneExtent
+                  rulerToLaneGap +
+                  CutMarker.kHitHeight +
+                  laneHeight +
+                  laneSpacing +
+                  zoomLaneHeight +
+                  cameraLaneExtent
             : null;
         final totalHeight =
             rulerHeight +
@@ -1457,7 +1468,9 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
             laneSpacing +
             zoomLaneHeight +
             cameraLaneExtent +
-            keystrokeLaneExtent;
+            keystrokeLaneExtent +
+            (music != null ? 42.0 : 0.0);
+        _musicLaneTopY = music != null ? totalHeight - 42 : null;
 
         return SizedBox(
           height: totalHeight,
@@ -1868,12 +1881,13 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                                           child: Column(
                                             children: [
                                               const SizedBox(
-                                                  height: laneSpacing),
+                                                height: laneSpacing,
+                                              ),
                                               SizedBox(
                                                 height: keystrokeLaneHeight,
                                                 child: KeystrokeTimelineLane(
-                                                  recording:
-                                                      widget.keystrokeRecording!,
+                                                  recording: widget
+                                                      .keystrokeRecording!,
                                                   settings:
                                                       widget.keystrokeSettings,
                                                   clips: widget.clips,
@@ -1889,6 +1903,19 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
                                       ),
                                     ),
                                   ),
+                                if (music != null) ...[
+                                  const SizedBox(height: 6),
+                                  SizedBox(
+                                    height: 36,
+                                    child: MusicLane(
+                                      pixelsPerSecond: pps,
+                                      duration:
+                                          widget.duration.inMicroseconds / 1e6,
+                                      selected: widget.musicSelected,
+                                      onSelected: widget.onMusicSelected,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                             IgnorePointer(

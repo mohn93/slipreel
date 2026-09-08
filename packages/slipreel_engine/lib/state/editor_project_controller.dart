@@ -1,3 +1,4 @@
+import 'package:slipreel_engine/audio/music_track.dart';
 import 'dart:ui' show Size;
 
 import 'package:flutter/painting.dart' show EdgeInsets;
@@ -28,8 +29,7 @@ import 'package:slipreel_engine/models/zoom_look.dart';
 ///
 /// Exported top-level so [BackgroundTab] can use the same formula for its
 /// slider `min` without depending on the controller implementation.
-int minPadding3DFor(Size videoSize) =>
-    (0.06 * videoSize.shortestSide).round();
+int minPadding3DFor(Size videoSize) => (0.06 * videoSize.shortestSide).round();
 
 /// Single source of truth for per-recording editor settings.
 ///
@@ -44,7 +44,7 @@ int minPadding3DFor(Size videoSize) =>
 /// previous reference onto its stack without snapshotting.
 class EditorProjectController extends StateNotifier<EditorProjectState> {
   EditorProjectController({EditorProjectState? initial})
-      : super(initial ?? EditorProjectState.defaults());
+    : super(initial ?? EditorProjectState.defaults());
 
   /// Public read accessor for the current state. `StateNotifier.state`
   /// is protected to subclasses; external callers (e.g.
@@ -57,6 +57,16 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   /// fully-built state and the controller pushes it through.
   void replace(EditorProjectState next) {
     state = next;
+  }
+
+  void setMusic(MusicTrack? track) {
+    if (track == state.timeline.music) return;
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        music: track,
+        clearMusic: track == null,
+      ),
+    );
   }
 
   // ---- single-field mutators -------------------------------------------
@@ -214,8 +224,10 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     return state.timeline.copyWith(zoomTracks: updated);
   }
 
-  void replaceZoomRegions(List<ZoomRegion> regions,
-      {Size videoSize = Size.zero}) {
+  void replaceZoomRegions(
+    List<ZoomRegion> regions, {
+    Size videoSize = Size.zero,
+  }) {
     state = state.copyWith(timeline: _timelineWithActiveRegions(regions));
     _enforce3DPaddingFloor(videoSize);
   }
@@ -250,8 +262,10 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final current = state.windowFrame.padding.left;
     if (current >= floor) return;
     state = state.copyWith(
-      windowFrame: state.windowFrame
-          .copyWith(padding: EdgeInsets.all(floor.toDouble()), name: 'Custom'),
+      windowFrame: state.windowFrame.copyWith(
+        padding: EdgeInsets.all(floor.toDouble()),
+        name: 'Custom',
+      ),
     );
   }
 
@@ -324,8 +338,8 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     return state.timeline.copyWith(cameraTracks: updated);
   }
 
-  void replaceCameraRegions(List<CameraRegion> regions) => state =
-      state.copyWith(timeline: _timelineWithActiveCameraRegions(regions));
+  void replaceCameraRegions(List<CameraRegion> regions) => state = state
+      .copyWith(timeline: _timelineWithActiveCameraRegions(regions));
 
   void addCameraRegion(CameraRegion region) {
     final next = List<CameraRegion>.from(_activeCameraRegions())..add(region);
@@ -373,8 +387,10 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final list = state.captions;
     if (index < 0 || index >= list.length) return;
     final next = List<CaptionSegment>.from(list);
-    next[index] = next[index]
-        .copyWith(startMicros: startMicros, endMicros: endMicros);
+    next[index] = next[index].copyWith(
+      startMicros: startMicros,
+      endMicros: endMicros,
+    );
     state = state.copyWith(captionSegments: next);
   }
 
@@ -409,9 +425,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     if (index < 0 || index + 1 >= list.length) return;
     final a = list[index];
     final b = list[index + 1];
-    final mergedText = [a.text, b.text]
-        .where((t) => t.isNotEmpty)
-        .join(' ');
+    final mergedText = [a.text, b.text].where((t) => t.isNotEmpty).join(' ');
     final next = List<CaptionSegment>.from(list);
     next[index] = a.copyWith(endMicros: b.endMicros, text: mergedText);
     next.removeAt(index + 1);
@@ -431,9 +445,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     if (sliceIndex < 0 || sliceIndex >= clips.length) return;
     final updated = List<ClipSlice>.from(clips);
     updated[sliceIndex] = next;
-    state = state.copyWith(
-      timeline: state.timeline.copyWith(clips: updated),
-    );
+    state = state.copyWith(timeline: state.timeline.copyWith(clips: updated));
   }
 
   void setSliceSpeed(int sliceIndex, double speed) {
@@ -497,8 +509,10 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   // behind at the old level.
   void setAllMicGain(int percent) {
     final clamped = percent < 0 ? 0 : (percent > 200 ? 200 : percent);
-    _mapAllSlices((s) =>
-        s.micGainPercent == clamped ? s : s.copyWith(micGainPercent: clamped));
+    _mapAllSlices(
+      (s) =>
+          s.micGainPercent == clamped ? s : s.copyWith(micGainPercent: clamped),
+    );
   }
 
   void setAllMicMuted(bool muted) {
@@ -507,14 +521,17 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
 
   void setAllSystemGain(int percent) {
     final clamped = percent < 0 ? 0 : (percent > 200 ? 200 : percent);
-    _mapAllSlices((s) => s.systemGainPercent == clamped
-        ? s
-        : s.copyWith(systemGainPercent: clamped));
+    _mapAllSlices(
+      (s) => s.systemGainPercent == clamped
+          ? s
+          : s.copyWith(systemGainPercent: clamped),
+    );
   }
 
   void setAllSystemMuted(bool muted) {
     _mapAllSlices(
-        (s) => s.systemMuted == muted ? s : s.copyWith(systemMuted: muted));
+      (s) => s.systemMuted == muted ? s : s.copyWith(systemMuted: muted),
+    );
   }
 
   /// Maps [f] over every slice and commits once. No-ops (no notification) when
@@ -532,9 +549,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
       }
     }
     if (!changed) return;
-    state = state.copyWith(
-      timeline: state.timeline.copyWith(clips: updated),
-    );
+    state = state.copyWith(timeline: state.timeline.copyWith(clips: updated));
   }
 
   void setSliceHideCursor(int sliceIndex, bool value) {
@@ -573,9 +588,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     );
     final updated = List<ClipSlice>.from(clips);
     updated.replaceRange(sliceIndex, sliceIndex + 1, [left, right]);
-    state = state.copyWith(
-      timeline: state.timeline.copyWith(clips: updated),
-    );
+    state = state.copyWith(timeline: state.timeline.copyWith(clips: updated));
     return true;
   }
 
@@ -639,9 +652,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final updated = List<ClipSlice>.from(clips)
       ..[seamIndex] = newLeft
       ..[seamIndex + 1] = newRight;
-    state = state.copyWith(
-      timeline: state.timeline.copyWith(clips: updated),
-    );
+    state = state.copyWith(timeline: state.timeline.copyWith(clips: updated));
   }
 
   /// Second-click action for a cut marker: fuses the two slices
@@ -674,9 +685,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final updated = List<ClipSlice>.from(clips)
       ..[seamIndex] = merged
       ..removeAt(seamIndex + 1);
-    state = state.copyWith(
-      timeline: state.timeline.copyWith(clips: updated),
-    );
+    state = state.copyWith(timeline: state.timeline.copyWith(clips: updated));
   }
 
   void removeSlice(int sliceIndex) {
@@ -684,9 +693,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     if (clips.length <= 1) return;
     if (sliceIndex < 0 || sliceIndex >= clips.length) return;
     final updated = List<ClipSlice>.from(clips)..removeAt(sliceIndex);
-    state = state.copyWith(
-      timeline: state.timeline.copyWith(clips: updated),
-    );
+    state = state.copyWith(timeline: state.timeline.copyWith(clips: updated));
   }
 }
 
@@ -696,5 +703,5 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
 /// project state.
 final editorProjectControllerProvider =
     StateNotifierProvider<EditorProjectController, EditorProjectState>(
-  (ref) => EditorProjectController(),
-);
+      (ref) => EditorProjectController(),
+    );
