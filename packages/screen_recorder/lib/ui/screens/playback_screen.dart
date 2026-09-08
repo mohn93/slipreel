@@ -406,6 +406,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // each time they open a recording.
   bool _showSidebar = true;
   bool _showTimeline = true;
+
+  // Preview mode hides all editor chrome (top bar, canvas toolbar, sidebar,
+  // and the transport/timeline block) so the recording plays back clean in
+  // the current window. Toggled from the View menu or Shift+Cmd/Ctrl+Enter;
+  // Esc exits. It overrides the two toggles above while active but leaves
+  // them untouched, so exiting restores whatever layout the user had.
+  bool _previewMode = false;
   // Backing store for the HUD's text readout. PlaybackCanvas publishes
   // a fresh snapshot into this each frame; the screen-level
   // `ValueListenableBuilder` reads it and renders the panel OUTSIDE
@@ -1308,7 +1315,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         setState(() => _showTimeline = !_showTimeline);
         break;
       case _ViewMenuAction.preview:
-        // TODO: wire preview mode (full-screen play, chrome dimmed).
+        setState(() => _previewMode = true);
         break;
     }
   }
@@ -2616,6 +2623,20 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           return KeyEventResult.ignored;
         }
 
+        // Shift+Cmd/Ctrl+Enter: toggle preview mode (matches the View menu's
+        // advertised shortcut). Esc leaves preview mode when it is active.
+        if (cmdOrCtrl &&
+            HardwareKeyboard.instance.isShiftPressed &&
+            (event.logicalKey == LogicalKeyboardKey.enter ||
+                event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+          setState(() => _previewMode = !_previewMode);
+          return KeyEventResult.handled;
+        }
+        if (_previewMode && event.logicalKey == LogicalKeyboardKey.escape) {
+          setState(() => _previewMode = false);
+          return KeyEventResult.handled;
+        }
+
         // Space: Play/Pause toggle — route through the same handler the
         // play/pause button uses so the icon and dependent UI refresh
         // identically (the old inline play/pause skipped setState).
@@ -2648,7 +2669,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           ),
           child: Scaffold(
             backgroundColor: context.palette.appBackground,
-            appBar: _buildTopBar(context),
+            appBar: _previewMode ? null : _buildTopBar(context),
             body: Column(
               children: [
                 // Preview backdrop on the left, inspector panel on the right.
@@ -2659,24 +2680,26 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                       Expanded(
                         child: Column(
                           children: [
-                            Divider(
-                              height: 1,
-                              thickness: 1,
-                              color: context.palette.dividerSubtle,
-                            ),
-                            CanvasToolbar(
-                              children: [
-                                AspectRatioPicker(
-                                  current: project.outputAspect,
-                                  onChanged: (v) => ref
-                                      .read(
-                                        editorProjectControllerProvider
-                                            .notifier,
-                                      )
-                                      .setOutputAspect(v),
-                                ),
-                              ],
-                            ),
+                            if (!_previewMode) ...[
+                              Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: context.palette.dividerSubtle,
+                              ),
+                              CanvasToolbar(
+                                children: [
+                                  AspectRatioPicker(
+                                    current: project.outputAspect,
+                                    onChanged: (v) => ref
+                                        .read(
+                                          editorProjectControllerProvider
+                                              .notifier,
+                                        )
+                                        .setOutputAspect(v),
+                                  ),
+                                ],
+                              ),
+                            ],
                             Expanded(
                               child: Stack(
                                 children: [
@@ -2735,19 +2758,33 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                                             },
                                           ),
                                     ),
+                                  // Preview mode: a floating way back to the
+                                  // editor, since the top bar (and its View
+                                  // menu) are hidden. Esc / Shift+Cmd+Enter do
+                                  // the same.
+                                  if (_previewMode)
+                                    Positioned(
+                                      top: 16,
+                                      right: 16,
+                                      child: _PreviewExitButton(
+                                        onExit: () => setState(
+                                          () => _previewMode = false,
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                      if (_isInitialized && _showSidebar)
+                      if (_isInitialized && _showSidebar && !_previewMode)
                         VerticalDivider(
                           width: 1,
                           thickness: 1,
                           color: context.palette.dividerSubtle,
                         ),
-                      if (_isInitialized && _showSidebar)
+                      if (_isInitialized && _showSidebar && !_previewMode)
                         InspectorPanel(
                           initialTab: _selectedInspectorTab,
                           onTabChanged: (tab) {
@@ -3191,8 +3228,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
     // Top-bar "View" menu toggle. Collapses the whole transport +
     // timeline block; the canvas above naturally expands to fill the
-    // freed vertical space.
-    if (!_showTimeline) {
+    // freed vertical space. Preview mode hides it for the same reason.
+    if (!_showTimeline || _previewMode) {
       return const SizedBox.shrink();
     }
 
@@ -3527,9 +3564,74 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   }
 }
 
-/// Actions emitted by the top-bar "View" drop-down. Two toggles
-/// (sidebar / timeline visibility) and an action placeholder for the
-/// future preview mode.
+/// Floating pill shown in preview mode to return to the editor. The top bar
+/// (and its View menu) are hidden in preview mode, so this — along with Esc
+/// and Shift+Cmd/Ctrl+Enter — is how the user gets back.
+class _PreviewExitButton extends StatefulWidget {
+  const _PreviewExitButton({required this.onExit});
+
+  final VoidCallback onExit;
+
+  @override
+  State<_PreviewExitButton> createState() => _PreviewExitButtonState();
+}
+
+class _PreviewExitButtonState extends State<_PreviewExitButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onExit,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: (_hover ? Colors.black : Colors.black87).withValues(
+              alpha: _hover ? 0.72 : 0.55,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: _hover ? 0.45 : 0.22),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(LucideIcons.minimize2, size: 14, color: Colors.white),
+              const SizedBox(width: 7),
+              const Text(
+                'Exit preview',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Esc',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6),
+                  fontSize: 11,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Actions emitted by the top-bar "View" drop-down: two visibility toggles
+/// (sidebar / timeline) and the action that enters preview mode.
 enum _ViewMenuAction { sidebar, timeline, preview }
 
 enum _AppMenuAction { settings, account }
