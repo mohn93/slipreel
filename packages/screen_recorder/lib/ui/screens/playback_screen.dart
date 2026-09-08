@@ -1175,6 +1175,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _musicPreview.dispose();
     _controller.removeListener(_syncMusicPlayer);
     _controller.removeListener(_syncCameraPlayer);
+    // Pause before disposing so the AVFoundation decode session has stopped by
+    // the time the player is torn down. Disposing a still-playing controller
+    // races its layer teardown against the decoder invalidation (see the fix in
+    // FVPTextureBasedVideoPlayer.disposeWithError:). Best-effort and unawaited —
+    // the platform processes the pause before the dispose that follows it.
+    if (_cameraController?.value.isPlaying ?? false) {
+      unawaited(_cameraController!.pause());
+    }
+    if (_controller.value.isPlaying) unawaited(_controller.pause());
     _cameraController?.dispose();
     _controller.dispose();
     _history?.dispose();
