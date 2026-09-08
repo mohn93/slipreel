@@ -34,7 +34,7 @@ void main() {
     );
     expect(
       desc.data,
-      'Highest quality. Best for archival or further editing.',
+      'Highest quality, largest files.',
     );
   });
 
@@ -48,7 +48,7 @@ void main() {
     );
     expect(
       desc.data,
-      'Optimized for Twitter, LinkedIn, and similar uploads.',
+      'High quality for social uploads.',
     );
   });
 
@@ -61,7 +61,7 @@ void main() {
     );
     expect(
       desc.data,
-      contains('directly playing on websites'),
+      contains('Balanced quality and file size'),
     );
   });
 
@@ -72,17 +72,7 @@ void main() {
     final desc = tester.widget<Text>(
       find.byKey(const ValueKey('compression_description')),
     );
-    expect(desc.data, contains('Aggressive compression'));
-  });
-
-  testWidgets('speed disclaimer is always visible', (tester) async {
-    for (final tier in CompressionTier.values) {
-      await tester.pumpWidget(build(value: tier, onChanged: (_) {}));
-      expect(
-        find.byKey(const ValueKey('compression_speed_disclaimer')),
-        findsOneWidget,
-      );
-    }
+    expect(desc.data, contains('Smallest files'));
   });
 
   testWidgets('tapping Social Media fires onChanged with socialMedia',

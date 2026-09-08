@@ -20,14 +20,14 @@ void main() {
     );
   }
 
-  testWidgets('renders File / Clipboard / Shareable link options',
+  testWidgets('renders File and Clipboard without unfinished sharing',
       (tester) async {
     await tester.pumpWidget(
       build(value: ExportDestination.file, onChanged: (_) {}),
     );
     expect(find.text('File'), findsOneWidget);
     expect(find.text('Clipboard'), findsOneWidget);
-    expect(find.text('Shareable link'), findsOneWidget);
+    expect(find.text('Shareable link'), findsNothing);
   });
 
   testWidgets('shows Destination section header', (tester) async {
@@ -53,23 +53,6 @@ void main() {
     expect(fired, ExportDestination.clipboard);
   });
 
-  testWidgets('tapping Shareable link fires onChanged with shareableLink',
-      (tester) async {
-    ExportDestination? fired;
-    await tester.pumpWidget(
-      build(
-        value: ExportDestination.file,
-        onChanged: (v) => fired = v,
-      ),
-    );
-    await tester.tap(
-      find.byKey(
-        const ValueKey('seg_btn_ExportDestination.shareableLink'),
-      ),
-    );
-    await tester.pump();
-    expect(fired, ExportDestination.shareableLink);
-  });
 
   testWidgets('reveal button is not rendered when callback is null',
       (tester) async {

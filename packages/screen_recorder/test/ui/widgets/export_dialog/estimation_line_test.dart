@@ -131,7 +131,7 @@ void main() {
     expect(mp4Text, isNot(equals(gifText)));
   });
 
-  testWidgets('is right-aligned', (tester) async {
+  testWidgets('is left-aligned', (tester) async {
     await tester.pumpWidget(
       build(durationSec: 5, bitrateKbps: 6000),
     );
@@ -141,6 +141,6 @@ void main() {
         matching: find.byType(Align),
       ).first,
     );
-    expect(align.alignment, Alignment.centerRight);
+    expect(align.alignment, Alignment.centerLeft);
   });
 }

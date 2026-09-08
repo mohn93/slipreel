@@ -17,18 +17,29 @@ class ShareableLinkPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: _TitleField(value: title, onChanged: onTitleChanged)),
-        const SizedBox(width: 24),
-        Expanded(
-          child: _PrivateToggle(
-            value: isPrivate,
-            onChanged: onIsPrivateChanged,
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final titleField = _TitleField(value: title, onChanged: onTitleChanged);
+        final privacy = _PrivateToggle(
+          value: isPrivate,
+          onChanged: onIsPrivateChanged,
+        );
+        if (constraints.maxWidth < 520) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [titleField, const SizedBox(height: 20), privacy],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: titleField),
+            const SizedBox(width: 24),
+            Expanded(child: privacy),
+          ],
+        );
+      },
     );
   }
 }

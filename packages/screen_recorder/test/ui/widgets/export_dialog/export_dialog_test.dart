@@ -66,6 +66,77 @@ Future<void> openDialog(WidgetTester tester, {
 }
 
 void main() {
+  testWidgets('saved shareable-link destination falls back to File', (tester) async {
+    await openDialog(tester, initialSettings: ExportSettings.defaults().copyWith(
+      destination: ExportDestination.shareableLink,
+    ));
+    expect(find.text('Shareable link'), findsNothing);
+    expect(find.text('Export to file…'), findsOneWidget);
+    expect(find.byKey(const ValueKey('shareable_title_field')), findsNothing);
+    expect(find.byKey(const ValueKey('estimation_line_text')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('responsive changes animate the dialog height in both directions', (tester) async {
+    await openDialog(tester);
+    final surface = find.descendant(of: find.byType(ExportDialog), matching: find.byType(AnimatedSize));
+    await tester.binding.setSurfaceSize(const Size(580, 1000));
+    await tester.pumpAndSettle();
+    final originalHeight = tester.getSize(surface).height;
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    await tester.pump();
+    expect(tester.getSize(surface).height, originalHeight);
+    await tester.pump(const Duration(milliseconds: 120));
+    final shrinkingHeight = tester.getSize(surface).height;
+    await tester.pumpAndSettle();
+    final shortHeight = tester.getSize(surface).height;
+    expect(shrinkingHeight, lessThan(originalHeight));
+    expect(shrinkingHeight, greaterThan(shortHeight));
+
+    await tester.binding.setSurfaceSize(const Size(580, 1000));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(tester.getSize(surface).height, greaterThan(shortHeight));
+    expect(tester.getSize(surface).height, lessThan(originalHeight));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(surface).height, originalHeight);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('reduced motion skips the height animation', (tester) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await openDialog(tester);
+    await tester.binding.setSurfaceSize(const Size(580, 1000));
+    await tester.pump();
+    await tester.pump();
+    final surface = find.descendant(of: find.byType(ExportDialog), matching: find.byType(AnimatedSize));
+    expect(surface, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('small windows keep all destinations and actions reachable', (tester) async {
+    await openDialog(tester);
+    await tester.binding.setSurfaceSize(const Size(480, 600));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final export = find.byKey(const ValueKey('export_primary_btn'));
+    await tester.ensureVisible(export);
+    await tester.pumpAndSettle();
+    expect(export.hitTestable(), findsOneWidget);
+
+    final clipboard = find.byKey(const ValueKey('seg_btn_ExportDestination.clipboard'));
+    await tester.ensureVisible(clipboard);
+    await tester.tap(clipboard);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('frame_rate_popup')), findsOneWidget);
+    await tester.ensureVisible(export);
+    await tester.pumpAndSettle();
+    expect(export.hitTestable(), findsOneWidget);
+  });
+
   // ── Test 1: Default state matches mockup layout ────────────────────────
   group('default state', () {
     testWidgets('all pickers visible with MP4/1080p/Web/30fps/File selected',
@@ -113,7 +184,7 @@ void main() {
 
       // Resolution and Compression pickers are visible (not hidden)
       expect(find.text('Resolution'), findsOneWidget);
-      expect(find.text('Compression'), findsOneWidget);
+      expect(find.text('Quality'), findsOneWidget);
 
       // ShareableLinkPanel is NOT visible
       expect(find.byKey(const ValueKey('shareable_title_field')), findsNothing);
@@ -124,7 +195,7 @@ void main() {
       expect(find.text('Format'), findsOneWidget);
       expect(find.text('Frame rate'), findsOneWidget);
       expect(find.text('Resolution'), findsOneWidget);
-      expect(find.text('Compression'), findsOneWidget);
+      expect(find.text('Quality'), findsOneWidget);
       expect(find.text('Destination'), findsOneWidget);
     });
 
@@ -132,64 +203,6 @@ void main() {
       await openDialog(tester);
       expect(find.byKey(const ValueKey('export_cancel_btn')), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
-    });
-  });
-
-  // ── Test 2: Switching to Shareable link ───────────────────────────────
-  group('shareable link mode', () {
-    testWidgets(
-        'switching to Shareable link hides resolution/compression, shows panel + footer',
-        (tester) async {
-      await openDialog(tester);
-
-      // Tap Shareable link
-      await tester.tap(
-        find.byKey(
-          const ValueKey('seg_btn_ExportDestination.shareableLink'),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Resolution and Compression pickers disappear
-      expect(find.text('Resolution'), findsNothing);
-      expect(find.text('Compression'), findsNothing);
-
-      // ShareableLinkPanel appears
-      expect(
-        find.byKey(const ValueKey('shareable_title_field')),
-        findsOneWidget,
-      );
-
-      // Footer shows the lock note
-      expect(
-        find.byKey(const ValueKey('shareable_link_footer')),
-        findsOneWidget,
-      );
-      expect(
-        find.text(
-          'Shareable links are always exported as 1080p video at 60fps.',
-        ),
-        findsOneWidget,
-      );
-
-      // Estimation line is gone
-      expect(
-        find.byKey(const ValueKey('estimation_line_text')),
-        findsNothing,
-      );
-    });
-
-    testWidgets('button label changes to "Export & Share"', (tester) async {
-      await openDialog(tester);
-
-      await tester.tap(
-        find.byKey(
-          const ValueKey('seg_btn_ExportDestination.shareableLink'),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Export & Share'), findsOneWidget);
     });
   });
 
@@ -306,20 +319,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Export to clipboard'), findsOneWidget);
-    });
-
-    testWidgets('label is "Export & Share" for Shareable link destination',
-        (tester) async {
-      await openDialog(tester);
-
-      await tester.tap(
-        find.byKey(
-          const ValueKey('seg_btn_ExportDestination.shareableLink'),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Export & Share'), findsOneWidget);
     });
 
     testWidgets('label cycles back to "Export to file…" when returning to File',
@@ -448,124 +447,6 @@ void main() {
       expect(returned!.destination, ExportDestination.clipboard);
     });
 
-    testWidgets('shareable link locks resolution to 1080p and fps to 60',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1400, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      ExportSettings? returned;
-
-      final widget = MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: Center(
-              child: ElevatedButton(
-                key: const ValueKey('open_dialog_btn'),
-                onPressed: () async {
-                  returned = await showDialog<ExportSettings>(
-                    context: context,
-                    builder: (_) => ExportDialog(
-                      initialSettings: ExportSettings.defaults().copyWith(
-                        resolution: ExportResolution.r720p,
-                        frameRate: 24,
-                      ),
-                      sourceVideoSize: const Size(1920, 1080),
-                      videoDuration: const Duration(seconds: 5),
-                    ),
-                  );
-                },
-                child: const Text('Open'),
-              ),
-            ),
-          ),
-        ),
-      );
-
-      await tester.pumpWidget(widget);
-      await tester.tap(find.byKey(const ValueKey('open_dialog_btn')));
-      await tester.pumpAndSettle();
-
-      // Switch to Shareable link
-      await tester.tap(
-        find.byKey(
-          const ValueKey('seg_btn_ExportDestination.shareableLink'),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Confirm
-      await tester.tap(find.byKey(const ValueKey('export_primary_btn')));
-      await tester.pumpAndSettle();
-
-      expect(returned, isNotNull);
-      expect(returned!.resolution, ExportResolution.r1080p);
-      expect(returned!.frameRate, 60);
-    });
-  });
-
-  // ── Regression (M3): GIF → Shareable link must not break the fps picker ─
-  group('GIF -> Shareable link (M3)', () {
-    testWidgets(
-        'switching to Shareable link from GIF forces MP4 (no fps-picker assert)',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1400, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-
-      ExportSettings? returned;
-      final widget = MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: Center(
-              child: ElevatedButton(
-                key: const ValueKey('open_dialog_btn'),
-                onPressed: () async {
-                  returned = await showDialog<ExportSettings>(
-                    context: context,
-                    builder: (_) => ExportDialog(
-                      // Start in GIF at a GIF-only fps (10 is not in the MP4
-                      // list). Before the fix, switching to Shareable link
-                      // forced fps=60 while leaving format=gif, so the picker
-                      // rendered value=60 against the GIF option list (no 60)
-                      // and tripped FrameRatePicker's assert.
-                      initialSettings: ExportSettings.defaults().copyWith(
-                        format: ExportFormat.gif,
-                        frameRate: 10,
-                      ),
-                      sourceVideoSize: const Size(1920, 1080),
-                      videoDuration: const Duration(seconds: 5),
-                    ),
-                  );
-                },
-                child: const Text('Open'),
-              ),
-            ),
-          ),
-        ),
-      );
-
-      await tester.pumpWidget(widget);
-      await tester.tap(find.byKey(const ValueKey('open_dialog_btn')));
-      await tester.pumpAndSettle();
-      expect(find.text('10 fps'), findsOneWidget);
-
-      await tester.tap(find.byKey(
-          const ValueKey('seg_btn_ExportDestination.shareableLink')));
-      await tester.pumpAndSettle();
-
-      // No assertion/exception was thrown reaching shareable mode.
-      expect(tester.takeException(), isNull);
-      expect(find.byKey(const ValueKey('shareable_link_footer')),
-          findsOneWidget);
-
-      await tester.tap(find.byKey(const ValueKey('export_primary_btn')));
-      await tester.pumpAndSettle();
-
-      // The lock normalized the invalid GIF+60 combination to MP4/1080p/60.
-      expect(returned, isNotNull);
-      expect(returned!.format, ExportFormat.mp4);
-      expect(returned!.resolution, ExportResolution.r1080p);
-      expect(returned!.frameRate, 60);
-    });
   });
 
   // ── Test 8: Cancel returns null ────────────────────────────────────────
