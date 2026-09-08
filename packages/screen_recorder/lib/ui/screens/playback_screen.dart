@@ -375,6 +375,13 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // reads via [ref.watch] in build() and mutates via these helpers
   // below.
   EditorProjectState get _project => ref.read(editorProjectControllerProvider);
+
+  // Cached notifier so [dispose] can read the current project without `ref`.
+  // Riverpod forbids `ref` after the widget is disposed; calling it in
+  // dispose() throws "Cannot use ref after the widget was disposed", which
+  // aborted the rest of teardown — the music preview player was never
+  // disposed and kept playing after leaving the editor.
+  EditorProjectController? _projectControllerForDispose;
   EditorProjectController get _projectController =>
       ref.read(editorProjectControllerProvider.notifier);
 
@@ -459,6 +466,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   @override
   void initState() {
     super.initState();
+    _projectControllerForDispose = ref.read(
+      editorProjectControllerProvider.notifier,
+    );
     _initializeVideo();
     HardwareKeyboard.instance.addHandler(_onKey);
     ref.captureAnalytics(
@@ -1145,7 +1155,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // queue mean a partially-written file is impossible.
     _saveDebounce?.cancel();
     if (_isInitialized) {
-      _projectStore.save(_project);
+      // Use the cached notifier's current state, never `ref` — see
+      // [_projectControllerForDispose]. A ref read here throws and would abort
+      // the teardown below (leaving the music stem playing).
+      final controller = _projectControllerForDispose;
+      if (controller != null) _projectStore.save(controller.current);
       _controller.removeListener(_onTrimTick);
       _controller.removeListener(_onSkipTick);
       _controller.removeListener(_onHoverTrack);
