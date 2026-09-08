@@ -33,6 +33,10 @@
 // texture. Compared against the player clock to measure display latency.
 @property(nonatomic, assign) CMTime lastPresentedItemTime;
 
+// Slipreel: guards the layer/display-link teardown so it runs exactly once,
+// even though the framework can call disposeWithError: more than once.
+@property(nonatomic, assign) BOOL layerTornDown;
+
 /// Ensures that the frame updater runs until a frame is rendered, regardless of play/pause state.
 - (void)expectFrame;
 @end
@@ -111,11 +115,22 @@
 }
 
 - (void)disposeWithError:(FlutterError *_Nullable *_Nonnull)error {
+  // Slipreel: detach the invisible AVPlayerLayer and drop the display link
+  // BEFORE super tears down the player item. super calls
+  // replaceCurrentItemWithPlayerItem:nil, which invalidates the video decode
+  // session on a background thread; if the layer is still parented when that
+  // happens, CoreAnimation's visibility pass (triggered by removeFromSuperlayer)
+  // walks into the half-freed media pipeline and crashes with EXC_BAD_ACCESS
+  // (removeFromSuperlayer -> mark_visible -> MediaToolbox). This is reliably hit
+  // when the player is disposed while still playing. Guard it so the framework's
+  // occasional double dispose (e.g. hot restart) can't run it twice.
+  if (!_layerTornDown) {
+    _layerTornDown = YES;
+    [self.playerLayer removeFromSuperlayer];
+    _displayLink = nil;
+  }
+
   [super disposeWithError:error];
-
-  [self.playerLayer removeFromSuperlayer];
-
-  _displayLink = nil;
 }
 
 #pragma mark - FlutterTexture

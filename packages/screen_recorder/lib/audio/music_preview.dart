@@ -377,6 +377,19 @@ class MusicPreview {
     VideoPlayerController? recordingPlayer,
     Directory? folder,
   ) async {
+    // Mute and pause before disposing. On macOS/AVFoundation, disposing a
+    // still-playing controller does not reliably cut its audio right away, so
+    // leaving the editor while music is playing would keep the stem audible
+    // back on the recordings list. Muting is the instant stop; pausing tears
+    // down the render pipeline; both are best-effort since a structural edit
+    // may already have disposed the controller.
+    for (final p in [player, recordingPlayer]) {
+      if (p == null) continue;
+      try {
+        await p.setVolume(0);
+        if (p.value.isInitialized && p.value.isPlaying) await p.pause();
+      } catch (_) {}
+    }
     await player?.dispose();
     await recordingPlayer?.dispose();
     if (folder != null && await folder.exists()) {
