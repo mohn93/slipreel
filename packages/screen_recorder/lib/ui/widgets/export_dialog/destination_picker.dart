@@ -22,11 +22,6 @@ class DestinationPicker extends StatelessWidget {
   static const _options = [
     (value: ExportDestination.file, label: 'File', tooltip: null),
     (value: ExportDestination.clipboard, label: 'Clipboard', tooltip: null),
-    (
-      value: ExportDestination.shareableLink,
-      label: 'Shareable link',
-      tooltip: null,
-    ),
   ];
 
   @override
@@ -50,9 +45,9 @@ class DestinationPicker extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Row(
-          mainAxisSize: MainAxisSize.min,
+        Wrap(
           spacing: kSegmentHGap,
+          runSpacing: kSegmentHGap,
           children: [
             ExportSegmentedButton<ExportDestination>(
               options: _options,
@@ -80,11 +75,7 @@ class _RevealButton extends StatelessWidget {
         key: const ValueKey('reveal_in_finder_btn'),
         width: kSegmentHeight,
         onTap: onTap,
-        child: const Icon(
-          Icons.folder_outlined,
-          size: 16,
-          color: kTextPrimary,
-        ),
+        child: const Icon(Icons.folder_outlined, size: 16, color: kTextPrimary),
       ),
     );
   }

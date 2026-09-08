@@ -68,7 +68,11 @@ class _ExportDialogState extends State<ExportDialog> {
   @override
   void initState() {
     super.initState();
-    _settings = widget.initialSettings;
+    // Older builds could persist the unfinished hosted-sharing destination.
+    // Keep those settings usable while sharing is unavailable in the UI.
+    _settings = widget.initialSettings.destination == ExportDestination.shareableLink
+        ? widget.initialSettings.copyWith(destination: ExportDestination.file)
+        : widget.initialSettings;
   }
 
   // ── Derived state helpers ─────────────────────────────────────────────
@@ -76,8 +80,9 @@ class _ExportDialogState extends State<ExportDialog> {
   bool get _isShareableLink =>
       _settings.destination == ExportDestination.shareableLink;
 
-  List<int> get _frameRateOptions =>
-      _settings.format == ExportFormat.gif ? _kGifFrameRateOptions : kFrameRateOptions;
+  List<int> get _frameRateOptions => _settings.format == ExportFormat.gif
+      ? _kGifFrameRateOptions
+      : kFrameRateOptions;
 
   String get _primaryButtonLabel {
     return switch (_settings.destination) {
@@ -177,237 +182,207 @@ class _ExportDialogState extends State<ExportDialog> {
     Navigator.of(context).pop();
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: kDialogBackground,
-      // A visible border + real shadow so the dialog lifts off the near-black
-      // editor background instead of fusing with it.
       elevation: 24,
       shadowColor: Colors.black,
       surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(24),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: kBorderSubtle, width: 1),
+        side: const BorderSide(color: kBorderSubtle),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 680, maxWidth: 1100),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildTopRow(),
-              const SizedBox(height: 20),
-              _buildMidRow(),
-              const SizedBox(height: 20),
-              _buildBottomRow(),
-              const SizedBox(height: 8),
-              _buildFooterRow(),
-            ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: _sizeTransition(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Export',
+                    style: TextStyle(
+                      color: kTextPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Choose where to send your video.',
+                    style: TextStyle(color: kTextSecondary, fontSize: 13),
+                  ),
+                  const SizedBox(height: 24),
+                  DestinationPicker(
+                    value: _settings.destination,
+                    onChanged: _onDestinationChanged,
+                    onRevealLastExport: widget.onRevealLastExport,
+                  ),
+                  _divider(),
+                  if (_isShareableLink)
+                    ShareableLinkPanel(
+                      title: _settings.title ?? '',
+                      isPrivate: _settings.isPrivate,
+                      onTitleChanged: _onTitleChanged,
+                      onIsPrivateChanged: _onIsPrivateChanged,
+                    )
+                  else
+                    _buildSettings(),
+                  _divider(),
+                  _buildFooter(),
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  // ── Row builders ──────────────────────────────────────────────────────
+  Widget _sizeTransition({required Widget child}) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.topCenter,
+      child: child,
+    );
+  }
 
-  /// Top row: Format (left) + Frame rate (right).
-  Widget _buildTopRow() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _divider() => const Padding(
+    padding: EdgeInsets.symmetric(vertical: 24),
+    child: Divider(height: 1, color: kBorderSubtle),
+  );
+
+  Widget _buildSettings() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
-          child: FormatPicker(
-            value: _settings.format,
-            onChanged: _onFormatChanged,
+        _responsivePair(
+          FormatPicker(value: _settings.format, onChanged: _onFormatChanged),
+          ResolutionPicker(
+            value: _settings.resolution,
+            sourceVideoSize: widget.sourceVideoSize,
+            onChanged: _onResolutionChanged,
           ),
         ),
-        const SizedBox(width: 24),
-        Expanded(
-          child: FrameRatePicker(
+        const SizedBox(height: 24),
+        _responsivePair(
+          CompressionPicker(
+            value: _settings.compression,
+            onChanged: _onCompressionChanged,
+          ),
+          FrameRatePicker(
             value: _settings.frameRate,
             options: _frameRateOptions,
             onChanged: _onFrameRateChanged,
           ),
+          wideFirst: true,
         ),
       ],
     );
   }
 
-  /// Mid row: Resolution + Compression — OR — ShareableLinkPanel.
-  Widget _buildMidRow() {
-    if (_isShareableLink) {
-      return ShareableLinkPanel(
-        title: _settings.title ?? '',
-        isPrivate: _settings.isPrivate,
-        onTitleChanged: _onTitleChanged,
-        onIsPrivateChanged: _onIsPrivateChanged,
-      );
-    }
-
+  Widget _responsivePair(
+    Widget first,
+    Widget second, {
+    bool wideFirst = false,
+  }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final colWidth = (constraints.maxWidth - 24) / 2;
+        if (constraints.maxWidth < 520) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [first, const SizedBox(height: 24), second],
+          );
+        }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: colWidth,
-              child: ResolutionPicker(
-                value: _settings.resolution,
-                sourceVideoSize: widget.sourceVideoSize,
-                onChanged: _onResolutionChanged,
-              ),
-            ),
+            Expanded(child: first),
             const SizedBox(width: 24),
-            SizedBox(
-              width: colWidth,
-              child: CompressionPicker(
-                value: _settings.compression,
-                onChanged: _onCompressionChanged,
-              ),
-            ),
+            if (wideFirst)
+              SizedBox(width: 160, child: second)
+            else
+              Expanded(child: second),
           ],
         );
       },
     );
   }
 
-  /// Bottom row: Destination (left) + Export + Cancel buttons (right).
-  Widget _buildBottomRow() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildFooter() {
+    final summary = _isShareableLink
+        ? const Text(
+            'Shareable links are always exported as 1080p video at 60fps.',
+            key: ValueKey('shareable_link_footer'),
+            style: TextStyle(color: kTextSecondary, fontSize: 12),
+          )
+        : EstimationLine(
+            durationSec: _durationSec,
+            bitrateKbps: _bitrateKbps,
+            format: _settings.format,
+            frameRate: _settings.frameRate,
+            outputArea: _outputArea,
+            audioBitrateKbps: widget.audioBitrateKbps,
+            estimator: widget.estimator,
+          );
+    final actions = Wrap(
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        Expanded(
-          child: DestinationPicker(
-            value: _settings.destination,
-            onChanged: _onDestinationChanged,
-            onRevealLastExport: widget.onRevealLastExport,
-          ),
+        TextButton(
+          key: const ValueKey('export_cancel_btn'),
+          onPressed: _onCancel,
+          style: TextButton.styleFrom(foregroundColor: kTextPrimary),
+          child: const Text('Cancel'),
         ),
-        const SizedBox(width: 24),
-        _buildActionButtons(),
-      ],
-    );
-  }
-
-  /// Primary export button + Cancel button (stacked vertically, right side).
-  Widget _buildActionButtons() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Spacer aligns the action row with the destination picker's first
-        // pill; tracks kSectionHeaderHeight (13pt label + 8px gap).
-        const SizedBox(height: kSectionHeaderHeight),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          spacing: 8,
-          children: [
-            _CancelButton(onTap: _onCancel),
-            _ExportButton(
-              label: _primaryButtonLabel,
-              onTap: _onExport,
+        FilledButton(
+          key: const ValueKey('export_primary_btn'),
+          onPressed: _onExport,
+          style: FilledButton.styleFrom(
+            backgroundColor: kAccent,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(kSegmentRadius),
             ),
-          ],
+          ),
+          child: Text(_primaryButtonLabel),
         ),
       ],
     );
-  }
-
-  /// Below bottom row: estimation line OR shareable link footer.
-  Widget _buildFooterRow() {
-    if (_isShareableLink) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Text(
-          'Shareable links are always exported as 1080p video at 60fps.',
-          key: const ValueKey('shareable_link_footer'),
-          style: const TextStyle(color: kTextSecondary, fontSize: 12),
-          textAlign: TextAlign.right,
-        ),
-      );
-    }
-
-    return EstimationLine(
-      durationSec: _durationSec,
-      bitrateKbps: _bitrateKbps,
-      format: _settings.format,
-      frameRate: _settings.frameRate,
-      outputArea: _outputArea,
-      audioBitrateKbps: widget.audioBitrateKbps,
-      estimator: widget.estimator,
-    );
-  }
-}
-
-// ── Private action button widgets ─────────────────────────────────────────
-
-class _ExportButton extends StatelessWidget {
-  const _ExportButton({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      key: const ValueKey('export_primary_btn'),
-      onTap: onTap,
-      child: Container(
-        height: kSegmentHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        decoration: BoxDecoration(
-          color: kAccent,
-          borderRadius: BorderRadius.circular(kSegmentRadius),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CancelButton extends StatelessWidget {
-  const _CancelButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      key: const ValueKey('export_cancel_btn'),
-      onTap: onTap,
-      child: Container(
-        height: kSegmentHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(kSegmentRadius),
-          border: Border.all(color: kBorderSubtle),
-        ),
-        alignment: Alignment.center,
-        child: const Text(
-          'Cancel',
-          style: TextStyle(
-            color: kTextPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 520) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              summary,
+              const SizedBox(height: 16),
+              Align(alignment: Alignment.centerRight, child: actions),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: summary),
+            const SizedBox(width: 20),
+            actions,
+          ],
+        );
+      },
     );
   }
 }

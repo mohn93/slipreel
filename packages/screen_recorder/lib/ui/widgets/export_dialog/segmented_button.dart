@@ -26,9 +26,9 @@ class ExportSegmentedButton<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Wrap(
       spacing: kSegmentHGap,
+      runSpacing: kSegmentHGap,
       children: [
         for (final option in options)
           _Button<T>(
@@ -94,10 +94,7 @@ class _Button<T> extends StatelessWidget {
     Widget result = body;
 
     if (isDisabled) {
-      result = MouseRegion(
-        cursor: SystemMouseCursors.forbidden,
-        child: result,
-      );
+      result = MouseRegion(cursor: SystemMouseCursors.forbidden, child: result);
     }
 
     final tooltip = option.tooltip;
@@ -105,6 +102,6 @@ class _Button<T> extends StatelessWidget {
       result = Tooltip(message: tooltip, child: result);
     }
 
-    return result;
+    return IntrinsicWidth(child: result);
   }
 }
