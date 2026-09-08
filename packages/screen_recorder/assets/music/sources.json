@@ -1,0 +1,44 @@
+[
+  {
+    "title": "Vaporware",
+    "artist": "The Cynic Project",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source": "https://opengameart.org/content/calm-piano-1-vaporware",
+    "download": "https://opengameart.org/sites/default/files/003_Vaporware_2.mp3",
+    "retrieved": "2026-09-08",
+    "originalSha256": "1697fa1b7ed6f3fe1eca4daa4f9d1a2eb3db8fe40a0f3c283529ab47e57b5b38",
+    "asset": "vaporware.m4a",
+    "assetSha256": "a2b7fe01a49eef4a5f34dca94eb3e30a9962bcf9ba521a5f47cbba51bab08803",
+    "durationSeconds": 164.954,
+    "changes": "Transcoded full recording to AAC stereo at 48 kHz, 256 kbps. No cuts, synthesized additions, or forced loops."
+  },
+  {
+    "title": "Synthwave 4k",
+    "artist": "The Cynic Project",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source": "https://opengameart.org/content/calm-ambient-1-synthwave-4k",
+    "download": "https://opengameart.org/sites/default/files/001_Synthwave_4k_0.mp3",
+    "retrieved": "2026-09-08",
+    "originalSha256": "56b31f997020da1abd4092f5e82457592323717a23e4d560c5f8135d26c3b8be",
+    "asset": "synthwave-4k.m4a",
+    "assetSha256": "7e5605ce2337b6b9b0822599b9b186d8e44d5f1fa84145665bb7b1752a1351b7",
+    "durationSeconds": 157.896,
+    "changes": "Transcoded full recording to AAC stereo at 48 kHz, 256 kbps. No cuts, synthesized additions, or forced loops."
+  },
+  {
+    "title": "Contemplation",
+    "artist": "Joth",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source": "https://opengameart.org/content/contemplation-0",
+    "download": "https://opengameart.org/sites/default/files/Contemplation.mp3",
+    "retrieved": "2026-09-08",
+    "originalSha256": "283962d3a975c93613c46cda30c9f0816176ae3e2899f961591a49e2d41b4bf3",
+    "asset": "contemplation.m4a",
+    "assetSha256": "118368dfb97733b8635160c7c64b4a74e7c22495bf281ebfc029888e805f8584",
+    "durationSeconds": 120.059,
+    "changes": "Transcoded full recording to AAC stereo at 48 kHz, 256 kbps. No cuts, synthesized additions, or forced loops."
+  }
+]

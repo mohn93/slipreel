@@ -132,6 +132,7 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+    - assets/music/
     - assets/cursors/default_cursor.png
     - assets/cursors/click_cursor.png
     # Onboarding feature-showcase clips + poster fallbacks (reused from the

@@ -41,6 +41,7 @@ class InspectorPanel extends StatefulWidget {
     super.key,
     this.width = 380,
     this.initialTab = InspectorTab.background,
+    this.onTabChanged,
     this.selection,
     this.zoomRegions = const [],
     this.clipDuration = Duration.zero,
@@ -71,6 +72,7 @@ class InspectorPanel extends StatefulWidget {
 
   final double width;
   final InspectorTab initialTab;
+  final ValueChanged<InspectorTab>? onTabChanged;
 
   /// Whether hiding the cursor is supported for the current recording.
   /// When false the cursor tab's "Hide cursor" toggle is rendered
@@ -180,6 +182,14 @@ class _InspectorPanelState extends State<InspectorPanel> {
   late InspectorTab _selected = widget.initialTab;
 
   @override
+  void didUpdateWidget(covariant InspectorPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialTab != widget.initialTab) {
+      _selected = widget.initialTab;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final selection = widget.selection;
     return Container(
@@ -218,7 +228,10 @@ class _InspectorPanelState extends State<InspectorPanel> {
           child: _Rail(
             selected: selected,
             isDevice: widget.isDevice,
-            onSelect: (t) => setState(() => _selected = t),
+            onSelect: (t) {
+              setState(() => _selected = t);
+              widget.onTabChanged?.call(t);
+            },
           ),
         ),
         VerticalDivider(
@@ -238,16 +251,16 @@ class _InspectorPanelState extends State<InspectorPanel> {
         InspectorTab.background => BackgroundTab(videoSize: widget.videoSize),
         InspectorTab.device => DeviceTab(recordingSize: widget.videoSize),
         InspectorTab.cursor => CursorTab(
-            canHideCursor: widget.canHideCursor,
-            isDevice: widget.isDevice,
-          ),
+          canHideCursor: widget.canHideCursor,
+          isDevice: widget.isDevice,
+        ),
         InspectorTab.camera => CameraTab(hasCamera: widget.hasCamera),
         InspectorTab.captions => CaptionsTab(videoPath: widget.videoPath),
         InspectorTab.audio => const AudioTab(),
         InspectorTab.shortcuts => ShortcutsTab(
-            hasKeystrokeData: widget.hasKeystrokeData,
-            isDevice: widget.isDevice,
-          ),
+          hasKeystrokeData: widget.hasKeystrokeData,
+          isDevice: widget.isDevice,
+        ),
         InspectorTab.animation => AnimationTab(library: widget.curveLibrary),
       },
     );
@@ -263,9 +276,9 @@ class _InspectorPanelState extends State<InspectorPanel> {
       // below the header.
       SliceSelected(:final index) => _sliceContext(index),
       CameraSelected(:final index) => Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-          child: _cameraContext(index),
-        ),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+        child: _cameraContext(index),
+      ),
     };
   }
 
@@ -374,8 +387,9 @@ class _Rail extends StatelessWidget {
                   for (final t in tabs) ...[
                     SpringyIconButton(
                       icon: t.icon,
-                      tooltip:
-                          t.isEnabled ? t.label : '${t.label} — coming soon',
+                      tooltip: t.isEnabled
+                          ? t.label
+                          : '${t.label} — coming soon',
                       isActive: t == selected,
                       isEnabled: t.isEnabled,
                       onTap: () => onSelect(t),
@@ -392,7 +406,6 @@ class _Rail extends StatelessWidget {
     );
   }
 }
-
 
 // _ClipLocalState removed — clip-level fields (playbackSpeed,
 // fadeIn, fadeOut) moved into EditorProjectState via P2-8 bugfix

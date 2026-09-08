@@ -1,3 +1,4 @@
+import '../audio/music_graph.dart';
 // packages/screen_recorder/lib/export/export_pipeline.dart
 import 'dart:async';
 import 'dart:io';
@@ -188,6 +189,19 @@ class ExportPipeline {
         ? Duration(microseconds: (probed.durationSec! * 1000000).round())
         : Duration.zero;
     final slicedState = _ensureSlices(projectState, sourceDuration);
+    // Output duration: sum over slices of effectiveLength / playbackSpeed.
+    final outputDurationSec = _slicedOutputSeconds(slicedState.timeline.clips);
+
+    final music = slicedState.timeline.music;
+    final hasMusic =
+        music != null &&
+        !music.muted &&
+        music.volume > 0 &&
+        music.segmentDuration > 0 &&
+        music.length(outputDurationSec) > 0;
+    if (hasMusic && !await File(music.path).exists()) {
+      throw StateError('Background audio is missing. Replace it in the Audio panel.');
+    }
     final progressClips = slicedState.timeline.clips;
     final skipMargin = Duration(
       microseconds: (1000000 + pipelineFps - 1) ~/ pipelineFps,
@@ -329,18 +343,26 @@ class ExportPipeline {
       audioStreams: probed.audioStreams,
       videoTimeOffset: decodeStart,
     );
-    final filterComplex = _composeWithScalePad(
+    var filterComplex = _composeWithScalePad(
       base.filterComplex,
       videoLabel: base.videoMapLabel ?? '[outv]',
       outWidth: outWidth,
       outHeight: outHeight,
     );
     final videoMapLabel = '[outv_scaled]';
-    final audioMapLabel = base.audioMapLabel;
+    var audioMapLabel = base.audioMapLabel;
 
-    // Output duration: sum over slices of effectiveLength / playbackSpeed.
-    final outputDurationSec = _slicedOutputSeconds(slicedState.timeline.clips);
-
+    if (hasMusic) {
+      filterComplex +=
+          ';${buildMusicGraph(track: music, duration: outputDurationSec, clips: slicedState.timeline.clips, streams: probed.audioStreams)}';
+      if (audioMapLabel != null) {
+        filterComplex +=
+            ';$audioMapLabel[music]amix=inputs=2:duration=longest:normalize=0[mixed_music]';
+        audioMapLabel = '[mixed_music]';
+      } else {
+        audioMapLabel = '[music]';
+      }
+    }
     final encoder = FfmpegEncoder(
       outputPath: outputPath,
       width: outWidth,
@@ -348,6 +370,7 @@ class ExportPipeline {
       fps: outFps,
       bitrateKbps: bitrateKbps,
       audioSourcePath: audioMapLabel != null ? sourcePath : null,
+      musicSourcePath: hasMusic ? music.path : null,
       filterComplex: filterComplex,
       videoOutLabel: videoMapLabel,
       audioOutLabel: audioMapLabel,

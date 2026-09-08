@@ -79,6 +79,7 @@ NSliceFilterGraph buildExportFilterGraph({
   required EditorProjectState state,
   required List<AudioStreamInfo> audioStreams,
   Duration videoTimeOffset = Duration.zero,
+  bool includeVideo = true,
 }) {
   final clips = state.timeline.clips;
   if (clips.isEmpty) {
@@ -96,14 +97,16 @@ NSliceFilterGraph buildExportFilterGraph({
 
   final chains = <String>[];
 
-  // Video: one chain per slice, then concat=n=N:v=1:a=0[outv].
-  for (var i = 0; i < clips.length; i++) {
-    chains.add(_videoChainFor(clips[i], i, timeOffset: videoTimeOffset));
+  if (includeVideo) {
+    // Video: one chain per slice, then concat=n=N:v=1:a=0[outv].
+    for (var i = 0; i < clips.length; i++) {
+      chains.add(_videoChainFor(clips[i], i, timeOffset: videoTimeOffset));
+    }
+    chains.add(
+      '${_labels('v', clips.length)}'
+      'concat=n=${clips.length}:v=1:a=0[outv]',
+    );
   }
-  chains.add(
-    '${_labels('v', clips.length)}'
-    'concat=n=${clips.length}:v=1:a=0[outv]',
-  );
 
   // Audio: per-track per-slice chains, concat per track, then amix the two
   // tracks. Muted/0% slices still contribute volume=0 to keep concat input
@@ -169,7 +172,7 @@ NSliceFilterGraph buildExportFilterGraph({
 
   return NSliceFilterGraph(
     filterComplex: chains.join(';'),
-    videoMapLabel: '[outv]',
+    videoMapLabel: includeVideo ? '[outv]' : null,
     audioMapLabel: audioMapLabel,
     sliceCount: clips.length,
   );
@@ -200,7 +203,7 @@ List<String> _trackChainBlock({
   final out = <String>[];
   for (var i = 0; i < clips.length; i++) {
     out.add(
-      _audioChainFor(
+      buildSliceAudioChain(
         clips[i],
         i,
         streamLabel: streamLabel,
@@ -267,7 +270,7 @@ String _videoChainFor(ClipSlice s, int i, {required Duration timeOffset}) {
   return '[0:v]${filters.join(',')}[v$i]';
 }
 
-String _audioChainFor(
+String buildSliceAudioChain(
   ClipSlice s,
   int i, {
   required String streamLabel,

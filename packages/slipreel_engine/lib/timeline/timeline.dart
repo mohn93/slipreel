@@ -1,3 +1,4 @@
+import 'package:slipreel_engine/audio/music_track.dart';
 import 'package:slipreel_engine/models/camera_region.dart';
 import 'package:slipreel_engine/models/caption_segment.dart';
 import 'package:slipreel_engine/models/zoom_region.dart';
@@ -154,21 +155,12 @@ class CaptionTrack {
   int get hashCode => Object.hash(source, Object.hashAll(segments));
 }
 
-/// Container for every track on a recording — zoom regions today,
-/// caption tracks, audio tracks, and multi-clip splits later.
-///
-/// Replaces the flat `EditorProjectState.zoomRegions` field. Future
-/// fields will append to this class:
-///
-///   - `clips: List<Clip>` for trim+stitch multi-clip support
-///   - `audioTracks: List<AudioTrack>` for narration + background music
-///
-/// We deliberately don't introduce empty placeholder lists for those
-/// today — they have no consumers, so they'd be cargo. The schema
-/// migration chain will fill them in (with empty defaults) when the
-/// fields land.
+/// Persisted editor timeline: source video slices, zooms, camera, captions,
+/// and a background music bed placed in edited time. Missing music defaults to
+/// null, preserving compatibility with projects saved before music support.
 class Timeline {
   Timeline({
+    this.music,
     List<ZoomTrack> zoomTracks = const <ZoomTrack>[],
     List<ClipSlice> clips = const <ClipSlice>[],
     List<CameraTrack> cameraTracks = const <CameraTrack>[],
@@ -182,6 +174,7 @@ class Timeline {
   /// controller seeds a single slice once it knows the video duration).
   factory Timeline.defaults() => Timeline(zoomTracks: [ZoomTrack()]);
 
+  final MusicTrack? music;
   final List<ZoomTrack> zoomTracks;
   final List<ClipSlice> clips;
   final List<CameraTrack> cameraTracks;
@@ -210,11 +203,14 @@ class Timeline {
       captionTracks.isEmpty ? null : captionTracks.first;
 
   Timeline copyWith({
+    MusicTrack? music,
+    bool clearMusic = false,
     List<ZoomTrack>? zoomTracks,
     List<ClipSlice>? clips,
     List<CameraTrack>? cameraTracks,
     List<CaptionTrack>? captionTracks,
   }) => Timeline(
+    music: clearMusic ? null : (music ?? this.music),
     zoomTracks: zoomTracks ?? this.zoomTracks,
     clips: clips ?? this.clips,
     cameraTracks: cameraTracks ?? this.cameraTracks,
@@ -222,6 +218,7 @@ class Timeline {
   );
 
   Map<String, dynamic> toJson() => {
+    'music': music?.toJson(),
     'zoomTracks': zoomTracks.map((t) => t.toJson()).toList(),
     'clips': clips.map((c) => c.toJson()).toList(),
     'cameraTracks': cameraTracks.map((t) => t.toJson()).toList(),
@@ -269,7 +266,16 @@ class Timeline {
         }
       }
     }
+    MusicTrack? music;
+    try {
+      if (json['music'] is Map<String, dynamic>) {
+        music = MusicTrack.fromJson(json['music'] as Map<String, dynamic>);
+      }
+    } catch (_) {
+      /* Keep older or damaged projects usable. */
+    }
     return Timeline(
+      music: music,
       zoomTracks: List.unmodifiable(tracks),
       clips: List.unmodifiable(clips),
       cameraTracks: List.unmodifiable(cameraTracks),
@@ -281,6 +287,7 @@ class Timeline {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is Timeline &&
+          other.music == music &&
           _listEq(other.zoomTracks, zoomTracks) &&
           _listEq(other.clips, clips) &&
           _listEq(other.cameraTracks, cameraTracks) &&
@@ -288,6 +295,7 @@ class Timeline {
 
   @override
   int get hashCode => Object.hash(
+    music,
     Object.hashAll(zoomTracks),
     Object.hashAll(clips),
     Object.hashAll(cameraTracks),
