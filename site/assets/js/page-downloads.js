@@ -1,16 +1,48 @@
+import { createApi } from './api.js?v=7';
+import { apiBase } from './config.js';
+import { downloadAccess } from './download-access.js?v=1';
 import { itemsFromDocument, formatBytes } from './appcast.js?v=7';
 import { eligibleReleases, safeDownloadUrl } from './release-list.js';
 const list = document.getElementById('releases');
 const status = document.getElementById('download-status');
-const ceiling = document.getElementById('ceiling');
-const clearCeiling = document.getElementById('clear-ceiling');
+const api = createApi(apiBase(location.hostname), (url, options) => fetch(url, { ...options, cache: 'no-store' }));
+const licenseHeading = document.getElementById('license-heading');
+const licenseDetail = document.getElementById('license-detail');
+const licenseAction = document.getElementById('license-action');
+const licenseRetry = document.getElementById('license-retry');
 let available = [];
-const requestedCeiling = new URLSearchParams(location.search).get('until');
-if (/^\d{4}-\d{2}-\d{2}$/.test(requestedCeiling || '')) ceiling.value = requestedCeiling;
+let feedState = 'loading';
+let access = { mode: 'loading', ceiling: '' };
+let licenseRequest;
+function renderLicense() {
+  const copy = {
+    visitor: ['Already purchased Slipreel?', 'Sign in and we’ll find the newest version covered by your license.', 'Sign in to find your version', 'login.html'],
+    free: ['Try Slipreel for Mac', 'Your account has no active paid license. Download the latest version to try Slipreel.', 'View your account', 'account.html'],
+    subscription: ['Your subscription covers the latest release', access.grace ? 'Your payment needs attention. Your downloads remain covered during the grace period.' : 'All available releases are included. The latest version is recommended below.', 'Manage subscription', 'account.html'],
+    onetime: ['Your one-time license', `Updates included through ${access.ceiling ? new Intl.DateTimeFormat('en', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(access.ceiling + 'T00:00:00Z')) : ''}. We’ve selected the releases covered by your purchase.`, 'Manage license', 'account.html'],
+    error: ['We couldn’t check your license', 'Try again to find a version covered by your purchase. Your account and purchases haven’t changed.', '', 'account.html'],
+    loading: ['Finding the right version for you…', 'Checking your account for a Slipreel license.', '', 'account.html'],
+  }[access.mode];
+  licenseHeading.textContent = copy[0]; licenseDetail.textContent = copy[1];
+  licenseAction.hidden = !copy[2]; licenseAction.textContent = copy[2]; licenseAction.href = copy[3];
+  licenseRetry.hidden = access.mode !== 'error';
+  document.getElementById('releases-heading').textContent = access.mode === 'onetime' ? 'Your covered releases' : 'Release history';
+}
+async function checkLicense() {
+  if (licenseRequest) return licenseRequest;
+  licenseRequest = (async () => {
+    access = { mode: 'loading', ceiling: '' }; renderLicense(); list.replaceChildren();
+    status.textContent = 'Checking your license…';
+    access = downloadAccess(await api.entitlement());
+    renderLicense(); render();
+  })();
+  try { await licenseRequest; } finally { licenseRequest = null; }
+}
 function render() {
   list.replaceChildren();
-  const releases = eligibleReleases(available, ceiling.value);
-  if (clearCeiling) clearCeiling.hidden = !ceiling.value;
+  if (['loading', 'error'].includes(access.mode)) { status.textContent = access.mode === 'error' ? 'Downloads will appear after your license is checked.' : 'Checking your license…'; return; }
+  if (feedState !== 'ready') { status.textContent = feedState === 'error' ? 'Downloads could not be checked. Please reload, or contact support for your version.' : 'Checking available releases…'; return; }
+  const releases = eligibleReleases(available, access.ceiling);
   const dateFormat = new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   for (const [index, release] of releases.entries()) {
     const item = document.createElement('li');
@@ -21,7 +53,7 @@ function render() {
     if (index === 0) {
       const badge = document.createElement('span');
       badge.className = 'release-badge';
-      badge.textContent = release.version === available[0]?.version ? 'Latest' : 'Latest covered';
+      badge.textContent = ['onetime', 'subscription'].includes(access.mode) ? 'Recommended' : 'Latest';
       title.append(badge);
     }
     const date = document.createElement('time');
@@ -54,10 +86,10 @@ function render() {
     list.append(item);
   }
   status.textContent = releases.length ? `${releases.length} available releases. Dates are release dates in UTC.`
-    : 'No available release matches this date. Contact support for help with your eligible version.';
+    : 'No available release is covered by your license. Contact support for help finding your version.';
 }
-ceiling.addEventListener('change', render);
-clearCeiling?.addEventListener('click', () => { ceiling.value = ''; render(); ceiling.focus(); });
+licenseRetry.addEventListener('click', checkLicense);
+window.addEventListener('focus', checkLicense);
 async function load() {
   try {
     const response = await fetch('/appcast.xml', { cache: 'no-cache' });
@@ -73,9 +105,12 @@ async function load() {
       } catch { return null; }
     }));
     available = eligibleReleases(results.filter(Boolean), '');
+    feedState = 'ready';
     render();
   } catch {
-    status.textContent = 'Downloads could not be checked. Please reload, or contact support for an eligible version.';
+    feedState = 'error';
+    render();
   }
 }
+checkLicense();
 load();
