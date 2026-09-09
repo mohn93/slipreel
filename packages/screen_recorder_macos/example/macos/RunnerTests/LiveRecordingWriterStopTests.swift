@@ -71,4 +71,37 @@ final class LiveRecordingWriterStopTests: XCTestCase {
       return
     }
   }
+  func testCameraWriterPersistsRecoveryTimingAndFinalizesFragmentedVideo() throws {
+    let path = NSTemporaryDirectory() + "camera_recovery_\(UUID().uuidString).mov"
+    addTeardownBlock {
+      try? FileManager.default.removeItem(atPath: path)
+      try? FileManager.default.removeItem(atPath: path + ".start-time")
+    }
+    var pixelBuffer: CVPixelBuffer?
+    XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 64, 64,
+      kCVPixelFormatType_32BGRA, nil, &pixelBuffer), kCVReturnSuccess)
+    let pixel = try XCTUnwrap(pixelBuffer)
+    var format: CMVideoFormatDescription?
+    XCTAssertEqual(CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
+      imageBuffer: pixel, formatDescriptionOut: &format), noErr)
+    var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 30),
+      presentationTimeStamp: CMTime(seconds: 100.25, preferredTimescale: 600),
+      decodeTimeStamp: .invalid)
+    var sample: CMSampleBuffer?
+    XCTAssertEqual(CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault,
+      imageBuffer: pixel, formatDescription: try XCTUnwrap(format),
+      sampleTiming: &timing, sampleBufferOut: &sample), noErr)
+    let writer = CameraSidecarWriter(outputPath: path, width: 64, height: 64)
+    try writer.start()
+    writer.append(try XCTUnwrap(sample))
+    XCTAssertEqual(try String(contentsOfFile: path + ".start-time", encoding: .utf8), "100.25")
+    let done = expectation(description: "camera finalizes")
+    writer.stop { result in
+      if case .failure(let error) = result { XCTFail("Camera finalization failed: \(error)") }
+      done.fulfill()
+    }
+    wait(for: [done], timeout: 10)
+    let asset = AVURLAsset(url: URL(fileURLWithPath: path))
+    XCTAssertEqual(asset.tracks(withMediaType: .video).count, 1)
+  }
 }

@@ -12,7 +12,7 @@ import { createResendSender } from './email/resend.js';
 const config = loadConfig();
 const pool = createPool(config);
 
-// Billing is optional at boot: if the Stripe env isn't set, start without the
+// Billing is optional only outside production: if the Stripe env isn't set, start without the
 // billing routes (only /health etc.) rather than crashing. This keeps a keyless
 // dev box working while a fully-configured box gets checkout/portal/webhook.
 let stripe;
@@ -21,25 +21,28 @@ try {
   billing = loadBillingConfig();
   stripe = createStripeClient(billing.secretKey);
 } catch (err) {
+  if (config.nodeEnv === 'production') throw err;
   billing = undefined;
   stripe = undefined;
 }
 
-// Licensing (entitlement tokens) is optional at boot too: if the Ed25519 env
+// Licensing is optional only outside production: if the Ed25519 env
 // isn't set, start without token/auth routes rather than crashing.
 let tokenSigner;
 try {
   tokenSigner = await createTokenSigner(loadTokenConfig());
 } catch (err) {
+  if (config.nodeEnv === 'production') throw err;
   tokenSigner = undefined;
 }
 
-// Email delivery (magic-link sends) is optional at boot too: if RESEND_API_KEY
+// Email delivery is optional only outside production: if RESEND_API_KEY
 // isn't set, start without a sender — magic links are logged instead of sent.
 let email;
 try {
   email = createResendSender(loadEmailConfig());
 } catch (err) {
+  if (config.nodeEnv === 'production') throw err;
   email = undefined;
 }
 

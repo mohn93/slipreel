@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#08080C">
@@ -13,6 +14,7 @@
 </head>
 <body>
 <main class="flow">
+  <nav aria-label="Site navigation"><a href="index.html">Home</a> · <a href="guide.html">Getting started</a></nav>
   <h1 class="flow__title">Your account</h1>
   <p class="flow__sub" id="sub">Loading…</p>
 
@@ -38,8 +40,8 @@
   </div>
 
   <div class="card hidden" id="download">
-    <a class="btn btn--ghost btn--block" href="https://slipreel.app/download/latest.dmg">Download Slipreel for macOS</a>
-    <p class="muted">Signed and notarized by Apple. Sign in inside the app to activate a new Mac.</p>
+    <a class="btn btn--ghost btn--block" id="eligible-download" href="downloads.html">Find your eligible Slipreel version</a>
+    <p class="muted">Signed by the developer and notarized by Apple. Sign in inside the app to activate a new Mac.</p>
   </div>
 
   <div class="card hidden" id="devices">
@@ -50,7 +52,6 @@
   <div class="status hidden" id="status" role="alert"></div>
   <p><a class="muted" href="#" id="logout">Sign out</a></p>
 </main>
-<script type="module" src="assets/js/page-account.js?v=4"></script>
-<script type="module" src="assets/js/analytics.js"></script>
+<script type="module" src="assets/js/page-account.js?v=7"></script>
 </body>
 </html>

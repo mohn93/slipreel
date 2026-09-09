@@ -36,8 +36,8 @@ class RefreshTransient extends RefreshResult {
 /// the browser (web session), delivered back via the slipreel:// deep link.
 class LicensingApi {
   LicensingApi({String? baseUrl, http.Client? client})
-      : _baseUrl = baseUrl ?? LicensingConfig.apiBaseResolved,
-        _client = client ?? http.Client();
+    : _baseUrl = baseUrl ?? LicensingConfig.apiBaseResolved,
+      _client = client ?? http.Client();
 
   final String _baseUrl;
   final http.Client _client;
@@ -51,14 +51,16 @@ class LicensingApi {
     required String deviceId,
   }) async {
     try {
-      final res = await _client.post(
-        Uri.parse('$_baseUrl/v1/token/refresh'),
-        headers: const {'content-type': 'application/json'},
-        body: jsonEncode({
-          'refresh_token': refreshToken,
-          'device_id': deviceId,
-        }),
-      );
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/v1/token/refresh'),
+            headers: const {'content-type': 'application/json'},
+            body: jsonEncode({
+              'refresh_token': refreshToken,
+              'device_id': deviceId,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
       if (res.statusCode == 401 || res.statusCode == 403) {
         return const RefreshRevoked();
       }

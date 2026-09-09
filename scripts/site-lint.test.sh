@@ -25,6 +25,16 @@ if SITE_DIR="$tmp" bash "$LINT" >/dev/null 2>&1; then
   fail "site-lint.sh must reject an external host (fonts.googleapis.com)"
 fi
 
+# Source citations are navigation, but fetches to the same host remain blocked.
+cat > "$tmp/index.html" <<'HTML'
+<!doctype html><html><body><a href="https://www.loom.com/pricing">Pricing source</a></body></html>
+HTML
+SITE_DIR="$tmp" bash "$LINT" >/dev/null 2>&1 || fail "external anchor navigation should be allowed"
+printf '<script src="https://www.loom.com/tracker.js"></script>\n' >> "$tmp/index.html"
+if SITE_DIR="$tmp" bash "$LINT" >/dev/null 2>&1; then
+  fail "external scripts remain blocked even when host is cited in an anchor"
+fi
+
 # A missing local asset must be caught.
 rm -rf "${tmp:?}"/*
 mkdir -p "$tmp/assets/css"

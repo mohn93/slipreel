@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:slipreel_engine/export/export_pipeline.dart';
+import 'package:slipreel_engine/export/gif_export_pipeline.dart';
 import 'package:slipreel_engine/models/cursor_recording.dart';
 import 'package:slipreel_engine/models/export_settings.dart';
 import 'package:slipreel_engine/models/recording_metadata.dart';
@@ -12,6 +13,22 @@ import 'package:slipreel_engine/state/editor_project_state.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('both pipelines reject the source as destination without deleting it', () async {
+    final dir = await Directory.systemTemp.createTemp('source-guard-');
+    addTearDown(() => dir.delete(recursive: true));
+    final source = await File('test/fixtures/sample_recording.mp4').copy('${dir.path}/source.mp4');
+    final bytes = await source.readAsBytes();
+    final meta = RecordingMetadata(isPureSource: true, recordedAt: DateTime.now(), widthPx: 320, heightPx: 240, fps: 30);
+    for (final format in [ExportFormat.mp4, ExportFormat.gif]) {
+      final settings = ExportSettings(format: format, resolution: ExportResolution.r720p, compression: CompressionTier.web, frameRate: 30, destination: ExportDestination.file);
+      final Future<dynamic> run = format == ExportFormat.mp4
+        ? ExportPipeline(sourcePath: source.path, outputPath: source.path, sourceMetadata: meta, cursorRecording: CursorRecording(), projectState: EditorProjectState.defaults(), settings: settings).run()
+        : GifExportPipeline(sourcePath: source.path, outputPath: source.path, sourceMetadata: meta, cursorRecording: CursorRecording(), projectState: EditorProjectState.defaults(), settings: settings).run();
+      await expectLater(run, throwsArgumentError);
+      expect(await source.readAsBytes(), bytes);
+    }
+  });
 
   group('ExportPipeline', () {
     test(

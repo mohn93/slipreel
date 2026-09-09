@@ -9,8 +9,9 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # Preserve and restore the real file so the test never leaves it stamped to the
 # test's date.
-orig="$(cat "$target")"
-restore() { printf '%s' "$orig" > "$target"; }
+orig="$(mktemp)"
+cp "$target" "$orig"
+restore() { cp "$orig" "$target"; rm -f "$orig"; }
 trap restore EXIT
 
 # explicit date -> exact DateTime.utc line, leading zeros stripped (not octal)

@@ -215,8 +215,8 @@ Future<void> main() async {
     _registerSlipreelDebugExtensions(tipsController: tipsController);
   }
 
-  // Auto-update (macOS only). Construct once, wire Sparkle's feed + daily
-  // background check at startup, and share the same instance with the
+  // Manual updates (macOS only). Construct once, wire Sparkle's feed
+  // at startup, and share the same instance with the
   // Settings "Check for updates" tile via the provider override below.
   final updaterService = UpdaterService(SparkleUpdaterBackend());
   if (Platform.isMacOS) {
@@ -618,6 +618,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   HotkeyController? _hotkeyController;
   SleepObserver? _sleepObserver;
   LongRecordingWatcher? _longWatcher;
+  Timer? _licenseRefreshTimer;
 
   static const _menuChannel = MethodChannel('slipreel/menu');
 
@@ -628,6 +629,9 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _initRecordingSurfaces());
     _wireAnalyticsObservers();
+    _licenseRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      unawaited(ref.read(licensingControllerProvider.notifier).refreshIfNeeded());
+    });
     // Native macOS app-menu items (Settings…, Manage Account) call in here.
     _menuChannel.setMethodCallHandler((call) async {
       if (call.method != 'menuAction') return null;
@@ -773,6 +777,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _licenseRefreshTimer?.cancel();
     _hotkeyController?.dispose();
     _sleepObserver?.dispose();
     _longWatcher?.dispose();
@@ -886,6 +891,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(ref.read(licensingControllerProvider.notifier).refreshIfNeeded());
       // User may have flipped a permission in System Settings; re-probe.
       ref.read(permissionsControllerProvider.notifier).refreshAll();
       // Restart crumb persistence in case a transient `detached` (engine

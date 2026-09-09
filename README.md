@@ -10,8 +10,20 @@ the editor; export to MP4 or GIF.
 
 ## Status
 
-Pre-release. Used daily by the author; not yet packaged for distribution
-(no DMG/sign/notarize/auto-update pipeline — that's the next sub-project).
+Published at [slipreel.app](https://slipreel.app), with a signed, notarized
+universal macOS DMG and Sparkle update feed. Public sharing is pending the
+[release hardening checks](docs/reviews/2026-09-08-release-readiness-review.md).
+The release workflow runs the shared Flutter, website, and Postgres-backed API
+checks before signing and publishing. Older releases are retained for one-time
+licenses; updates are initiated from Settings with a compatibility warning.
+
+The API owns email-verified accounts, Stripe purchases, two-device activation,
+and signed entitlement tokens. Both subscriptions and one-time licenses require
+an online renewal at least every 14 days. Recording media and caption processing
+stay on the Mac; the caption model requires a roughly 488MB first-use download.
+
+See the [current deployment runbook](docs/deploy/release-hardening-runbook.md)
+for migration, validation, rollback, and remaining production checks.
 
 ## Capture
 

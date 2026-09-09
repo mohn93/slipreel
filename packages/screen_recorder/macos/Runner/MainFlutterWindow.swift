@@ -74,6 +74,18 @@ class MainFlutterWindow: NSWindow {
       binaryMessenger: flutterViewController.engine.binaryMessenger)
     deviceChannel.setMethodCallHandler { call, result in
       switch call.method {
+      case "copyFile":
+        guard let path = call.arguments as? String,
+              FileManager.default.fileExists(atPath: path) else {
+          result(FlutterError(code: "FILE_NOT_FOUND", message: "Export file is missing", details: nil))
+          return
+        }
+        NSPasteboard.general.clearContents()
+        if NSPasteboard.general.writeObjects([NSURL(fileURLWithPath: path)]) {
+          result(nil)
+        } else {
+          result(FlutterError(code: "CLIPBOARD_FAILED", message: "Could not copy export", details: nil))
+        }
       case "hardwareId":
         result(MainFlutterWindow.hardwareUUID())
       case "deviceName":

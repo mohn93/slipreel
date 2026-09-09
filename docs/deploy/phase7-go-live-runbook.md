@@ -1,3 +1,9 @@
+> Historical test-environment setup reference. For the deployed service and
+> release-hardening migration, use [the current runbook](release-hardening-runbook.md).
+> Do not copy the old price IDs, amounts, proxy assumptions, or unauthenticated
+> checkout examples below into a live deployment. Current checkout requires
+> verified email sign-in; production configuration must be complete.
+
 # Phase 7 — Go-Live Runbook (test-mode end-to-end)
 
 What this achieves: take the licensing system (PR #65, Phases 1-6) from "all green in test/dev" to a **running deployment** you can click through end-to-end — buy in the browser, the token deep-links back into the app, export unlocks. Everything here stays in **Stripe test mode** (no real charges); §14 covers the later switch to live.

@@ -1,0 +1,11 @@
+.docs { width: min(100% - 40px, 800px); margin: 64px auto; line-height: 1.7; }
+.docs h1 { font-size: clamp(2rem, 6vw, 3.5rem); line-height: 1.1; margin: 32px 0; }
+.docs h2 { margin-top: 36px; font-size: clamp(1.35rem, 4vw, 1.8rem); line-height: 1.3; }
+.docs p, .docs li { color: var(--text-secondary, #b6b6c4); }
+.docs li { margin-bottom: 12px; }
+.docs a { text-decoration: underline; text-underline-offset: 4px; }
+.docs nav { display: flex; gap: 20px; flex-wrap: wrap; }
+.docs .btn { margin: 8px 8px 8px 0; text-decoration: none; }
+.docs time { font-size: .9rem; }
+.docs input { max-width: 100%; }
+@media (prefers-reduced-motion: reduce) { .docs * { scroll-behavior: auto; } }

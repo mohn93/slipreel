@@ -12,6 +12,7 @@ class _SpyStore implements SessionMarkerStore {
   String get path => '';
   List<SessionMarker> markers;
   final List<String> removed = [];
+  bool failRemove = false;
 
   _SpyStore(this.markers);
 
@@ -23,6 +24,7 @@ class _SpyStore implements SessionMarkerStore {
 
   @override
   Future<void> remove(String id) async {
+    if (failRemove) throw StateError("marker disk error");
     removed.add(id);
     markers = markers.where((m) => m.id != id).toList(growable: false);
   }
@@ -60,8 +62,9 @@ void main() {
   test('scan filters out markers whose video file is missing', () async {
     final store = _SpyStore([mk('present'), mk('gone', createVideo: false)]);
     final svc = RecoveryService(
-        markerStore: store,
-        runProcess: (_, __) async => _ok(''));
+      markerStore: store,
+      runProcess: (_, __) async => _ok(''),
+    );
     final candidates = await svc.scan();
     expect(candidates.map((c) => c.marker.id), ['present']);
     expect(store.removed, ['gone']);
@@ -70,8 +73,9 @@ void main() {
   test('scan filters out zero-byte video files', () async {
     final store = _SpyStore([mk('empty', bytes: 0)]);
     final svc = RecoveryService(
-        markerStore: store,
-        runProcess: (_, __) async => _ok(''));
+      markerStore: store,
+      runProcess: (_, __) async => _ok(''),
+    );
     final candidates = await svc.scan();
     expect(candidates, isEmpty);
     expect(store.removed, ['empty']);
@@ -82,19 +86,28 @@ void main() {
     final store = _SpyStore([m]);
     final calls = <String>[];
     final svc = RecoveryService(
-        markerStore: store,
-        runProcess: (exe, args) async {
-          calls.add('$exe ${args.join(' ')}');
-          // Simulate the re-muxed output existing.
-          final output = args.last;
-          File(output).writeAsBytesSync(List.filled(2048, 1));
-          return _ok('Duration: 00:00:30.00');
-        });
+      markerStore: store,
+      runProcess: (exe, args) async {
+        calls.add('$exe ${args.join(' ')}');
+        if (args.contains('json')) {
+          return _ok(
+            '{"streams":[{"codec_type":"video","width":1920,"height":1080},{"codec_type":"audio"},{"codec_type":"audio"}]}',
+          );
+        }
+        if (args.contains('format=duration')) return _ok('30.0');
+        expect(args, containsAllInOrder(['-map', '0:v', '-map', '0:a?']));
+        // Simulate the re-muxed output existing.
+        final output = args.last;
+        File(output).writeAsBytesSync(List.filled(2048, 1));
+        return _ok('Duration: 00:00:30.00');
+      },
+    );
     final cand = (await svc.scan()).single;
     final history = RecordingHistoryStore();
     final out = await svc.recover(cand, history);
     expect(out, endsWith('.recovered.mp4'));
-    expect(calls.first, contains('-c copy'));
+    expect(calls.any((c) => c.contains('-c copy')), isTrue);
+    expect(File(m.videoPath).existsSync(), isFalse);
     expect(store.removed, ['s1']);
     expect((await history.load()).map((e) => e.videoPath), [out]);
   });
@@ -103,21 +116,77 @@ void main() {
     final m = mk('s1', bytes: 4096);
     final store = _SpyStore([m]);
     final svc = RecoveryService(
-        markerStore: store,
-        runProcess: (_, __) async => _err('bad fragment'));
+      markerStore: store,
+      runProcess: (_, __) async => _err('bad fragment'),
+    );
     final cand = (await svc.scan()).single;
     final out = await svc.recover(cand, RecordingHistoryStore());
     expect(out, isNull);
     expect(store.removed, isEmpty); // marker stays, user can try Discard
   });
 
+  test(
+    'marker cleanup failure never deletes committed recovered media',
+    () async {
+      final m = mk('marker-failure');
+      final store = _SpyStore([m])..failRemove = true;
+      final svc = RecoveryService(
+        markerStore: store,
+        runProcess: (_, args) async {
+          if (args.contains('json')) {
+            return _ok('{"streams":[{"codec_type":"video"}]}');
+          }
+          if (args.contains('format=duration')) return _ok('30.0');
+          File(args.last).writeAsBytesSync([1, 2, 3]);
+          return _ok('');
+        },
+      );
+      final history = RecordingHistoryStore();
+      final out = await svc.recover((await svc.scan()).single, history);
+      expect(out, isNotNull);
+      expect(File(out!).existsSync(), isTrue);
+      expect((await history.load()).single.videoPath, out);
+    },
+  );
+
+  test(
+    'recovery keeps original and marker when an audio track is missing',
+    () async {
+      final m = mk('two-audio');
+      final store = _SpyStore([m]);
+      final svc = RecoveryService(
+        markerStore: store,
+        runProcess: (_, args) async {
+          if (args.contains('json')) {
+            final second = args.last == m.videoPath
+                ? ',{"codec_type":"audio"}'
+                : '';
+            return _ok(
+              '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}$second]}',
+            );
+          }
+          File(args.last).writeAsBytesSync([1, 2, 3]);
+          return _ok('');
+        },
+      );
+      expect(
+        await svc.recover((await svc.scan()).single, RecordingHistoryStore()),
+        isNull,
+      );
+      expect(File(m.videoPath).existsSync(), isTrue);
+      expect(store.removed, isEmpty);
+      expect(tmp.listSync().whereType<Directory>(), isEmpty);
+    },
+  );
+
   test('discard deletes partial files + removes the marker', () async {
     final m = mk('s1', bytes: 4096);
     File(m.cursorNdjsonPath).writeAsStringSync('');
     final store = _SpyStore([m]);
     final svc = RecoveryService(
-        markerStore: store,
-        runProcess: (_, __) async => _ok(''));
+      markerStore: store,
+      runProcess: (_, __) async => _ok(''),
+    );
     final cand = (await svc.scan()).single;
     await svc.discard(cand);
     expect(File(m.videoPath).existsSync(), isFalse);

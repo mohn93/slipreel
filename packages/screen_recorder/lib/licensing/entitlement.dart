@@ -30,14 +30,14 @@ bool canExport(
 }) {
   if (claims == null) return false;
   final at = (now ?? DateTime.now()).toUtc();
-  if (at.isAfter(claims.expiresAt)) return false;
+  if (!at.isBefore(claims.expiresAt) || !claims.exportEntitled) return false;
 
   switch (claims.plan) {
     case 'subscription':
       return claims.status == 'active' || claims.status == 'grace';
     case 'onetime':
       final until = claims.updatesUntil;
-      return until != null && !appReleaseDate.isAfter(until);
+      return claims.status == 'active' && until != null && !appReleaseDate.isAfter(until);
     default:
       return false;
   }

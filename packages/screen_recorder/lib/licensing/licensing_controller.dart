@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
@@ -25,17 +27,48 @@ class LicensingController extends StateNotifier<EntitlementState> {
     DateTime Function() now = DateTime.now,
     DeviceFingerprint? fingerprint,
     Future<bool> Function(Uri url)? openUrl,
-  })  : _store = store,
-        _verifier = verifier,
-        _api = api,
-        _authState = authState,
-        _now = now,
-        _fingerprint = fingerprint ?? DeviceFingerprint(),
-        _openUrl = openUrl ?? _defaultOpen,
-        super(const EntitlementLoading());
+  }) : _store = store,
+       _verifier = verifier,
+       _api = api,
+       _authState = authState,
+       _now = now,
+       _fingerprint = fingerprint ?? DeviceFingerprint(),
+       _openUrl = openUrl ?? _defaultOpen,
+       super(const EntitlementLoading());
 
   final signInFeedback = SignInFeedbackController();
   Uri? _lastAuthCallback;
+  final Set<Uri> _authCallbacksInFlight = {};
+  Future<void>? _refreshing;
+  DateTime? _lastRefreshAttempt;
+  int _credentialGeneration = 0;
+  Future<void> _writes = Future.value();
+
+  Future<void> _write(Future<void> Function() operation) {
+    final next = _writes.then((_) => operation());
+    _writes = next.catchError((Object _) {});
+    return next;
+  }
+
+  /// Retry offline renewals at most once per minute. Refresh daily while open,
+  /// and immediately when credentials are near expiry before an export.
+  Future<void> refreshIfNeeded() async {
+    if (_refreshing != null) return _refreshing!;
+    final at = _now();
+    if (_lastRefreshAttempt != null &&
+        at.difference(_lastRefreshAttempt!) < const Duration(minutes: 1)) {
+      return;
+    }
+    final current = state;
+    if (current is EntitlementLoaded &&
+        at.isBefore(
+          current.claims.expiresAt.subtract(const Duration(days: 1)),
+        ) &&
+        at.difference(current.claims.issuedAt) < const Duration(days: 1)) {
+      return;
+    }
+    await refreshNow();
+  }
 
   final LicenseStore _store;
   final EntitlementVerifier _verifier;
@@ -56,7 +89,9 @@ class LicensingController extends StateNotifier<EntitlementState> {
       state = const EntitlementSignedOut();
       return;
     }
-    final claims = await _verifier.verify(tokens.token, now: _now());
+    // Keep signed expired claims for accurate offline-renewal UI. Export gating
+    // still checks expiry; this never grants access from an expired token.
+    final claims = await _verifier.verify(tokens.token, now: _now(), ignoreExpiry: true);
     state = claims == null
         ? const EntitlementSignedOut()
         : EntitlementLoaded(claims);
@@ -69,27 +104,55 @@ class LicensingController extends StateNotifier<EntitlementState> {
   ///   removed from the account) — clear credentials and lock (signed-out).
   /// - [RefreshTransient]: offline/unknown — keep the current state; offline
   ///   grace lives in the cached token's own exp.
-  Future<void> refreshNow() async {
-    final tokens = await _store.load();
-    if (tokens == null) return;
-    final result = await _api.refresh(
-      refreshToken: tokens.refreshToken,
-      deviceId: tokens.deviceId,
-    );
-    switch (result) {
-      case RefreshOk(:final token):
-        final claims = await _verifier.verify(token, now: _now());
-        if (claims == null) return;
-        await _store.save(LicenseTokens(
-          token: token,
-          refreshToken: tokens.refreshToken,
-          deviceId: tokens.deviceId,
-        ));
-        state = EntitlementLoaded(claims);
-      case RefreshRevoked():
-        await signOut();
-      case RefreshTransient():
-        return;
+  Future<void> refreshNow() {
+    return _refreshing ??= _refresh().whenComplete(() => _refreshing = null);
+  }
+
+  Future<void> _refresh() async {
+    final generation = _credentialGeneration;
+    _lastRefreshAttempt = _now();
+    try {
+      final tokens = await _store.load();
+      if (tokens == null || generation != _credentialGeneration) return;
+      final result = await _api
+          .refresh(refreshToken: tokens.refreshToken, deviceId: tokens.deviceId)
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => const RefreshTransient(),
+          );
+      if (!mounted || generation != _credentialGeneration) return;
+      switch (result) {
+        case RefreshOk(:final token):
+          final claims = await _verifier.verify(token, now: _now());
+          if (claims == null || claims.deviceId != tokens.deviceId) return;
+          await _write(() async {
+            if (!mounted || generation != _credentialGeneration) return;
+            await _store.save(
+              LicenseTokens(
+                token: token,
+                refreshToken: tokens.refreshToken,
+                deviceId: tokens.deviceId,
+              ),
+            );
+            if (mounted && generation == _credentialGeneration) {
+              state = EntitlementLoaded(claims);
+            }
+          });
+        case RefreshRevoked():
+          // A background rejection must not consume a browser sign-in nonce
+          // that the user just requested (especially after a security reset).
+          await _write(() async {
+            if (!mounted || generation != _credentialGeneration) return;
+            await _store.clear();
+            if (mounted && generation == _credentialGeneration) {
+              state = const EntitlementSignedOut();
+            }
+          });
+        case RefreshTransient():
+          return;
+      }
+    } catch (_) {
+      // Offline or unavailable local storage: preserve the existing license.
     }
   }
 
@@ -100,29 +163,38 @@ class LicensingController extends StateNotifier<EntitlementState> {
   Future<void> handleDeepLink(Uri uri) async {
     if (uri.scheme != 'slipreel' || uri.host != 'auth') return;
     // app_links may deliver the initial callback again on its stream.
-    if (uri == _lastAuthCallback) return;
-    _lastAuthCallback = uri;
+    if (uri == _lastAuthCallback || !_authCallbacksInFlight.add(uri)) return;
     try {
       final nonce = uri.queryParameters['state'] ?? '';
       if (nonce.isEmpty || !await _authState.matches(nonce)) {
-        signInFeedback.show(const SignInFeedback(
-          'Sign-in link expired',
-          'This link does not match the sign-in started on this Mac. '
-          'Start sign-in again from Slipreel and use the newest email link.',
-          action: 'signin',
-        ));
+        signInFeedback.show(
+          const SignInFeedback(
+            'Sign-in link expired',
+            'This link does not match the sign-in started on this Mac. '
+                'Start sign-in again from Slipreel and use the newest email link.',
+            action: 'signin',
+          ),
+        );
         return;
       }
       final error = uri.queryParameters['error'];
       if (error != null) {
         await _authState.clear();
-        signInFeedback.show(error == 'seat_limit'
-            ? const SignInFeedback('Device limit reached',
-                'This account has reached its device limit. Remove a device '
-                'from your account, then sign in again on this Mac.')
-            : const SignInFeedback('Could not activate this Mac',
-                'Your browser sign-in succeeded, but this Mac could not be '
-                'activated. Please try signing in again.', action: 'signin'));
+        _lastAuthCallback = uri;
+        signInFeedback.show(
+          error == 'seat_limit'
+              ? const SignInFeedback(
+                  'Device limit reached',
+                  'This account has reached its device limit. Remove a device '
+                      'from your account, then sign in again on this Mac.',
+                )
+              : const SignInFeedback(
+                  'Could not activate this Mac',
+                  'Your browser sign-in succeeded, but this Mac could not be '
+                      'activated. Please try signing in again.',
+                  action: 'signin',
+                ),
+        );
         return;
       }
       final link = AuthDeepLink.parse(uri);
@@ -130,46 +202,88 @@ class LicensingController extends StateNotifier<EntitlementState> {
           ? null
           : await _verifier.verify(link.token, now: _now());
       if (link == null || claims == null || claims.deviceId != link.deviceId) {
-        signInFeedback.show(const SignInFeedback('Could not verify sign-in',
+        signInFeedback.show(
+          const SignInFeedback(
+            'Could not verify sign-in',
             'The activation link is invalid or expired. Request a new sign-in '
-            'link from Slipreel.', action: 'signin'));
+                'link from Slipreel.',
+            action: 'signin',
+          ),
+        );
         return;
       }
-      await _store.save(LicenseTokens(
-        token: link.token, refreshToken: link.refresh, deviceId: link.deviceId,
-      ));
-      await _authState.clear();
+      final generation = ++_credentialGeneration;
+      await _write(() async {
+        if (!mounted || generation != _credentialGeneration) return;
+        await _store.save(
+          LicenseTokens(
+            token: link.token,
+            refreshToken: link.refresh,
+            deviceId: link.deviceId,
+          ),
+        );
+        await _authState.clear();
+      });
+      if (!mounted || generation != _credentialGeneration) return;
+      _lastAuthCallback = uri;
       state = EntitlementLoaded(claims);
-      final reason = paywallReasonFor(state,
-          appReleaseDate: buildReleaseDate, now: _now());
+      final reason = paywallReasonFor(
+        state,
+        appReleaseDate: buildReleaseDate,
+        now: _now(),
+      );
       if (reason == null) {
-        signInFeedback.show(SignInFeedback('Signed in successfully',
-          claims.plan == 'onetime'
-              ? 'Your one-time license is active on this Mac. Unlimited exports are unlocked.'
-              : 'Your subscription is active on this Mac. Unlimited exports are unlocked.'));
+        signInFeedback.show(
+          SignInFeedback(
+            'Signed in successfully',
+            claims.plan == 'onetime'
+                ? 'Your one-time license is active on this Mac. Unlimited exports are unlocked.'
+                : 'Your subscription is active on this Mac. Unlimited exports are unlocked.',
+          ),
+        );
       } else if (reason == PaywallReason.updateCeiling) {
-        signInFeedback.show(const SignInFeedback('Signed in — update renewal needed',
+        signInFeedback.show(
+          const SignInFeedback(
+            'Signed in — update renewal needed',
             'Your one-time license covers an earlier version of Slipreel. '
-            'Keep exporting with that version, or renew updates to unlock this version.'));
+                'Keep exporting with that version, or renew updates to unlock this version.',
+          ),
+        );
       } else if (reason == PaywallReason.subscriptionLapsed) {
-        signInFeedback.show(const SignInFeedback('Signed in — subscription inactive',
-            'Your subscription is not active. Manage your subscription to restore unlimited exports.'));
+        signInFeedback.show(
+          const SignInFeedback(
+            'Signed in — subscription inactive',
+            'Your subscription is not active. Manage your subscription to restore unlimited exports.',
+          ),
+        );
       } else {
-        signInFeedback.show(const SignInFeedback('Signed in — no active license',
+        signInFeedback.show(
+          const SignInFeedback(
+            'Signed in — no active license',
             'This account has no active subscription or one-time license. '
-            'Any remaining free exports are still available on this Mac. '
-            'Choose a plan to unlock unlimited exports.', action: 'pricing'));
+                'Any remaining free exports are still available on this Mac. '
+                'Choose a plan to unlock unlimited exports.',
+            action: 'pricing',
+          ),
+        );
       }
     } catch (_) {
       // Do not expose/log callback tokens, file paths, or transport errors.
-      signInFeedback.show(const SignInFeedback('Sign-in could not finish',
+      signInFeedback.show(
+        const SignInFeedback(
+          'Sign-in could not finish',
           'Slipreel could not verify or save your sign-in. Please try again.',
-          action: 'signin'));
+          action: 'signin',
+        ),
+      );
+    } finally {
+      _authCallbacksInFlight.remove(uri);
     }
   }
 
   Future<bool> openAccount() => _openUrl(
-      Uri.parse(LicensingConfig.siteBaseResolved).replace(path: '/account'));
+    Uri.parse(LicensingConfig.siteBaseResolved).replace(path: '/account'),
+  );
 
   /// Start the browser purchase/sign-in flow. Generates a fresh nonce, then
   /// opens `${site}/pricing?device=<fp>&state=<nonce>`. Returns whether the
@@ -179,7 +293,10 @@ class LicensingController extends StateNotifier<EntitlementState> {
     final name = await _fingerprint.describe();
     final nonce = await _authState.begin();
     final url = _authState.pricingUrl(
-        deviceFingerprint: fp, state: nonce, deviceName: name);
+      deviceFingerprint: fp,
+      state: nonce,
+      deviceName: name,
+    );
     return _openUrl(url);
   }
 
@@ -190,7 +307,10 @@ class LicensingController extends StateNotifier<EntitlementState> {
     final name = await _fingerprint.describe();
     final nonce = await _authState.begin();
     final url = _authState.loginUrl(
-        deviceFingerprint: fp, state: nonce, deviceName: name);
+      deviceFingerprint: fp,
+      state: nonce,
+      deviceName: name,
+    );
     return _openUrl(url);
   }
 
@@ -198,18 +318,22 @@ class LicensingController extends StateNotifier<EntitlementState> {
   /// (Server-side seat release via DELETE /v1/devices/:id is done from the web
   /// account page; a native call can be added later.)
   Future<void> signOut() async {
-    await _store.clear();
-    await _authState.clear();
-    state = const EntitlementSignedOut();
+    ++_credentialGeneration;
+    await _write(() async {
+      await _store.clear();
+      await _authState.clear();
+    });
+    if (mounted) state = const EntitlementSignedOut();
   }
 }
 
 /// Overridden in main.dart with the fully-wired instance.
 final licensingControllerProvider =
     StateNotifierProvider<LicensingController, EntitlementState>((ref) {
-  throw UnimplementedError(
-      'licensingControllerProvider must be overridden in main.dart');
-});
+      throw UnimplementedError(
+        'licensingControllerProvider must be overridden in main.dart',
+      );
+    });
 
 /// Read-only entitlement state for gates/UI.
 final entitlementProvider = Provider<EntitlementState>(

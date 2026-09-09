@@ -62,10 +62,7 @@ final class CameraSidecarWriter {
       guard !isStarted else { throw WriterError.alreadyStarted }
       try? FileManager.default.removeItem(at: outputURL)
       let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
-      // No movieFragmentInterval: the camera sidecar is secondary to the primary
-      // screen recording (which carries its own crash-resilient fragmentation).
-      // A crash loses at most the webcam track, never the screen recording, so
-      // fragmenting the .mov here isn't worth the runtime warning it can trigger.
+      writer.movieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
 
       let settings: [String: Any] = [
         AVVideoCodecKey: AVVideoCodecType.h264,
@@ -99,6 +96,7 @@ final class CameraSidecarWriter {
           return
         }
         writer.startSession(atSourceTime: pts)
+        try? String(CMTimeGetSeconds(pts)).write(to: outputURL.appendingPathExtension("start-time"), atomically: true, encoding: .utf8)
         // PTS here is on the host time clock (same as SCStream); record seconds.
         firstSampleHostSeconds = CMTimeGetSeconds(pts)
         writerActive = true

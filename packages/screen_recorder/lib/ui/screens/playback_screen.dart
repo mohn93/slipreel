@@ -2145,7 +2145,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         path: widget.videoPath,
         metadataFps: meta.fps,
       );
-      videoDuration = probed.durationSec != null
+      videoDuration = projectForExport.timeline.clips.isNotEmpty
+          ? totalEditedDuration(projectForExport.timeline.clips)
+          : probed.durationSec != null
           ? Duration(milliseconds: (probed.durationSec! * 1000).round())
           : Duration.zero;
 
@@ -2154,6 +2156,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       // Export gate (spec §2/§9). If not entitled, show the paywall instead of
       // the export dialog. The sheet auto-advances (returns true) if the user
       // becomes entitled via the browser flow while it's open.
+      await ref.read(licensingControllerProvider.notifier).refreshIfNeeded();
+      if (!mounted) return;
       final entitlementState = ref.read(entitlementProvider);
       final trial = ref.read(trialExportsProvider);
       final paid = canExportNow(
@@ -2235,7 +2239,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     if (settings == null || !mounted) return;
 
     // ── GIF >60s gate ──────────────────────────────────────────────────
-    if (settings.format == ExportFormat.gif && videoDuration.inSeconds > 60) {
+    if (settings.format == ExportFormat.gif &&
+        videoDuration > const Duration(seconds: 60)) {
       AppAlerts.warning(
         'GIF export is limited to clips of 60 seconds or less. '
         'Try MP4 instead.',

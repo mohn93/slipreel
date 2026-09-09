@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:screen_recorder/services/destination_handlers.dart';
 
 // ---------------------------------------------------------------------------
@@ -25,42 +26,76 @@ class _ClipboardRecorder {
 // ---------------------------------------------------------------------------
 
 void main() {
-  group('FileSaver', () {
-    test('resolveOutputPath calls the save dialog with the suggested name', () async {
-      String? capturedName;
-      final saver = FileSaver(
-        saveDialog: (name) async {
-          capturedName = name;
-          return '/chosen/path/recording_001.mp4';
-        },
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'native clipboard delivery sends a file reference and offers reveal',
+    () async {
+      const channel = MethodChannel('slipreel/device');
+      MethodCall? received;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            received = call;
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
       );
+      final result = await ClipboardCopier().deliver('/tmp/export.mp4');
+      expect(received!.method, 'copyFile');
+      expect(received!.arguments, '/tmp/export.mp4');
+      expect(result.revealPath, '/tmp/export.mp4');
+      expect(result.copiedToClipboard, isTrue);
+    },
+    skip: !Platform.isMacOS,
+  );
 
-      final result =
-          await saver.resolveOutputPath(suggestedFileName: 'recording_001.mp4');
+  group('FileSaver', () {
+    test(
+      'resolveOutputPath calls the save dialog with the suggested name',
+      () async {
+        String? capturedName;
+        final saver = FileSaver(
+          saveDialog: (name) async {
+            capturedName = name;
+            return '/chosen/path/recording_001.mp4';
+          },
+        );
 
-      expect(capturedName, 'recording_001.mp4');
-      expect(result, '/chosen/path/recording_001.mp4');
-    });
+        final result = await saver.resolveOutputPath(
+          suggestedFileName: 'recording_001.mp4',
+        );
 
-    test('resolveOutputPath returns null when the dialog returns null (user cancelled)',
-        () async {
-      final saver = FileSaver(saveDialog: (_) async => null);
+        expect(capturedName, 'recording_001.mp4');
+        expect(result, '/chosen/path/recording_001.mp4');
+      },
+    );
 
-      final result =
-          await saver.resolveOutputPath(suggestedFileName: 'recording_001.mp4');
+    test(
+      'resolveOutputPath returns null when the dialog returns null (user cancelled)',
+      () async {
+        final saver = FileSaver(saveDialog: (_) async => null);
 
-      expect(result, isNull);
-    });
+        final result = await saver.resolveOutputPath(
+          suggestedFileName: 'recording_001.mp4',
+        );
 
-    test('deliver returns a result with revealPath set and a sane message', () async {
-      final saver = FileSaver(saveDialog: (_) async => null);
+        expect(result, isNull);
+      },
+    );
 
-      final result = await saver.deliver('/exports/recording_001.mp4');
+    test(
+      'deliver returns a result with revealPath set and a sane message',
+      () async {
+        final saver = FileSaver(saveDialog: (_) async => null);
 
-      expect(result.revealPath, '/exports/recording_001.mp4');
-      expect(result.message, contains('recording_001.mp4'));
-      expect(result.copiedToClipboard, isFalse);
-    });
+        final result = await saver.deliver('/exports/recording_001.mp4');
+
+        expect(result.revealPath, '/exports/recording_001.mp4');
+        expect(result.message, contains('recording_001.mp4'));
+        expect(result.copiedToClipboard, isFalse);
+      },
+    );
 
     test('deliver message begins with "Export complete:"', () async {
       final saver = FileSaver(saveDialog: (_) async => null);
@@ -99,70 +134,78 @@ void main() {
       expect(path!, startsWith(tmpDir.path));
     });
 
-    test('resolveOutputPath uses the extension from the suggested name (.mp4)',
-        () async {
-      final copier = ClipboardCopier(
-        tempDirProvider: _fakeTmpDir(tmpDir),
-        clipboardWrite: clipboard.write,
-      );
+    test(
+      'resolveOutputPath uses the extension from the suggested name (.mp4)',
+      () async {
+        final copier = ClipboardCopier(
+          tempDirProvider: _fakeTmpDir(tmpDir),
+          clipboardWrite: clipboard.write,
+        );
 
-      final path = await copier.resolveOutputPath(
-        suggestedFileName: 'recording_123.mp4',
-      );
+        final path = await copier.resolveOutputPath(
+          suggestedFileName: 'recording_123.mp4',
+        );
 
-      expect(path, endsWith('.mp4'));
-    });
+        expect(path, endsWith('.mp4'));
+      },
+    );
 
-    test('resolveOutputPath uses the extension from the suggested name (.gif)',
-        () async {
-      final copier = ClipboardCopier(
-        tempDirProvider: _fakeTmpDir(tmpDir),
-        clipboardWrite: clipboard.write,
-      );
+    test(
+      'resolveOutputPath uses the extension from the suggested name (.gif)',
+      () async {
+        final copier = ClipboardCopier(
+          tempDirProvider: _fakeTmpDir(tmpDir),
+          clipboardWrite: clipboard.write,
+        );
 
-      final path = await copier.resolveOutputPath(
-        suggestedFileName: 'animation.gif',
-      );
+        final path = await copier.resolveOutputPath(
+          suggestedFileName: 'animation.gif',
+        );
 
-      expect(path, endsWith('.gif'));
-    });
+        expect(path, endsWith('.gif'));
+      },
+    );
 
-    test('resolveOutputPath always returns a non-null path (no user prompt)',
-        () async {
-      final copier = ClipboardCopier(
-        tempDirProvider: _fakeTmpDir(tmpDir),
-        clipboardWrite: clipboard.write,
-      );
+    test(
+      'resolveOutputPath always returns a non-null path (no user prompt)',
+      () async {
+        final copier = ClipboardCopier(
+          tempDirProvider: _fakeTmpDir(tmpDir),
+          clipboardWrite: clipboard.write,
+        );
 
-      final path1 = await copier.resolveOutputPath(
-        suggestedFileName: 'a.mp4',
-      );
-      final path2 = await copier.resolveOutputPath(
-        suggestedFileName: 'b.mp4',
-      );
+        final path1 = await copier.resolveOutputPath(
+          suggestedFileName: 'a.mp4',
+        );
+        final path2 = await copier.resolveOutputPath(
+          suggestedFileName: 'b.mp4',
+        );
 
-      expect(path1, isNotNull);
-      expect(path2, isNotNull);
-    });
+        expect(path1, isNotNull);
+        expect(path2, isNotNull);
+      },
+    );
 
-    test('two consecutive resolveOutputPath calls return distinct paths',
-        () async {
-      final copier = ClipboardCopier(
-        tempDirProvider: _fakeTmpDir(tmpDir),
-        clipboardWrite: clipboard.write,
-      );
+    test(
+      'two consecutive resolveOutputPath calls return distinct paths',
+      () async {
+        final copier = ClipboardCopier(
+          tempDirProvider: _fakeTmpDir(tmpDir),
+          clipboardWrite: clipboard.write,
+        );
 
-      final path1 = await copier.resolveOutputPath(
-        suggestedFileName: 'recording.mp4',
-      );
-      final path2 = await copier.resolveOutputPath(
-        suggestedFileName: 'recording.mp4',
-      );
+        final path1 = await copier.resolveOutputPath(
+          suggestedFileName: 'recording.mp4',
+        );
+        final path2 = await copier.resolveOutputPath(
+          suggestedFileName: 'recording.mp4',
+        );
 
-      expect(path1, isNotNull);
-      expect(path2, isNotNull);
-      expect(path1, isNot(path2));
-    });
+        expect(path1, isNotNull);
+        expect(path2, isNotNull);
+        expect(path1, isNot(path2));
+      },
+    );
 
     test('deliver puts the absolute path on the clipboard', () async {
       final copier = ClipboardCopier(
@@ -206,8 +249,7 @@ void main() {
     late _ClipboardRecorder clipboard;
 
     setUp(() async {
-      tmpDir =
-          await Directory.systemTemp.createTemp('shareable_link_test_');
+      tmpDir = await Directory.systemTemp.createTemp('shareable_link_test_');
       clipboard = _ClipboardRecorder();
     });
 
@@ -242,24 +284,26 @@ void main() {
       expect(path, isNotNull);
     });
 
-    test('two consecutive resolveOutputPath calls return distinct paths',
-        () async {
-      final publisher = ShareableLinkPublisher(
-        tempDirProvider: _fakeTmpDir(tmpDir),
-        clipboardWrite: clipboard.write,
-      );
+    test(
+      'two consecutive resolveOutputPath calls return distinct paths',
+      () async {
+        final publisher = ShareableLinkPublisher(
+          tempDirProvider: _fakeTmpDir(tmpDir),
+          clipboardWrite: clipboard.write,
+        );
 
-      final path1 = await publisher.resolveOutputPath(
-        suggestedFileName: 'recording.mp4',
-      );
-      final path2 = await publisher.resolveOutputPath(
-        suggestedFileName: 'recording.mp4',
-      );
+        final path1 = await publisher.resolveOutputPath(
+          suggestedFileName: 'recording.mp4',
+        );
+        final path2 = await publisher.resolveOutputPath(
+          suggestedFileName: 'recording.mp4',
+        );
 
-      expect(path1, isNotNull);
-      expect(path2, isNotNull);
-      expect(path1, isNot(path2));
-    });
+        expect(path1, isNotNull);
+        expect(path2, isNotNull);
+        expect(path1, isNot(path2));
+      },
+    );
 
     test('deliver puts a file:// URL on the clipboard', () async {
       final publisher = ShareableLinkPublisher(
@@ -273,21 +317,23 @@ void main() {
       expect(clipboard.lastText, Uri.file(outputPath).toString());
     });
 
-    test('deliver URL-encodes special characters in paths (e.g., spaces)',
-        () async {
-      final publisher = ShareableLinkPublisher(
-        tempDirProvider: _fakeTmpDir(tmpDir),
-        clipboardWrite: clipboard.write,
-      );
+    test(
+      'deliver URL-encodes special characters in paths (e.g., spaces)',
+      () async {
+        final publisher = ShareableLinkPublisher(
+          tempDirProvider: _fakeTmpDir(tmpDir),
+          clipboardWrite: clipboard.write,
+        );
 
-      const outputPath = '/tmp/has space/slipreel_export.mp4';
-      await publisher.deliver(outputPath);
+        const outputPath = '/tmp/has space/slipreel_export.mp4';
+        await publisher.deliver(outputPath);
 
-      final expectedUrl = Uri.file(outputPath).toString();
-      expect(clipboard.lastText, expectedUrl);
-      // Verify that the URL contains the encoded space
-      expect(expectedUrl, contains('%20'));
-    });
+        final expectedUrl = Uri.file(outputPath).toString();
+        expect(clipboard.lastText, expectedUrl);
+        // Verify that the URL contains the encoded space
+        expect(expectedUrl, contains('%20'));
+      },
+    );
 
     test('deliver returns copiedToClipboard: true', () async {
       final publisher = ShareableLinkPublisher(

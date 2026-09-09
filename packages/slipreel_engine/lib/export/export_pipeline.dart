@@ -1,3 +1,4 @@
+import 'safe_export_output.dart';
 import '../audio/music_graph.dart';
 // packages/screen_recorder/lib/export/export_pipeline.dart
 import 'dart:async';
@@ -124,6 +125,46 @@ class ExportPipeline {
     if (cancelToken?.isCancelled ?? false) {
       throw const ExportCancelledException();
     }
+    final staged = await SafeExportOutput.create(outputPath, [
+      sourcePath,
+      CameraSidecarMeta.moviePathForVideo(sourcePath),
+      if (projectState.timeline.music != null)
+        projectState.timeline.music!.path,
+    ]);
+    try {
+      final result = await _run(
+        outputPath: staged.path,
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+      );
+      if (cancelToken?.isCancelled ?? false) {
+        throw const ExportCancelledException();
+      }
+      final verified = await ffmpegProbe(
+        path: staged.path,
+        metadataFps: sourceMetadata.fps,
+      );
+      if (verified.width <= 0 || verified.height <= 0) {
+        throw StateError('Export validation failed.');
+      }
+      if (cancelToken?.isCancelled ?? false) {
+        throw const ExportCancelledException();
+      }
+      await staged.publish();
+      return result;
+    } finally {
+      await staged.dispose();
+    }
+  }
+
+  Future<ExportPerfSummary> _run({
+    required String outputPath,
+    void Function(double progress)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    if (cancelToken?.isCancelled ?? false) {
+      throw const ExportCancelledException();
+    }
     // ffprobe is authoritative for dimensions. Recording metadata
     // stores the *capture* width/height returned by the native plugin,
     // which can differ from what the encoder actually wrote to the
@@ -200,7 +241,9 @@ class ExportPipeline {
         music.segmentDuration > 0 &&
         music.length(outputDurationSec) > 0;
     if (hasMusic && !await File(music.path).exists()) {
-      throw StateError('Background audio is missing. Replace it in the Audio panel.');
+      throw StateError(
+        'Background audio is missing. Replace it in the Audio panel.',
+      );
     }
     final progressClips = slicedState.timeline.clips;
     final skipMargin = Duration(

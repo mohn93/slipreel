@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   push:
     branches: [main]
   pull_request:
@@ -26,6 +27,22 @@ jobs:
       # The deploy guard protects the webroot the release pipeline publishes
       # appcast.xml into, so it has to run on every PR, not on request.
       - run: melos run test_site --no-select
+      - name: Release script regression checks
+        run: |
+          bash scripts/update-appcast.test.sh
+          bash scripts/stamp-build-date.test.sh
+          bash scripts/lib/version.test.sh
+      - name: Native writer and geometry regressions
+        working-directory: packages/screen_recorder_macos/example/macos
+        run: |
+          pod install
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner \
+            -destination 'platform=macOS' -derivedDataPath "$RUNNER_TEMP/native-tests" \
+            test -only-testing:RunnerTests/LiveRecordingWriterStopTests \
+            -only-testing:RunnerTests/FirstFrameTimingTests \
+            -only-testing:RunnerTests/CursorCoordinateMapperTests \
+            -only-testing:RunnerTests/RegionSelectorStateTests \
+            -only-testing:RunnerTests/RegionToolbarPositionTests CODE_SIGNING_ALLOWED=NO
 
   test-linux:
     name: Test (Linux)
@@ -47,3 +64,34 @@ jobs:
       # packages can't be unit-tested without a real native runner — the full
       # suite runs on the macOS job. See the `test_portable` script in melos.yaml.
       - run: melos run test_portable --no-select
+
+  backend:
+    name: Backend (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: slipreel_test
+          POSTGRES_PASSWORD: test_only
+          POSTGRES_DB: slipreel_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U slipreel_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: server
+    env:
+      TEST_DATABASE_URL: postgres://slipreel_test:test_only@localhost:5432/slipreel_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --audit-level=high

@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'updater_backend.dart';
 
-/// Owns the Sparkle feed URL and the scheduled-check lifecycle. Kept free of
+/// Owns the Sparkle feed URL and manual update checks. Kept free of
 /// plugin types (the backend is injected) so it is unit-testable and so no
 /// Sparkle detail leaks into widgets — the UI only ever calls
 /// [checkForUpdates].
@@ -13,18 +13,14 @@ class UpdaterService {
   bool _initialized = false;
 
   /// GitHub-Pages-hosted appcast. Mirrors `SUFeedURL` in Info.plist.
-  static const String feedUrl =
-      'https://slipreel.app/appcast.xml';
+  static const String feedUrl = 'https://slipreel.app/appcast.xml';
 
-  /// Daily background check (seconds). Sparkle's minimum honored value is 3600.
-  static const int scheduledCheckInterval = 86400;
-
-  /// Point Sparkle at the feed and enable the daily background check. Safe to
+  /// Point Sparkle at the feed. Automatic checks are disabled before native
+  /// plugin initialization so Settings can explain license compatibility. Safe to
   /// call more than once; only the first call configures the updater.
   Future<void> init() async {
     if (_initialized) return;
     await _backend.setFeedURL(feedUrl);
-    await _backend.setScheduledCheckInterval(scheduledCheckInterval);
     _initialized = true;
   }
 

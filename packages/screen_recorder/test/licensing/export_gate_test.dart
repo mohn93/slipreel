@@ -55,6 +55,17 @@ void main() {
       final s = EntitlementLoaded(_claims(plan: 'subscription', status: 'active'));
       expect(paywallReasonFor(s, appReleaseDate: release), isNull);
     });
+    test('expired paid license requests verification, not another purchase', () {
+      final s = EntitlementLoaded(_claims(plan: 'onetime', status: 'active',
+          updatesUntil: DateTime.utc(2027)));
+      expect(paywallReasonFor(s, appReleaseDate: release,
+          now: DateTime.utc(2030)), PaywallReason.licenseCheckRequired);
+    });
+    test('server export denial overrides otherwise active claims', () {
+      final s = EntitlementLoaded(_claims(plan: 'subscription', status: 'active',
+          exportEntitled: false));
+      expect(canExportNow(s, appReleaseDate: release), isFalse);
+    });
     test('signed out -> needsPurchase', () {
       expect(paywallReasonFor(const EntitlementSignedOut(), appReleaseDate: release),
           PaywallReason.needsPurchase);

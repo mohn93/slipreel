@@ -3,107 +3,54 @@ import type pg from 'pg';
 import { testPool, resetDatabase } from './helpers/testDb.js';
 import { runMigrations } from '../src/migrate.js';
 import { makeLicensingApp } from './helpers/licensing.js';
+import {handleStripeEvent} from '../src/billing/entitlements.js';
+import type Stripe from 'stripe';
+import { createSession } from '../src/auth/sessions.js';
 
-describe('auth routes', () => {
+describe('verified checkout completion', () => {
   let pool: pg.Pool;
+  let cookie: string;
   beforeAll(async () => { pool = testPool(); await resetDatabase(pool); await runMigrations(pool); });
   afterAll(async () => { await pool.end(); });
   beforeEach(async () => {
-    await pool.query('DELETE FROM sessions'); await pool.query('DELETE FROM users');
-    await pool.query('DELETE FROM consumed_checkout_sessions');
-    await pool.query("INSERT INTO users (id, email, stripe_customer_id) VALUES ('u_c','c@e.com','cus_c')");
+    await pool.query('DELETE FROM users'); await pool.query('DELETE FROM processed_stripe_events'); await pool.query('DELETE FROM failed_checkouts');
+    await pool.query("INSERT INTO users (id,email,stripe_customer_id,email_verified) VALUES ('u_c','c@e.com','cus_c',true)");
+    cookie = `slipreel_session=${(await createSession(pool,'u_c')).token}`;
   });
-
-  it('session-from-checkout on a complete session sets a cookie and returns the user', async () => {
-    const { app } = await makeLicensingApp(pool, {
-      session: { status: 'complete', customer: 'cus_c', created: Math.floor(Date.now() / 1000) },
-    });
-    const res = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
-      payload: { checkout_session_id: 'cs_1' } });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().user).toEqual({ id: 'u_c', email: 'c@e.com' });
-    expect(String(res.headers['set-cookie'])).toContain('slipreel_session=');
+  it('never turns a leaked checkout ID into a login', async () => {
+    const {app} = await makeLicensingApp(pool,{session:{status:'complete',customer:'cus_c'}});
+    const res = await app.inject({method:'POST',url:'/v1/auth/session-from-checkout',payload:{checkout_session_id:'cs_leaked'}});
+    expect(res.statusCode).toBe(401); expect(res.headers['set-cookie']).toBeUndefined(); await app.close();
+  });
+  it('rejects another customer even with a verified session', async () => {
+    const {app} = await makeLicensingApp(pool,{session:{status:'complete',customer:'cus_victim'}});
+    const res = await app.inject({method:'POST',url:'/v1/auth/session-from-checkout',headers:{cookie},payload:{checkout_session_id:'cs_victim'}});
+    expect(res.statusCode).toBe(403); await app.close();
+  });
+  it('pending payments can be retried without consuming activation and fulfill once before webhook', async () => {
+    const session = {id:'cs_1',status:'complete',mode:'payment',payment_status:'unpaid',payment_intent:'pi_1',customer:'cus_c',metadata:{device:'fp',state:'nonce'}};
+    const {app} = await makeLicensingApp(pool,{session});
+    const request = () => app.inject({method:'POST',url:'/v1/auth/session-from-checkout',headers:{cookie},payload:{checkout_session_id:'cs_1'}});
+    expect((await request()).statusCode).toBe(202);
+    session.payment_status = 'paid';
+    const first = await request(); expect(first.statusCode).toBe(200); expect(first.json()).toMatchObject({device:'fp',state:'nonce'});
+    expect(first.headers['set-cookie']).toBeUndefined(); expect((await request()).statusCode).toBe(200);
+    expect((await pool.query('SELECT * FROM purchase_grants')).rows).toHaveLength(1); await app.close();
+  });
+  it('returns terminal failures, but a later settled payment can still recover', async () => {
+    const session = {id:'cs_fail',status:'complete',mode:'payment',payment_status:'unpaid',payment_intent:'pi_fail',customer:'cus_c'};
+    const {app}=await makeLicensingApp(pool,{session});
+    await handleStripeEvent(pool,{id:'failed_event',type:'checkout.session.async_payment_failed',data:{object:session}} as Stripe.Event);
+    const request=()=>app.inject({method:'POST',url:'/v1/auth/session-from-checkout',headers:{cookie},payload:{checkout_session_id:session.id}});
+    expect((await request()).statusCode).toBe(402);
+    session.payment_status='paid';expect((await request()).statusCode).toBe(200);
+    session.status='expired';expect((await request()).statusCode).toBe(410);
     await app.close();
   });
-
-  it('rejects an incomplete checkout session with 400', async () => {
-    const { app } = await makeLicensingApp(pool, { session: { status: 'open', customer: 'cus_c' } });
-    const res = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
-      payload: { checkout_session_id: 'cs_2' } });
-    expect(res.statusCode).toBe(400);
-    await app.close();
-  });
-
-  it('404s when the session customer has no user', async () => {
-    const { app } = await makeLicensingApp(pool, { session: { status: 'complete', customer: 'cus_unknown' } });
-    const res = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
-      payload: { checkout_session_id: 'cs_3' } });
-    expect(res.statusCode).toBe(404);
-    await app.close();
-  });
-
-  it('rejects a stale checkout session (created over 30 minutes ago) with 400', async () => {
-    const { app } = await makeLicensingApp(pool, {
-      session: { status: 'complete', customer: 'cus_c', created: Math.floor(Date.now() / 1000) - 3600 },
-    });
-    const res = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
-      payload: { checkout_session_id: 'cs_stale' } });
-    expect(res.statusCode).toBe(400);
-    await app.close();
-  });
-
-  it('is single-use: the same checkout session cannot log in twice', async () => {
-    const now = Math.floor(Date.now() / 1000);
-    const { app } = await makeLicensingApp(pool, { session: { status: 'complete', customer: 'cus_c', created: now } });
-    const first = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout', payload: { checkout_session_id: 'cs_once' } });
-    expect(first.statusCode).toBe(200);
-    const second = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout', payload: { checkout_session_id: 'cs_once' } });
-    expect(second.statusCode).toBe(409);
-    await app.close();
-  });
-
-  it('session-from-checkout returns the device/state from metadata', async () => {
-    const now = Math.floor(Date.now() / 1000);
-    const { app } = await makeLicensingApp(pool, { session: {
-      status: 'complete', customer: 'cus_c', created: now,
-      metadata: { device: 'fp-9', device_name: 'Air', state: 'nonce-9' },
-    } });
-    const res = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout', payload: { checkout_session_id: 'cs_md' } });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ device: 'fp-9', device_name: 'Air', state: 'nonce-9' });
-    await app.close();
-  });
-
-  it('does not burn the checkout session id on a 404 (user not yet created)', async () => {
-    const { app } = await makeLicensingApp(pool, {
-      session: { status: 'complete', customer: 'cus_missing', created: Math.floor(Date.now() / 1000) },
-    });
-    const first = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
-      payload: { checkout_session_id: 'cs_race' } });
-    expect(first.statusCode).toBe(404);
-
-    await pool.query("INSERT INTO users (id, email, stripe_customer_id) VALUES ('u_race','race@e.com','cus_missing')");
-
-    const second = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
-      payload: { checkout_session_id: 'cs_race' } });
-    expect(second.statusCode).toBe(200);
-    expect(second.json().user).toEqual({ id: 'u_race', email: 'race@e.com' });
-    await app.close();
-  });
-
-  it('logout requires a session (401 without cookie) and clears it with one', async () => {
-    const { app } = await makeLicensingApp(pool, {
-      session: { status: 'complete', customer: 'cus_c', created: Math.floor(Date.now() / 1000) },
-    });
-    // no cookie -> 401
-    const no = await app.inject({ method: 'POST', url: '/v1/auth/logout' });
-    expect(no.statusCode).toBe(401);
-    // login, capture cookie, then logout -> 200
-    const login = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
-      payload: { checkout_session_id: 'cs_1' } });
-    const cookie = String(login.headers['set-cookie']).split(';')[0];
-    const out = await app.inject({ method: 'POST', url: '/v1/auth/logout', headers: { cookie } });
-    expect(out.statusCode).toBe(200);
-    await app.close();
+  it('logout deletes the authenticated session', async () => {
+    const {app} = await makeLicensingApp(pool);
+    expect((await app.inject({method:'POST',url:'/v1/auth/logout'})).statusCode).toBe(401);
+    expect((await app.inject({method:'POST',url:'/v1/auth/logout',headers:{cookie}})).statusCode).toBe(200);
+    expect((await app.inject({method:'POST',url:'/v1/auth/logout',headers:{cookie}})).statusCode).toBe(401); await app.close();
   });
 });

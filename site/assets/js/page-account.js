@@ -1,5 +1,5 @@
 import { apiBase } from './config.js';
-import { createApi } from './api.js';
+import { createApi } from './api.js?v=7';
 
 const meta = document.querySelector('meta[name="slipreel-api-base"]');
 const api = createApi(apiBase(location.hostname, meta ? meta.content : null));
@@ -22,7 +22,7 @@ function err(msg) { statusEl.textContent = msg; statusEl.className = 'status sta
 function formatDate(iso) {
   if (!iso) return null;
   const d = new Date(iso);
-  return isNaN(d) ? null : d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  return isNaN(d) ? null : d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 }
 
 // Map an effective entitlement ({ plan, status, updatesUntil }) to the
@@ -47,9 +47,14 @@ function renderPlan(e) {
   } else if (e && e.plan === 'onetime') {
     showUpgrade = false;
     dot = 'plan-dot plan-dot--ok';
-    name = 'Lifetime license';
+    name = 'One-time license';
     const until = formatDate(e.updatesUntil);
-    detail = until ? `Active. Free updates through ${until}.` : 'Active. Unlimited exports.';
+    const expired = e.updatesUntil && Date.parse(e.updatesUntil) < Date.now();
+    detail = until ? `Your license includes releases through ${until} (UTC). ${expired ? 'Keep using an eligible version or renew for newer releases.' : 'Unlimited exports on eligible versions.'}` : 'Active. Unlimited exports.';
+    showUpgrade = !!expired;
+    upgrade.textContent = expired ? 'Renew for another year of updates' : 'Upgrade for unlimited exports';
+    upgrade.href = 'pricing.html?plan=onetime';
+    if (e.updatesUntil) document.getElementById('eligible-download').href = 'downloads.html?' + new URLSearchParams({ until: e.updatesUntil.slice(0, 10) });
   }
 
   planDot.className = dot;
@@ -121,7 +126,8 @@ async function load() {
   if (!devicesRes.ok) return err('Could not load your account.');
   sub.textContent = 'Your plan, billing, and devices.';
   signedout.className = 'card hidden';
-  renderPlan(entRes.ok ? entRes.data : null);
+  if (!entRes.ok) return err('Could not load your license. Reload to try again.');
+  renderPlan(entRes.data);
   billing.className = 'card';
   downloadCard.className = 'card';
   devicesCard.className = 'card';

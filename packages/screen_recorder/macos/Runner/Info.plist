@@ -50,7 +50,7 @@
 	<key>SUPublicEDKey</key>
 	<string>BfOJEhSrpFvuU7xfWNiffUrGpBPzZddUL/54ikghH5M=</string>
 	<key>SUEnableAutomaticChecks</key>
-	<true/>
+	<false/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 </dict>

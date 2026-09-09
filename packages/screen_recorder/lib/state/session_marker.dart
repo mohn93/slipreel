@@ -14,6 +14,8 @@ class SessionMarker {
     required this.width,
     required this.height,
     required this.fps,
+    this.isDeviceCapture = false,
+    this.cameraDeviceLabel,
   });
 
   final String id;
@@ -23,26 +25,32 @@ class SessionMarker {
   final int width;
   final int height;
   final int fps;
+  final bool isDeviceCapture;
+  final String? cameraDeviceLabel;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'videoPath': videoPath,
-        'cursorNdjsonPath': cursorNdjsonPath,
-        'startedAt': startedAt.toUtc().toIso8601String(),
-        'width': width,
-        'height': height,
-        'fps': fps,
-      };
+    'id': id,
+    'videoPath': videoPath,
+    'cursorNdjsonPath': cursorNdjsonPath,
+    'startedAt': startedAt.toUtc().toIso8601String(),
+    'width': width,
+    'height': height,
+    'fps': fps,
+    'isDeviceCapture': isDeviceCapture,
+    'cameraDeviceLabel': cameraDeviceLabel,
+  };
 
   static SessionMarker fromJson(Map<String, dynamic> json) => SessionMarker(
-        id: json['id'] as String,
-        videoPath: json['videoPath'] as String,
-        cursorNdjsonPath: json['cursorNdjsonPath'] as String,
-        startedAt: DateTime.parse(json['startedAt'] as String),
-        width: (json['width'] as num?)?.toInt() ?? 0,
-        height: (json['height'] as num?)?.toInt() ?? 0,
-        fps: (json['fps'] as num?)?.toInt() ?? 0,
-      );
+    id: json['id'] as String,
+    isDeviceCapture: json['isDeviceCapture'] as bool? ?? false,
+    cameraDeviceLabel: json['cameraDeviceLabel'] as String?,
+    videoPath: json['videoPath'] as String,
+    cursorNdjsonPath: json['cursorNdjsonPath'] as String,
+    startedAt: DateTime.parse(json['startedAt'] as String),
+    width: (json['width'] as num?)?.toInt() ?? 0,
+    height: (json['height'] as num?)?.toInt() ?? 0,
+    fps: (json['fps'] as num?)?.toInt() ?? 0,
+  );
 }
 
 /// Atomic JSON store at `<App Support>/current_sessions.json`.
@@ -67,8 +75,11 @@ class SessionMarkerStore {
           .map((s) => SessionMarker.fromJson(s as Map<String, dynamic>))
           .toList(growable: false);
     } catch (e, st) {
-      AppLogger.platform.w('SessionMarkerStore.load failed; treating as empty',
-          error: e, stackTrace: st);
+      AppLogger.platform.w(
+        'SessionMarkerStore.load failed; treating as empty',
+        error: e,
+        stackTrace: st,
+      );
       return const [];
     }
   }
@@ -80,7 +91,9 @@ class SessionMarkerStore {
 
   Future<void> remove(String id) async {
     final current = await load();
-    await _atomicWrite(current.where((m) => m.id != id).toList(growable: false));
+    await _atomicWrite(
+      current.where((m) => m.id != id).toList(growable: false),
+    );
   }
 
   Future<void> _atomicWrite(List<SessionMarker> markers) async {
@@ -97,5 +110,6 @@ class SessionMarkerStore {
 }
 
 final sessionMarkerStoreProvider = Provider<SessionMarkerStore>(
-  (ref) => throw UnimplementedError('Override sessionMarkerStoreProvider in main()'),
+  (ref) =>
+      throw UnimplementedError('Override sessionMarkerStoreProvider in main()'),
 );

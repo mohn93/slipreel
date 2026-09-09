@@ -20,10 +20,7 @@ allow='([a-z0-9-]+\.)*slipreel\.app|schema\.org|www\.w3\.org|purl\.org|andymatus
 while IFS= read -r url; do
   [[ -z "$url" ]] && continue
   grep -qE "^https?://($allow)" <<<"$url" || violation "external request: $url"
-done < <(grep -rhoE 'https?://[A-Za-z0-9.:-]+' \
-           --include='*.html' --include='*.css' --include='*.js' \
-           --exclude='*.test.js' \
-           "$SITE" 2>/dev/null | sort -u)
+done < <(python3 "$ROOT/scripts/site-network-urls.py" "$SITE")
 
 # 2. Local assets referenced from HTML must exist on disk. References resolve
 #    the way the production nginx serves them (try_files $uri $uri.html $uri/):

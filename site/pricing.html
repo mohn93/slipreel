@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#08080C">
@@ -13,6 +14,7 @@
 </head>
 <body>
 <main class="pw">
+  <nav aria-label="Account navigation"><a href="index.html">Home</a> · <a href="account.html">Account / Sign in</a> · <a href="guide.html">Getting started</a></nav>
   <header class="pw__head">
     <p class="pw__eyebrow">Slipreel Pro</p>
     <h1 class="pw__title">Unlock export</h1>
@@ -44,16 +46,16 @@
       <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Auto-zoom, captions &amp; device frames</li>
       <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Wallpapers, 3D tilt &amp; motion blur</li>
       <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Use on 2 Macs</li>
-      <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>100% on your Mac — nothing uploaded</li>
+      <li><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Recording and editing stay on your Mac</li>
     </ul>
   </section>
 
-  <div class="pw__buy card">
+  <form class="pw__buy card" id="purchase">
     <label class="field">
       <span class="field__label">Email</span>
       <input class="input" id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
     </label>
-    <button class="btn btn--primary pw__cta" id="continue">Continue to checkout</button>
+    <button class="btn btn--primary pw__cta" id="continue" type="submit">Email me a checkout link</button>
     <div class="status hidden" id="status" role="alert"></div>
     <div class="pw__trust">
       <span>
@@ -63,11 +65,10 @@
       <span>14-day money-back guarantee</span>
       <span>macOS 13+</span>
     </div>
-  </div>
+  </form>
 
-  <p class="pw__fine">One-time includes one year of updates; your paid version keeps exporting after that. Later updates are an optional paid renewal. For a refund, email hello@slipreel.app within 14 days. Prices in USD. Questions? <a href="mailto:hello@slipreel.app">hello@slipreel.app</a></p>
+  <p class="pw__fine">One-time includes one year of updates; your paid version keeps exporting after that. Paid licenses, including one-time purchases, need an internet connection at least every 14 days to renew their activation. Later updates are an optional paid renewal. For a refund, email hello@slipreel.app within 14 days. Prices in USD. Questions? <a href="mailto:hello@slipreel.app">hello@slipreel.app</a></p>
 </main>
-<script type="module" src="assets/js/page-pricing.js?v=6"></script>
-<script type="module" src="assets/js/analytics.js"></script>
+<script type="module" src="assets/js/page-pricing.js?v=7"></script>
 </body>
 </html>

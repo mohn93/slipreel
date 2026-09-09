@@ -23,7 +23,9 @@ export function itemsFromDocument(doc) {
   const text = (el) => (el && el.textContent ? String(el.textContent).trim() : null);
   return Array.from(doc.getElementsByTagName('item')).map((item) => {
     const enc = item.getElementsByTagName('enclosure')[0];
+    const published = Date.parse(text(item.getElementsByTagName('pubDate')[0]));
     return {
+      date: Number.isFinite(published) ? new Date(published).toISOString() : null,
       url: enc ? enc.getAttribute('url') : null,
       length: enc ? enc.getAttribute('length') : null,
       version: text(item.getElementsByTagName('sparkle:shortVersionString')[0]),

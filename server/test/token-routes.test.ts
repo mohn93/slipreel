@@ -1,3 +1,4 @@
+import {createSession} from '../src/auth/sessions.js';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type pg from 'pg';
 import { testPool, resetDatabase } from './helpers/testDb.js';
@@ -6,9 +7,9 @@ import { makeLicensingApp } from './helpers/licensing.js';
 
 // Log a user in via session-from-checkout and return the session cookie.
 async function login(app: any, customer: string): Promise<string> {
-  const res = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
-    payload: { checkout_session_id: 'cs' } });
-  return String(res.headers['set-cookie']).split(';')[0];
+  const user = (await app.pool.query('SELECT id FROM users ORDER BY id LIMIT 1')).rows[0];
+  const {token} = await createSession(app.pool, user.id);
+  return `slipreel_session=${token}`;
 }
 
 describe('token routes', () => {

@@ -1,0 +1,80 @@
+Slipreel release review evidence — 2026-09-08
+
+Scope: local current source, public deployed site/API, public v1.0.12 DMG.
+No live purchases, emails, or customer-data access. Backend reproductions used a disposable local DB and mocked Stripe.
+
+BASELINE RESULTS
+App: 1060 passed, 14 skipped
+Engine: 1545 passed, 2 skipped
+Platform interface: 77 passed
+macOS Dart plugin: 18 passed
+Backend: 92 passed
+Site: 27 passed
+Selected native Swift tests: 60 passed
+Bundled ffmpeg MP4/GIF checks: 17 passed
+Static analysis: app and engine clean; backend typecheck passed
+Site/release shell guards: passed
+
+backend-repros.log
+CONFIRMED: unauthenticated checkout with existing email + own completed payment authenticates as existing user and opens their billing portal (Stripe mocked, real routes/DB).
+CONFIRMED: success-page activation before entitlement webhook receives free token, despite successful checkout.
+CONFIRMED: unpaid one-time checkout event grants active permanent entitlement.
+CONFIRMED: full refund event is acknowledged but leaves one-time entitlement active.
+CONFIRMED: delayed older active event restores canceled subscription; expired period_end is ignored.
+CONFIRMED: unpaid subscription with expired paid period continues granting export.
+SEAT RACE: 2 activations accepted, 2 seats present for seat limit 2.
+
+source-overwrite.log
+SAME-PATH RESULT: sourceExists=false; error=Exception: ffmpeg encode exited 234: Output /var/folders/71/kxxgsmf951l857wsc7qy_j_w0000gn/T/phase9_pipe5xHsYm/source-copy.mp4 same as Input #1 - exiting
+Error opening output file /var/folders/71/kxxgsmf951l857wsc7qy_j_w0000gn/T/phase9_pipe5xHsYm/source-copy.mp4.
+Error opening output files: Invalid argument
+
+00:07 +0 -1: ExportPipeline end-to-end produces a valid MP4 and a PASS summary on the fixture [E]
+  Expected: true
+    Actual: <false>
+  An export must not delete its source
+  
+  package:matcher                                               expect
+  package:flutter_test/src/widget_tester.dart 473:18            expect
+  /tmp/slipreel-release-review/source-overwrite-test.dart 71:9  main.<fn>.<fn>
+  
+00:07 +0 -1: Some tests failed.
+
+recovery-audio.log
+RECOVERY RESULT: audioTracks=1; originalExists=false
+00:05 +0 -1: recovery must preserve both mic and system audio [E]
+  Expected: <2>
+    Actual: <1>
+  Recovery should preserve both independent audio tracks
+  
+  package:matcher                                             expect
+  package:flutter_test/src/widget_tester.dart 473:18          expect
+  /tmp/slipreel-release-review/recovery-audio-test.dart 27:5  main.<fn>
+  
+00:05 +0 -1: Some tests failed.
+
+web-check-curl.log
+Checked 55 public page/link/asset URLs. Failures: []
+Local/live differences: ['screen-studio-alternative.html', 'index.html', 'quicktime-alternative.html', 'pricing.html', 'loom-alternative.html', 'screenflow-alternative.html', 'privacy.html']
+
+WARMED-POOL CONCURRENCY REPRO
+SEAT RACE: 8 activations accepted, 8 seats present for seat limit 2.
+(The first cold-pool attempt accepted 2; warming 8 connections reproduced the race.)
+
+DOWNLOAD VERIFICATION
+DMG byte length: 148255719, matching appcast.
+DMG checksum valid; codesign verification valid; stapler validate successful.
+Gatekeeper spctl assessment: accepted; source=Notarized Developer ID.
+Deep/strict codesign on mounted app and nested helpers/frameworks valid.
+App + ffmpeg + ffprobe + whisper-cli universal x86_64/arm64.
+LSMinimumSystemVersion: 13.0.
+Sparkle Ed25519 signature cryptographically verifies against bundled public key: true.
+Public API entitlement key matches checked-in app key: true.
+GET /health: status ok, db up.
+Old appcast enclosure /download/Slipreel-1.0.0.dmg: 404.
+
+ENVIRONMENT NOTES
+Initial backend run lacked TEST_DATABASE_URL; corrected using a freshly initialized disposable database at localhost:55439/slipreel_review_test.
+Native tests required pod install to refresh an outdated generated project; all selected tests passed afterward.
+Report/evidence are the only intended review additions. Test-generated changes to build-date newline and example Podfile.lock were restored. Pre-existing app Podfile.lock change left intact.
+Raw logs and local reproduction harnesses: /tmp/slipreel-release-review/

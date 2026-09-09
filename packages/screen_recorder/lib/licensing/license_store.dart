@@ -87,8 +87,12 @@ class FileSecureKV implements SecureKV {
   FileSecureKV(this._path);
   final String _path;
   Map<String, String>? _cache;
+  Future<Map<String, String>>? _loading;
+  Future<void> _pending = Future.value();
 
-  Future<Map<String, String>> _loaded() async {
+  Future<Map<String, String>> _loaded() => _loading ??= _load();
+
+  Future<Map<String, String>> _load() async {
     if (_cache != null) return _cache!;
     try {
       final file = File(_path);
@@ -107,26 +111,40 @@ class FileSecureKV implements SecureKV {
     return _cache!;
   }
 
-  Future<void> _flush() async {
-    final file = File(_path);
-    await file.parent.create(recursive: true);
-    await file.writeAsString(jsonEncode(_cache));
+  Future<void> _mutate(void Function(Map<String, String>) update) {
+    final operation = _pending.then((_) async {
+      final next = Map<String, String>.of(await _loaded());
+      update(next);
+      final file = File(_path);
+      await file.parent.create(recursive: true);
+      final staging = await file.parent.createTemp('.license-');
+      try {
+        final temporary = File('${staging.path}/data.json');
+        await temporary.writeAsString(jsonEncode(next), flush: true);
+        await temporary.rename(_path);
+        _cache = next;
+        _loading = Future.value(next);
+      } finally {
+        await staging.delete(recursive: true);
+      }
+    });
+    _pending = operation.catchError((Object _) {});
+    return operation;
   }
 
   @override
-  Future<String?> read(String key) async => (await _loaded())[key];
-
-  @override
-  Future<void> write(String key, String value) async {
-    (await _loaded())[key] = value;
-    await _flush();
+  Future<String?> read(String key) async {
+    await _pending;
+    return (await _loaded())[key];
   }
 
   @override
-  Future<void> delete(String key) async {
-    (await _loaded()).remove(key);
-    await _flush();
-  }
+  Future<void> write(String key, String value) =>
+      _mutate((data) => data[key] = value);
+
+  @override
+  Future<void> delete(String key) => _mutate((data) => data.remove(key));
+
 }
 
 /// Keychain-backed license store (via [SecureKV]). Corrupt data loads as null.

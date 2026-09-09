@@ -40,6 +40,7 @@ describe('resolveEffectiveEntitlement', () => {
 
   it('grace subscription still grants export', async () => {
     await seedUser(pool, 'u_g'); await addSub(pool, 'u_g', 'grace');
+    await pool.query("UPDATE entitlements SET grace_until = now() + interval '7 days' WHERE user_id = 'u_g'");
     const e = await resolveEffectiveEntitlement(pool, 'u_g');
     expect(e.plan).toBe('subscription'); expect(e.status).toBe('grace'); expect(e.export).toBe(true);
   });
