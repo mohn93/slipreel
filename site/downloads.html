@@ -1,3 +1,44 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#08080C"><title>Downloads — Slipreel</title><meta name="description" content="Find a Slipreel release eligible for your one-time license."><link rel="canonical" href="https://slipreel.app/downloads"><link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="assets/css/site.css"><link rel="stylesheet" href="assets/css/docs.css"></head><body><main class="docs"><nav aria-label="Site navigation"><a href="index.html">Slipreel</a><a href="account.html">Account</a><a href="guide.html">Guide</a><a href="downloads.html">Downloads</a><a href="changelog.html">Changelog</a></nav>
-<h1>Downloads</h1><p>Use macOS 13 or later on Intel or Apple Silicon. <a href="guide.html">Installation guide</a>.</p><p>For a one-time license, install a release dated on or before the <strong>updates-until date</strong> in your <a href="account.html">account</a>. Newer versions may need an optional paid renewal. Keep a backup of your projects before changing app versions.</p><label for="ceiling">Show releases up to your updates-until date (optional)</label><p><input id="ceiling" type="date"></p><p id="download-status" role="status">Checking available releases…</p><ul id="releases"></ul><noscript><p>Enable JavaScript to view verified archived downloads. <a href="https://slipreel.app/download/latest.dmg">Download the latest release</a>, or email support for an eligible older version.</p></noscript><p>Some older downloads may no longer be available. If your eligible version is missing, contact <a href="mailto:hello@slipreel.app">hello@slipreel.app</a> before installing a newer version.</p></main><script type="module" src="assets/js/page-downloads.js"></script></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#08080C">
+<title>Downloads — Slipreel</title>
+<meta name="description" content="Download Slipreel for Mac or find an earlier release covered by your one-time license.">
+<link rel="canonical" href="https://slipreel.app/downloads">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/site.css">
+<link rel="stylesheet" href="assets/css/downloads.css?v=1">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to downloads</a>
+<header class="archive-header">
+  <nav class="archive-nav" aria-label="Site navigation">
+    <a class="archive-brand" href="index.html"><img src="favicon.svg" width="32" height="32" alt=""><span>Slipreel</span></a>
+    <div class="archive-links"><a href="guide.html">Guide</a><a href="downloads.html" aria-current="page">Downloads</a><a href="changelog.html">Changelog</a><a class="archive-account" href="account.html">Account</a></div>
+  </nav>
+</header>
+<main class="archive" id="main">
+  <header class="archive-intro">
+    <h1>Slipreel for Mac.</h1>
+    <p>Get the latest release, or pick up an earlier version.</p>
+    <div class="archive-platform"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="18" height="13" rx="2"/><path d="M8 21h8M12 16v5"/></svg>macOS 13 or later <span aria-hidden="true">·</span> Intel &amp; Apple Silicon</div>
+  </header>
+  <section class="archive-filter" aria-labelledby="filter-heading">
+    <div><h2 id="filter-heading">Find a version covered by your license</h2><p>One-time purchase? Use the updates-until date in your <a href="account.html">account</a> to show eligible releases.</p></div>
+    <div class="archive-date"><label for="ceiling">Updates until <span>(optional)</span></label><div class="archive-date-controls"><input id="ceiling" type="date"><button id="clear-ceiling" type="button" hidden>Clear</button></div></div>
+  </section>
+  <section class="archive-history" aria-labelledby="releases-heading">
+    <div class="archive-list-head"><h2 id="releases-heading">Release history</h2><a href="changelog.html">What’s new</a></div>
+    <p id="download-status" class="archive-status" role="status">Checking available releases…</p>
+    <ul id="releases" class="release-list" aria-label="Available releases"></ul>
+    <noscript><p>Enable JavaScript to view verified archived downloads. <a href="https://slipreel.app/download/latest.dmg">Download the latest release</a>, or email support for an eligible older version.</p></noscript>
+  </section>
+  <aside class="archive-help"><h2>Installing a different version?</h2><p>Keep a backup of your projects before switching. Releases after your updates-until date may need an optional paid renewal.</p><div><a href="guide.html">Installation guide</a><a href="mailto:hello@slipreel.app">Help finding a version</a></div></aside>
+  <footer class="archive-footer"><span>Made for your Mac.</span><a href="index.html">Back to Slipreel</a></footer>
+</main>
+<script type="module" src="assets/js/page-downloads.js?v=2"></script>
+</body>
+</html>
