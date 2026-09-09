@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Slipreel database backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+Unit=slipreel-db-backup.service
+
+[Install]
+WantedBy=timers.target

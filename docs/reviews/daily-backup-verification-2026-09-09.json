@@ -1,0 +1,24 @@
+{
+  "verifiedAt": "2026-09-09T08:16:35.832807+00:00",
+  "file": "/var/backups/slipreel/slipreel-db-2026-09-09.dump",
+  "bytes": 40592,
+  "fileMode": "0o600",
+  "fileOwnerUid": 0,
+  "directoryMode": "0o700",
+  "directoryOwnerUid": 0,
+  "archiveListingValidated": true,
+  "archiveContentValidated": true,
+  "retentionDays": 14,
+  "retentionScope": "slipreel-db-YYYY-MM-DD.dump files only; UTC today plus previous13dates",
+  "initialRunRemovedFiles": 0,
+  "service": {
+    "Result": "success",
+    "ExecMainStatus": "0"
+  },
+  "timer": {
+    "NextElapseUSecRealtime": "Thu 2026-09-10 03:19:04 UTC",
+    "ActiveState": "active"
+  },
+  "localOnly": true,
+  "offHostBackupConfigured": false
+}

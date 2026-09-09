@@ -102,3 +102,37 @@ under `deploy/` are examples and do not describe every live hosting setup.
 Migrations in `migrations/NNNN_name.sql` are forward-only and run at boot. Never
 modify an already applied migration. Secrets belong in the host's protected
 environment file, not in Git or logs.
+
+## Daily local database backup
+
+`deploy/slipreel-db-backup.mjs` creates a consistent PostgreSQL custom dump under
+`/var/backups/slipreel` (root 0700, files 0600). The root-owned systemd service loads
+`/etc/slipreel-api.env`, runs `pg_dump` as `slipreel-api` for peer authentication,
+and passes connection settings through its environment rather than process
+arguments. Credentials and raw PostgreSQL diagnostics are never logged.
+
+The timer runs daily at 03:15 UTC plus up to 15 minutes of randomized delay and
+catches up after downtime. Each UTC date has one file. Only after both archive
+listing and full data extraction validate does atomic publication replace that
+date's backup; retention removes this task's exact daily filenames older than the
+14-day window. Other backups, including protected rollout snapshots, are untouched.
+Failures exit nonzero and preserve previous completed dumps. Monitor the service's
+failure state; an external notification channel is not configured by this setup.
+
+Install the script as `/usr/local/libexec/slipreel-db-backup.mjs` and the matching
+service/timer from `deploy/` into `/etc/systemd/system/`; create the root-only backup
+directory before starting the unit. Run `systemctl daemon-reload`, then
+`systemctl start slipreel-db-backup.service` and
+`systemctl enable --now slipreel-db-backup.timer`. Check the initial service result
+and `systemctl list-timers slipreel-db-backup.timer`.
+
+These backups are local to the VPS and **do not protect against host or disk loss**.
+An off-host destination and restore drill remain separate operational decisions.
+Validation reads the archive content but does not restore it into a live database.
+For isolated fixture tests, run `node --test test/db-backup.test.mjs` with
+`BACKUP_TEST_DATABASE_URL`, and optional `BACKUP_TEST_PG_DUMP` /
+`BACKUP_TEST_PG_RESTORE` pointing to compatible PostgreSQL clients. Never use a
+production database as the test fixture.
+
+Backend CI runs these backup tests explicitly against its disposable Postgres16
+service using matching PostgreSQL16 clients, after the API test suite.

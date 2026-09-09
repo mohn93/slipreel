@@ -96,4 +96,16 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Install PostgreSQL16 backup clients
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ]; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client-16
+          fi
+      - name: Test database backup and retention
+        env:
+          BACKUP_TEST_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+          BACKUP_TEST_PG_DUMP: /usr/lib/postgresql/16/bin/pg_dump
+          BACKUP_TEST_PG_RESTORE: /usr/lib/postgresql/16/bin/pg_restore
+        run: node --test test/db-backup.test.mjs
       - run: npm audit --audit-level=high

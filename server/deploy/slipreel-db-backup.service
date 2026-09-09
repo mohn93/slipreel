@@ -1,0 +1,21 @@
+[Unit]
+Description=Slipreel daily verified database backup
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+EnvironmentFile=/etc/slipreel-api.env
+ExecStart=/usr/bin/node /usr/local/libexec/slipreel-db-backup.mjs
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=1h
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/backups/slipreel
