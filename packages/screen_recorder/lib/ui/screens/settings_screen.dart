@@ -417,11 +417,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: [
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text('Share anonymous usage data',
+            title: Text('Share usage data',
                 style: TextStyle(color: context.palette.textPrimary)),
             subtitle: Text(
-              'Helps improve Slipreel. Never includes your recordings, file names, '
-              'or screen contents — only which features get used.',
+              'Feature usage is associated with your account while signed in. '
+              'Never includes recordings, file names, or screen contents.',
               style: TextStyle(color: context.palette.textSecondary),
             ),
             value: shareAnalytics,
@@ -434,9 +434,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: Text('Send crash & error reports',
                 style: TextStyle(color: context.palette.textPrimary)),
             subtitle: Text(
-              'Sends anonymized error and crash reports so we can fix '
-              'problems. File paths are stripped and your recordings are '
-              'never included.',
+              'Sends technical reports, associated with your account while signed in. '
+              'File paths are stripped; recordings are never included.',
               style: TextStyle(color: context.palette.textSecondary),
             ),
             value: shareDiagnostics,

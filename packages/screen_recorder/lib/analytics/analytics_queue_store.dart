@@ -28,34 +28,43 @@ class AnalyticsQueueStore {
           .whereType<AnalyticsEvent>()
           .toList();
     } catch (e, st) {
-      AppLogger.platform
-          .w('AnalyticsQueueStore.load failed; starting empty', error: e, stackTrace: st);
+      AppLogger.platform.w(
+        'AnalyticsQueueStore.load failed; starting empty',
+        error: e,
+        stackTrace: st,
+      );
       return [];
     }
   }
 
-  /// Persists the queue, keeping only the newest [maxEvents]. Best-effort:
-  /// analytics must never break the app, so failures are logged and swallowed.
-  Future<void> save(List<AnalyticsEvent> events) async {
-    try {
-      final trimmed =
-          events.length > maxEvents ? events.sublist(events.length - maxEvents) : events;
-      final file = File(path);
-      await file.create(recursive: true);
-      await file.writeAsString(jsonEncode(trimmed.map((e) => e.toJson()).toList()));
-    } catch (e, st) {
-      AppLogger.platform
-          .w('AnalyticsQueueStore.save failed; dropping', error: e, stackTrace: st);
-    }
+  Future<void> _writes = Future.value();
+  Future<void> _serialize(Future<void> Function() work) {
+    final next = _writes.then((_) => work());
+    _writes = next.catchError((Object _) {});
+    return next;
   }
 
-  /// Removes the persisted queue (used when the user opts out).
-  Future<void> clear() async {
-    try {
-      final file = File(path);
-      if (file.existsSync()) await file.delete();
-    } catch (_) {
-      /* best-effort */
-    }
+  /// Atomic and serialized. Failure is reported so feedback cannot claim
+  /// durable offline delivery when the disk write failed.
+  Future<void> save(List<AnalyticsEvent> events) {
+    final trimmed = events.length > maxEvents
+        ? events.sublist(events.length - maxEvents)
+        : List.of(events);
+    final encoded = jsonEncode(trimmed.map((e) => e.toJson()).toList());
+    return _serialize(() async {
+      final tmp = File('$path.tmp');
+      try {
+        await tmp.parent.create(recursive: true);
+        await tmp.writeAsString(encoded, flush: true);
+        await tmp.rename(path);
+      } finally {
+        if (await tmp.exists()) await tmp.delete();
+      }
+    });
   }
+
+  Future<void> clear() => _serialize(() async {
+    final file = File(path);
+    if (await file.exists()) await file.delete();
+  });
 }

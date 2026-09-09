@@ -1,0 +1,35 @@
+{
+  "verifiedAt": "2026-09-09T12:10:53.744164+00:00",
+  "appTests": {
+    "passed": 1089,
+    "skipped": 14
+  },
+  "analysis": "no issues",
+  "macosDebugBuild": "passed",
+  "websiteTests": {
+    "passed": 43
+  },
+  "siteLint": "passed",
+  "siteLintGuards": "passed",
+  "deployGuards": "passed",
+  "ownerAcceptance": {
+    "payment": "confirmed successful",
+    "activation": "confirmed successful"
+  },
+  "productionChanges": false,
+  "liveReadOnlyChecks": {
+    "apiService": "active",
+    "backupTimer": "active",
+    "lastBackupServiceResult": "success",
+    "dailyBackupBytes": 40592,
+    "netdataDocker": "healthy",
+    "offhostDestination": "not configured by this task",
+    "alertDelivery": "not verified"
+  },
+  "logs": [
+    "/tmp/slipreel-gtm-full-clean.log",
+    "/tmp/slipreel-gtm-analyze-final.log",
+    "/tmp/slipreel-gtm-build-final.log",
+    "/tmp/slipreel-gtm-site-final.log"
+  ]
+}

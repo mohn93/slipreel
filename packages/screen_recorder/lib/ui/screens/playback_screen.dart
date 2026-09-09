@@ -1,3 +1,4 @@
+import '../../state/project_autosave.dart';
 import 'package:screen_recorder/audio/music_library.dart';
 import 'package:screen_recorder/audio/music_preview.dart';
 import 'dart:async';
@@ -376,12 +377,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // below.
   EditorProjectState get _project => ref.read(editorProjectControllerProvider);
 
-  // Cached notifier so [dispose] can read the current project without `ref`.
-  // Riverpod forbids `ref` after the widget is disposed; calling it in
-  // dispose() throws "Cannot use ref after the widget was disposed", which
-  // aborted the rest of teardown — the music preview player was never
-  // disposed and kept playing after leaving the editor.
-  EditorProjectController? _projectControllerForDispose;
   EditorProjectController get _projectController =>
       ref.read(editorProjectControllerProvider.notifier);
 
@@ -437,7 +432,30 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   late final EditorProjectStore _projectStore = EditorProjectStore(
     videoPath: widget.videoPath,
   );
-  Timer? _saveDebounce;
+  late final ProjectAutosave<EditorProjectState> _autosave = ProjectAutosave(write: _projectStore.save);
+  bool _allowPop = false;
+  bool _leaving = false;
+
+  Future<bool> _flushProject() async {
+    final saved = await _autosave.flush();
+    if (!saved && mounted) {
+      AppAlerts.error('Edits could not be saved. Check disk space or reconnect the recording’s drive, then use Retry save.');
+    }
+    return saved;
+  }
+
+  Future<void> _leaveEditor() async {
+    if (_leaving) return;
+    _leaving = true;
+    try {
+      if (!await _flushProject() || !mounted) return;
+      setState(() => _allowPop = true);
+      // PopScope must rebuild with permission before the actual route pop.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
+    } finally { _leaving = false; }
+  }
 
   /// Camera sidecar metadata (`.camera.json`) for this recording, or null
   /// when the recording has no camera. Its presence enables the Camera
@@ -466,9 +484,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   @override
   void initState() {
     super.initState();
-    _projectControllerForDispose = ref.read(
-      editorProjectControllerProvider.notifier,
-    );
+    PendingProjectSaves.instance.add(_flushProject);
     _initializeVideo();
     HardwareKeyboard.instance.addHandler(_onKey);
     ref.captureAnalytics(
@@ -1136,10 +1152,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   /// build() calls this on every notifier publish.
   void _persistProject() {
     if (!_isInitialized) return; // Don't overwrite on the load pass.
-    _saveDebounce?.cancel();
-    _saveDebounce = Timer(const Duration(milliseconds: 500), () {
-      _projectStore.save(_project);
-    });
+    _autosave.schedule(_project);
   }
 
   @override
@@ -1149,17 +1162,21 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     _snapFlashTimer?.cancel();
     _zoomPreviewOverride.dispose();
     _cameraDragOverride.dispose();
-    // Flush any pending debounced save before tearing down so the
-    // user doesn't lose the last change they made before navigating
-    // away. Fire-and-forget — atomic write + the store's mutation
-    // queue mean a partially-written file is impossible.
-    _saveDebounce?.cancel();
+    PendingProjectSaves.instance.remove(_flushProject);
+    // Ordinary route and native exit paths have already awaited this. Keep a
+    // dirty snapshot registered if an external route replacement disposes us.
+    if (_autosave.dirty) {
+      late Future<bool> Function() save;
+      save = () async {
+        final ok = await _autosave.flush();
+        if (ok) PendingProjectSaves.instance.remove(save);
+        return ok;
+      };
+      PendingProjectSaves.instance.add(save);
+      unawaited(save());
+    }
+    _autosave.dispose();
     if (_isInitialized) {
-      // Use the cached notifier's current state, never `ref` — see
-      // [_projectControllerForDispose]. A ref read here throws and would abort
-      // the teardown below (leaving the music stem playing).
-      final controller = _projectControllerForDispose;
-      if (controller != null) _projectStore.save(controller.current);
       _controller.removeListener(_onTrimTick);
       _controller.removeListener(_onSkipTick);
       _controller.removeListener(_onHoverTrack);
@@ -1573,6 +1590,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     );
     if (confirmed != true || !mounted) return;
 
+    await _autosave.discard();
+
     // Pause the player so we're not holding the video file open
     // while we try to unlink it (macOS tolerates open-file delete,
     // but the sidecar writes from EditorProjectStore could race
@@ -1616,7 +1635,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
 
     if (!mounted) return;
-    Navigator.of(context).pop();
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) Navigator.of(context).pop(); });
     AppAlerts.success('Recording deleted');
   }
 
@@ -1717,7 +1737,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
             icon(
               LucideIcons.folderOpen,
               'Record another',
-              () => Navigator.of(context).pop(),
+              _leaveEditor,
             ),
             const SizedBox(width: 4),
             icon(LucideIcons.trash2, 'Delete recording', _deleteRecording),
@@ -1752,6 +1772,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               ),
             ),
       actions: [
+        ListenableBuilder(
+          listenable: _autosave,
+          builder: (context, _) => _autosave.status == ProjectSaveStatus.failed
+              ? TextButton.icon(onPressed: _flushProject, icon: const Icon(Icons.warning_amber_rounded), label: const Text('Unsaved edits · Retry save'))
+              : Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(
+                  _autosave.status == ProjectSaveStatus.saved ? 'Saved' : 'Saving…',
+                  style: TextStyle(fontSize: 12, color: dim))),
+        ),
         icon(LucideIcons.command, 'Commands', _showCommandPalette),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -2610,7 +2638,10 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         _refreshPlayheadEditedPos();
       },
     );
-    return Focus(
+    return PopScope(
+      canPop: _allowPop,
+      onPopInvokedWithResult: (didPop, result) { if (!didPop) unawaited(_leaveEditor()); },
+      child: Focus(
       autofocus: true,
       onKeyEvent: (node, event) {
         // Only handle key down events
@@ -2979,7 +3010,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
           ),
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildVideoPlayer() {

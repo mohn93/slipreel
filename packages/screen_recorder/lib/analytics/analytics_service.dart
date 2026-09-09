@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:slipreel_engine/utils/breadcrumbs.dart';
@@ -32,22 +33,36 @@ class AnalyticsService {
     Duration flushDebounce = const Duration(seconds: 5),
     DateTime Function() now = DateTime.now,
     Breadcrumbs? breadcrumbs,
-  })  : _enabled = enabled,
-        _distinctId = distinctId,
-        _superProperties = superProperties,
-        _now = now,
-        _breadcrumbs = breadcrumbs ?? Breadcrumbs.instance,
-        _sink = PostHogSink(
-          store: store,
-          distinctId: distinctId,
-          projectKey: projectKey,
-          host: host ?? AnalyticsConfig.hostResolved,
-          client: client,
-          flushDebounce: flushDebounce,
-        );
+  }) : _enabled = enabled,
+       _distinctId = distinctId,
+       _superProperties = superProperties,
+       _now = now,
+       _breadcrumbs = breadcrumbs ?? Breadcrumbs.instance,
+       _sink = PostHogSink(
+         store: store,
+         distinctId: distinctId,
+         projectKey: projectKey,
+         host: host ?? AnalyticsConfig.hostResolved,
+         client: client,
+         flushDebounce: flushDebounce,
+       );
 
   final PostHogSink _sink;
-  String _distinctId; // mutable: becomes the user id after identify()
+  String _distinctId;
+  bool _identified = false;
+  String get distinctId => _distinctId;
+  static String newAnonymousId() {
+    final random = Random.secure();
+    final suffix = List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+    return 'anon_$suffix';
+  }
+
+  void resetIdentity() {
+    _identified = false;
+    _distinctId = newAnonymousId();
+    _sink.setDistinctId(_distinctId);
+  }
+
   final Map<String, Object?> _superProperties;
   final DateTime Function() _now;
   final Breadcrumbs _breadcrumbs;
@@ -73,31 +88,36 @@ class AnalyticsService {
     // feedback submission.
     _breadcrumbs.dropEvent(event, props: properties);
     if (!_enabled || !_sink.isConfigured) return;
-    _sink.enqueue(PostHogEvent(
-      name: event,
-      timestamp: _now(),
-      properties: {..._superProperties, ...?properties},
-    ));
+    _sink.enqueue(
+      PostHogEvent(
+        name: event,
+        timestamp: _now(),
+        properties: {..._superProperties, ...?properties},
+      ),
+    );
   }
 
-  /// Attribution: link this install's anonymous, device-keyed person to a
-  /// stable [userId] (the entitlement token's `sub`) so app + web events unify
-  /// into one PostHog person. [setProps] sets person properties. No-ops when
-  /// disabled/unconfigured or already identified as [userId].
+  /// Link only a fresh anonymous session to its first account. Later account
+  /// switches change future events without joining two identified people.
+  /// Identity stays current while disabled, but no identify event is sent.
   void identify(String userId, {Map<String, Object?>? setProps}) {
-    if (!_enabled || !_sink.isConfigured) return;
-    if (userId.isEmpty || _distinctId == userId) return;
-    final anonId = _distinctId;
-    _distinctId = userId; // the $identify below (and later events) use the new id
+    if (userId.isEmpty || (_identified && _distinctId == userId)) return;
+    final anonId = _identified ? null : _distinctId;
+    _identified = true;
+    _distinctId =
+        userId; // the $identify below (and later events) use the new id
     _sink.setDistinctId(userId);
-    _sink.enqueue(PostHogEvent(
-      name: r'$identify',
-      timestamp: _now(),
-      properties: {
-        r'$anon_distinct_id': anonId,
-        if (setProps != null && setProps.isNotEmpty) r'$set': setProps,
-      },
-    ));
+    if (!_enabled || !_sink.isConfigured || anonId == null) return;
+    _sink.enqueue(
+      PostHogEvent(
+        name: r'$identify',
+        timestamp: _now(),
+        properties: {
+          r'$anon_distinct_id': anonId,
+          if (setProps != null && setProps.isNotEmpty) r'$set': setProps,
+        },
+      ),
+    );
   }
 
   /// Delivers everything currently queued in one PostHog /batch/ request. On
@@ -125,7 +145,8 @@ class AnalyticsService {
 /// App-wide analytics. Overridden in `main()` with the instance initialized at
 /// startup. The default throws so a missing override is caught in development.
 final analyticsServiceProvider = Provider<AnalyticsService>(
-  (ref) => throw UnimplementedError('Override analyticsServiceProvider in main()'),
+  (ref) =>
+      throw UnimplementedError('Override analyticsServiceProvider in main()'),
 );
 
 /// Widget-friendly capture that no-ops if the provider isn't overridden — e.g.

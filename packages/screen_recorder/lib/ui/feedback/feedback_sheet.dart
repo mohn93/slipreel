@@ -1,3 +1,4 @@
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,20 +7,17 @@ import '../app_alerts/app_alerts.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_palette_context.dart';
 
-/// In-app feedback form: an idea/problem picker, a required message, an
-/// optional email, and an opt-in diagnostics attachment. Submitting is
-/// fire-and-forget from the UI's perspective — [FeedbackService] and its
-/// sink absorb their own errors, so this never blocks or surfaces failures
-/// to the user.
+/// In-app feedback with acknowledged delivery, durable offline queue status,
+/// and an email fallback when delivery or local persistence is unavailable.
 class FeedbackSheet {
   const FeedbackSheet._();
 
   static Future<void> show(BuildContext context) => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        showDragHandle: true,
-        builder: (_) => const _FeedbackBody(),
-      );
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => const _FeedbackBody(),
+  );
 }
 
 class _FeedbackBody extends ConsumerStatefulWidget {
@@ -31,6 +29,7 @@ class _FeedbackBody extends ConsumerStatefulWidget {
 
 class _FeedbackBodyState extends ConsumerState<_FeedbackBody> {
   bool _busy = false;
+  bool _sendError = false;
   FeedbackType _type = FeedbackType.problem;
   bool _attachDiagnostics = false;
   final _messageController = TextEditingController();
@@ -49,20 +48,43 @@ class _FeedbackBodyState extends ConsumerState<_FeedbackBody> {
     super.dispose();
   }
 
-  void _send() {
+  Future<void> _send() async {
     if (_busy) return;
     final message = _messageController.text.trim();
     if (message.isEmpty) return;
-    _busy = true;
+    setState(() => _busy = true);
     final email = _emailController.text.trim();
-    ref.read(feedbackServiceProvider).submit(FeedbackReport(
-          type: _type,
-          message: message,
-          email: email.isEmpty ? null : email,
-          attachDiagnostics: _attachDiagnostics,
-        ));
-    Navigator.of(context).maybePop();
-    AppAlerts.success('Thanks — feedback sent.');
+    DeliveryStatus result;
+    try {
+      result = await ref
+          .read(feedbackServiceProvider)
+          .submit(
+            FeedbackReport(
+              type: _type,
+              message: message,
+              email: email.isEmpty ? null : email,
+              attachDiagnostics: _attachDiagnostics,
+            ),
+          );
+    } catch (_) {
+      result = DeliveryStatus.unavailable;
+    }
+    if (!mounted) return;
+    if (result == DeliveryStatus.unavailable) {
+      setState(() {
+        _busy = false;
+        _sendError = true;
+      });
+      return;
+    }
+    Navigator.of(context).pop();
+    if (result == DeliveryStatus.sent) {
+      AppAlerts.success('Thanks — feedback sent.');
+    } else {
+      AppAlerts.info(
+        'Feedback saved on this Mac. We’ll send it when connected.',
+      );
+    }
   }
 
   @override
@@ -79,7 +101,11 @@ class _FeedbackBodyState extends ConsumerState<_FeedbackBody> {
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
-            24, 8, 24, 24 + MediaQuery.of(context).viewInsets.bottom),
+          24,
+          8,
+          24,
+          24 + MediaQuery.of(context).viewInsets.bottom,
+        ),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -136,13 +162,30 @@ class _FeedbackBodyState extends ConsumerState<_FeedbackBody> {
                 value: _attachDiagnostics,
                 onChanged: (v) =>
                     setState(() => _attachDiagnostics = v ?? false),
-                title: Text('Attach diagnostics',
-                    style: TextStyle(color: palette.textPrimary)),
+                title: Text(
+                  'Attach diagnostics',
+                  style: TextStyle(color: palette.textPrimary),
+                ),
                 subtitle: Text(
                   'Includes app version, OS, and recent activity logs — '
                   'no recordings or file paths.',
                   style: TextStyle(color: palette.textSecondary, fontSize: 12),
                 ),
+              ),
+              if (_sendError)
+                const Text(
+                  'Could not send or save your feedback. Your message is still here. Try again or email hello@slipreel.app.',
+                ),
+              TextButton(
+                onPressed: () async {
+                  final opened = await launchUrl(
+                    Uri(scheme: 'mailto', path: 'hello@slipreel.app'),
+                  );
+                  if (!opened) {
+                    AppAlerts.info('Email hello@slipreel.app for help.');
+                  }
+                },
+                child: const Text('Email support: hello@slipreel.app'),
               ),
               const SizedBox(height: 16),
               Row(
@@ -150,19 +193,21 @@ class _FeedbackBodyState extends ConsumerState<_FeedbackBody> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).maybePop(),
-                    child: Text('Cancel',
-                        style: TextStyle(color: palette.textSecondary)),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(color: palette.textSecondary),
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Opacity(
                     opacity: canSend ? 1 : 0.5,
                     child: ElevatedButton(
-                      onPressed: _send,
+                      onPressed: _busy ? null : _send,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: palette.accent,
                         foregroundColor: Colors.white,
                       ),
-                      child: const Text('Send'),
+                      child: Text(_busy ? 'Sending…' : 'Send'),
                     ),
                   ),
                 ],
@@ -175,19 +220,19 @@ class _FeedbackBodyState extends ConsumerState<_FeedbackBody> {
   }
 
   Widget _typeSelector(AppPalette palette) => SegmentedButton<FeedbackType>(
-        segments: const [
-          ButtonSegment(
-            value: FeedbackType.idea,
-            label: Text('Idea'),
-            icon: Icon(Icons.lightbulb_outline),
-          ),
-          ButtonSegment(
-            value: FeedbackType.problem,
-            label: Text('Problem'),
-            icon: Icon(Icons.bug_report_outlined),
-          ),
-        ],
-        selected: {_type},
-        onSelectionChanged: (s) => setState(() => _type = s.first),
-      );
+    segments: const [
+      ButtonSegment(
+        value: FeedbackType.idea,
+        label: Text('Idea'),
+        icon: Icon(Icons.lightbulb_outline),
+      ),
+      ButtonSegment(
+        value: FeedbackType.problem,
+        label: Text('Problem'),
+        icon: Icon(Icons.bug_report_outlined),
+      ),
+    ],
+    selected: {_type},
+    onSelectionChanged: (s) => setState(() => _type = s.first),
+  );
 }

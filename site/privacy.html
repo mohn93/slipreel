@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#08080C">
 <title>Slipreel — Privacy Policy</title>
-<meta name="description" content="How Slipreel handles your data: analytics, session replay, email, payments, and the desktop app.">
+<meta name="description" content="How Slipreel handles your data: analytics, diagnostics, email, payments, and the desktop app.">
 <link rel="canonical" href="https://slipreel.app/privacy">
 <meta name="robots" content="index, follow">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -47,8 +47,7 @@
   <ul>
     <li><strong>Website:</strong> anonymous, cookie-free page and interaction
     analytics. Session replay is disabled. Sign-in, checkout, purchase confirmation, and account pages do not load website analytics. Authentication parameters are removed from analytics events. No advertising or cross-site tracking.</li>
-    <li><strong>App:</strong> anonymous usage events, identified only by a
-    one-way hash of a device identifier &mdash; never the raw identifier. This is
+    <li><strong>App:</strong> usage events identified by a random session identifier before sign-in and associated with your account identifier while signed in. We do not use your raw hardware identifier for analytics. This is
     <strong>opt-out</strong>: turn it off any time in <em>Settings &rarr;
     Privacy</em>. It never captures recording content.</li>
   </ul>
@@ -56,15 +55,14 @@
   <h2>Account &amp; email</h2>
   <p>When you create an account or purchase Slipreel, we collect your email address to create your
   license, sign you in, and send transactional email (receipts, sign-in links)
-  via Resend. Paid licenses renew their activation online at least every 14 days. We do not attach your name (we don't
-  collect it) and the app itself never transmits your email.</p>
+  via Resend. Paid licenses renew their activation online at least every 14 days. The app does not send your sign-in email for usage analytics. If you provide a reply email when submitting in-app feedback, the app sends that email and your message to PostHog (US) so we can respond.</p>
 
   <h2>Payments</h2>
   <p>Payments are processed by Stripe.
   Card details go directly to Stripe; we never see or store them.</p>
 
   <h2>Updates, captions, and diagnostics</h2>
-  <p>The app checks for updates and downloads the caption model (about 488 MB) on first use. Transcription then runs locally. If enabled, diagnostics report technical errors; feedback you choose to submit is sent to us. Review the privacy controls in Settings.</p>
+  <p>The app checks for updates and downloads the caption model (about 488 MB) on first use. Transcription then runs locally. If enabled, diagnostics report technical errors and are associated with your account while signed in. Feedback you choose to submit is processed through PostHog (US), including any optional reply email. Undelivered events may be queued on your Mac; signing out gives new activity a fresh anonymous identifier. Review the privacy controls in Settings.</p>
 
   <h2>Hosting &amp; delivery</h2>
   <p>The site and API are served through Cloudflare

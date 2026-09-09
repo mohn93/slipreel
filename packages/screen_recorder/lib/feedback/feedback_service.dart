@@ -5,6 +5,8 @@ import '../analytics/analytics_event.dart';
 import '../analytics/posthog_sink.dart';
 import '../diagnostics/pii_scrubber.dart';
 
+export '../analytics/posthog_sink.dart' show DeliveryStatus;
+
 enum FeedbackType { idea, problem }
 
 class FeedbackReport {
@@ -30,11 +32,11 @@ class FeedbackService {
     required PiiScrubber scrubber,
     required Map<String, Object?> meta,
     DateTime Function() now = DateTime.now,
-  })  : _sink = sink,
-        _breadcrumbs = breadcrumbs,
-        _scrubber = scrubber,
-        _meta = meta,
-        _now = now;
+  }) : _sink = sink,
+       _breadcrumbs = breadcrumbs,
+       _scrubber = scrubber,
+       _meta = meta,
+       _now = now;
 
   final PostHogSink _sink;
   final Breadcrumbs _breadcrumbs;
@@ -44,20 +46,22 @@ class FeedbackService {
 
   Future<void> load() => _sink.load();
 
-  Future<void> submit(FeedbackReport report) async {
-    _sink.enqueue(PostHogEvent(
-      name: 'feedback_submitted',
-      timestamp: _now(),
-      properties: {
-        ..._meta,
-        'type': report.type.name,
-        'message': _scrubber.scrub(report.message),
-        if (report.email != null && report.email!.isNotEmpty) 'email': report.email,
-        if (report.attachDiagnostics)
-          'breadcrumbs': _scrubber.scrubAll(_breadcrumbs.snapshot()),
-      },
-    ));
-    await _sink.flush();
+  Future<DeliveryStatus> submit(FeedbackReport report) {
+    return _sink.submit(
+      PostHogEvent(
+        name: 'feedback_submitted',
+        timestamp: _now(),
+        properties: {
+          ..._meta,
+          'type': report.type.name,
+          'message': _scrubber.scrub(report.message),
+          if (report.email != null && report.email!.isNotEmpty)
+            'email': report.email,
+          if (report.attachDiagnostics)
+            'breadcrumbs': _scrubber.scrubAll(_breadcrumbs.snapshot()),
+        },
+      ),
+    );
   }
 
   void setDistinctId(String id) => _sink.setDistinctId(id);
@@ -68,5 +72,6 @@ class FeedbackService {
 }
 
 final feedbackServiceProvider = Provider<FeedbackService>(
-  (ref) => throw UnimplementedError('Override feedbackServiceProvider in main()'),
+  (ref) =>
+      throw UnimplementedError('Override feedbackServiceProvider in main()'),
 );

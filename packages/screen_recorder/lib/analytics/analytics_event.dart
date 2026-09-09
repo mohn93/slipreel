@@ -16,27 +16,37 @@ class AnalyticsEvent {
     required this.name,
     required this.timestamp,
     this.properties = const {},
+    this.distinctId,
   });
+
+  /// Identity captured when queued, never reassigned at delivery.
+  final String? distinctId;
+  AnalyticsEvent withIdentity(String id) => AnalyticsEvent(
+    name: name,
+    timestamp: timestamp,
+    properties: properties,
+    distinctId: id,
+  );
 
   final String name;
   final DateTime timestamp;
   final Map<String, Object?> properties;
 
-  /// Shape for a PostHog `/batch/` item. `distinct_id` is attached at send
-  /// time (it is constant per install) rather than stored per event.
+  /// The fallback supports callers constructing an event before enqueue.
   Map<String, dynamic> toBatchItem(String distinctId) => {
-        'event': name,
-        'distinct_id': distinctId,
-        'properties': properties,
-        'timestamp': timestamp.toUtc().toIso8601String(),
-      };
+    'event': name,
+    'distinct_id': this.distinctId ?? distinctId,
+    'properties': properties,
+    'timestamp': timestamp.toUtc().toIso8601String(),
+  };
 
   /// Persisted shape for the on-disk offline queue.
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'timestamp': timestamp.toUtc().toIso8601String(),
-        'properties': properties,
-      };
+    'name': name,
+    if (distinctId != null) 'distinct_id': distinctId,
+    'timestamp': timestamp.toUtc().toIso8601String(),
+    'properties': properties,
+  };
 
   static AnalyticsEvent? fromJson(Map<String, dynamic> json) {
     final name = json['name'];
@@ -47,6 +57,9 @@ class AnalyticsEvent {
     final props = json['properties'];
     return AnalyticsEvent(
       name: name,
+      distinctId: json['distinct_id'] is String
+          ? json['distinct_id'] as String
+          : null,
       timestamp: when,
       properties: props is Map<String, dynamic>
           ? props.map((k, v) => MapEntry(k, v as Object?))

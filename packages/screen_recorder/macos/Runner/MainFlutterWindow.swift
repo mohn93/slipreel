@@ -24,6 +24,34 @@ private final class AppMenuTarget: NSObject {
 }
 
 class MainFlutterWindow: NSWindow {
+  private var projectSaveChannel: FlutterMethodChannel?
+  private var closingAfterSave = false
+
+  func saveBeforeExit(_ completion: @escaping (Bool) -> Void) {
+    guard let channel = projectSaveChannel else { completion(true); return }
+    var completed = false
+    let finish: (Bool) -> Void = { allowed in
+      guard !completed else { return }
+      completed = true
+      completion(allowed)
+    }
+    channel.invokeMethod("saveBeforeExit", arguments: nil) { result in
+      finish((result as? Bool) == true)
+    }
+    // A stalled Flutter isolate must not leave macOS waiting indefinitely.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 15) { finish(false) }
+  }
+
+  override func performClose(_ sender: Any?) {
+    if closingAfterSave { super.performClose(sender); return }
+    saveBeforeExit { [weak self] allowed in
+      guard let self = self, allowed else { return }
+      self.closingAfterSave = true
+      self.performClose(sender)
+      self.closingAfterSave = false
+    }
+  }
+
   // Bar/pill are borderless; borderless windows refuse key/main unless we
   // opt in, which the bar needs to receive clicks (gear menu, mode buttons).
   override var canBecomeKey: Bool { true }
@@ -32,6 +60,8 @@ class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     self.contentViewController = flutterViewController
+    projectSaveChannel = FlutterMethodChannel(name: "slipreel/project-saves",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
 
     // Transparent so the Flutter-drawn rounded bar shows without black
     // corners. Flutter paints its own background.

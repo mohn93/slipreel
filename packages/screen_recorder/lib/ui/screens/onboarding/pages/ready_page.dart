@@ -73,9 +73,8 @@ class ReadyPage extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                'Slipreel sends anonymous usage data to improve the app — never '
-                'your recordings or screen contents. Turn it off anytime in '
-                'Settings → Privacy.',
+                'Slipreel sends feature usage data, linked to your account while signed in — '
+                'never your recordings or screen contents. Turn it off in Settings → Privacy.',
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: Colors.white38),
                 textAlign: TextAlign.center,
