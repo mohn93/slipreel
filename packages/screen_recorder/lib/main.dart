@@ -37,6 +37,7 @@ import 'feedback/feedback_service.dart';
 import 'debug/debug_probe.dart';
 import 'licensing/auth_state_store.dart';
 import 'licensing/sign_in_feedback.dart';
+import 'licensing/activation_success_dialog.dart';
 import 'state/window_mode.dart';
 import 'state/window_mode_controller.dart';
 import 'licensing/build_release_date.g.dart';
@@ -670,7 +671,9 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     if (!mounted || !ctx.mounted) return;
     final action = await showDialog<bool>(
       context: ctx,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => feedback.exportsUnlocked
+          ? ActivationSuccessDialog(message: feedback.message)
+          : AlertDialog(
         title: Text(feedback.title),
         content: SizedBox(width: 420, child: Text(feedback.message)),
         actions: [

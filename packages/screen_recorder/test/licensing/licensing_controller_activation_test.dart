@@ -26,10 +26,10 @@ class _RetryStore extends InMemoryLicenseStore {
   }
 }
 
-EntitlementClaims _claims() => EntitlementClaims(
+EntitlementClaims _claims({bool exportEntitled = true}) => EntitlementClaims(
       sub: 'usr_1',
       plan: 'subscription',
-      exportEntitled: true,
+      exportEntitled: exportEntitled,
       status: 'active',
       updatesUntil: null,
       deviceId: 'dev_1',
@@ -59,6 +59,7 @@ void main() {
     store.fail = false;
     await c.handleDeepLink(link);
     expect(c.state, isA<EntitlementLoaded>());
+    expect(c.signInFeedback.pending?.exportsUnlocked, isTrue);
     expect(await auth.matches(nonce), isFalse);
   });
 
@@ -76,12 +77,28 @@ void main() {
     await c.handleDeepLink(Uri.parse(
         'slipreel://auth?token=jwt.ok&refresh=rt_9&device_id=dev_1&state=$nonce'));
     expect(c.state, isA<EntitlementLoaded>());
+    expect(c.signInFeedback.pending?.exportsUnlocked, isTrue);
     final saved = await store.load();
     expect(saved!.token, 'jwt.ok');
     expect(saved.refreshToken, 'rt_9');
     expect(saved.deviceId, 'dev_1');
     // Nonce consumed.
     expect(await auth.matches(nonce), isFalse);
+  });
+
+  test('signed-in account without export entitlement does not celebrate activation', () async {
+    final auth = AuthStateStore(InMemorySecureKV());
+    final nonce = await auth.begin();
+    final c = LicensingController(
+      store: InMemoryLicenseStore(),
+      verifier: _FakeVerifier({'jwt.ok': _claims(exportEntitled: false)}),
+      api: LicensingApi(baseUrl: 'https://x.test'),
+      authState: auth,
+    );
+    await c.handleDeepLink(Uri.parse(
+        'slipreel://auth?token=jwt.ok&refresh=rt&device_id=dev_1&state=$nonce'));
+    expect(c.signInFeedback.pending?.exportsUnlocked, isFalse);
+    c.dispose();
   });
 
   test('deep link with wrong state is ignored', () async {
