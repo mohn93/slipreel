@@ -669,12 +669,41 @@ a {
   border-radius: calc(var(--radius-lg) - 6px);
 }
 
-/* Entrance. Pure CSS, so it plays with JavaScript disabled, and it settles on
-   the final state rather than depending on a class being added. Section 9's
-   reduce block cancels the animation, which leaves every element at its
-   normal, fully visible style. */
-@media (prefers-reduced-motion: no-preference) {
-  .hero__inner > * {
+/* A normal image paints independently of the video player's poster pipeline.
+   Native video controls remain the fallback when JavaScript is unavailable. */
+.hero__preview {
+  position: absolute;
+  inset: clamp(4px, 0.5vw, 7px);
+  z-index: 1;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 6px);
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--bg-card);
+}
+.hero__preview[hidden] { display: none; }
+.hero__stage.has-preview .hero__media { visibility: hidden; }
+.hero__preview img { height: 100%; object-fit: cover; }
+.hero__preview span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 12px 18px;
+  border-radius: 999px;
+  color: #fff;
+  background: #08080c;
+  font: inherit;
+  white-space: nowrap;
+}
+.hero__preview:focus-visible { outline: 3px solid #fff; outline-offset: -3px; }
+
+/* Keep the mobile hero and the media visible on the first paint: opacity
+   entrances delay LCP even when the poster has already downloaded. Desktop
+   copy retains its entrance when motion is allowed. */
+@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+  .hero__inner > :not(.hero__stage) {
     animation: hero-rise var(--dur-slow) var(--ease-out) both;
   }
 
