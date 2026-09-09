@@ -1690,3 +1690,10 @@ a {
     color: var(--ink);
   }
 }
+
+/* Avoid full-viewport noise blending and continuous background compositing
+   on phones. Keep the same static gradient composition. */
+@media (max-width: 767px) {
+  .grain { display: none; }
+  .aurora::before { animation: none; }
+}
