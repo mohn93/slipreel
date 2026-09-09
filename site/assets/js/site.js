@@ -271,9 +271,22 @@ function mountHeroMotion() {
   if (!video) return;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const smallScreen = window.matchMedia('(max-width: 767px)');
+  const preview = document.querySelector('.hero__preview');
+  let started = false;
+  if (preview) {
+    preview.addEventListener('click', () => {
+      // Hide before play so the native controls can recover from a blocked or
+      // failed media request, and move keyboard focus off the hidden button.
+      started = true;
+      preview.hidden = true;
+      video.focus();
+      video.play().catch(() => { video.controls = true; });
+    });
+  }
   const apply = () => {
     const manual = reducedMotion.matches || smallScreen.matches;
     video.controls = manual;
+    if (preview) preview.hidden = !manual || started;
     if (manual) {
       video.pause();
     } else if (video.paused) {
