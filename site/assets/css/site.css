@@ -683,6 +683,7 @@ a {
   background: var(--bg-card);
 }
 .hero__preview[hidden] { display: none; }
+.hero__stage.has-preview .hero__media { visibility: hidden; }
 .hero__preview img { height: 100%; object-fit: cover; }
 .hero__preview span {
   position: absolute;
