@@ -52,20 +52,30 @@ billing/signing/email configuration is missing or invalid.
 
 ## Downloads and updates
 
-The release workflow now retains all versioned DMGs. Provision enough storage and
-monitor free space; never silently prune a customer's covered version. Back up
-signed artifacts or mirror them into durable object storage. The public downloads
-page lists available releases from the appcast and checks availability. Restore
-missing historical enclosures from original signed GitHub release artifacts,
-verify their existing Sparkle signatures, and publish them at the exact original
-URLs. Do not rebuild an old version under the same signed URL.
+The supported public archive starts at **1.0.13 / build 1000013**. Installers
+1.0.0–1.0.12 have been withdrawn by the owner's decision; private backups remain
+for internal recovery and evidence. Do not restore those installers to the origin,
+public appcast, GitHub release assets, or download listings. This is a release
+withdrawal policy, not a claim that every retired build had the same defects.
+
+Retain future supported versioned DMGs, including versions covered by one-time
+licenses. Provision storage and monitor free space; do not silently prune a
+customer's covered supported version. Back up signed artifacts in private durable
+storage. The downloads page enforces the supported-build floor even if it receives
+a cached appcast, then checks availability and license coverage. Refer customers
+whose license covers no supported release to support rather than a retired binary.
 
 Use `python3 scripts/prepare-download-archive.py --output /tmp/slipreel-archive`
-for a read-only inventory. Add `--download` to stage missing originals from GitHub,
-or `--version 1.0.0 --download` for a single release. The tool verifies length and
-Ed25519 signature against the published appcast and checked-in public key before
-moving a file into the staging folder. It never uploads. The rollout restored all original signed versions 1.0.0–1.0.9 and verified their
-canonical public URLs; see the dated archive restoration evidence.
+for a read-only inventory of supported releases. Add `--download` to stage missing
+supported originals from GitHub, or `--version 1.0.13 --download` for one release.
+The tool rejects an explicitly requested withdrawn version and ignores withdrawn
+or unversioned entries in cached feeds. It verifies length and Ed25519 signature
+before staging and never uploads. Only restore supported artifacts at their exact
+original URLs; never rebuild an old version under the same signed URL.
+
+The earlier archive-restoration evidence documents a historical rollout step.
+It does not authorize reintroducing the subsequently withdrawn installers. Private
+backup recovery is a separate, explicitly authorized operation, outside this tool.
 
 Automatic Sparkle checks/installations are disabled before native plugin startup.
 Settings exposes manual checks and warns customers without an active subscription
@@ -97,7 +107,9 @@ reports or commands that enter shared logs.
   long recording and low disk, export/cancel, crash recovery, reopened edits.
 - Old-version update installation, one-time ceiling warning, and covered-version
   download/install/export. Confirm site availability checks do not hide the last
-  eligible release because its archive file is missing.
+  eligible supported release because its archive file is missing. Withdrawn
+  installers must remain unavailable; use retained private fixtures for old-version
+  update checks, without restoring public links.
 - Restore a backup and rehearse rollback to a database-compatible secure build.
   Keep migrations forward-only. Do not restore old session/refresh credentials or
   reintroduce checkout-as-authentication during a rollback.
