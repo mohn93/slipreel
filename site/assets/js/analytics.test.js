@@ -41,13 +41,15 @@ test('analytics preserves only its configured public ingestion key after credent
   const env = environment('/');
   env.start();
   const hook = env.config().before_send;
-  const original = { event: '$pageview', properties: {
+  const original = { event: '$pageview', timestamp: new Date('2026-09-09T15:00:00Z'), properties: {
     token: 'AUTH_SECRET',
     $current_url: 'https://slipreel.app/?token=URL_SECRET&plan=monthly',
     nested: { token: 'NESTED_SECRET', refresh_token: 'REFRESH_SECRET' },
   } };
   const clean = hook(original);
   assert.equal(clean.properties.token, 'phc_fixture');
+  assert.ok(clean.timestamp instanceof Date);
+  assert.equal(JSON.parse(JSON.stringify(clean)).timestamp, '2026-09-09T15:00:00.000Z');
   assert.equal(clean.properties.$current_url, 'https://slipreel.app/?plan=monthly');
   assert.ok(!JSON.stringify(clean).includes('SECRET'));
   assert.equal(original.properties.token, 'AUTH_SECRET');

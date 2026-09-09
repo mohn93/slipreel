@@ -17,7 +17,7 @@
 // than hardcoded here — see ph-config.js and scripts/deploy-site.sh. Empty in
 // the committed source, so a plain checkout no-ops until deployed/configured.
 import { POSTHOG_KEY } from './ph-config.js';
-import { scrubEvent } from './credential-safety.js';
+import { scrubEvent } from './credential-safety.js?v=2';
 
 // Same-origin proxy base. nginx routes /ingest/static/* to PostHog's asset CDN
 // and /ingest/* to the US ingestion API. location.origin keeps this correct on
