@@ -272,7 +272,6 @@ function mountHeroMotion() {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const smallScreen = window.matchMedia('(max-width: 767px)');
   const preview = document.querySelector('.hero__preview');
-  const stage = video.closest('.hero__stage');
   let started = false;
   if (preview) {
     preview.addEventListener('click', () => {
@@ -280,7 +279,6 @@ function mountHeroMotion() {
       // failed media request, and move keyboard focus off the hidden button.
       started = true;
       preview.hidden = true;
-      stage?.classList.remove('has-preview');
       video.focus();
       video.play().catch(() => { video.controls = true; });
     });
@@ -290,7 +288,6 @@ function mountHeroMotion() {
     video.controls = manual;
     if (preview) {
       preview.hidden = !manual || started;
-      stage?.classList.toggle('has-preview', !preview.hidden);
     }
     if (manual) {
       video.pause();
