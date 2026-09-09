@@ -2,8 +2,8 @@
 
 This is the current deployment checklist for the September 2026 security and
 recording-safety changes. The older Phase 7 document is historical setup context,
-not evidence of current live configuration. No production changes were performed
-by the code repair task.
+not evidence of current live configuration. Production rollout evidence is recorded in
+[the dated rollout report](../reviews/rollout-status-2026-09-09.md).
 
 ## Release order and compatibility
 
@@ -29,16 +29,15 @@ by the code repair task.
    Device records are retained so the same Mac can rotate its credentials rather
    than spending a new seat. Verify existing-device and two-device behavior.
 6. Build/sign/notarize the new macOS release only after required checks succeed.
-   The current public 1.0.12 binary does not receive source fixes until users
-   install the new build. Inspect code signing, notarization, Sparkle signature,
+   The former public 1.0.12 binary does not receive source fixes until users
+   install 1.0.13 or a later build. Inspect code signing, notarization, Sparkle signature,
    both architectures, and actual bundled ffmpeg/ffprobe/whisper helpers again.
 
 ## Approved billing policy
 
 - Full refund: revoke that purchase's grant; unrelated valid purchases remain.
 - Partial refund: retain access.
-- Open dispute: suspend the affected purchase; restore only when resolved in the
-  customer's favor (a merchant win), revoke after a merchant loss.
+- Open dispute: suspend the affected purchase; restore after a merchant win, revoke after a merchant loss.
 - Past-due subscriptions: seven-day grace; terminal unpaid/canceled subscriptions
   have no continuing access.
 - Both license types: online token renewal at least every 14 days. Revocation
@@ -65,9 +64,8 @@ Use `python3 scripts/prepare-download-archive.py --output /tmp/slipreel-archive`
 for a read-only inventory. Add `--download` to stage missing originals from GitHub,
 or `--version 1.0.0 --download` for a single release. The tool verifies length and
 Ed25519 signature against the published appcast and checked-in public key before
-moving a file into the staging folder. It never uploads. The repair task recovered
-and verified 1.0.0 locally under `/tmp/slipreel-release-review/archive-restoration/`;
-the public URL still needs restoration.
+moving a file into the staging folder. It never uploads. The rollout restored all original signed versions 1.0.0–1.0.9 and verified their
+canonical public URLs; see the dated archive restoration evidence.
 
 Automatic Sparkle checks/installations are disabled before native plugin startup.
 Settings exposes manual checks and warns customers without an active subscription

@@ -1,0 +1,62 @@
+{
+  "verifiedAt": "2026-09-09T08:06:12.821Z",
+  "endpoints": {
+    "health": {
+      "status": 200,
+      "state": "ok",
+      "db": "up"
+    },
+    "ready": {
+      "status": 200,
+      "state": "ready"
+    }
+  },
+  "migration": {
+    "recorded": true,
+    "filename": "0008_release_hardening.sql",
+    "applied_at": "2026-09-09T07:56:55.676Z",
+    "pendingLegacyGrants": 0
+  },
+  "webhook": {
+    "id": "we_1UA8MyJa6q311aT706rMrpt6",
+    "status": "enabled",
+    "livemode": true,
+    "url": "https://api.slipreel.app/v1/stripe/webhook",
+    "apiVersion": "2026-07-29.dahlia",
+    "enabledEvents": [
+      "checkout.session.completed",
+      "customer.subscription.created",
+      "customer.subscription.updated",
+      "customer.subscription.deleted",
+      "checkout.session.async_payment_succeeded",
+      "checkout.session.async_payment_failed",
+      "charge.refunded",
+      "charge.dispute.created",
+      "charge.dispute.closed"
+    ],
+    "missingEvents": []
+  },
+  "runtime": {
+    "since": "2026-09-09 07:56:55 UTC",
+    "service": {
+      "NRestarts": "0",
+      "ExecMainStatus": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "ActiveEnterTimestamp": "Wed 2026-09-09 07:56:54 UTC"
+    },
+    "logs": {
+      "entries": 53,
+      "applicationErrors": 0,
+      "applicationWarnings": 0,
+      "systemErrors": 0,
+      "http5xx": 0,
+      "http4xx": 2,
+      "httpErrorStatuses": {
+        "401": 2
+      },
+      "errorCategories": {}
+    }
+  },
+  "scope": "Read-only verification; no payments, emails or production mutations."
+}

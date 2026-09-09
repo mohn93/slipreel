@@ -1,0 +1,36 @@
+{
+  "verifiedAt": "2026-09-09T07:50:19.198Z",
+  "id": "we_1UA8MyJa6q311aT706rMrpt6",
+  "url": "https://api.slipreel.app/v1/stripe/webhook",
+  "livemode": true,
+  "status": "enabled",
+  "apiVersion": "2026-07-29.dahlia",
+  "previousEvents": [
+    "checkout.session.completed",
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted"
+  ],
+  "addedEvents": [
+    "checkout.session.async_payment_succeeded",
+    "checkout.session.async_payment_failed",
+    "charge.refunded",
+    "charge.dispute.created",
+    "charge.dispute.closed"
+  ],
+  "enabledEvents": [
+    "checkout.session.completed",
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "checkout.session.async_payment_succeeded",
+    "checkout.session.async_payment_failed",
+    "charge.refunded",
+    "charge.dispute.created",
+    "charge.dispute.closed"
+  ],
+  "verified": true,
+  "mutationFields": [
+    "enabled_events"
+  ]
+}
