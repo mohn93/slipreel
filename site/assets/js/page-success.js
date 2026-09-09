@@ -80,6 +80,7 @@ async function run() {
     }
     return;
   }
+  if (r.error === 'payment_failed') return fail('The payment did not succeed. Check your account and payment method before trying a new checkout.');
   if (r.error === 'checkout_expired') return fail('This checkout expired before payment was completed. Check your account before starting a new purchase.');
   if (r.error === 'payment_not_entitled') return fail('This payment does not currently provide an active license. Check your account and billing status, or contact support. Do not purchase again just to retry activation.');
   if (r.status === 403) return fail('This checkout belongs to a different account. Sign out, then sign in with the email used for the purchase.');

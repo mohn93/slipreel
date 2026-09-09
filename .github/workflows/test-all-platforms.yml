@@ -35,6 +35,8 @@ jobs:
       - name: Native writer and geometry regressions
         working-directory: packages/screen_recorder_macos/example/macos
         run: |
+          # Direct xcodebuild needs Flutter's generated xcconfig and file lists.
+          (cd .. && flutter build macos --debug --config-only)
           pod install
           xcodebuild -workspace Runner.xcworkspace -scheme Runner \
             -destination 'platform=macOS' -derivedDataPath "$RUNNER_TEMP/native-tests" \
