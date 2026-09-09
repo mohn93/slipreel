@@ -17,11 +17,9 @@
 .archive-filter h2 { font-size: 16px; font-weight: 600; letter-spacing: -.2px; }
 .archive-filter p { max-width: 49ch; font-size: 14px; line-height: 1.65; color: var(--ink-dim); margin-top: 7px; }
 .archive-filter p a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
-.archive-date label { display: block; font-size: 12px; margin-bottom: 8px; }
-.archive-date label span { color: var(--ink-dim); }
-.archive-date-controls { display: flex; align-items: center; gap: 10px; }
-.archive-date input { min-width: 176px; min-height: 44px; padding: 9px 12px; font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line-strong); border-radius: 8px; color-scheme: dark; }
-.archive-date button { color: var(--ink); font: inherit; font-size: 13px; background: none; border: 0; padding: 10px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.archive-license-action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 16px; color: var(--ink); background: var(--bg); font: inherit; font-size: 13px; font-weight: 550; text-decoration: none; cursor: pointer; }
+.archive-license-action:hover { border-color: var(--ink-faint); }
+.archive-license-action[hidden] { display: none; }
 .archive-history { margin-top: 42px; }
 .archive-list-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .archive-list-head h2 { font-size: 22px; font-weight: 600; letter-spacing: -.5px; }
@@ -52,8 +50,6 @@
   .archive-intro > p { font-size: 16px; max-width: 30ch; }
   .archive-platform { font-size: 12px; gap: 7px; }
   .archive-filter { grid-template-columns: 1fr; padding: 22px; gap: 20px; }
-  .archive-date input { width: 100%; min-width: 0; }
-  .archive-date-controls { width: 100%; }
   .archive-history { margin-top: 32px; }
   .release-row { grid-template-columns: 1fr auto; gap: 8px 14px; padding: 20px 0; }
   .release-title { grid-column: 1; gap: 7px; }

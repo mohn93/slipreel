@@ -54,7 +54,7 @@ function renderPlan(e) {
     showUpgrade = !!expired;
     upgrade.textContent = expired ? 'Renew for another year of updates' : 'Upgrade for unlimited exports';
     upgrade.href = 'pricing.html?plan=onetime';
-    if (e.updatesUntil) document.getElementById('eligible-download').href = 'downloads.html?' + new URLSearchParams({ until: e.updatesUntil.slice(0, 10) });
+    document.getElementById('eligible-download').href = 'downloads.html';
   }
 
   planDot.className = dot;
