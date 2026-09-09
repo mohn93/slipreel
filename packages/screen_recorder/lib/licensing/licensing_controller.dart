@@ -237,8 +237,9 @@ class LicensingController extends StateNotifier<EntitlementState> {
           SignInFeedback(
             'Signed in successfully',
             claims.plan == 'onetime'
-                ? 'Your one-time license is active on this Mac. Unlimited exports are unlocked.'
-                : 'Your subscription is active on this Mac. Unlimited exports are unlocked.',
+                ? 'Your one-time license is active on this Mac. Make something worth sharing.'
+                : 'Your subscription is active on this Mac. Make something worth sharing.',
+            exportsUnlocked: true,
           ),
         );
       } else if (reason == PaywallReason.updateCeiling) {
