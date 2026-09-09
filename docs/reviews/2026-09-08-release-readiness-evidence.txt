@@ -33,11 +33,11 @@ Error opening output files: Invalid argument
   Expected: true
     Actual: <false>
   An export must not delete its source
-  
+
   package:matcher                                               expect
   package:flutter_test/src/widget_tester.dart 473:18            expect
   /tmp/slipreel-release-review/source-overwrite-test.dart 71:9  main.<fn>.<fn>
-  
+
 00:07 +0 -1: Some tests failed.
 
 recovery-audio.log
@@ -46,11 +46,11 @@ RECOVERY RESULT: audioTracks=1; originalExists=false
   Expected: <2>
     Actual: <1>
   Recovery should preserve both independent audio tracks
-  
+
   package:matcher                                             expect
   package:flutter_test/src/widget_tester.dart 473:18          expect
   /tmp/slipreel-release-review/recovery-audio-test.dart 27:5  main.<fn>
-  
+
 00:05 +0 -1: Some tests failed.
 
 web-check-curl.log
