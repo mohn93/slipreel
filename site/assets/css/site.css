@@ -669,12 +669,11 @@ a {
   border-radius: calc(var(--radius-lg) - 6px);
 }
 
-/* Entrance. Pure CSS, so it plays with JavaScript disabled, and it settles on
-   the final state rather than depending on a class being added. Section 9's
-   reduce block cancels the animation, which leaves every element at its
-   normal, fully visible style. */
-@media (prefers-reduced-motion: no-preference) {
-  .hero__inner > * {
+/* Keep the mobile hero and the media visible on the first paint: opacity
+   entrances delay LCP even when the poster has already downloaded. Desktop
+   copy retains its entrance when motion is allowed. */
+@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+  .hero__inner > :not(.hero__stage) {
     animation: hero-rise var(--dur-slow) var(--ease-out) both;
   }
 
