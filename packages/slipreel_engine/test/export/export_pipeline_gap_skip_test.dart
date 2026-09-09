@@ -186,6 +186,7 @@ void main() {
         if (tmp.existsSync()) tmp.deleteSync(recursive: true);
       });
       final outPath = '${tmp.path}/out.mp4';
+      await File(outPath).writeAsString('previous successful export');
 
       final pipeline = ExportPipeline(
         sourcePath: 'test/fixtures/sample_recording.mp4',
@@ -207,7 +208,7 @@ void main() {
       );
 
       await expectLater(pipeline.run(), throwsException);
-      expect(File(outPath).existsSync(), isFalse);
+      expect(await File(outPath).readAsString(), 'previous successful export');
     },
   );
 

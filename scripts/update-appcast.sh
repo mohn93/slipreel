@@ -37,6 +37,7 @@ item="    <item>
       <pubDate>${pubdate}</pubDate>
       <sparkle:version>${BUILD}</sparkle:version>
       <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+      <sparkle:releaseNotesLink>https://slipreel.app/changelog</sparkle:releaseNotesLink>
       <sparkle:minimumSystemVersion>${MIN_OS}</sparkle:minimumSystemVersion>
       <enclosure url=\"${URL}\" ${sig} type=\"application/octet-stream\" />
     </item>"

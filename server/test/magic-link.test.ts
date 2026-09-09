@@ -28,11 +28,11 @@ describe('magic link', () => {
     await app.close();
   });
 
-  it('does not leak existence for an unknown email (200, no token)', async () => {
+  it('allows a new user to verify their email', async () => {
     const { app } = await makeLicensingApp(pool);
     const req = await app.inject({ method: 'POST', url: '/v1/auth/magic-link', payload: { email: 'nobody@e.com' } });
     expect(req.statusCode).toBe(200);
-    expect(req.json().debug_token).toBeUndefined();
+    expect(req.json().debug_token).toBeTruthy();
     await app.close();
   });
 
@@ -76,12 +76,12 @@ describe('magic link', () => {
     await app.close();
   });
 
-  it('unknown email does not send', async () => {
+  it('new email receives a verification link', async () => {
     const sent: string[] = [];
     const email = { sendMagicLink: async (to: string) => { sent.push(to); } };
     const { app } = await makeLicensingApp(pool, { email });
     await app.inject({ method: 'POST', url: '/v1/auth/magic-link', payload: { email: 'nobody@e.com' } });
-    expect(sent).toHaveLength(0);
+    expect(sent).toHaveLength(1);
     await app.close();
   });
 });

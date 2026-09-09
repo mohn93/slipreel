@@ -13,19 +13,27 @@ permissions:
   contents: write   # softprops/action-gh-release needs this to publish the DMG
 
 jobs:
+  checks:
+    uses: ./.github/workflows/test-all-platforms.yml
   release:
+    needs: checks
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Resolve version
         id: ver
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            RELEASE_VERSION="$INPUT_VERSION"
           else
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            RELEASE_VERSION="${GITHUB_REF_NAME#v}"
           fi
+          source scripts/lib/version.sh
+          derive_build_number "$RELEASE_VERSION" >/dev/null
+          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -109,7 +117,6 @@ jobs:
           DEPLOY_HOST: 185.203.116.117
           DEPLOY_USER: deploy
           DEPLOY_ROOT: /var/www/slipreel
-          KEEP_DMGS: "3"
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "${{ secrets.SLIPREEL_DEPLOY_SSH_KEY }}" > ~/.ssh/slipreel_deploy
@@ -122,17 +129,10 @@ jobs:
           # never points at a not-yet-uploaded file.
           rsync -av -e "$SSH" "$DMG" "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/download/"
           rsync -av -e "$SSH" out/appcast.xml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/appcast.xml"
-          # Stable alias for the marketing site's no-JavaScript download link,
-          # which cannot know the current version. It MUST be named
-          # `latest.dmg` and NOT `Slipreel-latest.dmg`: the prune below globs
-          # `Slipreel-*.dmg`, so a matching alias would occupy one of the
-          # newest-$KEEP_DMGS slots and could get a real DMG deleted.
+          # Keep every signed release: one-time customers may need a build
+          # from before their update ceiling. Never prune customer downloads.
           $SSH "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd '$DEPLOY_ROOT/download' && ln -sfn '$(basename "$DMG")' latest.dmg"
-          # Disk is tight on the box: keep only the newest $KEEP_DMGS DMGs.
-          # Sparkle only needs the current one; older items stay in the feed.
-          $SSH "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cd '$DEPLOY_ROOT/download' && ls -1t Slipreel-*.dmg 2>/dev/null | tail -n +$((KEEP_DMGS+1)) | xargs -r rm -f; ls -1 Slipreel-*.dmg"
           rm -f ~/.ssh/slipreel_deploy
 
       - name: Clean up keychain + keys

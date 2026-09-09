@@ -45,6 +45,13 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
 
   ({String title, String body}) _copy(PaywallReason reason) {
     switch (reason) {
+      case PaywallReason.licenseCheckRequired:
+        return (
+          title: 'Connect to verify your license',
+          body: 'Your saved license needs its online check, required at least '
+              'every 14 days. Connect to the internet and retry. You do not '
+              'need to purchase again.',
+        );
       case PaywallReason.needsPurchase:
         return (
           title: 'Exporting is a paid feature',
@@ -64,7 +71,7 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
           body: 'Your one-time license covers versions released within your '
               'update window. This build is newer, so export is locked here. '
               'Renew another year of updates to export on the latest version '
-              'your earlier build still exports as before.',
+              'or download an earlier covered version.',
         );
     }
   }
@@ -118,8 +125,18 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
             ElevatedButton(
               onPressed: _busy
                   ? null
-                  : () => _run(
-                      ref.read(licensingControllerProvider.notifier).unlockExport),
+                  : () => _run(() async {
+                      final controller = ref.read(licensingControllerProvider.notifier);
+                      if (widget.reason != PaywallReason.licenseCheckRequired) {
+                        return controller.unlockExport();
+                      }
+                      await controller.refreshNow();
+                      if (mounted && !canExportNow(ref.read(entitlementProvider),
+                          appReleaseDate: buildReleaseDate)) {
+                        AppAlerts.error('Could not renew your license. Check your connection or sign in again.');
+                      }
+                      return true;
+                    }),
               style: ElevatedButton.styleFrom(
                   backgroundColor: palette.accent,
                   foregroundColor: Colors.white,
@@ -130,7 +147,9 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
                       width: 18,
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
-                  : Text(widget.reason == PaywallReason.needsPurchase
+                  : Text(widget.reason == PaywallReason.licenseCheckRequired
+                      ? 'Retry license check'
+                      : widget.reason == PaywallReason.needsPurchase
                       ? 'Unlock export'
                       : 'Continue'),
             ),

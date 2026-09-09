@@ -17,6 +17,15 @@ class _FakeVerifier extends EntitlementVerifier {
       _table[jwt];
 }
 
+class _RetryStore extends InMemoryLicenseStore {
+  bool fail = true;
+  @override
+  Future<void> save(LicenseTokens tokens) async {
+    if (fail) throw StateError('storage unavailable');
+    await super.save(tokens);
+  }
+}
+
 EntitlementClaims _claims() => EntitlementClaims(
       sub: 'usr_1',
       plan: 'subscription',
@@ -35,6 +44,23 @@ void main() {
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+  test('a callback can be retried after local storage recovers', () async {
+    final store = _RetryStore();
+    final auth = AuthStateStore(InMemorySecureKV());
+    final nonce = await auth.begin();
+    final c = LicensingController(store: store,
+      verifier: _FakeVerifier({'jwt.ok': _claims()}),
+      api: LicensingApi(baseUrl: 'https://x.test'), authState: auth);
+    final link = Uri.parse('slipreel://auth?token=jwt.ok&refresh=rt&device_id=dev_1&state=$nonce');
+    await c.handleDeepLink(link);
+    expect(await store.load(), isNull);
+    expect(await auth.matches(nonce), isTrue);
+    store.fail = false;
+    await c.handleDeepLink(link);
+    expect(c.state, isA<EntitlementLoaded>());
+    expect(await auth.matches(nonce), isFalse);
+  });
 
   test('valid deep link with matching state activates', () async {
     final store = InMemoryLicenseStore();

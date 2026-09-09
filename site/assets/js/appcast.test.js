@@ -70,6 +70,7 @@ function fakeDoc(items) {
       kids.push(el('enclosure', '', { url: it.url, length: it.length ?? null }));
     }
     if (it.version !== undefined) kids.push(el('sparkle:shortVersionString', it.version));
+    if (it.date !== undefined) kids.push(el('pubDate', it.date));
     if (it.build !== undefined) kids.push(el('sparkle:version', it.build));
     return {
       getElementsByTagName: (t) => kids.filter((k) => k.tagName === t),
@@ -80,16 +81,16 @@ function fakeDoc(items) {
 
 test('itemsFromDocument reads url, length, version and build', () => {
   const doc = fakeDoc([
-    { url: 'https://slipreel.app/download/Slipreel-1.0.1.dmg', length: '140703903', version: '1.0.1', build: '1000001' },
+    { url: 'https://slipreel.app/download/Slipreel-1.0.1.dmg', length: '140703903', version: '1.0.1', build: '1000001', date: '2026-09-08T00:00:00.000Z' },
   ]);
   assert.deepEqual(itemsFromDocument(doc), [
-    { url: 'https://slipreel.app/download/Slipreel-1.0.1.dmg', length: '140703903', version: '1.0.1', build: '1000001' },
+    { url: 'https://slipreel.app/download/Slipreel-1.0.1.dmg', length: '140703903', version: '1.0.1', build: '1000001', date: '2026-09-08T00:00:00.000Z' },
   ]);
 });
 
 test('itemsFromDocument tolerates a malformed item', () => {
   const doc = fakeDoc([{}]);
   assert.deepEqual(itemsFromDocument(doc), [
-    { url: null, length: null, version: null, build: null },
+    { url: null, length: null, version: null, build: null, date: null },
   ]);
 });

@@ -237,14 +237,17 @@ void main() {
     });
 
     test('palette tmp directory is removed even when pass 2 fails', () async {
-      // Force a pass-2 failure by directing output to a path inside a
-      // non-existent directory — ffmpeg cannot open the output file.
-      final bogusOutput =
-          '/tmp/nonexistent_dir_${DateTime.now().microsecondsSinceEpoch}/out.gif';
+      final tmp = await Directory.systemTemp.createTemp('gif-pass2-failure-');
+      addTearDown(() => tmp.delete(recursive: true));
+      final bogusOutput = '${tmp.path}/out.gif';
+      await File(bogusOutput).writeAsString('previous successful export');
 
       final pipeline = GifExportPipeline(
         sourcePath: 'test/fixtures/sample_recording.mp4',
         outputPath: bogusOutput,
+        beforePass2ForTesting: () async {
+          throw Exception("Simulated pass 2 failure");
+        },
         sourceMetadata: _metadata(),
         cursorRecording: CursorRecording(),
         projectState: _bareState(),
@@ -254,6 +257,10 @@ void main() {
       // The pipeline must throw because pass 2 cannot write its output.
       await expectLater(pipeline.run(), throwsA(isA<Exception>()));
 
+      expect(
+        await File(bogusOutput).readAsString(),
+        'previous successful export',
+      );
       // Even though it threw, the palette directory must be cleaned up.
       final paletteDir = pipeline.debugPaletteDirectoryPath;
       expect(paletteDir, isNotNull);

@@ -1,3 +1,5 @@
+import 'package:screen_recorder/update/updater_backend.dart';
+import 'package:screen_recorder/update/updater_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +19,15 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 
 /// Minimal platform stub — same pattern as test/state/sleep_observer_test.dart.
 class _FakePlatform extends ScreenRecorderPlatform {}
+class _UpdateBackend implements UpdaterBackend {
+  int checks = 0;
+  @override
+  Future<void> setFeedURL(String url) async {}
+  @override
+  Future<void> setScheduledCheckInterval(int seconds) async {}
+  @override
+  Future<void> checkForUpdates() async { checks++; }
+}
 
 Widget _app(Widget child, List<Override> overrides) => ProviderScope(
       overrides: overrides,
@@ -94,6 +105,30 @@ void main() {
 
   List<Override> withEntitlement(EntitlementState state) =>
       [...overrides, entitlementProvider.overrideWithValue(state)];
+
+  testWidgets('one-time updates require compatibility confirmation', (tester) async {
+    final backend = _UpdateBackend();
+    await tester.pumpWidget(_app(const SettingsScreen(), [
+      ...withEntitlement(EntitlementLoaded(claims(plan: 'onetime',
+          updatesUntil: DateTime.utc(2027, 1, 1)))),
+      updaterServiceProvider.overrideWithValue(UpdaterService(backend)),
+    ]));
+    await tester.pump();
+    await tester.ensureVisible(find.text('Check for updates'));
+    await tester.tap(find.text('Check for updates'));
+    await tester.pumpAndSettle();
+    expect(find.text('Check license compatibility'), findsOneWidget);
+    expect(find.textContaining('2027-01-01 (UTC)'), findsOneWidget);
+    expect(backend.checks, 0);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(backend.checks, 0);
+    await tester.tap(find.text('Check for updates'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Check for updates'));
+    await tester.pumpAndSettle();
+    expect(backend.checks, 1);
+  });
 
   testWidgets('hides the Account section when licensing is not wired',
       (tester) async {

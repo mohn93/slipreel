@@ -1,0 +1,38 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import { scrubEvent } from './credential-safety.js';
+const source = readFileSync(new URL('./analytics.js', import.meta.url), 'utf8').replace(/^import .*;$/gm, '');
+function environment(pathname) {
+  let idle, config, identified;
+  const window = {
+    location: { origin: 'https://slipreel.app' },
+    requestIdleCallback: (callback) => { idle = callback; },
+    posthog: { __SV: 1, init: (_key, options) => { config = options; }, identify: (...args) => { identified = args; } },
+  };
+  vm.runInNewContext(source, { window, location: { pathname }, document: {}, POSTHOG_KEY: 'phc_fixture', scrubEvent });
+  return { window, start: () => idle?.(), loaded: () => { window.posthog.__loaded = true; config.loaded(window.posthog); }, config: () => config, identified: () => identified };
+}
+test('identity queued before SDK readiness is applied on loaded callback', () => {
+  const env = environment('/');
+  env.window.slipreelIdentify('fixture-user', { fixture: true });
+  env.start();
+  assert.equal(env.identified(), undefined);
+  env.loaded();
+  assert.deepEqual(env.identified(), ['fixture-user', { fixture: true }]);
+  assert.equal(env.config().disable_session_recording, true);
+  assert.equal(env.config().before_send, scrubEvent);
+});
+test('credential and account pages never initialize analytics even if module is accidentally loaded', () => {
+  for (const route of ['/login', '/success.html', '/account', '/pricing.html']) {
+    const env = environment(route);
+    env.start();
+    assert.equal(env.config(), undefined);
+  }
+  for (const page of ['login', 'success', 'account', 'pricing']) {
+    const html = readFileSync(new URL(`../../${page}.html`, import.meta.url), 'utf8');
+    assert.ok(!html.includes('src="assets/js/analytics.js'));
+    assert.ok(html.includes('name="referrer" content="no-referrer"'));
+  }
+});

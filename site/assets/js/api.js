@@ -3,23 +3,27 @@
 export function createApi(baseUrl, fetchImpl = fetch) {
   async function call(method, path, body) {
     let res;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
       res = await fetchImpl(baseUrl + path, {
         method,
+        signal: controller.signal,
         credentials: 'include',
         headers: body ? { 'Content-Type': 'application/json' } : {},
         body: body ? JSON.stringify(body) : undefined,
       });
+      let data = null;
+      try { data = await res.json(); } catch { data = null; }
+      return { ok: res.ok, status: res.status, data };
     } catch {
       // Network error (API unreachable, DNS, CORS-blocked): surface as a failure
       // the caller can render, never an unhandled rejection. status 0 = no response.
       return { ok: false, status: 0, data: null };
-    }
-    let data = null;
-    try { data = await res.json(); } catch { data = null; }
-    return { ok: res.ok, status: res.status, data };
+    } finally { clearTimeout(timeout); }
   }
   return {
+    checkoutContext: (id) => call('GET', '/v1/checkout-context/' + encodeURIComponent(id)),
     checkout: (b) => call('POST', '/v1/checkout', b),
     sessionFromCheckout: (id) => call('POST', '/v1/auth/session-from-checkout', { checkout_session_id: id }),
     token: (b) => call('POST', '/v1/token', b),

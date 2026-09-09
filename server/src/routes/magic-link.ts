@@ -1,11 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { newId } from '../ids.js';
 import { createMagicLink, consumeMagicLink } from '../auth/magic_link.js';
 import { createSession } from '../auth/sessions.js';
 import { setSessionCookie } from '../auth/cookie.js';
 
 const requestBody = z.object({
   email: z.string().email(),
+  checkout_plan: z.enum(['monthly', 'onetime']).optional(),
+  checkout_session_id: z.string().max(200).optional(),
+  checkout_flow: z.string().max(200).optional(),
   device: z.string().max(200).optional(),
   device_name: z.string().max(120).optional(),
   state: z.string().max(200).optional(),
@@ -21,12 +25,15 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid request' });
 
     const { rows } = await app.pool.query<{ id: string }>(
-      'SELECT id FROM users WHERE email = $1',
-      [parsed.data.email],
+      'INSERT INTO users (id, email) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET email = users.email RETURNING id',
+      [newId('usr'), parsed.data.email],
     );
     const user = rows[0];
     if (user) {
       const { token } = await createMagicLink(app.pool, user.id, {
+        checkoutPlan: parsed.data.checkout_plan,
+        checkoutSessionId: parsed.data.checkout_session_id,
+        checkoutFlow: parsed.data.checkout_flow,
         device: parsed.data.device ?? null,
         deviceName: parsed.data.device_name ?? null,
         state: parsed.data.state ?? null,
@@ -39,6 +46,7 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
           app.log.info({ emailId, to: parsed.data.email }, 'magic link email sent');
         } catch (err) {
           app.log.error({ err }, 'magic link email send failed');
+          return reply.code(503).send({ error: 'email_unavailable' });
         }
       } else {
         app.log.info({ email: parsed.data.email }, 'magic link issued (email delivery not configured)');
@@ -62,6 +70,7 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
       'SELECT id, email FROM users WHERE id = $1',
       [consumed.userId],
     );
+    await app.pool.query('UPDATE users SET email_verified = true WHERE id = $1', [consumed.userId]);
     const { token, expiresAt } = await createSession(app.pool, consumed.userId);
     setSessionCookie(reply, token, expiresAt);
     return reply.send({
@@ -69,6 +78,9 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
       device: consumed.device,
       device_name: consumed.deviceName,
       state: consumed.state,
+      checkout_plan: consumed.checkoutPlan,
+      checkout_session_id: consumed.checkoutSessionId,
+      checkout_flow: consumed.checkoutFlow,
     });
   });
 }

@@ -592,6 +592,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   size: 16, color: context.palette.textSecondary),
               onTap: () async {
                 try {
+                  final entitlement = ref.read(entitlementProvider);
+                  final claims = entitlement is EntitlementLoaded
+                      ? entitlement.claims
+                      : null;
+                  if (claims?.plan != 'subscription' ||
+                      !canExport(claims, appReleaseDate: buildReleaseDate)) {
+                    final until = claims?.updatesUntil?.toUtc();
+                    final ceiling = until == null
+                        ? 'your included update period'
+                        : '${until.year}-${until.month.toString().padLeft(2, '0')}-${until.day.toString().padLeft(2, '0')}';
+                    final proceed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Check license compatibility'),
+                        content: Text(
+                          'A one-time license covers releases through $ceiling (UTC). '
+                          'Installing a newer release may require renewing updates to export. '
+                          'Compare the release date before installing, or download an earlier version.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () {
+                              launchUrl(
+                                Uri.parse('https://slipreel.app/downloads'),
+                              );
+                              Navigator.pop(ctx, false);
+                            },
+                            child: const Text('Earlier versions'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Cancel'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Check for updates'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (proceed != true) return;
+                  }
                   await ref.read(updaterServiceProvider).checkForUpdates();
                 } catch (_) {
                   // Sparkle unavailable (non-macOS / test host) — nothing to do.

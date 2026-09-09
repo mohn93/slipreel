@@ -17,6 +17,7 @@
 // than hardcoded here — see ph-config.js and scripts/deploy-site.sh. Empty in
 // the committed source, so a plain checkout no-ops until deployed/configured.
 import { POSTHOG_KEY } from './ph-config.js';
+import { scrubEvent } from './credential-safety.js';
 
 // Same-origin proxy base. nginx routes /ingest/static/* to PostHog's asset CDN
 // and /ingest/* to the US ingestion API. location.origin keeps this correct on
@@ -76,9 +77,10 @@ function initPostHog() {
     autocapture: false, // no blanket click/input listeners
     capture_pageview: true, // one pageview per full page load (this is an MPA)
     capture_pageleave: true, // bounce / time-on-page
-    disable_session_recording: false, // session replay ON (full) — requires
-    // "Record user sessions" enabled in PostHog Project Settings > Session Replay.
-    // Inputs are masked by default (maskAllInputs) so typed text isn't captured.
+    disable_session_recording: true, // Callback links and account data must never enter replay.
+    mask_personal_data_properties: true,
+    before_send: scrubEvent,
+    loaded: () => applyPendingIdentify(),
     disable_surveys: true,
     person_profiles: 'identified_only', // anonymous pageviews stay cheap
     persistence: 'localStorage', // no analytics cookie -> no consent banner
@@ -104,7 +106,7 @@ window.slipreelIdentify = function (userId, setProps) {
 };
 
 // Only load once configured, and never on the critical path.
-if (typeof POSTHOG_KEY === 'string' && POSTHOG_KEY.startsWith('phc_')) {
+if (!/^\/(login|success|account|pricing)(\.html)?\/?$/.test(location.pathname) && typeof POSTHOG_KEY === 'string' && POSTHOG_KEY.startsWith('phc_')) {
   if ('requestIdleCallback' in window) {
     window.requestIdleCallback(initPostHog, { timeout: 3000 });
   } else {

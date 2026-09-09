@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import Stripe from 'stripe';
@@ -34,6 +34,7 @@ describe('POST /v1/stripe/webhook', () => {
     await runMigrations(pool);
     await pool.query(
       `INSERT INTO users (id, email, stripe_customer_id) VALUES ('usr_wh', 'wh@example.com', 'cus_wh')`);
+    vi.spyOn(stripe.checkout.sessions, 'listLineItems').mockResolvedValue({has_more:false,data:[{quantity:1,price:{id:'price_o'}}]} as any);
     app = buildApp({ pool, stripe, billing, logger: false });
     await app.ready();
   });
@@ -42,7 +43,7 @@ describe('POST /v1/stripe/webhook', () => {
   it('accepts a validly-signed event and applies it', async () => {
     const { payload, header } = signed({
       id: 'evt_wh_1', type: 'checkout.session.completed',
-      data: { object: { mode: 'payment', customer: 'cus_wh', payment_intent: 'pi_wh' } },
+      data: { object: { id:'cs_wh',mode: 'payment', payment_status:'paid', customer: 'cus_wh', payment_intent: 'pi_wh' } },
     });
     const res = await app.inject({
       method: 'POST', url: '/v1/stripe/webhook',
@@ -59,7 +60,7 @@ describe('POST /v1/stripe/webhook', () => {
   it('rejects a bad signature with 400 and writes nothing', async () => {
     const payload = JSON.stringify({
       id: 'evt_wh_2', type: 'checkout.session.completed',
-      data: { object: { mode: 'payment', customer: 'cus_wh', payment_intent: 'pi_bad' } },
+      data: { object: { id:'cs_wh',mode: 'payment', payment_status:'paid', customer: 'cus_wh', payment_intent: 'pi_bad' } },
     });
     const res = await app.inject({
       method: 'POST', url: '/v1/stripe/webhook',

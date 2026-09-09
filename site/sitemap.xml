@@ -30,4 +30,7 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
+<url><loc>https://slipreel.app/guide</loc></url>
+<url><loc>https://slipreel.app/changelog</loc></url>
+<url><loc>https://slipreel.app/downloads</loc></url>
 </urlset>

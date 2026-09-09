@@ -1,169 +1,104 @@
 # Slipreel API
 
-Node/TypeScript + Postgres service behind nginx at `https://api.slipreel.app`.
-Owns accounts, Stripe checkout/webhooks, device seats, and Ed25519 entitlement
-tokens. This package is the Phase 1 skeleton (config, DB, migrations, health).
+Node 22.12+/TypeScript, Fastify and Postgres service for verified email accounts,
+Stripe purchases, two-device licensing and Ed25519 entitlement tokens.
 
-## Requirements
-- Node 22+
-- Docker (for local Postgres)
+## Local development and tests
 
-## Setup
-```bash
-cp .env.example .env
-npm install
-npm run db:up          # starts Postgres 16 on localhost:5433 (dbs: slipreel, slipreel_test)
+Copy `.env.example` to `.env`, configure test-mode credentials, then run `npm ci`
+and `npm run db:up`. `npm run dev` starts the server and applies migrations.
+For tests, supply a disposable database explicitly:
+
+```sh
+TEST_DATABASE_URL=postgres://slipreel:slipreel@127.0.0.1:5433/slipreel_test npm test
+npm run typecheck
+npm run build
 ```
 
-## Develop
-```bash
-npm run dev            # tsx watch, migrates on boot, serves /health
-curl localhost:8080/health
-```
+Tests **drop the public schema**. Never supply a production database URL. Test
+files run serially because each initializes its own schema. `npm run typecheck` covers server source and maintenance scripts, including legacy reconciliation. Development may run
+without billing/signing/email configuration; production fails startup if any is
+missing or invalid. `/health` checks the database; `/ready` also requires all
+customer-facing services to be configured. Readiness does not prove upstream
+Stripe or email delivery is available.
 
-## Test
-DB-backed tests need `TEST_DATABASE_URL` (in `.env`). Load it inline:
-```bash
-env $(grep -v '^#' .env | xargs) npm test
-```
-Note: `npm run typecheck` covers `src/` only, not `test/`; the test files are
-exercised by `npm test` (vitest) rather than the typecheck step.
+## Authentication and checkout
 
-## Migrations
-Add `migrations/NNNN_<name>.sql` (forward-only; never edit an applied file).
-Apply manually with `env $(grep -v '^#' .env | xargs) npm run migrate`; the server
-also migrates on boot.
+- `POST /v1/auth/magic-link` accepts email, optional device/device_name/state,
+  and optional `checkout_plan`, `checkout_session_id`, `checkout_flow`. New users
+  receive verification links too. Non-production responses include debug tokens.
+- `POST /v1/auth/magic-link/verify` consumes the token, verifies email ownership,
+  creates a secure HttpOnly cookie, and returns the stored flow context.
+- `POST /v1/checkout` requires a verified authenticated user. `plan` is `monthly`
+  or `onetime`; yearly is retained for existing subscriptions. Posted email never
+  selects the customer. Optional device context is stored server-side.
+- Cancel redirects contain an opaque `flow`; authenticated
+  `GET /v1/checkout-context/:id` restores its plan/device/state for its owner.
+- `POST /v1/auth/session-from-checkout` is retained as a compatibility path name,
+  but **never logs anyone in**. It requires a session and matching customer,
+  verifies the settled purchase price, reconciles fulfillment, and returns device
+  context. HTTP202 `payment_pending` is retryable; references are not consumed.
+- `/v1/token` activates/rotates a device under a per-account transaction lock;
+  `/v1/token/refresh` validates its refresh secret. `/v1/devices`, `/v1/entitlement`,
+  `/v1/portal` and logout are scoped to the authenticated account.
 
-## Build & run
-```bash
-npm run build && node dist/server.js
-```
+## Stripe fulfillment and payment policy
 
-## Deploy (VPS)
-- App dir: `/opt/slipreel-api` (built `dist/` + `node_modules` + `migrations/`).
-- Secrets: `/etc/slipreel-api.env` (root-owned, `0600`) with `NODE_ENV=production`,
-  `PORT=8080`, `DATABASE_URL=...`, `LOG_LEVEL=info`.
-- systemd: install `deploy/slipreel-api.service` to `/etc/systemd/system/`, then
-  `systemctl daemon-reload && systemctl enable --now slipreel-api`.
-- nginx: install `deploy/nginx-api.conf` to `/etc/nginx/sites-available/`, symlink
-  into `sites-enabled/`, then `certbot --nginx -d api.slipreel.app` and
-  `nginx -t && systemctl reload nginx`.
-- Postgres: create the `slipreel` role + database on the box; point `DATABASE_URL`
-  at it. Requires the `citext` extension (migration `0001` enables it) — migration
-  `0001` runs `CREATE EXTENSION IF NOT EXISTS citext`, which needs a role with
-  privilege to create extensions (superuser, or a role granted it) on first migrate.
-- The app binds `127.0.0.1` by default (nginx reaches it locally). If you ever set
-  `HOST=0.0.0.0`, add a firewall rule (`ufw deny 8080`) so only nginx/443 is public.
+Configure webhook delivery for `checkout.session.completed`,
+`checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
+`customer.subscription.created`, `customer.subscription.updated`,
+`customer.subscription.deleted`, `charge.refunded`, `charge.dispute.created`, and
+`charge.dispute.closed`. Failed asynchronous payments grant nothing and return terminal HTTP 402 payment_failed on completion. Webhooks are
+signature-verified; event claims and entitlement writes commit together.
 
-## Env vars
-See `.env.example`. `DATABASE_URL` is required; `PORT` (8080) and `LOG_LEVEL`
-(info) have defaults.
+Only settled purchases of configured prices grant access. The payment-intent
+ledger deduplicates success-page reconciliation and different webhook event IDs.
+Subscription deliveries reconcile Stripe's current state under a lock. REST calls explicitly pin API version2025-02-24.acacia; webhook snapshots can use a different version because live objects are retrieved by ID.
+`past_due` receives seven days of grace anchored to the invoice due/finalization time or billing-period start; repeated
+notifications cannot extend it. `unpaid` and canceled subscriptions lose access.
+Active subscriptions also require a future billing period end.
 
-## Stripe (test mode)
+Full refunds revoke the corresponding purchase; partial refunds retain it. Open
+disputes suspend that purchase; won disputes restore it and lost disputes revoke
+it. Other independent one-time purchases remain valid. Subscription reversals
+block the affected billing period; open disputes remain suspended until resolved.
+Refund and dispute state is stored even if it arrives before checkout fulfillment.
+Offline signed licenses last 14 days, so server-side revocation is effective on the
+next successful refresh or token expiry, not immediately on an offline Mac.
 
-All of this is test mode (`sk_test_…`). Nothing here touches live mode.
+## Deploying migration 0008
 
-1. Put your test secret key in `server/.env` as `STRIPE_SECRET_KEY=sk_test_...`.
-2. Create the products/prices (idempotent) and copy the printed ids into `.env`:
-   ```bash
-   env $(grep -v '^#' .env | xargs) npm run stripe:bootstrap
-   ```
-3. Forward webhooks to the local server and copy the `whsec_...` it prints into
-   `.env` as `STRIPE_WEBHOOK_SECRET`:
-   ```bash
-   stripe listen --forward-to localhost:8080/v1/stripe/webhook
-   ```
-4. Start the server (`npm run dev`) — with the Stripe env set it enables
-   `/v1/checkout`, `/v1/portal`, and `/v1/stripe/webhook`. Without it, the
-   server logs "billing disabled" and serves only the base routes.
-5. Exercise it:
-   - Create a checkout session:
-     ```bash
-     curl -s localhost:8080/v1/checkout \
-       -H 'content-type: application/json' \
-       -d '{"email":"you@example.com","plan":"yearly"}'
-     ```
-     Open the returned `url`, pay with test card `4242 4242 4242 4242` (any
-     future expiry / CVC). Decline testing: `4000 0000 0000 0002`.
-   - Or drive the webhook directly:
-     ```bash
-     stripe trigger checkout.session.completed
-     stripe trigger customer.subscription.deleted
-     ```
-   Then check the DB: `psql "$DATABASE_URL" -c 'select plan,status,updates_until,current_period_end from entitlements'`.
+Deploy the API and login-first website together. The forward migration clears all
+web sessions and outstanding magic links, and invalidates device refresh hashes.
+Existing device rows remain so verifying email and signing in on the same Mac
+rotates credentials without consuming another seat. Previously issued signed
+licenses expire within their existing 14-day lifetime.
 
-Notes: the webhook verifies Stripe's signature over the raw body and is
-idempotent (re-delivered events are no-ops). `stripe login` (once) is required
-before `stripe listen`/`stripe trigger`.
+Back up the database first and reconcile legacy one-time purchase history from
+Stripe before refund automation is enabled for those purchases. The old schema
+stored only the latest payment-intent ID and a cumulative update ceiling. The
+migration preserves that ceiling as a `legacy_until` grant, but cannot infer all
+previous renewals. Replace legacy grants with the verified individual settled
+purchases and their original purchase times, retaining the verified ceiling.
+Run `npm run reconcile:legacy -- --user USER_ID` with the intended database and
+Stripe environment to inspect a rollback-only proposal; rerun with `--apply` only
+after reviewing the before/after ceiling and payment list. This reads all settled
+checkout sessions for that customer, verifies prices and current refunds/disputes,
+and refuses to erase any grant missing from the retrieved history. Add repeatable `--historical-price price_ID` flags for retired one-time prices
+that you have verified belong to this product; current prices remain accepted.
+Unknown historical products remain excluded. Synthetic `legacy_` placeholders
+can be replaced only with explicit `--expected-current-until ISO_TIMESTAMP` and
+`--expected-reconciled-until ISO_TIMESTAMP` matching both reviewed dry-run ceilings
+(use `none` for a null ceiling). Known payment IDs must still all be covered;
+placeholder approval never disables that coverage check. `/ready` returns 503 while any legacy aggregate remains, and refunds of a
+legacy aggregate retry instead of incorrectly revoking earlier purchases. Do not invent purchase history from timestamps.
 
-## Licensing (auth + entitlement tokens)
+Use production-mode Stripe and email credentials, configure the signing key pair,
+CORS origin, success/cancel/portal URLs, and monitor `/ready`. Validate a real email
+round trip and a controlled settled checkout/activation before broad release.
+Current reverse-proxy configuration must be checked on the actual host; templates
+under `deploy/` are examples and do not describe every live hosting setup.
 
-Passwordless. A user is authenticated by reusing their completed Stripe Checkout
-session, or by a single-use magic link. An authenticated request to `/v1/token`
-registers the device (2 seats) and returns an Ed25519-signed entitlement token
-the desktop app verifies offline.
-
-Setup (test/dev):
-1. Generate the dedicated entitlement keypair and paste the two lines into `.env`:
-   ```bash
-   npm run gen:entitlement-keys
-   ```
-2. Start the server (`npm run dev`). With the keys set it enables the licensing
-   routes; without them it logs "licensing disabled" and serves only the base +
-   billing routes.
-
-Endpoints:
-- `POST /v1/auth/session-from-checkout` `{ checkout_session_id }` → sets a session cookie for the buyer.
-- `POST /v1/auth/magic-link` `{ email }` → issues a single-use link (email delivery stubbed; in non-production the response includes `debug_token`). `POST /v1/auth/magic-link/verify` `{ token }` → sets a session cookie.
-- `POST /v1/token` (session cookie) `{ fingerprint, device_name? }` → `{ token, refresh_token, device_id }`. A 3rd device → 409 `{ error: 'seat_limit', devices }`.
-- `POST /v1/token/refresh` `{ refresh_token, device_id }` → `{ token }` (no cookie needed).
-- `GET /v1/devices` / `DELETE /v1/devices/:id` (session cookie) → list / deactivate.
-- `GET /v1/entitlement/public-key` → the PEM the app embeds to verify tokens.
-
-Token claims: `sub, iss, iat, exp` (~14d), `plan` (subscription|onetime|free),
-`export`, `status`, `updates_until`, `device_id`, `seat_limit`. The private key is
-env-only; never commit it and never reuse the Sparkle key.
-
-## Web flow (Phase 4a — backend)
-
-The marketing site (`slipreel.app`) calls the API (`api.slipreel.app`) with credentials.
-Backend support:
-- **CORS** — `CORS_ORIGINS` (comma-separated) allows those origins with credentials.
-- **Email** — magic links are sent via Resend when `RESEND_API_KEY` is set; otherwise
-  they are logged and (non-production only) returned as `debug_token`. Verify the
-  `slipreel.app` sender domain in Resend before real sends.
-- **Single-use login** — `session-from-checkout` consumes the checkout session
-  (a leaked `checkout_session_id` works at most once, within 30 minutes).
-- **Device/state threading** — `POST /v1/checkout` accepts `device`, `device_name`,
-  `state`; they ride in the Stripe session metadata and are returned by
-  `session-from-checkout`. `POST /v1/auth/magic-link` accepts the same and returns
-  them from `.../verify`, so the web pages can mint a device token and deep-link back.
-- **Rate limits** — magic-link 5/min, checkout + session-from-checkout 20/min per IP
-  (in-memory; single-instance).
-
-The static pages that drive this flow are Phase 4b.
-
-## Local end-to-end (web flow)
-
-Run the API and the static site together to click through the pages
-(`site/pricing.html`, `success.html`, `login.html`, `account.html`):
-
-1. Boot the API with local-friendly config in `server/.env` (test mode):
-   - `CORS_ORIGINS=http://localhost:4173`
-   - Stripe test keys + price ids (`npm run stripe:bootstrap`), entitlement keys
-     (`npm run gen:entitlement-keys`), and optionally `RESEND_API_KEY`.
-   - Then `npm run dev`.
-2. Serve the site on the origin you allowed:
-   ```bash
-   npx --yes serve site -l 4173      # or: (cd site && python3 -m http.server 4173)
-   ```
-3. The pages auto-resolve the API base from the hostname: `slipreel.app` -> `https://api.slipreel.app`,
-   otherwise `http://<host>:8080`. To point at a different local API, add
-   `<meta name="slipreel-api-base" content="http://localhost:8080">` to the page `<head>`
-   for local testing only (do not commit it).
-4. Open `http://localhost:4173/pricing.html`, pay with Stripe test card
-   `4242 4242 4242 4242`, and follow the redirect back to `/success.html`.
-
-Deploy: `scripts/deploy-site.sh` rsyncs the whole `site/` tree (new pages ship
-automatically). Serve clean URLs (`/pricing`, `/success`, `/login`, `/account`)
-with `server/deploy/nginx-site.conf` (a `try_files $uri $uri.html` rule).
+Migrations in `migrations/NNNN_name.sql` are forward-only and run at boot. Never
+modify an already applied migration. Secrets belong in the host's protected
+environment file, not in Git or logs.

@@ -67,3 +67,46 @@ test('completeMagicLink mirrors completeCheckout (device -> deeplink)', async ()
 test('requestMagicLink reports sent', async () => {
   assert.deepEqual(await requestMagicLink(apiStub(), { email: 'a@b.com' }), { sent: true });
 });
+
+test('pending payment waits before minting activation and preserves activation context', async () => {
+  let calls = 0, tokenCalls = 0;
+  const result = await completeCheckout(apiStub({
+    sessionFromCheckout: async () => ++calls < 3 ? { ok: true, status: 202, data: { error: 'payment_pending' } }
+      : { ok: true, status: 200, data: { user: {}, device: 'mac', state: 'nonce' } },
+    token: async () => { tokenCalls++; return okToken; },
+  }), 'cs', { wait: async () => {} });
+  assert.equal(calls, 3);
+  assert.equal(tokenCalls, 1);
+  assert.ok(result.deeplink.includes('state=nonce'));
+});
+test('pending payment exhausts bounded retry without issuing any free activation', async () => {
+  const result = await completeCheckout(apiStub({
+    sessionFromCheckout: async () => ({ ok: true, status: 202, data: {} }),
+    token: async () => { assert.fail('must not activate pending purchase'); },
+  }), 'cs', { attempts: 2, wait: async () => {} });
+  assert.deepEqual(result, { pending: true, sessionId: 'cs' });
+});
+test('verified checkout intent starts checkout without premature device activation', async () => {
+  let posted;
+  const result = await completeMagicLink(apiStub({
+    magicLinkVerify: async () => ({ ok: true, data: { checkout_plan: 'monthly', device: 'mac', device_name: 'Air', state: 'nonce' } }),
+    checkout: async (body) => { posted = body; return { ok: true, data: { url: 'https://checkout.stripe/x' } }; },
+    token: async () => assert.fail('must not activate before payment'),
+  }), 'magic');
+  assert.equal(posted.plan, 'monthly');
+  assert.equal(posted.state, 'nonce');
+  assert.equal(result.redirect, 'https://checkout.stripe/x');
+});
+test('verified cancellation resumes only the server-owned flow', async () => {
+  const result = await completeMagicLink(apiStub({ magicLinkVerify: async () => ({ ok: true, data: { checkout_flow: 'flow123', checkout_plan: 'monthly' } }) }), 'magic');
+  assert.equal(result.redirect, 'pricing.html?flow=flow123');
+});
+test('checkout failure after verification retains context for retry without consuming the magic link twice', async () => {
+  const result = await completeMagicLink(apiStub({
+    magicLinkVerify: async () => ({ ok: true, data: { checkout_plan: 'onetime', device: 'mac', state: 'nonce' } }),
+    checkout: async () => ({ ok: false, status: 503, data: {} }),
+  }), 'magic');
+  assert.equal(result.phase, 'checkout');
+  assert.equal(result.checkoutContext.device, 'mac');
+  assert.equal(result.checkoutContext.state, 'nonce');
+});

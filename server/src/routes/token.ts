@@ -17,7 +17,7 @@ function locationFromRequest(req: FastifyRequest): string | null {
 
 // device_name is nullish: the web success/login pages post `device_name: null`
 // when the app didn't supply one, so accept null as well as omitted.
-const tokenBody = z.object({ fingerprint: z.string().min(1), device_name: z.string().nullish() });
+const tokenBody = z.object({ fingerprint: z.string().min(1).max(200), device_name: z.string().max(120).nullish() });
 const refreshReq = z.object({ refresh_token: z.string().min(1), device_id: z.string().min(1) });
 
 async function mintFor(app: FastifyInstance, userId: string, deviceId: string): Promise<string> {

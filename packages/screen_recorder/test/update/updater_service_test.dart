@@ -24,19 +24,20 @@ class _FakeBackend implements UpdaterBackend {
 }
 
 void main() {
-  test('init sets the feed URL and the daily interval, and is idempotent',
-      () async {
-    final backend = _FakeBackend();
-    final service = UpdaterService(backend);
+  test(
+    'init sets the feed once without enabling automatic update checks',
+    () async {
+      final backend = _FakeBackend();
+      final service = UpdaterService(backend);
 
-    await service.init();
-    await service.init(); // second call must not re-configure
+      await service.init();
+      await service.init(); // second call must not re-configure
 
-    expect(backend.feedUrl,
-        'https://slipreel.app/appcast.xml');
-    expect(backend.interval, 86400);
-    expect(backend.calls.where((c) => c == 'setFeedURL').length, 1);
-  });
+      expect(backend.feedUrl, 'https://slipreel.app/appcast.xml');
+      expect(backend.interval, isNull);
+      expect(backend.calls.where((c) => c == 'setFeedURL').length, 1);
+    },
+  );
 
   test('checkForUpdates delegates to the backend', () async {
     final backend = _FakeBackend();

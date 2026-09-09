@@ -183,6 +183,7 @@ class LiveRecordingWriter {
     }
 
     writer.startSession(atSourceTime: pts)
+    try? String(CMTimeGetSeconds(pts)).write(to: outputURL.appendingPathExtension("start-time"), atomically: true, encoding: .utf8)
     sessionStartedAt = pts
     writerActive = true
   }

@@ -26,7 +26,7 @@ describe('mapSubscriptionStatus', () => {
     expect(mapSubscriptionStatus('active')).toBe('active');
     expect(mapSubscriptionStatus('trialing')).toBe('active');
     expect(mapSubscriptionStatus('past_due')).toBe('grace');
-    expect(mapSubscriptionStatus('unpaid')).toBe('grace');
+    expect(mapSubscriptionStatus('unpaid')).toBe('canceled');
     expect(mapSubscriptionStatus('canceled')).toBe('canceled');
     expect(mapSubscriptionStatus('incomplete')).toBe('incomplete');
   });
@@ -51,7 +51,7 @@ describe('handleStripeEvent', () => {
     const r = await handleStripeEvent(
       pool,
       event('evt_1', 'checkout.session.completed', {
-        mode: 'payment', customer: 'cus_ot', payment_intent: 'pi_1',
+        mode: 'payment', payment_status: 'paid', customer: 'cus_ot', payment_intent: 'pi_1',
       }),
     );
     expect(r.processed).toBe(true);
@@ -70,9 +70,9 @@ describe('handleStripeEvent', () => {
   it('a second one-time purchase extends updates_until by another year', async () => {
     await seedUser(pool, 'cus_ot');
     await handleStripeEvent(pool, event('evt_a', 'checkout.session.completed',
-      { mode: 'payment', customer: 'cus_ot', payment_intent: 'pi_a' }));
+      { mode: 'payment', payment_status: 'paid', customer: 'cus_ot', payment_intent: 'pi_a' }));
     await handleStripeEvent(pool, event('evt_b', 'checkout.session.completed',
-      { mode: 'payment', customer: 'cus_ot', payment_intent: 'pi_b' }));
+      { mode: 'payment', payment_status: 'paid', customer: 'cus_ot', payment_intent: 'pi_b' }));
     const { rows } = await pool.query(
       `SELECT updates_until FROM entitlements WHERE plan = 'onetime'`);
     expect(rows).toHaveLength(1);
@@ -144,7 +144,7 @@ describe('handleStripeEvent', () => {
   it('is idempotent — re-delivering the same event id is a no-op', async () => {
     await seedUser(pool, 'cus_ot');
     const e = event('evt_dup', 'checkout.session.completed',
-      { mode: 'payment', customer: 'cus_ot', payment_intent: 'pi_x' });
+      { mode: 'payment', payment_status: 'paid', customer: 'cus_ot', payment_intent: 'pi_x' });
     const first = await handleStripeEvent(pool, e);
     const second = await handleStripeEvent(pool, e);
     expect(first.processed).toBe(true);
@@ -190,7 +190,7 @@ describe('handleStripeEvent', () => {
       handleStripeEvent(
         badPool as unknown as pg.Pool,
         event('evt_fail', 'checkout.session.completed', {
-          mode: 'payment', customer: 'cus_fail', payment_intent: 'pi_fail',
+          mode: 'payment', payment_status: 'paid', customer: 'cus_fail', payment_intent: 'pi_fail',
         }),
       ),
     ).rejects.toThrow('boom');
@@ -206,7 +206,7 @@ describe('handleStripeEvent', () => {
   it('rejects a second onetime entitlement row for the same user (partial unique index)', async () => {
     const userId = await seedUser(pool, 'cus_dupe');
     await handleStripeEvent(pool, event('evt_dupe1', 'checkout.session.completed',
-      { mode: 'payment', customer: 'cus_dupe', payment_intent: 'pi_dupe1' }));
+      { mode: 'payment', payment_status: 'paid', customer: 'cus_dupe', payment_intent: 'pi_dupe1' }));
 
     await expect(
       pool.query(

@@ -4,6 +4,9 @@ import 'entitlement_claims.dart';
 /// The three reasons export can be blocked, each mapping to a distinct paywall
 /// message (spec §2). null (from [paywallReasonFor]) means export is allowed.
 enum PaywallReason {
+  /// A previously verified paid license needs its periodic online renewal.
+  licenseCheckRequired,
+
   /// No purchase on this account (free / signed out / loading). Show plans.
   needsPurchase,
 
@@ -38,6 +41,10 @@ PaywallReason? paywallReasonFor(
     return null;
   }
   final claims = _claimsOf(state);
+  if (claims != null && claims.plan != 'free' &&
+      !(now ?? DateTime.now()).isBefore(claims.expiresAt)) {
+    return PaywallReason.licenseCheckRequired;
+  }
   if (claims != null && claims.plan == 'onetime' &&
       claims.updatesUntil != null &&
       appReleaseDate.isAfter(claims.updatesUntil!)) {

@@ -18,7 +18,7 @@ export async function stripeWebhookRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: 'invalid signature' });
       }
       try {
-        await handleStripeEvent(app.pool, evt);
+        await handleStripeEvent(app.pool, evt, app.stripe, app.billing);
       } catch (err) {
         app.log.error({ err, type: evt.type }, 'stripe webhook handler failed');
         return reply.code(500).send({ error: 'handler error' });

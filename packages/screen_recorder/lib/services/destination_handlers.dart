@@ -6,11 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-// TODO when super_clipboard's file-pasteboard API is needed:
-// import 'package:super_clipboard/super_clipboard.dart';
-// Currently using vanilla Clipboard.setData for plain-text delivery.
-// Replace with super_clipboard's file-reference pasteboard once the
-// native API surface stabilises (super_clipboard ≥ 1.0).
+Future<void> _defaultFileClipboardWrite(String path) async {
+  if (!Platform.isMacOS) {
+    throw UnsupportedError('File clipboard export requires macOS.');
+  }
+  await const MethodChannel(
+    'slipreel/device',
+  ).invokeMethod<void>('copyFile', path);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -90,7 +93,7 @@ class FileSaver implements DestinationHandler {
     Future<String?> Function(String suggestedName)? saveDialog,
     this.initialDirectory,
   }) : _saveDialog =
-            saveDialog ?? ((name) => _defaultSaveDialog(name, initialDirectory));
+           saveDialog ?? ((name) => _defaultSaveDialog(name, initialDirectory));
 
   /// Folder the Save dialog opens at (the configured default save location),
   /// or null to let the OS pick.
@@ -99,7 +102,9 @@ class FileSaver implements DestinationHandler {
   final Future<String?> Function(String suggestedName) _saveDialog;
 
   static Future<String?> _defaultSaveDialog(
-      String suggestedName, String? initialDirectory) async {
+    String suggestedName,
+    String? initialDirectory,
+  ) async {
     final ext = p.extension(suggestedName); // e.g. ".mp4"
     final XTypeGroup typeGroup;
     if (ext == '.gif') {
@@ -134,20 +139,20 @@ class FileSaver implements DestinationHandler {
 // ClipboardCopier
 // ---------------------------------------------------------------------------
 
-/// Writes to a tmp file then copies its absolute path to the system clipboard.
+/// Writes to a temporary file and places a native file reference on the clipboard.
 class ClipboardCopier implements DestinationHandler {
   /// Constructs a [ClipboardCopier].
   ///
   /// [clipboardWrite] is injectable for testing. In production the default
-  /// uses `Clipboard.setData`.
+  /// writes an NSPasteboard file URL on macOS.
   ///
   /// [tempDirProvider] is injectable for testing. In production the default
   /// calls `getTemporaryDirectory()`.
   ClipboardCopier({
     Future<void> Function(String text)? clipboardWrite,
     Future<Directory> Function()? tempDirProvider,
-  })  : _clipboardWrite = clipboardWrite ?? _defaultClipboardWrite,
-        _tempDirProvider = tempDirProvider ?? getTemporaryDirectory;
+  }) : _clipboardWrite = clipboardWrite ?? _defaultFileClipboardWrite,
+       _tempDirProvider = tempDirProvider ?? getTemporaryDirectory;
 
   final Future<void> Function(String text) _clipboardWrite;
   final Future<Directory> Function() _tempDirProvider;
@@ -165,14 +170,10 @@ class ClipboardCopier implements DestinationHandler {
 
   @override
   Future<DestinationResult> deliver(String outputPath) async {
-    // TODO when super_clipboard's file-pasteboard API is needed:
-    // Use super_clipboard to write a proper NSPasteboard file reference so
-    // the system recognises the clipboard item as a file rather than text.
-    // For now plain-text of the absolute path is sufficient and avoids
-    // requiring native Swift/ObjC glue code in this task.
     await _clipboardWrite(outputPath);
-    return const DestinationResult(
-      message: 'Path copied — paste into Finder or any app',
+    return DestinationResult(
+      message: 'File copied — paste into Finder or an app that accepts files',
+      revealPath: outputPath,
       copiedToClipboard: true,
     );
   }
@@ -198,8 +199,8 @@ class ShareableLinkPublisher implements DestinationHandler {
   ShareableLinkPublisher({
     Future<void> Function(String text)? clipboardWrite,
     Future<Directory> Function()? tempDirProvider,
-  })  : _clipboardWrite = clipboardWrite ?? _defaultClipboardWrite,
-        _tempDirProvider = tempDirProvider ?? getTemporaryDirectory;
+  }) : _clipboardWrite = clipboardWrite ?? _defaultClipboardWrite,
+       _tempDirProvider = tempDirProvider ?? getTemporaryDirectory;
 
   final Future<void> Function(String text) _clipboardWrite;
   final Future<Directory> Function() _tempDirProvider;

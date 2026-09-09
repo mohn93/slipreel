@@ -37,8 +37,15 @@ async function afterSession(api, ctx) {
   return { account: { email: ctx.email, userId: ctx.userId } };
 }
 
-export async function completeCheckout(api, sessionId) {
-  const s = await api.sessionFromCheckout(sessionId);
+export async function completeCheckout(api, sessionId, { attempts = 15, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), onPending = () => {} } = {}) {
+  let s;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    s = await api.sessionFromCheckout(sessionId);
+    if (s.status !== 202) break;
+    onPending(attempt);
+    if (attempt + 1 < attempts) await wait(2000);
+  }
+  if (s.status === 202) return { pending: true, sessionId };
   if (!s.ok) return { error: s.data?.error || 'session_failed', status: s.status };
   return afterSession(api, {
     device: s.data.device, device_name: s.data.device_name, state: s.data.state,
@@ -49,17 +56,27 @@ export async function completeCheckout(api, sessionId) {
 export async function completeMagicLink(api, token) {
   const v = await api.magicLinkVerify(token);
   if (!v.ok) return { error: v.data?.error || 'verify_failed', status: v.status };
+  if (v.data.checkout_flow) return { redirect: 'pricing.html?' + new URLSearchParams({ flow: v.data.checkout_flow }) };
+  if (v.data.checkout_session_id) return { checkoutSessionId: v.data.checkout_session_id };
+  if (v.data.checkout_plan) {
+    const checkoutContext = { plan: v.data.checkout_plan, device: v.data.device, deviceName: v.data.device_name, state: v.data.state };
+    const result = await startCheckout(api, checkoutContext);
+    return result.error ? { ...result, phase: 'checkout', checkoutContext } : result;
+  }
   return afterSession(api, {
     device: v.data.device, device_name: v.data.device_name, state: v.data.state,
     email: v.data.user?.email, userId: v.data.user?.id,
   });
 }
 
-export async function requestMagicLink(api, { email, device, deviceName, state }) {
+export async function requestMagicLink(api, { email, device, deviceName, state, checkoutPlan, checkoutSessionId, checkoutFlow }) {
   const body = { email };
   if (device) body.device = device;
   if (deviceName) body.device_name = deviceName;
   if (state) body.state = state;
+  if (checkoutPlan) body.checkout_plan = checkoutPlan;
+  if (checkoutSessionId) body.checkout_session_id = checkoutSessionId;
+  if (checkoutFlow) body.checkout_flow = checkoutFlow;
   const r = await api.magicLink(body);
   return { sent: r.ok };
 }

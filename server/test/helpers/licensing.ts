@@ -36,7 +36,7 @@ export async function makeLicensingApp(
   const signer = await makeTestSigner();
   const stripeState: { session: unknown } = { session: opts.session ?? null };
   const stripe = {
-    checkout: { sessions: { retrieve: async (_id: string) => stripeState.session } },
+    checkout: { sessions: { retrieve: async (_id: string) => stripeState.session, listLineItems: async () => ({has_more:false,data:[{quantity:1,price:{id:'price_o'}}]}) } },
   } as unknown as Stripe;
   const app = buildApp({ pool, stripe, billing, tokenSigner: signer, email: opts.email, logger: false });
   await app.ready();

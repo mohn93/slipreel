@@ -1,3 +1,4 @@
+import 'safe_export_output.dart';
 // packages/screen_recorder/lib/export/gif_export_pipeline.dart
 import 'dart:async';
 import 'dart:convert';
@@ -149,6 +150,46 @@ class GifExportPipeline {
   /// [CancelToken] across runs (kill() is idempotent, so reuse is currently
   /// harmless, but the assumption may tighten later).
   Future<ExportPerfSummary> run({
+    void Function(double progress)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    if (cancelToken?.isCancelled ?? false) {
+      throw const ExportCancelledException();
+    }
+    final staged = await SafeExportOutput.create(outputPath, [
+      sourcePath,
+      CameraSidecarMeta.moviePathForVideo(sourcePath),
+      if (projectState.timeline.music != null)
+        projectState.timeline.music!.path,
+    ]);
+    try {
+      final result = await _run(
+        outputPath: staged.path,
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+      );
+      if (cancelToken?.isCancelled ?? false) {
+        throw const ExportCancelledException();
+      }
+      final verified = await ffmpegProbe(
+        path: staged.path,
+        metadataFps: sourceMetadata.fps,
+      );
+      if (verified.width <= 0 || verified.height <= 0) {
+        throw StateError('Export validation failed.');
+      }
+      if (cancelToken?.isCancelled ?? false) {
+        throw const ExportCancelledException();
+      }
+      await staged.publish();
+      return result;
+    } finally {
+      await staged.dispose();
+    }
+  }
+
+  Future<ExportPerfSummary> _run({
+    required String outputPath,
     void Function(double progress)? onProgress,
     CancelToken? cancelToken,
   }) async {

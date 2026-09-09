@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#08080C">
 <title>Slipreel — screen recordings that look like they took a week</title>
-<meta name="description" content="Slipreel is a macOS screen recorder that auto-zooms, smooths your cursor, frames your app, and captions it — the moment you stop recording.">
+<meta name="description" content="Slipreel is a macOS screen recorder that auto-zooms, smooths your cursor, frames your app, and lets you add on-device captions.">
 <link rel="canonical" href="https://slipreel.app/">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -37,7 +37,7 @@
   "@type": "SoftwareApplication",
   "@id": "https://slipreel.app/#app",
   "name": "Slipreel",
-  "description": "Slipreel is a macOS screen recorder and editor that turns a raw screen capture into a polished product demo. When you stop recording it automatically zooms in on your clicks, smooths the cursor, wraps the footage in a device frame on a background, and transcribes captions on-device, then exports to MP4 or GIF.",
+  "description": "Slipreel is a macOS screen recorder and editor that turns a raw screen capture into a polished product demo. When you stop recording it automatically zooms in on your clicks, smooths the cursor, wraps the footage in a device frame on a background, and lets you generate captions on-device, then exports to MP4 or GIF.",
   "applicationCategory": "MultimediaApplication",
   "applicationSubCategory": "Screen Recorder",
   "operatingSystem": "macOS 13.0 or later",
@@ -110,15 +110,15 @@
       "name": "How do I unlock export after buying?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Export unlocks instantly after checkout — your purchase activates on this Mac automatically, and you can sign in on a second device from your account page. The app is free to download and fully functional to record and edit before you buy; three full-quality exports are included, then a license unlocks unlimited exports."
+        "text": "Verify your email before checkout. After payment is confirmed, a purchase started in Slipreel returns to the app to activate that Mac. If you bought on the website, install Slipreel and choose Sign in in the app. Three full-quality exports are included free; a paid license unlocks unlimited exports on two Macs."
       }
     },
     {
       "@type": "Question",
-      "name": "What happens after the first year on a lifetime license?",
+      "name": "What happens after the first year on a one-time license?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The app keeps working forever, and every version released in your first year stays yours. Updates after that are a separate, optional renewal."
+        "text": "You can keep exporting with versions released during your included update year. Later updates are an optional paid renewal. Online activation renews at least every 14 days, including for one-time licenses."
       }
     },
     {
@@ -134,7 +134,7 @@
       "name": "Do my recordings get uploaded anywhere?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "No. Recording, editing, captions, and export all run on your Mac — your recordings never leave the machine. The only thing that talks to a server is license activation, which sends nothing from your recordings."
+        "text": "Your recording media stays on your Mac for recording, editing, captions, and export. The app connects for license activation and renewal, update checks, and the first caption-model download. Optional analytics, diagnostics, and submitted feedback can also send data; see Settings and our privacy policy."
       }
     },
     {
@@ -142,7 +142,7 @@
       "name": "How do captions work offline?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The Whisper transcription engine ships inside the app and runs on your Mac. The speech model itself is downloaded once on first use and cached; after that, captions work with no network at all, and your recording is never uploaded."
+        "text": "The Whisper transcription engine ships inside the app and runs on your Mac. The speech model itself is downloaded once on first use (about 488 MB) and cached; after that, captions work with no network at all, and your recording is never uploaded."
       }
     },
     {
@@ -273,7 +273,7 @@
     <ul class="nav__links">
       <li><a class="nav__link" href="#features">Features</a></li>
       <li><a class="nav__link" href="#pricing">Pricing</a></li>
-      <li><a class="nav__link" href="#faq">FAQ</a></li>
+      <li><a class="nav__link" href="account.html">Account</a></li>
       <li class="nav__compare">
         <details class="nav__dropdown">
           <summary class="nav__link nav__link--menu">Compare</summary>
@@ -299,17 +299,18 @@
     <p class="eyebrow">For macOS 13+ &middot; Apple Silicon and Intel</p>
     <h1 class="hero__title">Screen recordings that look like they took a week.</h1>
     <p class="hero__sub">
-      Slipreel auto-zooms, smooths your cursor, frames your app, and captions it &mdash;
-      the moment you stop recording.
+      Slipreel auto-zooms, smooths your cursor, and frames your app.
+      Add on-device captions, refine your edit, and export a finished demo.
     </p>
     <div class="hero__cta">
       <a class="btn btn--primary"
          href="https://slipreel.app/download/latest.dmg"
          data-download-link>Download for macOS</a>
       <a class="btn btn--ghost" href="#pricing">See pricing</a>
+      <a class="btn btn--ghost" href="account.html">Account / Sign in</a>
     </div>
     <p class="hero__meta">Three free full-quality exports. No account or credit card.</p>
-    <p class="hero__meta"><span data-version-badge>Free download</span> &middot; Signed and notarized by Apple</p>
+    <p class="hero__meta"><span data-version-badge>Free download</span> &middot; Developer-developer-signed and notarized by Apple</p>
     <figure class="hero__stage">
       <video class="hero__media" width="1280" height="720"
              poster="assets/img/hero-poster.webp"
@@ -550,7 +551,7 @@
           <svg class="platform-strip__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
           </svg>
-          <span>Signed and notarized by Apple, distributed direct.</span>
+          <span>Developer-developer-signed and notarized by Apple, distributed direct.</span>
         </li>
         <li class="platform-strip__item">
           <svg class="platform-strip__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -625,6 +626,8 @@
   </div>
 </section>
 
+<p class="container">Paid licenses, including one-time purchases, need an internet connection at least every 14 days to renew activation. Caption generation downloads a roughly 488 MB model the first time. <a href="guide.html">Getting started guide</a>.</p>
+
 <!-- FAQ: native details/summary, so it opens and closes with the keyboard
      alone and needs zero JavaScript. Carries #faq for the nav link. -->
 <section class="section faq" id="faq">
@@ -659,19 +662,16 @@
       <details class="faq__item">
         <summary class="faq__question">How do I unlock export after buying?</summary>
         <p class="faq__answer">
-          Export unlocks instantly after checkout &mdash; your purchase
-          activates on this Mac automatically, and you can sign in on a second
-          device from your account page. The app is free to download and fully
-          functional to record and edit before you buy; three full-quality exports are included, then a license unlocks unlimited exports.
+          Verify your email before checkout. After payment is confirmed, a purchase started in Slipreel returns to the app to activate that Mac. If you bought on the website, install Slipreel and choose Sign in in the app. Three full-quality exports are included free; a paid license unlocks unlimited exports on two Macs.
         </p>
       </details>
 
       <details class="faq__item">
-        <summary class="faq__question">What happens after the first year on a lifetime license?</summary>
+        <summary class="faq__question">What happens after the first year on a one-time license?</summary>
         <p class="faq__answer">
-          The app keeps working forever, and every version released in your
-          first year stays yours. Updates after that are a separate,
-          optional renewal.
+          You can keep exporting with versions released during your included update year.
+          Later updates are an optional paid renewal. Online activation renews at least
+          every 14 days, including for one-time licenses.
         </p>
       </details>
 
@@ -683,10 +683,7 @@
       <details class="faq__item">
         <summary class="faq__question">Do my recordings get uploaded anywhere?</summary>
         <p class="faq__answer">
-          No. Recording, editing, captions, and export all run on your Mac
-          &mdash; your recordings never leave the machine. The only thing that
-          talks to a server is license activation, which sends nothing from your
-          recordings.
+          Your recording media stays on your Mac for recording, editing, captions, and export. The app connects for license activation and renewal, update checks, and the first caption-model download. Optional analytics, diagnostics, and submitted feedback can also send data; see Settings and our privacy policy. <a href="privacy.html">Read our privacy policy</a>.
         </p>
       </details>
 
@@ -694,8 +691,8 @@
         <summary class="faq__question">How do captions work offline?</summary>
         <p class="faq__answer">
           The Whisper transcription engine ships inside the app and runs on your
-          Mac. The speech model itself is downloaded once on first use and
-          cached; after that, captions work with no network at all, and your
+          Mac. Generate captions when you are ready; the speech model is downloaded
+          once on first use (about 488 MB) and cached; after that, captions work with no network at all, and your
           recording is never uploaded.
         </p>
       </details>
@@ -763,6 +760,9 @@
       <span class="site-footer__wordmark">Slipreel</span>
       <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
       <a class="site-footer__contact" href="/privacy">Privacy</a>
+      <a class="site-footer__contact" href="guide.html">Getting started</a>
+      <a class="site-footer__contact" href="downloads.html">Downloads</a>
+      <a class="site-footer__contact" href="changelog.html">Changelog</a>
       <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
     </div>
   </div>

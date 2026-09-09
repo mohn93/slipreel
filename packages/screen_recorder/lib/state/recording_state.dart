@@ -240,6 +240,7 @@ class RecordingController extends StateNotifier<RecordingState> {
             width: _videoEncoder.width,
             height: _videoEncoder.height,
             fps: _videoEncoder.fps,
+            cameraDeviceLabel: camera?.deviceLabel,
           ));
           _activeMarkerId = markerId;
           _activeNdjsonPath = ndjsonPath;
@@ -373,6 +374,30 @@ class RecordingController extends StateNotifier<RecordingState> {
         microphone: micConfig,
         outputPath: outputPath,
       );
+
+      if (_sessionMarkerStore != null) {
+        try {
+          await _sessionMarkerStore.add(
+            SessionMarker(
+              id: '$ts',
+              videoPath: outputPath,
+              cursorNdjsonPath: '$outputPath.cursor.ndjson',
+              startedAt: DateTime.now().toUtc(),
+              width: _videoEncoder.width,
+              height: _videoEncoder.height,
+              fps: _videoEncoder.fps,
+              isDeviceCapture: true,
+            ),
+          );
+          _activeMarkerId = '$ts';
+        } catch (e, st) {
+          AppLogger.recording.w(
+            'Failed to write device recovery marker',
+            error: e,
+            stackTrace: st,
+          );
+        }
+      }
 
       // No cursor/keystroke tracking for touch devices — intentionally skip the
       // checkpointer + cursor/keystroke stream subscriptions. We still listen
@@ -604,10 +629,8 @@ class RecordingController extends StateNotifier<RecordingState> {
     if (_videoEncoder.isActive) {
       _videoEncoder.forceReset().ignore();
     }
-    if (_activeMarkerId != null && _sessionMarkerStore != null) {
-      _sessionMarkerStore.remove(_activeMarkerId!).ignore();
-      _activeMarkerId = null;
-    }
+    // Keep interrupted captures recoverable until successful stop or explicit discard.
+    _activeMarkerId = null;
     _cursorCheckpointer?.stop().ignore();
     _cursorCheckpointer = null;
     _activeNdjsonPath = null;
@@ -641,10 +664,8 @@ class RecordingController extends StateNotifier<RecordingState> {
     }
     _cursorCheckpointer?.stop().ignore();
     _cursorCheckpointer = null;
-    if (_activeMarkerId != null && _sessionMarkerStore != null) {
-      _sessionMarkerStore.remove(_activeMarkerId!).ignore();
-      _activeMarkerId = null;
-    }
+    // Keep interrupted captures recoverable until successful stop or explicit discard.
+    _activeMarkerId = null;
     _activeNdjsonPath = null;
     _durationTimer?.cancel();
     _durationTimer = null;

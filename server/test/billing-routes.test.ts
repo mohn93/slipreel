@@ -46,6 +46,7 @@ function fakeStripe() {
 describe('billing routes', () => {
   let pool: pg.Pool;
   let signer: TokenSigner;
+  let cookie: string;
   beforeAll(async () => {
     pool = testPool(); await resetDatabase(pool); await runMigrations(pool);
     signer = await makeTestSigner();
@@ -55,6 +56,8 @@ describe('billing routes', () => {
     await pool.query('DELETE FROM sessions');
     await pool.query('DELETE FROM consumed_checkout_sessions');
     await pool.query('DELETE FROM users');
+    await pool.query("INSERT INTO users (id,email,email_verified) VALUES ('buyer','buyer@example.com',true)");
+    cookie = `slipreel_session=${(await createSession(pool,'buyer')).token}`;
   });
 
   // Wire the token signer so auth routes (session-from-checkout) are available:
@@ -65,10 +68,20 @@ describe('billing routes', () => {
     return app;
   }
 
+  it('rejects anonymous checkout and uses verified identity rather than posted email', async () => {
+    const {stripe,calls} = fakeStripe(); const app = await make(stripe);
+    expect((await app.inject({method:'POST',url:'/v1/checkout',payload:{email:'victim@example.com',plan:'onetime'}})).statusCode).toBe(401);
+    expect((await app.inject({method:'POST',url:'/v1/checkout',headers:{cookie},payload:{email:'victim@example.com',plan:'onetime'}})).statusCode).toBe(200);
+    expect(calls.customerCreated).toEqual(['buyer@example.com']);
+    const flow = new URL(calls.checkout.cancel_url).searchParams.get('flow');
+    const ctx = await app.inject({method:'GET',url:`/v1/checkout-context/${flow}`,headers:{cookie}});
+    expect(ctx.json().plan).toBe('onetime'); await app.close();
+  });
+
   it('POST /v1/checkout (monthly) creates a subscription session and returns its url', async () => {
     const { stripe, calls } = fakeStripe();
     const app = await make(stripe);
-    const res = await app.inject({ method: 'POST', url: '/v1/checkout',
+    const res = await app.inject({ method: 'POST', url: '/v1/checkout', headers: {cookie},
       payload: { email: 'c@example.com', plan: 'monthly' } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ url: 'https://checkout.stripe.test/cs_1' });
@@ -82,7 +95,7 @@ describe('billing routes', () => {
   it('rejects new yearly checkout without creating a Stripe session', async () => {
     const { stripe, calls } = fakeStripe();
     const app = await make(stripe);
-    const res = await app.inject({ method: 'POST', url: '/v1/checkout',
+    const res = await app.inject({ method: 'POST', url: '/v1/checkout', headers: {cookie},
       payload: { email: 'retired@example.com', plan: 'yearly' } });
     expect(res.statusCode).toBe(400);
     expect(calls.checkout).toBeUndefined();
@@ -92,7 +105,7 @@ describe('billing routes', () => {
   it('POST /v1/checkout (onetime) uses payment mode and the onetime price', async () => {
     const { stripe, calls } = fakeStripe();
     const app = await make(stripe);
-    const res = await app.inject({ method: 'POST', url: '/v1/checkout',
+    const res = await app.inject({ method: 'POST', url: '/v1/checkout', headers: {cookie},
       payload: { email: 'd@example.com', plan: 'onetime' } });
     expect(res.statusCode).toBe(200);
     expect(calls.checkout.mode).toBe('payment');
@@ -103,7 +116,7 @@ describe('billing routes', () => {
   it('POST /v1/checkout rejects an unknown plan with 400', async () => {
     const { stripe } = fakeStripe();
     const app = await make(stripe);
-    const res = await app.inject({ method: 'POST', url: '/v1/checkout',
+    const res = await app.inject({ method: 'POST', url: '/v1/checkout', headers: {cookie},
       payload: { email: 'e@example.com', plan: 'lifetime' } });
     expect(res.statusCode).toBe(400);
     await app.close();
@@ -113,11 +126,9 @@ describe('billing routes', () => {
     const { stripe, calls } = fakeStripe();
     const app = await make(stripe);
     // Create the user (+ cus_1) via checkout, then log in with that session.
-    await app.inject({ method: 'POST', url: '/v1/checkout',
+    await app.inject({ method: 'POST', url: '/v1/checkout', headers: {cookie},
       payload: { email: 'f@example.com', plan: 'monthly' } });
-    const login = await app.inject({ method: 'POST', url: '/v1/auth/session-from-checkout',
-      payload: { checkout_session_id: 'cs' } });
-    const cookie = String(login.headers['set-cookie']).split(';')[0];
+
 
     const res = await app.inject({ method: 'POST', url: '/v1/portal', headers: { cookie } });
     expect(res.statusCode).toBe(200);
@@ -149,7 +160,7 @@ describe('billing routes', () => {
   it('POST /v1/checkout rejects an oversized state value with 400', async () => {
     const { stripe } = fakeStripe();
     const app = await make(stripe);
-    const res = await app.inject({ method: 'POST', url: '/v1/checkout',
+    const res = await app.inject({ method: 'POST', url: '/v1/checkout', headers: {cookie},
       payload: { email: 'h@example.com', plan: 'monthly', state: 'x'.repeat(1000) } });
     expect(res.statusCode).toBe(400);
     await app.close();
@@ -158,9 +169,9 @@ describe('billing routes', () => {
   it('checkout forwards device/state into the session metadata', async () => {
     const { stripe, calls } = fakeStripe();
     const app = await make(stripe);
-    await app.inject({ method: 'POST', url: '/v1/checkout',
+    await app.inject({ method: 'POST', url: '/v1/checkout', headers: {cookie},
       payload: { email: 'g@example.com', plan: 'monthly', device: 'fp-1', device_name: 'Mac', state: 'nonce-1' } });
-    expect(calls.checkout.metadata).toEqual({ device: 'fp-1', device_name: 'Mac', state: 'nonce-1' });
+    expect(calls.checkout.metadata).toMatchObject({ device: 'fp-1', device_name: 'Mac', state: 'nonce-1' });
     await app.close();
   });
 });
