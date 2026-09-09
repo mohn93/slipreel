@@ -71,6 +71,20 @@ void main() {
     },
   );
 
+  test('abandoned deletion restores edits for the next exit save', () async {
+    final writes = <int>[];
+    final save = ProjectAutosave<int>(write: (value) async => writes.add(value));
+    save.schedule(1);
+    await save.discard();
+    // The recording could not be deleted; restore the current editor snapshot.
+    save.schedule(2);
+    expect(save.dirty, isTrue);
+    final registry = PendingProjectSaves()..add(save.flush);
+    expect(await registry.flush(), isTrue);
+    expect(writes, [2]);
+    save.dispose();
+  });
+
   test(
     'explicit discard drains existing write and cancels deferred save',
     () async {

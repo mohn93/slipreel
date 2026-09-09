@@ -1600,6 +1600,22 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       await _controller.pause();
     } catch (_) {}
 
+    String? deleteError;
+    try {
+      final video = File(widget.videoPath);
+      if (await video.exists()) await video.delete();
+    } catch (e) {
+      deleteError = e.toString();
+    }
+
+    if (deleteError != null) {
+      // Deletion was abandoned: retain the current edits for retry/exit.
+      _autosave.schedule(_project);
+      if (!mounted) return;
+      AppAlerts.error('Couldn\'t delete the recording: $deleteError');
+      return;
+    }
+
     final sidecars = recordingSidecarPaths(widget.videoPath);
     for (final path in sidecars) {
       try {
@@ -1610,20 +1626,6 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         // surface via debug log and continue with the next sidecar.
         debugPrint('Failed to delete sidecar $path: $e');
       }
-    }
-
-    String? deleteError;
-    try {
-      final video = File(widget.videoPath);
-      if (await video.exists()) await video.delete();
-    } catch (e) {
-      deleteError = e.toString();
-    }
-
-    if (deleteError != null) {
-      if (!mounted) return;
-      AppAlerts.error('Couldn\'t delete the recording: $deleteError');
-      return;
     }
 
     // Drop it from Recents history too, otherwise it lingers as a greyed
