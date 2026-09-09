@@ -1,4 +1,5 @@
 import { itemsFromDocument, pickLatestItem, formatBytes } from './appcast.js';
+import { supportedRelease } from './release-list.js?v=2';
 
 document.documentElement.classList.add('js');
 
@@ -16,7 +17,7 @@ async function hydrateDownload() {
     if (!res.ok) return;
     const doc = new DOMParser().parseFromString(await res.text(), 'application/xml');
     if (doc.getElementsByTagName('parsererror').length) return;
-    const latest = pickLatestItem(itemsFromDocument(doc));
+    const latest = pickLatestItem(itemsFromDocument(doc).filter(supportedRelease));
     if (!latest) return;
     links.forEach((link) => { link.href = latest.url; });
     if (badge) {

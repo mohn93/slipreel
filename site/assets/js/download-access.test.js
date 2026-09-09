@@ -6,7 +6,7 @@ const response = data => ({ ok: true, status: 200, data });
 test('one-time account date selects covered releases, including the final UTC day', () => {
   const access = downloadAccess(response({ plan: 'onetime', status: 'active', export: true, updatesUntil: '2026-08-31T23:59:59.000Z' }));
   assert.deepEqual(access, { mode: 'onetime', ceiling: '2026-08-31' });
-  assert.deepEqual(eligibleReleases([{ build: 2, date: '2026-09-01T00:00:00Z' }, { build: 1, date: '2026-08-31T23:00:00Z' }], access.ceiling).map(r => r.build), [1]);
+  assert.deepEqual(eligibleReleases([{ build: 1000014, date: '2026-09-01T00:00:00Z' }, { build: 1000013, date: '2026-08-31T23:00:00Z' }], access.ceiling).map(r => r.build), [1000013]);
 });
 test('active and grace subscriptions include current releases', () => {
   for (const status of ['active', 'grace']) assert.deepEqual(downloadAccess(response({ plan: 'subscription', status, export: true })), { mode: 'subscription', ceiling: '', grace: status === 'grace' });

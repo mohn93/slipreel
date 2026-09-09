@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Inventory missing public DMGs and optionally stage original signed releases.
+"""Inventory missing supported public DMGs and optionally stage original signed releases.
+Withdrawn releases before 1.0.13 are never staged by this public-archive tool.
 
 No upload or deletion. Run from the repository root with authenticated gh.
 The app's checked-in Sparkle public key verifies each downloaded artifact.
@@ -15,6 +16,14 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 
+MIN_SUPPORTED_BUILD = 1000013
+MIN_SUPPORTED_VERSION = (1, 0, 13)
+
+def supported_release(version, build):
+    return (bool(re.fullmatch(r"\d+\.\d+\.\d+", version or ""))
+            and tuple(map(int, version.split("."))) >= MIN_SUPPORTED_VERSION
+            and str(build).isdigit() and int(build) >= MIN_SUPPORTED_BUILD)
+
 def run(args):
     return subprocess.check_output(args, text=True).strip()
 
@@ -28,6 +37,8 @@ def main():
     root = pathlib.Path(__file__).resolve().parent.parent
     if args.version and not re.fullmatch(r'\d+\.\d+\.\d+', args.version):
         parser.error('invalid version')
+    if args.version and tuple(map(int, args.version.split('.'))) < MIN_SUPPORTED_VERSION:
+        parser.error('withdrawn release: the supported public archive starts at 1.0.13')
     args.output.mkdir(parents=True, exist_ok=True)
     feed = run(['curl', '--fail', '--silent', '--show-error', '--max-time', '30', 'https://slipreel.app/appcast.xml'])
     ns = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
@@ -38,6 +49,8 @@ def main():
         version = item.findtext(ns + 'shortVersionString')
         enclosure = item.find('enclosure')
         if not version or not re.fullmatch(r'\d+\.\d+\.\d+', version) or enclosure is None:
+            continue
+        if not supported_release(version, item.findtext(ns + 'version')):
             continue
         if args.version and version != args.version:
             continue

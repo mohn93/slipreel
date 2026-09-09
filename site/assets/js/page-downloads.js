@@ -2,7 +2,7 @@ import { createApi } from './api.js?v=7';
 import { apiBase } from './config.js';
 import { downloadAccess } from './download-access.js?v=1';
 import { itemsFromDocument, formatBytes } from './appcast.js?v=7';
-import { eligibleReleases, safeDownloadUrl } from './release-list.js';
+import { eligibleReleases, safeDownloadUrl } from './release-list.js?v=2';
 const list = document.getElementById('releases');
 const status = document.getElementById('download-status');
 const api = createApi(apiBase(location.hostname), (url, options) => fetch(url, { ...options, cache: 'no-store' }));
@@ -86,7 +86,7 @@ function render() {
     list.append(item);
   }
   status.textContent = releases.length ? `${releases.length} available releases. Dates are release dates in UTC.`
-    : 'No available release is covered by your license. Contact support for help finding your version.';
+    : 'No supported release is covered by your license. The archive starts at 1.0.13; contact support for help with your license.';
 }
 licenseRetry.addEventListener('click', checkLicense);
 window.addEventListener('focus', checkLicense);
@@ -96,7 +96,7 @@ async function load() {
     if (!response.ok) throw new Error('feed unavailable');
     const doc = new DOMParser().parseFromString(await response.text(), 'application/xml');
     if (doc.getElementsByTagName('parsererror').length) throw new Error('invalid feed');
-    const items = itemsFromDocument(doc).filter((item) => safeDownloadUrl(item.url) && item.date);
+    const items = eligibleReleases(itemsFromDocument(doc), '').filter((item) => safeDownloadUrl(item.url));
     // Verify availability; an old appcast entry alone is not a working archive.
     const results = await Promise.all(items.map(async (item) => {
       try {
