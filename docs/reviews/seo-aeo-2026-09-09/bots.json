@@ -1,0 +1,37 @@
+[
+  [
+    "curl/8.7.1",
+    "HTTP/2 200 \ndate: Wed, 09 Sep 2026 13:52:54 GMT\ncontent-type: text/html; charset=utf-8\nalt-svc: h3=\":443\"; ma=86400\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=uPIZDz1vLeieqTPz43hCoyfQOHuvuC%2BsZ81ls9XJwihdERK%2FgSf8AqYeIGpbcO6GmTkbr5bop7BN%2F5Kcd9YOxozoWBolCzRxwhH3SUEAEXe7McWco%2Fwsrgs6zLnkMkE%3D\"}]}\nlast-modified: Wed, 09 Sep 2026 11:56:38 GMT\nserver: cloudflare\nvary: Accept-Encoding\ncf-cache-status: DYNAMIC\ncf-ray: a386ad122822e193-MRS\n\n",
+    ""
+  ],
+  [
+    "Python-urllib/3.13",
+    "HTTP/2 403 \ndate: Wed, 09 Sep 2026 13:52:54 GMT\ncontent-type: text/plain; charset=UTF-8\ncontent-length: 17\ncache-control: private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0\nexpires: Thu, 01 Jan 1970 00:00:01 GMT\nreferrer-policy: same-origin\nx-frame-options: SAMEORIGIN\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=nCn1aI6Ia1ytbGru8dk6FBsXzFCNjldUydCkLqxCA3fm7g7bQS29jrMdCcqY8diFCNqu%2B6re1it4XhLzXoBm5JEhTK3Ib2F0jEB4FB0u6ia%2BNvG7GlZ%2Fbyxu4%2FN8nz0%3D\"}]}\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\nserver: cloudflare\ncf-ray: a386ad120b91ee93-MXP\nalt-svc: h3=\":443\"; ma=86400\n\n",
+    ""
+  ],
+  [
+    "Googlebot",
+    "HTTP/2 200 \ndate: Wed, 09 Sep 2026 13:52:54 GMT\ncontent-type: text/html; charset=utf-8\nalt-svc: h3=\":443\"; ma=86400\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=J5qzbBPDXmtwmvt%2F47mT3DzSoSqlvJRuESDkborephFgxH94u%2FqCESB%2B6t%2FtFdv5h%2Fhn7CWn0knUKFuLOvmbNkdCUfhV2hNYd4lFgaOmL4H%2BnilSVltHAqCbJtSSn4g%3D\"}]}\nlast-modified: Wed, 09 Sep 2026 11:56:38 GMT\nserver: cloudflare\nvary: Accept-Encoding\ncf-cache-status: DYNAMIC\ncf-ray: a386ad125b08edde-MXP\n\n",
+    ""
+  ],
+  [
+    "bingbot",
+    "HTTP/2 200 \ndate: Wed, 09 Sep 2026 13:52:54 GMT\ncontent-type: text/html; charset=utf-8\nalt-svc: h3=\":443\"; ma=86400\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=3AY4J%2FsRmggY7jq%2BqK9TDLTxNPSWF%2B53BvgPbDt3pJ4ZZE5U%2B9INqBiw9Hqf4Kcb01AU7H%2B3nec851LOQPMsGo1pzahHuVjrewZS%2BiO8IYtFho%2BEsYt0AAC%2FDkQhoFQ%3D\"}]}\nlast-modified: Wed, 09 Sep 2026 11:56:38 GMT\nserver: cloudflare\nvary: Accept-Encoding\ncf-cache-status: DYNAMIC\ncf-ray: a386ad12e899edd7-MXP\n\n",
+    ""
+  ],
+  [
+    "OAI-SearchBot",
+    "HTTP/2 200 \ndate: Wed, 09 Sep 2026 13:52:54 GMT\ncontent-type: text/html; charset=utf-8\nalt-svc: h3=\":443\"; ma=86400\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=BErP2dBppRs6umsW43zMN1qw2jhIrbEdrr98T4Pn1H1sgHhYChoNNwTztD%2BSBqnwIWxbcFkosiCy%2FIRFIW4KVyv09yZLur5wiGQpQsOazKPX7fro%2BlvCeqOq%2BmfjUT0%3D\"}]}\nlast-modified: Wed, 09 Sep 2026 11:56:38 GMT\nserver: cloudflare\nvary: Accept-Encoding\ncf-cache-status: DYNAMIC\ncf-ray: a386ad137cf773ab-MRS\n\n",
+    ""
+  ],
+  [
+    "PerplexityBot",
+    "HTTP/2 200 \ndate: Wed, 09 Sep 2026 13:52:54 GMT\ncontent-type: text/html; charset=utf-8\nalt-svc: h3=\":443\"; ma=86400\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=%2BcWZjpJtHCXuI1mIKyMzToOIwo3Sxr49%2FsKj321YQaRANYwpZ4BynvA25IVM9vdKqlkt29tPTupfgfDhsCcaST4%2FPniSvo6ch9UJwa5mdxCyZU4paflvn%2FpK3U%2BmkMY%3D\"}]}\nlast-modified: Wed, 09 Sep 2026 11:56:38 GMT\nserver: cloudflare\nvary: Accept-Encoding\ncf-cache-status: DYNAMIC\ncf-ray: a386ad13aad1bad9-MXP\n\n",
+    ""
+  ],
+  [
+    "GPTBot",
+    "HTTP/2 200 \ndate: Wed, 09 Sep 2026 13:52:54 GMT\ncontent-type: text/html; charset=utf-8\nalt-svc: h3=\":443\"; ma=86400\nnel: {\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}\nreport-to: {\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=vtRdDoaJ37Pj%2B4owuOun9HAdbx6h3D7fsChwMnudEYkDOvessMfu2JRQUrgPshr%2Fb%2BUdxTRVWfYSQw5HUELMT8POyQdJSEapi79MaT7NJRyRatpkw9BRMlxbFWK92VU%3D\"}]}\nlast-modified: Wed, 09 Sep 2026 11:56:38 GMT\nserver: cloudflare\nvary: Accept-Encoding\ncf-cache-status: DYNAMIC\ncf-ray: a386ad142aea658b-MRS\n\n",
+    ""
+  ]
+]

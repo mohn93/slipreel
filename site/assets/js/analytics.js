@@ -79,7 +79,14 @@ function initPostHog() {
     capture_pageleave: true, // bounce / time-on-page
     disable_session_recording: true, // Callback links and account data must never enter replay.
     mask_personal_data_properties: true,
-    before_send: scrubEvent,
+    before_send: (event) => {
+      const clean = scrubEvent(event);
+      // PostHog uses properties.token for its public ingestion key. Restore
+      // only our configured key after scrubbing; never preserve a caller's
+      // token or weaken URL/nested credential redaction.
+      if (clean?.properties) clean.properties.token = POSTHOG_KEY;
+      return clean;
+    },
     loaded: () => applyPendingIdentify(),
     disable_surveys: true,
     person_profiles: 'identified_only', // anonymous pageviews stay cheap
@@ -106,7 +113,7 @@ window.slipreelIdentify = function (userId, setProps) {
 };
 
 // Only load once configured, and never on the critical path.
-if (!/^\/(login|success|account|pricing)(\.html)?\/?$/.test(location.pathname) && typeof POSTHOG_KEY === 'string' && POSTHOG_KEY.startsWith('phc_')) {
+if (!/^\/(login|success|cancel|account|pricing)(\.html)?\/?$/.test(location.pathname) && typeof POSTHOG_KEY === 'string' && POSTHOG_KEY.startsWith('phc_')) {
   if ('requestIdleCallback' in window) {
     window.requestIdleCallback(initPostHog, { timeout: 3000 });
   } else {

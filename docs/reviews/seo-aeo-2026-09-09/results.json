@@ -1,0 +1,52 @@
+{
+  "date": "2026-09-09",
+  "scope": "Live homepage before candidate changes",
+  "pagespeed_url": "https://pagespeed.web.dev/analysis/https-slipreel-app/vfe9iqtqoz",
+  "mobile": {
+    "performance": 99,
+    "accessibility": 95,
+    "best_practices": 96,
+    "seo": 100,
+    "fcp_seconds": 1.1,
+    "lcp_seconds": 2.0,
+    "tbt_ms": 70,
+    "cls": 0,
+    "speed_index_seconds": 2.0
+  },
+  "desktop": {
+    "performance": 99,
+    "accessibility": 95,
+    "best_practices": 96,
+    "seo": 100,
+    "fcp_seconds": 0.4,
+    "lcp_seconds": 0.5,
+    "tbt_ms": 10,
+    "cls": 0,
+    "speed_index_seconds": 1.2
+  },
+  "field_core_web_vitals": "No Data",
+  "rich_results_url": "https://search.google.com/test/rich-results/result?id=NLF7zw1Jd9uuz95AGuUnAA",
+  "rich_results": {
+    "crawl": "successful",
+    "valid_items": 8,
+    "organization": 1,
+    "software_application": 1,
+    "video": 6,
+    "software_optional_warning": "Missing aggregateRating",
+    "video_optional_warnings": [
+      "Invalid datetime value for uploadDate",
+      "Missing timezone for uploadDate"
+    ]
+  },
+  "candidate_validation": {
+    "site_tests": 44,
+    "seo_contract_tests": 7,
+    "caddy_routing_cases": 55,
+    "mobile_pages_without_horizontal_overflow": 9,
+    "mobile_viewport_width": 390,
+    "lint": "passed",
+    "deployment_guards": "passed",
+    "video_dates": "Existing publication day normalized to UTC midnight, not a recovered upload time"
+  },
+  "deployment": "Candidate source and Caddy snippet are not deployed; Google scores describe existing production."
+}

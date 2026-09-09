@@ -2,7 +2,8 @@
 #
 # Search and AI answer engines are welcome to crawl and cite Slipreel.
 # The app/account pages (account, login, success, cancel, pricing) carry no
-# public content and are marked noindex at the page level. They are left
+# indexable content: pricing is the checkout form; public plan details live
+# at /#pricing. These routes are marked noindex at the page level and left
 # crawlable on purpose: a page blocked here would never be fetched, so its
 # noindex could never be seen. Crawlable + noindex is what reliably keeps them
 # out of the index.

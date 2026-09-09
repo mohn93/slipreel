@@ -71,6 +71,7 @@ scripts:
   test_site:
     run: |
       node --test site/assets/js/*.test.js && \
+      python3 scripts/site-seo.test.py && \
       bash scripts/site-lint.sh && \
       bash scripts/site-lint.test.sh && \
       bash scripts/deploy-site.test.sh

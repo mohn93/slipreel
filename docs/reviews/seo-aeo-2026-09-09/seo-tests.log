@@ -1,0 +1,12 @@
+test_credential_routes_remain_noindex_and_analytics_free (__main__.SearchContract.test_credential_routes_remain_noindex_and_analytics_free) ... ok
+test_faq_markup_matches_visible_answers (__main__.SearchContract.test_faq_markup_matches_visible_answers) ... ok
+test_internal_public_links_use_canonicals_and_valid_fragments (__main__.SearchContract.test_internal_public_links_use_canonicals_and_valid_fragments) ... ok
+test_public_metadata_and_structure (__main__.SearchContract.test_public_metadata_and_structure) ... ok
+test_public_software_offers_have_prices_and_license_terms (__main__.SearchContract.test_public_software_offers_have_prices_and_license_terms) ... ok
+test_sitemap_matches_indexable_canonical_pages (__main__.SearchContract.test_sitemap_matches_indexable_canonical_pages) ... ok
+test_video_metadata_has_timezone_and_real_asset_references (__main__.SearchContract.test_video_metadata_has_timezone_and_real_asset_references) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.010s
+
+OK
