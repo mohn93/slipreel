@@ -1609,9 +1609,9 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     }
 
     if (deleteError != null) {
+      if (!mounted) return;
       // Deletion was abandoned: retain the current edits for retry/exit.
       _autosave.schedule(_project);
-      if (!mounted) return;
       AppAlerts.error('Couldn\'t delete the recording: $deleteError');
       return;
     }
