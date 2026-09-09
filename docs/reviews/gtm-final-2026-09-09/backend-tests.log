@@ -1,0 +1,15 @@
+
+> slipreel-api@0.0.1 test
+> vitest run
+
+
+ RUN  v5.0.0 /Users/mohn93/Desktop/side_projects/screenflow_studio/server
+
+
+ Test Files  24 passed (24)
+      Tests  102 passed (102)
+   Start at  13:38:11
+   Duration  6.52s (tests 61%, import 31%, transform 6%, worker 1%)
+
+    Isolate  24 workers spawned · ~76ms startup each (spawn + environment, per file)
+             at least ~1.74s faster with isolate: false — reuses workers across files instead of one per file

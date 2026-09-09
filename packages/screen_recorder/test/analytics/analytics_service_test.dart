@@ -162,6 +162,7 @@ void main() {
     await store.save([
       AnalyticsEvent(
         name: 'leftover',
+        distinctId: 'previous_owner',
         timestamp: DateTime.utc(2026, 1, 1),
         properties: const {'k': 'v'},
       ),

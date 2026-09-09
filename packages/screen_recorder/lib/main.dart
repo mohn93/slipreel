@@ -1,6 +1,7 @@
+import 'state/project_autosave.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'dart:io' show Directory, File, Platform;
+import 'dart:io' show Directory, Platform;
 import 'dart:math' show Random;
 
 import 'package:flutter/foundation.dart';
@@ -42,7 +43,6 @@ import 'state/window_mode.dart';
 import 'state/window_mode_controller.dart';
 import 'licensing/build_release_date.g.dart';
 import 'licensing/deep_link_listener.dart';
-import 'licensing/device_fingerprint.dart';
 import 'licensing/entitlement.dart';
 import 'licensing/export_gate.dart';
 import 'licensing/trial_exports.dart';
@@ -107,6 +107,7 @@ final recordingHistoryStoreProvider = Provider<RecordingHistoryStore>(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  PendingProjectSaves.instance.install();
 
   // Initialize logging system
   AppLogger.initialize(level: Level.debug);
@@ -252,14 +253,13 @@ Future<void> main() async {
   }
 
   // Product analytics (opt-out: on unless the user turned it off in Settings).
-  // No-ops entirely unless a project key was baked in via --dart-define. The
-  // distinct_id reuses the device fingerprint (already a one-way hash that
-  // never exposes the raw hardware id); if the platform can't supply one we
-  // fall back to a persisted random id so events still stitch into a funnel.
+  // No-ops entirely unless a project key was baked in via --dart-define.
+  // Anonymous identity is fresh per launch so shared Macs cannot link two
+  // accounts through a persistent hardware identifier.
   final appSupportPath = (await getApplicationSupportDirectory()).path;
   // Resolved once here and shared across analytics, diagnostics, and feedback
   // so all three stitch to the same PostHog person.
-  final distinctId = await _resolveAnalyticsDistinctId(appSupportPath);
+  final distinctId = AnalyticsService.newAnonymousId();
   final analyticsService = AnalyticsService(
     store: AnalyticsQueueStore(
       path: p.join(appSupportPath, 'analytics_queue.json'),
@@ -290,7 +290,7 @@ Future<void> main() async {
   // Per-launch session id, shared by diagnosticsMeta (so handled Dart events
   // carry it) and the persistent crumb store (so a next-launch native-crash
   // scan can correlate a crashed session's crumbs back to it). Same 16-byte-hex
-  // Random.secure() mechanism as _resolveAnalyticsDistinctId's fallback id.
+  // Random.secure() mechanism as the anonymous analytics identity.
   final sessionRnd = Random.secure();
   final sessionId = List<int>.generate(16, (_) => sessionRnd.nextInt(256))
       .map((b) => b.toRadixString(16).padLeft(2, '0'))
@@ -571,33 +571,6 @@ String _playbackStateJson() {
       '"durationMs": ${v.duration.inMilliseconds}}';
 }
 
-/// distinct_id for analytics: prefer the device fingerprint (a sha256 of the
-/// hardware id — anonymous, stable per machine). If the platform can't supply
-/// one, persist a random id in a sidecar so events from this install still
-/// group together. Falls back to a constant only if even that write fails.
-Future<String> _resolveAnalyticsDistinctId(String appSupportPath) async {
-  try {
-    return await DeviceFingerprint().compute();
-  } catch (_) {
-    try {
-      final file = File(p.join(appSupportPath, 'analytics_id'));
-      if (file.existsSync()) {
-        final existing = (await file.readAsString()).trim();
-        if (existing.isNotEmpty) return existing;
-      }
-      final rnd = Random.secure();
-      final id = List<int>.generate(16, (_) => rnd.nextInt(256))
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join();
-      await file.create(recursive: true);
-      await file.writeAsString(id);
-      return id;
-    } catch (_) {
-      return 'anonymous';
-    }
-  }
-}
-
 class MyApp extends ConsumerStatefulWidget {
   const MyApp({
     super.key,
@@ -761,10 +734,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       },
     );
 
-    // Attribution: identify by the entitlement's user id (`sub`) so app events
-    // join the same PostHog person as the web (which identifies by the same id
-    // and supplies the email). fireImmediately covers an entitlement already
-    // loaded at startup; identify() no-ops once identified.
+    // Each queued event keeps its owner, including across restart/sign-out.
     ref.listenManual<EntitlementState>(
       entitlementProvider,
       (prev, next) {
@@ -772,6 +742,10 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
           analytics.identify(next.claims.sub);
           ref.read(diagnosticsServiceProvider).setDistinctId(next.claims.sub);
           ref.read(feedbackServiceProvider).setDistinctId(next.claims.sub);
+        } else if (prev is EntitlementLoaded) {
+          analytics.resetIdentity();
+          ref.read(diagnosticsServiceProvider).setDistinctId(analytics.distinctId);
+          ref.read(feedbackServiceProvider).setDistinctId(analytics.distinctId);
         }
       },
       fireImmediately: true,

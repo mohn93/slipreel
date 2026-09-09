@@ -1,0 +1,4 @@
+00:00 +0: loading /tmp/slipreel-final-audit/telemetry_repro_test.dart
+00:00 +0: audit: queued activity from A is relabeled as B after switching accounts
+00:00 +1: audit: in-memory queue exceeds the persistent store cap
+00:00 +2: All tests passed!

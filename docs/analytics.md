@@ -10,13 +10,17 @@ distinguished by the `source` property, not a separate project.
 - A thin Dart client (`packages/screen_recorder/lib/analytics/`) POSTs events
   directly to PostHog's US `/batch/` endpoint. No `posthog_flutter` SDK — that
   package targets iOS/Android/web and does not support desktop.
-- Events are buffered in memory and mirrored to a bounded on-disk queue
-  (`<appSupport>/analytics_queue.json`), so nothing is lost offline; delivery is
-  best-effort and never blocks or crashes the app.
-- `distinct_id` is the device fingerprint (`DeviceFingerprint.compute()`) — a
-  sha256 of the hardware id that already backs licensing. The raw id never
-  leaves the machine. If the platform can't supply one, a random per-install id
-  is persisted instead.
+- Events retain their identity at capture time, including in their atomic disk
+  queue. Each queue is bounded to 500 events and roughly 1 MiB; events over
+  64 KiB are rejected. Oldest events are dropped when limits are reached.
+- Delivery uses batches of at most 100 events. Failed attempts back off from
+  five seconds to five minutes. Disposal cannot restart the retry timer.
+- Anonymous identities are random per launch and after sign-out. Signed-in
+  events use the account ID. A shared Mac never joins account A to B through
+  a persistent device identity. Queued events are never relabeled at delivery.
+- Legacy queue entries without an owner are discarded on migration because
+  their original account cannot be established safely. This affects pending
+  telemetry/feedback only, not projects, recordings, licenses, or preferences.
 
 ## Privacy
 
@@ -69,17 +73,20 @@ Every event also carries super properties: `source: 'app'` and
 
 ## Attribution (identify)
 
-Analytics start anonymous. Once a user has an account, both surfaces call
-`identify` with the **same user id** (the entitlement token's `sub`, which is
-the `users` table id), so web + app events unify into one PostHog person:
+The desktop app joins a fresh anonymous session to its first authenticated
+account. Later account switches change the identity of future events without
+joining two known accounts. Sign-out creates a new anonymous session. Identity
+is also retained for queued diagnostics and feedback across restarts.
 
-- **Web** (`page-success.js` after checkout): `slipreelIdentify(userId, {email})`
-  — supplies the **email** (the token/app never see it).
-- **App** (`main.dart`, on `EntitlementLoaded`): `analytics.identify(sub)` — user
-  id only, no PII. Gated by the opt-out toggle like everything else.
+Website sign-in, pricing, success and account pages do not load analytics;
+they do not send checkout email addresses to PostHog. Account IDs are not
+anonymous data. Optional in-app feedback reply email is explicitly sent to
+PostHog (US), alongside the scrubbed feedback message. Settings, onboarding,
+and the public privacy policy disclose this behavior.
 
-Name isn't captured (not stored anywhere). Email reaches PostHog only from the
-web, post-purchase — note it in the privacy policy.
+Feedback shows “sent” only after HTTP acknowledgement. A successful local
+write with failed delivery shows “saved on this Mac”; an unavailable transport
+or failed disk/network combination keeps the form open with an email fallback.
 
 ## Where events fire
 

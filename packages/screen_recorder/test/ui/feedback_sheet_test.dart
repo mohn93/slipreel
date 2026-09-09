@@ -8,11 +8,14 @@ import 'package:screen_recorder/ui/theme/app_palette.dart';
 class _FakeFeedback implements FeedbackService {
   FeedbackReport? submitted;
   int submitCount = 0;
+  DeliveryStatus result = DeliveryStatus.sent;
   @override
-  Future<void> submit(FeedbackReport report) async {
+  Future<DeliveryStatus> submit(FeedbackReport report) async {
     submitted = report;
     submitCount++;
+    return result;
   }
+
   @override
   Future<void> load() async {}
   @override
@@ -24,20 +27,26 @@ class _FakeFeedback implements FeedbackService {
 }
 
 void main() {
-  testWidgets('submitting sends type + message through the service', (tester) async {
+  testWidgets('submitting sends type + message through the service', (
+    tester,
+  ) async {
     final fake = _FakeFeedback();
-    await tester.pumpWidget(ProviderScope(
-      overrides: [feedbackServiceProvider.overrideWithValue(fake)],
-      child: MaterialApp(
-        theme: ThemeData(extensions: const [AppPalette.midnight]),
-        home: Builder(builder: (context) => Scaffold(
-          body: ElevatedButton(
-            onPressed: () => FeedbackSheet.show(context),
-            child: const Text('open'),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [feedbackServiceProvider.overrideWithValue(fake)],
+        child: MaterialApp(
+          theme: ThemeData(extensions: const [AppPalette.midnight]),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: ElevatedButton(
+                onPressed: () => FeedbackSheet.show(context),
+                child: const Text('open'),
+              ),
+            ),
           ),
-        )),
+        ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'it crashed');
@@ -50,20 +59,62 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
+  testWidgets('failed delivery retains the message and offers email fallback', (
+    tester,
+  ) async {
+    final fake = _FakeFeedback()..result = DeliveryStatus.unavailable;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [feedbackServiceProvider.overrideWithValue(fake)],
+        child: MaterialApp(
+          theme: ThemeData(extensions: const [AppPalette.midnight]),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => FeedbackSheet.show(context),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'please help');
+    await tester.tap(find.text('Send'));
+    await tester.pumpAndSettle();
+    expect(find.text('please help'), findsOneWidget);
+    expect(find.textContaining('Could not send or save'), findsOneWidget);
+    expect(find.text('Email support: hello@slipreel.app'), findsOneWidget);
+    fake.result = DeliveryStatus.sent;
+    await tester.ensureVisible(find.text('Send'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send'));
+    await tester.pumpAndSettle();
+    expect(fake.submitCount, 2);
+    expect(find.text('Send feedback'), findsNothing);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
   testWidgets('a rapid double-tap on Send submits only once', (tester) async {
     final fake = _FakeFeedback();
-    await tester.pumpWidget(ProviderScope(
-      overrides: [feedbackServiceProvider.overrideWithValue(fake)],
-      child: MaterialApp(
-        theme: ThemeData(extensions: const [AppPalette.midnight]),
-        home: Builder(builder: (context) => Scaffold(
-          body: ElevatedButton(
-            onPressed: () => FeedbackSheet.show(context),
-            child: const Text('open'),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [feedbackServiceProvider.overrideWithValue(fake)],
+        child: MaterialApp(
+          theme: ThemeData(extensions: const [AppPalette.midnight]),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: ElevatedButton(
+                onPressed: () => FeedbackSheet.show(context),
+                child: const Text('open'),
+              ),
+            ),
           ),
-        )),
+        ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'once please');

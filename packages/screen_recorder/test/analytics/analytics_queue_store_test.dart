@@ -35,6 +35,15 @@ void main() {
     expect(loaded.map((x) => x.name), ['b', 'c']);
   });
 
+  test('overlapping writes are atomic and leave the newest snapshot', () async {
+    final store = AnalyticsQueueStore(path: '${dir.path}/q.json');
+    await Future.wait([
+      store.save([e('older')]),
+      store.save([e('newer')]),
+    ]);
+    expect((await store.load()).single.name, 'newer');
+  });
+
   test('clear removes the persisted queue', () async {
     final store = AnalyticsQueueStore(path: '${dir.path}/q.json');
     await store.save([e('a')]);

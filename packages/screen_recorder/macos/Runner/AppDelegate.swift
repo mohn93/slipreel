@@ -11,6 +11,12 @@ class AppDelegate: FlutterAppDelegate {
     super.init()
   }
 
+  override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard let window = mainFlutterWindow as? MainFlutterWindow else { return .terminateNow }
+    window.saveBeforeExit { allowed in sender.reply(toApplicationShouldTerminate: allowed) }
+    return .terminateLater
+  }
+
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     return true
   }
