@@ -672,6 +672,7 @@ a {
 /* A normal image paints independently of the video player's poster pipeline.
    Native video controls remain the fallback when JavaScript is unavailable. */
 .hero__preview {
+  display: none;
   position: absolute;
   inset: clamp(4px, 0.5vw, 7px);
   z-index: 1;
@@ -683,7 +684,10 @@ a {
   background: var(--bg-card);
 }
 .hero__preview[hidden] { display: none; }
-.hero__stage.has-preview .hero__media { visibility: hidden; }
+@media (max-width: 767px), (prefers-reduced-motion: reduce) {
+  .hero__preview:not([hidden]) { display: block; }
+  .hero__stage:has(.hero__preview:not([hidden])) .hero__media { visibility: hidden; }
+}
 .hero__preview img { height: 100%; object-fit: cover; }
 .hero__preview span {
   position: absolute;
@@ -1685,4 +1689,11 @@ a {
     background-color: var(--line);
     color: var(--ink);
   }
+}
+
+/* Avoid full-viewport noise blending and continuous background compositing
+   on phones. Keep the same static gradient composition. */
+@media (max-width: 767px) {
+  .grain { display: none; }
+  .aurora::before { animation: none; }
 }
