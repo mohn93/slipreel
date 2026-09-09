@@ -127,7 +127,8 @@ directory before starting the unit. Run `systemctl daemon-reload`, then
 and `systemctl list-timers slipreel-db-backup.timer`.
 
 These backups are local to the VPS and **do not protect against host or disk loss**.
-An off-host destination and restore drill remain separate operational decisions.
+An off-host destination and regular restore drills remain separate operational
+responsibilities. The dated rollout evidence records the initial successful restore drill.
 Validation reads the archive content but does not restore it into a live database.
 For isolated fixture tests, run `node --test test/db-backup.test.mjs` with
 `BACKUP_TEST_DATABASE_URL`, and optional `BACKUP_TEST_PG_DUMP` /

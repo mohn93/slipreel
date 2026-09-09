@@ -20,5 +20,25 @@
     "ActiveState": "active"
   },
   "localOnly": true,
-  "offHostBackupConfigured": false
+  "offHostBackupConfigured": false,
+  "restoreDrill": {
+    "verifiedAt": "2026-09-09T08:28:11.710274+00:00",
+    "source": "/var/backups/slipreel/slipreel-db-2026-09-09.dump",
+    "disposableDatabase": "slipreel_daily_restore_20260909_1f94c01b32",
+    "restored": true,
+    "migration0008Verified": true,
+    "cleanupCompleted": true,
+    "counts": {
+      "migration0008": true,
+      "users": 1,
+      "devices": 1,
+      "sessions": 1,
+      "entitlements": 0,
+      "purchaseGrants": 0,
+      "orphanDevices": 0,
+      "orphanEntitlements": 0,
+      "orphanGrants": 0
+    },
+    "referentialChecksPassed": true
+  }
 }

@@ -1,0 +1,125 @@
+{
+  "restored": [
+    {
+      "version": "1.0.0",
+      "url": "https://slipreel.app/download/Slipreel-1.0.0.dmg",
+      "bytes": 140703955,
+      "sha256": "8b39507ba7f6cbedb042f46693f08949dc375782ec1291e03c074bb56f09200c",
+      "sparkle_signature_verified": true,
+      "remote_sha256_verified": true,
+      "public_head_status": 200,
+      "public_content_length": 140703955,
+      "verified_at": "2026-09-09T07:51:31.631687+00:00",
+      "final_verified_at": "2026-09-09T08:06:22.654514+00:00"
+    },
+    {
+      "version": "1.0.1",
+      "url": "https://slipreel.app/download/Slipreel-1.0.1.dmg",
+      "bytes": 140703903,
+      "sha256": "726a00a178915fa467cd4c9c2e03f8c0b45cec667f8efb3ad01c712fcc28602a",
+      "sparkle_signature_verified": true,
+      "remote_sha256_verified": true,
+      "public_head_status": 200,
+      "public_content_length": 140703903,
+      "verified_at": "2026-09-09T07:55:39.381774+00:00",
+      "final_verified_at": "2026-09-09T08:06:22.655511+00:00"
+    },
+    {
+      "version": "1.0.2",
+      "url": "https://slipreel.app/download/Slipreel-1.0.2.dmg",
+      "bytes": 141404742,
+      "sha256": "a3acb9590d18889033fbf15f2264e2e9a50060d737d169369e2d1c79c32cf8cd",
+      "sparkle_signature_verified": true,
+      "remote_sha256_verified": true,
+      "public_head_status": 200,
+      "public_content_length": 141404742,
+      "verified_at": "2026-09-09T07:58:40.638472+00:00",
+      "final_verified_at": "2026-09-09T08:06:22.655517+00:00"
+    },
+    {
+      "version": "1.0.3",
+      "url": "https://slipreel.app/download/Slipreel-1.0.3.dmg",
+      "bytes": 141406216,
+      "sha256": "4cb56f561a7a59fb5784b29a422217fb38dd681f36e268fb8ba86bee9f7a25d3",
+      "sparkle_signature_verified": true,
+      "remote_sha256_verified": true,
+      "public_head_status": 200,
+      "public_content_length": 141406216,
+      "verified_at": "2026-09-09T07:59:41.767048+00:00",
+      "final_verified_at": "2026-09-09T08:06:22.655522+00:00"
+    },
+    {
+      "version": "1.0.4",
+      "url": "https://slipreel.app/download/Slipreel-1.0.4.dmg",
+      "bytes": 141406698,
+      "sha256": "758ad40d0a1d2a9fc7617626bfffa42cc8f9751bfee71f75c6da06f325175e0f",
+      "sparkle_signature_verified": true,
+      "remote_sha256_verified": true,
+      "public_head_status": 200,
+      "public_content_length": 141406698,
+      "verified_at": "2026-09-09T08:00:32.177763+00:00",
+      "final_verified_at": "2026-09-09T08:06:22.655527+00:00"
+    },
+    {
+      "version": "1.0.5",
+      "url": "https://slipreel.app/download/Slipreel-1.0.5.dmg",
+      "bytes": 141460116,
+      "sha256": "975a4d314cd11df570f3880b15313b6c862bb871e6e7e1c065cd7a9d8e87d9c5",
+      "sparkle_signature_verified": true,
+      "remote_sha256_verified": true,
+      "public_head_status": 200,
+      "public_content_length": 141460116,
+      "verified_at": "2026-09-09T08:01:21.774375+00:00",
+      "final_verified_at": "2026-09-09T08:06:22.655529+00:00"
+    },
+    {
+      "version": "1.0.6",
+      "url": "https://slipreel.app/download/Slipreel-1.0.6.dmg",
+      "bytes": 141459914,
+      "sha256": "aaf6a048dff0517bb9c34ee7cd10cd9ef70446f8c9617202b00c174e626e6837",
+      "sparkle_signature_verified": true,
+      "remote_sha256_verified": true,
+      "public_head_status": 200,
+      "public_content_length": 141459914,
+      "verified_at": "2026-09-09T08:02:31.555865+00:00",
+      "final_verified_at": "2026-09-09T08:06:22.655532+00:00"
+    },
+    {
+      "version": "1.0.7",
+      "url": "https://slipreel.app/download/Slipreel-1.0.7.dmg",
+      "bytes": 141444354,
+      "sha256": "23c24128514135ea147d583a484aac47ca0ea3ff3e8c39b7215df60d1121707f",
+      "sparkle_signature_verified": true,
+      "remote_sha256_verified": true,
+      "public_head_status": 200,
+      "public_content_length": 141444354,
+      "verified_at": "2026-09-09T08:03:12.837766+00:00",
+      "final_verified_at": "2026-09-09T08:06:22.655536+00:00"
+    },
+    {
+      "version": "1.0.8",
+      "url": "https://slipreel.app/download/Slipreel-1.0.8.dmg",
+      "bytes": 147934792,
+      "sha256": "75a8f019ae000bd330051d768e4c626e3adc8f66f8421e7933b8aaaa9665d013",
+      "sparkle_signature_verified": true,
+      "remote_sha256_verified": true,
+      "public_head_status": 200,
+      "public_content_length": 147934792,
+      "verified_at": "2026-09-09T08:04:17.940161+00:00",
+      "final_verified_at": "2026-09-09T08:06:22.655539+00:00"
+    },
+    {
+      "version": "1.0.9",
+      "url": "https://slipreel.app/download/Slipreel-1.0.9.dmg",
+      "bytes": 148281129,
+      "sha256": "97e6539966301bf4e35d760148dec760efdaf44aa4f0c8834ed1ec5560c98d9e",
+      "sparkle_signature_verified": true,
+      "remote_sha256_verified": true,
+      "public_head_status": 200,
+      "public_content_length": 148281129,
+      "verified_at": "2026-09-09T08:05:22.179848+00:00",
+      "final_verified_at": "2026-09-09T08:06:22.655542+00:00"
+    }
+  ],
+  "notes": "Original GitHub release DMGs verified against published appcast length and checked-in Sparkle public key; remote SHA256 verified before and after atomic non-overwriting publication. Current appcast/latest artifacts unchanged."
+}
