@@ -14,6 +14,8 @@ export function scrubEvent(event) {
   if (!event) return event;
   function scrub(value, key = '') {
     if (sensitive.test(key)) return '[redacted]';
+    // The SDK passes a Date timestamp; treating it as a plain object yields {}.
+    if (value instanceof Date) return new Date(value.getTime());
     if (typeof value === 'string' && (/url|href|referrer/i.test(key) || /^slipreel:/i.test(value))) return redactUrl(value);
     if (Array.isArray(value)) return value.map((item) => scrub(item));
     if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrub(v, k)]));
