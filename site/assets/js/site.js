@@ -263,25 +263,26 @@ function mount(fn) {
   }
 }
 
-// The hero <video> autoplays, which the browser does regardless of the user's
-// motion preference. Every other motion effect on the page is gated behind
-// `prefers-reduced-motion`, so gate this one too: when reduce is requested,
-// pause on the poster frame instead of looping. Reacts to live preference
-// changes so toggling the OS setting takes effect without a reload.
+// Start with a poster and native controls, including when JavaScript is absent.
+// Small screens and reduced-motion users choose when to download/play the demo.
+// Desktop retains automatic playback once this module is ready.
 function mountHeroMotion() {
   const video = document.querySelector('.hero__media');
   if (!video) return;
-  const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const smallScreen = window.matchMedia('(max-width: 767px)');
   const apply = () => {
-    if (query.matches) {
-      video.removeAttribute('autoplay');
+    const manual = reducedMotion.matches || smallScreen.matches;
+    video.controls = manual;
+    if (manual) {
       video.pause();
     } else if (video.paused) {
-      video.play().catch(() => {});
+      video.play().catch(() => { video.controls = true; });
     }
   };
   apply();
-  query.addEventListener('change', apply);
+  reducedMotion.addEventListener('change', apply);
+  smallScreen.addEventListener('change', apply);
 }
 
 mount(mountTheater);
