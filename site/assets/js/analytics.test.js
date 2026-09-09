@@ -22,17 +22,34 @@ test('identity queued before SDK readiness is applied on loaded callback', () =>
   env.loaded();
   assert.deepEqual(env.identified(), ['fixture-user', { fixture: true }]);
   assert.equal(env.config().disable_session_recording, true);
-  assert.equal(env.config().before_send, scrubEvent);
+  assert.equal(typeof env.config().before_send, 'function');
 });
 test('credential and account pages never initialize analytics even if module is accidentally loaded', () => {
-  for (const route of ['/login', '/success.html', '/account', '/pricing.html']) {
+  for (const route of ['/login', '/success.html', '/cancel', '/cancel.html', '/account', '/pricing.html']) {
     const env = environment(route);
     env.start();
     assert.equal(env.config(), undefined);
   }
-  for (const page of ['login', 'success', 'account', 'pricing']) {
+  for (const page of ['login', 'success', 'cancel', 'account', 'pricing']) {
     const html = readFileSync(new URL(`../../${page}.html`, import.meta.url), 'utf8');
     assert.ok(!html.includes('src="assets/js/analytics.js'));
     assert.ok(html.includes('name="referrer" content="no-referrer"'));
   }
+});
+
+test('analytics preserves only its configured public ingestion key after credential redaction', () => {
+  const env = environment('/');
+  env.start();
+  const hook = env.config().before_send;
+  const original = { event: '$pageview', properties: {
+    token: 'AUTH_SECRET',
+    $current_url: 'https://slipreel.app/?token=URL_SECRET&plan=monthly',
+    nested: { token: 'NESTED_SECRET', refresh_token: 'REFRESH_SECRET' },
+  } };
+  const clean = hook(original);
+  assert.equal(clean.properties.token, 'phc_fixture');
+  assert.equal(clean.properties.$current_url, 'https://slipreel.app/?plan=monthly');
+  assert.ok(!JSON.stringify(clean).includes('SECRET'));
+  assert.equal(original.properties.token, 'AUTH_SECRET');
+  assert.equal(hook(null), null);
 });

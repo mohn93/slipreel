@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#08080C">
-<title>Slipreel — screen recordings that look like they took a week</title>
+<title>Mac Screen Recorder with Auto-Zoom &amp; Captions | Slipreel</title>
 <meta name="description" content="Slipreel is a macOS screen recorder that auto-zooms, smooths your cursor, frames your app, and lets you add on-device captions.">
 <link rel="canonical" href="https://slipreel.app/">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
@@ -29,8 +29,9 @@
 <meta name="twitter:description" content="Auto-zoom, smoothed cursor, device frames, on-device captions. A macOS screen recorder and editor.">
 <meta name="twitter:image" content="https://slipreel.app/assets/img/og.png">
 <meta name="twitter:image:alt" content="Slipreel — screen recordings that look like they took a week. A dashboard recording shown in the Slipreel editor.">
+<link rel="preload" href="/assets/img/hero-poster.webp" as="image" fetchpriority="high">
 <link rel="preload" href="assets/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/css/site.css">
+<link rel="stylesheet" href="assets/css/site.css?v=20260909">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -58,18 +59,27 @@
     "MP4 and GIF export with six aspect ratios",
     "Full display, window or region capture"
   ],
-  "offers": {
-    "@type": "AggregateOffer",
-    "priceCurrency": "USD",
-    "lowPrice": "9.00",
-    "highPrice": "69.00",
-    "offerCount": "2",
-    "offers": [
-      { "@type": "Offer", "price": "9.00", "priceCurrency": "USD", "name": "Monthly", "url": "https://slipreel.app/pricing.html" },
-      { "@type": "Offer", "price": "69.00", "priceCurrency": "USD", "name": "One-time purchase", "url": "https://slipreel.app/pricing.html" }
-    ]
-  },
-  "publisher": { "@id": "https://slipreel.app/#org" }
+  "offers": [
+    {
+      "@type": "Offer",
+      "price": "9.00",
+      "priceCurrency": "USD",
+      "name": "Monthly subscription",
+      "url": "https://slipreel.app/#pricing",
+      "description": "$9 per month. Unlimited exports on two Macs while subscribed. Cancel anytime."
+    },
+    {
+      "@type": "Offer",
+      "price": "69.00",
+      "priceCurrency": "USD",
+      "name": "One-time purchase",
+      "url": "https://slipreel.app/#pricing",
+      "description": "$69 once. Unlimited exports on two Macs using versions released during the included year of updates. Later updates are an optional paid renewal. Online activation must renew at least every 14 days."
+    }
+  ],
+  "publisher": {
+    "@id": "https://slipreel.app/#org"
+  }
 }
 </script>
 <script type="application/ld+json">
@@ -134,7 +144,7 @@
       "name": "Do my recordings get uploaded anywhere?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Your recording media stays on your Mac for recording, editing, captions, and export. The app connects for license activation and renewal, update checks, and the first caption-model download. Optional analytics, diagnostics, and submitted feedback can also send data; see Settings and our privacy policy."
+        "text": "Your recording media stays on your Mac for recording, editing, captions, and export. The app connects for license activation and renewal, update checks, and the first caption-model download. Optional analytics, diagnostics, and submitted feedback can also send data; see Settings and our privacy policy. Read our privacy policy."
       }
     },
     {
@@ -142,7 +152,7 @@
       "name": "How do captions work offline?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The Whisper transcription engine ships inside the app and runs on your Mac. The speech model itself is downloaded once on first use (about 488 MB) and cached; after that, captions work with no network at all, and your recording is never uploaded."
+        "text": "The Whisper transcription engine ships inside the app and runs on your Mac. Generate captions when you are ready; the speech model is downloaded once on first use (about 488 MB) and cached; after that, captions work with no network at all, and your recording is never uploaded."
       }
     },
     {
@@ -180,6 +190,7 @@
   ]
 }
 </script>
+<!-- Video upload dates preserve the recorded publication day, normalized to UTC midnight. -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -189,56 +200,87 @@
       "name": "Slipreel — automatic zoom and smoothed cursor",
       "description": "Slipreel automatically zooms in on a click and glides the cursor across an analytics dashboard.",
       "thumbnailUrl": "https://slipreel.app/assets/img/hero-poster.webp",
-      "uploadDate": "2026-08-30",
+      "uploadDate": "2026-08-30T00:00:00Z",
       "contentUrl": "https://slipreel.app/assets/video/hero.mp4",
-      "publisher": { "@id": "https://slipreel.app/#org" }
+      "publisher": {
+        "@id": "https://slipreel.app/#org"
+      },
+      "duration": "PT11.1S"
     },
     {
       "@type": "VideoObject",
       "name": "Zooms that write themselves",
       "description": "The Slipreel editor with automatic zoom regions on the timeline and the preview pushing in on a click.",
       "thumbnailUrl": "https://slipreel.app/assets/img/beat-zoom-poster.webp",
-      "uploadDate": "2026-08-30",
+      "uploadDate": "2026-08-30T00:00:00Z",
       "contentUrl": "https://slipreel.app/assets/video/beat-zoom.mp4",
-      "publisher": { "@id": "https://slipreel.app/#org" }
+      "publisher": {
+        "@id": "https://slipreel.app/#org"
+      },
+      "duration": "PT8.383S"
     },
     {
       "@type": "VideoObject",
       "name": "A cursor that moves like it's on rails",
       "description": "The Slipreel editor with the cursor animation style set to Smooth, playing back a smoothed cursor path.",
       "thumbnailUrl": "https://slipreel.app/assets/img/beat-cursor-poster.webp",
-      "uploadDate": "2026-08-30",
+      "uploadDate": "2026-08-30T00:00:00Z",
       "contentUrl": "https://slipreel.app/assets/video/beat-cursor.mp4",
-      "publisher": { "@id": "https://slipreel.app/#org" }
+      "publisher": {
+        "@id": "https://slipreel.app/#org"
+      },
+      "duration": "PT12.2S"
     },
     {
       "@type": "VideoObject",
       "name": "Frame it for any screen",
       "description": "The Slipreel editor wrapping a mobile recording in an iPhone device frame over a background.",
       "thumbnailUrl": "https://slipreel.app/assets/img/beat-frames-poster.webp",
-      "uploadDate": "2026-08-30",
+      "uploadDate": "2026-08-30T00:00:00Z",
       "contentUrl": "https://slipreel.app/assets/video/beat-frames.mp4",
-      "publisher": { "@id": "https://slipreel.app/#org" }
+      "publisher": {
+        "@id": "https://slipreel.app/#org"
+      },
+      "duration": "PT11S"
     },
     {
       "@type": "VideoObject",
       "name": "Every keystroke, on the timeline",
       "description": "The Slipreel editor showing keystroke overlays on the preview and a keystroke lane on the timeline.",
       "thumbnailUrl": "https://slipreel.app/assets/img/beat-keystrokes-poster.webp",
-      "uploadDate": "2026-08-30",
+      "uploadDate": "2026-08-30T00:00:00Z",
       "contentUrl": "https://slipreel.app/assets/video/beat-keystrokes.mp4",
-      "publisher": { "@id": "https://slipreel.app/#org" }
+      "publisher": {
+        "@id": "https://slipreel.app/#org"
+      },
+      "duration": "PT11.217S"
     },
     {
       "@type": "VideoObject",
       "name": "Captions, without the upload",
       "description": "The Slipreel editor with captions burned into the preview and the transcript open for editing.",
       "thumbnailUrl": "https://slipreel.app/assets/img/beat-captions-poster.webp",
-      "uploadDate": "2026-08-30",
+      "uploadDate": "2026-08-30T00:00:00Z",
       "contentUrl": "https://slipreel.app/assets/video/beat-captions.mp4",
-      "publisher": { "@id": "https://slipreel.app/#org" }
+      "publisher": {
+        "@id": "https://slipreel.app/#org"
+      },
+      "duration": "PT11S"
     }
   ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "@id": "https://slipreel.app/#website",
+  "name": "Slipreel",
+  "url": "https://slipreel.app/",
+  "inLanguage": "en",
+  "publisher": {
+    "@id": "https://slipreel.app/#org"
+  }
 }
 </script>
 </head>
@@ -299,7 +341,7 @@
     <p class="eyebrow">For macOS 13+ &middot; Apple Silicon and Intel</p>
     <h1 class="hero__title">Screen recordings that look like they took a week.</h1>
     <p class="hero__sub">
-      Slipreel auto-zooms, smooths your cursor, and frames your app.
+      Slipreel is a Mac screen recorder and editor with automatic zoom, cursor smoothing, and device frames.
       Add on-device captions, refine your edit, and export a finished demo.
     </p>
     <div class="hero__cta">
@@ -626,7 +668,7 @@
   </div>
 </section>
 
-<p class="container">Paid licenses, including one-time purchases, need an internet connection at least every 14 days to renew activation. Caption generation downloads a roughly 488 MB model the first time. <a href="guide.html">Getting started guide</a>.</p>
+<p class="container">Paid licenses, including one-time purchases, need an internet connection at least every 14 days to renew activation. Caption generation downloads a roughly 488 MB model the first time. <a href="/guide">Getting started guide</a>.</p>
 
 <!-- FAQ: native details/summary, so it opens and closes with the keyboard
      alone and needs zero JavaScript. Carries #faq for the nav link. -->
@@ -683,7 +725,7 @@
       <details class="faq__item">
         <summary class="faq__question">Do my recordings get uploaded anywhere?</summary>
         <p class="faq__answer">
-          Your recording media stays on your Mac for recording, editing, captions, and export. The app connects for license activation and renewal, update checks, and the first caption-model download. Optional analytics, diagnostics, and submitted feedback can also send data; see Settings and our privacy policy. <a href="privacy.html">Read our privacy policy</a>.
+          Your recording media stays on your Mac for recording, editing, captions, and export. The app connects for license activation and renewal, update checks, and the first caption-model download. Optional analytics, diagnostics, and submitted feedback can also send data; see Settings and our privacy policy. <a href="/privacy">Read our privacy policy</a>.
         </p>
       </details>
 
@@ -760,15 +802,15 @@
       <span class="site-footer__wordmark">Slipreel</span>
       <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
       <a class="site-footer__contact" href="/privacy">Privacy</a>
-      <a class="site-footer__contact" href="guide.html">Getting started</a>
-      <a class="site-footer__contact" href="downloads.html">Downloads</a>
-      <a class="site-footer__contact" href="changelog.html">Changelog</a>
+      <a class="site-footer__contact" href="/guide">Getting started</a>
+      <a class="site-footer__contact" href="/downloads">Downloads</a>
+      <a class="site-footer__contact" href="/changelog">Changelog</a>
       <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
     </div>
   </div>
 </footer>
 
 <script type="module" src="assets/js/site.js?v=8"></script>
-<script type="module" src="assets/js/analytics.js"></script>
+<script type="module" src="assets/js/analytics.js?v=2"></script>
 </body>
 </html>

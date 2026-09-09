@@ -1575,7 +1575,7 @@ a {
 }
 
 .footer-compare__label {
-  color: var(--ink-faint);
+  color: var(--ink-dim);
   font-weight: 580;
 }
 

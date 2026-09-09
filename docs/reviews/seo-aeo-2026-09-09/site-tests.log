@@ -1,0 +1,278 @@
+
+> test
+> node --test
+
+TAP version 13
+# Subtest: identity queued before SDK readiness is applied on loaded callback
+ok 1 - identity queued before SDK readiness is applied on loaded callback
+  ---
+  duration_ms: 6.918458
+  type: 'test'
+  ...
+# Subtest: credential and account pages never initialize analytics even if module is accidentally loaded
+ok 2 - credential and account pages never initialize analytics even if module is accidentally loaded
+  ---
+  duration_ms: 2.191708
+  type: 'test'
+  ...
+# Subtest: analytics preserves only its configured public ingestion key after credential redaction
+ok 3 - analytics preserves only its configured public ingestion key after credential redaction
+  ---
+  duration_ms: 0.724542
+  type: 'test'
+  ...
+# Subtest: checkout POSTs JSON with credentials
+ok 4 - checkout POSTs JSON with credentials
+  ---
+  duration_ms: 1.048917
+  type: 'test'
+  ...
+# Subtest: sessionFromCheckout wraps the id
+ok 5 - sessionFromCheckout wraps the id
+  ---
+  duration_ms: 0.183125
+  type: 'test'
+  ...
+# Subtest: devices is a credentialed GET with no body
+ok 6 - devices is a credentialed GET with no body
+  ---
+  duration_ms: 1.771292
+  type: 'test'
+  ...
+# Subtest: deleteDevice encodes the id in the path
+ok 7 - deleteDevice encodes the id in the path
+  ---
+  duration_ms: 3.051125
+  type: 'test'
+  ...
+# Subtest: non-2xx and non-JSON bodies surface as {ok:false} with null data
+ok 8 - non-2xx and non-JSON bodies surface as {ok:false} with null data
+  ---
+  duration_ms: 0.27425
+  type: 'test'
+  ...
+# Subtest: a network error (fetch throws) surfaces as {ok:false, status:0} not a rejection
+ok 9 - a network error (fetch throws) surfaces as {ok:false, status:0} not a rejection
+  ---
+  duration_ms: 0.109958
+  type: 'test'
+  ...
+# Subtest: formatBytes renders megabytes
+ok 10 - formatBytes renders megabytes
+  ---
+  duration_ms: 0.55125
+  type: 'test'
+  ...
+# Subtest: formatBytes rejects junk
+ok 11 - formatBytes rejects junk
+  ---
+  duration_ms: 0.116125
+  type: 'test'
+  ...
+# Subtest: pickLatestItem picks the highest build, not document order
+ok 12 - pickLatestItem picks the highest build, not document order
+  ---
+  duration_ms: 0.863333
+  type: 'test'
+  ...
+# Subtest: pickLatestItem ignores items with no url or no build
+ok 13 - pickLatestItem ignores items with no url or no build
+  ---
+  duration_ms: 0.248542
+  type: 'test'
+  ...
+# Subtest: pickLatestItem rejects a non-numeric build
+ok 14 - pickLatestItem rejects a non-numeric build
+  ---
+  duration_ms: 0.358625
+  type: 'test'
+  ...
+# Subtest: pickLatestItem rejects an empty or whitespace-only build
+ok 15 - pickLatestItem rejects an empty or whitespace-only build
+  ---
+  duration_ms: 0.948583
+  type: 'test'
+  ...
+# Subtest: pickLatestItem returns null when nothing is usable
+ok 16 - pickLatestItem returns null when nothing is usable
+  ---
+  duration_ms: 0.855084
+  type: 'test'
+  ...
+# Subtest: itemsFromDocument reads url, length, version and build
+ok 17 - itemsFromDocument reads url, length, version and build
+  ---
+  duration_ms: 4.337375
+  type: 'test'
+  ...
+# Subtest: itemsFromDocument tolerates a malformed item
+ok 18 - itemsFromDocument tolerates a malformed item
+  ---
+  duration_ms: 0.36825
+  type: 'test'
+  ...
+# Subtest: apiBase uses the API subdomain in production
+ok 19 - apiBase uses the API subdomain in production
+  ---
+  duration_ms: 1.354792
+  type: 'test'
+  ...
+# Subtest: apiBase honors an explicit meta override
+ok 20 - apiBase honors an explicit meta override
+  ---
+  duration_ms: 0.66125
+  type: 'test'
+  ...
+# Subtest: apiBase falls back to host:8080 in dev
+ok 21 - apiBase falls back to host:8080 in dev
+  ---
+  duration_ms: 0.079959
+  type: 'test'
+  ...
+# Subtest: credentials in URL, referrer and callback attributes never survive analytics scrubbing
+ok 22 - credentials in URL, referrer and callback attributes never survive analytics scrubbing
+  ---
+  duration_ms: 0.838584
+  type: 'test'
+  ...
+# Subtest: credential params are available to flow but removed from browser history
+ok 23 - credential params are available to flow but removed from browser history
+  ---
+  duration_ms: 0.491166
+  type: 'test'
+  ...
+# Subtest: one-time account date selects covered releases, including the final UTC day
+ok 24 - one-time account date selects covered releases, including the final UTC day
+  ---
+  duration_ms: 2.301625
+  type: 'test'
+  ...
+# Subtest: active and grace subscriptions include current releases
+ok 25 - active and grace subscriptions include current releases
+  ---
+  duration_ms: 0.092125
+  type: 'test'
+  ...
+# Subtest: signed-out visitors and free accounts are distinct
+ok 26 - signed-out visitors and free accounts are distinct
+  ---
+  duration_ms: 0.076417
+  type: 'test'
+  ...
+# Subtest: failed or incomplete license checks cannot recommend an uncovered release
+ok 27 - failed or incomplete license checks cannot recommend an uncovered release
+  ---
+  duration_ms: 2.010917
+  type: 'test'
+  ...
+# Subtest: buildDeeplink includes only present params
+ok 28 - buildDeeplink includes only present params
+  ---
+  duration_ms: 0.724333
+  type: 'test'
+  ...
+# Subtest: startCheckout returns the redirect url
+ok 29 - startCheckout returns the redirect url
+  ---
+  duration_ms: 0.555458
+  type: 'test'
+  ...
+# Subtest: startCheckout surfaces an error
+ok 30 - startCheckout surfaces an error
+  ---
+  duration_ms: 0.201375
+  type: 'test'
+  ...
+# Subtest: completeCheckout with a device mints a token and returns a deeplink
+ok 31 - completeCheckout with a device mints a token and returns a deeplink
+  ---
+  duration_ms: 0.19325
+  type: 'test'
+  ...
+# Subtest: completeCheckout without a device routes to account
+ok 32 - completeCheckout without a device routes to account
+  ---
+  duration_ms: 0.15825
+  type: 'test'
+  ...
+# Subtest: completeCheckout surfaces a seat-limit 409
+ok 33 - completeCheckout surfaces a seat-limit 409
+  ---
+  duration_ms: 0.158458
+  type: 'test'
+  ...
+# Subtest: completeMagicLink mirrors completeCheckout (device -> deeplink)
+ok 34 - completeMagicLink mirrors completeCheckout (device -> deeplink)
+  ---
+  duration_ms: 0.17225
+  type: 'test'
+  ...
+# Subtest: requestMagicLink reports sent
+ok 35 - requestMagicLink reports sent
+  ---
+  duration_ms: 0.084292
+  type: 'test'
+  ...
+# Subtest: pending payment waits before minting activation and preserves activation context
+ok 36 - pending payment waits before minting activation and preserves activation context
+  ---
+  duration_ms: 0.428042
+  type: 'test'
+  ...
+# Subtest: pending payment exhausts bounded retry without issuing any free activation
+ok 37 - pending payment exhausts bounded retry without issuing any free activation
+  ---
+  duration_ms: 0.366083
+  type: 'test'
+  ...
+# Subtest: verified checkout intent starts checkout without premature device activation
+ok 38 - verified checkout intent starts checkout without premature device activation
+  ---
+  duration_ms: 0.16675
+  type: 'test'
+  ...
+# Subtest: verified cancellation resumes only the server-owned flow
+ok 39 - verified cancellation resumes only the server-owned flow
+  ---
+  duration_ms: 0.075125
+  type: 'test'
+  ...
+# Subtest: checkout failure after verification retains context for retry without consuming the magic link twice
+ok 40 - checkout failure after verification retains context for retry without consuming the magic link twice
+  ---
+  duration_ms: 0.073459
+  type: 'test'
+  ...
+# Subtest: checkout preserves all valid plan links and defaults invalid links to one-time
+ok 41 - checkout preserves all valid plan links and defaults invalid links to one-time
+  ---
+  duration_ms: 1.415875
+  type: 'test'
+  ...
+# Subtest: archive only checks first-party release downloads
+ok 42 - archive only checks first-party release downloads
+  ---
+  duration_ms: 1.327958
+  type: 'test'
+  ...
+# Subtest: license date ceiling excludes newer releases and unknown dates
+ok 43 - license date ceiling excludes newer releases and unknown dates
+  ---
+  duration_ms: 0.505041
+  type: 'test'
+  ...
+# Subtest: cached appcasts cannot reintroduce withdrawn installers
+ok 44 - cached appcasts cannot reintroduce withdrawn installers
+  ---
+  duration_ms: 0.133583
+  type: 'test'
+  ...
+1..44
+# tests 44
+# suites 0
+# pass 44
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 127.104375
