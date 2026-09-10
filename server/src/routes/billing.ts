@@ -39,6 +39,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
       customer: stripeCustomerId,
       mode,
       line_items: [{ price, quantity: 1 }],
+      allow_promotion_codes: true,
       success_url: app.billing.successUrl,
       cancel_url: cancel.toString(),
       metadata,

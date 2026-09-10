@@ -86,6 +86,7 @@ describe('billing routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ url: 'https://checkout.stripe.test/cs_1' });
     expect(calls.checkout.mode).toBe('subscription');
+    expect(calls.checkout.allow_promotion_codes).toBe(true);
     expect(calls.checkout.line_items[0].price).toBe('price_m');
     expect(calls.checkout.customer).toBe('cus_1');
     expect(calls.checkout.success_url).toBe(billing.successUrl);
@@ -109,6 +110,7 @@ describe('billing routes', () => {
       payload: { email: 'd@example.com', plan: 'onetime' } });
     expect(res.statusCode).toBe(200);
     expect(calls.checkout.mode).toBe('payment');
+    expect(calls.checkout.allow_promotion_codes).toBe(true);
     expect(calls.checkout.line_items[0].price).toBe('price_o');
     await app.close();
   });
