@@ -14,10 +14,10 @@ import 'recording_settings_controller.dart';
 import 'recording_state.dart';
 import 'system_audio_controller.dart';
 import 'window_mode_controller.dart';
-import '../ui/widgets/permission_denied_sheet.dart';
+import '../ui/widgets/permission_denied_dialog.dart';
 
 /// Single funnel for every start/stop/pause trigger — UI button, hotkey,
-/// sleep observer. Owns the countdown decision; delegates the deny-sheet
+/// sleep observer. Owns the countdown decision; delegates the permission dialog
 /// gate to RecordingController.startRecording's existing guard.
 class RecordingActionRouter {
   RecordingActionRouter(this._container);
@@ -198,9 +198,9 @@ class RecordingActionRouter {
     return false;
   }
 
-  /// Shows the permission-denied UI as a full-screen **panel**, not a bottom
-  /// sheet. The recording bar window is ~68px tall, so `showModalBottomSheet`
-  /// would clip to an empty scrim there. Switch to panel mode, push the screen,
+  /// Shows permission guidance in a full-screen panel. The recording bar
+  /// window is ~68px tall, too short to host a dialog.
+  /// Switch to panel mode, push the screen,
   /// and restore the bar once it's dismissed.
   Future<void> _showDeniedPanel(BuildContext context, PermissionKind kind) async {
     final window = _container.read(windowModeControllerProvider.notifier);

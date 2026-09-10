@@ -95,8 +95,8 @@ import 'package:screen_recorder/ui/app_alerts/app_alert_types.dart';
 import 'package:screen_recorder/licensing/build_release_date.g.dart';
 import 'package:screen_recorder/licensing/export_gate.dart';
 import 'package:screen_recorder/licensing/licensing_controller.dart';
-import 'package:screen_recorder/ui/paywall/export_nudge_sheet.dart';
-import 'package:screen_recorder/ui/paywall/paywall_sheet.dart';
+import 'package:screen_recorder/ui/paywall/export_nudge_dialog.dart';
+import 'package:screen_recorder/ui/paywall/paywall_dialog.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:screen_recorder/ui/widgets/springy_icon_button.dart';
 import 'package:screen_recorder/ui/widgets/command_palette/command_palette.dart';
@@ -1677,7 +1677,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       /* best-effort; a failed write only risks showing it again */
     }
     if (!mounted) return;
-    await ExportNudgeSheet.show(context, remaining: remaining);
+    await ExportNudgeDialog.show(context, remaining: remaining);
   }
 
   PreferredSizeWidget _buildTopBar(BuildContext context) {
@@ -2184,7 +2184,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
       if (!mounted) return;
 
       // Export gate (spec §2/§9). If not entitled, show the paywall instead of
-      // the export dialog. The sheet auto-advances (returns true) if the user
+      // the export dialog. The dialog auto-advances (returns true) if the user
       // becomes entitled via the browser flow while it's open.
       await ref.read(licensingControllerProvider.notifier).refreshIfNeeded();
       if (!mounted) return;
@@ -2213,7 +2213,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
               AnalyticsEvents.paywallShown,
               properties: {'reason': reason.name},
             );
-        final becameEntitled = await PaywallSheet.show(context, reason: reason);
+        final becameEntitled = await PaywallDialog.show(context, reason: reason);
         if (!becameEntitled || !mounted) return;
         // fall through to the export dialog now that export is unlocked
       }

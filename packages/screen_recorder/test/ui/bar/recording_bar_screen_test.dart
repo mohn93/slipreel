@@ -15,7 +15,7 @@ import 'package:screen_recorder/state/window_mode_controller.dart';
 import 'package:screen_recorder/ui/bar/recording_bar.dart';
 import 'package:screen_recorder/ui/bar/recording_pill.dart';
 import 'package:screen_recorder/ui/bar/recording_bar_screen.dart';
-import 'package:screen_recorder/ui/widgets/permission_denied_sheet.dart';
+import 'package:screen_recorder/ui/widgets/permission_denied_dialog.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
-import 'package:screen_recorder/ui/widgets/permission_denied_sheet.dart';
+import 'package:screen_recorder/ui/widgets/permission_denied_dialog.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 import 'package:url_launcher_platform_interface/link.dart';
@@ -62,7 +62,7 @@ void main() {
           body: Center(
             child: ElevatedButton(
               onPressed: () =>
-                  PermissionDeniedSheet.show(context, kind),
+                  PermissionDeniedDialog.show(context, kind),
               child: const Text('open'),
             ),
           ),

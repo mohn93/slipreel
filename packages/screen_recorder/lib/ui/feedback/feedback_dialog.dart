@@ -1,3 +1,4 @@
+import 'package:screen_recorder/ui/widgets/desktop_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,13 +10,11 @@ import '../theme/app_palette_context.dart';
 
 /// In-app feedback with acknowledged delivery, durable offline queue status,
 /// and an email fallback when delivery or local persistence is unavailable.
-class FeedbackSheet {
-  const FeedbackSheet._();
+class FeedbackDialog {
+  const FeedbackDialog._();
 
-  static Future<void> show(BuildContext context) => showModalBottomSheet<void>(
+  static Future<void> show(BuildContext context) => showDesktopDialog<void>(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
     builder: (_) => const _FeedbackBody(),
   );
 }
@@ -100,25 +99,13 @@ class _FeedbackBodyState extends ConsumerState<_FeedbackBody> {
 
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          8,
-          24,
-          24 + MediaQuery.of(context).viewInsets.bottom,
-        ),
+        padding: const EdgeInsets.all(24),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Send feedback',
-                style: TextStyle(
-                  color: palette.textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              const DesktopDialogHeading(title: 'Send feedback'),
               const SizedBox(height: 16),
               _typeSelector(palette),
               const SizedBox(height: 16),

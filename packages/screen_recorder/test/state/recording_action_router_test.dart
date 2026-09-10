@@ -9,7 +9,7 @@ import 'package:screen_recorder/state/recording_settings_store.dart';
 import 'package:screen_recorder/state/recording_state.dart';
 import 'package:screen_recorder/state/window_mode.dart';
 import 'package:screen_recorder/state/window_mode_controller.dart';
-import 'package:screen_recorder/ui/widgets/permission_denied_sheet.dart';
+import 'package:screen_recorder/ui/widgets/permission_denied_dialog.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart'
     hide RecordingSettings;
 

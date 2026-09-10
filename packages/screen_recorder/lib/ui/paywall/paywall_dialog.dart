@@ -1,3 +1,4 @@
+import 'package:screen_recorder/ui/widgets/desktop_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,20 +13,16 @@ import 'package:screen_recorder/ui/theme/app_palette_context.dart';
 /// browser purchase/sign-in flow. Watches [entitlementProvider]; when export
 /// becomes allowed (the Phase 5b deep link lands) it auto-dismisses with true
 /// so the caller proceeds straight into export.
-class PaywallSheet {
-  const PaywallSheet._();
+class PaywallDialog {
+  const PaywallDialog._();
 
-  /// Returns true if the user became entitled while the sheet was open.
+  /// Returns true if the user became entitled while the dialog was open.
   static Future<bool> show(
     BuildContext context, {
     required PaywallReason reason,
   }) async {
-    final result = await showModalBottomSheet<bool>(
+    final result = await showDesktopDialog<bool>(
       context: context,
-      isDismissible: true,
-      showDragHandle: true,
-      // Inherits the elevated surface + border + stronger scrim from
-      // bottomSheetTheme so it stands off the near-black background.
       builder: (_) => _PaywallBody(reason: reason),
     );
     return result ?? false;
@@ -48,27 +45,31 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
       case PaywallReason.licenseCheckRequired:
         return (
           title: 'Connect to verify your license',
-          body: 'Your saved license needs its online check, required at least '
+          body:
+              'Your saved license needs its online check, required at least '
               'every 14 days. Connect to the internet and retry. You do not '
               'need to purchase again.',
         );
       case PaywallReason.needsPurchase:
         return (
           title: 'Exporting is a paid feature',
-          body: 'Recording and editing are free. Choose a subscription or a '
+          body:
+              'Recording and editing are free. Choose a subscription or a '
               'one-time purchase (perpetual export plus one year of updates) '
               'on the next screen.',
         );
       case PaywallReason.subscriptionLapsed:
         return (
           title: 'Your subscription has lapsed',
-          body: 'Export is locked until your subscription is active again. '
+          body:
+              'Export is locked until your subscription is active again. '
               'Manage or renew it on the next screen.',
         );
       case PaywallReason.updateCeiling:
         return (
           title: 'Renew your update year',
-          body: 'Your one-time license covers versions released within your '
+          body:
+              'Your one-time license covers versions released within your '
               'update window. This build is newer, so export is locked here. '
               'Renew another year of updates to export on the latest version '
               'or download an earlier covered version.',
@@ -108,59 +109,73 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
 
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(copy.title,
-                style: TextStyle(
-                    color: palette.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600)),
+            DesktopDialogHeading(title: copy.title),
             const SizedBox(height: 12),
-            Text(copy.body,
-                style: TextStyle(color: palette.textSecondary, height: 1.4)),
+            Text(
+              copy.body,
+              style: TextStyle(color: palette.textSecondary, height: 1.4),
+            ),
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _busy
                   ? null
                   : () => _run(() async {
-                      final controller = ref.read(licensingControllerProvider.notifier);
+                      final controller = ref.read(
+                        licensingControllerProvider.notifier,
+                      );
                       if (widget.reason != PaywallReason.licenseCheckRequired) {
                         return controller.unlockExport();
                       }
                       await controller.refreshNow();
-                      if (mounted && !canExportNow(ref.read(entitlementProvider),
-                          appReleaseDate: buildReleaseDate)) {
-                        AppAlerts.error('Could not renew your license. Check your connection or sign in again.');
+                      if (mounted &&
+                          !canExportNow(
+                            ref.read(entitlementProvider),
+                            appReleaseDate: buildReleaseDate,
+                          )) {
+                        AppAlerts.error(
+                          'Could not renew your license. Check your connection or sign in again.',
+                        );
                       }
                       return true;
                     }),
               style: ElevatedButton.styleFrom(
-                  backgroundColor: palette.accent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14)),
+                backgroundColor: palette.accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
               child: _busy
                   ? const SizedBox(
                       height: 18,
                       width: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : Text(widget.reason == PaywallReason.licenseCheckRequired
-                      ? 'Retry license check'
-                      : widget.reason == PaywallReason.needsPurchase
-                      ? 'Unlock export'
-                      : 'Continue'),
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      widget.reason == PaywallReason.licenseCheckRequired
+                          ? 'Retry license check'
+                          : widget.reason == PaywallReason.needsPurchase
+                          ? 'Unlock export'
+                          : 'Continue',
+                    ),
             ),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _busy
                   ? null
                   : () => _run(
-                      ref.read(licensingControllerProvider.notifier).openSignIn),
-              child: Text('Already purchased? Sign in',
-                  style: TextStyle(color: palette.textSecondary)),
+                      ref.read(licensingControllerProvider.notifier).openSignIn,
+                    ),
+              child: Text(
+                'Already purchased? Sign in',
+                style: TextStyle(color: palette.textSecondary),
+              ),
             ),
           ],
         ),

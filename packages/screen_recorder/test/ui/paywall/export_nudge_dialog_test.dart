@@ -3,11 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/licensing/entitlement.dart';
 import 'package:screen_recorder/licensing/licensing_controller.dart';
-import 'package:screen_recorder/ui/paywall/export_nudge_sheet.dart';
+import 'package:screen_recorder/ui/paywall/export_nudge_dialog.dart';
 import 'package:screen_recorder/ui/theme/app_palette.dart';
 
 // Minimal StateNotifier stand-in for LicensingController (mirrors the pattern
-// in paywall_sheet_test.dart).
+// in paywall_dialog_test.dart).
 class _FakeController extends StateNotifier<EntitlementState>
     implements LicensingController {
   _FakeController() : super(const EntitlementSignedOut());
@@ -41,7 +41,7 @@ void main() {
     await tester.pumpWidget(_host(c));
     final ctx = tester.element(find.text('open'));
     // ignore: unawaited_futures
-    ExportNudgeSheet.show(ctx, remaining: 2);
+    ExportNudgeDialog.show(ctx, remaining: 2);
     await tester.pumpAndSettle();
 
     expect(find.textContaining('2 free exports left'), findsOneWidget);
@@ -54,7 +54,7 @@ void main() {
     await tester.pumpWidget(_host(c));
     final ctx = tester.element(find.text('open'));
     // ignore: unawaited_futures
-    ExportNudgeSheet.show(ctx, remaining: 1);
+    ExportNudgeDialog.show(ctx, remaining: 1);
     await tester.pumpAndSettle();
     expect(find.textContaining('1 free export left'), findsOneWidget);
   });
@@ -65,13 +65,13 @@ void main() {
     await tester.pumpWidget(_host(c));
     final ctx = tester.element(find.text('open'));
     // ignore: unawaited_futures
-    ExportNudgeSheet.show(ctx, remaining: 2);
+    ExportNudgeDialog.show(ctx, remaining: 2);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('See plans'));
     await tester.pumpAndSettle();
     expect(c.unlockCalls, 1);
-    expect(find.text('See plans'), findsNothing); // sheet dismissed
+    expect(find.text('See plans'), findsNothing); // dialog dismissed
   });
 
   testWidgets('Maybe later dismisses without starting a purchase',
@@ -80,7 +80,7 @@ void main() {
     await tester.pumpWidget(_host(c));
     final ctx = tester.element(find.text('open'));
     // ignore: unawaited_futures
-    ExportNudgeSheet.show(ctx, remaining: 2);
+    ExportNudgeDialog.show(ctx, remaining: 2);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Maybe later'));
