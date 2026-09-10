@@ -57,6 +57,9 @@ signature-verified; event claims and entitlement writes commit together.
 
 Only settled purchases of configured prices grant access. The payment-intent
 ledger deduplicates success-page reconciliation and different webhook event IDs.
+Completed zero-total orders have no PaymentIntent; they use a namespaced
+`checkout_session:<id>` key in that ledger. Price and customer validation still
+apply, and replaying a webhook or reopening success never grants a second year.
 Subscription deliveries reconcile Stripe's current state under a lock. REST calls explicitly pin API version2025-02-24.acacia; webhook snapshots can use a different version because live objects are retrieved by ID.
 `past_due` receives seven days of grace anchored to the invoice due/finalization time or billing-period start; repeated
 notifications cannot extend it. `unpaid` and canceled subscriptions lose access.
