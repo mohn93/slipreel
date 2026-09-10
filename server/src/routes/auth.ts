@@ -4,7 +4,7 @@ import { deleteSession } from '../auth/sessions.js';
 import { clearSessionCookie, SESSION_COOKIE } from '../auth/cookie.js';
 import { requireSession } from '../auth/require_session.js';
 import { resolveEffectiveEntitlement } from '../billing/effective_entitlement.js';
-import { reconcileCheckout } from '../billing/entitlements.js';
+import { reconcileCheckout, isSettledCheckout } from '../billing/entitlements.js';
 
 const fromCheckout = z.object({ checkout_session_id: z.string().min(1).max(200) });
 
@@ -21,14 +21,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     );
     const user = rows[0];
     if (!user || !customer || user.stripe_customer_id !== customer) return reply.code(403).send({ error: 'checkout ownership mismatch' });
-    if (cs.payment_status !== 'paid') {
+    if (!isSettledCheckout(cs)) {
       const failed = await app.pool.query('SELECT 1 FROM failed_checkouts WHERE session_id = $1', [cs.id]);
       if (failed.rowCount) return reply.code(402).send({error:'payment_failed'});
     }
     if (cs.status === 'expired') return reply.code(410).send({error:'checkout_expired'});
     if (cs.status !== 'complete') return reply.code(202).send({ error: 'payment_pending' });
     if (!(await reconcileCheckout(app.pool, app.stripe, app.billing, cs))) {
-      return cs.payment_status === 'paid' ? reply.code(409).send({error:'payment_not_entitled'}) : reply.code(202).send({error:'payment_pending'});
+      return isSettledCheckout(cs) ? reply.code(409).send({error:'payment_not_entitled'}) : reply.code(202).send({error:'payment_pending'});
     }
     if (!(await resolveEffectiveEntitlement(app.pool, user.id)).export) return reply.code(409).send({error:'payment_not_entitled'});
     const md = cs.metadata ?? {};

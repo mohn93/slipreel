@@ -21,6 +21,23 @@ export function mapSubscriptionStatus(
   }
 }
 
+/** Stripe omits PaymentIntent for completed orders discounted to zero. */
+function isNoCostCheckout(session: Stripe.Checkout.Session): boolean {
+  return session.status === 'complete' && session.amount_total === 0 &&
+    (session.payment_status === 'paid' || session.payment_status === 'no_payment_required');
+}
+
+export function isSettledCheckout(session: Stripe.Checkout.Session): boolean {
+  return session.payment_status === 'paid' || isNoCostCheckout(session);
+}
+
+function checkoutGrantKey(session: Stripe.Checkout.Session): string | null {
+  const pi = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+  // The existing text ledger key also supports a namespaced Checkout reference.
+  // Replays of the same free order must never extend the license again.
+  return pi ?? (isNoCostCheckout(session) && session.id ? `checkout_session:${session.id}` : null);
+}
+
 /** Resolve our user id from a Stripe customer id; null if unknown. */
 async function userIdForCustomer(
   client: pg.PoolClient,
@@ -75,10 +92,10 @@ export async function handleStripeEvent(
       case 'checkout.session.async_payment_succeeded':
       case 'checkout.session.completed': {
         const s = event.data.object as Stripe.Checkout.Session;
-        if (s.mode === 'payment' && s.payment_status === 'paid') {
+        if (s.mode === 'payment' && isSettledCheckout(s)) {
           if (stripe && billing && !(await isExpectedCheckout(stripe, billing, s))) break;
           const userId = await userIdForCustomer(client, s.customer);
-          if (userId) await extendOnetime(client, userId, s.payment_intent, s.created);
+          if (userId) await extendOnetime(client, userId, checkoutGrantKey(s), s.created);
         }
         // subscription-mode checkouts are handled by the subscription.* events.
         break;
@@ -225,10 +242,22 @@ export async function isExpectedCheckout(stripe: Stripe, billing: BillingConfig,
 
 /** Success-page and webhook reconciliation share purchase-level idempotency. */
 export async function reconcileCheckout(pool: pg.Pool, stripe: Stripe, billing: BillingConfig, session: Stripe.Checkout.Session): Promise<boolean> {
-  if (session.status !== 'complete' || session.payment_status !== 'paid' || !(await isExpectedCheckout(stripe, billing, session))) return false;
+  if (session.status !== 'complete' || !isSettledCheckout(session) || !(await isExpectedCheckout(stripe, billing, session))) return false;
   if (session.mode === 'payment') {
-    await handleStripeEvent(pool, {id: `checkout_reconcile_${session.id}`, type: 'checkout.session.completed', data: {object: session}} as Stripe.Event, stripe, billing);
-    return true;
+    const key = checkoutGrantKey(session);
+    if (!key) return false;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const userId = await userIdForCustomer(client, session.customer);
+      if (!userId) throw new Error('Unknown checkout customer');
+      // Purchase-level idempotency permits recovery even if an earlier webhook
+      // or reconciliation was recorded without granting this no-cost order.
+      await extendOnetime(client, userId, key, session.created);
+      await client.query('COMMIT');
+      return true;
+    } catch (err) { await client.query('ROLLBACK'); throw err; }
+    finally { client.release(); }
   }
   const id = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
   if (!id) return false;
