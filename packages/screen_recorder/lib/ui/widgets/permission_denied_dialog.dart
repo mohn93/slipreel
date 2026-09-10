@@ -1,3 +1,4 @@
+import 'package:screen_recorder/ui/widgets/desktop_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
@@ -37,7 +38,7 @@ const Map<PermissionKind, String> _kBodies = {
 
 /// Shared inner content for both presentations below. Owns the "open System
 /// Settings" launch + the inline-error state. "Not now" (and a successful
-/// launch) pop whatever route hosts it — a bottom sheet OR a pushed panel
+/// launch) pop whatever route hosts it — a dialog or a pushed panel
 /// route — so the same widget serves both.
 class _PermissionDeniedBody extends StatefulWidget {
   const _PermissionDeniedBody({required this.kind});
@@ -55,12 +56,12 @@ class _PermissionDeniedBodyState extends State<_PermissionDeniedBody> {
     final theme = Theme.of(context);
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(_kTitles[widget.kind]!, style: theme.textTheme.titleLarge),
+            DesktopDialogHeading(title: _kTitles[widget.kind]!),
             const SizedBox(height: 12),
             Text(_kBodies[widget.kind]!, style: theme.textTheme.bodyMedium),
             if (_error != null) ...[
@@ -123,28 +124,25 @@ class _PermissionDeniedBodyState extends State<_PermissionDeniedBody> {
   }
 }
 
-/// Bottom-sheet presentation. Use from **full-size windows** (onboarding,
-/// settings) where a modal bottom sheet renders normally.
+/// Centered dialog for full-size windows (onboarding and settings).
 ///
-/// Do NOT use from the recording bar — that window is ~68px tall, so the sheet
+/// Do NOT use from the recording bar — that window is ~68px tall, so the dialog
 /// clips to an empty dark scrim. Use [PermissionDeniedScreen] via panel mode
 /// there instead (see RecordingActionRouter).
-class PermissionDeniedSheet {
-  const PermissionDeniedSheet._();
+class PermissionDeniedDialog {
+  const PermissionDeniedDialog._();
 
   static Future<void> show(BuildContext context, PermissionKind kind) {
-    return showModalBottomSheet<void>(
+    return showDesktopDialog<void>(
       context: context,
-      isDismissible: true,
-      showDragHandle: true,
       builder: (_) => _PermissionDeniedBody(kind: kind),
     );
   }
 }
 
 /// Full-screen presentation. Pushed by the recording bar (which switches to
-/// panel mode first) because the bar window is too short for a bottom sheet.
-/// Renders the same content as [PermissionDeniedSheet], full-bleed.
+/// panel mode first) because the bar window is too short for a dialog.
+/// Renders the same content as [PermissionDeniedDialog], full-bleed.
 class PermissionDeniedScreen extends StatelessWidget {
   const PermissionDeniedScreen({super.key, required this.kind});
   final PermissionKind kind;

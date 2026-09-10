@@ -7,7 +7,7 @@ import 'package:screen_recorder/licensing/entitlement.dart';
 import 'package:screen_recorder/licensing/entitlement_claims.dart';
 import 'package:screen_recorder/licensing/export_gate.dart';
 import 'package:screen_recorder/licensing/licensing_controller.dart';
-import 'package:screen_recorder/ui/paywall/paywall_sheet.dart';
+import 'package:screen_recorder/ui/paywall/paywall_dialog.dart';
 import 'package:screen_recorder/ui/theme/app_palette.dart';
 
 // A StateNotifier we can drive from the test, standing in for LicensingController.
@@ -76,10 +76,10 @@ void main() {
     final c = _FakeController();
     bool? result;
     await tester.pumpWidget(_host(c, onOpen: () {}));
-    // Open the sheet imperatively so we control the reason.
+    // Open the dialog imperatively so we control the reason.
     final ctx = tester.element(find.text('open'));
     // ignore: unawaited_futures
-    PaywallSheet.show(ctx, reason: PaywallReason.needsPurchase).then((r) => result = r);
+    PaywallDialog.show(ctx, reason: PaywallReason.needsPurchase).then((r) => result = r);
     await tester.pumpAndSettle();
 
     expect(find.text('Unlock export'), findsOneWidget);
@@ -87,7 +87,7 @@ void main() {
     await tester.pump();
     expect(c.unlockCalls, 1);
 
-    // Simulate the deep link landing: entitlement flips -> sheet auto-dismisses true.
+    // Simulate the deep link landing: entitlement flips -> dialog auto-dismisses true.
     c.grantEntitlement();
     await tester.pumpAndSettle();
     expect(result, isTrue);
@@ -99,17 +99,17 @@ void main() {
     await tester.pumpWidget(_host(c, onOpen: () {}));
     final ctx = tester.element(find.text('open'));
     // ignore: unawaited_futures
-    PaywallSheet.show(ctx, reason: PaywallReason.updateCeiling);
+    PaywallDialog.show(ctx, reason: PaywallReason.updateCeiling);
     await tester.pumpAndSettle();
     expect(find.textContaining('update'), findsWidgets);
   });
 
-  testWidgets('a throwing unlock does not crash the sheet', (tester) async {
+  testWidgets('a throwing unlock does not crash the dialog', (tester) async {
     final c = _FakeController()..throwOnUnlock = true;
     await tester.pumpWidget(_host(c, onOpen: () {}));
     final ctx = tester.element(find.text('open'));
     // ignore: unawaited_futures
-    PaywallSheet.show(ctx, reason: PaywallReason.needsPurchase);
+    PaywallDialog.show(ctx, reason: PaywallReason.needsPurchase);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Unlock export'));
     await tester.pump(); // run the async catch
@@ -126,7 +126,7 @@ void main() {
     await tester.pumpWidget(_host(c, onOpen: () {}));
     final ctx = tester.element(find.text('open'));
     // ignore: unawaited_futures
-    PaywallSheet.show(ctx, reason: PaywallReason.subscriptionLapsed);
+    PaywallDialog.show(ctx, reason: PaywallReason.subscriptionLapsed);
     await tester.pumpAndSettle();
 
     // The primary CTA reads "Continue" for a lapsed subscription, not "Unlock".
@@ -142,7 +142,7 @@ void main() {
     await tester.pumpWidget(_host(c, onOpen: () {}));
     final ctx = tester.element(find.text('open'));
     // ignore: unawaited_futures
-    PaywallSheet.show(ctx, reason: PaywallReason.needsPurchase);
+    PaywallDialog.show(ctx, reason: PaywallReason.needsPurchase);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Already purchased? Sign in'));
@@ -151,13 +151,13 @@ void main() {
     expect(c.unlockCalls, 0);
   });
 
-  testWidgets('unlock returning false keeps the sheet open (browser did not open)',
+  testWidgets('unlock returning false keeps the dialog open (browser did not open)',
       (tester) async {
     final c = _FakeController()..unlockReturns = false;
     bool? result;
     await tester.pumpWidget(_host(c, onOpen: () {}));
     final ctx = tester.element(find.text('open'));
-    unawaited(PaywallSheet.show(ctx, reason: PaywallReason.needsPurchase)
+    unawaited(PaywallDialog.show(ctx, reason: PaywallReason.needsPurchase)
         .then((r) => result = r));
     await tester.pumpAndSettle();
 
@@ -177,7 +177,7 @@ void main() {
     await tester.pumpWidget(_host(c, onOpen: () {}));
     final ctx = tester.element(find.text('open'));
     // ignore: unawaited_futures
-    PaywallSheet.show(ctx, reason: PaywallReason.needsPurchase);
+    PaywallDialog.show(ctx, reason: PaywallReason.needsPurchase);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Unlock export'));

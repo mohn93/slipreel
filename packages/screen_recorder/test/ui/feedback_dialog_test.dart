@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder/feedback/feedback_service.dart';
-import 'package:screen_recorder/ui/feedback/feedback_sheet.dart';
+import 'package:screen_recorder/ui/feedback/feedback_dialog.dart';
 import 'package:screen_recorder/ui/theme/app_palette.dart';
 
 class _FakeFeedback implements FeedbackService {
@@ -39,7 +39,7 @@ void main() {
           home: Builder(
             builder: (context) => Scaffold(
               body: ElevatedButton(
-                onPressed: () => FeedbackSheet.show(context),
+                onPressed: () => FeedbackDialog.show(context),
                 child: const Text('open'),
               ),
             ),
@@ -55,7 +55,7 @@ void main() {
     expect(fake.submitted, isNotNull);
     expect(fake.submitted!.message, 'it crashed');
     // Drain AppAlerts' success auto-dismiss timer (4s; no overlay is
-    // attached in this host) — same pattern as paywall_sheet_test.dart.
+    // attached in this host) — same pattern as paywall_dialog_test.dart.
     await tester.pump(const Duration(seconds: 5));
   });
 
@@ -71,7 +71,7 @@ void main() {
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
-                onPressed: () => FeedbackSheet.show(context),
+                onPressed: () => FeedbackDialog.show(context),
                 child: const Text('open'),
               ),
             ),
@@ -107,7 +107,7 @@ void main() {
           home: Builder(
             builder: (context) => Scaffold(
               body: ElevatedButton(
-                onPressed: () => FeedbackSheet.show(context),
+                onPressed: () => FeedbackDialog.show(context),
                 child: const Text('open'),
               ),
             ),
@@ -118,7 +118,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'once please');
-    // Two taps within the same frame (before the sheet pops) — the _busy guard
+    // Two taps within the same frame (before the dialog pops) — the _busy guard
     // must swallow the second.
     await tester.tap(find.text('Send'));
     await tester.tap(find.text('Send'), warnIfMissed: false);

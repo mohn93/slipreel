@@ -27,7 +27,7 @@ class PermissionsSnapshot {
 }
 
 /// The single source of truth for permission state in the app.
-/// Read by onboarding, the deny sheet, and RecordingController.
+/// Read by onboarding, the permission dialog, and RecordingController.
 class PermissionsController extends StateNotifier<PermissionsSnapshot> {
   PermissionsController(this._platform) : super(PermissionsSnapshot.initial);
 
