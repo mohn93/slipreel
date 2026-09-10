@@ -47,4 +47,44 @@ void main() {
     await c.showBar(); // already bar
     expect(chrome.calls, isEmpty);
   });
+
+  test(
+    'modal hold keeps the window expanded and restores the latest mode',
+    () async {
+      final chrome = _FakeChrome();
+      final c = WindowModeController(chrome);
+
+      final hold = c.holdPanelForModal();
+      await hold.ready;
+      expect(c.state, WindowMode.panel);
+
+      // Requests made by content behind the modal are remembered, but cannot
+      // collapse the window while the modal is visible.
+      await c.showBar();
+      await c.showPill();
+      expect(c.state, WindowMode.panel);
+
+      await hold.release();
+      expect(c.state, WindowMode.pill);
+      expect(chrome.calls, [WindowMode.panel, WindowMode.pill]);
+    },
+  );
+
+  test(
+    'nested modal holds restore only after the final modal closes',
+    () async {
+      final chrome = _FakeChrome();
+      final c = WindowModeController(chrome);
+      final outer = c.holdPanelForModal();
+      final inner = c.holdPanelForModal();
+      await outer.ready;
+
+      await outer.release();
+      expect(c.state, WindowMode.panel);
+
+      await inner.release();
+      expect(c.state, WindowMode.bar);
+      expect(chrome.calls, [WindowMode.panel, WindowMode.bar]);
+    },
+  );
 }

@@ -79,6 +79,7 @@ import 'state/wallpaper_favorites_controller.dart';
 import 'ui/app_alerts/alert_stack_overlay.dart';
 import 'ui/app_alerts/app_alerts.dart';
 import 'ui/app_alerts/app_alerts_controller.dart';
+import 'ui/navigation/panel_modal_route_observer.dart';
 import 'ui/theme/app_palette.dart';
 import 'state/recording_state.dart';
 import 'state/recovery_service.dart';
@@ -593,12 +594,16 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   SleepObserver? _sleepObserver;
   LongRecordingWatcher? _longWatcher;
   Timer? _licenseRefreshTimer;
+  late final PanelModalRouteObserver _panelModalRouteObserver;
 
   static const _menuChannel = MethodChannel('slipreel/menu');
 
   @override
   void initState() {
     super.initState();
+    _panelModalRouteObserver = PanelModalRouteObserver(
+      ref.read(windowModeControllerProvider.notifier),
+    );
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _initRecordingSurfaces());
@@ -946,6 +951,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       // Lets agent-wires resolve routes so the agent can call
       // `wait_for_route("RecordingBarScreen")` etc.
       navigatorObservers: [
+        _panelModalRouteObserver,
         if (debugProbe.navigatorObserver() case final observer?) observer,
       ],
       home: widget.onboardingDone
