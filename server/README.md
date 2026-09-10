@@ -32,6 +32,10 @@ Stripe or email delivery is available.
 - `POST /v1/checkout` requires a verified authenticated user. `plan` is `monthly`
   or `onetime`; yearly is retained for existing subscriptions. Posted email never
   selects the customer. Optional device context is stored server-side.
+  Stripe Checkout enables promotion-code entry for both plans. Create an active,
+  customer-facing promotion code linked to the coupon in the same Stripe mode
+  (live or test) as checkout; a coupon ID alone cannot be entered by customers.
+  After deploying this setting, start a new checkout to see the code field.
 - Cancel redirects contain an opaque `flow`; authenticated
   `GET /v1/checkout-context/:id` restores its plan/device/state for its owner.
 - `POST /v1/auth/session-from-checkout` is retained as a compatibility path name,
