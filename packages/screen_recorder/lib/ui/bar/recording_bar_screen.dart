@@ -28,8 +28,7 @@ bool shouldClearRestoredMic({
   required bool hasSelection,
   required bool userTouchedMic,
   required double level,
-}) =>
-    hasSelection && !userTouchedMic && level < 0;
+}) => hasSelection && !userTouchedMic && level < 0;
 
 /// Root of the app. Hosts the bar/pill and routes Recents/Settings/editor as
 /// panels by morphing the window. Single window, three shapes.
@@ -107,7 +106,9 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     // dedups via `_monitoredConfig`, so the initial call + listener fan-in are
     // idempotent.
     ref.listenManual<WindowMode>(windowModeControllerProvider, (_, mode) {
-      if (mounted) _syncMicMonitor(mode, ref.read(microphoneControllerProvider));
+      if (mounted) {
+        _syncMicMonitor(mode, ref.read(microphoneControllerProvider));
+      }
     });
     ref.listenManual<MicrophoneConfig?>(microphoneControllerProvider, (_, mic) {
       if (mounted) {
@@ -229,14 +230,19 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
   Widget _buildBar() {
     return RecordingBar(
       onPickMode: _pickAndRecord,
-      onClose: () => SystemNavigator.pop(),
       onGearTap: _onGearTap,
       onDragStart: () => unawaited(
-            ref.read(windowChromeProvider).startWindowDrag().catchError(
-                  (Object e, StackTrace st) => AppLogger.platform
-                      .w('startWindowDrag failed', error: e, stackTrace: st),
-                ),
-          ),
+        ref
+            .read(windowChromeProvider)
+            .startWindowDrag()
+            .catchError(
+              (Object e, StackTrace st) => AppLogger.platform.w(
+                'startWindowDrag failed',
+                error: e,
+                stackTrace: st,
+              ),
+            ),
+      ),
       microphone: ref.watch(microphoneControllerProvider),
       onMicTap: _onMicTap,
       systemAudio: ref.watch(systemAudioControllerProvider),
@@ -282,9 +288,15 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     }
     _lastBarSize = size;
     unawaited(
-      ref.read(windowChromeProvider).setBarSize(size.w, size.h).catchError(
-            (Object e, StackTrace st) => AppLogger.platform
-                .w('setBarSize failed', error: e, stackTrace: st),
+      ref
+          .read(windowChromeProvider)
+          .setBarSize(size.w, size.h)
+          .catchError(
+            (Object e, StackTrace st) => AppLogger.platform.w(
+              'setBarSize failed',
+              error: e,
+              stackTrace: st,
+            ),
           ),
     );
   }
@@ -302,30 +314,45 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     try {
       if (!mounted) return;
       final current = ref.read(microphoneControllerProvider);
-      final result =
-          await ScreenRecorderPlatform.instance.showMicrophoneMenu(current);
+      final result = await ScreenRecorderPlatform.instance.showMicrophoneMenu(
+        current,
+      );
       if (!mounted || result.cancelled) return;
       ref.read(microphoneControllerProvider.notifier).set(result.config);
     } catch (e, st) {
-      AppLogger.platform
-          .w('showMicrophoneMenu failed', error: e, stackTrace: st);
+      AppLogger.platform.w(
+        'showMicrophoneMenu failed',
+        error: e,
+        stackTrace: st,
+      );
     } finally {
       if (mounted) setState(() => _micMenuLoading = false);
     }
   }
 
   Future<void> _onSystemAudioTap() async {
+    // System audio is authorized by macOS through Screen Recording. Gate the
+    // SCShareableContent-backed menu just like source discovery so a denied
+    // user gets Slipreel's guided Settings flow instead of an unexplained OS
+    // detour or an empty application list.
+    final router = recordingActionRouterRef;
+    if (router != null && !await router.ensureSystemAudioPermission(context)) {
+      return;
+    }
+    if (!mounted) return;
     final current = ref.read(systemAudioControllerProvider);
-    final result =
-        await ScreenRecorderPlatform.instance.showSystemAudioMenu(current);
+    final result = await ScreenRecorderPlatform.instance.showSystemAudioMenu(
+      current,
+    );
     if (!mounted || result.cancelled) return;
     ref.read(systemAudioControllerProvider.notifier).set(result.config);
   }
 
   Future<void> _onCameraTap() async {
     final current = ref.read(cameraControllerProvider);
-    final result =
-        await ScreenRecorderPlatform.instance.showCameraMenu(current);
+    final result = await ScreenRecorderPlatform.instance.showCameraMenu(
+      current,
+    );
     if (!mounted || result.cancelled) return;
     ref.read(cameraControllerProvider.notifier).set(result.config);
   }

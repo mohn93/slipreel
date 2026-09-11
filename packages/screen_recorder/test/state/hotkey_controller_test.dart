@@ -32,6 +32,8 @@ class _FakeRouter implements RecordingActionRouter {
   Future<void> pauseOrResume() async => actions.pauses++;
   @override
   Future<bool> ensureScreenRecording(BuildContext _) async => true;
+  @override
+  Future<bool> ensureSystemAudioPermission(BuildContext _) async => true;
 }
 
 void main() {
@@ -39,9 +41,10 @@ void main() {
     final fake = _FakePlatform();
     final actions = _RecordingActions();
     final ctrl = HotkeyController(
-        platform: fake,
-        router: _FakeRouter(actions),
-        rootContextProvider: () => null);
+      platform: fake,
+      router: _FakeRouter(actions),
+      rootContextProvider: () => null,
+    );
     await Future<void>.delayed(Duration.zero);
     expect(fake.registerCalls, 1);
     await ctrl.dispose();
@@ -52,9 +55,10 @@ void main() {
     final fake = _FakePlatform();
     final actions = _RecordingActions();
     final ctrl = HotkeyController(
-        platform: fake,
-        router: _FakeRouter(actions),
-        rootContextProvider: () => _MockContext());
+      platform: fake,
+      router: _FakeRouter(actions),
+      rootContextProvider: () => _MockContext(),
+    );
     await Future<void>.delayed(Duration.zero);
     fake.emit({'action': 'start'});
     await Future<void>.delayed(Duration.zero);
@@ -66,9 +70,10 @@ void main() {
     final fake = _FakePlatform();
     final actions = _RecordingActions();
     final ctrl = HotkeyController(
-        platform: fake,
-        router: _FakeRouter(actions),
-        rootContextProvider: () => null);
+      platform: fake,
+      router: _FakeRouter(actions),
+      rootContextProvider: () => null,
+    );
     await Future<void>.delayed(Duration.zero);
     fake.emit({'action': 'stop'});
     await Future<void>.delayed(Duration.zero);
@@ -80,9 +85,10 @@ void main() {
     final fake = _FakePlatform();
     final actions = _RecordingActions();
     final ctrl = HotkeyController(
-        platform: fake,
-        router: _FakeRouter(actions),
-        rootContextProvider: () => null);
+      platform: fake,
+      router: _FakeRouter(actions),
+      rootContextProvider: () => null,
+    );
     await Future<void>.delayed(Duration.zero);
     fake.emit({'action': 'pauseToggle'});
     await Future<void>.delayed(Duration.zero);
@@ -94,9 +100,10 @@ void main() {
     final fake = _FakePlatform();
     final actions = _RecordingActions();
     final ctrl = HotkeyController(
-        platform: fake,
-        router: _FakeRouter(actions),
-        rootContextProvider: () => null);
+      platform: fake,
+      router: _FakeRouter(actions),
+      rootContextProvider: () => null,
+    );
     await Future<void>.delayed(Duration.zero);
     fake.emit({'event': 'conflict', 'id': 1});
     await Future<void>.delayed(Duration.zero);

@@ -36,13 +36,45 @@ const Map<PermissionKind, String> _kBodies = {
       'Slipreel needs Camera access in System Settings to record a webcam or a connected iPhone or iPad.',
 };
 
+/// Why Slipreel is asking for macOS Screen Recording access. System audio is
+/// authorized through the same TCC category, but needs purpose-specific copy
+/// so the permission request does not look unrelated to the speaker control.
+enum ScreenRecordingPermissionPurpose { screenCapture, systemAudio }
+
+String _permissionTitle(
+  PermissionKind kind,
+  ScreenRecordingPermissionPurpose purpose,
+) {
+  if (kind == PermissionKind.screenRecording &&
+      purpose == ScreenRecordingPermissionPurpose.systemAudio) {
+    return 'Allow system audio recording';
+  }
+  return _kTitles[kind]!;
+}
+
+String _permissionBody(
+  PermissionKind kind,
+  ScreenRecordingPermissionPurpose purpose,
+) {
+  if (kind == PermissionKind.screenRecording &&
+      purpose == ScreenRecordingPermissionPurpose.systemAudio) {
+    return 'macOS includes system audio access under Screen Recording. Enable '
+        'Slipreel in System Settings, then quit and reopen Slipreel.';
+  }
+  return _kBodies[kind]!;
+}
+
 /// Shared inner content for both presentations below. Owns the "open System
 /// Settings" launch + the inline-error state. "Not now" (and a successful
 /// launch) pop whatever route hosts it — a dialog or a pushed panel
 /// route — so the same widget serves both.
 class _PermissionDeniedBody extends StatefulWidget {
-  const _PermissionDeniedBody({required this.kind});
+  const _PermissionDeniedBody({
+    required this.kind,
+    required this.screenRecordingPurpose,
+  });
   final PermissionKind kind;
+  final ScreenRecordingPermissionPurpose screenRecordingPurpose;
 
   @override
   State<_PermissionDeniedBody> createState() => _PermissionDeniedBodyState();
@@ -61,9 +93,17 @@ class _PermissionDeniedBodyState extends State<_PermissionDeniedBody> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            DesktopDialogHeading(title: _kTitles[widget.kind]!),
+            DesktopDialogHeading(
+              title: _permissionTitle(
+                widget.kind,
+                widget.screenRecordingPurpose,
+              ),
+            ),
             const SizedBox(height: 12),
-            Text(_kBodies[widget.kind]!, style: theme.textTheme.bodyMedium),
+            Text(
+              _permissionBody(widget.kind, widget.screenRecordingPurpose),
+              style: theme.textTheme.bodyMedium,
+            ),
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -132,10 +172,18 @@ class _PermissionDeniedBodyState extends State<_PermissionDeniedBody> {
 class PermissionDeniedDialog {
   const PermissionDeniedDialog._();
 
-  static Future<void> show(BuildContext context, PermissionKind kind) {
+  static Future<void> show(
+    BuildContext context,
+    PermissionKind kind, {
+    ScreenRecordingPermissionPurpose screenRecordingPurpose =
+        ScreenRecordingPermissionPurpose.screenCapture,
+  }) {
     return showDesktopDialog<void>(
       context: context,
-      builder: (_) => _PermissionDeniedBody(kind: kind),
+      builder: (_) => _PermissionDeniedBody(
+        kind: kind,
+        screenRecordingPurpose: screenRecordingPurpose,
+      ),
     );
   }
 }
@@ -144,13 +192,24 @@ class PermissionDeniedDialog {
 /// panel mode first) because the bar window is too short for a dialog.
 /// Renders the same content as [PermissionDeniedDialog], full-bleed.
 class PermissionDeniedScreen extends StatelessWidget {
-  const PermissionDeniedScreen({super.key, required this.kind});
+  const PermissionDeniedScreen({
+    super.key,
+    required this.kind,
+    this.screenRecordingPurpose =
+        ScreenRecordingPermissionPurpose.screenCapture,
+  });
   final PermissionKind kind;
+  final ScreenRecordingPermissionPurpose screenRecordingPurpose;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(child: _PermissionDeniedBody(kind: kind)),
+      body: Center(
+        child: _PermissionDeniedBody(
+          kind: kind,
+          screenRecordingPurpose: screenRecordingPurpose,
+        ),
+      ),
     );
   }
 }

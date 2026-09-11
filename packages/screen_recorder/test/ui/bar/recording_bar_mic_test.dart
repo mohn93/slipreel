@@ -27,56 +27,68 @@ Future<TipsController> _allSeenController() async {
 }
 
 Widget _wrap(Widget c, TipsController tips) => ProviderScope(
-      overrides: [tipsControllerProvider.overrideWith((ref) => tips)],
-      child: MaterialApp(home: Scaffold(body: c)),
-    );
+  overrides: [tipsControllerProvider.overrideWith((ref) => tips)],
+  child: MaterialApp(home: Scaffold(body: c)),
+);
 
-RecordingBar _bar(
-        {MicrophoneConfig? mic,
-        VoidCallback? onMicTap,
-        Stream<double>? level}) =>
-    RecordingBar(
-      onPickMode: (_) {},
-      onClose: () {},
-      onGearTap: () {},
-      onDragStart: () {},
-      microphone: mic,
-      onMicTap: onMicTap ?? () {},
-      onSystemAudioTap: () {},
-      onCameraTap: () {},
-      micLevelStream: level,
-    );
+RecordingBar _bar({
+  MicrophoneConfig? mic,
+  VoidCallback? onMicTap,
+  Stream<double>? level,
+}) => RecordingBar(
+  onPickMode: (_) {},
+  onGearTap: () {},
+  onDragStart: () {},
+  microphone: mic,
+  onMicTap: onMicTap ?? () {},
+  onSystemAudioTap: () {},
+  onCameraTap: () {},
+  micLevelStream: level,
+);
 
 void main() {
-  testWidgets('off state shows "No microphone"', (tester) async {
+  testWidgets('off state exposes "Microphone off"', (tester) async {
     _wide(tester);
     final tips = await _allSeenController();
     await tester.pumpWidget(_wrap(_bar(mic: null), tips));
-    expect(find.text('No microphone'), findsOneWidget);
+    expect(find.bySemanticsLabel('Microphone off'), findsOneWidget);
   });
 
-  testWidgets('on state shows the device label', (tester) async {
+  testWidgets('on state exposes the selected device label', (tester) async {
     _wide(tester);
     final tips = await _allSeenController();
-    await tester.pumpWidget(_wrap(
+    await tester.pumpWidget(
+      _wrap(
         _bar(
-            mic: const MicrophoneConfig(
-                deviceUid: 'u', deviceLabel: 'MacBook Pro Mic')),
-        tips));
-    expect(find.text('MacBook Pro Mic'), findsOneWidget);
-    expect(find.text('No microphone'), findsNothing);
+          mic: const MicrophoneConfig(
+            deviceUid: 'u',
+            deviceLabel: 'MacBook Pro Mic',
+          ),
+        ),
+        tips,
+      ),
+    );
+    expect(
+      find.bySemanticsLabel('Microphone: MacBook Pro Mic'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a very long device label does not overflow', (tester) async {
     _wide(tester);
     final tips = await _allSeenController();
-    await tester.pumpWidget(_wrap(
+    await tester.pumpWidget(
+      _wrap(
         _bar(
-            mic: const MicrophoneConfig(
-                deviceUid: 'u',
-                deviceLabel:
-                    'Extremely Long Virtual Audio Capture Device Name That Would Overflow')),
-        tips));
+          mic: const MicrophoneConfig(
+            deviceUid: 'u',
+            deviceLabel:
+                'Extremely Long Virtual Audio Capture Device Name That Would Overflow',
+          ),
+        ),
+        tips,
+      ),
+    );
     await tester.pump();
     expect(tester.takeException(), isNull); // no RenderFlex overflow
   });
@@ -85,24 +97,26 @@ void main() {
     _wide(tester);
     var tapped = false;
     final tips = await _allSeenController();
-    await tester
-        .pumpWidget(_wrap(_bar(onMicTap: () => tapped = true), tips));
+    await tester.pumpWidget(_wrap(_bar(onMicTap: () => tapped = true), tips));
     await tester.tap(find.byKey(const Key('bar-mic')));
     expect(tapped, isTrue);
   });
 
-  testWidgets('shows the meter under the mic when a stream is provided',
-      (tester) async {
+  testWidgets('shows the meter under the mic when a stream is provided', (
+    tester,
+  ) async {
     _wide(tester);
     final c = StreamController<double>.broadcast();
     final tips = await _allSeenController();
-    await tester.pumpWidget(_wrap(
-      _bar(
-        mic: const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'Mic'),
-        level: c.stream,
+    await tester.pumpWidget(
+      _wrap(
+        _bar(
+          mic: const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'Mic'),
+          level: c.stream,
+        ),
+        tips,
       ),
-      tips,
-    ));
+    );
     expect(find.byType(MicLevelMeter), findsOneWidget);
     await c.close();
   });

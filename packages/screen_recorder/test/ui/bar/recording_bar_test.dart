@@ -27,51 +27,48 @@ Future<TipsController> _allSeenController() async {
 }
 
 Widget _wrap(Widget child, TipsController tips) => ProviderScope(
-      overrides: [tipsControllerProvider.overrideWith((ref) => tips)],
-      child: MaterialApp(home: Scaffold(body: child)),
-    );
+  overrides: [tipsControllerProvider.overrideWith((ref) => tips)],
+  child: MaterialApp(home: Scaffold(body: child)),
+);
 
 RecordingBar _bar({
   void Function(BarSourceMode)? onPickMode,
-  VoidCallback? onClose,
   VoidCallback? onGearTap,
   VoidCallback? onDragStart,
   MicrophoneConfig? microphone,
   VoidCallback? onMicTap,
   VoidCallback? onSystemAudioTap,
   VoidCallback? onCameraTap,
-}) =>
-    RecordingBar(
-      onPickMode: onPickMode ?? (_) {},
-      onClose: onClose ?? () {},
-      onGearTap: onGearTap ?? () {},
-      onDragStart: onDragStart ?? () {},
-      microphone: microphone,
-      onMicTap: onMicTap ?? () {},
-      onSystemAudioTap: onSystemAudioTap ?? () {},
-      onCameraTap: onCameraTap ?? () {},
-    );
+}) => RecordingBar(
+  onPickMode: onPickMode ?? (_) {},
+  onGearTap: onGearTap ?? () {},
+  onDragStart: onDragStart ?? () {},
+  microphone: microphone,
+  onMicTap: onMicTap ?? () {},
+  onSystemAudioTap: onSystemAudioTap ?? () {},
+  onCameraTap: onCameraTap ?? () {},
+);
 
 void main() {
   testWidgets('renders the four source modes', (tester) async {
     _wide(tester);
     final tips = await _allSeenController();
     await tester.pumpWidget(_wrap(_bar(), tips));
-    expect(find.text('Display'), findsOneWidget);
+    expect(find.text('Screen'), findsOneWidget);
     expect(find.text('Window'), findsOneWidget);
     expect(find.text('Area'), findsOneWidget);
     expect(find.text('Device'), findsOneWidget);
   });
 
-  testWidgets(
-      'shows "No camera", "No microphone", and "No system audio" when nothing is configured',
-      (tester) async {
+  testWidgets('exposes off input states to assistive technology', (
+    tester,
+  ) async {
     _wide(tester);
     final tips = await _allSeenController();
     await tester.pumpWidget(_wrap(_bar(), tips));
-    expect(find.text('No camera'), findsOneWidget);
-    expect(find.text('No microphone'), findsOneWidget);
-    expect(find.text('No system audio'), findsOneWidget);
+    expect(find.bySemanticsLabel('Camera off'), findsOneWidget);
+    expect(find.bySemanticsLabel('Microphone off'), findsOneWidget);
+    expect(find.bySemanticsLabel('System audio off'), findsOneWidget);
   });
 
   testWidgets('tapping Window fires onPickMode(window)', (tester) async {
@@ -92,32 +89,34 @@ void main() {
     expect(picked, BarSourceMode.device);
   });
 
-  testWidgets('close button fires onClose', (tester) async {
-    _wide(tester);
-    var closed = false;
-    final tips = await _allSeenController();
-    await tester.pumpWidget(_wrap(_bar(onClose: () => closed = true), tips));
-    await tester.tap(find.byKey(const Key('bar-close')));
-    expect(closed, isTrue);
-  });
-
   testWidgets('tapping the gear fires onGearTap', (tester) async {
     _wide(tester);
     var gearTapped = false;
     final tips = await _allSeenController();
-    await tester
-        .pumpWidget(_wrap(_bar(onGearTap: () => gearTapped = true), tips));
+    await tester.pumpWidget(
+      _wrap(_bar(onGearTap: () => gearTapped = true), tips),
+    );
     await tester.tap(find.byKey(const Key('bar-gear')));
     expect(gearTapped, isTrue);
   });
 
-  testWidgets('dragging the bar fires onDragStart (window move)',
-      (tester) async {
+  testWidgets('overflow menu has an accessible label', (tester) async {
+    _wide(tester);
+    final tips = await _allSeenController();
+    await tester.pumpWidget(_wrap(_bar(), tips));
+
+    expect(find.bySemanticsLabel('More options'), findsOneWidget);
+  });
+
+  testWidgets('dragging the bar fires onDragStart (window move)', (
+    tester,
+  ) async {
     _wide(tester);
     var dragged = false;
     final tips = await _allSeenController();
-    await tester
-        .pumpWidget(_wrap(_bar(onDragStart: () => dragged = true), tips));
+    await tester.pumpWidget(
+      _wrap(_bar(onDragStart: () => dragged = true), tips),
+    );
     await tester.drag(find.byType(RecordingBar), const Offset(60, 0));
     expect(dragged, isTrue);
   });
@@ -129,7 +128,10 @@ void main() {
   // without throwing.
   testWidgets('does not overflow when the window is briefly narrower than the '
       'content', (tester) async {
-    tester.view.physicalSize = const Size(360, 120); // far narrower than content
+    tester.view.physicalSize = const Size(
+      360,
+      120,
+    ); // far narrower than content
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -137,8 +139,12 @@ void main() {
     final tips = await _allSeenController();
     await tester.pumpWidget(_wrap(_bar(), tips));
 
-    expect(tester.takeException(), isNull,
-        reason: 'the bar must not throw a RenderFlex overflow while the '
-            'window is catching up to the content width');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason:
+          'the bar must not throw a RenderFlex overflow while the '
+          'window is catching up to the content width',
+    );
   });
 }
