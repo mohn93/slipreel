@@ -93,6 +93,8 @@ import 'ui/widgets/recovery_modal.dart';
 import 'ui/widgets/zoom/playback_canvas.dart';
 import 'update/updater_backend.dart';
 import 'update/updater_service.dart';
+import 'update/required_update.dart';
+import 'update/required_update_dialog.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
 
 // rootNavigatorKey moved to app_globals.dart so app-menu actions can import it
@@ -218,10 +220,13 @@ Future<void> main() async {
     _registerSlipreelDebugExtensions(tipsController: tipsController);
   }
 
-  // Manual updates (macOS only). Construct once, wire Sparkle's feed
+  // License-aware updates (macOS only). Construct once, wire Sparkle's feed
   // at startup, and share the same instance with the
   // Settings "Check for updates" tile via the provider override below.
-  final updaterService = UpdaterService(SparkleUpdaterBackend());
+  final updaterService = UpdaterService(
+    SparkleUpdaterBackend(),
+    loadRequiredUpdate: () => fetchRequiredUpdate(UpdaterService.feedUrl),
+  );
   if (Platform.isMacOS) {
     unawaited(updaterService.init());
   }
@@ -594,6 +599,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   SleepObserver? _sleepObserver;
   LongRecordingWatcher? _longWatcher;
   Timer? _licenseRefreshTimer;
+  DialogRoute<void>? _requiredUpdateRoute;
   late final PanelModalRouteObserver _panelModalRouteObserver;
 
   static const _menuChannel = MethodChannel('slipreel/menu');
@@ -608,12 +614,42 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _initRecordingSurfaces());
     _wireAnalyticsObservers();
+    if (Platform.isMacOS) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.listenManual<EntitlementState>(
+          entitlementProvider,
+          (_, next) {
+            // Unsupported hosts/network failures must not interrupt startup.
+            ref.read(updaterServiceProvider)
+                .checkAtStartup(() => ref.read(entitlementProvider))
+                .then((update) {
+                  if (mounted) {
+                    ref.read(requiredUpdateCandidateProvider.notifier).state = update;
+                  }
+                }).ignore();
+          },
+          fireImmediately: true,
+        );
+        ref.listenManual(
+          requiredUpdateProvider,
+          (_, next) => _syncRequiredUpdateDialog(),
+          fireImmediately: true,
+        );
+        ref.listenManual(
+          recordingControllerProvider.select((state) => state.status),
+          (_, next) => _syncRequiredUpdateDialog(),
+        );
+      });
+    }
     _licenseRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      ref.invalidate(requiredUpdateProvider);
       unawaited(ref.read(licensingControllerProvider.notifier).refreshIfNeeded());
     });
     // Native macOS app-menu items (Settings…, Manage Account) call in here.
     _menuChannel.setMethodCallHandler((call) async {
       if (call.method != 'menuAction') return null;
+      if (ref.read(requiredUpdateProvider) != null) return null;
       final actions = ref.read(appMenuActionsProvider);
       switch (call.arguments) {
         case 'settings':
@@ -633,6 +669,37 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       },
       fireImmediately: true,
     );
+  }
+
+  void _syncRequiredUpdateDialog() {
+    if (!mounted) return;
+    final update = ref.read(requiredUpdateProvider);
+    final navigator = rootNavigatorKey.currentState;
+    if (navigator == null) return;
+    if (update == null) {
+      final route = _requiredUpdateRoute;
+      _requiredUpdateRoute = null;
+      if (route != null) navigator.removeRoute(route);
+      return;
+    }
+    // Let an in-progress recording finish and save before requiring a restart.
+    final recording = ref.read(recordingControllerProvider);
+    if (recording.isRecording || recording.isProcessing || _requiredUpdateRoute != null) return;
+    final route = DialogRoute<void>(
+      context: navigator.context,
+      barrierDismissible: false,
+      builder: (_) => RequiredUpdateDialog(
+        update: update,
+        onUpdate: () async {
+          // Coverage may expire while the dialog is open.
+          ref.invalidate(requiredUpdateProvider);
+          if (ref.read(requiredUpdateProvider) == null) return;
+          await ref.read(updaterServiceProvider).checkForUpdates();
+        },
+      ),
+    );
+    _requiredUpdateRoute = route;
+    unawaited(navigator.push(route));
   }
 
   Future<void> _showSignInFeedback(SignInFeedback feedback) async {

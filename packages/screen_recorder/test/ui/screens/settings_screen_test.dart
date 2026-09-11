@@ -26,7 +26,7 @@ class _UpdateBackend implements UpdaterBackend {
   @override
   Future<void> setScheduledCheckInterval(int seconds) async {}
   @override
-  Future<void> checkForUpdates() async { checks++; }
+  Future<void> checkForUpdates({bool inBackground = false}) async { checks++; }
 }
 
 Widget _app(Widget child, List<Override> overrides) => ProviderScope(

@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slipreel_engine/utils/app_logger.dart';
 import 'package:screen_recorder_platform_interface/screen_recorder_platform_interface.dart';
 
+import '../update/required_update.dart';
+
 import 'countdown_controller.dart';
 import 'camera_controller.dart';
 import 'global_preferences_controller.dart';
@@ -24,6 +26,7 @@ class RecordingActionRouter {
   final ProviderContainer _container;
 
   Future<void> start(BuildContext context) async {
+    if (_container.read(requiredUpdateProvider) != null) return;
     final settings = _container.read(recordingSettingsControllerProvider);
     final seconds = settings.countdownSeconds;
 
@@ -47,6 +50,7 @@ class RecordingActionRouter {
     }
 
     Future<void> doStart() async {
+      if (_container.read(requiredUpdateProvider) != null) return;
       final controller = _container.read(recordingControllerProvider.notifier);
       // Read optional providers with try/catch — they throw by default until
       // overridden in main(). Tests that don't care about permissions/audio

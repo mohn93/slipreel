@@ -7,7 +7,7 @@ import 'package:auto_updater/auto_updater.dart';
 abstract class UpdaterBackend {
   Future<void> setFeedURL(String url);
   Future<void> setScheduledCheckInterval(int seconds);
-  Future<void> checkForUpdates();
+  Future<void> checkForUpdates({bool inBackground = false});
 }
 
 /// Real backend: delegates to Sparkle via the `auto_updater` plugin.
@@ -20,5 +20,6 @@ class SparkleUpdaterBackend implements UpdaterBackend {
       autoUpdater.setScheduledCheckInterval(seconds);
 
   @override
-  Future<void> checkForUpdates() => autoUpdater.checkForUpdates();
+  Future<void> checkForUpdates({bool inBackground = false}) =>
+      autoUpdater.checkForUpdates(inBackground: inBackground);
 }

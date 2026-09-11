@@ -1,3 +1,4 @@
+import '../../update/required_update.dart';
 import '../../state/project_autosave.dart';
 import 'package:screen_recorder/audio/music_library.dart';
 import 'package:screen_recorder/audio/music_preview.dart';
@@ -2120,6 +2121,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   }
 
   Future<void> _export() async {
+    if (ref.read(requiredUpdateProvider) != null) return;
     // Re-entrancy guard. The Export button stays mounted (the
     // settings/progress dialogs cover but don't replace the playback
     // screen), so double-tapping during a slow probe would otherwise

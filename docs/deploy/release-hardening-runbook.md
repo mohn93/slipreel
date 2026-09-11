@@ -77,12 +77,47 @@ The earlier archive-restoration evidence documents a historical rollout step.
 It does not authorize reintroducing the subsequently withdrawn installers. Private
 backup recovery is a separate, explicitly authorized operation, outside this tool.
 
-Automatic Sparkle checks/installations are disabled before native plugin startup.
-Settings exposes manual checks and warns customers without an active subscription
-about the one-time update ceiling, linking to earlier downloads. This prevents an
-automatic offer from bypassing the compatibility explanation. Test an existing
-installation with previously persisted automatic-update preferences, not only a
-clean install. A future license-filtered update feed can restore automatic checks.
+Native Sparkle scheduling and automatic installation remain disabled before
+plugin startup. Dart requests one background check per launch after licensing
+resolves: signed-out/free users, one-time users within `updatesUntil`, and active
+or grace subscriptions with a current token are eligible. Expired one-time
+coverage suppresses the startup offer; renewal can enable it during the session.
+The native dialog lets eligible users choose whether to install. Settings still
+provides manual checks and the license compatibility warning. Test both a clean
+install and an existing installation with persisted updater preferences.
+
+### Required updates
+
+The macOS client reads the channel-level `<slipreelMinimumSupportedBuild>` in
+`appcast.xml` once at startup. A build below that floor gets an undismissable
+Update required dialog when an installable release meets the floor. Update now
+opens Sparkle; closing Sparkle leaves the required dialog in place. New recordings
+(including hotkeys/countdowns) and exports are blocked. Active recordings can
+finish and save before the dialog appears. Cmd+Q remains available.
+
+The same eligibility rules apply: free/signed-out users and current subscriptions
+qualify; one-time licenses past their update year are exempt. The offered release
+must also have a publication date within a one-time license's coverage. Unsupported
+macOS targets do not force an update. A missing, invalid, or unavailable feed does
+not block startup; policy is not cached for offline enforcement.
+
+To require builds below 1000020 to update, publish an installable release with build
+1000020 or higher using `MINIMUM_SUPPORTED_BUILD=1000020` in the environment for
+`scripts/release-macos.sh` or `scripts/update-appcast.sh`. The Release macOS manual
+workflow also accepts `minimum_supported_build`. Leave it blank/unset to retain
+the current floor across releases; explicitly set it to `0` to disable enforcement
+on subsequent launches. Build numbers use major × 1000000 + minor × 1000 + patch,
+so 1.0.20 maps to 1000020. Do not raise the floor beyond the published build.
+
+This feature must ship before it can enforce future updates. Older installed
+clients without this code ignore the custom field. No live force policy is enabled
+by adding this implementation. Native installation still verifies Sparkle's signed
+artifact; the policy itself is read over HTTPS.
+
+Release QA: use a test feed and an installed macOS build to verify Update now opens
+Sparkle, dismissing Sparkle leaves the gate, installation/relaunch clears it, and
+an expired one-time license stays usable. Exercise an unsupported OS target,
+offline startup, policy removal, and a recording finishing during the policy fetch.
 
 ## Security operations
 

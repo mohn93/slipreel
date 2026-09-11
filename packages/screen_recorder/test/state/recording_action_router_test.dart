@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:screen_recorder/update/required_update.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/state/countdown_controller.dart';
@@ -77,6 +78,18 @@ class _NoopChrome implements WindowChrome {
 }
 
 void main() {
+  testWidgets('required update blocks recording before permissions or countdown', (tester) async {
+    final container = ProviderContainer(overrides: [
+      requiredUpdateProvider.overrideWithValue(RequiredUpdate(build: 1000020, version: '1.0.20', releaseDate: DateTime.utc(2026))),
+    ]);
+    addTearDown(container.dispose);
+    late BuildContext context;
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (ctx) { context = ctx; return const SizedBox(); })));
+    await RecordingActionRouter(container).start(context);
+    expect(container.read(recordingControllerProvider).status, RecordingStatus.idle);
+    expect((ScreenRecorderPlatform.instance as _FakePlatform).requestScreenRecCalls, 0);
+  });
+
   setUp(() {
     ScreenRecorderPlatform.instance = _FakePlatform();
   });
