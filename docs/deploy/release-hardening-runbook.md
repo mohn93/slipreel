@@ -91,7 +91,8 @@ install and an existing installation with persisted updater preferences.
 The macOS client reads the channel-level `<slipreelMinimumSupportedBuild>` in
 `appcast.xml` once at startup. A build below that floor gets an undismissable
 Update required dialog when an installable release meets the floor. Update now
-opens Sparkle; closing Sparkle leaves the required dialog in place. New recordings
+opens Sparkle; closing Sparkle leaves the required dialog in place. The gate sits
+above app navigation so recovery and deep-link routes cannot cover it. New recordings
 (including hotkeys/countdowns) and exports are blocked. Active recordings can
 finish and save before the dialog appears. Cmd+Q remains available.
 

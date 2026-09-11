@@ -26,7 +26,12 @@ class UpdaterService {
   static const String feedUrl = 'https://slipreel.app/appcast.xml';
 
   /// Native scheduling stays disabled so it cannot bypass the license gate.
-  Future<void> init() => _initialization ??= _backend.setFeedURL(feedUrl);
+  Future<void> init() => _initialization ??= _backend
+      .setFeedURL(feedUrl)
+      .catchError((Object error, StackTrace stack) {
+        _initialization = null;
+        Error.throwWithStackTrace(error, stack);
+      });
 
   /// Check once per launch after licensing resolves. Background checks show
   /// an optional update offer only when a newer release exists.

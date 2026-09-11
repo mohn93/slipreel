@@ -12,11 +12,13 @@ class _FakeBackend implements UpdaterBackend {
   String? feedUrl;
   int? interval;
   Completer<void>? initialization;
+  bool failInitialization = false;
 
   @override
   Future<void> setFeedURL(String url) async {
     feedUrl = url;
     calls.add('setFeedURL');
+    if (failInitialization) throw StateError('native initialization failed');
     await initialization?.future;
   }
 
@@ -52,6 +54,15 @@ EntitlementLoaded _license(
 );
 
 void main() {
+  test('manual update retries a failed startup initialization', () async {
+    final backend = _FakeBackend()..failInitialization = true;
+    final service = UpdaterService(backend);
+    await expectLater(service.init(), throwsStateError);
+    backend.failInitialization = false;
+    await service.checkForUpdates();
+    expect(backend.calls, ['setFeedURL', 'setFeedURL', 'checkForUpdates']);
+  });
+
   test('required updates suppress the optional native prompt', () async {
     final backend = _FakeBackend();
     final update = RequiredUpdate(
