@@ -5,7 +5,7 @@ import FlutterMacOS
 class AppDelegate: FlutterAppDelegate {
   override init() {
     // This must run before plugin registration starts Sparkle. Automatic
-    // offers bypass the license-ceiling explanation in our Settings flow.
+    // scheduling stays off; Dart checks after resolving update coverage.
     UserDefaults.standard.set(false, forKey: "SUEnableAutomaticChecks")
     UserDefaults.standard.set(false, forKey: "SUAutomaticallyUpdate")
     super.init()

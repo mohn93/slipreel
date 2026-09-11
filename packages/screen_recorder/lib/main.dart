@@ -93,6 +93,8 @@ import 'ui/widgets/recovery_modal.dart';
 import 'ui/widgets/zoom/playback_canvas.dart';
 import 'update/updater_backend.dart';
 import 'update/updater_service.dart';
+import 'update/required_update.dart';
+import 'update/required_update_gate.dart';
 import 'package:slipreel_engine/models/recording_history.dart';
 
 // rootNavigatorKey moved to app_globals.dart so app-menu actions can import it
@@ -218,12 +220,15 @@ Future<void> main() async {
     _registerSlipreelDebugExtensions(tipsController: tipsController);
   }
 
-  // Manual updates (macOS only). Construct once, wire Sparkle's feed
+  // License-aware updates (macOS only). Construct once, wire Sparkle's feed
   // at startup, and share the same instance with the
   // Settings "Check for updates" tile via the provider override below.
-  final updaterService = UpdaterService(SparkleUpdaterBackend());
+  final updaterService = UpdaterService(
+    SparkleUpdaterBackend(),
+    loadRequiredUpdate: () => fetchRequiredUpdate(UpdaterService.feedUrl),
+  );
   if (Platform.isMacOS) {
-    unawaited(updaterService.init());
+    updaterService.init().ignore();
   }
 
   // Licensing: load the cached entitlement token, verify it offline, and wire
@@ -608,12 +613,33 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _initRecordingSurfaces());
     _wireAnalyticsObservers();
+    if (Platform.isMacOS) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.listenManual<EntitlementState>(
+          entitlementProvider,
+          (_, next) {
+            // Unsupported hosts/network failures must not interrupt startup.
+            ref.read(updaterServiceProvider)
+                .checkAtStartup(() => ref.read(entitlementProvider))
+                .then((update) {
+                  if (mounted) {
+                    ref.read(requiredUpdateCandidateProvider.notifier).state = update;
+                  }
+                }).ignore();
+          },
+          fireImmediately: true,
+        );
+      });
+    }
     _licenseRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      ref.invalidate(requiredUpdateProvider);
       unawaited(ref.read(licensingControllerProvider.notifier).refreshIfNeeded());
     });
     // Native macOS app-menu items (Settings…, Manage Account) call in here.
     _menuChannel.setMethodCallHandler((call) async {
       if (call.method != 'menuAction') return null;
+      if (ref.read(requiredUpdateProvider) != null) return null;
       final actions = ref.read(appMenuActionsProvider);
       switch (call.arguments) {
         case 'settings':
@@ -926,6 +952,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     return MaterialApp(
       navigatorKey: rootNavigatorKey,
       title: 'Slipreel',
+      builder: (context, child) => RequiredUpdateGate(child: child ?? const SizedBox.shrink()),
       theme: ThemeData(
         colorScheme: palette.toColorScheme(),
         extensions: [palette],

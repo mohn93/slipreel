@@ -8,6 +8,9 @@ on:
       version:
         description: "Version (e.g. 1.0.0)"
         required: true
+      minimum_supported_build:
+        description: "Force-update floor (build integer); blank preserves policy, 0 disables"
+        required: false
 
 permissions:
   contents: write   # softprops/action-gh-release needs this to publish the DMG
@@ -99,6 +102,7 @@ jobs:
       - name: Build appcast against the published feed
         env:
           SPARKLE_ED_KEY_FILE: ${{ runner.temp }}/sparkle_ed_priv
+          INPUT_MINIMUM_SUPPORTED_BUILD: ${{ github.event.inputs.minimum_supported_build }}
         run: |
           export PATH="$PWD/packages/screen_recorder/macos/Pods/Sparkle/bin:$PATH"
           source scripts/lib/version.sh
@@ -110,6 +114,9 @@ jobs:
           # (or returns the marker-less placeholder) and update-appcast.sh
           # regenerates the skeleton.
           curl -fsSL https://slipreel.app/appcast.xml -o out/appcast.xml || true
+          if [[ -n "$INPUT_MINIMUM_SUPPORTED_BUILD" ]]; then
+            export MINIMUM_SUPPORTED_BUILD="$INPUT_MINIMUM_SUPPORTED_BUILD"
+          fi
           scripts/update-appcast.sh "${{ steps.ver.outputs.version }}" "$BUILD" "$DMG" "$URL" out/appcast.xml
 
       - name: Deploy DMG + appcast to slipreel.app

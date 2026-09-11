@@ -51,4 +51,19 @@ empty="$tmp/empty-appcast.xml"
 [[ -s "$empty" ]] || fail "empty pre-existing appcast produced empty output"
 grep -q '<sparkle:version>1000000</sparkle:version>' "$empty" || fail "empty-file regen missing item"
 
+# Force policy is opt-in, persists across releases, and can be disabled.
+! grep -q 'slipreelMinimumSupportedBuild' "$appcast" || fail "policy enabled by default"
+MINIMUM_SUPPORTED_BUILD=1000001 "$here/update-appcast.sh" 1.0.1 1000001 "$tmp/Slipreel-1.0.1.dmg" "https://example.com/update.dmg" "$appcast"
+grep -q '<slipreelMinimumSupportedBuild>1000001</slipreelMinimumSupportedBuild>' "$appcast" || fail "missing force policy"
+"$here/update-appcast.sh" 1.0.2 1000002 "$tmp/Slipreel-1.0.1.dmg" "https://example.com/update.dmg" "$appcast"
+grep -q '<slipreelMinimumSupportedBuild>1000001</slipreelMinimumSupportedBuild>' "$appcast" || fail "ordinary release lost policy"
+cp "$appcast" "$tmp/before.xml"
+for invalid in -1 abc 1000003 ''; do
+  if MINIMUM_SUPPORTED_BUILD="$invalid" "$here/update-appcast.sh" 1.0.2 1000002 "$tmp/Slipreel-1.0.1.dmg" "https://example.com/update.dmg" "$appcast"; then
+    fail "invalid policy accepted: $invalid"
+  fi
+  cmp "$appcast" "$tmp/before.xml" || fail "invalid policy mutated feed"
+done
+MINIMUM_SUPPORTED_BUILD=0 "$here/update-appcast.sh" 1.0.2 1000002 "$tmp/Slipreel-1.0.1.dmg" "https://example.com/update.dmg" "$appcast"
+! grep -q 'slipreelMinimumSupportedBuild' "$appcast" || fail "policy not removed"
 echo "update-appcast.test.sh: OK"

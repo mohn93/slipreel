@@ -5,6 +5,8 @@
 # channel skeleton on first run. Idempotent per version.
 #
 # Usage: update-appcast.sh <version> <build_number> <dmg> <enclosure_url> [appcast]
+#   MINIMUM_SUPPORTED_BUILD=<integer>: require eligible older clients to update.
+#   Omit to preserve policy; set 0 to disable. Must not exceed this release build.
 #   Signing key: SPARKLE_ED_KEY_FILE=<file> (else the login-keychain key).
 set -euo pipefail
 
@@ -16,6 +18,15 @@ APPCAST="${5:-dist/appcast.xml}"
 MIN_OS="13.0"
 FEED_TITLE="Slipreel"
 FEED_LINK="https://slipreel.app/appcast.xml"
+
+if [[ -n "${MINIMUM_SUPPORTED_BUILD+x}" ]]; then
+  python3 - "$MINIMUM_SUPPORTED_BUILD" "$BUILD" <<'VALIDATE'
+import re, sys
+minimum, build = sys.argv[1:]
+if not re.fullmatch(r"0|[1-9][0-9]*", minimum) or not build.isdecimal() or int(minimum) > int(build):
+    sys.exit("ERROR: MINIMUM_SUPPORTED_BUILD must be a non-negative integer no greater than the release build")
+VALIDATE
+fi
 
 command -v sign_update >/dev/null \
   || { echo "ERROR: sign_update not found: brew install sparkle (build-machine only)" >&2; exit 1; }
@@ -83,6 +94,23 @@ awk -v itemfile="$item_file" '
   }
 ' "$tmp" > "$APPCAST"
 rm -f "$tmp" "$item_file"
+
+# The channel policy is intentionally independent of individual releases.
+# Ordinary releases retain it; only an explicit value changes or removes it.
+if [[ -n "${MINIMUM_SUPPORTED_BUILD+x}" ]]; then
+  python3 - "$APPCAST" "$MINIMUM_SUPPORTED_BUILD" <<'POLICY'
+from pathlib import Path
+import re, sys
+import xml.etree.ElementTree as ET
+path = Path(sys.argv[1])
+source = path.read_text()
+source = re.sub(r"\s*<slipreelMinimumSupportedBuild>[^<]*</slipreelMinimumSupportedBuild>", "", source)
+if int(sys.argv[2]) > 0:
+    source = source.replace("<channel>", "<channel>\n    <slipreelMinimumSupportedBuild>" + sys.argv[2] + "</slipreelMinimumSupportedBuild>", 1)
+ET.fromstring(source)
+path.write_text(source)
+POLICY
+fi
 
 # Never deploy a broken feed: the output must be non-empty and contain the item
 # we just wrote (guards against a truncated base file yielding an empty appcast).
