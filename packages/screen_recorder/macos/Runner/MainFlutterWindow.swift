@@ -196,7 +196,10 @@ class MainFlutterWindow: NSWindow {
       // and calls `setBarSize` to hug it (the mic/system-audio labels vary).
       configureFloating(width: 736, height: kBarHeight, cornerRadius: 18)
     case "pill":
-      configureFloating(width: 156, height: 48, cornerRadius: 24)
+      // Room for an explicit paused state and a labelled Finish action. The
+      // prior 156-point icon-only pill was compact but undersized for its two
+      // most important controls.
+      configureFloating(width: 252, height: 52, cornerRadius: 26)
     case "panel":
       configurePanel(width: 1100, height: 720)
     default:

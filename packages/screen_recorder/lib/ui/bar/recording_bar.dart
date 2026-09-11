@@ -12,16 +12,13 @@ import 'spring_hover_button.dart';
 /// The selectable source modes on the bar. `device` is shown but disabled.
 enum BarSourceMode { display, window, area, device }
 
-/// Shared height for the labelled bar controls so their hover containers all
-/// line up (modes are icon-over-label; A/V are icon-beside-label).
-const double _kBarButtonHeight = 56;
+/// Shared height for the grouped controls. The native bar remains 68 points
+/// high, leaving a calm 7-point inset around the interactive row.
+const double _kBarButtonHeight = 48;
+const double _kInputButtonWidth = 46;
 
-/// Fixed width for the mic chip so the bar doesn't resize as the device label
-/// changes — long labels ellipsize, the icon and chevron stay anchored.
-const double _kMicChipWidth = 160;
-
-/// The compact floating control bar: close, source modes, disabled A/V
-/// placeholders, and a gear button that opens a NATIVE menu. There are
+/// The compact floating control bar: primary capture actions, compact input
+/// status controls, and a more button that opens a NATIVE menu. There are
 /// intentionally no Flutter Tooltips/dropdowns here — Flutter overlays cannot
 /// escape the tiny borderless window and would clip. Pure presentation; all
 /// actions are callbacks.
@@ -29,7 +26,6 @@ class RecordingBar extends StatelessWidget {
   const RecordingBar({
     super.key,
     required this.onPickMode,
-    required this.onClose,
     required this.onGearTap,
     required this.onDragStart,
     this.microphone,
@@ -44,7 +40,6 @@ class RecordingBar extends StatelessWidget {
   });
 
   final void Function(BarSourceMode mode) onPickMode;
-  final VoidCallback onClose;
   final VoidCallback onGearTap;
 
   /// Fired when the user begins dragging a non-button area — used to start a
@@ -89,70 +84,66 @@ class RecordingBar extends StatelessWidget {
     return GestureDetector(
       onPanStart: (_) => onDragStart(),
       child: Container(
-      width: double.infinity,
-      height: double.infinity,
-      color: const Color(0xFF2C2C30),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      // The borderless bar window is sized to the row's intrinsic width by
-      // `_syncBarSize` (RecordingBarScreen). On the first frame(s) — before that
-      // measurement resizes the window — the incoming width can be narrower than
-      // the content, which made a plain `Center > Row` overflow. OverflowBox
-      // lets the row take its intrinsic width (what _syncBarSize measures
-      // anyway) without throwing, while keeping it centred once the window fits.
-      child: OverflowBox(
-        alignment: Alignment.center,
-        minWidth: 0,
-        maxWidth: double.infinity,
-        child: Row(
-          key: contentKey,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _CircleButton(
-              barKey: const Key('bar-close'),
-              // Material's close has heavier strokes than Lucide's hairline x,
-              // which reads better in the tiny inverted chip.
-              icon: Icons.close_rounded,
-              onPressed: onClose,
-            ),
-            const _Divider(),
-            TipAnchor(
-              tipId: TipId.barModePicker,
-              dimBackdrop: false,
-              child: _Mode(
-                icon: LucideIcons.monitor,
-                label: 'Display',
-                onTap: () => onPickMode(BarSourceMode.display),
+        width: double.infinity,
+        height: double.infinity,
+        color: const Color(0xFF2C2C30),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        // The borderless bar window is sized to the row's intrinsic width by
+        // `_syncBarSize` (RecordingBarScreen). On the first frame(s) — before that
+        // measurement resizes the window — the incoming width can be narrower than
+        // the content, which made a plain `Center > Row` overflow. OverflowBox
+        // lets the row take its intrinsic width (what _syncBarSize measures
+        // anyway) without throwing, while keeping it centred once the window fits.
+        child: OverflowBox(
+          alignment: Alignment.center,
+          minWidth: 0,
+          maxWidth: double.infinity,
+          child: Row(
+            key: contentKey,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const _GroupLabel('Record'),
+              TipAnchor(
+                tipId: TipId.barModePicker,
+                dimBackdrop: false,
+                child: _Mode(
+                  icon: LucideIcons.monitor,
+                  label: 'Screen',
+                  onTap: () => onPickMode(BarSourceMode.display),
+                ),
               ),
-            ),
-            _Mode(
-              icon: LucideIcons.appWindowMac,
-              label: 'Window',
-              onTap: () => onPickMode(BarSourceMode.window),
-            ),
-            _Mode(
-              icon: LucideIcons.scan,
-              label: 'Area',
-              onTap: () => onPickMode(BarSourceMode.area),
-            ),
-            _Mode(
-              icon: LucideIcons.smartphone,
-              label: 'Device',
-              onTap: () => onPickMode(BarSourceMode.device),
-            ),
-            const _Divider(),
-            _CameraControl(camera: camera, onTap: onCameraTap),
-            _MicControl(
+              _Mode(
+                icon: LucideIcons.appWindowMac,
+                label: 'Window',
+                onTap: () => onPickMode(BarSourceMode.window),
+              ),
+              _Mode(
+                icon: LucideIcons.scan,
+                label: 'Area',
+                onTap: () => onPickMode(BarSourceMode.area),
+              ),
+              _Mode(
+                icon: LucideIcons.smartphone,
+                label: 'Device',
+                onTap: () => onPickMode(BarSourceMode.device),
+              ),
+              const _Divider(),
+              _CameraControl(camera: camera, onTap: onCameraTap),
+              _MicControl(
                 microphone: microphone,
                 onTap: onMicTap,
                 levelStream: micLevelStream,
-                menuLoading: micMenuLoading),
-            _SystemAudioControl(
-                systemAudio: systemAudio, onTap: onSystemAudioTap),
-            const _Divider(),
-            _GearButton(onTap: onGearTap),
-          ],
+                menuLoading: micMenuLoading,
+              ),
+              _SystemAudioControl(
+                systemAudio: systemAudio,
+                onTap: onSystemAudioTap,
+              ),
+              const _Divider(),
+              _GearButton(onTap: onGearTap),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -162,11 +153,30 @@ class _Divider extends StatelessWidget {
   const _Divider();
   @override
   Widget build(BuildContext context) => Container(
-        width: 1,
-        height: 34,
-        margin: const EdgeInsets.symmetric(horizontal: 6),
-        color: Colors.white.withValues(alpha: 0.10),
-      );
+    width: 1,
+    height: 34,
+    margin: const EdgeInsets.symmetric(horizontal: 6),
+    color: Colors.white.withValues(alpha: 0.10),
+  );
+}
+
+class _GroupLabel extends StatelessWidget {
+  const _GroupLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(left: 7, right: 5),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: Colors.white.withValues(alpha: 0.46),
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
 }
 
 class _Mode extends StatelessWidget {
@@ -179,31 +189,38 @@ class _Mode extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final disabled = onTap == null;
-    final iconColor =
-        disabled ? const Color(0xFF6E6E76) : const Color(0xFFE9E9EC);
-    // Labels read subtler than the icons.
-    final labelColor = disabled
-        ? const Color(0xFF6E6E76)
-        : Colors.white.withValues(alpha: 0.55);
+    final color = disabled ? const Color(0xFF6E6E76) : const Color(0xFFDCDCE1);
     return SpringHoverButton(
       onTap: onTap,
-      // Fixed width so all four mode tiles (and their hover pills) are equal,
-      // regardless of label length.
       child: SizedBox(
-        width: 58,
+        // Lucide's icon glyphs carry wider intrinsic metrics than their visual
+        // 18-point box, so leave enough room for the longest labels at the
+        // app's inherited desktop text scale.
+        width: label == 'Area' ? 70 : 84,
         height: _kBarButtonHeight,
         child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 22, color: iconColor),
-              const SizedBox(height: 2),
-              Text(label,
-                  maxLines: 1,
-                  overflow: TextOverflow.fade,
-                  softWrap: false,
-                  style: TextStyle(fontSize: 10, color: labelColor)),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 7),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 18, color: color),
+                  const SizedBox(width: 7),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -211,11 +228,9 @@ class _Mode extends StatelessWidget {
   }
 }
 
-/// Live microphone control: icon + (truncated) device name + chevron. Greyed
-/// when off. Tapping opens the native mic menu via [onTap].
-/// When [levelStream] is non-null, a [MicLevelMeter] is rendered inside the
-/// chip's container, pinned to the bottom — the chip's icon/label stay put
-/// and the bar height does NOT grow.
+/// Compact microphone status button. The checked device remains visible in
+/// the native menu; here a status pin and the retained live meter provide the
+/// at-a-glance confidence needed before recording.
 class _MicControl extends StatefulWidget {
   const _MicControl({
     required this.microphone,
@@ -239,69 +254,59 @@ class _MicControlState extends State<_MicControl> {
   @override
   Widget build(BuildContext context) {
     final on = widget.microphone != null;
-    final label = on ? widget.microphone!.deviceLabel : 'No microphone';
-    // Active when a mic is selected, or while hovered — the icon/label animate
-    // from the inactive grey to the active bright colour.
+    final label = on
+        ? 'Microphone: ${widget.microphone!.deviceLabel}'
+        : 'Microphone off';
     final active = on || _hover;
-    return SpringHoverButton(
-      key: const Key('bar-mic'),
-      onTap: widget.onTap,
-      onHoverChanged: (h) => setState(() => _hover = h),
-      child: SizedBox(
-        width: _kMicChipWidth,
-        height: _kBarButtonHeight,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+    return Semantics(
+      button: true,
+      label: label,
+      child: SpringHoverButton(
+        key: const Key('bar-mic'),
+        onTap: widget.onTap,
+        onHoverChanged: (h) => setState(() => _hover = h),
+        child: SizedBox(
+          width: _kInputButtonWidth,
+          height: _kBarButtonHeight,
           child: Stack(
+            alignment: Alignment.center,
             children: [
-              Positioned.fill(
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(end: active ? 1.0 : 0.0),
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOut,
-                  builder: (context, t, _) {
-                    final color = Color.lerp(
-                        const Color(0xFF6E6E76), const Color(0xFFE9E9EC), t)!;
-                    return Row(
-                      children: [
-                        Icon(on ? LucideIcons.mic : LucideIcons.micOff,
-                            size: 22, color: color),
-                        const SizedBox(width: 6),
-                        // Left-aligned label fills the remaining fixed width and
-                        // ellipsizes; the leading icon never shifts.
-                        Expanded(
-                          child: Text(label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              softWrap: false,
-                              textAlign: TextAlign.left,
-                              style: TextStyle(fontSize: 12, color: color)),
-                        ),
-                        const SizedBox(width: 2),
-                        if (widget.menuLoading)
-                          const SizedBox(
-                            key: Key('mic-menu-loading'),
-                            width: 13,
-                            height: 13,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.5,
-                              color: Color(0xFFAFAFB6),
-                              semanticsLabel: 'Loading microphones',
-                            ),
-                          )
-                        else
-                          const Icon(LucideIcons.chevronDown,
-                              size: 13, color: Color(0xFF7E7E86)),
-                      ],
-                    );
-                  },
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: active ? 1.0 : 0.0),
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                builder: (context, t, _) => Icon(
+                  on ? LucideIcons.mic : LucideIcons.micOff,
+                  size: 20,
+                  color: Color.lerp(
+                    const Color(0xFF6E6E76),
+                    const Color(0xFFE9E9EC),
+                    t,
+                  ),
                 ),
               ),
+              if (widget.menuLoading)
+                const Positioned(
+                  right: 5,
+                  top: 5,
+                  child: SizedBox(
+                    key: Key('mic-menu-loading'),
+                    width: 9,
+                    height: 9,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.4,
+                      color: Color(0xFFAFAFB6),
+                      semanticsLabel: 'Loading microphones',
+                    ),
+                  ),
+                )
+              else
+                Positioned(right: 6, bottom: 7, child: _StatusDot(on: on)),
               if (widget.levelStream != null)
                 Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 6,
+                  left: 8,
+                  right: 8,
+                  bottom: 4,
                   child: MicStatus(levelStream: widget.levelStream!),
                 ),
             ],
@@ -312,9 +317,7 @@ class _MicControlState extends State<_MicControl> {
   }
 }
 
-/// System-audio control: speaker icon + label + chevron, mirroring [_MicControl]
-/// (fixed-width chip, hover-brighten). Greyed when off. Tapping opens the native
-/// system-audio menu via [onTap].
+/// Compact system-audio status button.
 class _SystemAudioControl extends StatefulWidget {
   const _SystemAudioControl({required this.systemAudio, required this.onTap});
 
@@ -344,41 +347,35 @@ class _SystemAudioControlState extends State<_SystemAudioControl> {
   Widget build(BuildContext context) {
     final on = widget.systemAudio != null;
     final active = on || _hover;
-    return SpringHoverButton(
-      key: const Key('bar-system-audio'),
-      onTap: widget.onTap,
-      onHoverChanged: (h) => setState(() => _hover = h),
-      child: SizedBox(
-        width: _kMicChipWidth,
-        height: _kBarButtonHeight,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(end: active ? 1.0 : 0.0),
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-            builder: (context, t, _) {
-              final color = Color.lerp(
-                  const Color(0xFF6E6E76), const Color(0xFFE9E9EC), t)!;
-              return Row(
-                children: [
-                  Icon(on ? LucideIcons.volume2 : LucideIcons.volumeOff,
-                      size: 22, color: color),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(_label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: false,
-                        textAlign: TextAlign.left,
-                        style: TextStyle(fontSize: 12, color: color)),
+    return Semantics(
+      button: true,
+      label: on ? _label : 'System audio off',
+      child: SpringHoverButton(
+        key: const Key('bar-system-audio'),
+        onTap: widget.onTap,
+        onHoverChanged: (h) => setState(() => _hover = h),
+        child: SizedBox(
+          width: _kInputButtonWidth,
+          height: _kBarButtonHeight,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: active ? 1.0 : 0.0),
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                builder: (context, t, _) => Icon(
+                  on ? LucideIcons.volume2 : LucideIcons.volumeOff,
+                  size: 20,
+                  color: Color.lerp(
+                    const Color(0xFF6E6E76),
+                    const Color(0xFFE9E9EC),
+                    t,
                   ),
-                  const SizedBox(width: 2),
-                  const Icon(LucideIcons.chevronDown,
-                      size: 13, color: Color(0xFF7E7E86)),
-                ],
-              );
-            },
+                ),
+              ),
+              Positioned(right: 6, bottom: 7, child: _StatusDot(on: on)),
+            ],
           ),
         ),
       ),
@@ -389,8 +386,11 @@ class _SystemAudioControlState extends State<_SystemAudioControl> {
 /// Test-only public wrapper around the private [_SystemAudioControl].
 @visibleForTesting
 class SystemAudioControlForTest extends StatelessWidget {
-  const SystemAudioControlForTest(
-      {super.key, this.systemAudio, required this.onTap});
+  const SystemAudioControlForTest({
+    super.key,
+    this.systemAudio,
+    required this.onTap,
+  });
   final SystemAudioConfig? systemAudio;
   final VoidCallback onTap;
   @override
@@ -398,8 +398,7 @@ class SystemAudioControlForTest extends StatelessWidget {
       _SystemAudioControl(systemAudio: systemAudio, onTap: onTap);
 }
 
-/// Live camera control: icon + (truncated) device name + chevron, mirroring
-/// [_MicControl]. Greyed when off. Tapping opens the native camera menu.
+/// Compact camera status button.
 class _CameraControl extends StatefulWidget {
   const _CameraControl({required this.camera, required this.onTap});
 
@@ -416,43 +415,37 @@ class _CameraControlState extends State<_CameraControl> {
   @override
   Widget build(BuildContext context) {
     final on = widget.camera != null;
-    final label = on ? widget.camera!.deviceLabel : 'No camera';
+    final label = on ? 'Camera: ${widget.camera!.deviceLabel}' : 'Camera off';
     final active = on || _hover;
-    return SpringHoverButton(
-      key: const Key('bar-camera'),
-      onTap: widget.onTap,
-      onHoverChanged: (h) => setState(() => _hover = h),
-      child: SizedBox(
-        width: _kMicChipWidth,
-        height: _kBarButtonHeight,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(end: active ? 1.0 : 0.0),
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-            builder: (context, t, _) {
-              final color = Color.lerp(
-                  const Color(0xFF6E6E76), const Color(0xFFE9E9EC), t)!;
-              return Row(
-                children: [
-                  Icon(on ? LucideIcons.video : LucideIcons.videoOff,
-                      size: 22, color: color),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: false,
-                        textAlign: TextAlign.left,
-                        style: TextStyle(fontSize: 12, color: color)),
+    return Semantics(
+      button: true,
+      label: label,
+      child: SpringHoverButton(
+        key: const Key('bar-camera'),
+        onTap: widget.onTap,
+        onHoverChanged: (h) => setState(() => _hover = h),
+        child: SizedBox(
+          width: _kInputButtonWidth,
+          height: _kBarButtonHeight,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: active ? 1.0 : 0.0),
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                builder: (context, t, _) => Icon(
+                  on ? LucideIcons.video : LucideIcons.videoOff,
+                  size: 20,
+                  color: Color.lerp(
+                    const Color(0xFF6E6E76),
+                    const Color(0xFFE9E9EC),
+                    t,
                   ),
-                  const SizedBox(width: 2),
-                  const Icon(LucideIcons.chevronDown,
-                      size: 13, color: Color(0xFF7E7E86)),
-                ],
-              );
-            },
+                ),
+              ),
+              Positioned(right: 6, bottom: 7, child: _StatusDot(on: on)),
+            ],
           ),
         ),
       ),
@@ -471,65 +464,23 @@ class CameraControlForTest extends StatelessWidget {
       _CameraControl(camera: camera, onTap: onTap);
 }
 
-class _CircleButton extends StatelessWidget {
-  const _CircleButton({required this.barKey, required this.icon, required this.onPressed});
+class _StatusDot extends StatelessWidget {
+  const _StatusDot({required this.on});
 
-  final Key barKey;
-  // Kept for API symmetry with the original `_CircleButton`; the close button
-  // now uses a hand-painted heavy X instead of a font glyph because Material's
-  // `weight:` axis is a no-op on the non-variable MaterialIcons font shipped
-  // with Flutter.
-  final IconData icon;
-  final VoidCallback onPressed;
+  final bool on;
 
   @override
-  Widget build(BuildContext context) {
-    return SpringHoverButton(
-      key: barKey,
-      onTap: onPressed,
-      borderRadius: 11,
-      child: SizedBox(
-        width: 46,
-        height: _kBarButtonHeight,
-        child: Center(
-          child: Container(
-            width: 22,
-            height: 22,
-            decoration: const BoxDecoration(
-              color: Color(0xFFE9E9EC),
-              shape: BoxShape.circle,
-            ),
-            child: const CustomPaint(painter: _HeavyXPainter()),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Draws a chunky "×" with rounded caps. Stroke is ~22% of the box edge so
-/// the X reads bold inside the small 22px chip without overflowing.
-class _HeavyXPainter extends CustomPainter {
-  const _HeavyXPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF2C2C30)
-      ..strokeWidth = size.shortestSide * 0.08
-      ..strokeCap = StrokeCap.round
-      ..isAntiAlias = true;
-    // Inset so the rounded caps don't kiss the circle's edge.
-    final inset = size.shortestSide * 0.30;
-    final r = Rect.fromLTRB(
-      inset, inset, size.width - inset, size.height - inset,
-    );
-    canvas.drawLine(r.topLeft, r.bottomRight, paint);
-    canvas.drawLine(r.topRight, r.bottomLeft, paint);
-  }
-
-  @override
-  bool shouldRepaint(_HeavyXPainter oldDelegate) => false;
+  Widget build(BuildContext context) => Container(
+    width: 6,
+    height: 6,
+    decoration: BoxDecoration(
+      color: on ? const Color(0xFF62D985) : const Color(0xFF62626B),
+      shape: BoxShape.circle,
+      boxShadow: on
+          ? const [BoxShadow(color: Color(0x2862D985), blurRadius: 4)]
+          : null,
+    ),
+  );
 }
 
 class _GearButton extends StatelessWidget {
@@ -538,22 +489,23 @@ class _GearButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Subtler than the other icons, with a small dropdown chevron beside it.
-    return SpringHoverButton(
-      key: const Key('bar-gear'),
-      onTap: onTap,
-      borderRadius: 11,
-      child: const SizedBox(
-        width: 46,
-        height: _kBarButtonHeight,
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(LucideIcons.settings, color: Color(0xFF7E7E86), size: 22),
-              SizedBox(width: 1),
-              Icon(LucideIcons.chevronDown, color: Color(0xFF7E7E86), size: 13),
-            ],
+    // Utility actions are deliberately quieter than capture and input state.
+    return Semantics(
+      button: true,
+      label: 'More options',
+      child: SpringHoverButton(
+        key: const Key('bar-gear'),
+        onTap: onTap,
+        borderRadius: 11,
+        child: const SizedBox(
+          width: 46,
+          height: _kBarButtonHeight,
+          child: Center(
+            child: Icon(
+              LucideIcons.ellipsis,
+              color: Color(0xFF8B8B94),
+              size: 21,
+            ),
           ),
         ),
       ),

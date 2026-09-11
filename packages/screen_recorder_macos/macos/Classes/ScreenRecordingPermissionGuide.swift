@@ -404,7 +404,7 @@ private final class ScreenRecordingPermissionGuideView: NSView, NSDraggingSource
       font: .systemFont(ofSize: 18, weight: .semibold),
       color: .white)
     drawText(
-      "Quit and reopen Slipreel to load your screens and windows.",
+      "Quit and reopen Slipreel to apply this permission.",
       in: CGRect(x: 98, y: 64, width: 214, height: 52),
       font: .systemFont(ofSize: 13, weight: .regular),
       color: NSColor(srgbRed: 0.70, green: 0.72, blue: 0.76, alpha: 1))

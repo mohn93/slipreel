@@ -26,33 +26,36 @@ Future<TipsController> _allSeenController() async {
 }
 
 Widget _wrap(Widget child, TipsController tips) => ProviderScope(
-      overrides: [tipsControllerProvider.overrideWith((ref) => tips)],
-      child: MaterialApp(home: Scaffold(body: child)),
-    );
+  overrides: [tipsControllerProvider.overrideWith((ref) => tips)],
+  child: MaterialApp(home: Scaffold(body: child)),
+);
 
 RecordingBar _bar({void Function(BarSourceMode)? onPickMode}) => RecordingBar(
-      onPickMode: onPickMode ?? (_) {},
-      onClose: () {},
-      onGearTap: () {},
-      onDragStart: () {},
-      onMicTap: () {},
-      onSystemAudioTap: () {},
-      onCameraTap: () {},
-    );
+  onPickMode: onPickMode ?? (_) {},
+  onGearTap: () {},
+  onDragStart: () {},
+  onMicTap: () {},
+  onSystemAudioTap: () {},
+  onCameraTap: () {},
+);
 
 void main() {
-  testWidgets('always renders the system-audio control and no device-audio control',
-      (tester) async {
-    _wide(tester);
-    final tips = await _allSeenController();
-    await tester.pumpWidget(_wrap(_bar(), tips));
+  testWidgets(
+    'always renders the system-audio control and no device-audio control',
+    (tester) async {
+      _wide(tester);
+      final tips = await _allSeenController();
+      await tester.pumpWidget(_wrap(_bar(), tips));
 
-    expect(find.byKey(const Key('bar-system-audio')), findsOneWidget);
-    expect(find.byKey(const Key('bar-device-audio')), findsNothing);
-    expect(find.byKey(const Key('bar-mic')), findsOneWidget);
-  });
+      expect(find.byKey(const Key('bar-system-audio')), findsOneWidget);
+      expect(find.byKey(const Key('bar-device-audio')), findsNothing);
+      expect(find.byKey(const Key('bar-mic')), findsOneWidget);
+    },
+  );
 
-  testWidgets('tapping the Device chip fires onPickMode(device)', (tester) async {
+  testWidgets('tapping the Device chip fires onPickMode(device)', (
+    tester,
+  ) async {
     _wide(tester);
     BarSourceMode? picked;
     final tips = await _allSeenController();

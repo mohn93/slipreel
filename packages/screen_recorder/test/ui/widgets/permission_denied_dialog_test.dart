@@ -6,7 +6,8 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 import 'package:url_launcher_platform_interface/link.dart';
 
-class _FakeUrlLauncher extends UrlLauncherPlatform with MockPlatformInterfaceMixin {
+class _FakeUrlLauncher extends UrlLauncherPlatform
+    with MockPlatformInterfaceMixin {
   String? lastUrl;
   bool returnValue = true;
 
@@ -19,8 +20,10 @@ class _FakeUrlLauncher extends UrlLauncherPlatform with MockPlatformInterfaceMix
     lastUrl = url;
     return returnValue;
   }
+
   @override
-  Future<bool> launch(String url, {
+  Future<bool> launch(
+    String url, {
     required bool useSafariVC,
     required bool useWebView,
     required bool enableJavaScript,
@@ -55,26 +58,37 @@ void main() {
     ScreenRecorderPlatform.instance = fakePlatform;
   });
 
-  Future<void> pumpAndShow(WidgetTester tester, PermissionKind kind) async {
-    await tester.pumpWidget(MaterialApp(
-      home: Builder(
-        builder: (context) => Scaffold(
-          body: Center(
-            child: ElevatedButton(
-              onPressed: () =>
-                  PermissionDeniedDialog.show(context, kind),
-              child: const Text('open'),
+  Future<void> pumpAndShow(
+    WidgetTester tester,
+    PermissionKind kind, {
+    ScreenRecordingPermissionPurpose screenRecordingPurpose =
+        ScreenRecordingPermissionPurpose.screenCapture,
+  }) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => PermissionDeniedDialog.show(
+                  context,
+                  kind,
+                  screenRecordingPurpose: screenRecordingPurpose,
+                ),
+                child: const Text('open'),
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
 
-  testWidgets('Screen Recording: deep-links to ScreenCapture pane',
-      (tester) async {
+  testWidgets('Screen Recording: deep-links to ScreenCapture pane', (
+    tester,
+  ) async {
     await pumpAndShow(tester, PermissionKind.screenRecording);
     await tester.tap(find.text('Open System Settings'));
     await tester.pumpAndSettle();
@@ -96,8 +110,27 @@ void main() {
     expect(fakePlatform.screenRecordingGuideCalls, 0);
   });
 
-  testWidgets('Accessibility: deep-links to Accessibility pane',
-      (tester) async {
+  testWidgets('System audio: uses Screen Recording pane and pinned guide', (
+    tester,
+  ) async {
+    await pumpAndShow(
+      tester,
+      PermissionKind.screenRecording,
+      screenRecordingPurpose: ScreenRecordingPermissionPurpose.systemAudio,
+    );
+    expect(find.text('Allow system audio recording'), findsOneWidget);
+    await tester.tap(find.text('Open System Settings'));
+    await tester.pumpAndSettle();
+    expect(
+      fake.lastUrl,
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+    );
+    expect(fakePlatform.screenRecordingGuideCalls, 1);
+  });
+
+  testWidgets('Accessibility: deep-links to Accessibility pane', (
+    tester,
+  ) async {
     await pumpAndShow(tester, PermissionKind.accessibility);
     await tester.tap(find.text('Open System Settings'));
     await tester.pumpAndSettle();
@@ -118,24 +151,28 @@ void main() {
   });
 
   testWidgets(
-      'shows inline error and does NOT pop when launchUrl returns false',
-      (tester) async {
-    fake.returnValue = false;
-    await pumpAndShow(tester, PermissionKind.screenRecording);
+    'shows inline error and does NOT pop when launchUrl returns false',
+    (tester) async {
+      fake.returnValue = false;
+      await pumpAndShow(tester, PermissionKind.screenRecording);
 
-    // Sheet is open — no error yet.
-    expect(find.textContaining("Couldn't open"), findsNothing);
+      // Sheet is open — no error yet.
+      expect(find.textContaining("Couldn't open"), findsNothing);
 
-    await tester.tap(find.text('Open System Settings'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Open System Settings'));
+      await tester.pumpAndSettle();
 
-    // Error text appears.
-    expect(find.textContaining("Couldn't open System Settings"), findsOneWidget);
+      // Error text appears.
+      expect(
+        find.textContaining("Couldn't open System Settings"),
+        findsOneWidget,
+      );
 
-    // Sheet is still visible (not popped): the title and "Not now" button
-    // remain in the tree.
-    expect(find.text('Screen Recording permission required'), findsOneWidget);
-    expect(find.text('Not now'), findsOneWidget);
-    expect(fakePlatform.screenRecordingGuideCalls, 0);
-  });
+      // Sheet is still visible (not popped): the title and "Not now" button
+      // remain in the tree.
+      expect(find.text('Screen Recording permission required'), findsOneWidget);
+      expect(find.text('Not now'), findsOneWidget);
+      expect(fakePlatform.screenRecordingGuideCalls, 0);
+    },
+  );
 }

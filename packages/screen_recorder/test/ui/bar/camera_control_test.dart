@@ -7,25 +7,30 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 void main() {
   testWidgets('camera control shows label and fires onTap', (tester) async {
     var taps = 0;
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: CameraControlForTest(
-          camera: const CameraConfig(deviceUid: 'u', deviceLabel: 'FaceTime HD'),
-          onTap: () => taps++,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CameraControlForTest(
+            camera: const CameraConfig(
+              deviceUid: 'u',
+              deviceLabel: 'FaceTime HD',
+            ),
+            onTap: () => taps++,
+          ),
         ),
       ),
-    ));
-    expect(find.text('FaceTime HD'), findsOneWidget);
+    );
+    expect(find.bySemanticsLabel('Camera: FaceTime HD'), findsOneWidget);
     await tester.tap(find.byKey(const Key('bar-camera')));
     expect(taps, 1);
   });
 
-  testWidgets('camera control shows "No camera" when off', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: CameraControlForTest(camera: null, onTap: () {}),
+  testWidgets('camera control exposes its off state', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: CameraControlForTest(camera: null, onTap: () {})),
       ),
-    ));
-    expect(find.text('No camera'), findsOneWidget);
+    );
+    expect(find.bySemanticsLabel('Camera off'), findsOneWidget);
   });
 }

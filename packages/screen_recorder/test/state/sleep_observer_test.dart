@@ -25,6 +25,8 @@ class _FakeRouter implements RecordingActionRouter {
   Future<void> pauseOrResume() async => pauses++;
   @override
   Future<bool> ensureScreenRecording(_) async => true;
+  @override
+  Future<bool> ensureSystemAudioPermission(_) async => true;
 }
 
 void main() {
@@ -36,7 +38,10 @@ void main() {
     container.read(recordingControllerProvider.notifier).state =
         const RecordingState(status: RecordingStatus.recording);
     final observer = SleepObserver(
-        platform: fake, router: router, container: container);
+      platform: fake,
+      router: router,
+      container: container,
+    );
     await Future<void>.delayed(Duration.zero);
     fake.c.add({'event': 'willSleep'});
     await Future<void>.delayed(Duration.zero);
@@ -51,7 +56,10 @@ void main() {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final observer = SleepObserver(
-        platform: fake, router: router, container: container);
+      platform: fake,
+      router: router,
+      container: container,
+    );
     await Future<void>.delayed(Duration.zero);
     fake.c.add({'event': 'willSleep'});
     await Future<void>.delayed(Duration.zero);
@@ -67,10 +75,11 @@ void main() {
     addTearDown(container.dispose);
     int wakeCalls = 0;
     final observer = SleepObserver(
-        platform: fake,
-        router: router,
-        container: container,
-        onWake: () => wakeCalls++);
+      platform: fake,
+      router: router,
+      container: container,
+      onWake: () => wakeCalls++,
+    );
     await Future<void>.delayed(Duration.zero);
     fake.c.add({'event': 'didWake'});
     await Future<void>.delayed(Duration.zero);
@@ -86,7 +95,10 @@ void main() {
     container.read(recordingControllerProvider.notifier).state =
         const RecordingState(status: RecordingStatus.recording);
     final observer = SleepObserver(
-        platform: fake, router: router, container: container);
+      platform: fake,
+      router: router,
+      container: container,
+    );
     await Future<void>.delayed(Duration.zero);
     fake.c.add({'event': 'willSleep'});
     await Future<void>.delayed(Duration.zero);

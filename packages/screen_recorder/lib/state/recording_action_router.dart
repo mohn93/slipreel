@@ -68,8 +68,9 @@ class RecordingActionRouter {
       }
       String? defaultSaveLocation;
       try {
-        defaultSaveLocation =
-            _container.read(globalPreferencesControllerProvider).defaultSaveLocation;
+        defaultSaveLocation = _container
+            .read(globalPreferencesControllerProvider)
+            .defaultSaveLocation;
       } catch (_) {}
 
       // Device sources (iPhone/iPad over USB) take a different start path: the
@@ -112,7 +113,9 @@ class RecordingActionRouter {
       return;
     }
 
-    _container.read(countdownControllerProvider.notifier).run(
+    _container
+        .read(countdownControllerProvider.notifier)
+        .run(
           seconds: seconds,
           onComplete: () {
             unawaited(doStart());
@@ -174,7 +177,24 @@ class RecordingActionRouter {
   /// the native source picker. ScreenCaptureKit cannot enumerate sources until
   /// permission is granted; checking only after selection turns denial into a
   /// misleading "no windows" empty state.
-  Future<bool> ensureScreenRecording(BuildContext context) async {
+  Future<bool> ensureScreenRecording(BuildContext context) =>
+      _ensureScreenRecording(
+        context,
+        purpose: ScreenRecordingPermissionPurpose.screenCapture,
+      );
+
+  /// System audio is authorized through the same macOS TCC category as screen
+  /// capture, but receives purpose-specific guidance when access is missing.
+  Future<bool> ensureSystemAudioPermission(BuildContext context) =>
+      _ensureScreenRecording(
+        context,
+        purpose: ScreenRecordingPermissionPurpose.systemAudio,
+      );
+
+  Future<bool> _ensureScreenRecording(
+    BuildContext context, {
+    required ScreenRecordingPermissionPurpose purpose,
+  }) async {
     final PermissionsController perms;
     try {
       perms = _container.read(permissionsControllerProvider.notifier);
@@ -187,13 +207,20 @@ class RecordingActionRouter {
         status == PermissionStatus.unsupported) {
       return true;
     }
-    status = await perms.request(PermissionKind.screenRecording); // system prompt
+    status = await perms.request(
+      PermissionKind.screenRecording,
+    ); // system prompt
     if (status == PermissionStatus.granted) return true;
     AppLogger.permissions.w(
-        'Screen Recording not granted at record-start (status: $status); '
-        'showing deny panel');
+      'Screen Recording not granted at record-start (status: $status); '
+      'showing deny panel',
+    );
     if (context.mounted) {
-      await _showDeniedPanel(context, PermissionKind.screenRecording);
+      await _showDeniedPanel(
+        context,
+        PermissionKind.screenRecording,
+        screenRecordingPurpose: purpose,
+      );
     }
     return false;
   }
@@ -202,12 +229,22 @@ class RecordingActionRouter {
   /// window is ~68px tall, too short to host a dialog.
   /// Switch to panel mode, push the screen,
   /// and restore the bar once it's dismissed.
-  Future<void> _showDeniedPanel(BuildContext context, PermissionKind kind) async {
+  Future<void> _showDeniedPanel(
+    BuildContext context,
+    PermissionKind kind, {
+    ScreenRecordingPermissionPurpose screenRecordingPurpose =
+        ScreenRecordingPermissionPurpose.screenCapture,
+  }) async {
     final window = _container.read(windowModeControllerProvider.notifier);
     await window.showPanel();
     if (context.mounted) {
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => PermissionDeniedScreen(kind: kind)),
+        MaterialPageRoute<void>(
+          builder: (_) => PermissionDeniedScreen(
+            kind: kind,
+            screenRecordingPurpose: screenRecordingPurpose,
+          ),
+        ),
       );
     }
     await window.showBar();

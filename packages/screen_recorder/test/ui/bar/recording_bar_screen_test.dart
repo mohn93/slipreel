@@ -45,16 +45,22 @@ class _FakePlatform extends ScreenRecorderPlatform
   MicrophoneConfig? menuReturns;
   Completer<MicrophoneMenuResult>? micMenuCompleter;
   int showMicMenuCalls = 0;
+  int showSystemAudioMenuCalls = 0;
 
   @override
-  Future<MicrophoneMenuResult> showMicrophoneMenu(MicrophoneConfig? current) async {
+  Future<MicrophoneMenuResult> showMicrophoneMenu(
+    MicrophoneConfig? current,
+  ) async {
     showMicMenuCalls++;
     if (micMenuCompleter case final completer?) return completer.future;
     return MicrophoneMenuResult(cancelled: false, config: menuReturns);
   }
 
   @override
-  Future<SystemAudioMenuResult> showSystemAudioMenu(SystemAudioConfig? current) async {
+  Future<SystemAudioMenuResult> showSystemAudioMenu(
+    SystemAudioConfig? current,
+  ) async {
+    showSystemAudioMenuCalls++;
     return const SystemAudioMenuResult(cancelled: true);
   }
 
@@ -127,8 +133,7 @@ class _FakeRecordingController extends RecordingController {
     PermissionsSnapshot? permissions,
     Future<void> Function(PermissionKind kind)? onDenied,
     String? defaultSaveLocation,
-  }) async =>
-      startCalls++;
+  }) async => startCalls++;
 
   @override
   Future<void> stopRecording() async => stopCalls++;
@@ -166,13 +171,15 @@ void main() {
 
   testWidgets('bar mode renders the RecordingBar', (tester) async {
     _wide(tester);
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(_FakeChrome()),
-        await _tipsOverride(),
-      ],
-      child: const MaterialApp(home: RecordingBarScreen()),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          await _tipsOverride(),
+        ],
+        child: const MaterialApp(home: RecordingBarScreen()),
+      ),
+    );
     await tester.pump();
     expect(find.byType(RecordingBar), findsOneWidget);
     expect(find.byType(RecordingPill), findsNothing);
@@ -181,18 +188,22 @@ void main() {
   testWidgets('pill mode renders the RecordingPill', (tester) async {
     _wide(tester);
     late WidgetRef capturedRef;
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(_FakeChrome()),
-        await _tipsOverride(),
-      ],
-      child: MaterialApp(
-        home: Consumer(builder: (c, ref, _) {
-          capturedRef = ref;
-          return const RecordingBarScreen();
-        }),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          await _tipsOverride(),
+        ],
+        child: MaterialApp(
+          home: Consumer(
+            builder: (c, ref, _) {
+              capturedRef = ref;
+              return const RecordingBarScreen();
+            },
+          ),
+        ),
       ),
-    ));
+    );
     await tester.pump();
     await capturedRef.read(windowModeControllerProvider.notifier).showPill();
     await tester.pump();
@@ -208,25 +219,31 @@ void main() {
   // do real video/file IO that isn't test-friendly.
   // ---------------------------------------------------------------------------
 
-  testWidgets('tapping Window picks a source and starts recording',
-      (tester) async {
+  testWidgets('tapping Window picks a source and starts recording', (
+    tester,
+  ) async {
     _wide(tester);
-    final fakePlatform =
-        _FakePlatform(picked: const PickedSource(kind: RecordingSource.window, id: '7'));
+    final fakePlatform = _FakePlatform(
+      picked: const PickedSource(kind: RecordingSource.window, id: '7'),
+    );
     ScreenRecorderPlatform.instance = fakePlatform;
     final fakeController = _FakeRecordingController();
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(_FakeChrome()),
-        recordingControllerProvider.overrideWith((ref) => fakeController),
-        permissionsControllerProvider.overrideWith(
-            (ref) => PermissionsController(ScreenRecorderPlatform.instance)
-              ..state = PermissionsSnapshot.initial),
-        await _tipsOverride(),
-      ],
-      child: const MaterialApp(home: RecordingBarScreen()),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          recordingControllerProvider.overrideWith((ref) => fakeController),
+          permissionsControllerProvider.overrideWith(
+            (ref) =>
+                PermissionsController(ScreenRecorderPlatform.instance)
+                  ..state = PermissionsSnapshot.initial,
+          ),
+          await _tipsOverride(),
+        ],
+        child: const MaterialApp(home: RecordingBarScreen()),
+      ),
+    );
     await tester.pump();
 
     await tester.tap(find.text('Window'));
@@ -234,8 +251,10 @@ void main() {
 
     expect(fakePlatform.pickSourceCalls, [RecordingSource.window]);
     expect(fakeController.selectSourceCalls, hasLength(1));
-    expect(fakeController.selectSourceCalls.single['kind'],
-        RecordingSource.window);
+    expect(
+      fakeController.selectSourceCalls.single['kind'],
+      RecordingSource.window,
+    );
     expect(fakeController.selectSourceCalls.single['id'], '7');
     // startRecording is now routed through recordingActionRouterRef?.start(),
     // which is null in test context — so fakeController.startCalls stays 0.
@@ -243,42 +262,48 @@ void main() {
   });
 
   testWidgets(
-      'tapping Window without screen permission shows CTA before source picker',
-      (tester) async {
-    _wide(tester);
-    final fakePlatform = _FakePlatform()
-      ..screenRecordingPermission = PermissionStatus.denied
-      ..requestedScreenRecordingPermission = PermissionStatus.denied;
-    ScreenRecorderPlatform.instance = fakePlatform;
-    final fakeController = _FakeRecordingController();
-    final container = ProviderContainer(overrides: [
-      windowChromeProvider.overrideWithValue(_FakeChrome()),
-      recordingControllerProvider.overrideWith((ref) => fakeController),
-      permissionsControllerProvider.overrideWith(
-          (ref) => PermissionsController(fakePlatform)),
-      await _tipsOverride(),
-    ]);
-    addTearDown(container.dispose);
-    recordingActionRouterRef = RecordingActionRouter(container);
+    'tapping Window without screen permission shows CTA before source picker',
+    (tester) async {
+      _wide(tester);
+      final fakePlatform = _FakePlatform()
+        ..screenRecordingPermission = PermissionStatus.denied
+        ..requestedScreenRecordingPermission = PermissionStatus.denied;
+      ScreenRecorderPlatform.instance = fakePlatform;
+      final fakeController = _FakeRecordingController();
+      final container = ProviderContainer(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          recordingControllerProvider.overrideWith((ref) => fakeController),
+          permissionsControllerProvider.overrideWith(
+            (ref) => PermissionsController(fakePlatform),
+          ),
+          await _tipsOverride(),
+        ],
+      );
+      addTearDown(container.dispose);
+      recordingActionRouterRef = RecordingActionRouter(container);
 
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: const MaterialApp(home: RecordingBarScreen()),
-    ));
-    await tester.pump();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: RecordingBarScreen()),
+        ),
+      );
+      await tester.pump();
 
-    await tester.tap(find.text('Window'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Window'));
+      await tester.pumpAndSettle();
 
-    expect(fakePlatform.requestScreenRecordingCalls, 1);
-    expect(fakePlatform.pickSourceCalls, isEmpty);
-    expect(find.byType(PermissionDeniedScreen), findsOneWidget);
-    expect(find.text('Screen Recording permission required'), findsOneWidget);
-    expect(find.text('Open System Settings'), findsOneWidget);
+      expect(fakePlatform.requestScreenRecordingCalls, 1);
+      expect(fakePlatform.pickSourceCalls, isEmpty);
+      expect(find.byType(PermissionDeniedScreen), findsOneWidget);
+      expect(find.text('Screen Recording permission required'), findsOneWidget);
+      expect(find.text('Open System Settings'), findsOneWidget);
 
-    await tester.tap(find.text('Not now'));
-    await tester.pumpAndSettle();
-  });
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets('cancelling the picker is a no-op', (tester) async {
     _wide(tester);
@@ -286,14 +311,16 @@ void main() {
     ScreenRecorderPlatform.instance = fakePlatform;
     final fakeController = _FakeRecordingController();
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(_FakeChrome()),
-        recordingControllerProvider.overrideWith((ref) => fakeController),
-        await _tipsOverride(),
-      ],
-      child: const MaterialApp(home: RecordingBarScreen()),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          recordingControllerProvider.overrideWith((ref) => fakeController),
+          await _tipsOverride(),
+        ],
+        child: const MaterialApp(home: RecordingBarScreen()),
+      ),
+    );
     await tester.pump();
 
     await tester.tap(find.text('Window'));
@@ -308,22 +335,31 @@ void main() {
     _wide(tester);
     final fakePlatform = _FakePlatform(
       region: const RegionSelection(
-          displayId: '1', x: 0, y: 0, widthPx: 100, heightPx: 100),
+        displayId: '1',
+        x: 0,
+        y: 0,
+        widthPx: 100,
+        heightPx: 100,
+      ),
     );
     ScreenRecorderPlatform.instance = fakePlatform;
     final fakeController = _FakeRecordingController();
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(_FakeChrome()),
-        recordingControllerProvider.overrideWith((ref) => fakeController),
-        permissionsControllerProvider.overrideWith(
-            (ref) => PermissionsController(ScreenRecorderPlatform.instance)
-              ..state = PermissionsSnapshot.initial),
-        await _tipsOverride(),
-      ],
-      child: const MaterialApp(home: RecordingBarScreen()),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          recordingControllerProvider.overrideWith((ref) => fakeController),
+          permissionsControllerProvider.overrideWith(
+            (ref) =>
+                PermissionsController(ScreenRecorderPlatform.instance)
+                  ..state = PermissionsSnapshot.initial,
+          ),
+          await _tipsOverride(),
+        ],
+        child: const MaterialApp(home: RecordingBarScreen()),
+      ),
+    );
     await tester.pump();
 
     await tester.tap(find.text('Area'));
@@ -331,9 +367,15 @@ void main() {
 
     expect(fakePlatform.selectRegionCalls, 1);
     expect(fakeController.selectSourceCalls, hasLength(1));
-    expect(fakeController.selectSourceCalls.single['kind'], RecordingSource.area);
+    expect(
+      fakeController.selectSourceCalls.single['kind'],
+      RecordingSource.area,
+    );
     expect(fakeController.selectSourceCalls.single['id'], '1');
-    expect(fakeController.selectSourceCalls.single['region'], isA<RegionSelection>());
+    expect(
+      fakeController.selectSourceCalls.single['region'],
+      isA<RegionSelection>(),
+    );
     // startRecording is now routed through recordingActionRouterRef?.start(),
     // which is null in test context — so fakeController.startCalls stays 0.
     expect(fakeController.startCalls, 0);
@@ -344,67 +386,85 @@ void main() {
     ScreenRecorderPlatform.instance = _FakePlatform();
     final fakeController = _FakeRecordingController();
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(_FakeChrome()),
-        recordingControllerProvider.overrideWith((ref) => fakeController),
-        await _tipsOverride(),
-      ],
-      child: const MaterialApp(home: RecordingBarScreen()),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          recordingControllerProvider.overrideWith((ref) => fakeController),
+          await _tipsOverride(),
+        ],
+        child: const MaterialApp(home: RecordingBarScreen()),
+      ),
+    );
     await tester.pump();
 
-    fakeController.emit(const RecordingState(status: RecordingStatus.recording));
+    fakeController.emit(
+      const RecordingState(status: RecordingStatus.recording),
+    );
     await tester.pump();
     await tester.pump();
 
     expect(find.byType(RecordingPill), findsOneWidget);
   });
 
-  testWidgets('tapping the mic control opens the menu and updates state',
-      (tester) async {
+  testWidgets('tapping the mic control opens the menu and updates state', (
+    tester,
+  ) async {
     _wide(tester);
     final fakePlatform = _FakePlatform()
-      ..menuReturns = const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'Mic One');
+      ..menuReturns = const MicrophoneConfig(
+        deviceUid: 'u',
+        deviceLabel: 'Mic One',
+      );
     ScreenRecorderPlatform.instance = fakePlatform;
 
     late WidgetRef capturedRef;
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(_FakeChrome()),
-        await _tipsOverride(),
-      ],
-      child: MaterialApp(
-        home: Consumer(builder: (c, ref, _) {
-          capturedRef = ref;
-          return const RecordingBarScreen();
-        }),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          await _tipsOverride(),
+        ],
+        child: MaterialApp(
+          home: Consumer(
+            builder: (c, ref, _) {
+              capturedRef = ref;
+              return const RecordingBarScreen();
+            },
+          ),
+        ),
       ),
-    ));
+    );
     await tester.pump();
 
     await tester.tap(find.byKey(const Key('bar-mic')));
     await tester.pumpAndSettle();
 
     expect(fakePlatform.showMicMenuCalls, 1);
-    expect(capturedRef.read(microphoneControllerProvider)?.deviceLabel, 'Mic One');
-    expect(find.text('Mic One'), findsOneWidget);
+    expect(
+      capturedRef.read(microphoneControllerProvider)?.deviceLabel,
+      'Mic One',
+    );
+    expect(find.bySemanticsLabel('Microphone: Mic One'), findsOneWidget);
   });
 
-  testWidgets('shows a spinner while the microphone menu is loading',
-      (tester) async {
+  testWidgets('shows a spinner while the microphone menu is loading', (
+    tester,
+  ) async {
     _wide(tester);
     final completer = Completer<MicrophoneMenuResult>();
     final fakePlatform = _FakePlatform()..micMenuCompleter = completer;
     ScreenRecorderPlatform.instance = fakePlatform;
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(_FakeChrome()),
-        await _tipsOverride(),
-      ],
-      child: const MaterialApp(home: RecordingBarScreen()),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          await _tipsOverride(),
+        ],
+        child: const MaterialApp(home: RecordingBarScreen()),
+      ),
+    );
     await tester.pump();
 
     await tester.tap(find.byKey(const Key('bar-mic')));
@@ -421,19 +481,22 @@ void main() {
     expect(find.byKey(const Key('mic-menu-loading')), findsNothing);
   });
 
-  testWidgets('bar auto-sizes its window to the (variable) content size',
-      (tester) async {
+  testWidgets('bar auto-sizes its window to the (variable) content size', (
+    tester,
+  ) async {
     _wide(tester);
     ScreenRecorderPlatform.instance = _FakePlatform();
     final chrome = _FakeChrome();
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(chrome),
-        await _tipsOverride(),
-      ],
-      child: const MaterialApp(home: RecordingBarScreen()),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(chrome),
+          await _tipsOverride(),
+        ],
+        child: const MaterialApp(home: RecordingBarScreen()),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(chrome.barSizes, isNotEmpty);
@@ -442,7 +505,8 @@ void main() {
     expect(off.h, 68); // base height, no meter when mic is off
 
     final container = ProviderScope.containerOf(
-        tester.element(find.byType(RecordingBar)));
+      tester.element(find.byType(RecordingBar)),
+    );
     container
         .read(microphoneControllerProvider.notifier)
         .set(const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'X'));
@@ -460,42 +524,131 @@ void main() {
     final fakePlatform = _FakePlatform();
     ScreenRecorderPlatform.instance = fakePlatform;
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(_FakeChrome()),
-        await _tipsOverride(),
-      ],
-      child: const MaterialApp(home: RecordingBarScreen()),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          await _tipsOverride(),
+        ],
+        child: const MaterialApp(home: RecordingBarScreen()),
+      ),
+    );
     await tester.pump();
 
     expect(find.byKey(const Key('bar-system-audio')), findsOneWidget);
   });
 
-  testWidgets('monitor starts when a mic is selected, stops when off',
-      (tester) async {
+  testWidgets('system audio opens immediately when screen access is granted', (
+    tester,
+  ) async {
+    _wide(tester);
+    final fakePlatform = _FakePlatform()
+      ..screenRecordingPermission = PermissionStatus.granted;
+    ScreenRecorderPlatform.instance = fakePlatform;
+    final container = ProviderContainer(
+      overrides: [
+        windowChromeProvider.overrideWithValue(_FakeChrome()),
+        permissionsControllerProvider.overrideWith(
+          (ref) => PermissionsController(fakePlatform),
+        ),
+        await _tipsOverride(),
+      ],
+    );
+    addTearDown(container.dispose);
+    recordingActionRouterRef = RecordingActionRouter(container);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: RecordingBarScreen()),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('bar-system-audio')));
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.showSystemAudioMenuCalls, 1);
+    expect(find.byType(PermissionDeniedScreen), findsNothing);
+  });
+
+  testWidgets(
+    'system audio denial shows purpose-specific guided permission panel',
+    (tester) async {
+      _wide(tester);
+      final fakePlatform = _FakePlatform()
+        ..screenRecordingPermission = PermissionStatus.denied
+        ..requestedScreenRecordingPermission = PermissionStatus.denied;
+      ScreenRecorderPlatform.instance = fakePlatform;
+      final container = ProviderContainer(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          permissionsControllerProvider.overrideWith(
+            (ref) => PermissionsController(fakePlatform),
+          ),
+          await _tipsOverride(),
+        ],
+      );
+      addTearDown(container.dispose);
+      recordingActionRouterRef = RecordingActionRouter(container);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: RecordingBarScreen()),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('bar-system-audio')));
+      await tester.pumpAndSettle();
+
+      expect(fakePlatform.requestScreenRecordingCalls, 1);
+      expect(fakePlatform.showSystemAudioMenuCalls, 0);
+      expect(find.byType(PermissionDeniedScreen), findsOneWidget);
+      expect(find.text('Allow system audio recording'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'macOS includes system audio access under Screen Recording',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('monitor starts when a mic is selected, stops when off', (
+    tester,
+  ) async {
     _wide(tester);
     final fakePlatform = _FakePlatform();
     ScreenRecorderPlatform.instance = fakePlatform;
 
     late WidgetRef ref;
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        windowChromeProvider.overrideWithValue(_FakeChrome()),
-        await _tipsOverride(),
-      ],
-      child: MaterialApp(
-        home: Consumer(builder: (c, r, _) {
-          ref = r;
-          return const RecordingBarScreen();
-        }),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(_FakeChrome()),
+          await _tipsOverride(),
+        ],
+        child: MaterialApp(
+          home: Consumer(
+            builder: (c, r, _) {
+              ref = r;
+              return const RecordingBarScreen();
+            },
+          ),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     expect(fakePlatform.monitorStarts, isEmpty); // off by default
 
-    ref.read(microphoneControllerProvider.notifier)
+    ref
+        .read(microphoneControllerProvider.notifier)
         .set(const MicrophoneConfig(deviceUid: 'u', deviceLabel: 'Mic'));
     await tester.pumpAndSettle();
     expect(fakePlatform.monitorStarts, hasLength(1));
