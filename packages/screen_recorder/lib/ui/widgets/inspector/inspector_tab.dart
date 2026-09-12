@@ -1,3 +1,4 @@
+import 'package:screen_recorder/distribution/distribution_channel.dart';
 import 'package:flutter/material.dart';
 
 /// Vertical-rail tabs in the playback inspector. Order matches the
@@ -31,5 +32,5 @@ enum InspectorTab {
 /// is hidden for screen recordings. All other tabs are always shown.
 List<InspectorTab> visibleInspectorTabs({required bool isDevice}) => [
       for (final t in InspectorTab.values)
-        if (t != InspectorTab.device || isDevice) t,
+        if ((t != InspectorTab.device || isDevice) && (!DistributionChannel.isAppStore || t != InspectorTab.shortcuts)) t,
     ];

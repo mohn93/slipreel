@@ -1,3 +1,4 @@
+import '../distribution/distribution_channel.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../licensing/entitlement.dart';
@@ -26,7 +27,7 @@ class UpdaterService {
   static const String feedUrl = 'https://slipreel.app/appcast.xml';
 
   /// Native scheduling stays disabled so it cannot bypass the license gate.
-  Future<void> init() => _initialization ??= _backend
+  Future<void> init() => DistributionChannel.isAppStore ? Future.value() : _initialization ??= _backend
       .setFeedURL(feedUrl)
       .catchError((Object error, StackTrace stack) {
         _initialization = null;
@@ -39,6 +40,7 @@ class UpdaterService {
     EntitlementState Function() readEntitlement, {
     DateTime Function()? now,
   }) async {
+    if (DistributionChannel.isAppStore) return null;
     if (!canOfferAutomaticUpdate(readEntitlement(), now: now?.call())) {
       return null;
     }
@@ -71,6 +73,7 @@ class UpdaterService {
   /// Foreground check — surfaces Sparkle's native UI (including its own
   /// "you're up to date" dialog when there is nothing newer).
   Future<void> checkForUpdates() async {
+    if (DistributionChannel.isAppStore) return;
     await init();
     await _backend.checkForUpdates();
   }

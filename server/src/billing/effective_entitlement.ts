@@ -23,6 +23,12 @@ export async function resolveEffectiveEntitlement(
     [userId],
   );
 
+  // Sandbox payments never grant production website licenses.
+  const apple = await pool.query<{active:boolean}>(
+    `SELECT true AS active FROM apple_subscriptions WHERE user_id=$1
+      AND environment='Production' AND revoked_at IS NULL AND expires_at > now() LIMIT 1`, [userId]);
+  if (apple.rows.length) return { plan: 'subscription', status: 'active', updatesUntil: null, export: true };
+
   const sub = rows.find(
     (r) => r.plan === 'subscription' && ((r.status === 'active' && !!r.current_period_end && r.current_period_end.getTime() > Date.now()) || (r.status === 'grace' && !!r.grace_until && r.grace_until.getTime() > Date.now())),
   );

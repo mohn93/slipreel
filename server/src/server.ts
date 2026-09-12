@@ -1,3 +1,5 @@
+import { createAppleSignIn } from './apple/sign_in.js';
+import { createAppleSubscriptions } from './apple/subscriptions.js';
 import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { runMigrations } from './migrate.js';
@@ -48,6 +50,8 @@ try {
 
 const app = buildApp({
   pool,
+  appleSignIn: createAppleSignIn(),
+  appleSubscriptions: createAppleSubscriptions(pool),
   stripe,
   billing,
   tokenSigner,

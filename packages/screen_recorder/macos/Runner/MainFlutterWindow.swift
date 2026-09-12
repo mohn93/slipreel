@@ -24,6 +24,8 @@ private final class AppMenuTarget: NSObject {
 }
 
 class MainFlutterWindow: NSWindow {
+  private var sandboxFiles: SandboxFiles?
+  private var storeBridge: StoreBridge?
   private var projectSaveChannel: FlutterMethodChannel?
   private var closingAfterSave = false
 
@@ -60,6 +62,8 @@ class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     self.contentViewController = flutterViewController
+    sandboxFiles = SandboxFiles(messenger: flutterViewController.engine.binaryMessenger)
+    storeBridge = StoreBridge(messenger: flutterViewController.engine.binaryMessenger, window: self)
     projectSaveChannel = FlutterMethodChannel(name: "slipreel/project-saves",
       binaryMessenger: flutterViewController.engine.binaryMessenger)
 

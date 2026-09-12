@@ -19,6 +19,7 @@ export async function registerDevice(
   name: string | null,
   seatLimit: number,
   location: string | null = null,
+  channel: 'direct' | 'app-store' = 'direct',
 ): Promise<
   | { ok: true; deviceId: string; refreshToken: string }
   | { ok: false; reason: 'seat_limit'; devices: DeviceInfo[] }
@@ -37,9 +38,10 @@ export async function registerDevice(
   if (existing.rows[0]) {
     const id = existing.rows[0].id;
     await client.query(
-      'UPDATE devices SET refresh_token_hash = $1, name = COALESCE($2, name), location = COALESCE($3, location), last_seen_at = now() WHERE id = $4',
-      [hash, name, location, id],
+      'UPDATE devices SET refresh_token_hash = CASE WHEN $5 THEN $1 ELSE refresh_token_hash END, name = COALESCE($2, name), location = COALESCE($3, location), last_seen_at = now() WHERE id = $4',
+      [hash, name, location, id, channel === 'direct'],
     );
+    if (channel === 'app-store') await client.query('INSERT INTO store_device_credentials VALUES($1,$2) ON CONFLICT(device_id) DO UPDATE SET refresh_token_hash=EXCLUDED.refresh_token_hash',[id,hash]);
     await client.query('COMMIT');
     return { ok: true, deviceId: id, refreshToken: token };
   }
@@ -64,8 +66,9 @@ export async function registerDevice(
   const id = newId('dev');
   await client.query(
     'INSERT INTO devices (id, user_id, fingerprint, name, location, refresh_token_hash, last_seen_at) VALUES ($1,$2,$3,$4,$5,$6,now())',
-    [id, userId, fingerprint, name, location, hash],
+    [id, userId, fingerprint, name, location, channel === 'direct' ? hash : newSecretToken().hash],
   );
+  if (channel === 'app-store') await client.query('INSERT INTO store_device_credentials VALUES($1,$2)',[id,hash]);
   await client.query('COMMIT');
     return { ok: true, deviceId: id, refreshToken: token };
   } catch (err) { await client.query('ROLLBACK'); throw err; }
@@ -80,7 +83,7 @@ export async function refreshDevice(
   location: string | null = null,
 ): Promise<{ userId: string } | null> {
   const { rows } = await pool.query<{ user_id: string }>(
-    'UPDATE devices SET last_seen_at = now(), location = COALESCE($3, location) WHERE id = $1 AND refresh_token_hash = $2 RETURNING user_id',
+    'UPDATE devices SET last_seen_at = now(), location = COALESCE($3, location) WHERE id = $1 AND (refresh_token_hash = $2 OR EXISTS(SELECT 1 FROM store_device_credentials s WHERE s.device_id=devices.id AND s.refresh_token_hash=$2)) RETURNING user_id',
     [deviceId, hashToken(refreshToken), location],
   );
   return rows[0] ? { userId: rows[0].user_id } : null;

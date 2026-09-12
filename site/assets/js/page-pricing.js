@@ -86,7 +86,8 @@ form.addEventListener('submit', async (event) => {
       emailEl.closest('label').classList.remove('hidden');
       emailEl.required = true;
       showError('Your session expired. Verify your email to continue.');
-    } else showError('Could not start checkout. Please try again.');
+    } else if (result.status === 409) showError('Your account already has access. Sign in to Slipreel to activate this Mac; another purchase is not needed.');
+    else showError('Could not start checkout. Please try again.');
   } else {
     cta.textContent = 'Sending link…';
     const result = await requestMagicLink(api, {

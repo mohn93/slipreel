@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import '../../distribution/distribution_channel.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,7 +42,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     PermissionKind.screenRecording,
     PermissionKind.camera,
     PermissionKind.microphone,
-    PermissionKind.accessibility,
+    if (!DistributionChannel.isAppStore) PermissionKind.accessibility,
   ];
   static const _permLabels = {
     PermissionKind.screenRecording: 'Screen Recording',
@@ -194,6 +196,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     style: TextStyle(color: context.palette.textSecondary)),
               ],
             ),
+          EntitlementAppStore() => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(canExportNow(state, appReleaseDate: buildReleaseDate) ? 'Unlimited exports active' : 'Free recording and editing'),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: _openSignIn, child: const Text('Slipreel account')),
+              TextButton(onPressed: _upgrade, child: const Text('App Store subscription')),
+            ],
+          ),
           EntitlementSignedOut() => _accountSignedOut(),
           EntitlementLoaded(:final claims) => _accountLoaded(state, claims),
         },
@@ -526,6 +537,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _chooseFolder() async {
     final dir = await getDirectoryPath();
     if (dir == null || !mounted) return;
+    if (DistributionChannel.isAppStore) {
+      try { await const MethodChannel('slipreel/sandbox-files').invokeMethod<void>('remember',dir); }
+      catch (_) { return; }
+    }
     await ref
         .read(globalPreferencesControllerProvider.notifier)
         .setDefaultSaveLocation(dir);
@@ -581,7 +596,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               },
             ),
             const SizedBox(height: 8),
-            ListTile(
+            if (DistributionChannel.isAppStore) const ListTile(title: Text('Updates are delivered by the App Store')),
+            if (!DistributionChannel.isAppStore) ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.system_update_alt,
                   color: context.palette.textPrimary),
@@ -639,7 +655,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 }
               },
             ),
-            ListTile(
+            if (!DistributionChannel.isAppStore) ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.public, color: context.palette.textPrimary),
               title: Text('Website',

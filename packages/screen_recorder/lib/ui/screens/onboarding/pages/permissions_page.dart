@@ -1,3 +1,4 @@
+import 'package:screen_recorder/distribution/distribution_channel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder/state/permissions_controller.dart';
@@ -37,7 +38,7 @@ class PermissionsPage extends ConsumerWidget {
     PermissionKind.screenRecording,
     PermissionKind.camera,
     PermissionKind.microphone,
-    PermissionKind.accessibility,
+    if (!DistributionChannel.isAppStore) PermissionKind.accessibility,
   ];
 
   @override

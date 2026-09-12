@@ -226,6 +226,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     //
     // The banner's "Open Accessibility settings" button uses the same
     // API with prompt=true to pop the modal when the user opts in.
+    #if !APP_STORE
     let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue()
     let trusted = AXIsProcessTrustedWithOptions(
       [promptKey: false] as CFDictionary)
@@ -239,6 +240,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         + "trusted=\(trusted). If this is the first launch on this build, "
         + "the app should now appear in System Settings → Privacy & Security "
         + "→ Accessibility (relaunch required after granting).")
+    #endif
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -316,16 +318,22 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     case "getStockCursorImages":
       getStockCursorImages(result: result)
     case "isAccessibilityTrusted":
+      #if APP_STORE
+      result(false)
+      #else
       result(AXIsProcessTrusted())
+      #endif
     case "requestAccessibilityPermission":
       // Pass `kAXTrustedCheckOptionPrompt = true` so macOS shows the
       // "X would like to control this computer using accessibility
       // features" dialog. The user has to flip the toggle in System
       // Settings; macOS only updates the trust state after a relaunch
       // of the host process.
+      #if !APP_STORE
       let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue()
       let options = [promptKey: true] as CFDictionary
       _ = AXIsProcessTrustedWithOptions(options)
+      #endif
       result(nil)
     case "getScreenRecordingPermission":
       Task {
@@ -346,7 +354,11 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
       }
     case "getAccessibilityPermission":
       // AX has no `notDetermined` — you're either trusted or not.
+      #if APP_STORE
+      result("unsupported")
+      #else
       result(AXIsProcessTrusted() ? "granted" : "denied")
+      #endif
     case "requestMicrophonePermission":
       AVCaptureDevice.requestAccess(for: .audio) { granted in
         DispatchQueue.main.async {
@@ -1580,6 +1592,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     // see CursorTracker.privateResizeCursor for the rationale. We
     // gate them behind responds(to:) so a future macOS that removes
     // the selectors silently falls back to the polygon glyph.
+    #if !APP_STORE
     if let nesw = CursorTracker.privateResizeCursor(
       selector: "_windowResizeNorthEastSouthWestCursor")
     {
@@ -1590,6 +1603,7 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
     {
       entries.append(("resizeNWSE", nwse))
     }
+    #endif
     var payload: [String: [String: Any]] = [:]
     for (name, cursor) in entries {
       let image = cursor.image

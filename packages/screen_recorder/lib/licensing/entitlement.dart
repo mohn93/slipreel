@@ -20,6 +20,23 @@ class EntitlementLoaded extends EntitlementState {
   final EntitlementClaims claims;
 }
 
+/// Combines verified native Apple access with signed shared account access.
+class EntitlementAppStore extends EntitlementState {
+  const EntitlementAppStore({
+    this.productId,
+    this.expiresAt,
+    this.sharedClaims,
+  });
+  final EntitlementClaims? sharedClaims;
+  final String? productId;
+  final DateTime? expiresAt;
+  bool activeAt(DateTime now) =>
+      (productId == 'com.slipreel.store.monthly' ||
+          productId == 'com.slipreel.store.yearly') &&
+      expiresAt != null &&
+      now.isBefore(expiresAt!);
+}
+
 /// Whether export is unlocked, per spec §2. [appReleaseDate] is this build's
 /// release date (baked at build time in Phase 5b) — the version ceiling for
 /// one-time licenses.
@@ -37,7 +54,9 @@ bool canExport(
       return claims.status == 'active' || claims.status == 'grace';
     case 'onetime':
       final until = claims.updatesUntil;
-      return claims.status == 'active' && until != null && !appReleaseDate.isAfter(until);
+      return claims.status == 'active' &&
+          until != null &&
+          !appReleaseDate.isAfter(until);
     default:
       return false;
   }

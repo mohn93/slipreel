@@ -8,6 +8,8 @@ export async function entitlementRoutes(app: FastifyInstance): Promise<void> {
   // ceiling). Billing changes still go through the Stripe portal.
   app.get('/v1/entitlement', { preHandler: requireSession(app) }, async (req, reply) => {
     const entitlement = await resolveEffectiveEntitlement(app.pool, req.userId!);
-    return reply.send(entitlement);
+    const apple = await app.pool.query(`SELECT 1 FROM apple_subscriptions WHERE user_id=$1
+      AND environment='Production' AND revoked_at IS NULL AND expires_at>now() LIMIT 1`,[req.userId!]);
+    return reply.send(apple.rows.length ? {...entitlement,billingProvider:'apple'} : entitlement);
   });
 }

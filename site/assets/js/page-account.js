@@ -128,6 +128,9 @@ async function load() {
   signedout.className = 'card hidden';
   if (!entRes.ok) return err('Could not load your license. Reload to try again.');
   renderPlan(entRes.data);
+  const appleBilling = entRes.data.billingProvider === 'apple';
+  document.getElementById('stripe-billing').classList.toggle('hidden', appleBilling);
+  document.getElementById('apple-billing').classList.toggle('hidden', !appleBilling);
   billing.className = 'card';
   downloadCard.className = 'card';
   devicesCard.className = 'card';

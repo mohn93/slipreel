@@ -11,6 +11,13 @@ APP="${BUILT_PRODUCTS_DIR:?BUILT_PRODUCTS_DIR not set (run from Xcode)}/${CONTEN
 HELPERS="$APP/Helpers"
 
 copied=0
+store_opts=()
+if [[ "${SLIPREEL_APP_STORE:-0}" == "1" ]]; then
+  for helper in ffmpeg ffprobe whisper-cli; do
+    [[ -x "$BIN/$helper" ]] || { echo "error: App Store build requires bundled $helper" >&2; exit 1; }
+  done
+  store_opts=(--entitlements "$ROOT/packages/screen_recorder/macos/Runner/Store/Helper.entitlements")
+fi
 
 # ffmpeg + ffprobe are an atomic pair: ffprobe is resolved at runtime as the
 # sibling of ffmpeg, so shipping one without the other breaks probing.
@@ -49,7 +56,7 @@ if [[ $copied -gt 0 && "${CODE_SIGNING_ALLOWED:-}" == "YES" ]]; then
   fi
   for b in ffmpeg ffprobe whisper-cli; do
     [[ -f "$HELPERS/$b" ]] || continue
-    codesign --force ${hardened_opts[@]+"${hardened_opts[@]}"} --sign "$sign_id" "$HELPERS/$b" || {
+    codesign --force ${store_opts[@]+"${store_opts[@]}"} ${hardened_opts[@]+"${hardened_opts[@]}"} --sign "$sign_id" "$HELPERS/$b" || {
       echo "error: codesign failed for Helpers/$b (identity: $sign_id)" >&2
       exit 1
     }

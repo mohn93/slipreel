@@ -1,3 +1,9 @@
+import 'store/native_account.dart';
+import 'distribution/distribution_channel.dart';
+import 'store/app_store_client.dart';
+import 'store/store_paywall.dart';
+import 'store/store_account_dialog.dart';
+import 'ui/widgets/desktop_dialog.dart';
 import 'state/project_autosave.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
@@ -227,7 +233,7 @@ Future<void> main() async {
     SparkleUpdaterBackend(),
     loadRequiredUpdate: () => fetchRequiredUpdate(UpdaterService.feedUrl),
   );
-  if (Platform.isMacOS) {
+  if (Platform.isMacOS && !DistributionChannel.isAppStore) {
     updaterService.init().ignore();
   }
 
@@ -245,14 +251,36 @@ Future<void> main() async {
   ));
   final licensingStore = SecureLicenseStore(licensingKv);
   final licensingController = LicensingController(
+    appStore: DistributionChannel.isAppStore ? AppStoreClient() : null,
+    showStorePlans: () async {
+      final context = rootNavigatorKey.currentContext;
+      if (context == null) return false;
+      return await showDesktopDialog<bool>(context: context, builder: (_) => const StorePaywall()) ?? false;
+    },
+    showStoreAccount: () async {
+      final context = rootNavigatorKey.currentContext;
+      if (context == null) return false;
+      return await showDesktopDialog<bool>(context: context, builder: (_) => const StoreAccountDialog()) ?? false;
+    },
     store: licensingStore,
     verifier: EntitlementVerifier(kEntitlementPublicKey),
     api: LicensingApi(),
     authState: AuthStateStore(licensingKv),
   );
   await licensingController.load();
+  final nativeAccount = DistributionChannel.isAppStore ? NativeAccount(licensingController) : null;
+  if (nativeAccount != null) {
+    Future<void> syncAccount() async {
+      try { await nativeAccount.load(); await nativeAccount.syncPurchases(); } catch (_) { /* retry on next launch or restore */ }
+    }
+    licensingController.appStore!.onChange = () {
+      unawaited(licensingController.refreshNow());
+      unawaited(syncAccount());
+    };
+    unawaited(syncAccount());
+  }
   final deepLinkListener = DeepLinkListener(licensingController);
-  unawaited(deepLinkListener.start());
+  if (!DistributionChannel.isAppStore) unawaited(deepLinkListener.start());
   if (Platform.isMacOS) {
     // Refresh in the background on launch (best-effort; offline keeps cache).
     unawaited(licensingController.refreshNow());
@@ -420,6 +448,7 @@ Future<void> main() async {
 
   runApp(ProviderScope(
     overrides: [
+      if (nativeAccount != null) nativeAccountProvider.overrideWith((ref) => nativeAccount),
       trialExportsProvider.overrideWith((ref) => trialExports),
       motionTuningProvider.overrideWith(
         // New sessions default to the cinematic feedforward baked from the
@@ -769,11 +798,12 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     ref.listenManual<EntitlementState>(
       entitlementProvider,
       (prev, next) {
-        if (next is EntitlementLoaded && next.claims.sub.isNotEmpty) {
-          analytics.identify(next.claims.sub);
-          ref.read(diagnosticsServiceProvider).setDistinctId(next.claims.sub);
-          ref.read(feedbackServiceProvider).setDistinctId(next.claims.sub);
-        } else if (prev is EntitlementLoaded) {
+        final claims = next is EntitlementLoaded ? next.claims : next is EntitlementAppStore ? next.sharedClaims : null;
+        if (claims != null && claims.sub.isNotEmpty) {
+          analytics.identify(claims.sub);
+          ref.read(diagnosticsServiceProvider).setDistinctId(claims.sub);
+          ref.read(feedbackServiceProvider).setDistinctId(claims.sub);
+        } else if (prev is EntitlementLoaded || (prev is EntitlementAppStore && prev.sharedClaims != null)) {
           analytics.resetIdentity();
           ref.read(diagnosticsServiceProvider).setDistinctId(analytics.distinctId);
           ref.read(feedbackServiceProvider).setDistinctId(analytics.distinctId);
