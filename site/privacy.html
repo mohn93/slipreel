@@ -112,8 +112,9 @@
   via Resend. Paid licenses renew their activation online at least every 14 days. The app does not send your sign-in email for usage analytics. If you provide a reply email when submitting in-app feedback, the app sends that email and your message to PostHog (US) so we can respond.</p>
 
   <h2>Payments</h2>
-  <p>Payments are processed by Stripe.
-  Card details go directly to Stripe; we never see or store them.</p>
+  <p>Website payments are processed by Stripe. Purchases in the Mac App Store edition are processed by Apple. We never see or store your card details. To share access across editions, we store verified subscription identifiers, purchase status, expiration dates, and a random identifier linking the purchase to your Slipreel account. Apple and Stripe process their respective payments independently.</p>
+  <p>Sign in with Apple provides an account identifier and your email address, which may be an Apple private relay address. We store Apple authorization credentials encrypted so we can revoke access when you delete your account. Email-code sign-in uses Resend. Sign-in codes expire and are stored as hashes.</p>
+  <p>You can request account deletion in the App Store app under Settings &rarr; Slipreel account. Apple subscriptions must be cancelled separately in your Apple Account settings. Website subscriptions are cancelled during account deletion. Records required for financial or legal compliance may remain with the payment provider.</p>
 
   <h2>Updates, captions, and diagnostics</h2>
   <p>The app checks for updates and downloads the caption model (about 488 MB) on first use. Transcription then runs locally. If enabled, diagnostics report technical errors and are associated with your account while signed in. Feedback you choose to submit is processed through PostHog (US), including any optional reply email. Undelivered events may be queued on your Mac; signing out gives new activity a fresh anonymous identifier. Review the privacy controls in Settings.</p>

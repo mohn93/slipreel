@@ -1,3 +1,6 @@
+import { nativeAccountRoutes } from './routes/native-account.js';
+import type { AppleSignIn } from './apple/sign_in.js';
+import type { AppleSubscriptions } from './apple/subscriptions.js';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import rawBody from 'fastify-raw-body';
 import cookie from '@fastify/cookie';
@@ -25,6 +28,8 @@ declare module 'fastify' {
     billing: BillingConfig;
     tokenSigner: TokenSigner;
     email?: EmailSender;
+    appleSignIn?: AppleSignIn;
+    appleSubscriptions?: AppleSubscriptions;
   }
 }
 
@@ -36,6 +41,8 @@ export type AppDeps = {
   tokenSigner?: TokenSigner;
   email?: EmailSender;
   corsOrigins?: string[];
+  appleSignIn?: AppleSignIn;
+  appleSubscriptions?: AppleSubscriptions;
 };
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -71,6 +78,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (deps.email) app.decorate('email', deps.email);
     app.decorate('tokenSigner', deps.tokenSigner);
     app.register(cookie);
+    if (deps.appleSignIn) app.decorate('appleSignIn', deps.appleSignIn);
+    if (deps.appleSubscriptions) app.decorate('appleSubscriptions', deps.appleSubscriptions);
+    app.register(nativeAccountRoutes);
     app.register(authRoutes);
     app.register(magicLinkRoutes);
     app.register(tokenRoutes);

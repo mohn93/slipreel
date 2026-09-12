@@ -22,6 +22,7 @@ class KeystrokeTracker {
   // MARK: - Lifecycle
 
   func startTracking() {
+    #if !APP_STORE
     guard !isTracking else { return }
     guard AXIsProcessTrusted() else {
       print("[KeystrokeTracker] Accessibility not trusted — keystroke capture disabled.")
@@ -41,6 +42,7 @@ class KeystrokeTracker {
 
     isTracking = true
     print("[KeystrokeTracker] Started.")
+    #endif
   }
 
   func stopTracking() {

@@ -61,7 +61,7 @@ class WhisperResolver {
       if (bundledPath != null) bundledPath!,
       for (final dir in _wellKnownDirs)
         for (final exe in _exeNames) '$dir/$exe',
-      ..._pathCandidates(),
+      if (const String.fromEnvironment('SLIPREEL_DISTRIBUTION') != 'app-store') ..._pathCandidates(),
     ];
     for (final candidate in candidates) {
       searched.add(candidate);

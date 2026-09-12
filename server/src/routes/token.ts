@@ -21,6 +21,8 @@ const tokenBody = z.object({ fingerprint: z.string().min(1).max(200), device_nam
 const refreshReq = z.object({ refresh_token: z.string().min(1), device_id: z.string().min(1) });
 
 async function mintFor(app: FastifyInstance, userId: string, deviceId: string): Promise<string> {
+  try { await app.appleSubscriptions?.refreshUser?.(userId); }
+  catch { app.log.warn('Apple subscription refresh unavailable; using last verified paid-through date'); }
   const eff = await resolveEffectiveEntitlement(app.pool, userId);
   return app.tokenSigner.mint({
     sub: userId,

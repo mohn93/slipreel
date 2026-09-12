@@ -1,3 +1,5 @@
+import '../../distribution/distribution_channel.dart';
+import '../../store/store_paywall.dart';
 import 'package:screen_recorder/ui/widgets/desktop_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,7 +25,7 @@ class PaywallDialog {
   }) async {
     final result = await showDesktopDialog<bool>(
       context: context,
-      builder: (_) => _PaywallBody(reason: reason),
+      builder: (_) => DistributionChannel.isAppStore ? const StorePaywall() : _PaywallBody(reason: reason),
     );
     return result ?? false;
   }

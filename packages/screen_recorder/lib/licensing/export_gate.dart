@@ -28,6 +28,9 @@ bool canExportNow(
   required DateTime appReleaseDate,
   DateTime? now,
 }) {
+  if (state is EntitlementAppStore) {
+    return state.activeAt(now ?? DateTime.now()) || canExport(state.sharedClaims, appReleaseDate: appReleaseDate, now: now);
+  }
   return canExport(_claimsOf(state), appReleaseDate: appReleaseDate, now: now);
 }
 

@@ -22,6 +22,9 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     const { plan } = parsed.data;
     const { rows } = await app.pool.query<{email: string; email_verified: boolean}>('SELECT email, email_verified FROM users WHERE id = $1', [req.userId!]);
     if (!rows[0]?.email_verified) return reply.code(403).send({error: 'email_verification_required'});
+    const appleAccess = await app.pool.query(`SELECT 1 FROM apple_subscriptions WHERE user_id=$1
+      AND environment='Production' AND revoked_at IS NULL AND expires_at>now() LIMIT 1`,[req.userId!]);
+    if (appleAccess.rows.length) return reply.code(409).send({error:'already_entitled'});
     const email = rows[0].email;
     const { stripeCustomerId } = await findOrCreateUserByEmail(app.pool, app.stripe, email);
     const price = app.billing.prices[plan];

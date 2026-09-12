@@ -1,3 +1,4 @@
+import 'package:screen_recorder/distribution/distribution_channel.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -29,7 +30,7 @@ const _features = <_Feature>[
     'assets/onboarding/beat-cursor.mp4',
     'assets/onboarding/beat-cursor-poster.webp',
   ),
-  _Feature(
+  if (!DistributionChannel.isAppStore) _Feature(
     'Keystrokes',
     'Keystroke overlays',
     'Show the keys you press, styled to match your recording.',

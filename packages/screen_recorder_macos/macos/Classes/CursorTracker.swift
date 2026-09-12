@@ -20,6 +20,7 @@ import QuartzCore
 // function-pointer cast is the same trick `os_unfair_lock` and
 // other Apple-internal helpers use when they ship through dlsym.
 
+#if !APP_STORE
 private typealias _CGSConnectionID = Int32
 private typealias _CGSMainConnectionIDFn = @convention(c) ()
   -> _CGSConnectionID
@@ -58,6 +59,8 @@ private let _cgsCopyCurrentCursorImage: _CGSCopyCurrentCursorImageFn? = {
   else { return nil }
   return unsafeBitCast(sym, to: _CGSCopyCurrentCursorImageFn.self)
 }()
+
+#endif
 
 /// Tracks cursor position and click events at high frequency.
 ///
@@ -129,14 +132,16 @@ class CursorTracker: NSObject {
     // 10.7. We pick them up via respondsToSelector + performSelector
     // so a future macOS that removes them just gracefully falls back
     // to the existing polygon glyph on the Dart side. No crash, no
-    // App-Store rejection risk because we don't link against private
+    // These are excluded from store builds; dynamically resolved private
     // symbols; we just message-send by name at runtime.
+    #if !APP_STORE
     if let nesw = privateResizeCursor(selector: "_windowResizeNorthEastSouthWestCursor") {
       entries.append(("resizeNESW", nesw))
     }
     if let nwse = privateResizeCursor(selector: "_windowResizeNorthWestSouthEastCursor") {
       entries.append(("resizeNWSE", nwse))
     }
+    #endif
     return entries.compactMap { (name, cursor) in
       guard let cg = cursor.image.cgImage(
         forProposedRect: nil, context: nil, hints: nil)
@@ -152,12 +157,15 @@ class CursorTracker: NSObject {
   /// method — sending it to `NSCursor.self` (the class metaobject)
   /// invokes the class method living on the metaclass, which is what
   /// `_windowResizeNorthEastSouthWestCursor` and friends are.
+  #if !APP_STORE
   static func privateResizeCursor(selector name: String) -> NSCursor? {
     let cursorClass: AnyObject = NSCursor.self
     let sel = Selector(name)
     guard cursorClass.responds(to: sel) else { return nil }
     return cursorClass.perform(sel)?.takeUnretainedValue() as? NSCursor
   }
+
+  #endif
 
   /// 8×8 average-hash of a CGImage in grayscale. Resilient to size,
   /// retina scaling, and minor anti-aliasing differences between the
@@ -219,10 +227,7 @@ class CursorTracker: NSObject {
     // sample doesn't pay the build cost.
     let libSize = Self.cursorLibrary.count
     diagnosticSampleCount = 0
-    print(
-      "[CursorState] init: libSize=\(libSize) "
-        + "cgsCidResolved=\(_cgsMainConnectionID != nil) "
-        + "cgsCopyResolved=\(_cgsCopyCurrentCursorImage != nil)")
+    print("[CursorState] init: libSize=\(libSize)")
 
     // Set up position sampling timer. We explicitly schedule on the main
     // runloop because startTracking can be called from a Task whose
@@ -345,7 +350,9 @@ class CursorTracker: NSObject {
     {
       cgImage = cg
       sourceUsed = "NSCursor.currentSystem"
-    } else if let cidFn = _cgsMainConnectionID,
+    }
+    #if !APP_STORE
+    if cgImage == nil, let cidFn = _cgsMainConnectionID,
       let copyFn = _cgsCopyCurrentCursorImage,
       let unmanaged = copyFn(cidFn())
     {
@@ -353,6 +360,7 @@ class CursorTracker: NSObject {
       sourceUsed = "CGSCopyCurrentCursorImage"
     }
 
+    #endif
     guard let liveImage = cgImage else {
       // Neither source produced anything. Hold the last state to
       // avoid visible flicker.

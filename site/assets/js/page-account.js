@@ -128,6 +128,9 @@ async function load() {
   signedout.className = 'card hidden';
   if (!entRes.ok) return err('Could not load your license. Reload to try again.');
   renderPlan(entRes.data);
+  const portalButton = document.getElementById('portal');
+  portalButton.dataset.provider = entRes.data.billingProvider || 'stripe';
+  portalButton.textContent = entRes.data.billingProvider === 'apple' ? 'Manage Apple subscription' : 'Manage billing';
   billing.className = 'card';
   downloadCard.className = 'card';
   devicesCard.className = 'card';
@@ -138,6 +141,7 @@ document.getElementById('portal').addEventListener('click', async () => {
   statusEl.className = 'status hidden';
   const btn = document.getElementById('portal');
   btn.setAttribute('disabled', 'true');
+  if (btn.dataset.provider === 'apple') { location.href = 'https://apps.apple.com/account/subscriptions'; return; }
   const r = await api.portal();
   if (r.ok && r.data?.url) { location.href = r.data.url; return; }
   btn.removeAttribute('disabled');

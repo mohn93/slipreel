@@ -55,8 +55,8 @@ class FfmpegResolver {
     final searched = <String>[];
     final candidates = <String>[
       if (bundledPath != null) bundledPath!,
-      ..._wellKnown,
-      ..._pathCandidates(),
+      if (const String.fromEnvironment('SLIPREEL_DISTRIBUTION') != 'app-store') ..._wellKnown,
+      if (const String.fromEnvironment('SLIPREEL_DISTRIBUTION') != 'app-store') ..._pathCandidates(),
     ];
     for (final candidate in candidates) {
       searched.add(candidate);

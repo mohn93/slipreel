@@ -1,3 +1,4 @@
+import '../store/app_store_client.dart';
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +25,9 @@ class LicensingController extends StateNotifier<EntitlementState> {
     required EntitlementVerifier verifier,
     required LicensingApi api,
     required AuthStateStore authState,
+    this.appStore,
+    this.showStorePlans,
+    this.showStoreAccount,
     DateTime Function() now = DateTime.now,
     DeviceFingerprint? fingerprint,
     Future<bool> Function(Uri url)? openUrl,
@@ -36,6 +40,9 @@ class LicensingController extends StateNotifier<EntitlementState> {
        _openUrl = openUrl ?? _defaultOpen,
        super(const EntitlementLoading());
 
+  final AppStoreClient? appStore;
+  final Future<bool> Function()? showStorePlans;
+  final Future<bool> Function()? showStoreAccount;
   final signInFeedback = SignInFeedbackController();
   Uri? _lastAuthCallback;
   final Set<Uri> _authCallbacksInFlight = {};
@@ -53,6 +60,10 @@ class LicensingController extends StateNotifier<EntitlementState> {
   /// Retry offline renewals at most once per minute. Refresh daily while open,
   /// and immediately when credentials are near expiry before an export.
   Future<void> refreshIfNeeded() async {
+    if (appStore != null) {
+      await refreshNow();
+      return;
+    }
     if (_refreshing != null) return _refreshing!;
     final at = _now();
     if (_lastRefreshAttempt != null &&
@@ -84,6 +95,12 @@ class LicensingController extends StateNotifier<EntitlementState> {
   /// Read the Keychain token, verify it, publish loaded/signed-out. Called once
   /// at startup before the UI reads entitlement.
   Future<void> load() async {
+    if (appStore != null) {
+      await appStore!.initialize();
+      appStore!.onChange = () => unawaited(refreshNow());
+      await refreshNow();
+      return;
+    }
     final tokens = await _store.load();
     if (tokens == null) {
       state = const EntitlementSignedOut();
@@ -91,7 +108,11 @@ class LicensingController extends StateNotifier<EntitlementState> {
     }
     // Keep signed expired claims for accurate offline-renewal UI. Export gating
     // still checks expiry; this never grants access from an expired token.
-    final claims = await _verifier.verify(tokens.token, now: _now(), ignoreExpiry: true);
+    final claims = await _verifier.verify(
+      tokens.token,
+      now: _now(),
+      ignoreExpiry: true,
+    );
     state = claims == null
         ? const EntitlementSignedOut()
         : EntitlementLoaded(claims);
@@ -109,6 +130,52 @@ class LicensingController extends StateNotifier<EntitlementState> {
   }
 
   Future<void> _refresh() async {
+    if (appStore != null) {
+      final generation = _credentialGeneration;
+      try {
+        final tokens = await _store.load();
+        final cached = tokens == null
+            ? null
+            : await _verifier.verify(
+                tokens.token,
+                now: _now(),
+                ignoreExpiry: true,
+              );
+        if (!mounted || generation != _credentialGeneration) return;
+        if (cached != null && mounted) state = EntitlementLoaded(cached);
+        await _refreshLicense();
+        final current = state;
+        final claims = current is EntitlementLoaded
+            ? current.claims
+            : current is EntitlementAppStore
+            ? current.sharedClaims
+            : null;
+        EntitlementAppStore native;
+        try {
+          native = await appStore!.entitlement();
+        } catch (_) {
+          native = current is EntitlementAppStore
+              ? current
+              : const EntitlementAppStore();
+        }
+        if (mounted && generation == _credentialGeneration) {
+          state = EntitlementAppStore(
+            productId: native.productId,
+            expiresAt: native.expiresAt,
+            sharedClaims: claims,
+          );
+        }
+      } catch (_) {
+        if (mounted && state is EntitlementLoading) {
+          state = const EntitlementAppStore();
+        }
+      }
+      return;
+    }
+    await _refreshLicense();
+  }
+
+  Future<void> _refreshLicense() async {
     final generation = _credentialGeneration;
     _lastRefreshAttempt = _now();
     try {
@@ -161,6 +228,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
   /// forged/stray deep link activating a token). On success: verify, persist,
   /// consume the nonce, publish loaded.
   Future<void> handleDeepLink(Uri uri) async {
+    if (appStore != null) return;
     if (uri.scheme != 'slipreel' || uri.host != 'auth') return;
     // app_links may deliver the initial callback again on its stream.
     if (uri == _lastAuthCallback || !_authCallbacksInFlight.add(uri)) return;
@@ -282,14 +350,17 @@ class LicensingController extends StateNotifier<EntitlementState> {
     }
   }
 
-  Future<bool> openAccount() => _openUrl(
-    Uri.parse(LicensingConfig.siteBaseResolved).replace(path: '/account'),
-  );
+  Future<bool> openAccount() => appStore != null
+      ? (showStoreAccount?.call() ?? Future.value(false))
+      : _openUrl(
+          Uri.parse(LicensingConfig.siteBaseResolved).replace(path: '/account'),
+        );
 
   /// Start the browser purchase/sign-in flow. Generates a fresh nonce, then
   /// opens `${site}/pricing?device=<fp>&state=<nonce>`. Returns whether the
   /// browser launch was requested (false if url_launcher declined).
   Future<bool> unlockExport() async {
+    if (appStore != null) return showStorePlans?.call() ?? false;
     final fp = await _fingerprint.compute();
     final name = await _fingerprint.describe();
     final nonce = await _authState.begin();
@@ -304,6 +375,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
   /// Like [unlockExport] but opens the sign-in page instead of the plans page,
   /// for a user who has already purchased (another device, or after sign-out).
   Future<bool> openSignIn() async {
+    if (appStore != null) return showStoreAccount?.call() ?? false;
     final fp = await _fingerprint.compute();
     final name = await _fingerprint.describe();
     final nonce = await _authState.begin();
@@ -325,6 +397,33 @@ class LicensingController extends StateNotifier<EntitlementState> {
       await _authState.clear();
     });
     if (mounted) state = const EntitlementSignedOut();
+    if (appStore != null) await refreshNow();
+  }
+
+  @override
+  void dispose() {
+    appStore?.dispose();
+    super.dispose();
+  }
+
+  Future<void> activateNative(LicenseTokens tokens) async {
+    final generation = ++_credentialGeneration;
+    final claims = await _verifier.verify(tokens.token, now: _now());
+    if (!mounted || generation != _credentialGeneration) return;
+    if (claims == null || claims.deviceId != tokens.deviceId) {
+      throw StateError('Invalid activation');
+    }
+    await _write(() async {
+      if (mounted && generation == _credentialGeneration) {
+        await _store.save(tokens);
+      }
+    });
+    if (!mounted || generation != _credentialGeneration) return;
+    state = EntitlementLoaded(claims);
+    // An older refresh cannot publish over this activation. Wait for it to drain
+    // before merging the fresh account token with native StoreKit access.
+    await _refreshing;
+    if (mounted && generation == _credentialGeneration) await refreshNow();
   }
 }
 

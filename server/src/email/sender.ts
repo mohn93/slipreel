@@ -2,5 +2,6 @@
 export type EmailSender = {
   // Returns the provider message id when available (for delivery tracing);
   // `void` keeps simple test stubs valid.
+  sendSignInCode?(to: string, code: string): Promise<{ id?: string } | void>;
   sendMagicLink(to: string, link: string): Promise<{ id?: string } | void>;
 };
