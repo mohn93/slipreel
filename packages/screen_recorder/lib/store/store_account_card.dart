@@ -188,18 +188,6 @@ class _StoreAccountCardState extends ConsumerState<StoreAccountCard> {
                     ),
               child: Text(account.signedIn ? 'Manage account' : 'Sign in'),
             ),
-            if (state.productId != null)
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => _run(
-                        () => ref
-                            .read(licensingControllerProvider.notifier)
-                            .appStore!
-                            .manageSubscriptions(),
-                      ),
-                child: const Text('Manage subscription'),
-              ),
           ],
         ),
         const SizedBox(height: 20),
@@ -211,47 +199,22 @@ class _StoreAccountCardState extends ConsumerState<StoreAccountCard> {
               : 'Already purchased? Sign in with the same Slipreel account.',
           style: TextStyle(color: p.textSecondary, fontSize: 13),
         ),
-        Wrap(
-          spacing: 8,
-          children: [
-            TextButton(
+        if (_notice != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
               onPressed: _busy
                   ? null
-                  : () => _run(
-                      () async {
-                        final controller = ref.read(
-                          licensingControllerProvider.notifier,
-                        );
-                        await controller.appStore!.restore();
-                        await account.load();
-                        if (account.signedIn) await account.syncPurchases();
-                        await controller.refreshNow();
-                        if (!canExportNow(
-                          ref.read(entitlementProvider),
-                          appReleaseDate: buildReleaseDate,
-                        )) {
-                          throw const AccountError(
-                            'No active purchase found. Check your Apple Account or sign in to your existing Slipreel account.',
-                          );
-                        }
-                      },
-                      success:
-                          'Purchases restored. Unlimited exports are active.',
-                    ),
-              child: const Text('Restore purchases'),
+                  : () => _run(() async {
+                      await account.load();
+                      if (account.signedIn) await account.syncPurchases();
+                      await ref
+                          .read(licensingControllerProvider.notifier)
+                          .refreshNow();
+                    }),
+              child: const Text('Try again'),
             ),
-            if (account.signedIn || _notice != null)
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => _run(() async {
-                        await account.load();
-                        if (account.signedIn) await account.syncPurchases();
-                      }, success: 'Account access refreshed.'),
-                child: const Text('Refresh access'),
-              ),
-          ],
-        ),
+          ),
         if (_busy) const LinearProgressIndicator(),
         if (_notice != null)
           Semantics(
