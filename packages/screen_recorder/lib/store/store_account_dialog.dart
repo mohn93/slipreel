@@ -70,43 +70,72 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DesktopDialogHeading(
-            title: account.signedIn
-                ? 'Your Slipreel account'
-                : 'Sign in to Slipreel',
+            title: account.signedIn ? 'Account' : 'Sign in to Slipreel',
           ),
           const SizedBox(height: 12),
           if (account.signedIn) ...[
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: CircleAvatar(
-                backgroundColor: palette.accentMuted,
-                child: Icon(
-                  Icons.person_outline_rounded,
-                  color: palette.accent,
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: palette.accentMuted,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    Icons.person_outline_rounded,
+                    color: palette.accent,
+                    size: 26,
+                  ),
                 ),
-              ),
-              title: Text(
-                account.email!,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text('Connected to this Mac'),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        account.email!,
+                        style: TextStyle(
+                          color: palette.textPrimary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Signed in on this Mac',
+                        style: TextStyle(
+                          color: palette.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Your account shares access between your Macs and Slipreel editions. Manage a subscription with the provider where you purchased it.',
-            ),
-            TextButton(
-              onPressed: _busy
+            const SizedBox(height: 20),
+            Divider(color: palette.dividerStrong, height: 1),
+            const SizedBox(height: 8),
+            _AccountAction(
+              icon: Icons.sync_rounded,
+              title: 'Sync purchases and access',
+              subtitle: 'Refresh access linked to your account.',
+              onTap: _busy
                   ? null
                   : () => _run(
                       account.syncPurchases,
                       success: 'Your purchases and access are up to date.',
                     ),
-              child: const Text('Sync purchases and access'),
             ),
             if (applePurchase)
-              TextButton(
-                onPressed: _busy
+              _AccountAction(
+                icon: Icons.credit_card_rounded,
+                title: 'Manage subscription',
+                subtitle: 'View your Apple subscription options.',
+                onTap: _busy
                     ? null
                     : () => _run(
                         () => ref
@@ -114,44 +143,64 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
                             .appStore!
                             .manageSubscriptions(),
                       ),
-                child: const Text('Manage Apple subscription'),
               ),
-            TextButton(
-              onPressed: _busy ? null : () => _run(account.signOut),
-              child: const Text('Sign out'),
-            ),
-            const Divider(),
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
-              ),
-              onPressed: _busy
-                  ? null
-                  : () async {
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Delete your Slipreel account?'),
-                          content: const Text(
-                            'This permanently deletes your account and shared access. Website subscriptions will be cancelled. Apple subscriptions must be cancelled separately in your Apple Account settings; deleting your Slipreel account does not cancel Apple billing. Local recordings remain on this Mac.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('Keep account'),
+            const SizedBox(height: 8),
+            Divider(color: palette.dividerStrong, height: 1),
+            const SizedBox(height: 16),
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 16,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.logout_rounded, size: 16),
+                  onPressed: _busy ? null : () => _run(account.signOut),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: palette.textPrimary,
+                    side: BorderSide(color: palette.dividerStrong),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 16,
+                    ),
+                  ),
+                  label: const Text('Sign out'),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text(
+                                'Delete your Slipreel account?',
+                              ),
+                              content: const Text(
+                                'This permanently deletes your account and shared access. Website subscriptions will be cancelled. Apple subscriptions must be cancelled separately in your Apple Account settings; deleting your Slipreel account does not cancel Apple billing. Local recordings remain on this Mac.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Keep account'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('Delete account'),
+                                ),
+                              ],
                             ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Delete account'),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirmed == true && mounted) {
-                        await _run(account.deleteAccount);
-                      }
-                    },
-              child: const Text('Delete account'),
+                          );
+                          if (confirmed == true && mounted) {
+                            await _run(account.deleteAccount);
+                          }
+                        },
+                  child: const Text('Delete account'),
+                ),
+              ],
             ),
           ] else ...[
             const Text(
@@ -246,6 +295,75 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Full-row targets keep account actions readable and easy to scan.
+class _AccountAction extends StatelessWidget {
+  const _AccountAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String title, subtitle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: palette.textPrimary,
+          disabledForegroundColor: palette.textSecondary,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          alignment: Alignment.centerLeft,
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 21, color: palette.textSecondary),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      color: palette.textSecondary,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: palette.textSecondary,
+            ),
+          ],
+        ),
       ),
     );
   }
