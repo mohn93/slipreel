@@ -35,8 +35,14 @@
   </div>
 
   <div class="card hidden" id="billing">
-    <button class="btn btn--primary btn--block" id="portal">Manage billing</button>
-    <p class="muted">Opens the Stripe customer portal to change plan, update your card, or cancel.</p>
+    <div id="stripe-billing">
+      <button class="btn btn--primary btn--block" id="portal">Manage billing</button>
+      <p class="muted">Opens the Stripe customer portal to change plan, update your card, or cancel.</p>
+    </div>
+    <div id="apple-billing" class="hidden">
+      <a class="btn btn--primary btn--block" href="https://apps.apple.com/account/subscriptions">Manage Apple subscription</a>
+      <p class="muted">Opens your Apple Account subscriptions to change your plan or cancel.</p>
+    </div>
   </div>
 
   <div class="card hidden" id="download">
