@@ -25,7 +25,7 @@ if not args.local_test:
     require((app/'Contents/embedded.provisionprofile').is_file(),'Missing App Store provisioning profile')
     require(ent.get('com.apple.developer.applesignin') == ['Default'],'Sign in with Apple entitlement missing')
     require(bool(ent.get('keychain-access-groups')),'Keychain access group missing')
-    details=subprocess.run(['codesign','-dv',str(app)],capture_output=True,check=True).stderr.decode()
+    details=subprocess.run(['codesign','-dvv',str(app)],capture_output=True,check=True).stderr.decode()
     require('TeamIdentifier=UD7WB2694V' in details,'Wrong signing team')
     require('Authority=Apple Distribution:' in details or 'Authority=3rd Party Mac Developer Application:' in details,'App Store distribution signature required')
 for helper in ('ffmpeg','ffprobe','whisper-cli'):
