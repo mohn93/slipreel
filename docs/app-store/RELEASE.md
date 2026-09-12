@@ -7,7 +7,7 @@ Decision: $9/month or $79/year auto-renewable subscriptions in the store, using 
 - Direct: `com.slipreel.app`, Stripe checkout, Sparkle updates.
 - Store: `com.slipreel.store`, `SlipreelStore.app` (display name Slipreel), StoreKit 2, Apple updates.
 - Monthly auto-renewable product: `com.slipreel.store.monthly`, subscription group “Slipreel Pro”. No store lifetime product.
-- Yearly auto-renewable product: `com.slipreel.store.yearly`, same Pro access as monthly; subscription level must be changed from 2 to 1 before submission; base price exactly $79 USD saved in App Store Connect (Apple ID `6811357597`).
+- Yearly auto-renewable product: `com.slipreel.store.yearly`, same Pro access and level 1 as monthly; base price exactly $79 USD saved in App Store Connect (Apple ID `6811357597`).
 - Display prices always come from StoreKit. The draft subscription pricing was set to exactly $9.00 USD using Apple’s expanded price points, with Apple-calculated regional equivalents.
 - Sign in before buying links an immutable `appAccountToken` UUID to the Slipreel account. Do not transfer an Apple transaction to a different account based on a client-provided email.
 - Apple/Stripe rows are separate. Apple refunds do not overwrite Stripe access, and Stripe cancellation does not remove Apple access.
@@ -114,7 +114,7 @@ Apple `altool --validate-app` succeeded with no errors on 2026-09-12 for the sig
 ## Yearly plan added September 12, 2026
 
 - StoreKit, local expiry checks and the server verification allowlist now support `com.slipreel.store.yearly`. The paywall displays the full localized annual charge and yearly renewal, alongside monthly. No RevenueCat dependency is introduced.
-- The yearly product is created in group `22378909`, with one-year duration, English US localization, exact $79.00 US price and Apple-calculated regional prices. Upfront availability was selected for all storefronts. Monthly installments with a 12-month commitment are not enabled. The level editor has not saved the requested move to level 1; both plans must have the same level. Review screenshot remains pending.
+- The yearly product is created in group `22378909`, with one-year duration, English US localization, exact $79.00 US price and Apple-calculated regional prices. Upfront availability was selected for all storefronts. Monthly installments with a 12-month commitment are not enabled. The user moved yearly alongside monthly in the level editor; Save was completed and the Apple API verified both products at groupLevel 1. Review screenshot remains pending.
 - Server reconciliation updates the product ID on a verified plan change while preserving the signed-date ordering guard. Tests cover yearly shared access/refund isolation, expiry, and stale plan changes.
 - Signed universal build 1.1.0 (10101), including both products, passed the strict sandbox/signing verifier. The signed installer `SlipreelStore-1.1.0-10101.pkg` passed Apple altool validation with VERIFY SUCCEEDED and no errors. This replaces build 10100 for subsequent release work; neither build has been uploaded or submitted.
 - Annual change validation: seven Flutter store tests passed; targeted analyzer clean; backend baseline 119 tests passed, then the expanded native-account suite passed all ten cases and both new Apple reconciliation regression tests passed. The server TypeScript build also passed.
