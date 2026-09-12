@@ -10,10 +10,22 @@ import 'package:screen_recorder/ui/theme/app_palette.dart';
 import 'store_paywall_test.dart'
     show FakeLicensing, FakeStore, FakeAccount, paid;
 
+class EmptyAccount extends FakeAccount {
+  EmptyAccount(super.licensing);
+  @override
+  Future<void> syncPurchases() async {}
+}
+
 void main() {
-  Future<void> host(WidgetTester tester, {double scale = 1}) async {
-    final c = FakeLicensing(FakeStore())..setAccess(paid());
-    final a = FakeAccount(c)..email = 'qa.account@example.com';
+  Future<void> host(
+    WidgetTester tester, {
+    double scale = 1,
+    bool empty = false,
+  }) async {
+    final c = FakeLicensing(FakeStore());
+    if (!empty) c.setAccess(paid());
+    final a = (empty ? EmptyAccount(c) : FakeAccount(c))
+      ..email = 'qa.account@example.com';
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -61,6 +73,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('qa.account@example.com'), findsOneWidget);
   });
+  testWidgets('empty restore does not report successful access', (
+    tester,
+  ) async {
+    await host(tester, empty: true);
+    await tester.tap(find.text('Restore purchases'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('No active purchase found.'), findsOneWidget);
+    expect(
+      find.text('Your purchases and access are up to date.'),
+      findsNothing,
+    );
+    expect(find.text('Manage subscription'), findsNothing);
+  });
+
   testWidgets('account fits narrow windows with large text', (tester) async {
     tester.view.physicalSize = const Size(400, 700);
     tester.view.devicePixelRatio = 1;

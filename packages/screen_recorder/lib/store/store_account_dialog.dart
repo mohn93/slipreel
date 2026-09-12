@@ -1,5 +1,7 @@
 import '../ui/theme/app_palette_context.dart';
 import '../licensing/entitlement.dart';
+import '../licensing/build_release_date.g.dart';
+import '../licensing/export_gate.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../licensing/licensing_controller.dart';
@@ -132,6 +134,14 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
                       await controller.appStore!.restore();
                       await account.syncPurchases();
                       await controller.refreshNow();
+                      if (!canExportNow(
+                        ref.read(entitlementProvider),
+                        appReleaseDate: buildReleaseDate,
+                      )) {
+                        throw const AccountError(
+                          'No active purchase found. Check your Apple Account or sign in to the Slipreel account used for your purchase.',
+                        );
+                      }
                     }, success: 'Your purchases and access are up to date.'),
             ),
             if (applePurchase)
