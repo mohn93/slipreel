@@ -89,13 +89,16 @@ void main() {
     final c = FakeLicensing(FakeStore())..setAccess(paid());
     await host(tester, c, FakeAccount(c));
     expect(find.text('Pro · Yearly'), findsOneWidget);
-    expect(find.text('Manage subscription'), findsOneWidget);
+    expect(find.text('Manage account'), findsOneWidget);
+    expect(find.text('Manage subscription'), findsNothing);
+    expect(find.text('Refresh access'), findsNothing);
+    expect(find.text('Restore purchases'), findsNothing);
     expect(find.text('Unlock unlimited exports'), findsNothing);
     expect(find.text('App Store subscription'), findsNothing);
     expect(find.text('qa@example.com'), findsOneWidget);
   });
   testWidgets(
-    'free settings offers benefits and restore without a store button',
+    'free settings offers benefits and sign-in without duplicated actions',
     (tester) async {
       final c = FakeLicensing(FakeStore());
       final a = FakeAccount(c)
@@ -105,9 +108,7 @@ void main() {
       expect(find.text('Unlock unlimited exports'), findsOneWidget);
       expect(find.text('Sign in'), findsOneWidget);
       expect(find.text('Manage subscription'), findsNothing);
-      await tester.tap(find.text('Restore purchases'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('No active purchase found.'), findsOneWidget);
+      expect(find.text('Restore purchases'), findsNothing);
     },
   );
   testWidgets('settings remains usable with narrow width and larger text', (

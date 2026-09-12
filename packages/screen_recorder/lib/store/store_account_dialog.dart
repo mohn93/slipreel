@@ -121,14 +121,18 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
             const SizedBox(height: 8),
             _AccountAction(
               icon: Icons.sync_rounded,
-              title: 'Sync purchases and access',
-              subtitle: 'Refresh access linked to your account.',
+              title: 'Restore purchases',
+              subtitle: 'Recover a purchase that isn’t showing up.',
               onTap: _busy
                   ? null
-                  : () => _run(
-                      account.syncPurchases,
-                      success: 'Your purchases and access are up to date.',
-                    ),
+                  : () => _run(() async {
+                      final controller = ref.read(
+                        licensingControllerProvider.notifier,
+                      );
+                      await controller.appStore!.restore();
+                      await account.syncPurchases();
+                      await controller.refreshNow();
+                    }, success: 'Your purchases and access are up to date.'),
             ),
             if (applePurchase)
               _AccountAction(

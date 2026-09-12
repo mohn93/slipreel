@@ -48,7 +48,7 @@ void main() {
     tester,
   ) async {
     await host(tester);
-    await tester.tap(find.text('Sync purchases and access'));
+    await tester.tap(find.text('Restore purchases'));
     await tester.pumpAndSettle();
     expect(
       find.text('Your purchases and access are up to date.'),
