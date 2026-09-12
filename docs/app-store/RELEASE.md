@@ -18,7 +18,7 @@ Decision: $9/month subscription only in the store. Access is shared with the web
 
 The working source remains a direct build by default. `scripts/prepare-app-store.py NEW_DIRECTORY` stages a separate source tree, removes the updater dependency before plugin generation, selects sandbox entitlements and compiles native code with `APP_STORE`. Dart uses `SLIPREEL_DISTRIBUTION=app-store`; native code checks the channel independently.
 
-Run `scripts/build-app-store.sh VERSION BUILD_NUMBER NEW_DIRECTORY` on a Mac with the correct Apple provisioning profile. Vendored ffmpeg, ffprobe, whisper-cli and their license/provenance files must exist. Helpers inherit the sandbox. No Homebrew/PATH fallback is allowed in the store edition.
+Set `APP_STORE_PROFILE` to the installed Mac App Store distribution profile name or UUID, then run `scripts/build-app-store.sh VERSION BUILD_NUMBER NEW_DIRECTORY` on a Mac with the correct Apple provisioning profile. Vendored ffmpeg, ffprobe, whisper-cli and their license/provenance files must exist. Helpers inherit the sandbox. No Homebrew/PATH fallback is allowed in the store edition.
 
 `verify-app-store.py APP_PATH` requires a distribution signature, profile, Sign in with Apple and Keychain groups, and checks the sandbox and helper signatures, absence of updater frameworks/direct callback, bundle identity and private cursor API strings. Use `--local-test` only to inspect an ad-hoc artifact. This structural check is not App Review approval or proof of recording/purchase behavior.
 
@@ -52,7 +52,7 @@ APPLE_SIGN_IN_KEY_ID=<key ID>
 APPLE_TOKEN_ENCRYPTION_KEY=<base64 32 random bytes; persist/back up securely>
 APPLE_IAP_KEY_FILE=<private P8 path>
 APPLE_IAP_KEY_ID=<key ID>
-APPLE_IAP_ISSUER_ID=<issuer UUID>
+APPLE_IAP_ISSUER_ID=d8910093-5191-47fe-a6f4-8dc988df6ae1
 APPLE_ROOT_CERT_FILES=<comma-separated Apple root certificate paths>
 ```
 
@@ -94,4 +94,6 @@ Sources: [Review guidelines](https://developer.apple.com/app-store/review/guidel
 
 Not deployed or submitted. Real Apple keys, provisioned signing, purchase lifecycle/sign-in acceptance, recording/export/folder-access acceptance and final metadata/media are release blockers.
 
-Sign in with Apple key draft is scoped to `com.slipreel.store` and paused at Register in Apple Developer. The user must create/download this credential. No sign-in key existed in this team at inspection. In-App Purchase server key and distribution provisioning still need setup.
+Sign in with Apple key `ZJ4RL462K3` was created and downloaded by the account holder, then verified against Apple Developer. Its private P8 and an owner-only local configuration are stored outside Git under `~/.config/slipreel/apple-store/`. Local ES256 signing/verification and server configuration loading passed. This is not an end-to-end Apple login test or a deployed server configuration. In-App Purchase server key and distribution provisioning still need setup.
+
+The Becoming Ventures In-App Purchase keys page showed Active (0). A `Slipreel Purchases` key form is prepared at Generate in App Store Connect; this separate credential is needed for App Store Server API verification. No billing key was created by the agent.

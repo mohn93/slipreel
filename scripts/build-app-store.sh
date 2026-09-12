@@ -5,7 +5,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 version="${1:?Usage: build-app-store.sh VERSION BUILD_NUMBER NEW_STAGING_DIRECTORY}"
 build="${2:?Build number required}"
 stage="${3:?New staging directory required}"
-python3 "$root/scripts/prepare-app-store.py" "$stage"
+profile="${APP_STORE_PROFILE:?Set APP_STORE_PROFILE to the installed Mac App Store distribution profile name or UUID}"
+python3 "$root/scripts/prepare-app-store.py" "$stage" --profile "$profile"
 cd "$stage"
 dart pub get
 dart run melos bootstrap
