@@ -140,8 +140,7 @@ final class StoreBridge: NSObject, ASAuthorizationControllerDelegate,
       channel.invokeMethod("transactionsChanged", arguments: nil)
       result(nil)
     case "manageSubscriptions":
-      NSWorkspace.shared.open(URL(string: "macappstore://apps.apple.com/account/subscriptions")!)
-      result(nil)
+      await manageSubscriptions(result: result)
     case "appleSignIn":
       guard appleResult == nil, let args = call.arguments as? [String: String],
             let nonce = args["nonce"], let state = args["state"] else {
@@ -159,6 +158,63 @@ final class StoreBridge: NSObject, ASAuthorizationControllerDelegate,
       controller.performRequests()
     default: result(FlutterMethodNotImplemented)
     }
+  }
+
+  /// macOS has no public StoreKit manage-subscriptions sheet. Never send a
+  /// sandbox transaction to the production account URL as a fallback.
+  private func manageSubscriptions(result: @escaping FlutterResult) async {
+    let receiptIsSandbox = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+    var environment: AppStore.Environment?
+    // Include expired subscriptions: customers may manage them to resubscribe.
+    var latest: Transaction?
+    for id in productIDs {
+      if case .verified(let transaction) = await Transaction.latest(for: id),
+         latest == nil || transaction.purchaseDate > latest!.purchaseDate {
+        latest = transaction
+      }
+    }
+    environment = latest?.environment
+    if environment == nil,
+       let verification = try? await AppTransaction.shared,
+       case .verified(let transaction) = verification {
+      environment = transaction.environment
+    }
+    if environment == .production && !receiptIsSandbox {
+      guard NSWorkspace.shared.open(URL(string: "macappstore://apps.apple.com/account/subscriptions")!) else {
+        result(FlutterError(code: "MANAGEMENT_UNAVAILABLE",
+          message: "Could not open Apple subscriptions. Open App Store account settings and choose Subscriptions.", details: nil))
+        return
+      }
+      result(nil)
+      return
+    }
+
+    let alert = NSAlert()
+    alert.alertStyle = .informational
+    if environment == .xcode {
+      alert.messageText = "Manage your Xcode test subscription"
+      alert.informativeText = "This purchase belongs to the local StoreKit test environment. Use Xcode’s StoreKit transaction manager to cancel, expire, or delete the test purchase. It does not appear in your Apple Account subscriptions."
+    } else if environment == .sandbox || receiptIsSandbox {
+      alert.messageText = "Manage your test subscription"
+      alert.informativeText = "This is a sandbox purchase; you have not been charged. Apple’s regular subscription list does not include this test purchase.\n\nFor a dedicated Sandbox Apple Account, use Apple’s sandbox account controls to manage subscriptions or clear purchase history. TestFlight purchases made with your regular Apple Account do not provide those reset controls here on Mac."
+    } else {
+      alert.messageText = "Subscription environment unavailable"
+      alert.informativeText = "Slipreel could not verify whether this subscription is a test or a real purchase. Try Restore purchases, then open subscription management again."
+    }
+    alert.addButton(withTitle: "Done")
+    if environment == .sandbox || receiptIsSandbox {
+      alert.addButton(withTitle: "Apple testing guide")
+    }
+    let response: NSApplication.ModalResponse
+    if let window {
+      response = await alert.beginSheetModal(for: window)
+    } else {
+      response = alert.runModal()
+    }
+    if response == .alertSecondButtonReturn {
+      NSWorkspace.shared.open(URL(string: "https://developer.apple.com/help/app-store-connect/test-a-beta-version/testing-subscriptions-and-in-app-purchases-in-testflight/")!)
+    }
+    result(nil)
   }
 
   func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {

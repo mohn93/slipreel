@@ -56,3 +56,9 @@ Live API checks show version 1.1.0 is PREPARE_FOR_SUBMISSION, with manual releas
 - Remaining native acceptance: Apple sign-in/Hide My Email, real shared access in both editions, microphone/system audio/webcam, selected-folder persistence, the corrected export path and offline/expiry behavior. Mock tests do not replace these checks.
 
 The candidate export staging also passed a native macOS restriction test: creating a sibling directory was denied, but Foundation replacement staging and POSIX atomic publication to the explicitly allowed file succeeded. This reproduces the file-only permission boundary; it does not replace the next TestFlight retest.
+
+## Subscription management environment routing
+
+The native bridge now resolves the environment from verified StoreKit subscription history (including expired purchases), with verified AppTransaction fallback and a sandbox-receipt guard. Only verified production opens the App Store subscription URL. Sandbox purchases show test-account guidance and an optional Apple testing guide; Xcode purchases direct testers to its transaction manager. Unknown environments stay in the app with recovery instructions. No undocumented sandbox deep link is used: the native macOS SDK does not expose `AppStore.showManageSubscriptions`.
+
+Validation: Swift typecheck against the macOS 13 deployment target and diff whitespace checks pass. This change is not in TestFlight 10102; native acceptance requires a subsequent build. Apple reference: https://developer.apple.com/help/app-store-connect/test-a-beta-version/testing-subscriptions-and-in-app-purchases-in-testflight/
