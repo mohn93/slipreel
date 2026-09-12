@@ -15,7 +15,8 @@ final class StoreBridge: NSObject, ASAuthorizationControllerDelegate,
   private var appleResult: FlutterResult?
   private var authorization: ASAuthorizationController?
   private let productIDs: Set<String> = [
-    "com.slipreel.store.monthly"
+    "com.slipreel.store.monthly",
+    "com.slipreel.store.yearly"
   ]
   static var isStore: Bool {
     #if APP_STORE
@@ -85,7 +86,7 @@ final class StoreBridge: NSObject, ASAuthorizationControllerDelegate,
               transaction.revocationDate == nil, !transaction.isUpgraded,
               transaction.productType == .autoRenewable,
               transaction.expirationDate.map({ $0 > Date() }) ?? false else { continue }
-        // Only the monthly subscription is supported.
+        // Monthly and yearly plans grant the same Pro access.
         if selected == nil ||
           (selected!.expirationDate != nil && transaction.expirationDate! > selected!.expirationDate!) {
           selected = transaction

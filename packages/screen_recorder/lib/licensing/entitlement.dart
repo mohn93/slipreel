@@ -31,7 +31,8 @@ class EntitlementAppStore extends EntitlementState {
   final String? productId;
   final DateTime? expiresAt;
   bool activeAt(DateTime now) =>
-      productId == 'com.slipreel.store.monthly' &&
+      (productId == 'com.slipreel.store.monthly' ||
+          productId == 'com.slipreel.store.yearly') &&
       expiresAt != null &&
       now.isBefore(expiresAt!);
 }

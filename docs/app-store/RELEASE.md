@@ -1,12 +1,13 @@
 # Slipreel Mac App Store release preparation
 
-Decision: $9/month subscription only in the store. Access is shared with the website edition through the same Slipreel account. Checkout is exclusive to the installed edition. Existing website one-time licenses retain their release-date ceiling.
+Decision: $9/month or $79/year auto-renewable subscriptions in the store, using StoreKit directly (no RevenueCat). Access is shared with the website edition through the same Slipreel account. Checkout is exclusive to the installed edition. Existing website one-time licenses retain their release-date ceiling.
 
 ## Package identity and billing
 
 - Direct: `com.slipreel.app`, Stripe checkout, Sparkle updates.
 - Store: `com.slipreel.store`, `SlipreelStore.app` (display name Slipreel), StoreKit 2, Apple updates.
 - Monthly auto-renewable product: `com.slipreel.store.monthly`, subscription group “Slipreel Pro”. No store lifetime product.
+- Yearly auto-renewable product: `com.slipreel.store.yearly`, same Pro access as monthly; subscription level must be changed from 2 to 1 before submission; base price exactly $79 USD saved in App Store Connect (Apple ID `6811357597`).
 - Display prices always come from StoreKit. The draft subscription pricing was set to exactly $9.00 USD using Apple’s expanded price points, with Apple-calculated regional equivalents.
 - Sign in before buying links an immutable `appAccountToken` UUID to the Slipreel account. Do not transfer an Apple transaction to a different account based on a client-provided email.
 - Apple/Stripe rows are separate. Apple refunds do not overwrite Stripe access, and Stripe cancellation does not remove Apple access.
@@ -69,7 +70,7 @@ Before submission, verify on a provisioned build and clean user environment:
 - Fresh install, screen recording/mic/camera consent, denial/regrant; no Accessibility prompt.
 - Record screen/window/area + system audio/mic/webcam; pause/resume; cursor/click/autozoom; export MP4/GIF; captions with bundled helper.
 - Save to a selected folder, quit/relaunch, resume editing/export using its security-scoped bookmark; revoke folder access and recover clearly.
-- Product loading, localized monthly price, cancelled/pending/success purchase, renewal/expiry/refund, restore after reinstall, offline expiry, account switching and purchase ownership mismatch.
+- Product loading, localized monthly/yearly prices and full billed amount, cancelled/pending/success purchase, renewal/expiry/refund, restore after reinstall, offline expiry, account switching and purchase ownership mismatch.
 - Website subscription -> store unlock without another charge; Apple production-equivalent test purchase -> direct token/website access; cancel/refund one provider while the other remains valid.
 - Email OTP and Apple sign-in with/without Hide My Email; sign out, session expiry, account deletion, Apple authorization revocation, device-seat limits.
 - No Stripe purchasing in store; no Apple purchasing or Sparkle removal in direct; provider-appropriate management.
@@ -109,3 +110,12 @@ Installer CSR is prepared at `~/.config/slipreel/apple-store/mac-installer.certS
 `scripts/package-app-store.sh APP_PATH NEW_PACKAGE_PATH` verifies the provisioned app and creates a package signed by the Becoming Ventures Mac Installer Distribution identity. It refuses to overwrite an existing package. The generated artifact is `dist/app-store-preparation-2026-09-12/SlipreelStore-1.1.0-10100.pkg` in the original checkout (160,874,602 bytes). This package still targets the production API whose new Apple/native-account routes have not been deployed. Do not present it as ready for user payment/login acceptance yet.
 
 Apple `altool --validate-app` succeeded with no errors on 2026-09-12 for the signed package, authenticated using the existing Slipreel App Store Connect API key. Validation is not an upload, TestFlight processing, App Review approval or functional acceptance. The validation log is copied beside the package.
+
+## Yearly plan added September 12, 2026
+
+- StoreKit, local expiry checks and the server verification allowlist now support `com.slipreel.store.yearly`. The paywall displays the full localized annual charge and yearly renewal, alongside monthly. No RevenueCat dependency is introduced.
+- The yearly product is created in group `22378909`, with one-year duration, English US localization, exact $79.00 US price and Apple-calculated regional prices. Upfront availability was selected for all storefronts. Monthly installments with a 12-month commitment are not enabled. The level editor has not saved the requested move to level 1; both plans must have the same level. Review screenshot remains pending.
+- Server reconciliation updates the product ID on a verified plan change while preserving the signed-date ordering guard. Tests cover yearly shared access/refund isolation, expiry, and stale plan changes.
+- Signed universal build 1.1.0 (10101), including both products, passed the strict sandbox/signing verifier. The signed installer `SlipreelStore-1.1.0-10101.pkg` passed Apple altool validation with VERIFY SUCCEEDED and no errors. This replaces build 10100 for subsequent release work; neither build has been uploaded or submitted.
+- Annual change validation: seven Flutter store tests passed; targeted analyzer clean; backend baseline 119 tests passed, then the expanded native-account suite passed all ten cases and both new Apple reconciliation regression tests passed. The server TypeScript build also passed.
+- App Store Connect draft version is still 1.0 and the live description still mentions monthly only. Align the version to 1.1.0 and use the updated local listing draft before submission. The existing Developer-role API key can read these records and validate packages, but Apple rejected version edits with 403 and the group-level update with 409. Do not widen API permissions just for this task.

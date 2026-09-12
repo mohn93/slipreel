@@ -6,6 +6,12 @@ class StoreProduct {
   const StoreProduct(this.id, this.title, this.price, this.period);
   final String id, title, price;
   final String? period;
+  bool get isYearly => id == 'com.slipreel.store.yearly';
+  String get purchaseLabel =>
+      isYearly ? 'Yearly · $price / year' : 'Monthly · $price / month';
+  String get billingLabel => isYearly
+      ? '$price charged yearly. Renews every year.'
+      : '$price charged monthly. Renews every month.';
   factory StoreProduct.fromMap(Map<Object?, Object?> map) => StoreProduct(
     map['id'] as String,
     map['title'] as String,

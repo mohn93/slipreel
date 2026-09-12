@@ -2,6 +2,8 @@ import type pg from 'pg';
 import { readFileSync } from 'node:fs';
 import { AppStoreServerAPIClient, SignedDataVerifier, Environment } from '@apple/app-store-server-library';
 
+const productIDs = new Set(['com.slipreel.store.monthly', 'com.slipreel.store.yearly']);
+
 export interface AppleSubscriptions {
   sync(signedTransaction: string, userId?: string): Promise<void>;
   notification(signedPayload: string): Promise<void>;
@@ -32,7 +34,7 @@ export function createAppleSubscriptions(pool: pg.Pool, env = process.env): Appl
   }
   async function sync(jws: string, expectedUser?: string): Promise<void> {
     const { transaction: hint, index } = await verifiedTransaction(jws);
-    if (!hint.originalTransactionId || !hint.appAccountToken || hint.productId !== 'com.slipreel.store.monthly') throw new Error('Unsupported transaction');
+    if (!hint.originalTransactionId || !hint.appAccountToken || !productIDs.has(hint.productId ?? '')) throw new Error('Unsupported transaction');
     const owner = await pool.query<{id:string}>('SELECT id FROM users WHERE app_account_token=$1', [hint.appAccountToken]);
     const userId = owner.rows[0]?.id;
     if (!userId && !expectedUser) return; // A deleted account must not be recreated by notifications.
@@ -43,7 +45,7 @@ export function createAppleSubscriptions(pool: pg.Pool, env = process.env): Appl
     for (const status of statuses) {
       if (!status.signedTransactionInfo) continue;
       const tx = await verifiers[index]!.verifyAndDecodeTransaction(status.signedTransactionInfo);
-      if (tx.originalTransactionId !== hint.originalTransactionId || tx.appAccountToken?.toLowerCase() !== hint.appAccountToken.toLowerCase() || tx.productId !== 'com.slipreel.store.monthly' || !tx.expiresDate || !tx.signedDate || !tx.transactionId) continue;
+      if (tx.originalTransactionId !== hint.originalTransactionId || tx.appAccountToken?.toLowerCase() !== hint.appAccountToken.toLowerCase() || !productIDs.has(tx.productId ?? '') || !tx.expiresDate || !tx.signedDate || !tx.transactionId) continue;
       found = true;
       // Billing grace must be enabled and separately verified before granting it.
       // For this launch access lasts through the signed paid-through date.
@@ -52,7 +54,7 @@ export function createAppleSubscriptions(pool: pg.Pool, env = process.env): Appl
         (original_transaction_id,environment,user_id,product_id,transaction_id,expires_at,revoked_at,signed_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
         ON CONFLICT (original_transaction_id,environment) DO UPDATE SET
-          transaction_id=EXCLUDED.transaction_id, expires_at=EXCLUDED.expires_at,
+          product_id=EXCLUDED.product_id, transaction_id=EXCLUDED.transaction_id, expires_at=EXCLUDED.expires_at,
           revoked_at=EXCLUDED.revoked_at,signed_at=EXCLUDED.signed_at,checked_at=now()
         WHERE apple_subscriptions.user_id=EXCLUDED.user_id AND apple_subscriptions.signed_at <= EXCLUDED.signed_at`,
         [tx.originalTransactionId,environments[index],userId,tx.productId,tx.transactionId,new Date(tx.expiresDate),revoked,new Date(tx.signedDate)]);

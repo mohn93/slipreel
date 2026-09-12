@@ -87,6 +87,29 @@ void main() {
       isFalse,
     );
   });
+  test('yearly access expires and billing shows the full annual charge', () {
+    final now = DateTime.utc(2026, 9, 12);
+    final access = EntitlementAppStore(
+      productId: 'com.slipreel.store.yearly',
+      expiresAt: now.add(const Duration(days: 365)),
+    );
+    expect(access.activeAt(now), isTrue);
+    expect(access.activeAt(now.add(const Duration(days: 365))), isFalse);
+    expect(
+      const EntitlementAppStore(
+        productId: 'com.slipreel.store.yearly',
+      ).activeAt(now),
+      isFalse,
+    );
+    const product = StoreProduct(
+      'com.slipreel.store.yearly',
+      'Pro Yearly',
+      '€79,00',
+      'year',
+    );
+    expect(product.purchaseLabel, 'Yearly · €79,00 / year');
+    expect(product.billingLabel, '€79,00 charged yearly. Renews every year.');
+  });
   test('shared website entitlement works without an Apple subscription', () {
     final now = DateTime.now();
     final claims = EntitlementClaims(

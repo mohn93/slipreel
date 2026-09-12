@@ -161,11 +161,10 @@ class _StorePaywallState extends ConsumerState<StorePaywall> {
                             ? 'Waiting for Apple to approve the purchase. Access will update automatically.'
                             : 'Purchase cancelled. You have not been charged.';
                       }),
-                child: Text(
-                  'Subscribe · ${product.price} / ${product.period ?? 'month'}',
-                ),
+                child: Text(product.purchaseLabel),
               ),
-              const SizedBox(height: 8),
+              Text(product.billingLabel, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
             ],
           if (_busy) const LinearProgressIndicator(),
           if (_message != null)

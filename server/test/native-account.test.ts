@@ -55,9 +55,9 @@ describe('native account and shared payment access',()=>{
     expect(await signer.verify(activation.json().token)).toMatchObject({sub:user.id,export:true,plan:'subscription'});
     await app.close();
   });
-  it('Apple production purchase grants direct access, refund preserves an active Stripe purchase',async()=>{
+  it.each(['monthly','yearly'])('Apple %s purchase grants direct access, refund preserves an active Stripe purchase',async(period)=>{
     const {app,user}=await login();
-    await pool.query(`INSERT INTO apple_subscriptions VALUES('original','Production',$1,'com.slipreel.store.monthly','tx',now()+interval '1 day',NULL,now(),now())`,[user.id]);
+    await pool.query(`INSERT INTO apple_subscriptions VALUES('original','Production',$1,$2,'tx',now()+interval '1 day',NULL,now(),now())`,[user.id,`com.slipreel.store.${period}`]);
     expect((await resolveEffectiveEntitlement(pool,user.id)).export).toBe(true);
     await pool.query("UPDATE apple_subscriptions SET revoked_at=now()");
     expect((await resolveEffectiveEntitlement(pool,user.id)).export).toBe(false);
