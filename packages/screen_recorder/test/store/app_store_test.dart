@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:screen_recorder/store/app_store_client.dart';
@@ -9,6 +10,34 @@ import 'package:screen_recorder/licensing/entitlement_claims.dart';
 import 'package:screen_recorder/licensing/entitlement_verifier.dart';
 import 'package:screen_recorder/licensing/licensing_api.dart';
 import 'package:screen_recorder/licensing/export_gate.dart';
+
+class _CachedFreeVerifier extends EntitlementVerifier {
+  _CachedFreeVerifier() : super(List.filled(32, 0));
+  @override
+  Future<EntitlementClaims?> verify(
+    String jwt, {
+    DateTime? now,
+    bool ignoreExpiry = false,
+  }) async => EntitlementClaims(
+    sub: 'user',
+    plan: 'free',
+    exportEntitled: false,
+    status: 'none',
+    updatesUntil: null,
+    deviceId: 'mac',
+    seatLimit: 2,
+    issuedAt: DateTime.now(),
+    expiresAt: DateTime.now().add(const Duration(days: 1)),
+  );
+}
+
+class _OfflineApi extends LicensingApi {
+  @override
+  Future<RefreshResult> refresh({
+    required String refreshToken,
+    required String deviceId,
+  }) async => const RefreshTransient();
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -180,6 +209,106 @@ void main() {
       expect(plans, 1);
       expect(accounts, 2);
       expect(await storage.load(), isNull);
+      controller.dispose();
+    },
+  );
+  testWidgets('restore stops waiting when Apple does not return', (
+    tester,
+  ) async {
+    messenger.setMockMethodCallHandler(
+      channel,
+      (_) => Completer<void>().future,
+    );
+    final check = expectLater(
+      AppStoreClient().restore(),
+      throwsA(isA<TimeoutException>()),
+    );
+    await tester.pump(const Duration(seconds: 46));
+    await check;
+  });
+  test('yearly savings use numeric prices in the same currency only', () {
+    const monthly = StoreProduct(
+      'com.slipreel.store.monthly',
+      'Pro',
+      '\$9',
+      'month',
+      priceValue: 9,
+      currencyCode: 'USD',
+    );
+    const yearly = StoreProduct(
+      'com.slipreel.store.yearly',
+      'Pro',
+      '\$79',
+      'year',
+      priceValue: 79,
+      currencyCode: 'USD',
+    );
+    expect(yearly.savingsComparedWith(monthly), 26);
+    expect(
+      const StoreProduct(
+        'com.slipreel.store.yearly',
+        'Pro',
+        '79 €',
+        'year',
+        priceValue: 79,
+        currencyCode: 'EUR',
+      ).savingsComparedWith(monthly),
+      isNull,
+    );
+    expect(
+      const StoreProduct(
+        'com.slipreel.store.yearly',
+        'Pro',
+        '\$79',
+        'year',
+      ).savingsComparedWith(monthly),
+      isNull,
+    );
+  });
+  test(
+    'shared refresh does not flash free access or discard verified Apple access on native error',
+    () async {
+      var offline = false;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'channel') return 'app-store';
+        if (offline) throw PlatformException(code: 'offline');
+        return {
+          'productId': 'com.slipreel.store.monthly',
+          'expiresAt': DateTime.now()
+              .add(const Duration(days: 1))
+              .millisecondsSinceEpoch,
+        };
+      });
+      final storage = InMemoryLicenseStore();
+      await storage.save(
+        const LicenseTokens(
+          token: 'cached-free',
+          refreshToken: 'refresh',
+          deviceId: 'mac',
+        ),
+      );
+      final controller = LicensingController(
+        store: storage,
+        verifier: _CachedFreeVerifier(),
+        api: _OfflineApi(),
+        authState: AuthStateStore(InMemorySecureKV()),
+        appStore: AppStoreClient(),
+      );
+      await controller.load();
+      final states = <EntitlementState>[];
+      final remove = controller.addListener(states.add, fireImmediately: false);
+      offline = true;
+      await controller.refreshNow();
+      expect(states, isNotEmpty);
+      expect(
+        states.every(
+          (state) =>
+              state is EntitlementAppStore &&
+              canExportNow(state, appReleaseDate: DateTime.now()),
+        ),
+        isTrue,
+      );
+      remove();
       controller.dispose();
     },
   );

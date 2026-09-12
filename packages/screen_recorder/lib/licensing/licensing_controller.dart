@@ -132,6 +132,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
   Future<void> _refresh() async {
     if (appStore != null) {
       final generation = _credentialGeneration;
+      final previous = state;
       try {
         final tokens = await _store.load();
         final cached = tokens == null
@@ -142,20 +143,21 @@ class LicensingController extends StateNotifier<EntitlementState> {
                 ignoreExpiry: true,
               );
         if (!mounted || generation != _credentialGeneration) return;
-        if (cached != null && mounted) state = EntitlementLoaded(cached);
-        await _refreshLicense();
-        final current = state;
-        final claims = current is EntitlementLoaded
-            ? current.claims
-            : current is EntitlementAppStore
-            ? current.sharedClaims
-            : null;
+        // Refresh shared access privately, then publish one combined state.
+        // Publishing a temporary free web license would flash an upgrade to
+        // paid Apple users, and discard their offline fallback on native error.
+        EntitlementState current = cached == null
+            ? const EntitlementSignedOut()
+            : EntitlementLoaded(cached);
+        await _refreshLicense(onState: (value) => current = value);
+        final refreshed = current;
+        final claims = refreshed is EntitlementLoaded ? refreshed.claims : null;
         EntitlementAppStore native;
         try {
           native = await appStore!.entitlement();
         } catch (_) {
-          native = current is EntitlementAppStore
-              ? current
+          native = previous is EntitlementAppStore
+              ? previous
               : const EntitlementAppStore();
         }
         if (mounted && generation == _credentialGeneration) {
@@ -175,7 +177,17 @@ class LicensingController extends StateNotifier<EntitlementState> {
     await _refreshLicense();
   }
 
-  Future<void> _refreshLicense() async {
+  Future<void> _refreshLicense({
+    void Function(EntitlementState)? onState,
+  }) async {
+    void publish(EntitlementState value) {
+      if (onState != null) {
+        onState(value);
+      } else {
+        state = value;
+      }
+    }
+
     final generation = _credentialGeneration;
     _lastRefreshAttempt = _now();
     try {
@@ -202,7 +214,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
               ),
             );
             if (mounted && generation == _credentialGeneration) {
-              state = EntitlementLoaded(claims);
+              publish(EntitlementLoaded(claims));
             }
           });
         case RefreshRevoked():
@@ -212,7 +224,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
             if (!mounted || generation != _credentialGeneration) return;
             await _store.clear();
             if (mounted && generation == _credentialGeneration) {
-              state = const EntitlementSignedOut();
+              publish(const EntitlementSignedOut());
             }
           });
         case RefreshTransient():

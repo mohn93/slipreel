@@ -19,6 +19,7 @@ import 'package:screen_recorder_platform_interface/screen_recorder_platform_inte
 
 /// Minimal platform stub — same pattern as test/state/sleep_observer_test.dart.
 class _FakePlatform extends ScreenRecorderPlatform {}
+
 class _UpdateBackend implements UpdaterBackend {
   int checks = 0;
   @override
@@ -26,19 +27,21 @@ class _UpdateBackend implements UpdaterBackend {
   @override
   Future<void> setScheduledCheckInterval(int seconds) async {}
   @override
-  Future<void> checkForUpdates({bool inBackground = false}) async { checks++; }
+  Future<void> checkForUpdates({bool inBackground = false}) async {
+    checks++;
+  }
 }
 
 Widget _app(Widget child, List<Override> overrides) => ProviderScope(
-      overrides: overrides,
-      child: MaterialApp(
-        theme: ThemeData.dark().copyWith(
-          // AppPalette.midnight is the real default constant in app_palette.dart.
-          extensions: [AppPalette.midnight],
-        ),
-        home: child,
-      ),
-    );
+  overrides: overrides,
+  child: MaterialApp(
+    theme: ThemeData.dark().copyWith(
+      // AppPalette.midnight is the real default constant in app_palette.dart.
+      extensions: [AppPalette.midnight],
+    ),
+    home: child,
+  ),
+);
 
 void main() {
   setUp(() {
@@ -47,20 +50,26 @@ void main() {
   });
 
   final overrides = <Override>[
-    recordingSettingsControllerProvider.overrideWith((ref) =>
-        RecordingSettingsController(
-            store: RecordingSettingsStore(path: '/tmp/x_rec.json'),
-            initial: RecordingSettings.defaults)),
-    globalPreferencesControllerProvider.overrideWith((ref) =>
-        GlobalPreferencesController(
-            store: GlobalPreferencesStore(path: '/tmp/x_glob.json'),
-            initial: GlobalPreferences.defaults)),
+    recordingSettingsControllerProvider.overrideWith(
+      (ref) => RecordingSettingsController(
+        store: RecordingSettingsStore(path: '/tmp/x_rec.json'),
+        initial: RecordingSettings.defaults,
+      ),
+    ),
+    globalPreferencesControllerProvider.overrideWith(
+      (ref) => GlobalPreferencesController(
+        store: GlobalPreferencesStore(path: '/tmp/x_glob.json'),
+        initial: GlobalPreferences.defaults,
+      ),
+    ),
     permissionsControllerProvider.overrideWith(
-        (ref) => PermissionsController(ScreenRecorderPlatform.instance)),
+      (ref) => PermissionsController(ScreenRecorderPlatform.instance),
+    ),
   ];
 
-  testWidgets('shows global sections, not frame styling or alert demo',
-      (tester) async {
+  testWidgets('shows global sections, not frame styling or alert demo', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app(const SettingsScreen(), overrides));
     await tester.pump();
 
@@ -77,8 +86,9 @@ void main() {
     expect(find.text('Background Color'), findsNothing);
   });
 
-  testWidgets('save location shows the Ask-each-time default when unset',
-      (tester) async {
+  testWidgets('save location shows the Ask-each-time default when unset', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app(const SettingsScreen(), overrides));
     await tester.pump();
     expect(find.textContaining('Ask each time'), findsOneWidget);
@@ -90,29 +100,37 @@ void main() {
     required String plan,
     String status = 'active',
     DateTime? updatesUntil,
-  }) =>
-      EntitlementClaims(
-        sub: 'u1',
-        plan: plan,
-        exportEntitled: plan != 'free',
-        status: status,
-        updatesUntil: updatesUntil,
-        deviceId: 'dev1',
-        seatLimit: 2,
-        issuedAt: DateTime.utc(2026, 1, 1),
-        expiresAt: DateTime.utc(2099, 1, 1),
-      );
+  }) => EntitlementClaims(
+    sub: 'u1',
+    plan: plan,
+    exportEntitled: plan != 'free',
+    status: status,
+    updatesUntil: updatesUntil,
+    deviceId: 'dev1',
+    seatLimit: 2,
+    issuedAt: DateTime.utc(2026, 1, 1),
+    expiresAt: DateTime.utc(2099, 1, 1),
+  );
 
-  List<Override> withEntitlement(EntitlementState state) =>
-      [...overrides, entitlementProvider.overrideWithValue(state)];
+  List<Override> withEntitlement(EntitlementState state) => [
+    ...overrides,
+    entitlementProvider.overrideWithValue(state),
+  ];
 
-  testWidgets('one-time updates require compatibility confirmation', (tester) async {
+  testWidgets('one-time updates require compatibility confirmation', (
+    tester,
+  ) async {
     final backend = _UpdateBackend();
-    await tester.pumpWidget(_app(const SettingsScreen(), [
-      ...withEntitlement(EntitlementLoaded(claims(plan: 'onetime',
-          updatesUntil: DateTime.utc(2027, 1, 1)))),
-      updaterServiceProvider.overrideWithValue(UpdaterService(backend)),
-    ]));
+    await tester.pumpWidget(
+      _app(const SettingsScreen(), [
+        ...withEntitlement(
+          EntitlementLoaded(
+            claims(plan: 'onetime', updatesUntil: DateTime.utc(2027, 1, 1)),
+          ),
+        ),
+        updaterServiceProvider.overrideWithValue(UpdaterService(backend)),
+      ]),
+    );
     await tester.pump();
     await tester.ensureVisible(find.text('Check for updates'));
     await tester.tap(find.text('Check for updates'));
@@ -130,8 +148,9 @@ void main() {
     expect(backend.checks, 1);
   });
 
-  testWidgets('hides the Account section when licensing is not wired',
-      (tester) async {
+  testWidgets('hides the Account section when licensing is not wired', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app(const SettingsScreen(), overrides));
     await tester.pump();
     expect(find.text('Account'), findsNothing);
@@ -139,55 +158,77 @@ void main() {
 
   testWidgets('signed out shows a Sign in prompt', (tester) async {
     await tester.pumpWidget(
-        _app(const SettingsScreen(), withEntitlement(const EntitlementSignedOut())));
+      _app(
+        const SettingsScreen(),
+        withEntitlement(const EntitlementSignedOut()),
+      ),
+    );
     await tester.pump();
     expect(find.text('Account'), findsOneWidget);
     expect(find.text('Not signed in'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Sign in'), findsOneWidget);
   });
 
-  testWidgets('active subscription shows Pro plan and Manage account',
-      (tester) async {
-    await tester.pumpWidget(_app(const SettingsScreen(),
-        withEntitlement(EntitlementLoaded(claims(plan: 'subscription')))));
+  testWidgets('active subscription shows Pro plan and Manage account', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        const SettingsScreen(),
+        withEntitlement(EntitlementLoaded(claims(plan: 'subscription'))),
+      ),
+    );
     await tester.pump();
-    expect(find.text('Pro — Monthly'), findsOneWidget);
+    expect(find.text('Pro subscription'), findsOneWidget);
     expect(find.textContaining('unlimited exports'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Manage account'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Upgrade'), findsNothing);
   });
 
-  testWidgets('free plan shows no license and an Upgrade action',
-      (tester) async {
-    await tester.pumpWidget(_app(const SettingsScreen(),
-        withEntitlement(EntitlementLoaded(claims(plan: 'free', status: 'none')))));
+  testWidgets('free plan shows no license and an Upgrade action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        const SettingsScreen(),
+        withEntitlement(
+          EntitlementLoaded(claims(plan: 'free', status: 'none')),
+        ),
+      ),
+    );
     await tester.pump();
     expect(find.text('No active license'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Upgrade'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Manage account'), findsOneWidget);
   });
 
-  testWidgets('not-entitled account shows the remaining free-export count',
-      (tester) async {
-    await tester.pumpWidget(_app(
-        const SettingsScreen(),
-        [
-          ...withEntitlement(EntitlementLoaded(claims(plan: 'free', status: 'none'))),
-          trialExportsRemainingProvider.overrideWith((ref) async => 2),
-        ]));
+  testWidgets('not-entitled account shows the remaining free-export count', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(const SettingsScreen(), [
+        ...withEntitlement(
+          EntitlementLoaded(claims(plan: 'free', status: 'none')),
+        ),
+        trialExportsRemainingProvider.overrideWith((ref) async => 2),
+      ]),
+    );
     await tester.pump(); // resolve the FutureProvider
-    expect(find.text('2 of ${TrialExports.limit} free exports left'),
-        findsOneWidget);
+    expect(
+      find.text('2 of ${TrialExports.limit} free exports left'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('entitled account does not show a free-export count',
-      (tester) async {
-    await tester.pumpWidget(_app(
-        const SettingsScreen(),
-        [
-          ...withEntitlement(EntitlementLoaded(claims(plan: 'subscription'))),
-          trialExportsRemainingProvider.overrideWith((ref) async => 2),
-        ]));
+  testWidgets('entitled account does not show a free-export count', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(const SettingsScreen(), [
+        ...withEntitlement(EntitlementLoaded(claims(plan: 'subscription'))),
+        trialExportsRemainingProvider.overrideWith((ref) async => 2),
+      ]),
+    );
     await tester.pump();
     expect(find.textContaining('free exports left'), findsNothing);
   });

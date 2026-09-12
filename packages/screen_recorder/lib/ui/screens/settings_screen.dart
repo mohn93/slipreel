@@ -1,3 +1,4 @@
+import '../../store/store_account_card.dart';
 import 'package:flutter/services.dart';
 import '../../distribution/distribution_channel.dart';
 import 'package:file_selector/file_selector.dart';
@@ -71,13 +72,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    ref.captureAnalytics(AnalyticsEvents.screenViewed,
-        properties: {'screen': 'settings'});
+    ref.captureAnalytics(
+      AnalyticsEvents.screenViewed,
+      properties: {'screen': 'settings'},
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       try {
         ref.read(permissionsControllerProvider.notifier).refreshAll();
-      } catch (_) {/* provider not overridden in some hosts */}
+      } catch (_) {
+        /* provider not overridden in some hosts */
+      }
     });
   }
 
@@ -107,64 +112,125 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (entitlement != null) ...[
-              _title('Account'),
-              const SizedBox(height: 12),
-              _accountCard(entitlement),
-              const SizedBox(height: 32),
-            ],
-
-            _title('Recording'),
-            const SizedBox(height: 12),
-            _countdownPicker(),
-            const SizedBox(height: 32),
-
-            _title('Appearance'),
-            const SizedBox(height: 12),
-            _appearanceCard(),
-            const SizedBox(height: 32),
-
-            _title('Permissions'),
-            const SizedBox(height: 12),
-            _permissionsCard(),
-            const SizedBox(height: 32),
-
-            _title('Default save location'),
-            const SizedBox(height: 12),
-            _saveLocationCard(),
-            const SizedBox(height: 32),
-
-            _title('Privacy'),
-            const SizedBox(height: 12),
-            _privacyCard(),
-            const SizedBox(height: 32),
-
-            _title('Keyboard shortcuts'),
-            const SizedBox(height: 12),
-            _shortcutsCard(),
-            const SizedBox(height: 32),
-
-            _title('About'),
-            const SizedBox(height: 12),
-            _aboutCard(),
-          ],
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 940),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 32),
+                  child: Text(
+                    'Your studio, your way.',
+                    style: TextStyle(
+                      color: context.palette.textPrimary,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.7,
+                    ),
+                  ),
+                ),
+                if (entitlement != null)
+                  _section(
+                    'Account',
+                    'Your plan and connected account.',
+                    _accountCard(entitlement),
+                  ),
+                _section(
+                  'Recording',
+                  'A little time to get ready.',
+                  _countdownPicker(),
+                ),
+                _section(
+                  'Appearance',
+                  'Make yourself at home.',
+                  _appearanceCard(),
+                ),
+                _section(
+                  'Permissions',
+                  'You choose what Slipreel can capture.',
+                  _permissionsCard(),
+                ),
+                _section(
+                  'Default save location',
+                  'Keep your work where it belongs.',
+                  _saveLocationCard(),
+                ),
+                _section(
+                  'Privacy',
+                  'Control what you share with us.',
+                  _privacyCard(),
+                ),
+                _section(
+                  'Keyboard shortcuts',
+                  'Stay in the flow.',
+                  _shortcutsCard(),
+                ),
+                _section(
+                  'About',
+                  'Made for your next great video.',
+                  _aboutCard(),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
+  Widget _section(String title, String detail, Widget content) => Padding(
+    padding: const EdgeInsets.only(bottom: 28),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final label = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _title(title),
+            const SizedBox(height: 6),
+            Text(
+              detail,
+              style: TextStyle(
+                color: context.palette.textSecondary,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          ],
+        );
+        if (constraints.maxWidth < 740) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [label, const SizedBox(height: 12), content],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 180,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: label,
+              ),
+            ),
+            const SizedBox(width: 32),
+            Expanded(child: content),
+          ],
+        );
+      },
+    ),
+  );
+
   Widget _title(String t) => Text(
-        t,
-        style: TextStyle(
-          color: context.palette.textPrimary,
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-        ),
-      );
+    t,
+    style: TextStyle(
+      color: context.palette.textPrimary,
+      fontSize: 16,
+      fontWeight: FontWeight.w600,
+    ),
+  );
 
   // Use a Material (not a DecoratedBox/Container-with-color) as the card
   // surface: cards host onTap ListTiles, and Flutter 3.44+ asserts when a
@@ -172,62 +238,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // colored DecoratedBox (ink splashes / bg become invisible). The Material
   // is the colored surface; the inner Container only sizes + pads.
   Widget _card({required Widget child, EdgeInsets? padding}) => Material(
-        color: context.palette.surfaceCard,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: double.infinity,
-          padding: padding ?? const EdgeInsets.all(16),
-          child: child,
-        ),
-      );
+    color: context.palette.surfaceCard,
+    borderRadius: BorderRadius.circular(12),
+    child: Container(
+      width: double.infinity,
+      padding: padding ?? const EdgeInsets.all(22),
+      child: child,
+    ),
+  );
 
   // ---- Account -------------------------------------------------------------
 
   Widget _accountCard(EntitlementState state) => _card(
-        child: switch (state) {
-          EntitlementLoading() => Row(
-              children: [
-                const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
-                const SizedBox(width: 12),
-                Text('Checking your license…',
-                    style: TextStyle(color: context.palette.textSecondary)),
-              ],
-            ),
-          EntitlementAppStore() => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(canExportNow(state, appReleaseDate: buildReleaseDate) ? 'Unlimited exports active' : 'Free recording and editing'),
-              const SizedBox(height: 12),
-              FilledButton(onPressed: _openSignIn, child: const Text('Slipreel account')),
-              TextButton(onPressed: _upgrade, child: const Text('App Store subscription')),
-            ],
-          ),
-          EntitlementSignedOut() => _accountSignedOut(),
-          EntitlementLoaded(:final claims) => _accountLoaded(state, claims),
-        },
-      );
-
-  Widget _accountSignedOut() => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    child: switch (state) {
+      EntitlementLoading() => Row(
         children: [
-          Text('Not signed in',
-              style: TextStyle(
-                  color: context.palette.textPrimary,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          Text('Sign in to activate this Mac and manage your plan.',
-              style: TextStyle(color: context.palette.textSecondary)),
-          _trialLine(),
-          const SizedBox(height: 14),
-          FilledButton(
-            onPressed: _openSignIn,
-            child: const Text('Sign in'),
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'Checking your license…',
+            style: TextStyle(color: context.palette.textSecondary),
           ),
         ],
-      );
+      ),
+      EntitlementAppStore() => StoreAccountCard(state: state),
+      EntitlementSignedOut() => _accountSignedOut(),
+      EntitlementLoaded(:final claims) => _accountLoaded(state, claims),
+    },
+  );
+
+  Widget _accountSignedOut() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Not signed in',
+        style: TextStyle(
+          color: context.palette.textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        'Sign in to activate this Mac and manage your plan.',
+        style: TextStyle(color: context.palette.textSecondary),
+      ),
+      _trialLine(),
+      const SizedBox(height: 14),
+      FilledButton(onPressed: _openSignIn, child: const Text('Sign in')),
+    ],
+  );
 
   // The device-local free-export allowance (mirrors the editor's export
   // button). Shown only when the user is not entitled; hidden when the trial
@@ -245,8 +308,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         : 'No free exports left';
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Text(text,
-          style: TextStyle(color: context.palette.textSecondary, fontSize: 13)),
+      child: Text(
+        text,
+        style: TextStyle(color: context.palette.textSecondary, fontSize: 13),
+      ),
     );
   }
 
@@ -270,14 +335,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name,
-                      style: TextStyle(
-                          color: context.palette.textPrimary,
-                          fontWeight: FontWeight.w600)),
+                  Text(
+                    name,
+                    style: TextStyle(
+                      color: context.palette.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(detail,
-                      style: TextStyle(
-                          color: context.palette.textSecondary, fontSize: 13)),
+                  Text(
+                    detail,
+                    style: TextStyle(
+                      color: context.palette.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -293,10 +365,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         else
           Row(
             children: [
-              FilledButton(
-                onPressed: _upgrade,
-                child: const Text('Upgrade'),
-              ),
+              FilledButton(onPressed: _upgrade, child: const Text('Upgrade')),
               const SizedBox(width: 8),
               TextButton(
                 onPressed: _manageAccount,
@@ -318,18 +387,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       case 'subscription':
         if (c.status == 'grace') {
           return (
-            'Pro — Monthly',
+            'Pro subscription',
             'Payment issue — update your card to keep exporting.',
-            amber
+            amber,
           );
         }
         if (c.status == 'active') {
-          return ('Pro — Monthly', 'Active · unlimited exports.', green);
+          return ('Pro subscription', 'Active · unlimited exports.', green);
         }
         return (
-          'Pro — Monthly',
+          'Pro subscription',
           'Inactive — resubscribe to unlock exports.',
-          grey
+          grey,
         );
       case 'onetime':
         final until = c.updatesUntil;
@@ -337,7 +406,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           return (
             'Lifetime license',
             'Updates ended ${_date(until)} — renew to update.',
-            amber
+            amber,
           );
         }
         return (
@@ -345,13 +414,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           until != null
               ? 'Active · free updates through ${_date(until)}.'
               : 'Active · unlimited exports.',
-          green
+          green,
         );
       default:
         return (
           'No active license',
           'Records and edits are free. Unlock unlimited exports.',
-          grey
+          grey,
         );
     }
   }
@@ -362,30 +431,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _manageAccount() async {
     try {
       await ref.read(licensingControllerProvider.notifier).openAccount();
-    } catch (_) {/* browser unavailable — nothing to do */}
+    } catch (_) {
+      /* browser unavailable — nothing to do */
+    }
   }
 
   Future<void> _openSignIn() async {
     try {
       await ref.read(licensingControllerProvider.notifier).openSignIn();
-    } catch (_) {/* browser unavailable — nothing to do */}
+    } catch (_) {
+      /* browser unavailable — nothing to do */
+    }
   }
 
   Future<void> _upgrade() async {
     try {
       await ref.read(licensingControllerProvider.notifier).unlockExport();
-    } catch (_) {/* browser unavailable — nothing to do */}
+    } catch (_) {
+      /* browser unavailable — nothing to do */
+    }
   }
 
   Widget _countdownPicker() {
-    final value =
-        ref.watch(recordingSettingsControllerProvider).countdownSeconds;
+    final value = ref
+        .watch(recordingSettingsControllerProvider)
+        .countdownSeconds;
     return _card(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text('Countdown before recording',
-              style: TextStyle(color: context.palette.textPrimary)),
+          Expanded(
+            child: Text(
+              'Countdown before recording',
+              style: TextStyle(color: context.palette.textPrimary),
+            ),
+          ),
+          const SizedBox(width: 12),
           ToggleButtons(
             isSelected: [value == 0, value == 3, value == 5],
             onPressed: (i) => ref
@@ -400,36 +481,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _appearanceCard() => _card(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: ListTile(
-          leading:
-              Icon(Icons.palette_outlined, color: context.palette.textPrimary),
-          title: Text('Theme playground',
-              style: TextStyle(color: context.palette.textPrimary)),
-          subtitle: Text('Preview and pick the app theme',
-              style: TextStyle(color: context.palette.textSecondary)),
-          trailing:
-              Icon(Icons.chevron_right, color: context.palette.textSecondary),
-          contentPadding: EdgeInsets.zero,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ThemePlaygroundScreen()),
-          ),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    child: ListTile(
+      leading: Icon(Icons.palette_outlined, color: context.palette.textPrimary),
+      title: Text(
+        'Appearance & theme',
+        style: TextStyle(color: context.palette.textPrimary),
+      ),
+      subtitle: Text(
+        'Choose the look of your workspace',
+        style: TextStyle(color: context.palette.textSecondary),
+      ),
+      trailing: Icon(Icons.chevron_right, color: context.palette.textSecondary),
+      contentPadding: EdgeInsets.zero,
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const ThemePlaygroundScreen())),
+    ),
+  );
 
   Widget _privacyCard() {
     final shareAnalytics = ref.watch(
-        globalPreferencesControllerProvider.select((p) => p.shareAnalytics));
+      globalPreferencesControllerProvider.select((p) => p.shareAnalytics),
+    );
     final shareDiagnostics = ref.watch(
-        globalPreferencesControllerProvider.select((p) => p.shareDiagnostics));
+      globalPreferencesControllerProvider.select((p) => p.shareDiagnostics),
+    );
     return _card(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Column(
         children: [
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text('Share usage data',
-                style: TextStyle(color: context.palette.textPrimary)),
+            title: Text(
+              'Share usage data',
+              style: TextStyle(color: context.palette.textPrimary),
+            ),
             subtitle: Text(
               'Feature usage is associated with your account while signed in. '
               'Never includes recordings, file names, or screen contents.',
@@ -442,8 +529,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text('Send crash & error reports',
-                style: TextStyle(color: context.palette.textPrimary)),
+            title: Text(
+              'Send crash & error reports',
+              style: TextStyle(color: context.palette.textPrimary),
+            ),
             subtitle: Text(
               'Sends technical reports, associated with your account while signed in. '
               'File paths are stripped; recordings are never included.',
@@ -455,14 +544,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 .setShareDiagnostics(v),
           ),
           ListTile(
-            leading: Icon(Icons.feedback_outlined,
-                color: context.palette.textPrimary),
-            title: Text('Send feedback',
-                style: TextStyle(color: context.palette.textPrimary)),
-            subtitle: Text('Share an idea or report a problem',
-                style: TextStyle(color: context.palette.textSecondary)),
-            trailing: Icon(Icons.chevron_right,
-                color: context.palette.textSecondary),
+            leading: Icon(
+              Icons.feedback_outlined,
+              color: context.palette.textPrimary,
+            ),
+            title: Text(
+              'Send feedback',
+              style: TextStyle(color: context.palette.textPrimary),
+            ),
+            subtitle: Text(
+              'Share an idea or report a problem',
+              style: TextStyle(color: context.palette.textSecondary),
+            ),
+            trailing: Icon(
+              Icons.chevron_right,
+              color: context.palette.textSecondary,
+            ),
             contentPadding: EdgeInsets.zero,
             onTap: () => FeedbackDialog.show(context),
           ),
@@ -497,8 +594,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _saveLocationCard() {
-    final path =
-        ref.watch(globalPreferencesControllerProvider).defaultSaveLocation;
+    final path = ref
+        .watch(globalPreferencesControllerProvider)
+        .defaultSaveLocation;
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -538,8 +636,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final dir = await getDirectoryPath();
     if (dir == null || !mounted) return;
     if (DistributionChannel.isAppStore) {
-      try { await const MethodChannel('slipreel/sandbox-files').invokeMethod<void>('remember',dir); }
-      catch (_) { return; }
+      try {
+        await const MethodChannel(
+          'slipreel/sandbox-files',
+        ).invokeMethod<void>('remember', dir);
+      } catch (_) {
+        return;
+      }
     }
     await ref
         .read(globalPreferencesControllerProvider.notifier)
@@ -559,17 +662,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           for (final r in rows)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(children: [
-                SizedBox(
-                  width: 56,
-                  child: Text(r.$1,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 56,
+                    child: Text(
+                      r.$1,
                       style: TextStyle(
-                          color: context.palette.textPrimary,
-                          fontFamily: 'Menlo')),
-                ),
-                Text(r.$2,
-                    style: TextStyle(color: context.palette.textSecondary)),
-              ]),
+                        color: context.palette.textPrimary,
+                        fontFamily: 'Menlo',
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      r.$2,
+                      style: TextStyle(color: context.palette.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
             ),
         ],
       ),
@@ -577,100 +689,118 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _aboutCard() => _card(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            FutureBuilder<PackageInfo>(
-              future: _packageInfoFuture,
-              builder: (context, snap) {
-                final info = snap.data;
-                final version = info == null
-                    ? '…'
-                    : '${info.version} (${info.buildNumber})';
-                return Text(
-                  'Slipreel · v$version',
-                  style: TextStyle(
-                      color: context.palette.textPrimary,
-                      fontWeight: FontWeight.w500),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-            if (DistributionChannel.isAppStore) const ListTile(title: Text('Updates are delivered by the App Store')),
-            if (!DistributionChannel.isAppStore) ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.system_update_alt,
-                  color: context.palette.textPrimary),
-              title: Text('Check for updates',
-                  style: TextStyle(color: context.palette.textPrimary)),
-              trailing: Icon(Icons.chevron_right,
-                  size: 16, color: context.palette.textSecondary),
-              onTap: () async {
-                try {
-                  final entitlement = ref.read(entitlementProvider);
-                  final claims = entitlement is EntitlementLoaded
-                      ? entitlement.claims
-                      : null;
-                  if (claims?.plan != 'subscription' ||
-                      !canExport(claims, appReleaseDate: buildReleaseDate)) {
-                    final until = claims?.updatesUntil?.toUtc();
-                    final ceiling = until == null
-                        ? 'your included update period'
-                        : '${until.year}-${until.month.toString().padLeft(2, '0')}-${until.day.toString().padLeft(2, '0')}';
-                    final proceed = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Check license compatibility'),
-                        content: Text(
-                          'A one-time license covers releases through $ceiling (UTC). '
-                          'Installing a newer release may require renewing updates to export. '
-                          'Compare the release date before installing, or download an earlier version.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () {
-                              launchUrl(
-                                Uri.parse('https://slipreel.app/downloads'),
-                              );
-                              Navigator.pop(ctx, false);
-                            },
-                            child: const Text('Earlier versions'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Cancel'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Check for updates'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (proceed != true) return;
-                  }
-                  await ref.read(updaterServiceProvider).checkForUpdates();
-                } catch (_) {
-                  // Sparkle unavailable (non-macOS / test host) — nothing to do.
-                }
-              },
-            ),
-            if (!DistributionChannel.isAppStore) ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.public, color: context.palette.textPrimary),
-              title: Text('Website',
-                  style: TextStyle(color: context.palette.textPrimary)),
-              trailing: Icon(Icons.open_in_new,
-                  size: 16, color: context.palette.textSecondary),
-              onTap: () async {
-                try {
-                  await launchUrl(Uri.parse('https://slipreel.app'));
-                } catch (_) {/* browser unavailable — nothing to do */}
-              },
-            ),
-          ],
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FutureBuilder<PackageInfo>(
+          future: _packageInfoFuture,
+          builder: (context, snap) {
+            final info = snap.data;
+            final version = info == null
+                ? '…'
+                : '${info.version} (${info.buildNumber})';
+            return Text(
+              'Slipreel · v$version',
+              style: TextStyle(
+                color: context.palette.textPrimary,
+                fontWeight: FontWeight.w500,
+              ),
+            );
+          },
         ),
-      );
+        const SizedBox(height: 8),
+        if (DistributionChannel.isAppStore)
+          const ListTile(title: Text('Updates are delivered by the App Store')),
+        if (!DistributionChannel.isAppStore)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(
+              Icons.system_update_alt,
+              color: context.palette.textPrimary,
+            ),
+            title: Text(
+              'Check for updates',
+              style: TextStyle(color: context.palette.textPrimary),
+            ),
+            trailing: Icon(
+              Icons.chevron_right,
+              size: 16,
+              color: context.palette.textSecondary,
+            ),
+            onTap: () async {
+              try {
+                final entitlement = ref.read(entitlementProvider);
+                final claims = entitlement is EntitlementLoaded
+                    ? entitlement.claims
+                    : null;
+                if (claims?.plan != 'subscription' ||
+                    !canExport(claims, appReleaseDate: buildReleaseDate)) {
+                  final until = claims?.updatesUntil?.toUtc();
+                  final ceiling = until == null
+                      ? 'your included update period'
+                      : '${until.year}-${until.month.toString().padLeft(2, '0')}-${until.day.toString().padLeft(2, '0')}';
+                  final proceed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Check license compatibility'),
+                      content: Text(
+                        'A one-time license covers releases through $ceiling (UTC). '
+                        'Installing a newer release may require renewing updates to export. '
+                        'Compare the release date before installing, or download an earlier version.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            launchUrl(
+                              Uri.parse('https://slipreel.app/downloads'),
+                            );
+                            Navigator.pop(ctx, false);
+                          },
+                          child: const Text('Earlier versions'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Check for updates'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (proceed != true) return;
+                }
+                await ref.read(updaterServiceProvider).checkForUpdates();
+              } catch (_) {
+                // Sparkle unavailable (non-macOS / test host) — nothing to do.
+              }
+            },
+          ),
+        if (!DistributionChannel.isAppStore)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.public, color: context.palette.textPrimary),
+            title: Text(
+              'Website',
+              style: TextStyle(color: context.palette.textPrimary),
+            ),
+            trailing: Icon(
+              Icons.open_in_new,
+              size: 16,
+              color: context.palette.textSecondary,
+            ),
+            onTap: () async {
+              try {
+                await launchUrl(Uri.parse('https://slipreel.app'));
+              } catch (_) {
+                /* browser unavailable — nothing to do */
+              }
+            },
+          ),
+      ],
+    ),
+  );
 
   Future<PackageInfo> _packageInfo() async {
     try {

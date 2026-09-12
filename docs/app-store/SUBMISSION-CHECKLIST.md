@@ -14,7 +14,7 @@ Checked September 12, 2026. This status supersedes the historical rollout notes 
 
 ## Next build
 
-- [ ] Merge icon changes after CI passes.
+- [x] Merge icon changes after CI passes (PR 130).
 - [ ] Build, sign, validate and upload a new build from merged main, including the icon and plist changes.
 - [ ] Install the update through TestFlight and visually verify the icon in Apple's purchase sheet.
 
@@ -45,3 +45,14 @@ Live API checks show version 1.1.0 is PREPARE_FOR_SUBMISSION, with manual releas
 ## Icon regeneration
 
 `scripts/render-macos-icon.cjs` uses Sharp to render the tracked SVG, preserving alpha. Install Sharp outside the checkout and expose its node_modules through NODE_PATH before running the script. No new runtime dependency is added to the app.
+
+## September 12 native acceptance and UX follow-up
+
+- TestFlight 10101 retained both paid export access and the signed-in account after quitting/relaunching. The existing-access screen suppressed plan buttons. Restore eventually completed with active access, but the long native wait prompted a bounded restore timeout in the next build.
+- A disposable TextEdit window was recorded into `recording_1789226907720.mp4` (59.48 seconds), loaded in the editor, and marked saved. Export reached the native save panel.
+- **Release blocker found on 10101:** MP4 export to Documents failed with `PathAccessException: Creation of temporary directory failed`. The save panel grants the selected output, not arbitrary sibling folders. The candidate uses Foundation's same-volume item replacement directory before atomic publication. Retest MP4/GIF and replacement of an existing output through TestFlight before marking this fixed in the distributed app.
+- Candidate UX replaces the store-branded upgrade button with contextual export-gate copy, localized monthly/yearly plan selection and a single upgrade action. Settings distinguishes free, paid and recovery states. Existing licenses that need verification are not offered another purchase. Pending, cancellation, error, restore and account-sync states are covered by widget tests.
+- UI preview images use fake accounts/products for layout review, not submission screenshots or proof of real purchases. No refund, account deletion, or second real purchase was performed on the owner's account.
+- Remaining native acceptance: Apple sign-in/Hide My Email, real shared access in both editions, microphone/system audio/webcam, selected-folder persistence, the corrected export path and offline/expiry behavior. Mock tests do not replace these checks.
+
+The candidate export staging also passed a native macOS restriction test: creating a sibling directory was denied, but Foundation replacement staging and POSIX atomic publication to the explicitly allowed file succeeded. This reproduces the file-only permission boundary; it does not replace the next TestFlight retest.

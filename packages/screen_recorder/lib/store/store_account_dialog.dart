@@ -1,3 +1,5 @@
+import '../ui/theme/app_palette_context.dart';
+import '../licensing/entitlement.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../licensing/licensing_controller.dart';
@@ -30,6 +32,7 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
   Future<void> _run(
     Future<void> Function() action, {
     bool close = false,
+    String? success,
   }) async {
     if (_busy) return;
     setState(() {
@@ -39,6 +42,7 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
     try {
       await action();
       if (mounted && close) Navigator.pop(context, true);
+      if (mounted && !close) setState(() => _message = success);
     } catch (e) {
       if (mounted) {
         setState(
@@ -55,8 +59,12 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(nativeAccountProvider);
+    final access = ref.watch(entitlementProvider);
+    final applePurchase =
+        access is EntitlementAppStore && access.productId != null;
+    final palette = context.palette;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(28),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -68,31 +76,55 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
           ),
           const SizedBox(height: 12),
           if (account.signedIn) ...[
-            Text(account.email!),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundColor: palette.accentMuted,
+                child: Icon(
+                  Icons.person_outline_rounded,
+                  color: palette.accent,
+                ),
+              ),
+              title: Text(
+                account.email!,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text('Connected to this Mac'),
+            ),
             const SizedBox(height: 12),
             const Text(
               'Your account shares access between your Macs and Slipreel editions. Manage a subscription with the provider where you purchased it.',
             ),
             TextButton(
-              onPressed: _busy ? null : () => _run(account.syncPurchases),
-              child: const Text('Sync purchases and access'),
-            ),
-            TextButton(
               onPressed: _busy
                   ? null
                   : () => _run(
-                      () => ref
-                          .read(licensingControllerProvider.notifier)
-                          .appStore!
-                          .manageSubscriptions(),
+                      account.syncPurchases,
+                      success: 'Your purchases and access are up to date.',
                     ),
-              child: const Text('Manage Apple subscription'),
+              child: const Text('Sync purchases and access'),
             ),
+            if (applePurchase)
+              TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => _run(
+                        () => ref
+                            .read(licensingControllerProvider.notifier)
+                            .appStore!
+                            .manageSubscriptions(),
+                      ),
+                child: const Text('Manage Apple subscription'),
+              ),
             TextButton(
               onPressed: _busy ? null : () => _run(account.signOut),
               child: const Text('Sign out'),
             ),
+            const Divider(),
             TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
               onPressed: _busy
                   ? null
                   : () async {
@@ -132,23 +164,41 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
                 enabled: !_busy,
                 keyboardType: TextInputType.emailAddress,
                 autofillHints: const [AutofillHints.email],
-                decoration: const InputDecoration(labelText: 'Email address'),
+                decoration: const InputDecoration(
+                  labelText: 'Email address',
+                  hintText: 'you@example.com',
+                  prefixIcon: Icon(Icons.mail_outline_rounded),
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 12),
               FilledButton(
                 onPressed: _busy
                     ? null
                     : () => _run(() async {
+                        if (!RegExp(
+                          r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                        ).hasMatch(_email.text.trim())) {
+                          throw const AccountError(
+                            'Enter a valid email address to receive your code.',
+                          );
+                        }
                         _challenge = await account.sendCode(_email.text);
                       }),
                 child: const Text('Email me a sign-in code'),
               ),
               const SizedBox(height: 8),
-              OutlinedButton(
+              OutlinedButton.icon(
+                icon: const Icon(Icons.apple),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
                 onPressed: _busy
                     ? null
                     : () => _run(account.signInWithApple, close: true),
-                child: const Text('Sign in with Apple'),
+                label: const Text('Sign in with Apple'),
               ),
               const Text(
                 'If you previously used email sign-in, choose that same address. Apple’s Hide My Email may create a separate account.',
@@ -160,7 +210,11 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
                 enabled: !_busy,
                 keyboardType: TextInputType.number,
                 autofillHints: const [AutofillHints.oneTimeCode],
-                decoration: const InputDecoration(labelText: 'Sign-in code'),
+                maxLength: 8,
+                decoration: const InputDecoration(
+                  labelText: 'Sign-in code',
+                  border: OutlineInputBorder(),
+                ),
               ),
               FilledButton(
                 onPressed: _busy
@@ -183,7 +237,13 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
           if (_message != null)
             Padding(
               padding: const EdgeInsets.only(top: 12),
-              child: Text(_message!),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  _message!,
+                  style: TextStyle(color: palette.textSecondary, height: 1.5),
+                ),
+              ),
             ),
         ],
       ),
