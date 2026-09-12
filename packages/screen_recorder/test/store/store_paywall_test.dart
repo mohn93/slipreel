@@ -69,7 +69,7 @@ class FakeAccount extends NativeAccount {
   Future<void> load() async {}
   @override
   Future<void> activate() async {
-    if (grantOnActivate) (licensing as FakeLicensing).setAccess(paid());
+    if (grantOnActivate) (licensing as FakeLicensing).setAccess(sharedAccess());
   }
 
   @override
@@ -77,6 +77,23 @@ class FakeAccount extends NativeAccount {
     if (syncFailure) throw const AccountError('sync failed');
     (licensing as FakeLicensing).setAccess(paid());
   }
+}
+
+EntitlementAppStore sharedAccess() {
+  final now = DateTime.now();
+  return EntitlementAppStore(
+    sharedClaims: EntitlementClaims(
+      sub: 'website-user',
+      plan: 'subscription',
+      exportEntitled: true,
+      status: 'active',
+      updatesUntil: null,
+      deviceId: 'mac',
+      seatLimit: 2,
+      issuedAt: now,
+      expiresAt: now.add(const Duration(days: 7)),
+    ),
+  );
 }
 
 EntitlementAppStore paid() => EntitlementAppStore(

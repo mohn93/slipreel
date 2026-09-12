@@ -498,18 +498,6 @@ class _StorePaywallState extends ConsumerState<StorePaywall> {
                     ),
                   ],
                 ),
-                if (savings != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Save $savings% vs monthly',
-                      style: TextStyle(
-                        color: p.textPrimary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
                 const SizedBox(height: 14),
                 Text(
                   product.price,
@@ -524,6 +512,18 @@ class _StorePaywallState extends ConsumerState<StorePaywall> {
                   product.isYearly ? 'per year' : 'per month',
                   style: TextStyle(color: p.textSecondary, fontSize: 12),
                 ),
+                if (savings != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Save $savings% vs monthly',
+                      style: TextStyle(
+                        color: p.textPrimary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

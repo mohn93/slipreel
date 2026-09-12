@@ -11,6 +11,34 @@ import 'package:screen_recorder/licensing/entitlement_verifier.dart';
 import 'package:screen_recorder/licensing/licensing_api.dart';
 import 'package:screen_recorder/licensing/export_gate.dart';
 
+class _CachedFreeVerifier extends EntitlementVerifier {
+  _CachedFreeVerifier() : super(List.filled(32, 0));
+  @override
+  Future<EntitlementClaims?> verify(
+    String jwt, {
+    DateTime? now,
+    bool ignoreExpiry = false,
+  }) async => EntitlementClaims(
+    sub: 'user',
+    plan: 'free',
+    exportEntitled: false,
+    status: 'none',
+    updatesUntil: null,
+    deviceId: 'mac',
+    seatLimit: 2,
+    issuedAt: DateTime.now(),
+    expiresAt: DateTime.now().add(const Duration(days: 1)),
+  );
+}
+
+class _OfflineApi extends LicensingApi {
+  @override
+  Future<RefreshResult> refresh({
+    required String refreshToken,
+    required String deviceId,
+  }) async => const RefreshTransient();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('slipreel/store');
@@ -237,4 +265,51 @@ void main() {
       isNull,
     );
   });
+  test(
+    'shared refresh does not flash free access or discard verified Apple access on native error',
+    () async {
+      var offline = false;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'channel') return 'app-store';
+        if (offline) throw PlatformException(code: 'offline');
+        return {
+          'productId': 'com.slipreel.store.monthly',
+          'expiresAt': DateTime.now()
+              .add(const Duration(days: 1))
+              .millisecondsSinceEpoch,
+        };
+      });
+      final storage = InMemoryLicenseStore();
+      await storage.save(
+        const LicenseTokens(
+          token: 'cached-free',
+          refreshToken: 'refresh',
+          deviceId: 'mac',
+        ),
+      );
+      final controller = LicensingController(
+        store: storage,
+        verifier: _CachedFreeVerifier(),
+        api: _OfflineApi(),
+        authState: AuthStateStore(InMemorySecureKV()),
+        appStore: AppStoreClient(),
+      );
+      await controller.load();
+      final states = <EntitlementState>[];
+      final remove = controller.addListener(states.add, fireImmediately: false);
+      offline = true;
+      await controller.refreshNow();
+      expect(states, isNotEmpty);
+      expect(
+        states.every(
+          (state) =>
+              state is EntitlementAppStore &&
+              canExportNow(state, appReleaseDate: DateTime.now()),
+        ),
+        isTrue,
+      );
+      remove();
+      controller.dispose();
+    },
+  );
 }
