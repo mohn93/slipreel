@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:screen_recorder/store/app_store_client.dart';
@@ -183,4 +184,57 @@ void main() {
       controller.dispose();
     },
   );
+  testWidgets('restore stops waiting when Apple does not return', (
+    tester,
+  ) async {
+    messenger.setMockMethodCallHandler(
+      channel,
+      (_) => Completer<void>().future,
+    );
+    final check = expectLater(
+      AppStoreClient().restore(),
+      throwsA(isA<TimeoutException>()),
+    );
+    await tester.pump(const Duration(seconds: 46));
+    await check;
+  });
+  test('yearly savings use numeric prices in the same currency only', () {
+    const monthly = StoreProduct(
+      'com.slipreel.store.monthly',
+      'Pro',
+      '\$9',
+      'month',
+      priceValue: 9,
+      currencyCode: 'USD',
+    );
+    const yearly = StoreProduct(
+      'com.slipreel.store.yearly',
+      'Pro',
+      '\$79',
+      'year',
+      priceValue: 79,
+      currencyCode: 'USD',
+    );
+    expect(yearly.savingsComparedWith(monthly), 26);
+    expect(
+      const StoreProduct(
+        'com.slipreel.store.yearly',
+        'Pro',
+        '79 €',
+        'year',
+        priceValue: 79,
+        currencyCode: 'EUR',
+      ).savingsComparedWith(monthly),
+      isNull,
+    );
+    expect(
+      const StoreProduct(
+        'com.slipreel.store.yearly',
+        'Pro',
+        '\$79',
+        'year',
+      ).savingsComparedWith(monthly),
+      isNull,
+    );
+  });
 }

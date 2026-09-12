@@ -64,7 +64,9 @@ final class StoreBridge: NSObject, ASAuthorizationControllerDelegate,
       products = try await Product.products(for: productIDs)
       result(products.sorted { $0.price < $1.price }.map { product -> [String: Any] in
         var data: [String: Any] = ["id": product.id, "title": product.displayName,
-                                    "price": product.displayPrice]
+                                    "price": product.displayPrice,
+                                    "priceValue": NSDecimalNumber(decimal: product.price).doubleValue,
+                                    "currencyCode": product.priceFormatStyle.currencyCode]
         if let period = product.subscription?.subscriptionPeriod {
           let unit: String
           switch period.unit {

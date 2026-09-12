@@ -25,7 +25,9 @@ class PaywallDialog {
   }) async {
     final result = await showDesktopDialog<bool>(
       context: context,
-      builder: (_) => DistributionChannel.isAppStore ? const StorePaywall() : _PaywallBody(reason: reason),
+      builder: (_) => DistributionChannel.isAppStore
+          ? StorePaywall(reason: reason)
+          : _PaywallBody(reason: reason),
     );
     return result ?? false;
   }
@@ -54,9 +56,9 @@ class _PaywallBodyState extends ConsumerState<_PaywallBody> {
         );
       case PaywallReason.needsPurchase:
         return (
-          title: 'Exporting is a paid feature',
+          title: 'Ready for unlimited exports?',
           body:
-              'Recording and editing are free. Choose a subscription or a '
+              'Your video is ready to share. Unlock unlimited full-quality exports with a '
               'one-time purchase (perpetual export plus one year of updates) '
               'on the next screen.',
         );

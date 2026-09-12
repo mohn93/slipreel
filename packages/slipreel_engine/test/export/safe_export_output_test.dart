@@ -62,4 +62,29 @@ void main() {
       expect(await staged.directory.exists(), isFalse);
     },
   );
+  test(
+    'platform staging publishes without creating siblings beside destination',
+    () async {
+      final stageRoot = await Directory.systemTemp.createTemp(
+        'replacement-root-',
+      );
+      addTearDown(() => stageRoot.delete(recursive: true));
+      final destination = File('${dir.path}/export.mp4');
+      final staged = await SafeExportOutput.create(
+        destination.path,
+        [source.path],
+        createStagingDirectory: (target) async {
+          expect(target, destination.path);
+          return stageRoot.createTemp('owned-');
+        },
+      );
+      expect(staged.directory.parent.path, stageRoot.path);
+      expect(await dir.list().length, 1);
+      await File(staged.path).writeAsString('complete');
+      await staged.publish();
+      await staged.dispose();
+      expect(await destination.readAsString(), 'complete');
+      expect(await source.readAsString(), 'original');
+    },
+  );
 }

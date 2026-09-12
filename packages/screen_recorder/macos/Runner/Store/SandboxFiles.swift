@@ -20,13 +20,31 @@ final class SandboxFiles {
     }
     #endif
     channel.setMethodCallHandler { [weak self] call,result in
-      guard let self, call.method == "remember", let path = call.arguments as? String else { result(FlutterMethodNotImplemented); return }
+      guard let self, let path = call.arguments as? String else {
+        result(FlutterMethodNotImplemented); return
+      }
       do {
-        #if APP_STORE
-        try self.remember(URL(fileURLWithPath:path),keyPath:path)
-        #endif
-        result(nil)
-      } catch { result(FlutterError(code:"FOLDER_ACCESS",message:"Select the folder again to allow access.",details:nil)) }
+        switch call.method {
+        case "remember":
+          #if APP_STORE
+          try self.remember(URL(fileURLWithPath:path),keyPath:path)
+          #endif
+          result(nil)
+        case "exportStagingDirectory":
+          // Save-panel access covers the destination file, not its parent.
+          // Ask Foundation for same-volume staging instead of creating a
+          // sibling folder in a directory the user did not grant access to.
+          let directory = try FileManager.default.url(
+            for: .itemReplacementDirectory, in: .userDomainMask,
+            appropriateFor: URL(fileURLWithPath: path), create: true)
+          result(directory.path)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      } catch {
+        result(FlutterError(code: call.method == "remember" ? "FOLDER_ACCESS" : "EXPORT_STAGING",
+          message: call.method == "remember" ? "Select the folder again to allow access." : "Choose the export file again to allow saving.", details:nil))
+      }
     }
   }
   private func remember(_ url: URL, keyPath: String) throws {

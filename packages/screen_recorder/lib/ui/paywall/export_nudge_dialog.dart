@@ -1,3 +1,4 @@
+import '../../distribution/distribution_channel.dart';
 import 'package:screen_recorder/ui/widgets/desktop_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,7 +44,7 @@ class _ExportNudgeBodyState extends ConsumerState<_ExportNudgeBody> {
       if (!mounted) return;
       if (ok) {
         await Navigator.of(context).maybePop();
-      } else {
+      } else if (!DistributionChannel.isAppStore) {
         AppAlerts.error('Could not open the browser. Try again.');
       }
     } catch (_) {

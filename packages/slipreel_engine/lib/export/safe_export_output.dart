@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 /// An export owns only its unique staging directory until publication.
@@ -29,18 +30,35 @@ class SafeExportOutput {
 
   static Future<SafeExportOutput> create(
     String destination,
-    List<String> sources,
-  ) async {
+    List<String> sources, {
+    Future<Directory> Function(String destination)? createStagingDirectory,
+  }) async {
     await _check(destination, sources);
-    final directory = await File(
+    final directory = await (createStagingDirectory ?? _createDirectory)(
       destination,
-    ).parent.createTemp('.slipreel-export-');
+    );
     return SafeExportOutput._(
       destination,
       sources,
       directory,
       p.join(directory.path, 'output${p.extension(destination)}'),
     );
+  }
+
+  static Future<Directory> _createDirectory(String destination) async {
+    if (const String.fromEnvironment('SLIPREEL_DISTRIBUTION') == 'app-store') {
+      // NSSavePanel grants the selected file, not permission to create sibling
+      // directories. Foundation chooses an owned replacement directory on the
+      // destination volume, retaining atomic publication even on external disks.
+      final path = await const MethodChannel(
+        'slipreel/sandbox-files',
+      ).invokeMethod<String>('exportStagingDirectory', destination);
+      if (path == null || path.isEmpty) {
+        throw StateError('Could not prepare a safe export destination.');
+      }
+      return Directory(path);
+    }
+    return File(destination).parent.createTemp('.slipreel-export-');
   }
 
   Future<void> publish() async {

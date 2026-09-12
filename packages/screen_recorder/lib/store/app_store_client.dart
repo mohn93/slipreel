@@ -3,9 +3,37 @@ import 'package:flutter/services.dart';
 import '../licensing/entitlement.dart';
 
 class StoreProduct {
-  const StoreProduct(this.id, this.title, this.price, this.period);
+  const StoreProduct(
+    this.id,
+    this.title,
+    this.price,
+    this.period, {
+    this.priceValue,
+    this.currencyCode,
+  });
   final String id, title, price;
   final String? period;
+  final double? priceValue;
+  final String? currencyCode;
+
+  int? savingsComparedWith(StoreProduct monthly) {
+    final annual = priceValue, month = monthly.priceValue;
+    if (!isYearly ||
+        monthly.isYearly ||
+        currencyCode == null ||
+        currencyCode != monthly.currencyCode ||
+        annual == null ||
+        month == null ||
+        !annual.isFinite ||
+        !month.isFinite ||
+        annual <= 0 ||
+        month <= 0 ||
+        annual >= month * 12)
+      return null;
+    final savings = ((1 - annual / (month * 12)) * 100).floor();
+    return savings > 0 ? savings : null;
+  }
+
   bool get isYearly => id == 'com.slipreel.store.yearly';
   String get purchaseLabel =>
       isYearly ? 'Yearly · $price / year' : 'Monthly · $price / month';
@@ -17,6 +45,8 @@ class StoreProduct {
     map['title'] as String,
     map['price'] as String,
     map['period'] as String?,
+    priceValue: (map['priceValue'] as num?)?.toDouble(),
+    currencyCode: map['currencyCode'] as String?,
   );
 }
 
@@ -44,7 +74,9 @@ class AppStoreClient {
           .map((p) => StoreProduct.fromMap(p as Map<Object?, Object?>))
           .toList();
   Future<EntitlementAppStore> entitlement() async {
-    final map = await channel.invokeMapMethod<String, Object?>('entitlement');
+    final map = await channel
+        .invokeMapMethod<String, Object?>('entitlement')
+        .timeout(const Duration(seconds: 15));
     if (map == null) throw StateError('StoreKit unavailable');
     return EntitlementAppStore(
       productId: map['productId'] as String?,
@@ -64,8 +96,13 @@ class AppStoreClient {
       }) ??
       'failed';
   Future<List<String>> signedTransactions() async =>
-      await channel.invokeListMethod<String>('signedTransactions') ?? [];
-  Future<void> restore() => channel.invokeMethod<void>('restore');
+      await channel
+          .invokeListMethod<String>('signedTransactions')
+          .timeout(const Duration(seconds: 15)) ??
+      [];
+  Future<void> restore() => channel
+      .invokeMethod<void>('restore')
+      .timeout(const Duration(seconds: 45));
   Future<void> manageSubscriptions() =>
       channel.invokeMethod<void>('manageSubscriptions');
   void dispose() {

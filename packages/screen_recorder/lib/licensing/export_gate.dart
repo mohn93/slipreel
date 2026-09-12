@@ -18,8 +18,11 @@ enum PaywallReason {
   updateCeiling,
 }
 
-EntitlementClaims? _claimsOf(EntitlementState state) =>
-    state is EntitlementLoaded ? state.claims : null;
+EntitlementClaims? _claimsOf(EntitlementState state) => switch (state) {
+  EntitlementLoaded(:final claims) => claims,
+  EntitlementAppStore(:final sharedClaims) => sharedClaims,
+  _ => null,
+};
 
 /// Whether export is currently allowed for [state], per the spec §2 rules.
 /// Loading/signed-out both resolve to false (fail-closed).
@@ -29,7 +32,8 @@ bool canExportNow(
   DateTime? now,
 }) {
   if (state is EntitlementAppStore) {
-    return state.activeAt(now ?? DateTime.now()) || canExport(state.sharedClaims, appReleaseDate: appReleaseDate, now: now);
+    return state.activeAt(now ?? DateTime.now()) ||
+        canExport(state.sharedClaims, appReleaseDate: appReleaseDate, now: now);
   }
   return canExport(_claimsOf(state), appReleaseDate: appReleaseDate, now: now);
 }
@@ -44,16 +48,21 @@ PaywallReason? paywallReasonFor(
     return null;
   }
   final claims = _claimsOf(state);
-  if (claims != null && claims.plan != 'free' &&
+  if (claims != null &&
+      claims.plan != 'free' &&
       !(now ?? DateTime.now()).isBefore(claims.expiresAt)) {
     return PaywallReason.licenseCheckRequired;
   }
-  if (claims != null && claims.plan == 'onetime' &&
+  if (claims != null &&
+      claims.plan == 'onetime' &&
       claims.updatesUntil != null &&
       appReleaseDate.isAfter(claims.updatesUntil!)) {
     return PaywallReason.updateCeiling;
   }
   if (claims != null && claims.plan == 'subscription') {
+    return PaywallReason.subscriptionLapsed;
+  }
+  if (state is EntitlementAppStore && state.productId != null) {
     return PaywallReason.subscriptionLapsed;
   }
   return PaywallReason.needsPurchase;
