@@ -283,14 +283,16 @@ class _StorePaywallState extends ConsumerState<StorePaywall> {
                               ),
                           ],
                         )
-                      : Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            for (var i = 0; i < cards.length; i++) ...[
-                              if (i > 0) const SizedBox(width: 12),
-                              Expanded(child: cards[i]),
+                      : IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (var i = 0; i < cards.length; i++) ...[
+                                if (i > 0) const SizedBox(width: 12),
+                                Expanded(child: cards[i]),
+                              ],
                             ],
-                          ],
+                          ),
                         );
                 },
               ),

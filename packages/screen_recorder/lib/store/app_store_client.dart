@@ -28,8 +28,9 @@ class StoreProduct {
         !month.isFinite ||
         annual <= 0 ||
         month <= 0 ||
-        annual >= month * 12)
+        annual >= month * 12) {
       return null;
+    }
     final savings = ((1 - annual / (month * 12)) * 100).floor();
     return savings > 0 ? savings : null;
   }

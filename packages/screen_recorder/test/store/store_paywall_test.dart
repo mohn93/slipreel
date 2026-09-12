@@ -18,12 +18,14 @@ class FakeStore extends AppStoreClient {
   int purchases = 0, restores = 0;
   String result = 'cancelled';
   bool unavailable = false;
+  List<StoreProduct>? offerings;
   String? purchasedId;
   VoidCallback? onPurchased;
   Completer<List<StoreProduct>>? loading;
   @override
   Future<List<StoreProduct>> products() async {
     if (loading != null) return loading!.future;
+    if (offerings != null) return offerings!;
     if (unavailable) throw Exception('offline');
     return const [
       StoreProduct('com.slipreel.store.yearly', 'Pro', '€79.99', 'year'),
@@ -146,7 +148,27 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final c = FakeLicensing(FakeStore());
+    final c = FakeLicensing(
+      FakeStore()
+        ..offerings = const [
+          StoreProduct(
+            'com.slipreel.store.monthly',
+            'Pro',
+            '\$9.00',
+            'month',
+            priceValue: 9,
+            currencyCode: 'USD',
+          ),
+          StoreProduct(
+            'com.slipreel.store.yearly',
+            'Pro',
+            '\$79.00',
+            'year',
+            priceValue: 79,
+            currencyCode: 'USD',
+          ),
+        ],
+    );
     final a = FakeAccount(c);
     await openPaywall(tester, c, a);
     await expectLater(
