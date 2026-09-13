@@ -163,6 +163,8 @@ class ClipboardCopier implements DestinationHandler {
     final cleanName = p.basename(suggestedFileName);
     final ext = p.extension(cleanName);
     final tmpDir = await _tempDirProvider();
+    // The OS may purge the cache directory between launches.
+    await tmpDir.create(recursive: true);
     final ts = DateTime.now().microsecondsSinceEpoch;
     final n = _nonce++;
     return p.join(tmpDir.path, 'slipreel_export_${ts}_$n$ext');
@@ -211,6 +213,8 @@ class ShareableLinkPublisher implements DestinationHandler {
     final cleanName = p.basename(suggestedFileName);
     final ext = p.extension(cleanName);
     final tmpDir = await _tempDirProvider();
+    // The OS may purge the cache directory between launches.
+    await tmpDir.create(recursive: true);
     final ts = DateTime.now().microsecondsSinceEpoch;
     final n = _nonce++;
     return p.join(tmpDir.path, 'slipreel_export_${ts}_$n$ext');
