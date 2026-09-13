@@ -50,6 +50,10 @@ class NativeAccount extends ChangeNotifier {
         await _clear();
       }
       throw AccountError(switch (code) {
+        'account_restricted' =>
+          'Your account is restricted. Contact support for help. Your local recordings are safe.',
+        'maintenance' =>
+          'Online services are under maintenance. Please try again shortly.',
         'invalid_code' =>
           'That code is invalid or expired. Request a new code.',
         'seat_limit' =>

@@ -133,6 +133,17 @@ if [[ -d "$SPARKLE_FW" ]]; then
   log "Sparkle nested code signed + app re-sealed"
 fi
 
+# Optional Developer ID profile enables native push for direct downloads.
+# Existing builds without this profile retain the in-app inbox.
+if [[ -n "${SLIPREEL_DIRECT_PUSH_PROFILE:-}" ]]; then
+  PUSH_ENTITLEMENTS="$DIST/direct-push.entitlements"
+  python3 "$ROOT/scripts/prepare-direct-push.py" "$APP" \
+    "$SLIPREEL_DIRECT_PUSH_PROFILE" "$APP_PKG/macos/Runner/Release.entitlements" \
+    "$PUSH_ENTITLEMENTS" || die "invalid direct push provisioning profile"
+  codesign --force --options runtime --timestamp --entitlements "$PUSH_ENTITLEMENTS" \
+    --sign "$SIGN_IDENTITY" "$APP" || die "failed to sign direct push capability"
+fi
+
 # --- stage 2: verify signature ----------------------------------------------
 log "verifying Developer ID signature + hardened runtime"
 codesign --verify --deep --strict --verbose=2 "$APP" \

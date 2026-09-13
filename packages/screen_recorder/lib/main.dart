@@ -1,3 +1,5 @@
+import 'notifications/notification_controller.dart';
+import 'notifications/notification_settings.dart';
 import 'store/native_account.dart';
 import 'distribution/distribution_channel.dart';
 import 'store/app_store_client.dart';
@@ -268,6 +270,19 @@ Future<void> main() async {
     authState: AuthStateStore(licensingKv),
   );
   await licensingController.load();
+  final notifications = NotificationController(
+    storage: licensingKv,
+    licenses: licensingStore,
+    channelName: DistributionChannel.isAppStore ? 'app-store' : 'direct',
+  );
+  unawaited(notifications.start());
+  licensingController.onAccountChanged = notifications.accountChanged;
+  notifications.openInbox = () {
+    final context = rootNavigatorKey.currentContext;
+    if (context != null) {
+      unawaited(showDialog<void>(context: context, builder: (_) => const NotificationInbox()));
+    }
+  };
   final nativeAccount = DistributionChannel.isAppStore ? NativeAccount(licensingController) : null;
   if (nativeAccount != null) {
     Future<void> syncAccount() async {
@@ -521,6 +536,10 @@ Future<void> main() async {
       ),
       updaterServiceProvider.overrideWithValue(updaterService),
       licensingControllerProvider.overrideWith((ref) => licensingController),
+      notificationControllerProvider.overrideWith((ref) {
+        ref.listen(entitlementProvider, (_, next) { unawaited(notifications.accountChanged()); });
+        return notifications;
+      }),
       analyticsServiceProvider.overrideWithValue(analyticsService),
       diagnosticsServiceProvider.overrideWithValue(diagnosticsService),
       crumbStoreProvider.overrideWithValue(crumbStore),
@@ -964,6 +983,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(notificationControllerProvider);
     final selectedPalette = ref.watch(appPaletteControllerProvider);
     final palette = AppPalette.byId(selectedPalette);
     // Re-attach the alerts overlay on every build. attach() is idempotent

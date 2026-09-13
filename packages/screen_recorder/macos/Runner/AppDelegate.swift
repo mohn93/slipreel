@@ -1,8 +1,14 @@
 import Cocoa
+import UserNotifications
+import Security
 import FlutterMacOS
 
 @main
 class AppDelegate: FlutterAppDelegate {
+  override func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    NotificationBridge.shared?.registered(deviceToken)
+  }
+
   override init() {
     // This must run before plugin registration starts Sparkle. Automatic
     // scheduling stays off; Dart checks after resolving update coverage.
@@ -48,5 +54,64 @@ class AppDelegate: FlutterAppDelegate {
       .appendingPathComponent("session.json")
     try? fm.removeItem(at: sessionFile)
     super.applicationWillTerminate(notification)
+  }
+}
+
+// Native permission/token bridge; no permission prompt occurs at launch.
+final class NotificationBridge: NSObject, UNUserNotificationCenterDelegate {
+  static var shared: NotificationBridge?
+  private let channel: FlutterMethodChannel
+  private var token: String?
+  init(messenger: FlutterBinaryMessenger) {
+    channel = FlutterMethodChannel(name: "slipreel/notifications", binaryMessenger: messenger)
+    super.init()
+    Self.shared = self
+    UNUserNotificationCenter.current().delegate = self
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else { return }
+      switch call.method {
+      case "status": self.status(result)
+      case "requestPermission":
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in
+          DispatchQueue.main.async { self.status(result) }
+        }
+      case "openSettings":
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
+        result(nil)
+      default: result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+  func registered(_ data: Data) {
+    let next = data.map { String(format: "%02x", $0) }.joined()
+    guard next != token else { return }
+    token = next
+    channel.invokeMethod("changed", arguments: nil)
+  }
+  private func status(_ result: @escaping FlutterResult) {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      let permission: String
+      switch settings.authorizationStatus {
+      case .authorized: permission = "authorized"
+      case .denied: permission = "denied"
+      case .provisional: permission = "provisional"
+      default: permission = "notDetermined"
+      }
+      DispatchQueue.main.async {
+        if settings.authorizationStatus == .authorized { NSApplication.shared.registerForRemoteNotifications() }
+        let task = SecTaskCreateFromSelf(nil)
+        let environment = task.flatMap { SecTaskCopyValueForEntitlement($0, "com.apple.developer.aps-environment" as CFString, nil) as? String }
+        result(["permission": permission, "apnsToken": self.token as Any, "environment": environment ?? "production", "configured": environment != nil])
+      }
+    }
+  }
+  func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+    NSApplication.shared.activate(ignoringOtherApps: true)
+    channel.invokeMethod("openInbox", arguments: nil)
+    completionHandler()
+  }
+  func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+    channel.invokeMethod("changed", arguments: nil)
+    completionHandler([])
   }
 }

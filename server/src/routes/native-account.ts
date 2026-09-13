@@ -75,6 +75,8 @@ export async function nativeAccountRoutes(app: FastifyInstance): Promise<void> {
     return {user:user.rows[0],entitlement:await resolveEffectiveEntitlement(app.pool,req.userId!)};
   });
   app.post('/v1/native/activate',{preHandler:auth},async(req,reply)=>{
+    const policy=await app.installations?.policy(req.userId!);
+    if (policy?.blocked || policy?.maintenance) return reply.code(policy.blocked ? 403 : 503).send({error:policy.blocked?'account_restricted':'maintenance',message:policy.message});
     const body=z.object({fingerprint:z.string().min(1).max(200),name:z.string().max(120)}).safeParse(req.body);
     if (!body.success) return reply.code(400).send({error:'invalid_request'});
     const device=await registerDevice(app.pool,req.userId!,body.data.fingerprint,body.data.name,SEAT_LIMIT,null,'app-store');
@@ -100,6 +102,7 @@ export async function nativeAccountRoutes(app: FastifyInstance): Promise<void> {
       if (subscription.status !== 'canceled' && subscription.status !== 'incomplete_expired') await app.stripe.subscriptions.cancel(subscription.id);
     }
     for (const row of identities.rows) await app.appleSignIn!.revoke(row.refresh_token_encrypted);
+    await app.installations?.deleteUser(req.userId!);
     await app.pool.query('DELETE FROM users WHERE id=$1',[req.userId]);
     return {ok:true};
   });

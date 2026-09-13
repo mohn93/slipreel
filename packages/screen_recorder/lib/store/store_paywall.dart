@@ -1,3 +1,4 @@
+import '../notifications/notification_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -118,6 +119,10 @@ class _StorePaywallState extends ConsumerState<StorePaywall> {
     // existing website subscription never leads to a second purchase.
     await ref.read(licensingControllerProvider.notifier).refreshNow();
     if (_entitled) return null;
+    final notifications = ref.read(notificationControllerProvider);
+    if (notifications != null && !await notifications.allowPaidExport()) {
+      return notifications.policyMessage ?? "Online services are temporarily unavailable.";
+    }
     final result = await store.purchase(
       product.id,
       ref.read(nativeAccountProvider).appAccountToken!,

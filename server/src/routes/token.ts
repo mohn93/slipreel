@@ -46,6 +46,8 @@ export async function tokenRoutes(app: FastifyInstance): Promise<void> {
     );
     if (!reg.ok) return reply.code(409).send({ error: 'seat_limit', devices: reg.devices });
 
+    const policy=await app.installations?.policy(req.userId!);
+    if (policy?.blocked || policy?.maintenance) return reply.code(policy.blocked ? 403 : 503).send({error:policy.blocked?'account_restricted':'maintenance'});
     const token = await mintFor(app, req.userId!, reg.deviceId);
     return reply.send({ token, refresh_token: reg.refreshToken, device_id: reg.deviceId });
   });
@@ -59,6 +61,8 @@ export async function tokenRoutes(app: FastifyInstance): Promise<void> {
     );
     if (!dev) return reply.code(401).send({ error: 'invalid refresh token' });
 
+    const policy=await app.installations?.policy(dev.userId);
+    if (policy?.blocked || policy?.maintenance) return reply.code(policy.blocked ? 403 : 503).send({error:policy.blocked?'account_restricted':'maintenance'});
     const token = await mintFor(app, dev.userId, parsed.data.device_id);
     return reply.send({ token });
   });
