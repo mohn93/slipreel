@@ -98,6 +98,8 @@ dependencies:
   cryptography: ^2.7.0
   # Licensing: secure on-disk storage for the device-bound entitlement token.
   flutter_secure_storage: ^9.2.2
+  firebase_core: ^4.14.0
+  firebase_remote_config: ^6.6.0
 
 dev_dependencies:
   flutter_test:
