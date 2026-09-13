@@ -61,6 +61,17 @@ class LicensingApi {
             }),
           )
           .timeout(const Duration(seconds: 10));
+      if (res.statusCode == 403) {
+        try {
+          final body = jsonDecode(res.body);
+          if (body is Map && body['error'] == 'account_restricted') {
+            // Keep identity so remote restriction checks cannot become anonymous.
+            return const RefreshTransient();
+          }
+        } on FormatException {
+          // An ordinary non-JSON 403 retains its existing revocation meaning.
+        }
+      }
       if (res.statusCode == 401 || res.statusCode == 403) {
         return const RefreshRevoked();
       }

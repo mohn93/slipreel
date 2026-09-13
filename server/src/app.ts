@@ -1,3 +1,5 @@
+import { installationRoutes } from './routes/installations.js';
+import type { InstallationRegistry } from './operations/registry.js';
 import { nativeAccountRoutes } from './routes/native-account.js';
 import type { AppleSignIn } from './apple/sign_in.js';
 import type { AppleSubscriptions } from './apple/subscriptions.js';
@@ -24,6 +26,7 @@ import type { EmailSender } from './email/sender.js';
 declare module 'fastify' {
   interface FastifyInstance {
     pool: pg.Pool;
+    installations?: InstallationRegistry;
     stripe: Stripe;
     billing: BillingConfig;
     tokenSigner: TokenSigner;
@@ -34,6 +37,7 @@ declare module 'fastify' {
 }
 
 export type AppDeps = {
+  installations?: InstallationRegistry;
   pool: pg.Pool;
   logger?: FastifyServerOptions['logger'];
   stripe?: Stripe;
@@ -60,6 +64,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.decorate('pool', deps.pool);
   app.register(healthRoutes);
+  if (deps.installations) {
+    app.decorate("installations", deps.installations);
+    app.register(async scope => installationRoutes(scope, deps.installations!));
+  }
 
   // Billing is optional: with no stripe client + config the app is Phase-1
   // behaviour (only /health), so keyless dev and existing tests still work.

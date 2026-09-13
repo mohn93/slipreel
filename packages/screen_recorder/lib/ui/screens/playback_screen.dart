@@ -1,3 +1,4 @@
+import '../../notifications/notification_controller.dart';
 import '../../update/required_update.dart';
 import '../../state/project_autosave.dart';
 import 'package:screen_recorder/audio/music_library.dart';
@@ -2196,6 +2197,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         entitlementState,
         appReleaseDate: buildReleaseDate,
       );
+      final notifications = ref.read(notificationControllerProvider);
+      if (paid && notifications != null && !await notifications.allowPaidExport()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(notifications.policyMessage ?? 'Online services are temporarily unavailable. Your recording is safe.'),
+        ));
+        return;
+      }
       final trialLeft = paid ? 0 : await trial.remaining;
       if (!mounted) return;
       if (!paid && trialLeft > 0) {

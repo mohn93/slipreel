@@ -19,6 +19,8 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid request', detail: parsed.error.issues });
     }
+    const policy=await app.installations?.policy(req.userId!);
+    if(policy?.blocked||policy?.maintenance)return reply.code(policy.blocked?403:503).send({error:policy.blocked?"account_restricted":"maintenance"});
     const { plan } = parsed.data;
     const { rows } = await app.pool.query<{email: string; email_verified: boolean}>('SELECT email, email_verified FROM users WHERE id = $1', [req.userId!]);
     if (!rows[0]?.email_verified) return reply.code(403).send({error: 'email_verification_required'});

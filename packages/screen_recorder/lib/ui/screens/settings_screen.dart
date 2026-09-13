@@ -1,3 +1,5 @@
+import '../../notifications/notification_settings.dart';
+import '../../notifications/notification_controller.dart';
 import '../../store/store_account_card.dart';
 import 'package:flutter/services.dart';
 import '../../distribution/distribution_channel.dart';
@@ -136,6 +138,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'Account',
                     'Your plan and connected account.',
                     _accountCard(entitlement),
+                  ),
+                if (ref.watch(notificationControllerProvider) != null)
+                  _section(
+                    'Notifications',
+                    'Messages, on your terms.',
+                    const NotificationSettings(),
                   ),
                 _section(
                   'Recording',

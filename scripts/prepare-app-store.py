@@ -16,7 +16,7 @@ p=app/'pubspec.yaml'
 p.write_text(re.sub(r'^  auto_updater:.*\n','',p.read_text(),flags=re.M))
 p=app/'macos/Runner/Configs/AppInfo.xcconfig'
 s=p.read_text().replace('PRODUCT_BUNDLE_IDENTIFIER = com.slipreel.app','PRODUCT_BUNDLE_IDENTIFIER = com.slipreel.store').replace('PRODUCT_NAME = Slipreel','PRODUCT_NAME = SlipreelStore')
-p.write_text(s)
+p.write_text(s+"\nSLIPREEL_APNS_ENVIRONMENT = production\n")
 p=app/'macos/Runner/Info.plist'
 with p.open('rb') as f: info=plistlib.load(f)
 for key in list(info):

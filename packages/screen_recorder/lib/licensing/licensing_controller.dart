@@ -81,6 +81,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
     await refreshNow();
   }
 
+  Future<void> Function()? onAccountChanged;
   final LicenseStore _store;
   final EntitlementVerifier _verifier;
   final LicensingApi _api;
@@ -408,6 +409,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
       await _store.clear();
       await _authState.clear();
     });
+    await onAccountChanged?.call();
     if (mounted) state = const EntitlementSignedOut();
     if (appStore != null) await refreshNow();
   }
