@@ -96,6 +96,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Verify API process startup and shutdown
+        run: npm run build && node scripts/startup-smoke.mjs
       - name: Install PostgreSQL16 backup clients
         run: |
           if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ]; then
