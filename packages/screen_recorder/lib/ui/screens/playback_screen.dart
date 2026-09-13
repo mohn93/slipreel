@@ -1,3 +1,6 @@
+import '../../state/recording_state.dart';
+import '../../distribution/distribution_channel.dart';
+import '../../reviews/store_review_prompt.dart';
 import '../../update/store_update_controller.dart';
 import '../../notifications/notification_controller.dart';
 import '../../update/required_update.dart';
@@ -317,6 +320,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   // (settings dialog → progress dialog) when the bare screen flashes
   // for a frame.
   bool _isExporting = false;
+  bool _completedExportForReview = false;
   // Owns the trim selection and soft-enforces it during playback.
   // Wired in [_initializeVideo] once the controller is initialised.
   // B-era whole-clip trim — per-slice trim handles in the multi-slice
@@ -2129,6 +2133,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // screen), so double-tapping during a slow probe would otherwise
     // launch two parallel pipelines.
     if (_isExporting) return;
+    _completedExportForReview = false;
     setState(() => _isExporting = true);
     final exports = ref.read(activeUpdateExportsProvider.notifier);
     exports.state++;
@@ -2137,6 +2142,16 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     } finally {
       exports.state--;
       if (mounted) setState(() => _isExporting = false);
+    }
+    if (mounted && _completedExportForReview) {
+      unawaited(ref.read(storeReviewPromptProvider).afterSuccessfulExport(isIdle: () {
+        if (!mounted || _isExporting || ModalRoute.of(context)?.isCurrent != true) return false;
+        final recording = ref.read(recordingControllerProvider);
+        return !recording.isRecording && !recording.isProcessing &&
+            ref.read(activeUpdateExportsProvider) == 0 &&
+            ref.read(requiredUpdateProvider) == null &&
+            ref.read(storeUpdateProvider) == null;
+      }));
     }
   }
 
@@ -2508,9 +2523,11 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 : null,
           );
           surfaceExportWarnings(summary, (m) => AppAlerts.warning(m));
+          _completedExportForReview = true;
+          // The Store edition uses this moment for Apple’s review prompt.
           // Soft, once-ever nudge after an unentitled user's first successful
           // export. Not a gate — the remaining free exports stay available.
-          if (!canExportNow(
+          if (!DistributionChannel.isAppStore && !canExportNow(
             ref.read(entitlementProvider),
             appReleaseDate: buildReleaseDate,
           )) {
