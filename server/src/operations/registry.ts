@@ -1,3 +1,4 @@
+import type { AccountLink } from "./link.js";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { randomUUID } from "node:crypto";
 import { newSecretToken, hashToken } from "../auth/secret_token.js";
@@ -36,6 +37,7 @@ export class InstallationRegistry {
     input: Registration,
     userId: string | null,
     licenseDeviceId: string | null = null,
+    accountLink: AccountLink | null = null,
   ) {
     const ref = this.db.collection("installations").doc(id);
     return this.db.runTransaction(async (tx) => {
@@ -65,6 +67,7 @@ export class InstallationRegistry {
         ...input,
         userId,
         licenseDeviceId,
+        accountLink,
         anonymousId,
         bindingVersion,
         inheritedAnonymousId,
@@ -98,6 +101,7 @@ export class InstallationRegistry {
         if (current.get("userId") === userId)
           tx.update(device.ref, {
             userId: null,
+            accountLink: null,
             anonymousId: randomUUID(),
             inheritedAnonymousId: null,
             apnsToken: null,

@@ -274,6 +274,9 @@ Future<void> main() async {
     storage: licensingKv,
     licenses: licensingStore,
     channelName: DistributionChannel.isAppStore ? 'app-store' : 'direct',
+    nativeSession: DistributionChannel.isAppStore
+        ? () => FlutterSecureKV().read('native-account-session')
+        : null,
   );
   unawaited(notifications.start());
   licensingController.onAccountChanged = notifications.accountChanged;
@@ -285,6 +288,7 @@ Future<void> main() async {
   };
   final nativeAccount = DistributionChannel.isAppStore ? NativeAccount(licensingController) : null;
   if (nativeAccount != null) {
+    nativeAccount.addListener(() { unawaited(notifications.accountChanged()); });
     Future<void> syncAccount() async {
       try { await nativeAccount.load(); await nativeAccount.syncPurchases(); } catch (_) { /* retry on next launch or restore */ }
     }

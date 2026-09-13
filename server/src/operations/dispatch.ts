@@ -1,3 +1,4 @@
+import type { AccountLink } from "./link.js";
 import {
   FieldValue,
   Timestamp,
@@ -19,7 +20,7 @@ const requestSchema = z.object({
 export async function dispatchRequests(
   db: Firestore,
   sender?: PushSender,
-  isLinked?: (userId: string, deviceId: string) => Promise<boolean>,
+  isLinked?: (link: AccountLink) => Promise<boolean>,
 ) {
   const pending = await db
     .collection("notificationRequests")
@@ -78,7 +79,7 @@ export async function dispatchRequests(
         if (
           binding.userId &&
           isLinked &&
-          !(await isLinked(binding.userId, binding.licenseDeviceId))
+          (!binding.accountLink || !(await isLinked(binding.accountLink)))
         )
           continue;
         inboxCount++;

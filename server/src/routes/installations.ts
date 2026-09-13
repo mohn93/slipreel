@@ -1,3 +1,6 @@
+import { resolveSession } from "../auth/sessions.js";
+import { hashToken } from "../auth/secret_token.js";
+import { validAccountLink, type AccountLink } from "../operations/link.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { refreshDevice } from "../auth/devices.js";
@@ -48,6 +51,11 @@ export async function installationRoutes(
       const body = identity
         .extend({
           registration,
+          nativeSession: z
+            .string()
+            .regex(/^[A-Za-z0-9_-]{40,100}$/)
+            .nullable()
+            .optional(),
           device: z
             .object({
               id: z.string().max(200),
@@ -67,25 +75,49 @@ export async function installationRoutes(
             data.device.refreshToken,
           )
         : null;
-      if (data.device && !device)
+      const session = data.nativeSession
+        ? await resolveSession(app.pool, data.nativeSession)
+        : null;
+      if (data.nativeSession && !session)
+        return reply.code(401).send({ error: "invalid_session" });
+      if (data.device && !device && !session)
         return reply.code(401).send({ error: "invalid_device" });
+      if (device && session && device.userId !== session.userId)
+        return reply.code(409).send({ error: "account_mismatch" });
+      const userId = session?.userId ?? device?.userId ?? null;
+      const accountLink: AccountLink | null = session
+        ? {
+            userId: session.userId,
+            licenseDeviceId: null,
+            credentialHash: hashToken(data.nativeSession!),
+            kind: "session",
+          }
+        : device
+          ? {
+              userId: device.userId,
+              licenseDeviceId: data.device!.id,
+              credentialHash: hashToken(data.device!.refreshToken),
+              kind: "device",
+            }
+          : null;
       try {
         const binding = await registry.sync(
           data.id,
           data.secret,
           data.registration,
-          device?.userId ?? null,
+          userId,
           data.device?.id ?? null,
+          accountLink,
         );
-        if (device) {
+        if (userId) {
           const user = await app.pool.query(
             "SELECT email FROM users WHERE id=$1",
-            [device.userId],
+            [userId],
           );
           if (user.rows[0])
             await registry.db
               .collection("users")
-              .doc(device.userId)
+              .doc(userId)
               .set({ email: user.rows[0].email }, { merge: true });
         }
         return { ...binding, policy: await registry.policy(binding.userId) };
@@ -109,12 +141,11 @@ export async function installationRoutes(
           body.data.secret,
         );
         if (binding.userId) {
-          const valid = await app.pool.query(
-            "SELECT 1 FROM devices WHERE id=$1 AND user_id=$2",
-            [binding.licenseDeviceId, binding.userId],
-          );
-          if (!valid.rowCount)
-            return reply.code(401).send({ error: "invalid_device" });
+          if (
+            !binding.accountLink ||
+            !(await validAccountLink(app.pool, binding.accountLink))
+          )
+            return reply.code(401).send({ error: "invalid_account_link" });
         }
         const messages = await registry.db
           .collection("installations")

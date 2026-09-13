@@ -14,18 +14,20 @@ class NotificationController extends ChangeNotifier {
     required this.licenses,
     required this.channelName,
     http.Client? client,
+    this.nativeSession,
   }) : client = client ?? http.Client();
   final SecureKV storage;
   final LicenseStore licenses;
   final String channelName;
   final http.Client client;
+  final Future<String?> Function()? nativeSession;
   final native = const MethodChannel('slipreel/notifications');
   String permission = 'notDetermined';
   String? error, policyMessage;
   bool blocked = false, maintenance = false, configured = false, busy = false;
   List<Map<String, dynamic>> messages = [];
   int _generation = 0;
-  String? _lastDeviceId;
+  String? _lastIdentityKey;
   Timer? _timer;
   Future<void>? _syncing;
   VoidCallback? openInbox;
@@ -87,10 +89,12 @@ class NotificationController extends ChangeNotifier {
       }
       final identity = jsonDecode(raw) as Map<String, dynamic>;
       final tokens = await licenses.load();
-      _lastDeviceId = tokens?.deviceId;
+      final session = await nativeSession?.call();
+      _lastIdentityKey = session ?? tokens?.deviceId;
       final result = await _post('/sync', {
         ...identity,
         'registration': registration,
+        'nativeSession': session,
         'device': tokens == null
             ? null
             : {'id': tokens.deviceId, 'refreshToken': tokens.refreshToken},
@@ -113,8 +117,9 @@ class NotificationController extends ChangeNotifier {
 
   Future<void> accountChanged() async {
     _generation++;
-    final deviceId = (await licenses.load())?.deviceId;
-    if (deviceId != _lastDeviceId) {
+    final identityKey =
+        await nativeSession?.call() ?? (await licenses.load())?.deviceId;
+    if (identityKey != _lastIdentityKey) {
       messages = [];
       blocked = false;
       policyMessage = null;

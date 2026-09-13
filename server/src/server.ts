@@ -1,3 +1,4 @@
+import {validAccountLink} from './operations/link.js';
 import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { InstallationRegistry } from './operations/registry.js';
@@ -87,7 +88,7 @@ async function start(): Promise<void> {
   const dispatchTimer=setInterval(async()=>{
     if (!installations || dispatching) return;
     dispatching=true;
-    try { await dispatchRequests(installations.db,pushSender,async(userId,deviceId)=>(await pool.query("SELECT 1 FROM devices WHERE id=$1 AND user_id=$2",[deviceId,userId])).rowCount===1); }
+    try { await dispatchRequests(installations.db,pushSender,link=>validAccountLink(pool,link)); }
     catch { app.log.warn("Notification dispatch unavailable"); }
     finally { dispatching=false; }
   },15000);

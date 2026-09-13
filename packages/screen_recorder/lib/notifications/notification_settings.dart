@@ -32,8 +32,8 @@ class NotificationSettings extends ConsumerWidget {
                 ),
               ),
               if (!state.configured)
-              const Text("Messages available in app")
-            else if (enabled)
+                const Text("Messages available in app")
+              else if (enabled)
                 const Chip(label: Text('Notifications enabled'))
               else
                 FilledButton(

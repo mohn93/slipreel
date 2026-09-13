@@ -33,6 +33,12 @@ void main() {
         isA<RefreshRevoked>());
   });
 
+  test('account restriction preserves identity for policy checks', () async {
+    final client = MockClient((req) async => http.Response('{"error":"account_restricted"}', 403));
+    final api = LicensingApi(client: client);
+    expect(await api.refresh(refreshToken: 'r', deviceId: 'd'), isA<RefreshTransient>());
+  });
+
   test('refresh is RefreshRevoked on 403', () async {
     final client = MockClient((req) async => http.Response('forbidden', 403));
     final api = LicensingApi(baseUrl: 'https://api.example.test', client: client);
