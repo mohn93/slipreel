@@ -16,16 +16,28 @@ class EmptyAccount extends FakeAccount {
   Future<void> syncPurchases() async {}
 }
 
+class SignInAccount extends FakeAccount {
+  SignInAccount(super.licensing) {
+    email = null;
+    appAccountToken = null;
+  }
+  @override
+  Future<String> sendCode(String email) async => 'test-challenge';
+}
+
 void main() {
   Future<void> host(
     WidgetTester tester, {
     double scale = 1,
     bool empty = false,
+    bool signedOut = false,
   }) async {
     final c = FakeLicensing(FakeStore());
     if (!empty) c.setAccess(paid());
-    final a = (empty ? EmptyAccount(c) : FakeAccount(c))
-      ..email = 'qa.account@example.com';
+    final a = signedOut
+        ? SignInAccount(c)
+        : (empty ? EmptyAccount(c) : FakeAccount(c));
+    if (!signedOut) a.email = 'qa.account@example.com';
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -33,7 +45,12 @@ void main() {
           nativeAccountProvider.overrideWith((ref) => a),
         ],
         child: MaterialApp(
-          theme: ThemeData.dark().copyWith(extensions: [AppPalette.midnight]),
+          theme: ThemeData(
+            fontFamily: 'Roboto',
+            colorScheme: AppPalette.midnight.toColorScheme(),
+            extensions: [AppPalette.midnight],
+            useMaterial3: true,
+          ),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(
               context,
@@ -55,6 +72,37 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('email validation and keyboard code entry', (tester) async {
+    await host(tester, signedOut: true);
+    await tester.tap(find.text('Continue with email'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Enter a valid email'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'tester@example.com');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('Check your inbox'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '123');
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Enter the 8-digit code from your email.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Change email or send a new code'));
+    await tester.pumpAndSettle();
+    expect(find.text('Continue with email'), findsOneWidget);
+    expect(find.text('Enter the 8-digit code from your email.'), findsNothing);
+  });
+  testWidgets('sign-in fits narrow windows with large text', (tester) async {
+    tester.view.physicalSize = const Size(400, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await host(tester, signedOut: true, scale: 1.5);
+    await tester.ensureVisible(find.text('Continue with email'));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('sync feedback and deletion confirmation remain usable', (
     tester,
@@ -120,6 +168,19 @@ void main() {
     await expectLater(
       find.byKey(const Key('account-preview')),
       matchesGoldenFile('$directory/account.png'),
+    );
+    await tester.pumpWidget(const SizedBox());
+    await host(tester, signedOut: true);
+    await expectLater(
+      find.byKey(const Key('account-preview')),
+      matchesGoldenFile('$directory/sign-in.png'),
+    );
+    await tester.enterText(find.byType(TextField), 'tester@example.com');
+    await tester.tap(find.text('Continue with email'));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byKey(const Key('account-preview')),
+      matchesGoldenFile('$directory/sign-in-code.png'),
     );
   });
 }

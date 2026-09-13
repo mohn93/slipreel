@@ -86,7 +86,7 @@ class ActivationSuccessDialog extends StatelessWidget {
                   autofocus: true,
                   style: FilledButton.styleFrom(
                     backgroundColor: palette.accent,
-                    foregroundColor: const Color(0xFF100C29),
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
