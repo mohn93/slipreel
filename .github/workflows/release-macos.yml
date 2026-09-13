@@ -75,11 +75,20 @@ jobs:
           KEY_B64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
         run: echo "$KEY_B64" | base64 -d > "$RUNNER_TEMP/notary.p8"
 
+      - name: Install direct-download push profile
+        env:
+          PROFILE_B64: ${{ secrets.SLIPREEL_DIRECT_PUSH_PROFILE_BASE64 }}
+        run: |
+          test -n "$PROFILE_B64" || { echo "Direct-download push profile is required" >&2; exit 1; }
+          printf '%s' "$PROFILE_B64" | base64 -d > "$RUNNER_TEMP/slipreel-direct.provisionprofile"
+          chmod 600 "$RUNNER_TEMP/slipreel-direct.provisionprofile"
+
       - name: Release pipeline
         env:
           # CI installs plain `flutter` (subosito), not fvm — override the
           # script's `fvm flutter` default.
           FLUTTER: flutter
+          SLIPREEL_DIRECT_PUSH_PROFILE: ${{ runner.temp }}/slipreel-direct.provisionprofile
           NOTARY_KEY: ${{ runner.temp }}/notary.p8
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
