@@ -23,6 +23,9 @@ jobs:
       - run: melos bootstrap
       - run: melos run analyze --no-select
       - run: melos run test --no-select
+      - name: Test App Store update policy and channel isolation
+        working-directory: packages/screen_recorder
+        run: flutter test --dart-define=SLIPREEL_DISTRIBUTION=app-store test/update/store_update_gate_test.dart test/update/store_update_policy_test.dart test/update/store_update_isolation_test.dart
       # Landing page (site/): unit tests + constraint lint + deploy guards.
       # The deploy guard protects the webroot the release pipeline publishes
       # appcast.xml into, so it has to run on every PR, not on request.

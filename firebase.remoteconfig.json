@@ -1,0 +1,32 @@
+{
+  "parameters": {
+    "store_update_available": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "valueType": "BOOLEAN",
+      "description": "Enable only after this release is available to all supported storefronts."
+    },
+    "store_latest_build": {
+      "defaultValue": {
+        "value": "0"
+      },
+      "valueType": "NUMBER",
+      "description": "CFBundleVersion of the publicly available Mac App Store release."
+    },
+    "store_minimum_build": {
+      "defaultValue": {
+        "value": "0"
+      },
+      "valueType": "NUMBER",
+      "description": "Builds below this value require an update; zero disables forced updates."
+    },
+    "store_latest_version": {
+      "defaultValue": {
+        "value": "0.0.0"
+      },
+      "valueType": "STRING",
+      "description": "Display version of the publicly available release."
+    }
+  }
+}

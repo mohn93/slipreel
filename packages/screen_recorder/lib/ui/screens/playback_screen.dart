@@ -1,3 +1,4 @@
+import '../../update/store_update_controller.dart';
 import '../../notifications/notification_controller.dart';
 import '../../update/required_update.dart';
 import '../../state/project_autosave.dart';
@@ -2129,9 +2130,12 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     // launch two parallel pipelines.
     if (_isExporting) return;
     setState(() => _isExporting = true);
+    final exports = ref.read(activeUpdateExportsProvider.notifier);
+    exports.state++;
     try {
       await _exportBody();
     } finally {
+      exports.state--;
       if (mounted) setState(() => _isExporting = false);
     }
   }

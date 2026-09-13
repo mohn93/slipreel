@@ -1,3 +1,4 @@
+import '../distribution/distribution_channel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +9,7 @@ import 'required_update_dialog.dart';
 import 'updater_service.dart';
 
 final _blockingUpdateProvider = Provider<RequiredUpdate?>((ref) {
+  if (DistributionChannel.isAppStore) return null;
   final update = ref.watch(requiredUpdateProvider);
   if (update == null) return null;
   final recording = ref.watch(recordingControllerProvider);

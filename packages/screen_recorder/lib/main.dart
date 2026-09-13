@@ -1,3 +1,4 @@
+import 'update/store_update_gate.dart';
 import 'notifications/notification_controller.dart';
 import 'notifications/notification_settings.dart';
 import 'store/native_account.dart';
@@ -1011,7 +1012,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     return MaterialApp(
       navigatorKey: rootNavigatorKey,
       title: 'Slipreel',
-      builder: (context, child) => RequiredUpdateGate(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => StoreUpdateGate(child: RequiredUpdateGate(child: child ?? const SizedBox.shrink())),
       theme: ThemeData(
         colorScheme: palette.toColorScheme(),
         extensions: [palette],

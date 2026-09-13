@@ -1,3 +1,5 @@
+import '../distribution/distribution_channel.dart';
+import 'store_update_controller.dart';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,6 +34,12 @@ final requiredUpdateCandidateProvider = StateProvider<RequiredUpdate?>(
   (ref) => null,
 );
 final requiredUpdateProvider = Provider<RequiredUpdate?>((ref) {
+  if (DistributionChannel.isAppStore) {
+    final policy = ref.watch(storeUpdateProvider);
+    return policy != null && policy.required
+        ? RequiredUpdate(build: policy.build, version: policy.version, releaseDate: DateTime.fromMillisecondsSinceEpoch(0))
+        : null;
+  }
   final candidate = ref.watch(requiredUpdateCandidateProvider);
   if (candidate == null) return null;
   return candidate.appliesTo(ref.watch(entitlementProvider)) ? candidate : null;
@@ -40,6 +48,7 @@ final requiredUpdateProvider = Provider<RequiredUpdate?>((ref) {
 /// An unavailable/malformed feed never creates a lockout. Sparkle still owns
 /// artifact signature verification and installation; this only reads policy.
 Future<RequiredUpdate?> fetchRequiredUpdate(String feedUrl) async {
+  if (DistributionChannel.isAppStore) return null;
   final client = http.Client();
   try {
     final response = await client
