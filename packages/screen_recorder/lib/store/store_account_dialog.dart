@@ -3,6 +3,7 @@ import '../licensing/entitlement.dart';
 import '../licensing/build_release_date.g.dart';
 import '../licensing/export_gate.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../licensing/licensing_controller.dart';
 import '../ui/widgets/desktop_dialog.dart';
@@ -58,6 +59,44 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
     }
   }
 
+  ButtonStyle get _primaryStyle => FilledButton.styleFrom(
+    minimumSize: const Size.fromHeight(48),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+  );
+
+  InputDecoration _fieldDecoration(String hint) {
+    final p = context.palette;
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(color: p.textSecondary),
+      filled: true,
+      fillColor: p.surfaceCard,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: p.dividerStrong),
+      ),
+    );
+  }
+
+  Future<void> _sendCode(NativeAccount account) => _run(() async {
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(_email.text.trim())) {
+      throw const AccountError(
+        'Enter a valid email address to receive your code.',
+      );
+    }
+    _challenge = await account.sendCode(_email.text.trim());
+  });
+
+  Future<void> _verifyCode(NativeAccount account) => _run(() async {
+    if (!RegExp(r'^\d{8}$').hasMatch(_code.text)) {
+      throw const AccountError('Enter the 8-digit code from your email.');
+    }
+    await account.verifyCode(_challenge!, _code.text);
+  }, close: true);
+
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(nativeAccountProvider);
@@ -72,7 +111,7 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DesktopDialogHeading(
-            title: account.signedIn ? 'Account' : 'Sign in to Slipreel',
+            title: account.signedIn ? 'Account' : 'Slipreel',
           ),
           const SizedBox(height: 12),
           if (account.signedIn) ...[
@@ -217,86 +256,162 @@ class _StoreAccountDialogState extends ConsumerState<StoreAccountDialog> {
               ],
             ),
           ] else ...[
-            const Text(
-              'Use the same account as your existing purchase to share access. Recording and editing do not require an account.',
+            const SizedBox(height: 8),
+            Text(
+              _challenge == null
+                  ? 'Your next great video starts here.'
+                  : 'Check your inbox',
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 26,
+                fontWeight: FontWeight.w600,
+                height: 1.2,
+                letterSpacing: -0.6,
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
+            Text(
+              _challenge == null
+                  ? 'Sign in to keep your Pro access with you on every Mac.'
+                  : 'We sent an 8-digit sign-in code to ${_email.text.trim()}.',
+              style: TextStyle(
+                color: palette.textSecondary,
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 26),
             if (_challenge == null) ...[
-              TextField(
-                controller: _email,
-                enabled: !_busy,
-                keyboardType: TextInputType.emailAddress,
-                autofillHints: const [AutofillHints.email],
-                decoration: const InputDecoration(
-                  labelText: 'Email address',
-                  hintText: 'you@example.com',
-                  prefixIcon: Icon(Icons.mail_outline_rounded),
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: _busy
-                    ? null
-                    : () => _run(() async {
-                        if (!RegExp(
-                          r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
-                        ).hasMatch(_email.text.trim())) {
-                          throw const AccountError(
-                            'Enter a valid email address to receive your code.',
-                          );
-                        }
-                        _challenge = await account.sendCode(_email.text);
-                      }),
-                child: const Text('Email me a sign-in code'),
-              ),
-              const SizedBox(height: 8),
               OutlinedButton.icon(
-                icon: const Icon(Icons.apple),
+                icon: const Icon(Icons.apple, size: 23),
                 style: OutlinedButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  disabledForegroundColor: Colors.black45,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 onPressed: _busy
                     ? null
                     : () => _run(account.signInWithApple, close: true),
                 label: const Text('Sign in with Apple'),
               ),
-              const Text(
-                'If you previously used email sign-in, choose that same address. Apple’s Hide My Email may create a separate account.',
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(child: Divider(color: palette.dividerStrong)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Text(
+                      'or use email',
+                      style: TextStyle(
+                        color: palette.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Expanded(child: Divider(color: palette.dividerStrong)),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Email address',
+                style: TextStyle(
+                  color: palette.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _email,
+                enabled: !_busy,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.done,
+                autofillHints: const [AutofillHints.email],
+                onSubmitted: (_) => _sendCode(account),
+                style: const TextStyle(fontSize: 14),
+                decoration: _fieldDecoration('you@example.com'),
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                style: _primaryStyle,
+                onPressed: _busy ? null : () => _sendCode(account),
+                child: const Text('Continue with email'),
+              ),
+              const SizedBox(height: 22),
+              Text(
+                'Already have Pro? Use your original sign-in method.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: palette.textSecondary,
+                  fontSize: 12,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Recording and editing are free. No account needed.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: palette.textSecondary,
+                  fontSize: 12,
+                  height: 1.5,
+                ),
               ),
             ] else ...[
-              Text('Enter the 8-digit code sent to ${_email.text.trim()}.'),
               TextField(
                 controller: _code,
                 enabled: !_busy,
+                autofocus: true,
                 keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
                 autofillHints: const [AutofillHints.oneTimeCode],
-                maxLength: 8,
-                decoration: const InputDecoration(
-                  labelText: 'Sign-in code',
-                  border: OutlineInputBorder(),
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(8),
+                ],
+                onSubmitted: (_) => _verifyCode(account),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 24,
+                  letterSpacing: 6,
+                  fontWeight: FontWeight.w600,
                 ),
+                decoration: _fieldDecoration(
+                  '00000000',
+                ).copyWith(labelText: 'Sign-in code'),
               ),
+              const SizedBox(height: 16),
               FilledButton(
-                onPressed: _busy
-                    ? null
-                    : () => _run(
-                        () => account.verifyCode(_challenge!, _code.text),
-                        close: true,
-                      ),
+                style: _primaryStyle,
+                onPressed: _busy ? null : () => _verifyCode(account),
                 child: const Text('Sign in'),
               ),
+              const SizedBox(height: 12),
               TextButton(
                 onPressed: _busy
                     ? null
-                    : () => setState(() => _challenge = null),
-                child: const Text('Use another email or request a new code'),
+                    : () => setState(() {
+                        _challenge = null;
+                        _code.clear();
+                        _message = null;
+                      }),
+                child: const Text('Change email or send a new code'),
               ),
             ],
           ],
-          if (_busy) const LinearProgressIndicator(),
+          if (_busy)
+            const Padding(
+              padding: EdgeInsets.only(top: 16),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
           if (_message != null)
             Padding(
               padding: const EdgeInsets.only(top: 12),

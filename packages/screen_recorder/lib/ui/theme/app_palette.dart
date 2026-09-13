@@ -85,6 +85,7 @@ class AppPalette extends ThemeExtension<AppPalette> {
         // ignore: deprecated_member_use
         surfaceVariant: surfaceCard,
         primary: accent,
+        onPrimary: Colors.white,
         primaryContainer: accentMuted,
         // ignore: deprecated_member_use
         onBackground: textPrimary,
