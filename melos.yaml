@@ -1,7 +1,10 @@
 name: slipreel
 
+# Only source packages: Flutter may stage third-party Swift packages under
+# build/macos/SourcePackages, which must not become Melos workspace members.
 packages:
-  - packages/**
+  - packages/*
+  - packages/*/example
 
 command:
   bootstrap:
