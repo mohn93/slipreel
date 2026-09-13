@@ -81,7 +81,7 @@
 <main class="legal">
   <a class="back" href="/">&larr; Slipreel</a>
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated 9 September 2026 · Becoming Ventures, LLC</p>
+  <p class="updated">Last updated 13 September 2026 · Becoming Ventures, LLC</p>
 
   <p>This policy explains what data Slipreel (the website at slipreel.app and the
   macOS app) collects, why, and who processes it. We keep collection minimal and
@@ -116,8 +116,12 @@
   <p>Sign in with Apple provides an account identifier and your email address, which may be an Apple private relay address. We store Apple authorization credentials encrypted so we can revoke access when you delete your account. Email-code sign-in uses Resend. Sign-in codes expire and are stored as hashes.</p>
   <p>You can request account deletion in the App Store app under Settings &rarr; Slipreel account. Apple subscriptions must be cancelled separately in your Apple Account settings. Website subscriptions are cancelled during account deletion. Records required for financial or legal compliance may remain with the payment provider.</p>
 
+  <h2>Devices and notifications</h2>
+  <p>We register each installation with a random identifier, its device name, app edition and version, notification permission, and last contact time. When you sign in, that installation is associated with your account so your devices can receive relevant service messages. We store these records and your in-app inbox using Google Cloud Firestore. Signing out removes the current account association; local recordings are unaffected.</p>
+  <p>If you enable native notifications, we also store an Apple Push Notification service token and use Apple to deliver alerts. You can disable native alerts in macOS System Settings. The in-app inbox remains available. Messages can be addressed to an account or an individual installation. We use installation and account status to operate maintenance and account restrictions while preserving local recording and editing.</p>
+
   <h2>Updates, captions, and diagnostics</h2>
-  <p>The app checks for updates and downloads the caption model (about 488 MB) on first use. Transcription then runs locally. If enabled, diagnostics report technical errors and are associated with your account while signed in. Feedback you choose to submit is processed through PostHog (US), including any optional reply email. Undelivered events may be queued on your Mac; signing out gives new activity a fresh anonymous identifier. Review the privacy controls in Settings.</p>
+  <p>The Mac App Store edition uses Google Firebase Remote Config to retrieve update availability and minimum supported versions. Firebase uses an installation identifier and technical app/device information to deliver this configuration; Firebase Analytics collection is disabled. App Store updates are installed through Apple. The website edition checks our update feed. The app downloads the caption model (about 488 MB) on first use. Transcription then runs locally. If enabled, diagnostics report technical errors and are associated with your account while signed in. Feedback you choose to submit is processed through PostHog (US), including any optional reply email. Undelivered events may be queued on your Mac; signing out gives new activity a fresh anonymous identifier. Review the privacy controls in Settings.</p>
 
   <h2>Hosting &amp; delivery</h2>
   <p>The site and API are served through Cloudflare
@@ -132,8 +136,8 @@
   <h2>Your choices</h2>
   <ul>
     <li>Turn off app analytics in <em>Settings &rarr; Privacy</em>.</li>
-    <li>Request access to, correction of, or deletion of your account data by
-    emailing us.</li>
+    <li>Manage native notification permission in macOS System Settings.</li>
+    <li>Delete your account from the app's account settings, or request access, correction, or deletion by emailing us. Website subscriptions are cancelled during account deletion. Apple subscriptions must be cancelled separately in your Apple Account settings. We retain records as needed to provide the service and meet payment, security, and legal obligations.</li>
   </ul>
 
   <h2>Contact</h2>
