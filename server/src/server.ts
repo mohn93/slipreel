@@ -83,7 +83,6 @@ async function start(): Promise<void> {
   const applied = await runMigrations(pool);
   if (applied.length) app.log.info({ applied }, 'applied migrations');
 
-  await app.listen({ port: config.port, host: config.host });
   let dispatching=false;
   const dispatchTimer=setInterval(async()=>{
     if (!installations || dispatching) return;
@@ -94,6 +93,8 @@ async function start(): Promise<void> {
   },15000);
   dispatchTimer.unref();
   app.addHook("onClose",async()=>{clearInterval(dispatchTimer);});
+
+  await app.listen({ port: config.port, host: config.host });
 
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, () => {
