@@ -28,6 +28,49 @@ void main() {
         );
   });
   test(
+    'a cold-start tap waits for navigation and opens the inbox once',
+    () async {
+      var nativePending = true;
+      var acknowledgements = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('slipreel/notifications'),
+            (call) async {
+              if (call.method == 'acknowledgeInboxOpen') {
+                nativePending = false;
+                acknowledgements++;
+                return null;
+              }
+              return {'pendingInboxOpen': nativePending};
+            },
+          );
+      final state = NotificationController(
+        storage: InMemorySecureKV(),
+        licenses: InMemoryLicenseStore(),
+        channelName: 'direct',
+        client: MockClient((_) async => http.Response('unavailable', 503)),
+      );
+      var ready = false;
+      var opens = 0;
+      state.openInbox = () {
+        if (!ready) return false;
+        opens++;
+        return true;
+      };
+      await state.sync();
+      expect(opens, 0);
+      expect(acknowledgements, 0);
+      ready = true;
+      state.openPendingInbox();
+      await Future<void>.delayed(Duration.zero);
+      state.openPendingInbox();
+      await state.sync();
+      expect(opens, 1);
+      expect(acknowledgements, 1);
+      state.dispose();
+    },
+  );
+  test(
     'registers an anonymous installation, then links verified device credentials',
     () async {
       final licenses = InMemoryLicenseStore();
@@ -51,8 +94,9 @@ void main() {
               200,
             );
           }
-          if (request.url.path.endsWith('/inbox'))
+          if (request.url.path.endsWith('/inbox')) {
             return http.Response('{"messages":[]}', 200);
+          }
           return http.Response('{"id":"installation","secret":"secret"}', 200);
         }),
       );
@@ -83,7 +127,7 @@ void main() {
         licenses: InMemoryLicenseStore(),
         channelName: 'direct',
         client: MockClient((request) async {
-          if (request.url.path.endsWith('/sync'))
+          if (request.url.path.endsWith('/sync')) {
             return http.Response(
               jsonEncode({
                 'policy': {
@@ -94,8 +138,10 @@ void main() {
               }),
               200,
             );
-          if (request.url.path.endsWith('/inbox'))
+          }
+          if (request.url.path.endsWith('/inbox')) {
             return http.Response('{"messages":[]}', 200);
+          }
           return http.Response('{"id":"installation","secret":"secret"}', 200);
         }),
       );
@@ -114,13 +160,15 @@ void main() {
       channelName: 'direct',
       client: MockClient((request) async {
         if (offline) throw Exception('offline');
-        if (request.url.path.endsWith('/sync'))
+        if (request.url.path.endsWith('/sync')) {
           return http.Response(
             '{"policy":{"blocked":true,"maintenance":false,"message":"Contact support"}}',
             200,
           );
-        if (request.url.path.endsWith('/inbox'))
+        }
+        if (request.url.path.endsWith('/inbox')) {
           return http.Response('{"messages":[]}', 200);
+        }
         return http.Response('{"id":"installation","secret":"secret"}', 200);
       }),
     );

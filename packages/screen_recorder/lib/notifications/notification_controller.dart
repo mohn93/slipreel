@@ -30,11 +30,26 @@ class NotificationController extends ChangeNotifier {
   String? _lastIdentityKey;
   Timer? _timer;
   Future<void>? _syncing;
-  VoidCallback? openInbox;
+  bool Function()? openInbox;
+  bool _pendingInboxOpen = false;
+
+  void openPendingInbox() {
+    if (!_pendingInboxOpen || openInbox?.call() != true) return;
+    _pendingInboxOpen = false;
+    unawaited(
+      native
+          .invokeMethod<dynamic>('acknowledgeInboxOpen')
+          .catchError((_) => null),
+    );
+  }
+
   Future<void> start() async {
     if (!Platform.isMacOS) return;
     native.setMethodCallHandler((call) async {
-      if (call.method == 'openInbox') openInbox?.call();
+      if (call.method == 'openInbox') {
+        _pendingInboxOpen = true;
+        openPendingInbox();
+      }
       if (call.method == 'changed' || call.method == 'openInbox') await sync();
     });
     _timer = Timer.periodic(
@@ -68,6 +83,10 @@ class NotificationController extends ChangeNotifier {
     try {
       final status =
           await native.invokeMapMethod<String, dynamic>('status') ?? {};
+      if (status['pendingInboxOpen'] == true) {
+        _pendingInboxOpen = true;
+        openPendingInbox();
+      }
       permission = status['permission'] as String? ?? 'notDetermined';
       configured = status['configured'] == true;
       final registration = {

@@ -62,6 +62,7 @@ final class NotificationBridge: NSObject, UNUserNotificationCenterDelegate {
   static var shared: NotificationBridge?
   private let channel: FlutterMethodChannel
   private var token: String?
+  private var pendingInboxOpen = false
   init(messenger: FlutterBinaryMessenger) {
     channel = FlutterMethodChannel(name: "slipreel/notifications", binaryMessenger: messenger)
     super.init()
@@ -71,6 +72,9 @@ final class NotificationBridge: NSObject, UNUserNotificationCenterDelegate {
       guard let self = self else { return }
       switch call.method {
       case "status": self.status(result)
+      case "acknowledgeInboxOpen":
+        self.pendingInboxOpen = false
+        result(nil)
       case "requestPermission":
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in
           DispatchQueue.main.async { self.status(result) }
@@ -101,14 +105,17 @@ final class NotificationBridge: NSObject, UNUserNotificationCenterDelegate {
         if settings.authorizationStatus == .authorized { NSApplication.shared.registerForRemoteNotifications() }
         let task = SecTaskCreateFromSelf(nil)
         let environment = task.flatMap { SecTaskCopyValueForEntitlement($0, "com.apple.developer.aps-environment" as CFString, nil) as? String }
-        result(["permission": permission, "apnsToken": self.token as Any, "environment": environment ?? "production", "configured": environment != nil])
+        result(["permission": permission, "apnsToken": self.token as Any, "environment": environment ?? "production", "configured": environment != nil, "pendingInboxOpen": self.pendingInboxOpen])
       }
     }
   }
   func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-    NSApplication.shared.activate(ignoringOtherApps: true)
-    channel.invokeMethod("openInbox", arguments: nil)
-    completionHandler()
+    DispatchQueue.main.async {
+      self.pendingInboxOpen = true
+      NSApplication.shared.activate(ignoringOtherApps: true)
+      self.channel.invokeMethod("openInbox", arguments: nil)
+      completionHandler()
+    }
   }
   func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
     channel.invokeMethod("changed", arguments: nil)

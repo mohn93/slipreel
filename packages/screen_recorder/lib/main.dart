@@ -280,12 +280,17 @@ Future<void> main() async {
   );
   unawaited(notifications.start());
   licensingController.onAccountChanged = notifications.accountChanged;
+  var inboxVisible = false;
   notifications.openInbox = () {
     final context = rootNavigatorKey.currentContext;
-    if (context != null) {
-      unawaited(showDialog<void>(context: context, builder: (_) => const NotificationInbox()));
-    }
+    if (context == null) return false;
+    if (inboxVisible) return true;
+    inboxVisible = true;
+    unawaited(showDialog<void>(context: context, builder: (_) => const NotificationInbox())
+        .whenComplete(() => inboxVisible = false));
+    return true;
   };
+  WidgetsBinding.instance.addPostFrameCallback((_) => notifications.openPendingInbox());
   final nativeAccount = DistributionChannel.isAppStore ? NativeAccount(licensingController) : null;
   if (nativeAccount != null) {
     nativeAccount.addListener(() { unawaited(notifications.accountChanged()); });
