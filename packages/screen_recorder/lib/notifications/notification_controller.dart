@@ -121,7 +121,6 @@ class NotificationController extends ChangeNotifier {
         await nativeSession?.call() ?? (await licenses.load())?.deviceId;
     if (identityKey != _lastIdentityKey) {
       messages = [];
-      blocked = false;
       policyMessage = null;
       notifyListeners();
     }

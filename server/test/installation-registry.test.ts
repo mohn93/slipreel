@@ -131,16 +131,14 @@ describe.skipIf(!enabled)("notification identity and dispatch", () => {
       ...registration,
       permission: "denied",
     });
-    await db
-      .doc("notificationRequests/device")
-      .set({
-        status: "queued",
-        target: { type: "installation", id: install.id },
-        title: "Hello",
-        body: "Test",
-        expiresInDays: 1,
-        push: true,
-      });
+    await db.doc("notificationRequests/device").set({
+      status: "queued",
+      target: { type: "installation", id: install.id },
+      title: "Hello",
+      body: "Test",
+      expiresInDays: 1,
+      push: true,
+    });
     let sent = 0;
     await dispatchRequests(db, {
       send: async () => {
@@ -152,6 +150,31 @@ describe.skipIf(!enabled)("notification identity and dispatch", () => {
     expect(
       (await db.doc(`installations/${install.id}/inbox/device`).get()).exists,
     ).toBe(true);
+  });
+  it("keeps restriction checks bound to the previous owner after sign-out", async () => {
+    const install = await registry.create(registration);
+    await registry.sync(install.id, install.secret, registration, "u1");
+    await db
+      .doc("restrictions/u1")
+      .set({ blocked: true, message: "Contact support" });
+    const signedOut = await registry.sync(
+      install.id,
+      install.secret,
+      registration,
+      null,
+    );
+    expect((await registry.policy(signedOut.restrictionSubject)).blocked).toBe(
+      true,
+    );
+    const switched = await registry.sync(
+      install.id,
+      install.secret,
+      registration,
+      "u2",
+    );
+    expect((await registry.policy(switched.restrictionSubject)).blocked).toBe(
+      false,
+    );
   });
   it("removes account data and detaches its installations on deletion", async () => {
     const install = await registry.create(registration);

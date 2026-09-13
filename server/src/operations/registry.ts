@@ -57,6 +57,8 @@ export class InstallationRegistry {
       const anonymousId =
         data.userId && changed ? randomUUID() : data.anonymousId;
       const bindingVersion = data.bindingVersion + (changed ? 1 : 0);
+      const restrictionSubject =
+        userId ?? data.restrictionSubject ?? data.userId ?? null;
       const inheritedAnonymousId =
         !data.userId && userId
           ? data.anonymousId
@@ -68,6 +70,7 @@ export class InstallationRegistry {
         userId,
         licenseDeviceId,
         accountLink,
+        restrictionSubject,
         anonymousId,
         bindingVersion,
         inheritedAnonymousId,
@@ -79,7 +82,7 @@ export class InstallationRegistry {
           { lastSeenAt: FieldValue.serverTimestamp() },
           { merge: true },
         );
-      return { userId, anonymousId, bindingVersion };
+      return { userId, anonymousId, bindingVersion, restrictionSubject };
     });
   }
   async authenticate(id: string, secret: string) {
@@ -102,6 +105,7 @@ export class InstallationRegistry {
           tx.update(device.ref, {
             userId: null,
             accountLink: null,
+            restrictionSubject: null,
             anonymousId: randomUUID(),
             inheritedAnonymousId: null,
             apnsToken: null,
@@ -109,6 +113,17 @@ export class InstallationRegistry {
           });
       });
       await this.db.recursiveDelete(device.ref.collection("inbox"));
+    }
+    const detached = await this.db
+      .collection("installations")
+      .where("restrictionSubject", "==", userId)
+      .get();
+    for (const installation of detached.docs) {
+      await this.db.runTransaction(async (tx) => {
+        const current = await tx.get(installation.ref);
+        if (current.get("restrictionSubject") === userId)
+          tx.update(installation.ref, { restrictionSubject: null });
+      });
     }
     const claims = await this.db
       .collection("anonymousClaims")

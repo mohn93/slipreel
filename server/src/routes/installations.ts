@@ -120,7 +120,7 @@ export async function installationRoutes(
               .doc(userId)
               .set({ email: user.rows[0].email }, { merge: true });
         }
-        return { ...binding, policy: await registry.policy(binding.userId) };
+        return { ...binding, policy: await registry.policy(binding.userId ?? binding.restrictionSubject) };
       } catch (err) {
         if (err instanceof InstallationAuthError)
           return reply.code(401).send({ error: "invalid_installation" });
@@ -155,7 +155,7 @@ export async function installationRoutes(
           .limit(100)
           .get();
         return {
-          policy: await registry.policy(binding.userId),
+          policy: await registry.policy(binding.userId ?? binding.restrictionSubject),
           messages: messages.docs
             .filter((doc) => {
               const m = doc.data();
