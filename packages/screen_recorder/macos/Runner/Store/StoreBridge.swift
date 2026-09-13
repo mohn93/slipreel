@@ -60,6 +60,14 @@ final class StoreBridge: NSObject, ASAuthorizationControllerDelegate,
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) async throws {
     switch call.method {
+    case "requestReview":
+      guard !buying, appleResult == nil, NSApp.isActive,
+            let window, window.isKeyWindow, window.attachedSheet == nil,
+            let controller = window.contentViewController else {
+        result(false); return
+      }
+      AppStore.requestReview(in: controller)
+      result(true) // Apple may suppress its UI, including in TestFlight.
     case "products":
       products = try await Product.products(for: productIDs)
       result(products.sorted { $0.price < $1.price }.map { product -> [String: Any] in
