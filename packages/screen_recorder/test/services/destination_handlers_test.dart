@@ -120,6 +120,24 @@ void main() {
       if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
     });
 
+    test(
+      'recreates a missing cache directory before export validation',
+      () async {
+        final cache = Directory('${tmpDir.path}/purged/app-cache');
+        final copier = ClipboardCopier(tempDirProvider: _fakeTmpDir(cache));
+        final output = await copier.resolveOutputPath(
+          suggestedFileName: 'clip.mp4',
+        );
+        // SafeExportOutput resolves this parent before creating its staging file.
+        expect(
+          await File(output!).parent.resolveSymbolicLinks(),
+          await cache.resolveSymbolicLinks(),
+        );
+        await File(output).writeAsString('test export');
+        expect(await File(output).readAsString(), 'test export');
+      },
+    );
+
     test('resolveOutputPath produces a path under the temp dir', () async {
       final copier = ClipboardCopier(
         tempDirProvider: _fakeTmpDir(tmpDir),
