@@ -7,8 +7,9 @@ requests (site-lint rule #1) and tracker blockers can't drop the data.
 ## What's in the repo
 
 - [`site/assets/js/analytics.js`](../../site/assets/js/analytics.js) — the tuned
-  snippet. Autocapture and session replay are **off**; it captures pageviews +
-  pageleave only, loads on `requestIdleCallback` (off the LCP path), and posts
+  snippet. Blanket autocapture is **off**; it captures pageviews, pageleave,
+  explicit download intent, and privacy-masked session replay on public
+  marketing pages. It loads on `requestIdleCallback` (off the LCP path) and posts
   to `/ingest` on the current origin. No `posthog.com` URL literal (the host is
   built from `location.origin`). It reads the key from `ph-config.js`.
 - [`site/assets/js/ph-config.js`](../../site/assets/js/ph-config.js) — exports
@@ -79,5 +80,6 @@ in the server block that actually serves 443.
 - `person_profiles: 'identified_only'` keeps anonymous pageviews cheap; combined
   with `persistence: 'localStorage'` there's no analytics cookie, so no consent
   banner is required for it.
-- To track a conversion, call `window.posthog?.capture('download_clicked')` from
-  the relevant handler (e.g. in `site.js`'s download hydration).
+- Direct-download links marked with `data-download-link` emit
+  `download_clicked`. This measures intent, not a completed transfer or install;
+  use delivery logs and app activation independently for those later stages.

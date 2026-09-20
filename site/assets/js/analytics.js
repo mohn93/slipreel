@@ -7,8 +7,9 @@
 //      is one fewer DNS/TLS handshake, and is not dropped by tracker blockers.
 //      Because of that invariant there must be NO literal posthog.com URL in
 //      this file: the host is built from location.origin at runtime.
-//   2. Lean-ish. autocapture is OFF (it attaches listeners /
-//      record the DOM); we send pageviews + a few explicit events instead.
+//   2. Lean-ish. autocapture is OFF (it attaches blanket interaction
+//      listeners); we send pageviews + a few explicit events instead. Session
+//      replay is limited to public marketing pages and masks every input.
 //   3. Off the critical path. Loaded on requestIdleCallback so it never
 //      competes with LCP.
 
@@ -23,6 +24,12 @@ import { scrubEvent } from './credential-safety.js?v=2';
 // and /ingest/* to the US ingestion API. location.origin keeps this correct on
 // both slipreel.app and www.slipreel.app without a cross-origin hop.
 const PROXY_HOST = `${window.location.origin}/ingest`;
+const SENSITIVE_ROUTE = /^\/(login|success|cancel|account|pricing)(\.html)?\/?$/;
+
+function redactReplayUrl(request) {
+  if (request?.name) request.name = request.name.split(/[?#]/, 1)[0];
+  return request;
+}
 
 function initPostHog() {
   // Official PostHog bootstrap snippet. It injects array.js from
@@ -77,7 +84,13 @@ function initPostHog() {
     autocapture: false, // no blanket click/input listeners
     capture_pageview: true, // one pageview per full page load (this is an MPA)
     capture_pageleave: true, // bounce / time-on-page
-    disable_session_recording: true, // Callback links and account data must never enter replay.
+    disable_session_recording: false,
+    session_recording: {
+      // Public marketing copy is useful for diagnosing navigation problems,
+      // but visitor-entered values and URL parameters never leave the browser.
+      maskAllInputs: true,
+      maskCapturedNetworkRequestFn: redactReplayUrl,
+    },
     mask_personal_data_properties: true,
     before_send: (event) => {
       const clean = scrubEvent(event);
@@ -93,6 +106,18 @@ function initPostHog() {
     persistence: 'localStorage', // no analytics cookie -> no consent banner
   });
   applyPendingIdentify();
+
+  // This is a conversion intent, not proof that the transfer or installation
+  // completed. Artifact delivery is measured separately at the edge/origin.
+  document.addEventListener('click', (event) => {
+    const link = event.target?.closest?.('a[data-download-link]');
+    if (!link) return;
+    window.posthog.capture('download_clicked', {
+      destination: 'direct_dmg',
+      link_text: link.textContent?.trim() || 'Download',
+      source_path: location.pathname,
+    });
+  });
 }
 
 // Attribution: identify the visitor by their stable user id (the same id the
@@ -113,7 +138,7 @@ window.slipreelIdentify = function (userId, setProps) {
 };
 
 // Only load once configured, and never on the critical path.
-if (!/^\/(login|success|cancel|account|pricing)(\.html)?\/?$/.test(location.pathname) && typeof POSTHOG_KEY === 'string' && POSTHOG_KEY.startsWith('phc_')) {
+if (!SENSITIVE_ROUTE.test(location.pathname) && typeof POSTHOG_KEY === 'string' && POSTHOG_KEY.startsWith('phc_')) {
   if ('requestIdleCallback' in window) {
     window.requestIdleCallback(initPostHog, { timeout: 3000 });
   } else {

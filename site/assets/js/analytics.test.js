@@ -6,13 +6,15 @@ import { scrubEvent } from './credential-safety.js';
 const source = readFileSync(new URL('./analytics.js', import.meta.url), 'utf8').replace(/^import .*;$/gm, '');
 function environment(pathname) {
   let idle, config, identified;
+  const listeners = {};
   const window = {
     location: { origin: 'https://slipreel.app' },
     requestIdleCallback: (callback) => { idle = callback; },
     posthog: { __SV: 1, init: (_key, options) => { config = options; }, identify: (...args) => { identified = args; } },
   };
-  vm.runInNewContext(source, { window, location: { pathname }, document: {}, POSTHOG_KEY: 'phc_fixture', scrubEvent });
-  return { window, start: () => idle?.(), loaded: () => { window.posthog.__loaded = true; config.loaded(window.posthog); }, config: () => config, identified: () => identified };
+  const document = { addEventListener: (type, callback) => { listeners[type] = callback; } };
+  vm.runInNewContext(source, { window, location: { pathname }, document, POSTHOG_KEY: 'phc_fixture', scrubEvent });
+  return { window, listeners, start: () => idle?.(), loaded: () => { window.posthog.__loaded = true; config.loaded(window.posthog); }, config: () => config, identified: () => identified };
 }
 test('identity queued before SDK readiness is applied on loaded callback', () => {
   const env = environment('/');
@@ -21,8 +23,26 @@ test('identity queued before SDK readiness is applied on loaded callback', () =>
   assert.equal(env.identified(), undefined);
   env.loaded();
   assert.deepEqual(env.identified(), ['fixture-user', { fixture: true }]);
-  assert.equal(env.config().disable_session_recording, true);
+  assert.equal(env.config().disable_session_recording, false);
+  assert.equal(env.config().session_recording.maskAllInputs, true);
+  assert.equal(
+    env.config().session_recording.maskCapturedNetworkRequestFn({ name: 'https://slipreel.app/?token=secret#fragment' }).name,
+    'https://slipreel.app/'
+  );
   assert.equal(typeof env.config().before_send, 'function');
+});
+
+test('download links emit an explicit conversion intent event', () => {
+  const env = environment('/');
+  const captured = [];
+  env.window.posthog.capture = (...args) => captured.push(args);
+  env.start();
+  env.listeners.click({ target: { closest: () => ({ textContent: ' Download for macOS ' }) } });
+  assert.deepEqual(JSON.parse(JSON.stringify(captured)), [['download_clicked', {
+    destination: 'direct_dmg',
+    link_text: 'Download for macOS',
+    source_path: '/',
+  }]]);
 });
 test('credential and account pages never initialize analytics even if module is accidentally loaded', () => {
   for (const route of ['/login', '/success.html', '/cancel', '/cancel.html', '/account', '/pricing.html']) {
