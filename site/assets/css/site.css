@@ -1483,6 +1483,53 @@ a {
   font-size: var(--fs-md);
 }
 
+/* Product evidence on comparison pages. Real editor captures make the page
+   useful before a visitor has to trust a feature table. */
+.product-proof__intro {
+  max-width: 68ch;
+  margin-bottom: clamp(24px, 4vw, 40px);
+}
+
+.product-proof__intro h2 { font-size: var(--fs-2xl); }
+.product-proof__intro p { margin-top: 0.8em; color: var(--ink-dim); }
+.product-proof__grid { display: grid; gap: 20px; }
+
+@media (min-width: 760px) {
+  .product-proof__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.product-proof__card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.product-proof__card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-bottom: 1px solid var(--line);
+}
+
+.product-proof__card figcaption {
+  padding: 16px 18px 18px;
+  color: var(--ink-dim);
+  font-size: var(--fs-sm);
+}
+
+.product-proof__card strong {
+  display: block;
+  margin-bottom: 0.35em;
+  color: var(--ink);
+}
+
+.comparison-review {
+  padding-block: 0 clamp(40px, 6vw, 72px);
+  color: var(--ink-dim);
+  font-size: var(--fs-xs);
+}
+
 /* Feature table. Wrapped in .ctable-wrap so it scrolls on its own on narrow
    screens without the page body ever scrolling sideways. */
 .ctable-wrap {

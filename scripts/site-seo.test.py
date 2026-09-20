@@ -9,7 +9,8 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit, unquote
 from xml.etree import ElementTree as ET
 
-SITE = Path(__file__).resolve().parents[1] / 'site'
+ROOT = Path(__file__).resolve().parents[1]
+SITE = ROOT / 'site'
 ORIGIN = 'https://slipreel.app'
 
 class Page(HTMLParser):
@@ -136,5 +137,28 @@ class SearchContract(unittest.TestCase):
             self.assertIn(phrase, llms)
         self.assertNotIn('only network calls', llms.lower())
         self.assertNotIn('forever', llms.lower())
+
+    def test_static_release_copy_uses_one_version(self):
+        changelog = (SITE / 'changelog.html').read_text()
+        match = re.search(r'<h2 id="release-([0-9-]+)">([0-9.]+)</h2>\s*<span class="support-badge">Latest release</span>', changelog)
+        self.assertIsNotNone(match, 'changelog needs one explicit latest release')
+        latest = match.group(2)
+        self.assertEqual(changelog.count('Latest release'), 1)
+        self.assertIn(f'v{latest}', (SITE / 'index.html').read_text())
+        self.assertIn(f'Slipreel {latest}', (SITE / 'downloads.html').read_text())
+
+    def test_server_configs_keep_security_and_webm_headers(self):
+        caddy = (ROOT / 'server/deploy/caddy-site-seo.conf').read_text()
+        nginx = (ROOT / 'server/deploy/nginx-site.conf').read_text()
+        for header in [
+            'Strict-Transport-Security', 'X-Content-Type-Options',
+            'X-Frame-Options', 'Referrer-Policy', 'Permissions-Policy',
+            'Content-Security-Policy-Report-Only',
+        ]:
+            with self.subTest(header=header):
+                self.assertIn(header, caddy)
+                self.assertIn(header, nginx)
+        self.assertIn('Content-Type video/webm', caddy)
+        self.assertIn('video/webm webm', nginx)
 
 if __name__ == '__main__': unittest.main(verbosity=2)
