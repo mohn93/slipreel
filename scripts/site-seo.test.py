@@ -138,14 +138,27 @@ class SearchContract(unittest.TestCase):
         self.assertNotIn('only network calls', llms.lower())
         self.assertNotIn('forever', llms.lower())
 
+    def test_about_page_has_visible_company_identity_and_substantial_copy(self):
+        about = PAGES['about']
+        organization = next(node for node in about.nodes if node.get('@type') == 'Organization')
+        self.assertEqual(organization['legalName'], 'Becoming Ventures, LLC')
+        self.assertEqual(organization['email'], 'hello@slipreel.app')
+        visible = re.sub(r'<(?:script|style)\b[^>]*>.*?</(?:script|style)>', ' ', about.path.read_text(), flags=re.DOTALL)
+        visible = re.sub(r'<[^>]+>', ' ', visible)
+        self.assertGreaterEqual(len(re.findall(r"\b[\w’'-]+\b", visible)), 400)
+        self.assertIn('/about', PAGES['index'].links)
+
     def test_static_release_copy_uses_one_version(self):
         changelog = (SITE / 'changelog.html').read_text()
         match = re.search(r'<h2 id="release-([0-9-]+)">([0-9.]+)</h2>\s*<span class="support-badge">Latest release</span>', changelog)
         self.assertIsNotNone(match, 'changelog needs one explicit latest release')
         latest = match.group(2)
         self.assertEqual(changelog.count('Latest release'), 1)
-        self.assertIn(f'v{latest}', (SITE / 'index.html').read_text())
+        homepage = (SITE / 'index.html').read_text()
+        self.assertIn(f'v{latest}', homepage)
         self.assertIn(f'Slipreel {latest}', (SITE / 'downloads.html').read_text())
+        self.assertIn(f'Current release: Slipreel {latest}', (SITE / 'llms.txt').read_text())
+        self.assertRegex(homepage, rf'data-version-badge>Free download · v{re.escape(latest)} · [0-9]+ MB</span>')
 
     def test_server_configs_keep_security_and_webm_headers(self):
         caddy = (ROOT / 'server/deploy/caddy-site-seo.conf').read_text()

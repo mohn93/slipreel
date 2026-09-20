@@ -22,6 +22,7 @@ build/
 
 # macOS
 .DS_Store
+.seo-cache/
 
 # Vendored native binaries (built locally by scripts/build-native-deps.sh)
 vendor/

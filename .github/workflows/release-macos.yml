@@ -99,15 +99,6 @@ jobs:
           printf '%s' "${{ secrets.SPARKLE_ED_PRIVATE_KEY }}" > "$SPARKLE_ED_KEY_FILE"
           scripts/release-macos.sh "${{ steps.ver.outputs.version }}"
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/Slipreel-*.dmg
-          # Reconstruct the tag from the resolved version so a manual
-          # workflow_dispatch tags v<version>, not the branch ref_name.
-          tag_name: v${{ steps.ver.outputs.version }}
-          fail_on_unmatched_files: true
-
       - name: Build appcast against the published feed
         env:
           SPARKLE_ED_KEY_FILE: ${{ runner.temp }}/sparkle_ed_priv
@@ -128,6 +119,22 @@ jobs:
           fi
           scripts/update-appcast.sh "${{ steps.ver.outputs.version }}" "$BUILD" "$DMG" "$URL" out/appcast.xml
 
+      - name: Synchronize crawler-visible release facts
+        run: |
+          python3 scripts/sync-site-release.py --appcast out/appcast.xml
+          python3 scripts/sync-site-release.test.py
+          python3 scripts/site-seo.test.py
+          bash scripts/site-lint.sh
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Slipreel-*.dmg
+          # Reconstruct the tag from the resolved version so a manual
+          # workflow_dispatch tags v<version>, not the branch ref_name.
+          tag_name: v${{ steps.ver.outputs.version }}
+          fail_on_unmatched_files: true
+
       - name: Deploy DMG + appcast to slipreel.app
         env:
           DEPLOY_HOST: 185.203.116.117
@@ -145,6 +152,11 @@ jobs:
           # never points at a not-yet-uploaded file.
           rsync -av -e "$SSH" "$DMG" "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/download/"
           rsync -av -e "$SSH" out/appcast.xml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/appcast.xml"
+          # These crawler-visible fallbacks are generated from the same appcast
+          # item before publishing, so the website cannot lag a signed release.
+          rsync -rltv --no-perms --no-owner --no-group -e "$SSH" \
+            site/index.html site/downloads.html site/changelog.html site/llms.txt site/sitemap.xml \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/"
           # Keep every signed release: one-time customers may need a build
           # from before their update ceiling. Never prune customer downloads.
           $SSH "$DEPLOY_USER@$DEPLOY_HOST" \
