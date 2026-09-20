@@ -9,7 +9,8 @@
 //      this file: the host is built from location.origin at runtime.
 //   2. Lean-ish. autocapture is OFF (it attaches blanket interaction
 //      listeners); we send pageviews + a few explicit events instead. Session
-//      replay is limited to public marketing pages and masks every input.
+//      replay is limited to public marketing pages; sensitive routes never load
+//      analytics at all.
 //   3. Off the critical path. Loaded on requestIdleCallback so it never
 //      competes with LCP.
 
@@ -25,11 +26,6 @@ import { scrubEvent } from './credential-safety.js?v=2';
 // both slipreel.app and www.slipreel.app without a cross-origin hop.
 const PROXY_HOST = `${window.location.origin}/ingest`;
 const SENSITIVE_ROUTE = /^\/(login|success|cancel|account|pricing)(\.html)?\/?$/;
-
-function redactReplayUrl(request) {
-  if (request?.name) request.name = request.name.split(/[?#]/, 1)[0];
-  return request;
-}
 
 function initPostHog() {
   // Official PostHog bootstrap snippet. It injects array.js from
@@ -86,10 +82,9 @@ function initPostHog() {
     capture_pageleave: true, // bounce / time-on-page
     disable_session_recording: false,
     session_recording: {
-      // Public marketing copy is useful for diagnosing navigation problems,
-      // but visitor-entered values and URL parameters never leave the browser.
-      maskAllInputs: true,
-      maskCapturedNetworkRequestFn: redactReplayUrl,
+      // Capture public marketing pages without input masking or replay URL
+      // redaction. Credential-bearing and purchase routes are excluded above.
+      maskAllInputs: false,
     },
     mask_personal_data_properties: true,
     before_send: (event) => {

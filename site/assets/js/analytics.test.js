@@ -24,11 +24,8 @@ test('identity queued before SDK readiness is applied on loaded callback', () =>
   env.loaded();
   assert.deepEqual(env.identified(), ['fixture-user', { fixture: true }]);
   assert.equal(env.config().disable_session_recording, false);
-  assert.equal(env.config().session_recording.maskAllInputs, true);
-  assert.equal(
-    env.config().session_recording.maskCapturedNetworkRequestFn({ name: 'https://slipreel.app/?token=secret#fragment' }).name,
-    'https://slipreel.app/'
-  );
+  assert.equal(env.config().session_recording.maskAllInputs, false);
+  assert.equal(env.config().session_recording.maskCapturedNetworkRequestFn, undefined);
   assert.equal(typeof env.config().before_send, 'function');
 });
 
