@@ -2,6 +2,8 @@
 
 > Slipreel is a macOS screen recorder and editor that turns a raw screen capture into a polished product demo. The moment you stop recording it automatically zooms in on your clicks, smooths the cursor path, wraps the footage in a device frame on a background, and can transcribe captions on-device — then exports to MP4 or GIF.
 
+Current release: Slipreel 1.0.18, published 11 September 2026. The direct download is signed with an Apple Developer ID and notarized by Apple.
+
 Slipreel is a native macOS app (macOS 13 or later, Apple Silicon or Intel), signed with an Apple Developer ID and notarized by Apple, distributed directly from slipreel.app (not the Mac App Store). It is made by Becoming Ventures, LLC. The app is free to download and fully functional for recording and editing; the current release includes three free full-quality exports, then a paid license unlocks unlimited exports.
 
 Privacy: recording, editing, captions, and export run on the user's Mac. Slipreel does not upload recording media; users can export and share their files themselves. Network connections include license activation and renewal, update checks, and the first caption-model download (roughly 488 MB). Optional usage analytics, diagnostics, and submitted feedback can also send data. Usage events use a random session identifier before sign-in and may be associated with the account identifier while signed in. See the privacy policy for details.
@@ -49,6 +51,7 @@ Privacy: recording, editing, captions, and export run on the user's Mac. Slipree
 - [Downloads](https://slipreel.app/downloads): current and supported archived releases
 - [Changelog](https://slipreel.app/changelog): release notes
 - [Privacy policy](https://slipreel.app/privacy): media processing, telemetry, and account data
+- [About](https://slipreel.app/about): why Slipreel exists, who operates it, and its product principles
 - [Screen Studio alternative](https://slipreel.app/screen-studio-alternative): features, pricing, and tradeoffs
 - [Loom alternative](https://slipreel.app/loom-alternative): local demos versus hosted sharing
 - [ScreenFlow alternative](https://slipreel.app/screenflow-alternative): focused demos versus a full editor
