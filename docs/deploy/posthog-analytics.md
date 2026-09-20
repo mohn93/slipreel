@@ -8,7 +8,7 @@ requests (site-lint rule #1) and tracker blockers can't drop the data.
 
 - [`site/assets/js/analytics.js`](../../site/assets/js/analytics.js) — the tuned
   snippet. Blanket autocapture is **off**; it captures pageviews, pageleave,
-  explicit download intent, and privacy-masked session replay on public
+  explicit download intent, and session replay on public
   marketing pages. It loads on `requestIdleCallback` (off the LCP path) and posts
   to `/ingest` on the current origin. No `posthog.com` URL literal (the host is
   built from `location.origin`). It reads the key from `ph-config.js`.
