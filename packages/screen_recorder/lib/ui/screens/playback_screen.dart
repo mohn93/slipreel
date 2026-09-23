@@ -451,15 +451,21 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     return saved;
   }
 
-  Future<void> _leaveEditor() async {
+  Future<void> _leaveEditor({bool newRecording = false}) async {
     if (_leaving) return;
     _leaving = true;
     try {
       if (!await _flushProject() || !mounted) return;
       setState(() => _allowPop = true);
-      // PopScope must rebuild with permission before the actual route pop.
+      // PopScope must rebuild with permission before leaving the editor.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.of(context).pop();
+        if (!mounted) return;
+        final navigator = Navigator.of(context);
+        if (newRecording) {
+          navigator.popUntil((route) => route.isFirst);
+        } else {
+          navigator.pop();
+        }
       });
     } finally { _leaving = false; }
   }
@@ -1650,7 +1656,7 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
   }
 
   /// Three-zone top bar modeled after the screenstudio chrome:
-  ///   LEFT  — traffic-light spacer · folder (record-another) · trash
+  ///   LEFT  — New recording · trash
   ///   CENTER — recording filename, with .ext rendered dim
   ///   RIGHT  — ⌘ palette · undo · redo · divider · presets · eye ·
   ///            gauge · Export CTA
@@ -1708,6 +1714,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final canUndo = _history?.canUndo ?? false;
     final canRedo = _history?.canRedo ?? false;
     final dim = palette.textSecondary;
+    final newRecordingLabel = TextPainter(
+      text: TextSpan(
+        text: 'New recording',
+        style: Theme.of(context).textTheme.labelLarge,
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final newRecordingButtonWidth =
+        (newRecordingLabel.width + 16 + 8 + 20).clamp(166.0, double.infinity);
+    newRecordingLabel.dispose();
 
     Widget icon(
       IconData glyph,
@@ -1737,16 +1754,21 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         preferredSize: const Size.fromHeight(1),
         child: Container(height: 1, color: palette.dividerSubtle),
       ),
-      leadingWidth: _kTrafficLightInset + _kTopBarIconSize * 2 + 16,
+      leadingWidth: _kTrafficLightInset + newRecordingButtonWidth +
+          _kTopBarIconSize + 12,
       leading: Padding(
         padding: EdgeInsets.only(left: _kTrafficLightInset, right: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            icon(
-              LucideIcons.folderOpen,
-              'Record another',
-              _leaveEditor,
+            TextButton.icon(
+              onPressed: () => _leaveEditor(newRecording: true),
+              icon: const Icon(LucideIcons.video, size: 16),
+              label: const Text('New recording'),
+              style: TextButton.styleFrom(
+                foregroundColor: palette.textPrimary,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
             ),
             const SizedBox(width: 4),
             icon(LucideIcons.trash2, 'Delete recording', _deleteRecording),

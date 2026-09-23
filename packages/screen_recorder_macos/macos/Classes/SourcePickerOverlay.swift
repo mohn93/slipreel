@@ -11,6 +11,11 @@ struct PickedSourceResult {
   let id: String
 }
 
+/// Borderless overlays must explicitly opt in to keyboard focus for Esc.
+private final class SourcePickerWindow: NSWindow {
+  override var canBecomeKey: Bool { true }
+}
+
 /// Shows borderless transparent overlay windows (one per NSScreen) painting
 /// the pickable targets, and returns the chosen source. Modeled on
 /// `RegionSelector`.
@@ -51,7 +56,7 @@ final class SourcePickerOverlay {
       return
     }
     for screen in NSScreen.screens {
-      let win = NSWindow(
+      let win = SourcePickerWindow(
         contentRect: screen.frame,
         styleMask: [.borderless],
         backing: .buffered,
@@ -79,7 +84,12 @@ final class SourcePickerOverlay {
       pickerViews.append(view)
     }
     NSApp.activate(ignoringOtherApps: true)
-    overlayWindows.first?.makeKey()
+    if let firstWindow = overlayWindows.first {
+      firstWindow.makeKeyAndOrderFront(nil)
+      if let firstView = pickerViews.first {
+        firstWindow.makeFirstResponder(firstView)
+      }
+    }
 
     escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
       if e.keyCode == 53 { self?.cancel(); return nil } // Esc

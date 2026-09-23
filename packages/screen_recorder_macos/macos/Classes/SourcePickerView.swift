@@ -23,6 +23,30 @@ final class SourcePickerView: NSView {
   /// single highlight even if a cross-screen `mouseExited` is missed.
   var onHoverChanged: ((SourcePickerView) -> Void)?
 
+  private lazy var cancelButton: NSButton = {
+    let button = NSButton(title: "Cancel", target: self, action: #selector(cancelSelection))
+    button.bezelStyle = .rounded
+    button.toolTip = "Cancel source selection (Esc)"
+    return button
+  }()
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    addSubview(cancelButton)
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    addSubview(cancelButton)
+  }
+
+  override func layout() {
+    super.layout()
+    cancelButton.frame = CGRect(x: bounds.maxX - 116, y: 20, width: 96, height: 32)
+  }
+
+  @objc private func cancelSelection() { onCancel?() }
+
   private var hoveredIndex: Int?
   private static let blue = NSColor(srgbRed: 0.16, green: 0.43, blue: 1.0, alpha: 0.34)
   private static let scrim = NSColor(srgbRed: 0.06, green: 0.07, blue: 0.10, alpha: 0.46)
