@@ -1714,6 +1714,17 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
     final canUndo = _history?.canUndo ?? false;
     final canRedo = _history?.canRedo ?? false;
     final dim = palette.textSecondary;
+    final newRecordingLabel = TextPainter(
+      text: TextSpan(
+        text: 'New recording',
+        style: Theme.of(context).textTheme.labelLarge,
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final newRecordingButtonWidth =
+        (newRecordingLabel.width + 16 + 8 + 20).clamp(166.0, double.infinity);
+    newRecordingLabel.dispose();
 
     Widget icon(
       IconData glyph,
@@ -1743,7 +1754,8 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
         preferredSize: const Size.fromHeight(1),
         child: Container(height: 1, color: palette.dividerSubtle),
       ),
-      leadingWidth: _kTrafficLightInset + 166 + _kTopBarIconSize + 12,
+      leadingWidth: _kTrafficLightInset + newRecordingButtonWidth +
+          _kTopBarIconSize + 12,
       leading: Padding(
         padding: EdgeInsets.only(left: _kTrafficLightInset, right: 4),
         child: Row(
