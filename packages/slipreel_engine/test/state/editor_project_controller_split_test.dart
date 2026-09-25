@@ -192,17 +192,10 @@ void main() {
       final zoom = _zoom(7, 9);
       c.replaceZoomRegions([zoom]);
 
-      c.setSliceTrimEnd(
-        0,
-        const Duration(seconds: 6),
-        removeOverlappingZooms: false,
-      );
-      expect(c.current.zoomRegions, [zoom]);
-      c.setSliceTrimEnd(
-        0,
-        const Duration(seconds: 10),
-        removeOverlappingZooms: false,
-      );
+      c.beginFinalEndTrim();
+      c.setSliceTrimEnd(0, const Duration(seconds: 6), duringDrag: true);
+      expect(c.current.zoomRegions, isEmpty);
+      c.setSliceTrimEnd(0, const Duration(seconds: 10), duringDrag: true);
       c.finishFinalEndTrim();
 
       expect(c.current.zoomRegions, [zoom]);
@@ -212,14 +205,25 @@ void main() {
       final c = _controllerWithClips([_slice(cs: 0, ce: 10)]);
       c.replaceZoomRegions([_zoom(7, 9)]);
 
-      c.setSliceTrimEnd(
-        0,
-        const Duration(seconds: 6),
-        removeOverlappingZooms: false,
-      );
-      expect(c.current.zoomRegions, hasLength(1));
+      c.beginFinalEndTrim();
+      c.setSliceTrimEnd(0, const Duration(seconds: 6), duringDrag: true);
+      expect(c.current.zoomRegions, isEmpty);
       c.finishFinalEndTrim();
 
+      expect(c.current.zoomRegions, isEmpty);
+    });
+
+    test('a lost drag-end callback still leaves no hidden zooms', () {
+      final c = _controllerWithClips([_slice(cs: 0, ce: 10)]);
+      c.replaceZoomRegions([_zoom(7, 9)]);
+
+      c.beginFinalEndTrim();
+      c.setSliceTrimEnd(0, const Duration(seconds: 6), duringDrag: true);
+
+      expect(c.current.zoomRegions, isEmpty);
+
+      // A later, separate end edit must not revive a zoom from the old drag.
+      c.setSliceTrimEnd(0, const Duration(seconds: 10));
       expect(c.current.zoomRegions, isEmpty);
     });
 

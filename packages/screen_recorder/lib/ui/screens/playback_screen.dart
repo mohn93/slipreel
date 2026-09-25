@@ -3559,22 +3559,15 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onSliceTrimStartChanged: (idx, v) => ref
                     .read(editorProjectControllerProvider.notifier)
                     .setSliceTrimStart(idx, v),
-                onSliceTrimEndChanged: (idx, v) {
-                  ref
-                      .read(editorProjectControllerProvider.notifier)
-                      .setSliceTrimEnd(
-                        idx,
-                        v,
-                        removeOverlappingZooms: false,
-                      );
-                },
+                onSliceTrimEndChanged: (idx, v) => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .setSliceTrimEnd(idx, v, duringDrag: true),
+                onFinalEndTrimStarted: () => ref
+                    .read(editorProjectControllerProvider.notifier)
+                    .beginFinalEndTrim(),
                 onFinalEndTrimCommitted: () {
                   final ctl = ref.read(editorProjectControllerProvider.notifier);
-                  final zoomCount = ctl.current.zoomRegions.length;
                   ctl.finishFinalEndTrim();
-                  if (ctl.current.zoomRegions.length != zoomCount) {
-                    _setSelectedZoomIndex(null);
-                  }
                 },
                 onClearSeamTrims: (seamIndex) => ref
                     .read(editorProjectControllerProvider.notifier)

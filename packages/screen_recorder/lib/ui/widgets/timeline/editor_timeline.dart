@@ -133,6 +133,7 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.cursorXListenable,
     this.onSliceTrimStartChanged,
     this.onSliceTrimEndChanged,
+    this.onFinalEndTrimStarted,
     this.onFinalEndTrimCommitted,
     this.onClearSeamTrims,
     this.onMergeSeam,
@@ -224,7 +225,9 @@ class EditorTimeline extends ConsumerStatefulWidget {
   onSliceTrimStartChanged;
   final void Function(int sliceIndex, Duration trimEnd)? onSliceTrimEndChanged;
 
-  /// Called after the final slice's right trim handle is released.
+  /// Bracket the final slice's right-handle gesture so the controller can
+  /// restore zooms if the handle moves back over them before release.
+  final VoidCallback? onFinalEndTrimStarted;
   final VoidCallback? onFinalEndTrimCommitted;
 
   /// Fired by [CutMarkerStrip] when the user taps a seam that has
@@ -830,6 +833,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
       _padCtlLeft.reverse();
     }
     if (isRightEdgeDrag) {
+      widget.onFinalEndTrimStarted?.call();
       _activeEdgeSide = TrimSide.right;
       // Freeze the bandRight target for auto-scroll math during the
       // bloom — see the header comment on _bandRightTargetAtDragStart.

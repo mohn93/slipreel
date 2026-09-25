@@ -46,6 +46,8 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   EditorProjectController({EditorProjectState? initial})
     : super(initial ?? EditorProjectState.defaults());
 
+  List<ZoomTrack>? _endTrimZoomTracks;
+
   /// Public read accessor for the current state. `StateNotifier.state`
   /// is protected to subclasses; external callers (e.g.
   /// [EditorHistoryController], persistence, debug tooling) read
@@ -56,6 +58,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   /// Swap the entire state. Used by the project loader: hand it a
   /// fully-built state and the controller pushes it through.
   void replace(EditorProjectState next) {
+    _endTrimZoomTracks = null;
     state = next;
   }
 
@@ -620,11 +623,22 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     _replaceSlice(sliceIndex, s.copyWith(trimStart: clamped));
   }
 
+  /// Keep the pre-drag zooms so moving the end handle back over a zoom can
+  /// restore it within the same gesture.
+  void beginFinalEndTrim() {
+    _endTrimZoomTracks = state.timeline.zoomTracks;
+  }
+
+  void finishFinalEndTrim() {
+    _endTrimZoomTracks = null;
+  }
+
   void setSliceTrimEnd(
     int sliceIndex,
     Duration trimEnd, {
-    bool removeOverlappingZooms = true,
+    bool duringDrag = false,
   }) {
+    if (!duringDrag) _endTrimZoomTracks = null;
     final s = _slice(sliceIndex);
     if (s == null) return;
     var clamped = trimEnd;
@@ -635,22 +649,14 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final clips = List<ClipSlice>.from(state.timeline.clips)
       ..[sliceIndex] = s.copyWith(trimEnd: clamped);
     var timeline = state.timeline.copyWith(clips: clips);
-    if (removeOverlappingZooms &&
-        sliceIndex == clips.length - 1 &&
-        clamped < s.trimEnd) {
-      timeline = _removeZoomsPastEnd(timeline, clamped);
+    if (sliceIndex == clips.length - 1) {
+      if (_endTrimZoomTracks != null) {
+        timeline = timeline.copyWith(zoomTracks: _endTrimZoomTracks);
+        timeline = _removeZoomsPastEnd(timeline, clamped);
+      } else if (clamped < s.trimEnd) {
+        timeline = _removeZoomsPastEnd(timeline, clamped);
+      }
     }
-    state = state.copyWith(timeline: timeline);
-  }
-
-  /// Finish an end-handle drag after its final position is known. Zooms stay
-  /// intact during the gesture, including when the handle crosses a zoom and
-  /// then moves back over it before release.
-  void finishFinalEndTrim() {
-    final clips = state.timeline.clips;
-    if (clips.isEmpty) return;
-    final timeline = _removeZoomsPastEnd(state.timeline, clips.last.trimEnd);
-    if (identical(timeline, state.timeline)) return;
     state = state.copyWith(timeline: timeline);
   }
 
@@ -738,6 +744,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final clips = state.timeline.clips;
     if (clips.length <= 1) return;
     if (sliceIndex < 0 || sliceIndex >= clips.length) return;
+    _endTrimZoomTracks = null;
     final updated = List<ClipSlice>.from(clips)..removeAt(sliceIndex);
     var timeline = state.timeline.copyWith(clips: updated);
     if (sliceIndex == clips.length - 1) {
