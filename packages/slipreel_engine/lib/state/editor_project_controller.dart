@@ -46,6 +46,8 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   EditorProjectController({EditorProjectState? initial})
     : super(initial ?? EditorProjectState.defaults());
 
+  List<ZoomTrack>? _endTrimZoomTracks;
+
   /// Public read accessor for the current state. `StateNotifier.state`
   /// is protected to subclasses; external callers (e.g.
   /// [EditorHistoryController], persistence, debug tooling) read
@@ -56,6 +58,7 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
   /// Swap the entire state. Used by the project loader: hand it a
   /// fully-built state and the controller pushes it through.
   void replace(EditorProjectState next) {
+    _endTrimZoomTracks = null;
     state = next;
   }
 
@@ -620,7 +623,22 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     _replaceSlice(sliceIndex, s.copyWith(trimStart: clamped));
   }
 
-  void setSliceTrimEnd(int sliceIndex, Duration trimEnd) {
+  /// Keep the pre-drag zooms so moving the end handle back over a zoom can
+  /// restore it within the same gesture.
+  void beginFinalEndTrim() {
+    _endTrimZoomTracks = state.timeline.zoomTracks;
+  }
+
+  void finishFinalEndTrim() {
+    _endTrimZoomTracks = null;
+  }
+
+  void setSliceTrimEnd(
+    int sliceIndex,
+    Duration trimEnd, {
+    bool duringDrag = false,
+  }) {
+    if (!duringDrag) _endTrimZoomTracks = null;
     final s = _slice(sliceIndex);
     if (s == null) return;
     var clamped = trimEnd;
@@ -628,7 +646,41 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final lower = s.trimStart + const Duration(milliseconds: 100);
     if (clamped < lower) clamped = lower > s.cutEnd ? s.cutEnd : lower;
     if (clamped == s.trimEnd) return;
-    _replaceSlice(sliceIndex, s.copyWith(trimEnd: clamped));
+    final clips = List<ClipSlice>.from(state.timeline.clips)
+      ..[sliceIndex] = s.copyWith(trimEnd: clamped);
+    var timeline = state.timeline.copyWith(clips: clips);
+    if (sliceIndex == clips.length - 1) {
+      if (_endTrimZoomTracks != null) {
+        timeline = timeline.copyWith(zoomTracks: _endTrimZoomTracks);
+        timeline = _removeZoomsPastEnd(timeline, clamped);
+      } else if (clamped < s.trimEnd) {
+        timeline = _removeZoomsPastEnd(timeline, clamped);
+      }
+    }
+    state = state.copyWith(timeline: timeline);
+  }
+
+  /// Zooms that overlap the cut tail should go with that footage. Those
+  /// starting at or after the final playable boundary also collapse to zero
+  /// width in the edited timeline and cannot be selected there.
+  Timeline _removeZoomsPastEnd(Timeline timeline, Duration end) {
+    final tracks = timeline.zoomTracks;
+    if (tracks.isEmpty) return timeline;
+    final updated = [
+      for (final track in tracks)
+        ZoomTrack(
+          regions: [
+            for (final zoom in track.regions)
+              if (zoom.endTime <= end) zoom,
+          ],
+        ),
+    ];
+    for (var i = 0; i < tracks.length; i++) {
+      if (updated[i].regions.length != tracks[i].regions.length) {
+        return timeline.copyWith(zoomTracks: updated);
+      }
+    }
+    return timeline;
   }
 
   /// First-click action for a cut marker: resets the inner trims of
@@ -692,8 +744,13 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final clips = state.timeline.clips;
     if (clips.length <= 1) return;
     if (sliceIndex < 0 || sliceIndex >= clips.length) return;
+    _endTrimZoomTracks = null;
     final updated = List<ClipSlice>.from(clips)..removeAt(sliceIndex);
-    state = state.copyWith(timeline: state.timeline.copyWith(clips: updated));
+    var timeline = state.timeline.copyWith(clips: updated);
+    if (sliceIndex == clips.length - 1) {
+      timeline = _removeZoomsPastEnd(timeline, updated.last.trimEnd);
+    }
+    state = state.copyWith(timeline: timeline);
   }
 }
 
