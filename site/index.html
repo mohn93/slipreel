@@ -31,7 +31,7 @@
 <meta name="twitter:image:alt" content="Slipreel — screen recordings that look like they took a week. A dashboard recording shown in the Slipreel editor.">
 <link rel="preload" href="/assets/img/hero-poster.webp" as="image" fetchpriority="high">
 <link rel="preload" href="assets/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/css/site.css?v=20260909-lcp5">
+<link rel="stylesheet" href="assets/css/site.css?v=20260925-landing">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -557,7 +557,7 @@
      structure. -->
 <section class="section feature-grid">
   <div class="container">
-    <h2 class="feature-grid__heading reveal">And the hundred small things.</h2>
+    <h2 class="feature-grid__heading reveal">The little things add up.</h2>
     <ul class="feature-grid__list reveal">
       <li class="feature-grid__item">3-2-1 countdown</li>
       <li class="feature-grid__item">Pause and resume</li>
@@ -615,22 +615,11 @@
 </section>
 
 
-<!-- Pricing: early-access banner + two cards. Slipreel has no license
-     enforcement yet, so the banner and both cards must never imply an
-     instant key -- see the copy notes in the task brief. The recommended
-     (lifetime) card is first in the DOM so it also leads on the mobile
-     single-column stack; the two-column desktop layout keeps that order.
-     Carries #pricing for the nav link. -->
 <section class="section pricing" id="pricing">
   <div class="container">
-    <h2 class="visually-hidden">Pricing</h2>
-    <div class="pricing__banner reveal">
-      <p>
-        <strong>Founding pricing.</strong> Slipreel is live and actively
-        developed. Buy now to lock in these rates &mdash; unlimited exports unlock
-        instantly after checkout, and the app is free to download and try
-        first.
-      </p>
+    <div class="pricing__header reveal">
+      <h2>Pricing</h2>
+      <p>Choose how you want to use Slipreel. Both plans unlock unlimited exports on two Macs.</p>
     </div>
 
     <div class="pricing__cards">
@@ -642,10 +631,10 @@
           <span class="pricing-card__amount">$69</span> once
         </p>
         <ul class="pricing-card__features">
-          <li>Keep using your purchased version</li>
+          <li>Unlimited exports on two Macs</li>
           <li>One year of updates included</li>
-          <li>All features</li>
-          <li>macOS 13+</li>
+          <li>Keep using your purchased version</li>
+          <li>All features included</li>
         </ul>
         <a class="btn btn--primary pricing-card__cta" href="pricing.html?plan=onetime">Buy Slipreel once</a>
       </article>
@@ -656,10 +645,9 @@
           <span class="pricing-card__amount">$9</span>/month
         </p>
         <ul class="pricing-card__features">
-          <li>For a short project</li>
+          <li>Unlimited exports on two Macs</li>
           <li>Every update while subscribed</li>
-          <li>All features</li>
-          <li>macOS 13+</li>
+          <li>All features included</li>
           <li>Cancel anytime</li>
         </ul>
         <a class="btn btn--ghost pricing-card__cta" href="pricing.html?plan=monthly">Subscribe monthly</a>
@@ -667,16 +655,23 @@
 
     </div>
 
-    <p class="pricing__note reveal">14-day money-back guarantee. Email hello@slipreel.app within 14 days for a refund. One-time includes one year of updates; later updates are an optional paid renewal.</p>
-    <p class="pricing__note reveal">
-      Prefer to try it first?
-      <a href="https://slipreel.app/download/latest.dmg" data-download-link>Download Slipreel free</a>
-      &mdash; three full-quality exports included. Recording and editing have no time limit.
-    </p>
+    <div class="pricing__details reveal">
+      <div class="pricing__trial">
+        <h3>Try it before you buy</h3>
+        <p>Three full-quality exports are free. Record and edit without a time limit.</p>
+        <a href="https://slipreel.app/download/latest.dmg" data-download-link>Download Slipreel free</a>
+      </div>
+      <div class="pricing__terms">
+        <h3>Good to know</h3>
+        <ul>
+          <li>14-day money-back guarantee. <a href="mailto:hello@slipreel.app">Email us</a> within 14 days for a refund.</li>
+          <li>One-time includes one year of updates. Later updates are an optional paid renewal.</li>
+          <li>Paid licenses renew activation online at least every 14 days.</li>
+        </ul>
+      </div>
+    </div>
   </div>
 </section>
-
-<p class="container">Paid licenses, including one-time purchases, need an internet connection at least every 14 days to renew activation. Caption generation downloads a roughly 488 MB model the first time. <a href="/guide">Getting started guide</a>.</p>
 
 <!-- FAQ: native details/summary, so it opens and closes with the keyboard
      alone and needs zero JavaScript. Carries #faq for the nav link. -->
@@ -797,25 +792,37 @@
 </section>
 </main>
 
-<footer class="site-footer">
+<footer class="site-footer site-footer--landing">
   <div class="container">
-    <nav class="footer-compare" aria-label="Compare Slipreel">
-      <span class="footer-compare__label">Compare Slipreel</span>
-      <a href="/screen-studio-alternative">vs Screen Studio</a>
-      <a href="/loom-alternative">vs Loom</a>
-      <a href="/screenflow-alternative">vs ScreenFlow</a>
-      <a href="/quicktime-alternative">vs QuickTime</a>
-    </nav>
-    <div class="site-footer__inner">
-      <span class="site-footer__wordmark">Slipreel</span>
-      <a class="site-footer__contact" href="mailto:hello@slipreel.app">hello@slipreel.app</a>
-      <a class="site-footer__contact" href="/about">About</a>
-      <a class="site-footer__contact" href="/privacy">Privacy</a>
-      <a class="site-footer__contact" href="/guide">Getting started</a>
-      <a class="site-footer__contact" href="/downloads">Downloads</a>
-      <a class="site-footer__contact" href="/changelog">Changelog</a>
-      <p class="site-footer__copyright">&copy; 2026 Becoming Ventures, LLC</p>
+    <div class="site-footer__main">
+      <div class="site-footer__brand">
+        <a class="site-footer__wordmark" href="#top">Slipreel</a>
+        <p>Make screen recordings worth sharing.</p>
+        <a href="mailto:hello@slipreel.app">hello@slipreel.app</a>
+      </div>
+      <nav class="site-footer__group" aria-label="Product links">
+        <h2>Product</h2>
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="/downloads">Downloads</a>
+        <a href="/changelog">Changelog</a>
+      </nav>
+      <nav class="site-footer__group" aria-label="Help and legal links">
+        <h2>Help</h2>
+        <a href="/guide">Getting started</a>
+        <a href="account.html">Account</a>
+        <a href="/about">About</a>
+        <a href="/privacy">Privacy</a>
+      </nav>
+      <nav class="site-footer__group" aria-label="Compare Slipreel">
+        <h2>Compare</h2>
+        <a href="/screen-studio-alternative">Screen Studio</a>
+        <a href="/loom-alternative">Loom</a>
+        <a href="/screenflow-alternative">ScreenFlow</a>
+        <a href="/quicktime-alternative">QuickTime</a>
+      </nav>
     </div>
+    <p class="site-footer__legal">&copy; 2026 Becoming Ventures, LLC</p>
   </div>
 </footer>
 
