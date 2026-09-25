@@ -1,4 +1,7 @@
+import 'dart:ui' show Rect;
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:slipreel_engine/models/zoom_region.dart';
 import 'package:slipreel_engine/state/clip_slice.dart';
 import 'package:slipreel_engine/state/editor_project_controller.dart';
 import 'package:slipreel_engine/state/editor_project_state.dart';
@@ -6,9 +9,7 @@ import 'package:slipreel_engine/state/editor_project_state.dart';
 EditorProjectController _controllerWithClips(List<ClipSlice> clips) {
   final base = EditorProjectState.defaults();
   return EditorProjectController(
-    initial: base.copyWith(
-      timeline: base.timeline.copyWith(clips: clips),
-    ),
+    initial: base.copyWith(timeline: base.timeline.copyWith(clips: clips)),
   );
 }
 
@@ -18,14 +19,20 @@ ClipSlice _slice({
   double speed = 1.0,
   int micGain = 100,
   bool hideCursor = false,
-}) =>
-    ClipSlice(
-      cutStart: Duration(seconds: cs),
-      cutEnd: Duration(seconds: ce),
-      playbackSpeed: speed,
-      micGainPercent: micGain,
-      hideCursor: hideCursor,
-    );
+}) => ClipSlice(
+  cutStart: Duration(seconds: cs),
+  cutEnd: Duration(seconds: ce),
+  playbackSpeed: speed,
+  micGainPercent: micGain,
+  hideCursor: hideCursor,
+);
+
+ZoomRegion _zoom(int start, int end) => ZoomRegion(
+  rect: const Rect.fromLTWH(0, 0, 100, 100),
+  startTime: Duration(seconds: start),
+  duration: Duration(seconds: end - start),
+  zoomLevel: 2,
+);
 
 void main() {
   group('splitSlice', () {
@@ -69,10 +76,7 @@ void main() {
 
     test('rejects split too close to right edge (<100ms)', () {
       final c = _controllerWithClips([_slice(cs: 0, ce: 10)]);
-      expect(
-        c.splitSlice(0, const Duration(milliseconds: 9950)),
-        false,
-      );
+      expect(c.splitSlice(0, const Duration(milliseconds: 9950)), false);
       expect(c.current.timeline.clips.length, 1);
     });
 
@@ -82,20 +86,23 @@ void main() {
       expect(c.current.timeline.clips.length, 1);
     });
 
-    test('respects existing trim bounds: split at sourcePosition outside trim fails', () {
-      // Slice has cut [0,10] but trimmed to [3,8]. Splitting at source 1s
-      // is inside cut but outside trim — should fail because the cut is
-      // an edited-time operation.
-      final c = _controllerWithClips([
-        ClipSlice(
-          cutStart: Duration.zero,
-          cutEnd: const Duration(seconds: 10),
-          trimStart: const Duration(seconds: 3),
-          trimEnd: const Duration(seconds: 8),
-        ),
-      ]);
-      expect(c.splitSlice(0, const Duration(seconds: 1)), false);
-    });
+    test(
+      'respects existing trim bounds: split at sourcePosition outside trim fails',
+      () {
+        // Slice has cut [0,10] but trimmed to [3,8]. Splitting at source 1s
+        // is inside cut but outside trim — should fail because the cut is
+        // an edited-time operation.
+        final c = _controllerWithClips([
+          ClipSlice(
+            cutStart: Duration.zero,
+            cutEnd: const Duration(seconds: 10),
+            trimStart: const Duration(seconds: 3),
+            trimEnd: const Duration(seconds: 8),
+          ),
+        ]);
+        expect(c.splitSlice(0, const Duration(seconds: 1)), false);
+      },
+    );
 
     test('inserts at the correct index when splitting a middle slice', () {
       final c = _controllerWithClips([
@@ -163,6 +170,36 @@ void main() {
       );
     });
 
+    test('trimming the final end removes zooms overlapping the cut tail', () {
+      final c = _controllerWithClips([_slice(cs: 0, ce: 10)]);
+      final kept = _zoom(2, 4);
+      final crossing = _zoom(4, 7);
+      final atEnd = _zoom(6, 8);
+      final afterEnd = _zoom(8, 10);
+      c.replaceZoomRegions([kept, crossing, atEnd, afterEnd]);
+
+      c.setSliceTrimEnd(0, const Duration(seconds: 6));
+
+      expect(
+        c.current.timeline.clips.single.trimEnd,
+        const Duration(seconds: 6),
+      );
+      expect(c.current.zoomRegions, [kept]);
+    });
+
+    test('trimming a middle slice keeps zooms in the later slice', () {
+      final c = _controllerWithClips([
+        _slice(cs: 0, ce: 5),
+        _slice(cs: 5, ce: 10),
+      ]);
+      final laterZoom = _zoom(7, 9);
+      c.replaceZoomRegions([laterZoom]);
+
+      c.setSliceTrimEnd(0, const Duration(seconds: 3));
+
+      expect(c.current.zoomRegions, [laterZoom]);
+    });
+
     test('out-of-range index is a no-op', () {
       final c = _controllerWithClips([_slice(cs: 0, ce: 10)]);
       final before = c.current;
@@ -180,17 +217,16 @@ void main() {
       ]);
       // Edited time 7s = source 7s = inside slice 1 [5,12].
       final ok = c.splitAtPlayhead(
-          const Duration(seconds: 7), c.current.timeline.clips);
+        const Duration(seconds: 7),
+        c.current.timeline.clips,
+      );
       expect(ok, true);
       expect(c.current.timeline.clips.length, 3);
     });
 
     test('returns false on empty clips', () {
       final c = _controllerWithClips(const []);
-      expect(
-        c.splitAtPlayhead(const Duration(seconds: 1), const []),
-        false,
-      );
+      expect(c.splitAtPlayhead(const Duration(seconds: 1), const []), false);
     });
 
     test('returns false at exact boundary between slices', () {
@@ -200,7 +236,9 @@ void main() {
       ]);
       // Edited time 5s is the seam — too close to either slice's edge.
       final ok = c.splitAtPlayhead(
-          const Duration(seconds: 5), c.current.timeline.clips);
+        const Duration(seconds: 5),
+        c.current.timeline.clips,
+      );
       expect(ok, false);
     });
   });
@@ -225,5 +263,25 @@ void main() {
       c.removeSlice(0);
       expect(c.current.timeline.clips.length, 1);
     });
+
+    test(
+      'deleting the final slice removes zooms stranded past the new end',
+      () {
+        final c = _controllerWithClips([
+          _slice(cs: 0, ce: 5),
+          _slice(cs: 5, ce: 10),
+        ]);
+        final kept = _zoom(3, 5);
+        c.replaceZoomRegions([kept, _zoom(5, 7), _zoom(8, 10)]);
+
+        c.removeSlice(1);
+
+        expect(
+          c.current.timeline.clips.single.trimEnd,
+          const Duration(seconds: 5),
+        );
+        expect(c.current.zoomRegions, [kept]);
+      },
+    );
   });
 }

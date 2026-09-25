@@ -628,7 +628,36 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final lower = s.trimStart + const Duration(milliseconds: 100);
     if (clamped < lower) clamped = lower > s.cutEnd ? s.cutEnd : lower;
     if (clamped == s.trimEnd) return;
-    _replaceSlice(sliceIndex, s.copyWith(trimEnd: clamped));
+    final clips = List<ClipSlice>.from(state.timeline.clips)
+      ..[sliceIndex] = s.copyWith(trimEnd: clamped);
+    var timeline = state.timeline.copyWith(clips: clips);
+    if (sliceIndex == clips.length - 1 && clamped < s.trimEnd) {
+      timeline = _removeZoomsPastEnd(timeline, clamped);
+    }
+    state = state.copyWith(timeline: timeline);
+  }
+
+  /// Zooms that overlap the cut tail should go with that footage. Those
+  /// starting at or after the final playable boundary also collapse to zero
+  /// width in the edited timeline and cannot be selected there.
+  Timeline _removeZoomsPastEnd(Timeline timeline, Duration end) {
+    final tracks = timeline.zoomTracks;
+    if (tracks.isEmpty) return timeline;
+    final updated = [
+      for (final track in tracks)
+        ZoomTrack(
+          regions: [
+            for (final zoom in track.regions)
+              if (zoom.endTime <= end) zoom,
+          ],
+        ),
+    ];
+    for (var i = 0; i < tracks.length; i++) {
+      if (updated[i].regions.length != tracks[i].regions.length) {
+        return timeline.copyWith(zoomTracks: updated);
+      }
+    }
+    return timeline;
   }
 
   /// First-click action for a cut marker: resets the inner trims of
@@ -693,7 +722,11 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     if (clips.length <= 1) return;
     if (sliceIndex < 0 || sliceIndex >= clips.length) return;
     final updated = List<ClipSlice>.from(clips)..removeAt(sliceIndex);
-    state = state.copyWith(timeline: state.timeline.copyWith(clips: updated));
+    var timeline = state.timeline.copyWith(clips: updated);
+    if (sliceIndex == clips.length - 1) {
+      timeline = _removeZoomsPastEnd(timeline, updated.last.trimEnd);
+    }
+    state = state.copyWith(timeline: timeline);
   }
 }
 

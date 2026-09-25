@@ -3559,9 +3559,14 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                 onSliceTrimStartChanged: (idx, v) => ref
                     .read(editorProjectControllerProvider.notifier)
                     .setSliceTrimStart(idx, v),
-                onSliceTrimEndChanged: (idx, v) => ref
-                    .read(editorProjectControllerProvider.notifier)
-                    .setSliceTrimEnd(idx, v),
+                onSliceTrimEndChanged: (idx, v) {
+                  final ctl = ref.read(editorProjectControllerProvider.notifier);
+                  final zoomCount = ctl.current.zoomRegions.length;
+                  ctl.setSliceTrimEnd(idx, v);
+                  if (ctl.current.zoomRegions.length != zoomCount) {
+                    _setSelectedZoomIndex(null);
+                  }
+                },
                 onClearSeamTrims: (seamIndex) => ref
                     .read(editorProjectControllerProvider.notifier)
                     .clearSeamTrims(seamIndex),
