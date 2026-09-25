@@ -11,6 +11,9 @@ class _FakeChrome implements WindowChrome {
   Future<void> setMode(WindowMode mode) async => calls.add(mode);
 
   @override
+  Future<void> hideBar() async {}
+
+  @override
   Future<void> setBarSize(double width, double height) async {}
 
   @override

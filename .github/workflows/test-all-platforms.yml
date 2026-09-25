@@ -47,7 +47,10 @@ jobs:
             -only-testing:RunnerTests/FirstFrameTimingTests \
             -only-testing:RunnerTests/CursorCoordinateMapperTests \
             -only-testing:RunnerTests/RegionSelectorStateTests \
-            -only-testing:RunnerTests/RegionToolbarPositionTests CODE_SIGNING_ALLOWED=NO
+            -only-testing:RunnerTests/RegionToolbarPositionTests \
+            -only-testing:RunnerTests/SourceCatalogTests \
+            -only-testing:RunnerTests/SourcePickerGeometryTests \
+            -only-testing:RunnerTests/SourcePickerViewTests CODE_SIGNING_ALLOWED=NO
 
   test-linux:
     name: Test (Linux)

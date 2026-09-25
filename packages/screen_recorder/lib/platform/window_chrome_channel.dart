@@ -13,6 +13,11 @@ class MethodChannelWindowChrome implements WindowChrome {
   }
 
   @override
+  Future<void> hideBar() async {
+    await _channel.invokeMethod<void>('hideBar');
+  }
+
+  @override
   Future<String?> showGearMenu() async {
     return _channel.invokeMethod<String>('showGearMenu');
   }

@@ -57,7 +57,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     PermissionKind.screenRecording: 'Required to capture your screen.',
     PermissionKind.camera: 'Optional — for webcam / facecam.',
     PermissionKind.microphone: 'Optional — for voice narration.',
-    PermissionKind.accessibility: 'Optional — for richer click tracking.',
+    PermissionKind.accessibility: 'Optional — for cursor shape detection.',
   };
   static const _permIcons = {
     PermissionKind.screenRecording: Icons.desktop_windows_outlined,

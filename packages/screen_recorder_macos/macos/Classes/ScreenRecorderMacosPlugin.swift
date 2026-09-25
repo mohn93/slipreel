@@ -315,6 +315,11 @@ public class ScreenRecorderMacosPlugin: NSObject, FlutterPlugin {
         ScreenRecordingPermissionGuide.shared.show()
         result(nil)
       }
+    case "showAccessibilityPermissionGuide":
+      Task { @MainActor in
+        ScreenRecordingPermissionGuide.shared.show(accessibility: true)
+        result(nil)
+      }
     case "getStockCursorImages":
       getStockCursorImages(result: result)
     case "isAccessibilityTrusted":

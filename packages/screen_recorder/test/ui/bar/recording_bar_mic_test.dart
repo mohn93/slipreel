@@ -38,6 +38,7 @@ RecordingBar _bar({
 }) => RecordingBar(
   onPickMode: (_) {},
   onGearTap: () {},
+  onDismiss: () {},
   onDragStart: () {},
   microphone: mic,
   onMicTap: onMicTap ?? () {},

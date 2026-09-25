@@ -26,6 +26,9 @@ class _StubWindowChrome implements WindowChrome {
   Future<void> setMode(WindowMode mode) async {}
 
   @override
+  Future<void> hideBar() async {}
+
+  @override
   Future<String?> showGearMenu() async => null;
 
   @override

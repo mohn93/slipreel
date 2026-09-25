@@ -28,7 +28,7 @@ const Map<PermissionKind, String> _kBodies = {
   PermissionKind.microphone:
       'Slipreel needs Microphone access in System Settings to record your voice.',
   PermissionKind.accessibility:
-      'Slipreel needs Accessibility access in System Settings to track clicks.',
+      'Accessibility is optional. It lets Slipreel detect cursor shapes for richer recordings. Open System Settings, find Slipreel in the Accessibility list, turn on its switch, then quit and reopen Slipreel.',
   // Camera permission backs BOTH the webcam and the iPhone/iPad-over-USB
   // capture paths (an iOS screen device is a video AVCaptureDevice), so keep
   // this copy generic — it's shown from onboarding, settings, and the bar.
@@ -129,13 +129,19 @@ class _PermissionDeniedBodyState extends State<_PermissionDeniedBody> {
                 }
                 if (!mounted) return;
                 if (ok) {
-                  if (widget.kind == PermissionKind.screenRecording) {
+                  if (widget.kind == PermissionKind.screenRecording ||
+                      widget.kind == PermissionKind.accessibility) {
                     // System Settings is a separate process. Ask the native
                     // layer to pin a lightweight guide beside its window so the
                     // user does not lose the next step after this route closes.
                     try {
-                      await ScreenRecorderPlatform.instance
-                          .showScreenRecordingPermissionGuide();
+                      if (widget.kind == PermissionKind.screenRecording) {
+                        await ScreenRecorderPlatform.instance
+                            .showScreenRecordingPermissionGuide();
+                      } else {
+                        await ScreenRecorderPlatform.instance
+                            .showAccessibilityPermissionGuide();
+                      }
                     } catch (_) {
                       // Settings still opened successfully; the guide is an
                       // enhancement and must never block the permission flow.

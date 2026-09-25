@@ -40,10 +40,16 @@ class _FakeUrlLauncher extends UrlLauncherPlatform
 class _FakeScreenRecorderPlatform extends ScreenRecorderPlatform
     with MockPlatformInterfaceMixin {
   int screenRecordingGuideCalls = 0;
+  int accessibilityGuideCalls = 0;
 
   @override
   Future<void> showScreenRecordingPermissionGuide() async {
     screenRecordingGuideCalls++;
+  }
+
+  @override
+  Future<void> showAccessibilityPermissionGuide() async {
+    accessibilityGuideCalls++;
   }
 }
 
@@ -132,12 +138,18 @@ void main() {
     tester,
   ) async {
     await pumpAndShow(tester, PermissionKind.accessibility);
+    expect(
+      find.textContaining('find Slipreel in the Accessibility list'),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Open System Settings'));
     await tester.pumpAndSettle();
     expect(
       fake.lastUrl,
       'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
     );
+    expect(fakePlatform.accessibilityGuideCalls, 1);
+    expect(fakePlatform.screenRecordingGuideCalls, 0);
   });
 
   testWidgets('Camera: deep-links to Camera pane', (tester) async {

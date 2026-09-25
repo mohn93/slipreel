@@ -17,6 +17,9 @@ enum WindowMode {
 abstract class WindowChrome {
   Future<void> setMode(WindowMode mode);
 
+  /// Hides the idle bar while leaving the app running for Dock restoration.
+  Future<void> hideBar();
+
   /// Pops up the native gear menu and resolves to the chosen action id
   /// ('recents' | 'settings' | 'quit') or null if dismissed.
   Future<String?> showGearMenu();

@@ -34,6 +34,7 @@ Widget _wrap(Widget child, TipsController tips) => ProviderScope(
 RecordingBar _bar({
   void Function(BarSourceMode)? onPickMode,
   VoidCallback? onGearTap,
+  VoidCallback? onDismiss,
   VoidCallback? onDragStart,
   MicrophoneConfig? microphone,
   VoidCallback? onMicTap,
@@ -42,6 +43,7 @@ RecordingBar _bar({
 }) => RecordingBar(
   onPickMode: onPickMode ?? (_) {},
   onGearTap: onGearTap ?? () {},
+  onDismiss: onDismiss ?? () {},
   onDragStart: onDragStart ?? () {},
   microphone: microphone,
   onMicTap: onMicTap ?? () {},
@@ -98,6 +100,16 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('bar-gear')));
     expect(gearTapped, isTrue);
+  });
+
+  testWidgets('tapping close requests a hide', (tester) async {
+    _wide(tester);
+    var dismissed = false;
+    final tips = await _allSeenController();
+    await tester.pumpWidget(_wrap(_bar(onDismiss: () => dismissed = true), tips));
+    await tester.tap(find.byKey(const Key('bar-dismiss')));
+    expect(dismissed, isTrue);
+    expect(find.bySemanticsLabel('Hide recording bar'), findsOneWidget);
   });
 
   testWidgets('overflow menu has an accessible label', (tester) async {

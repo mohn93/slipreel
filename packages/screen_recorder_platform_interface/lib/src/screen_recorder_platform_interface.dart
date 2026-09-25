@@ -130,6 +130,10 @@ abstract class ScreenRecorderPlatform extends PlatformInterface {
   /// user enables Screen Recording. No-op on unsupported platforms.
   Future<void> showScreenRecordingPermissionGuide() async {}
 
+  /// Shows a temporary helper beside Accessibility in System Settings.
+  /// No-op on unsupported platforms.
+  Future<void> showAccessibilityPermissionGuide() async {}
+
   /// Whether the host process is currently trusted by the macOS
   /// Accessibility system. Required for cursor-state detection
   /// (I-beam, pointing hand, resize, etc.) — without it the recorder

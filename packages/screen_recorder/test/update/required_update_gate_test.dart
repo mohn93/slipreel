@@ -12,6 +12,8 @@ import 'package:screen_recorder/update/required_update_gate.dart';
 class _Chrome implements WindowChrome {
   WindowMode mode = WindowMode.bar;
   @override
+  Future<void> hideBar() async {}
+  @override
   Future<void> setMode(WindowMode value) async => mode = value;
   @override
   Future<String?> showGearMenu() async => null;
