@@ -76,7 +76,10 @@ final class SourcePickerOverlay {
       // one highlight is ever shown (handles missed cross-screen mouseExited).
       view.onHoverChanged = { [weak self] active in
         guard let self = self else { return }
-        for v in self.pickerViews where v !== active { v.clearHover() }
+        for v in self.pickerViews {
+          v.keyboardSelectedID = nil
+          if v !== active { v.clearHover() }
+        }
       }
       win.contentView = view
       win.orderFrontRegardless()
@@ -92,8 +95,56 @@ final class SourcePickerOverlay {
     }
 
     escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
-      if e.keyCode == 53 { self?.cancel(); return nil } // Esc
+      guard let self else { return e }
+      if e.keyCode == 53 { self.cancel(); return nil } // Esc
+      if e.keyCode == 48, self.kind == .window { // Tab / Shift-Tab
+        self.cycleWindowSelection(reverse: e.modifierFlags.contains(.shift))
+        return nil
+      }
+      if e.keyCode == 36 || e.keyCode == 76 { // Return / Enter
+        if let id = self.pickerViews.compactMap(\.keyboardSelectedID).first
+          ?? self.pickerViews.compactMap(\.hoveredTargetID).first {
+          self.finish(id: id)
+        }
+        return nil
+      }
       return e
+    }
+  }
+
+  /// Tab steps through windows under the pointer first, including those hidden
+  /// by the frontmost window. Elsewhere, it steps through all available windows.
+  private func cycleWindowSelection(reverse: Bool) {
+    let mouse = NSEvent.mouseLocation
+    let pointedView = zip(overlayWindows, pickerViews).first {
+      $0.0.frame.contains(mouse)
+    }.map { $0.1 }
+    let underPointer: [PickerTarget] = pointedView.flatMap { view in
+      guard let window = view.window else { return nil }
+      let point = view.convert(window.convertPoint(fromScreen: mouse), from: nil)
+      return view.targets.filter { $0.appName != nil && $0.localFrame.contains(point) }
+    } ?? []
+    let allWindows = pickerViews.flatMap { $0.targets.filter { $0.appName != nil } }
+    let siblings = allWindows.filter {
+      $0.appName == underPointer.first?.appName
+    }
+    let candidates = siblings.count > 1 ? siblings
+      : underPointer.count > 1 ? underPointer : allWindows
+    var seen = Set<String>()
+    let ids = candidates.map(\.id).filter { seen.insert($0).inserted }
+    guard !ids.isEmpty else { return }
+    let current = pickerViews.compactMap(\.keyboardSelectedID).first
+      ?? pointedView?.hoveredTargetID
+    let currentIndex = current.flatMap { ids.firstIndex(of: $0) }
+    let nextIndex = currentIndex.map { ($0 + (reverse ? ids.count - 1 : 1)) % ids.count }
+      ?? (reverse ? ids.count - 1 : 0)
+    let id = ids[nextIndex]
+    let selectedView = (pointedView?.targets.contains { $0.id == id } == true)
+      ? pointedView
+      : pickerViews.first { $0.targets.contains { $0.id == id } }
+    for view in pickerViews {
+      view.clearHover()
+      view.keyboardSelectedID = view === selectedView ? id : nil
     }
   }
 
@@ -112,29 +163,26 @@ final class SourcePickerOverlay {
         let name = screen.localizedName
         let full = CGRect(origin: .zero, size: screen.frame.size)
         result[screen] = [PickerTarget(
-          id: String(displayId), title: name, icon: nil, localFrame: full)]
+          id: String(displayId), title: name, appName: nil, icon: nil, localFrame: full)]
       }
     case .window:
       let raw = content.windows.map { SourceCatalog.rawWindow(from: $0) }
-      let visible = SourceCatalog.applyStrictFilter(raw)
+      let visible = SourceCatalog.frontToBack(
+        SourceCatalog.pickableWindows(raw), orderedIDs: windowStackingOrder())
       for screen in NSScreen.screens {
         guard let displayId = screen.deviceDescription[
           NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { continue }
         let displayBounds = CGDisplayBounds(displayId) // global, top-left origin
         var targets: [PickerTarget] = []
         for w in visible {
-          guard let xi = w["x"] as? Int, let yi = w["y"] as? Int,
-                let wi = w["width"] as? Int, let hi = w["height"] as? Int,
-                let id = w["id"] as? String else { continue }
-          let cg = CGRect(x: CGFloat(xi), y: CGFloat(yi), width: CGFloat(wi), height: CGFloat(hi))
-          guard cg.intersects(displayBounds) else { continue }
-          let local = SourcePickerGeometry.localFrame(window: cg, displayBounds: displayBounds)
-          let title = (w["title"] as? String) ?? ""
-          let owner = (w["ownerName"] as? String) ?? ""
+          guard w.frame.intersects(displayBounds) else { continue }
+          let local = SourcePickerGeometry.localFrame(window: w.frame, displayBounds: displayBounds)
+          let title = w.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
           targets.append(PickerTarget(
-            id: id,
-            title: title.isEmpty ? owner : title,
-            icon: appIcon(ownerName: owner),
+            id: String(w.id),
+            title: title.isEmpty ? "Window \(w.id)" : title,
+            appName: w.ownerName,
+            icon: appIcon(bundleId: w.ownerBundleId),
             localFrame: local))
         }
         result[screen] = targets
@@ -143,9 +191,26 @@ final class SourcePickerOverlay {
     return result
   }
 
-  private func appIcon(ownerName: String) -> NSImage? {
-    let app = NSWorkspace.shared.runningApplications.first { $0.localizedName == ownerName }
-    return app?.icon
+  private func windowStackingOrder() -> [UInt32] {
+    guard let windows = CGWindowListCopyWindowInfo(
+      [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+        as? [[String: Any]] else { return [] }
+    return windows.compactMap {
+      ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value
+    }
+  }
+
+  private func appIcon(bundleId: String) -> NSImage? {
+    guard !bundleId.isEmpty else { return nil }
+    if let running = NSWorkspace.shared.runningApplications.first(where: {
+      $0.bundleIdentifier == bundleId
+    }) {
+      return running.icon
+    }
+    guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
+      return nil
+    }
+    return NSWorkspace.shared.icon(forFile: url.path)
   }
 
   private func finish(id: String) {

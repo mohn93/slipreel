@@ -33,6 +33,7 @@ Widget _wrap(Widget child, TipsController tips) => ProviderScope(
 RecordingBar _bar({void Function(BarSourceMode)? onPickMode}) => RecordingBar(
   onPickMode: onPickMode ?? (_) {},
   onGearTap: () {},
+  onDismiss: () {},
   onDragStart: () {},
   onMicTap: () {},
   onSystemAudioTap: () {},

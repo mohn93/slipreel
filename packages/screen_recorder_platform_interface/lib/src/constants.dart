@@ -68,6 +68,8 @@ class ScreenRecorderMethods {
       'requestScreenRecordingPermission';
   static const String showScreenRecordingPermissionGuide =
       'showScreenRecordingPermissionGuide';
+  static const String showAccessibilityPermissionGuide =
+      'showAccessibilityPermissionGuide';
   static const String getStockCursorImages = 'getStockCursorImages';
   static const String registerRecordingHotkeys = 'registerRecordingHotkeys';
   static const String unregisterRecordingHotkeys = 'unregisterRecordingHotkeys';

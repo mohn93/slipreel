@@ -91,6 +91,9 @@ class MainFlutterWindow: NSWindow {
       case "startWindowDrag":
         self?.startWindowDrag()
         result(nil)
+      case "hideBar":
+        if self?.currentMode == "bar" { NSApp.hide(nil) }
+        result(nil)
       case "setBarSize":
         guard let args = call.arguments as? [String: Any],
               let width = args["width"] as? Double,

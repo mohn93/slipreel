@@ -231,6 +231,7 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
     return RecordingBar(
       onPickMode: _pickAndRecord,
       onGearTap: _onGearTap,
+      onDismiss: () => unawaited(_dismissBar()),
       onDragStart: () => unawaited(
         ref
             .read(windowChromeProvider)
@@ -367,6 +368,14 @@ class _RecordingBarScreenState extends ConsumerState<RecordingBarScreen> {
         await _openPanel(const SettingsScreen());
       case 'quit':
         await SystemNavigator.pop();
+    }
+  }
+
+  Future<void> _dismissBar() async {
+    try {
+      await ref.read(windowChromeProvider).hideBar();
+    } catch (e, st) {
+      AppLogger.platform.w('hideBar failed', error: e, stackTrace: st);
     }
   }
 

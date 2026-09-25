@@ -22,8 +22,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 class _FakeChrome implements WindowChrome {
   final List<WindowMode> calls = [];
   final List<({double w, double h})> barSizes = [];
+  int hideCalls = 0;
   @override
   Future<void> setMode(WindowMode mode) async => calls.add(mode);
+  @override
+  Future<void> hideBar() async => hideCalls++;
   @override
   Future<String?> showGearMenu() async => null;
   @override
@@ -183,6 +186,27 @@ void main() {
     await tester.pump();
     expect(find.byType(RecordingBar), findsOneWidget);
     expect(find.byType(RecordingPill), findsNothing);
+  });
+
+  testWidgets('close hides the native bar without leaving bar mode', (
+    tester,
+  ) async {
+    _wide(tester);
+    final chrome = _FakeChrome();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          windowChromeProvider.overrideWithValue(chrome),
+          await _tipsOverride(),
+        ],
+        child: const MaterialApp(home: RecordingBarScreen()),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('bar-dismiss')));
+    await tester.pump();
+    expect(chrome.hideCalls, 1);
+    expect(find.byType(RecordingBar), findsOneWidget);
   });
 
   testWidgets('pill mode renders the RecordingPill', (tester) async {

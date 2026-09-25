@@ -22,7 +22,32 @@ enum SourceCatalog {
     "com.apple.controlcenter",
     "com.apple.notificationcenterui",
     "com.apple.WindowManager",
+    "com.apple.wallpaper",
   ]
+
+  /// Picker targets may have no title (secondary windows and dialogs often do).
+  /// Keep each window ID so sibling windows from one app remain selectable.
+  static func pickableWindows(_ windows: [RawWindow]) -> [RawWindow] {
+    return windows.filter { w in
+      w.isOnScreen &&
+        !excludedBundleIds.contains(w.ownerBundleId) &&
+        !w.ownerBundleId.hasPrefix("com.apple.wallpaper.") &&
+        w.ownerName != "Wallpaper" &&
+        w.frame.width >= 50 && w.frame.height >= 50
+    }
+  }
+
+  /// Core Graphics supplies on-screen IDs in front-to-back order. Unknown IDs
+  /// retain their ScreenCaptureKit order after those with a known position.
+  static func frontToBack(_ windows: [RawWindow], orderedIDs: [UInt32]) -> [RawWindow] {
+    let rank = Dictionary(orderedIDs.enumerated().map { ($0.element, $0.offset) },
+                          uniquingKeysWith: { first, _ in first })
+    return windows.enumerated().sorted { lhs, rhs in
+      let left = rank[lhs.element.id] ?? Int.max
+      let right = rank[rhs.element.id] ?? Int.max
+      return left == right ? lhs.offset < rhs.offset : left < right
+    }.map(\.element)
+  }
 
   static func applyStrictFilter(_ windows: [RawWindow]) -> [[String: Any]] {
     return windows.compactMap { w -> [String: Any]? in

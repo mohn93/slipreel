@@ -1,8 +1,9 @@
 import AppKit
 import CoreGraphics
+import ApplicationServices
 
 /// A lightweight, non-activating helper that follows the System Settings
-/// window while the user enables Screen Recording. The permission pane is a
+/// window while the user enables Screen Recording or Accessibility. The pane is a
 /// private app UI, so the guide anchors to its public WindowServer bounds
 /// instead of depending on brittle internal view coordinates.
 @MainActor
@@ -14,11 +15,13 @@ final class ScreenRecordingPermissionGuide {
   private var guideView: ScreenRecordingPermissionGuideView?
   private var trackingTimer: Timer?
   private var settingsMissingTicks = 0
+  private var accessibility = false
 
   private init() {}
 
-  func show() {
+  func show(accessibility: Bool = false) {
     hide()
+    self.accessibility = accessibility
 
     let panel = NSPanel(
       contentRect: NSRect(origin: .zero, size: Self.panelSize),
@@ -36,6 +39,7 @@ final class ScreenRecordingPermissionGuide {
 
     let view = ScreenRecordingPermissionGuideView(
       frame: NSRect(origin: .zero, size: Self.panelSize))
+    view.accessibility = accessibility
     view.onClose = { [weak self] in self?.hide() }
     panel.contentView = view
 
@@ -63,7 +67,8 @@ final class ScreenRecordingPermissionGuide {
 
   private func update() {
     guard let panel, let guideView else { return }
-    guideView.permissionGranted = CGPreflightScreenCaptureAccess()
+    guideView.permissionGranted = accessibility
+      ? AXIsProcessTrusted() : CGPreflightScreenCaptureAccess()
 
     guard let settings = settingsApplication() else {
       settingsMissingTicks += 1
@@ -188,6 +193,7 @@ enum PermissionGuideGeometry {
 
 private final class ScreenRecordingPermissionGuideView: NSView, NSDraggingSource {
   var onClose: (() -> Void)?
+  var accessibility = false
   var permissionGranted = false { didSet { needsDisplay = true } }
   var settingsIsToLeft = true { didSet { needsDisplay = true } }
 
@@ -313,7 +319,7 @@ private final class ScreenRecordingPermissionGuideView: NSView, NSDraggingSource
     let headline = dragCompleted ? "Now enable Slipreel" : "Add Slipreel to the list"
     let introduction = dragCompleted
       ? "Find this icon in System Settings and turn on the switch beside it."
-      : "Drag the floating app icon into the Screen Recording list."
+      : "Drag the app icon into the \(accessibility ? "Accessibility" : "Screen Recording") list."
     drawText(
       headline,
       in: CGRect(x: 24, y: 20, width: 278, height: 24),
@@ -399,7 +405,7 @@ private final class ScreenRecordingPermissionGuideView: NSView, NSDraggingSource
       color: NSColor(srgbRed: 0.30, green: 0.84, blue: 0.60, alpha: 1),
       alignment: .center)
     drawText(
-      "Screen Recording is on",
+      accessibility ? "Accessibility is on" : "Screen Recording is on",
       in: CGRect(x: 98, y: 32, width: 210, height: 24),
       font: .systemFont(ofSize: 18, weight: .semibold),
       color: .white)

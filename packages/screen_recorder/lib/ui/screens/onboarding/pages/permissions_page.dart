@@ -22,7 +22,7 @@ class PermissionsPage extends ConsumerWidget {
     PermissionKind.screenRecording: 'Required to capture your screen.',
     PermissionKind.camera: 'Optional — for webcam / facecam.',
     PermissionKind.microphone: 'Optional — for voice narration.',
-    PermissionKind.accessibility: 'Optional — for richer click tracking.',
+    PermissionKind.accessibility: 'Optional — for cursor shape detection.',
   };
 
   static const _icons = {
@@ -52,9 +52,11 @@ class PermissionsPage extends ConsumerWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Permissions',
-              style: Theme.of(context).textTheme.headlineMedium,
-              textAlign: TextAlign.center),
+          Text(
+            'Permissions',
+            style: Theme.of(context).textTheme.headlineMedium,
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 24),
           for (final kind in _onboardingKinds)
             PermissionStatusRow(
@@ -72,8 +74,7 @@ class PermissionsPage extends ConsumerWidget {
               // Screen Recording falls back to the permission dialog (Open System
               // Settings + drag-to-add guide) when Enable can't grant it.
               onGrant: () => requestPermissionWithGuide(context, ref, kind),
-              onOpenSettings: () =>
-                  PermissionDeniedDialog.show(context, kind),
+              onOpenSettings: () => PermissionDeniedDialog.show(context, kind),
             ),
           const Spacer(),
           FilledButton(

@@ -15,71 +15,91 @@ class ReadyPage extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         const _ReadyGlow(),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 48),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Spacer(),
-              _SuccessCheck(play: active),
-              const SizedBox(height: 28),
-              Text("You're all set", style: theme.textTheme.displaySmall),
-              const SizedBox(height: 12),
-              Text(
-                'Press the Display button on the recording bar to start.',
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(color: Colors.white70),
-                textAlign: TextAlign.center,
-              ),
-              const Spacer(),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 18, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                  ),
-                  child: const Column(
-                    children: [
-                      _ShortcutRow(
-                        keys: ['⌘', '⇧', '1'],
-                        label: 'Start recording from anywhere',
+        LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 48,
+                  vertical: 32,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _SuccessCheck(play: active),
+                    const SizedBox(height: 28),
+                    Text(
+                      "You're ready to record",
+                      style: theme.textTheme.displaySmall,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'On the recording bar, choose Screen, Window, or Area, then pick a source to begin recording.',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: Colors.white70,
                       ),
-                      SizedBox(height: 12),
-                      _ShortcutRow(keys: ['⌘', '⇧', '2'], label: 'Stop'),
-                      SizedBox(height: 12),
-                      _ShortcutRow(
-                        keys: ['⌘', '⇧', 'P'],
-                        label: 'Pause / Resume',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 32),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 440),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        child: const Column(
+                          children: [
+                            _ShortcutRow(
+                              keys: ['⌘', '⇧', '1'],
+                              label:
+                                  'Start recording with your selected source',
+                            ),
+                            SizedBox(height: 12),
+                            _ShortcutRow(keys: ['⌘', '⇧', '2'], label: 'Stop'),
+                            SizedBox(height: 12),
+                            _ShortcutRow(
+                              keys: ['⌘', '⇧', 'P'],
+                              label: 'Pause / Resume',
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: 280,
+                      child: FilledButton(
+                        onPressed: onFinish,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text('Open recording bar'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Slipreel sends feature usage data, linked to your account while signed in — '
+                      'never your recordings or screen contents. Turn it off in Settings → Privacy.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white38,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: 280,
-                child: FilledButton(
-                  onPressed: onFinish,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('Record my first video'),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Slipreel sends feature usage data, linked to your account while signed in — '
-                'never your recordings or screen contents. Turn it off in Settings → Privacy.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: Colors.white38),
-                textAlign: TextAlign.center,
-              ),
-            ],
+            ),
           ),
         ),
       ],
@@ -127,9 +147,10 @@ class _SuccessCheckState extends State<_SuccessCheck>
 
   @override
   Widget build(BuildContext context) {
-    final scale = Tween<double>(begin: 0.4, end: 1.0).animate(
-      CurvedAnimation(parent: _c, curve: Curves.elasticOut),
-    );
+    final scale = Tween<double>(
+      begin: 0.4,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _c, curve: Curves.elasticOut));
     final fade = CurvedAnimation(
       parent: _c,
       curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
@@ -194,9 +215,7 @@ class _ShortcutRow extends StatelessWidget {
       children: [
         SizedBox(
           width: 108,
-          child: Row(
-            children: [for (final k in keys) _KeyCap(k)],
-          ),
+          child: Row(children: [for (final k in keys) _KeyCap(k)]),
         ),
         Expanded(
           child: Text(

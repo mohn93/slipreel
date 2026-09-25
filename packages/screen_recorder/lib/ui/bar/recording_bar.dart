@@ -27,6 +27,7 @@ class RecordingBar extends StatelessWidget {
     super.key,
     required this.onPickMode,
     required this.onGearTap,
+    required this.onDismiss,
     required this.onDragStart,
     this.microphone,
     required this.onMicTap,
@@ -41,6 +42,7 @@ class RecordingBar extends StatelessWidget {
 
   final void Function(BarSourceMode mode) onPickMode;
   final VoidCallback onGearTap;
+  final VoidCallback onDismiss;
 
   /// Fired when the user begins dragging a non-button area — used to start a
   /// native window drag so the borderless bar can be repositioned.
@@ -141,6 +143,7 @@ class RecordingBar extends StatelessWidget {
               ),
               const _Divider(),
               _GearButton(onTap: onGearTap),
+              _DismissButton(onTap: onDismiss),
             ],
           ),
         ),
@@ -511,4 +514,27 @@ class _GearButton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _DismissButton extends StatelessWidget {
+  const _DismissButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: 'Hide recording bar',
+    child: SpringHoverButton(
+      key: const Key('bar-dismiss'),
+      onTap: onTap,
+      borderRadius: 11,
+      child: const SizedBox(
+        width: 40,
+        height: _kBarButtonHeight,
+        child: Center(
+          child: Icon(LucideIcons.x, color: Color(0xFFB8B8C0), size: 18),
+        ),
+      ),
+    ),
+  );
 }

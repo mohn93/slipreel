@@ -1,5 +1,6 @@
 import XCTest
 import CoreGraphics
+import AppKit
 @testable import screen_recorder_macos
 
 final class SourceCatalogTests: XCTestCase {
@@ -91,6 +92,31 @@ final class SourceCatalogTests: XCTestCase {
     XCTAssertEqual(result.count, 1)
   }
 
+  func testPickerKeepsSiblingWindowsIncludingUntitledOnes() {
+    let windows = [
+      makeWindow(id: 100, title: "First"),
+      makeWindow(id: 101, title: nil),
+      makeWindow(id: 102, title: "Second"),
+    ]
+    XCTAssertEqual(SourceCatalog.pickableWindows(windows).map(\.id), [100, 101, 102])
+  }
+
+  func testPickerUsesFrontmostOrderForOverlappingWindows() {
+    let windows = [makeWindow(id: 100), makeWindow(id: 101), makeWindow(id: 102)]
+    let ordered = SourceCatalog.frontToBack(windows, orderedIDs: [102, 100])
+    XCTAssertEqual(ordered.map(\.id), [102, 100, 101])
+  }
+
+  func testPickerStillExcludesSystemAndTinyWindows() {
+    let windows = [
+      makeWindow(id: 100, bundleId: "com.apple.dock"),
+      makeWindow(id: 101, width: 40),
+      makeWindow(id: 102),
+      makeWindow(id: 103, ownerName: "Wallpaper", bundleId: "com.apple.wallpaper.agent"),
+    ]
+    XCTAssertEqual(SourceCatalog.pickableWindows(windows).map(\.id), [102])
+  }
+
   func testDropsWindowThatIsTooShortButWideEnough() {
     let result = SourceCatalog.applyStrictFilter([makeWindow(width: 200, height: 30)])
     XCTAssertTrue(result.isEmpty)
@@ -141,5 +167,19 @@ final class SourcePickerGeometryTests: XCTestCase {
   func testTopmostReturnsNilOutsideAllFrames() {
     let frames = [CGRect(x: 0, y: 0, width: 10, height: 10)]
     XCTAssertNil(SourcePickerGeometry.topmost(at: CGPoint(x: 500, y: 500), frames: frames))
+  }
+}
+
+final class SourcePickerViewTests: XCTestCase {
+  func testRepeatedAppAndWindowTitleUsesOneLineWithoutWindowChips() {
+    let view = SourcePickerView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+    let frame = CGRect(x: 100, y: 100, width: 500, height: 400)
+    view.targets = [
+      PickerTarget(id: "100", title: "ChatGPT", appName: "ChatGPT", icon: nil, localFrame: frame),
+      PickerTarget(id: "101", title: "Document", appName: "Example", icon: nil, localFrame: frame),
+    ]
+    XCTAssertEqual(SourcePickerView.labelLines(for: view.targets[0]), ["ChatGPT"])
+    XCTAssertEqual(SourcePickerView.labelLines(for: view.targets[1]), ["Example", "Document"])
+    XCTAssertFalse(view.subviews.contains { $0 is NSScrollView })
   }
 }

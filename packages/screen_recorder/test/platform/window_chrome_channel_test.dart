@@ -31,6 +31,11 @@ void main() {
     expect(log.single.arguments, {'mode': 'panel'});
   });
 
+  test('hideBar sends hideBar', () async {
+    await MethodChannelWindowChrome().hideBar();
+    expect(log.single.method, 'hideBar');
+  });
+
   test('showGearMenu invokes showGearMenu and returns the action', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

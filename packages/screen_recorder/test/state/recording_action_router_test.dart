@@ -68,6 +68,8 @@ class _SeededPermissions extends PermissionsController {
 /// (its default throws until overridden in main()).
 class _NoopChrome implements WindowChrome {
   @override
+  Future<void> hideBar() async {}
+  @override
   Future<void> setMode(WindowMode mode) async {}
   @override
   Future<String?> showGearMenu() async => null;
