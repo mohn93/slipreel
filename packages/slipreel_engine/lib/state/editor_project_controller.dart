@@ -620,7 +620,11 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     _replaceSlice(sliceIndex, s.copyWith(trimStart: clamped));
   }
 
-  void setSliceTrimEnd(int sliceIndex, Duration trimEnd) {
+  void setSliceTrimEnd(
+    int sliceIndex,
+    Duration trimEnd, {
+    bool removeOverlappingZooms = true,
+  }) {
     final s = _slice(sliceIndex);
     if (s == null) return;
     var clamped = trimEnd;
@@ -631,9 +635,22 @@ class EditorProjectController extends StateNotifier<EditorProjectState> {
     final clips = List<ClipSlice>.from(state.timeline.clips)
       ..[sliceIndex] = s.copyWith(trimEnd: clamped);
     var timeline = state.timeline.copyWith(clips: clips);
-    if (sliceIndex == clips.length - 1 && clamped < s.trimEnd) {
+    if (removeOverlappingZooms &&
+        sliceIndex == clips.length - 1 &&
+        clamped < s.trimEnd) {
       timeline = _removeZoomsPastEnd(timeline, clamped);
     }
+    state = state.copyWith(timeline: timeline);
+  }
+
+  /// Finish an end-handle drag after its final position is known. Zooms stay
+  /// intact during the gesture, including when the handle crosses a zoom and
+  /// then moves back over it before release.
+  void finishFinalEndTrim() {
+    final clips = state.timeline.clips;
+    if (clips.isEmpty) return;
+    final timeline = _removeZoomsPastEnd(state.timeline, clips.last.trimEnd);
+    if (identical(timeline, state.timeline)) return;
     state = state.copyWith(timeline: timeline);
   }
 

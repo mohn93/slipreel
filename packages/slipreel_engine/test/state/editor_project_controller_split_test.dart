@@ -187,6 +187,42 @@ void main() {
       expect(c.current.zoomRegions, [kept]);
     });
 
+    test('a reversed end-handle drag keeps zooms at its final position', () {
+      final c = _controllerWithClips([_slice(cs: 0, ce: 10)]);
+      final zoom = _zoom(7, 9);
+      c.replaceZoomRegions([zoom]);
+
+      c.setSliceTrimEnd(
+        0,
+        const Duration(seconds: 6),
+        removeOverlappingZooms: false,
+      );
+      expect(c.current.zoomRegions, [zoom]);
+      c.setSliceTrimEnd(
+        0,
+        const Duration(seconds: 10),
+        removeOverlappingZooms: false,
+      );
+      c.finishFinalEndTrim();
+
+      expect(c.current.zoomRegions, [zoom]);
+    });
+
+    test('a completed end-handle drag removes zooms in its cut tail', () {
+      final c = _controllerWithClips([_slice(cs: 0, ce: 10)]);
+      c.replaceZoomRegions([_zoom(7, 9)]);
+
+      c.setSliceTrimEnd(
+        0,
+        const Duration(seconds: 6),
+        removeOverlappingZooms: false,
+      );
+      expect(c.current.zoomRegions, hasLength(1));
+      c.finishFinalEndTrim();
+
+      expect(c.current.zoomRegions, isEmpty);
+    });
+
     test('trimming a middle slice keeps zooms in the later slice', () {
       final c = _controllerWithClips([
         _slice(cs: 0, ce: 5),

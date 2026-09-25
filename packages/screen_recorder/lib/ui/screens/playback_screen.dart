@@ -3560,9 +3560,18 @@ class _PlaybackScreenState extends ConsumerState<PlaybackScreen>
                     .read(editorProjectControllerProvider.notifier)
                     .setSliceTrimStart(idx, v),
                 onSliceTrimEndChanged: (idx, v) {
+                  ref
+                      .read(editorProjectControllerProvider.notifier)
+                      .setSliceTrimEnd(
+                        idx,
+                        v,
+                        removeOverlappingZooms: false,
+                      );
+                },
+                onFinalEndTrimCommitted: () {
                   final ctl = ref.read(editorProjectControllerProvider.notifier);
                   final zoomCount = ctl.current.zoomRegions.length;
-                  ctl.setSliceTrimEnd(idx, v);
+                  ctl.finishFinalEndTrim();
                   if (ctl.current.zoomRegions.length != zoomCount) {
                     _setSelectedZoomIndex(null);
                   }

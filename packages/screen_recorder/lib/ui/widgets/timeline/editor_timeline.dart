@@ -133,6 +133,7 @@ class EditorTimeline extends ConsumerStatefulWidget {
     this.cursorXListenable,
     this.onSliceTrimStartChanged,
     this.onSliceTrimEndChanged,
+    this.onFinalEndTrimCommitted,
     this.onClearSeamTrims,
     this.onMergeSeam,
     this.onClearStartTrim,
@@ -222,6 +223,9 @@ class EditorTimeline extends ConsumerStatefulWidget {
   final void Function(int sliceIndex, Duration trimStart)?
   onSliceTrimStartChanged;
   final void Function(int sliceIndex, Duration trimEnd)? onSliceTrimEndChanged;
+
+  /// Called after the final slice's right trim handle is released.
+  final VoidCallback? onFinalEndTrimCommitted;
 
   /// Fired by [CutMarkerStrip] when the user taps a seam that has
   /// trimmed-away content — clears both trim handles so the full source
@@ -780,6 +784,7 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
   /// could push the dim band off the viewport edge trigger pad
   /// expansion. Also flips [_trimDragging] for the playhead fade.
   void _setTrimDragging(TrimDragInfo? info) {
+    final completedDrag = info == null ? _activeTrimDrag : null;
     final active = info != null;
     if (_trimDragging != active || _activeTrimDrag != info) {
       setState(() {
@@ -788,6 +793,11 @@ class _EditorTimelineState extends ConsumerState<EditorTimeline>
       });
     }
     if (!active) {
+      if (completedDrag != null &&
+          completedDrag.side == TrimSide.right &&
+          completedDrag.sliceIndex == widget.clips.length - 1) {
+        widget.onFinalEndTrimCommitted?.call();
+      }
       // Capture the scrollOffset at drag end so the unbloom lerp has
       // something to interpolate FROM as it reverses back to the
       // start value. Without this, lerping starts wherever pad's
