@@ -171,6 +171,30 @@ final class SourcePickerGeometryTests: XCTestCase {
 }
 
 final class SourcePickerViewTests: XCTestCase {
+  func testCancelSitsBelowRecordAndStillCancelsSelection() {
+    let view = SourcePickerView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+    let frame = CGRect(x: 100, y: 100, width: 500, height: 400)
+    view.targets = [
+      PickerTarget(id: "100", title: "Document", appName: "Example",
+                   icon: nil, localFrame: frame),
+    ]
+    view.keyboardSelectedID = "100"
+    view.layoutSubtreeIfNeeded()
+
+    let cancel = view.subviews.compactMap { $0 as? NSButton }.first!
+    XCTAssertEqual(cancel.frame.midX, frame.midX)
+    XCTAssertEqual(cancel.frame.minY, frame.midY + 58)
+    XCTAssertEqual(cancel.frame.size, CGSize(width: 116, height: 32))
+
+    var canceled = false
+    view.onCancel = { canceled = true }
+    cancel.performClick(nil)
+    XCTAssertTrue(canceled)
+
+    view.keyboardSelectedID = nil
+    XCTAssertEqual(cancel.frame.midX, view.bounds.midX)
+  }
+
   func testRepeatedAppAndWindowTitleUsesOneLineWithoutWindowChips() {
     let view = SourcePickerView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
     let frame = CGRect(x: 100, y: 100, width: 500, height: 400)

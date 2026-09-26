@@ -55,19 +55,19 @@ class SyncSiteReleaseTest(unittest.TestCase):
             MODULE.synchronize(self.site, MODULE.latest_release(self.appcast))
 
     def test_next_release_updates_changelog_and_site_fallbacks(self):
-        source = self.appcast.read_text().replace("1.0.18", "1.0.20").replace("1000018", "1000020")
+        source = self.appcast.read_text().replace("1.0.18", "1.0.21").replace("1000018", "1000021")
         self.appcast.write_text(source)
         MODULE.synchronize(self.site, MODULE.latest_release(self.appcast))
 
         changelog = (self.site / "changelog.html").read_text()
         self.assertEqual(changelog.count("Latest release"), 1)
         self.assertIn(
-            '<h2 id="release-1-0-20">1.0.20</h2>\n              <span class="support-badge">Latest release</span>',
+            '<h2 id="release-1-0-21">1.0.21</h2>\n              <span class="support-badge">Latest release</span>',
             changelog,
         )
         self.assertIn('<time datetime="2026-09-20">20 September 2026</time>', changelog)
-        self.assertIn("v1.0.20", (self.site / "index.html").read_text())
-        self.assertIn("Slipreel 1.0.20", (self.site / "downloads.html").read_text())
+        self.assertIn("v1.0.21", (self.site / "index.html").read_text())
+        self.assertIn("Slipreel 1.0.21", (self.site / "downloads.html").read_text())
 
 
 if __name__ == "__main__":
