@@ -14,8 +14,12 @@ struct PickerTarget {
 /// RegionSelectorView pattern: flipped coords, mouse events drive redraw and
 /// fire callbacks to the owning overlay manager.
 final class SourcePickerView: NSView {
-  var targets: [PickerTarget] = [] { didSet { needsDisplay = true } }
-  var keyboardSelectedID: String? { didSet { needsDisplay = true } }
+  var targets: [PickerTarget] = [] {
+    didSet { hoveredIndex = nil; positionCancelButton(); needsDisplay = true }
+  }
+  var keyboardSelectedID: String? {
+    didSet { positionCancelButton(); needsDisplay = true }
+  }
   /// Called with the chosen target id when the user clicks a target.
   var onSelect: ((String) -> Void)?
   /// Called when the user clicks empty space (cancel).
@@ -44,12 +48,25 @@ final class SourcePickerView: NSView {
 
   override func layout() {
     super.layout()
-    cancelButton.frame = CGRect(x: bounds.maxX - 116, y: 20, width: 96, height: 32)
+    positionCancelButton()
   }
 
   @objc private func cancelSelection() { onCancel?() }
 
   private var hoveredIndex: Int?
+  private var activeTarget: PickerTarget? {
+    if let keyboardSelectedID {
+      return targets.first { $0.id == keyboardSelectedID }
+    }
+    guard let hoveredIndex, targets.indices.contains(hoveredIndex) else { return nil }
+    return targets[hoveredIndex]
+  }
+
+  private func positionCancelButton() {
+    cancelButton.frame = activeTarget.map(cancelButtonRect(for:))
+      ?? CGRect(x: bounds.midX - 58, y: bounds.midY + 42, width: 116, height: 32)
+  }
+
   var hoveredTargetID: String? {
     guard let hoveredIndex, targets.indices.contains(hoveredIndex) else { return nil }
     return targets[hoveredIndex].id
@@ -72,17 +89,28 @@ final class SourcePickerView: NSView {
 
   override func mouseMoved(with event: NSEvent) {
     let p = convert(event.locationInWindow, from: nil)
+    // Keep the selected window active while the pointer crosses the gap to
+    // Cancel, even if its small window frame ends above the button.
+    if let activeTarget,
+       recordButtonRect(for: activeTarget)
+         .union(cancelButtonRect(for: activeTarget))
+         .insetBy(dx: -10, dy: -10).contains(p) { return }
     keyboardSelectedID = nil
     let idx = SourcePickerGeometry.topmost(at: p, frames: targets.map { $0.localFrame })
     if idx != hoveredIndex {
       hoveredIndex = idx
+      positionCancelButton()
       needsDisplay = true
       if idx != nil { onHoverChanged?(self) }
     }
   }
 
   override func mouseExited(with event: NSEvent) {
-    if hoveredIndex != nil { hoveredIndex = nil; needsDisplay = true }
+    if hoveredIndex != nil {
+      hoveredIndex = nil
+      positionCancelButton()
+      needsDisplay = true
+    }
   }
 
   /// Clears any hover highlight. Called by the manager when another screen
@@ -90,12 +118,14 @@ final class SourcePickerView: NSView {
   func clearHover() {
     if hoveredIndex != nil {
       hoveredIndex = nil
+      positionCancelButton()
       needsDisplay = true
     }
   }
 
   override func mouseDown(with event: NSEvent) {
     let p = convert(event.locationInWindow, from: nil)
+    if cancelButton.frame.contains(p) { onCancel?(); return }
     if let selected = targets.first(where: { $0.id == keyboardSelectedID }),
        recordButtonRect(for: selected).contains(p) {
       onSelect?(selected.id)
@@ -211,6 +241,12 @@ final class SourcePickerView: NSView {
   private func recordButtonRect(for target: PickerTarget) -> CGRect {
     CGRect(x: target.localFrame.midX - 58, y: target.localFrame.midY + 16,
            width: 116, height: 32)
+  }
+
+  private func cancelButtonRect(for target: PickerTarget) -> CGRect {
+    let record = recordButtonRect(for: target)
+    return CGRect(x: record.minX, y: record.maxY + 10,
+                  width: record.width, height: record.height)
   }
 
   private func drawCenteredLabel(_ text: String, x: CGFloat, y: CGFloat,
