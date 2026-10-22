@@ -100,6 +100,17 @@ can be replaced only with explicit `--expected-current-until ISO_TIMESTAMP` and
 placeholder approval never disables that coverage check. `/ready` returns 503 while any legacy aggregate remains, and refunds of a
 legacy aggregate retry instead of incorrectly revoking earlier purchases. Do not invent purchase history from timestamps.
 
+To give someone a free license without Stripe, run
+`npm run comp:grant -- --email someone@example.com` against the production
+database. It prints a rollback-only proposal; rerun with `--apply` to save. The
+grant creates the account if needed and records a `comp_` purchase grant with the
+same rights as a one-time purchase (unlimited exports, one year of updates;
+running it again adds another year). The person installs Slipreel and chooses
+Sign in with that email. `--revoke --apply` revokes all complimentary grants for
+the email and leaves paid grants intact. Comp accounts have no Stripe customer, so
+the billing portal is unavailable to them, and `reconcile:legacy` refuses users
+with comp grants.
+
 Use production-mode Stripe and email credentials, configure the signing key pair,
 CORS origin, success/cancel/portal URLs, and monitor `/ready`. Validate a real email
 round trip and a controlled settled checkout/activation before broad release.
