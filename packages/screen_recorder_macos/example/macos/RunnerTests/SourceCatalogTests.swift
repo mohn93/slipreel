@@ -225,6 +225,42 @@ final class CaptureExclusionTests: XCTestCase {
     }
   }
 
+  private struct App: Equatable { let pid: pid_t; let bundleId: String? }
+
+  private func select(
+    _ apps: [App], system: Bool, own: App?
+  ) async -> (result: [App], lookedUp: Bool) {
+    var lookedUp = false
+    let result = await ScreenCaptureManager.selectExcludedApplications(
+      from: apps, processID: { $0.pid }, bundleId: { $0.bundleId },
+      includeSystemApps: system, ownPID: 42,
+      lookupOwn: { _ in lookedUp = true; return own })
+    return (result, lookedUp)
+  }
+
+  func testOwnAppMissingFromOnScreenListIsLookedUp() async {
+    let own = App(pid: 42, bundleId: "com.slipreel.app")
+    let edge = App(pid: 7, bundleId: "com.microsoft.edgemac")
+    let dock = App(pid: 8, bundleId: "com.apple.dock")
+    let out = await select([edge, dock], system: true, own: own)
+    XCTAssertTrue(out.lookedUp)
+    XCTAssertEqual(out.result, [dock, own])
+  }
+
+  func testOwnAppOnScreenSkipsLookup() async {
+    let own = App(pid: 42, bundleId: "com.slipreel.app")
+    let out = await select([App(pid: 7, bundleId: "x"), own], system: false, own: nil)
+    XCTAssertFalse(out.lookedUp)
+    XCTAssertEqual(out.result, [own])
+  }
+
+  func testFailedLookupStillReturnsOtherExclusions() async {
+    let dock = App(pid: 8, bundleId: "com.apple.dock")
+    let out = await select([dock], system: true, own: nil)
+    XCTAssertTrue(out.lookedUp)
+    XCTAssertEqual(out.result, [dock])
+  }
+
   func testOtherAppsAreKept() {
     XCTAssertFalse(ScreenCaptureManager.excludesFromCapture(
       bundleId: "com.microsoft.edgemac", processID: 7, includeSystemApps: true, ownPID: 42))

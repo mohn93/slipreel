@@ -42,23 +42,50 @@ class ScreenCaptureManager: NSObject {
     return excludedSystemBundleIds.contains(bundleId)
   }
 
-  private static func excludedApplications(
+  /// Applications to keep out of a display or region capture. Also used for
+  /// display thumbnails so the picker preview matches the recording.
+  static func excludedApplications(
     in content: SCShareableContent,
     includeSystemApps: Bool
   ) async -> [SCRunningApplication] {
-    var apps = content.applications.filter {
-      excludesFromCapture(bundleId: $0.bundleIdentifier, processID: $0.processID, includeSystemApps: includeSystemApps)
+    await selectExcludedApplications(
+      from: content.applications,
+      processID: { $0.processID },
+      bundleId: { $0.bundleIdentifier },
+      includeSystemApps: includeSystemApps,
+      lookupOwn: { ownPID in
+        do {
+          let all = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+          return all.applications.first(where: { $0.processID == ownPID })
+        } catch {
+          NSLog("[ScreenCaptureManager] own-app lookup failed; Slipreel windows may be captured: \(error)")
+          return nil
+        }
+      }
+    )
+  }
+
+  /// On-screen-only content omits Slipreel when none of its windows is
+  /// visible yet (the pill can appear after capture starts), so [lookupOwn]
+  /// finds it in the full list to keep it excluded for the whole recording.
+  static func selectExcludedApplications<App>(
+    from apps: [App],
+    processID: (App) -> pid_t,
+    bundleId: (App) -> String?,
+    includeSystemApps: Bool,
+    ownPID: pid_t = ProcessInfo.processInfo.processIdentifier,
+    lookupOwn: (pid_t) async -> App?
+  ) async -> [App] {
+    var excluded = apps.filter {
+      excludesFromCapture(
+        bundleId: bundleId($0), processID: processID($0),
+        includeSystemApps: includeSystemApps, ownPID: ownPID)
     }
-    // On-screen-only content omits Slipreel when none of its windows is
-    // visible yet (the pill can appear after capture starts), so look it up
-    // in the full list to keep it excluded for the whole recording.
-    let ownPID = ProcessInfo.processInfo.processIdentifier
-    if !apps.contains(where: { $0.processID == ownPID }),
-       let all = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
-       let own = all.applications.first(where: { $0.processID == ownPID }) {
-      apps.append(own)
+    if !excluded.contains(where: { processID($0) == ownPID }),
+       let own = await lookupOwn(ownPID) {
+      excluded.append(own)
     }
-    return apps
+    return excluded
   }
 
   // MARK: - Permission Handling
