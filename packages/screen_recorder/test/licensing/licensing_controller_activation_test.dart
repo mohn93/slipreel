@@ -184,6 +184,53 @@ void main() {
     expect(await auth.matches(opened!.queryParameters['state']!), isTrue);
   });
 
+  test('repeated sign-in clicks keep the first email link valid', () async {
+    messenger.setMockMethodCallHandler(
+        channel, (call) async => 'HW-UUID-123');
+    final opened = <Uri>[];
+    final store = InMemoryLicenseStore();
+    final c = LicensingController(
+      store: store,
+      verifier: _FakeVerifier({'jwt.ok': _claims()}),
+      api: LicensingApi(baseUrl: 'https://x.test'),
+      authState: AuthStateStore(InMemorySecureKV()),
+      openUrl: (u) async {
+        opened.add(u);
+        return true;
+      },
+    );
+    await c.openSignIn();
+    await c.openSignIn();
+    await c.unlockExport();
+    final first = opened.first.queryParameters['state']!;
+    expect(opened.map((u) => u.queryParameters['state']).toSet(), {first});
+    await c.handleDeepLink(Uri.parse(
+        'slipreel://auth?token=jwt.ok&refresh=rt&device_id=dev_1&state=$first'));
+    expect(c.state, isA<EntitlementLoaded>());
+    expect(await store.load(), isNotNull);
+  });
+
+  test('sign-out rotates the pending sign-in nonce', () async {
+    messenger.setMockMethodCallHandler(
+        channel, (call) async => 'HW-UUID-123');
+    final opened = <Uri>[];
+    final c = LicensingController(
+      store: InMemoryLicenseStore(),
+      verifier: _FakeVerifier(const {}),
+      api: LicensingApi(baseUrl: 'https://x.test'),
+      authState: AuthStateStore(InMemorySecureKV()),
+      openUrl: (u) async {
+        opened.add(u);
+        return true;
+      },
+    );
+    await c.openSignIn();
+    await c.signOut();
+    await c.openSignIn();
+    expect(opened[0].queryParameters['state'],
+        isNot(opened[1].queryParameters['state']));
+  });
+
   test('signOut clears the store and state', () async {
     final store = InMemoryLicenseStore();
     await store.save(const LicenseTokens(

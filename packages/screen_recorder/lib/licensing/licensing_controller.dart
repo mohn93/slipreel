@@ -369,7 +369,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
           Uri.parse(LicensingConfig.siteBaseResolved).replace(path: '/account'),
         );
 
-  /// Start the browser purchase/sign-in flow. Generates a fresh nonce, then
+  /// Start the browser purchase/sign-in flow. Reuses or generates a nonce, then
   /// opens `${site}/pricing?device=<fp>&state=<nonce>`. Returns whether the
   /// browser launch was requested (false if url_launcher declined).
   Future<bool> unlockExport() async {
