@@ -62,6 +62,14 @@ describe('complimentary licenses', () => {
     expect(gone.entitlement?.status).toBe('canceled');
   });
 
+  it('refuses users with unreconciled legacy grants', async () => {
+    await pool.query("INSERT INTO users (id, email) VALUES ('usr_l', 'legacy@example.com')");
+    await pool.query("INSERT INTO purchase_grants (payment_intent_id, user_id, legacy_until) VALUES ('legacy_ent_1', 'usr_l', now() + interval '1 year')");
+    await expect(tx(c => grantComp(c, 'legacy@example.com'))).rejects.toThrow('unreconciled legacy');
+    const { rowCount } = await pool.query("SELECT 1 FROM purchase_grants WHERE payment_intent_id LIKE 'comp_%'");
+    expect(rowCount).toBe(0);
+  });
+
   it('refuses to revoke when there is nothing to revoke', async () => {
     await expect(tx(c => revokeComp(c, 'nobody@example.com'))).rejects.toThrow('No account');
     await pool.query("INSERT INTO users (id, email) VALUES ('usr_n', 'none@example.com')");

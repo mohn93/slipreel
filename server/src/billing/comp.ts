@@ -25,6 +25,10 @@ export async function grantComp(client: pg.PoolClient, email: string): Promise<C
   );
   const userId = inserted.rows[0]?.id ?? await userIdForEmail(client, email);
   if (!userId) throw new Error(`Could not resolve user for ${email}`);
+  // reconcile:legacy cannot cover comp_ ids, so a comp grant would strand the
+  // placeholder and keep /ready at 503. Reconcile first.
+  const legacy = await client.query('SELECT 1 FROM purchase_grants WHERE user_id = $1 AND legacy_until IS NOT NULL', [userId]);
+  if (legacy.rowCount) throw new Error(`${email} has unreconciled legacy purchases; run reconcile:legacy first`);
   const grantId = `${COMP_PREFIX}${newId('grant')}`;
   await client.query(
     'INSERT INTO purchase_grants (payment_intent_id, user_id, purchased_at) VALUES ($1, $2, now())',

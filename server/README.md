@@ -108,8 +108,8 @@ same rights as a one-time purchase (unlimited exports, one year of updates;
 running it again adds another year). The person installs Slipreel and chooses
 Sign in with that email. `--revoke --apply` revokes all complimentary grants for
 the email and leaves paid grants intact. Comp accounts have no Stripe customer, so
-the billing portal is unavailable to them, and `reconcile:legacy` refuses users
-with comp grants.
+the billing portal is unavailable to them. Users with unreconciled `legacy_`
+grants are refused; run `reconcile:legacy` for them first.
 
 Use production-mode Stripe and email credentials, configure the signing key pair,
 CORS origin, success/cancel/portal URLs, and monitor `/ready`. Validate a real email
