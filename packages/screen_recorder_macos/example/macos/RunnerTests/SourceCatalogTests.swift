@@ -207,3 +207,28 @@ final class SourcePickerViewTests: XCTestCase {
     XCTAssertFalse(view.subviews.contains { $0 is NSScrollView })
   }
 }
+
+final class CaptureExclusionTests: XCTestCase {
+  func testOwnProcessIsAlwaysExcluded() {
+    XCTAssertTrue(ScreenCaptureManager.excludesFromCapture(
+      bundleId: "com.slipreel.app", processID: 42, includeSystemApps: false, ownPID: 42))
+    XCTAssertTrue(ScreenCaptureManager.excludesFromCapture(
+      bundleId: nil, processID: 42, includeSystemApps: true, ownPID: 42))
+  }
+
+  func testSystemAppsOnlyExcludedForDisplayCapture() {
+    for bundleId in ["com.apple.finder", "com.apple.dock"] {
+      XCTAssertTrue(ScreenCaptureManager.excludesFromCapture(
+        bundleId: bundleId, processID: 7, includeSystemApps: true, ownPID: 42))
+      XCTAssertFalse(ScreenCaptureManager.excludesFromCapture(
+        bundleId: bundleId, processID: 7, includeSystemApps: false, ownPID: 42))
+    }
+  }
+
+  func testOtherAppsAreKept() {
+    XCTAssertFalse(ScreenCaptureManager.excludesFromCapture(
+      bundleId: "com.microsoft.edgemac", processID: 7, includeSystemApps: true, ownPID: 42))
+    XCTAssertFalse(ScreenCaptureManager.excludesFromCapture(
+      bundleId: nil, processID: 7, includeSystemApps: true, ownPID: 42))
+  }
+}

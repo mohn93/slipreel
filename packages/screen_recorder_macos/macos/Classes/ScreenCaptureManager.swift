@@ -23,6 +23,44 @@ class ScreenCaptureManager: NSObject {
   private var lastFrameTime: CFAbsoluteTime = 0
   private var minFrameInterval: CFAbsoluteTime = 1.0 / 60.0  // Max 60fps
 
+  // MARK: - Capture Exclusions
+
+  /// System apps hidden from full-display captures.
+  static let excludedSystemBundleIds: Set<String> = ["com.apple.finder", "com.apple.dock"]
+
+  /// Whether an app's windows are kept out of a display or region capture.
+  /// Slipreel's own process is always excluded so the recording bar, the
+  /// compact recording pill and any overlay never appear in the recording.
+  static func excludesFromCapture(
+    bundleId: String?,
+    processID: pid_t,
+    includeSystemApps: Bool,
+    ownPID: pid_t = ProcessInfo.processInfo.processIdentifier
+  ) -> Bool {
+    if processID == ownPID { return true }
+    guard includeSystemApps, let bundleId else { return false }
+    return excludedSystemBundleIds.contains(bundleId)
+  }
+
+  private static func excludedApplications(
+    in content: SCShareableContent,
+    includeSystemApps: Bool
+  ) async -> [SCRunningApplication] {
+    var apps = content.applications.filter {
+      excludesFromCapture(bundleId: $0.bundleIdentifier, processID: $0.processID, includeSystemApps: includeSystemApps)
+    }
+    // On-screen-only content omits Slipreel when none of its windows is
+    // visible yet (the pill can appear after capture starts), so look it up
+    // in the full list to keep it excluded for the whole recording.
+    let ownPID = ProcessInfo.processInfo.processIdentifier
+    if !apps.contains(where: { $0.processID == ownPID }),
+       let all = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+       let own = all.applications.first(where: { $0.processID == ownPID }) {
+      apps.append(own)
+    }
+    return apps
+  }
+
   // MARK: - Permission Handling
 
   /// Check if screen recording permission is granted.
@@ -170,7 +208,11 @@ class ScreenCaptureManager: NSObject {
       guard let display = content.displays.first(where: { $0.displayID == region.displayId }) else {
         throw ScreenCaptureError.invalidSourceId
       }
-      contentFilter = SCContentFilter(display: display, excludingWindows: [])
+      contentFilter = SCContentFilter(
+        display: display,
+        excludingApplications: await Self.excludedApplications(in: content, includeSystemApps: false),
+        exceptingWindows: []
+      )
       // Resolve the backing scale via NSScreen (matching display.id) instead
       // of `display.width / display.frame.width` — the latter has returned
       // wrong values on some macOS versions (SCDisplay.frame coming back as
@@ -202,13 +244,9 @@ class ScreenCaptureManager: NSObject {
             let display = content.displays.first(where: { $0.displayID == displayID }) else {
         throw ScreenCaptureError.invalidSourceId
       }
-      let excludedApps = content.applications.filter { app in
-        app.bundleIdentifier == "com.apple.finder" ||
-        app.bundleIdentifier == "com.apple.dock"
-      }
       contentFilter = SCContentFilter(
         display: display,
-        excludingApplications: excludedApps,
+        excludingApplications: await Self.excludedApplications(in: content, includeSystemApps: true),
         exceptingWindows: []
       )
       config.width = display.width
