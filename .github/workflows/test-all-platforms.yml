@@ -49,6 +49,7 @@ jobs:
             -only-testing:RunnerTests/RegionSelectorStateTests \
             -only-testing:RunnerTests/RegionToolbarPositionTests \
             -only-testing:RunnerTests/SourceCatalogTests \
+            -only-testing:RunnerTests/CaptureExclusionTests \
             -only-testing:RunnerTests/SourcePickerGeometryTests \
             -only-testing:RunnerTests/SourcePickerViewTests CODE_SIGNING_ALLOWED=NO
 

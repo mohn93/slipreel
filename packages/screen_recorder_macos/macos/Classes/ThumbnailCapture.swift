@@ -78,7 +78,11 @@ enum ThumbnailCapture {
               let d = content.displays.first(where: { $0.displayID == id }) else {
           throw ThumbnailCaptureError.sourceNotFound
         }
-        filter = SCContentFilter(display: d, excludingWindows: [])
+        filter = SCContentFilter(
+          display: d,
+          excludingApplications: await ScreenCaptureManager.excludedApplications(in: content, includeSystemApps: true),
+          exceptingWindows: []
+        )
         nativeSize = CGSize(width: d.width, height: d.height)
       }
       // Preserve the source's aspect ratio so the framebuffer is not letterboxed

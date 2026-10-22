@@ -23,6 +23,71 @@ class ScreenCaptureManager: NSObject {
   private var lastFrameTime: CFAbsoluteTime = 0
   private var minFrameInterval: CFAbsoluteTime = 1.0 / 60.0  // Max 60fps
 
+  // MARK: - Capture Exclusions
+
+  /// System apps hidden from full-display captures.
+  static let excludedSystemBundleIds: Set<String> = ["com.apple.finder", "com.apple.dock"]
+
+  /// Whether an app's windows are kept out of a display or region capture.
+  /// Slipreel's own process is always excluded so the recording bar, the
+  /// compact recording pill and any overlay never appear in the recording.
+  static func excludesFromCapture(
+    bundleId: String?,
+    processID: pid_t,
+    includeSystemApps: Bool,
+    ownPID: pid_t = ProcessInfo.processInfo.processIdentifier
+  ) -> Bool {
+    if processID == ownPID { return true }
+    guard includeSystemApps, let bundleId else { return false }
+    return excludedSystemBundleIds.contains(bundleId)
+  }
+
+  /// Applications to keep out of a display or region capture. Also used for
+  /// display thumbnails so the picker preview matches the recording.
+  static func excludedApplications(
+    in content: SCShareableContent,
+    includeSystemApps: Bool
+  ) async -> [SCRunningApplication] {
+    await selectExcludedApplications(
+      from: content.applications,
+      processID: { $0.processID },
+      bundleId: { $0.bundleIdentifier },
+      includeSystemApps: includeSystemApps,
+      lookupOwn: { ownPID in
+        do {
+          let all = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+          return all.applications.first(where: { $0.processID == ownPID })
+        } catch {
+          NSLog("[ScreenCaptureManager] own-app lookup failed; Slipreel windows may be captured: \(error)")
+          return nil
+        }
+      }
+    )
+  }
+
+  /// On-screen-only content omits Slipreel when none of its windows is
+  /// visible yet (the pill can appear after capture starts), so [lookupOwn]
+  /// finds it in the full list to keep it excluded for the whole recording.
+  static func selectExcludedApplications<App>(
+    from apps: [App],
+    processID: (App) -> pid_t,
+    bundleId: (App) -> String?,
+    includeSystemApps: Bool,
+    ownPID: pid_t = ProcessInfo.processInfo.processIdentifier,
+    lookupOwn: (pid_t) async -> App?
+  ) async -> [App] {
+    var excluded = apps.filter {
+      excludesFromCapture(
+        bundleId: bundleId($0), processID: processID($0),
+        includeSystemApps: includeSystemApps, ownPID: ownPID)
+    }
+    if !excluded.contains(where: { processID($0) == ownPID }),
+       let own = await lookupOwn(ownPID) {
+      excluded.append(own)
+    }
+    return excluded
+  }
+
   // MARK: - Permission Handling
 
   /// Check if screen recording permission is granted.
@@ -170,7 +235,11 @@ class ScreenCaptureManager: NSObject {
       guard let display = content.displays.first(where: { $0.displayID == region.displayId }) else {
         throw ScreenCaptureError.invalidSourceId
       }
-      contentFilter = SCContentFilter(display: display, excludingWindows: [])
+      contentFilter = SCContentFilter(
+        display: display,
+        excludingApplications: await Self.excludedApplications(in: content, includeSystemApps: false),
+        exceptingWindows: []
+      )
       // Resolve the backing scale via NSScreen (matching display.id) instead
       // of `display.width / display.frame.width` — the latter has returned
       // wrong values on some macOS versions (SCDisplay.frame coming back as
@@ -202,13 +271,9 @@ class ScreenCaptureManager: NSObject {
             let display = content.displays.first(where: { $0.displayID == displayID }) else {
         throw ScreenCaptureError.invalidSourceId
       }
-      let excludedApps = content.applications.filter { app in
-        app.bundleIdentifier == "com.apple.finder" ||
-        app.bundleIdentifier == "com.apple.dock"
-      }
       contentFilter = SCContentFilter(
         display: display,
-        excludingApplications: excludedApps,
+        excludingApplications: await Self.excludedApplications(in: content, includeSystemApps: true),
         exceptingWindows: []
       )
       config.width = display.width
