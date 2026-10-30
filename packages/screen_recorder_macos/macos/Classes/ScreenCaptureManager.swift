@@ -264,9 +264,13 @@ class ScreenCaptureManager: NSObject {
       }
       contentFilter = SCContentFilter(desktopIndependentWindow: window)
       // Use the scale of the display the window sits on, not the main one, so
-      // windows on a non-Retina secondary display aren't sized 2x.
+      // windows on a non-Retina secondary display aren't sized 2x. Match via
+      // CGDisplayBounds (global points, top-left origin like SCWindow.frame);
+      // SCDisplay.frame has come back in pixels on some macOS versions.
       let center = CGPoint(x: window.frame.midX, y: window.frame.midY)
-      let displayID = content.displays.first(where: { $0.frame.contains(center) })?.displayID
+      let displayID = content.displays.first(where: {
+        CGDisplayBounds($0.displayID).contains(center)
+      })?.displayID
       let screen = NSScreen.screens.first(where: {
         ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
       })
