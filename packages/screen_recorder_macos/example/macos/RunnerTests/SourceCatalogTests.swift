@@ -10,7 +10,8 @@ final class SourceCatalogTests: XCTestCase {
     ownerName: String = "Example",
     bundleId: String = "com.example.app",
     width: CGFloat = 1200,
-    height: CGFloat = 800
+    height: CGFloat = 800,
+    layer: Int = 0
   ) -> RawWindow {
     return RawWindow(
       id: id,
@@ -18,7 +19,8 @@ final class SourceCatalogTests: XCTestCase {
       ownerName: ownerName,
       ownerBundleId: bundleId,
       frame: CGRect(x: 0, y: 0, width: width, height: height),
-      isOnScreen: true
+      isOnScreen: true,
+      layer: layer
     )
   }
 
@@ -113,6 +115,15 @@ final class SourceCatalogTests: XCTestCase {
       makeWindow(id: 101, width: 40),
       makeWindow(id: 102),
       makeWindow(id: 103, ownerName: "Wallpaper", bundleId: "com.apple.wallpaper.agent"),
+    ]
+    XCTAssertEqual(SourceCatalog.pickableWindows(windows).map(\.id), [102])
+  }
+
+  func testPickerExcludesOverlayLayersAndOwnerlessWindows() {
+    let windows = [
+      makeWindow(id: 100, ownerName: "Window Server", bundleId: ""),
+      makeWindow(id: 101, layer: 25),
+      makeWindow(id: 102),
     ]
     XCTAssertEqual(SourceCatalog.pickableWindows(windows).map(\.id), [102])
   }

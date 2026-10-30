@@ -263,7 +263,14 @@ class ScreenCaptureManager: NSObject {
         throw ScreenCaptureError.invalidSourceId
       }
       contentFilter = SCContentFilter(desktopIndependentWindow: window)
-      let scale = NSScreen.main?.backingScaleFactor ?? 1.0
+      // Use the scale of the display the window sits on, not the main one, so
+      // windows on a non-Retina secondary display aren't sized 2x.
+      let center = CGPoint(x: window.frame.midX, y: window.frame.midY)
+      let displayID = content.displays.first(where: { $0.frame.contains(center) })?.displayID
+      let screen = NSScreen.screens.first(where: {
+        ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
+      })
+      let scale = (screen ?? NSScreen.main)?.backingScaleFactor ?? 1.0
       config.width = Int(window.frame.width * scale)
       config.height = Int(window.frame.height * scale)
     } else {
