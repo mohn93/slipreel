@@ -10,6 +10,8 @@ struct RawWindow {
   let ownerBundleId: String
   let frame: CGRect
   let isOnScreen: Bool
+  /// Window-server layer; 0 is the normal application window layer.
+  var layer: Int = 0
 }
 
 enum SourceCatalog {
@@ -27,9 +29,14 @@ enum SourceCatalog {
 
   /// Picker targets may have no title (secondary windows and dialogs often do).
   /// Keep each window ID so sibling windows from one app remain selectable.
+  /// Only normal-layer windows owned by an app qualify: on secondary displays
+  /// the window server adds full-screen overlay/menu-bar windows above the
+  /// app windows, which would win the hit test and record as black.
   static func pickableWindows(_ windows: [RawWindow]) -> [RawWindow] {
     return windows.filter { w in
       w.isOnScreen &&
+        w.layer == 0 &&
+        !w.ownerBundleId.isEmpty &&
         !excludedBundleIds.contains(w.ownerBundleId) &&
         !w.ownerBundleId.hasPrefix("com.apple.wallpaper.") &&
         w.ownerName != "Wallpaper" &&
@@ -93,7 +100,8 @@ enum SourceCatalog {
       ownerName: w.owningApplication?.applicationName ?? "Unknown",
       ownerBundleId: w.owningApplication?.bundleIdentifier ?? "",
       frame: w.frame,
-      isOnScreen: w.isOnScreen
+      isOnScreen: w.isOnScreen,
+      layer: w.windowLayer
     )
   }
 
