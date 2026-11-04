@@ -76,7 +76,9 @@ jobs:
 
   backend:
     name: Backend (Postgres)
-    runs-on: ubuntu-latest
+    # Pinned: the backup test needs postgresql-client-16 (matching production),
+    # which the ubuntu-latest (26.04) image's apt sources no longer carry.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16

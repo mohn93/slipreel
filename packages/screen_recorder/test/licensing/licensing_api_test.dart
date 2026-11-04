@@ -68,4 +68,45 @@ void main() {
     expect(await api.refresh(refreshToken: 'x', deviceId: 'y'),
         isA<RefreshTransient>());
   });
+
+  group('claimHandoff', () {
+    LicensingApi api(int status, String body, [void Function(http.Request)? seen]) =>
+        LicensingApi(
+          baseUrl: 'https://api.example.test',
+          client: MockClient((req) async {
+            seen?.call(req);
+            return http.Response(body, status);
+          }),
+        );
+
+    test('posts state + fingerprint and returns credentials on 200', () async {
+      http.Request? sent;
+      final r = await api(200,
+              '{"token":"t","refresh_token":"r","device_id":"dev_1"}',
+              (req) => sent = req)
+          .claimHandoff(state: 'h1.s', fingerprint: 'fp');
+      expect(sent!.url.path, '/v1/auth/handoff/claim');
+      expect(jsonDecode(sent!.body), {'state': 'h1.s', 'fingerprint': 'fp'});
+      expect(r, isA<HandoffCredentials>());
+      expect((r as HandoffCredentials).refreshToken, 'r');
+    });
+
+    test('204 is pending', () async {
+      expect(await api(204, '').claimHandoff(state: 's', fingerprint: 'f'),
+          isA<HandoffPending>());
+    });
+
+    test('409 carries the error', () async {
+      final r = await api(409, '{"error":"seat_limit"}')
+          .claimHandoff(state: 's', fingerprint: 'f');
+      expect((r as HandoffFailed).error, 'seat_limit');
+    });
+
+    test('5xx and malformed bodies are pending', () async {
+      expect(await api(503, 'x').claimHandoff(state: 's', fingerprint: 'f'),
+          isA<HandoffPending>());
+      expect(await api(200, '{"token":1}').claimHandoff(state: 's', fingerprint: 'f'),
+          isA<HandoffPending>());
+    });
+  });
 }

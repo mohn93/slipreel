@@ -1,6 +1,6 @@
 import { apiBase } from './config.js';
 import { createApi } from './api.js?v=7';
-import { startCheckout, requestMagicLink } from './flow.js?v=7';
+import { startCheckout, requestMagicLink } from './flow.js?v=8';
 import { checkoutPlan } from './pricing-plan.js';
 import { consumeCredentialParams } from './credential-safety.js';
 

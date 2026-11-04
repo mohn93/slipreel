@@ -269,6 +269,7 @@ Future<void> main() async {
     verifier: EntitlementVerifier(kEntitlementPublicKey),
     api: LicensingApi(),
     authState: AuthStateStore(licensingKv),
+    handoffDelay: LicensingController.defaultHandoffDelay,
   );
   await licensingController.load();
   final notifications = NotificationController(

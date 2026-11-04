@@ -31,6 +31,40 @@ class RefreshTransient extends RefreshResult {
   const RefreshTransient();
 }
 
+/// Outcome of polling for a sign-in approved in a browser (possibly on another
+/// device). See `POST /v1/auth/handoff/claim`.
+sealed class HandoffResult {
+  const HandoffResult();
+}
+
+/// Not approved yet, or the outcome is unknown (offline): keep polling.
+class HandoffPending extends HandoffResult {
+  const HandoffPending();
+}
+
+/// The browser approved and the server minted credentials for this Mac.
+class HandoffCredentials extends HandoffResult {
+  const HandoffCredentials({
+    required this.token,
+    required this.refreshToken,
+    required this.deviceId,
+    this.email,
+  });
+  final String token;
+  final String refreshToken;
+  final String deviceId;
+
+  /// The account that approved, shown so a wrong-account sign-in is visible.
+  final String? email;
+}
+
+/// The browser approved but activation failed (`seat_limit` or
+/// `activation_failed`).
+class HandoffFailed extends HandoffResult {
+  const HandoffFailed(this.error);
+  final String error;
+}
+
 /// Thin HTTP client for the VPS licensing endpoints the app calls directly.
 /// The only app-initiated call is token refresh; initial minting happens in
 /// the browser (web session), delivered back via the slipreel:// deep link.
@@ -83,6 +117,44 @@ class LicensingApi {
       return const RefreshTransient();
     } catch (_) {
       return const RefreshTransient();
+    }
+  }
+
+  /// POST /v1/auth/handoff/claim. Single use on the server: a 200 hands over
+  /// the credentials once. Anything unexpected reads as [HandoffPending].
+  Future<HandoffResult> claimHandoff({
+    required String state,
+    required String fingerprint,
+  }) async {
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/v1/auth/handoff/claim'),
+            headers: const {'content-type': 'application/json'},
+            body: jsonEncode({'state': state, 'fingerprint': fingerprint}),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode == 409) {
+        final body = jsonDecode(res.body);
+        final error = body is Map ? body['error'] : null;
+        return HandoffFailed(error is String ? error : 'activation_failed');
+      }
+      if (res.statusCode != 200) return const HandoffPending();
+      final body = jsonDecode(res.body);
+      if (body is Map &&
+          body['token'] is String &&
+          body['refresh_token'] is String &&
+          body['device_id'] is String) {
+        return HandoffCredentials(
+          token: body['token'] as String,
+          refreshToken: body['refresh_token'] as String,
+          deviceId: body['device_id'] as String,
+          email: body['email'] is String ? body['email'] as String : null,
+        );
+      }
+      return const HandoffPending();
+    } catch (_) {
+      return const HandoffPending();
     }
   }
 

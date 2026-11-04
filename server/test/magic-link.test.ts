@@ -65,6 +65,21 @@ describe('magic link', () => {
     await app.close();
   });
 
+  it('marks links from older Mac apps (no h1. state) so the page can require the Mac', async () => {
+    const sent: string[] = [];
+    const email = { sendMagicLink: async (_to: string, link: string) => { sent.push(link); } };
+    const { app } = await makeLicensingApp(pool, { email });
+    const send = (payload: Record<string, string>) =>
+      app.inject({ method: 'POST', url: '/v1/auth/magic-link', payload: { email: 'm@e.com', ...payload } });
+    await send({ device: 'fp', state: 'legacy-nonce' });
+    await send({ device: 'fp', state: 'h1.new-nonce' });
+    await send({});
+    expect(sent[0]).toContain('&from=mac');
+    expect(sent[1]).not.toContain('from=mac');
+    expect(sent[2]).not.toContain('from=mac');
+    await app.close();
+  });
+
   it('round-trips device/state from request to verify', async () => {
     const { app } = await makeLicensingApp(pool);
     const req = await app.inject({ method: 'POST', url: '/v1/auth/magic-link',

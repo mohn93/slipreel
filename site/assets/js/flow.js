@@ -1,3 +1,18 @@
+// Mac apps that can claim a sign-in approved on another device (by polling the
+// API) mark their state nonce with this prefix. Older apps only accept the
+// slipreel:// deep link, so their sign-in must finish on the Mac itself.
+export const HANDOFF_PREFIX = 'h1.';
+export function supportsHandoff(state) {
+  return typeof state === 'string' && state.startsWith(HANDOFF_PREFIX);
+}
+
+// True for a desktop Mac browser. iPadOS also reports "Macintosh", so a touch
+// screen rules it out.
+export function isMacBrowser(nav = globalThis.navigator) {
+  if (!nav) return false;
+  return /Macintosh/.test(nav.userAgent || '') && (nav.maxTouchPoints || 0) <= 1;
+}
+
 export function buildDeeplink({ token, refresh_token, device_id, state }) {
   const p = new URLSearchParams();
   p.set('token', token);
@@ -21,18 +36,25 @@ export async function startCheckout(api, { email, plan, device, deviceName, stat
 // the app (app-initiated flow, `device` present) or route to the account page.
 async function afterSession(api, ctx) {
   if (ctx.device) {
-    const t = await api.token({ fingerprint: ctx.device, device_name: ctx.device_name || null });
+    const handoff = supportsHandoff(ctx.state);
+    const body = { fingerprint: ctx.device, device_name: ctx.device_name || null };
+    // Lets the Mac app pick up this activation even when approved on a phone.
+    if (handoff) body.state = ctx.state;
+    const t = await api.token(body);
     const callbackError = (error) => ctx.state
       ? { errorDeeplink: 'slipreel://auth?' + new URLSearchParams({ error, state: ctx.state }) }
       : {};
+    // This sign-in already finished (another email link was used); the app has
+    // or will receive it, so do not report a seat problem or deep-link again.
+    if (t.status === 409 && t.data?.error === 'already_approved') return { alreadyApproved: true, handoff };
     if (t.status === 409) return {
-      seatLimit: t.data?.devices || [], ...callbackError('seat_limit'),
+      seatLimit: t.data?.devices || [], handoff, ...callbackError('seat_limit'),
     };
     if (!t.ok) return {
       error: t.data?.error || 'token_failed', status: t.status,
-      phase: 'activation', ...callbackError('activation_failed'),
+      phase: 'activation', handoff, ...callbackError('activation_failed'),
     };
-    return { deeplink: buildDeeplink({ ...t.data, state: ctx.state }) };
+    return { deeplink: buildDeeplink({ ...t.data, state: ctx.state }), handoff };
   }
   return { account: { email: ctx.email, userId: ctx.userId } };
 }

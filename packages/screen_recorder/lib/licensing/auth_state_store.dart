@@ -22,6 +22,13 @@ class AuthStateStore {
   /// email is on its way does not invalidate that email's link.
   static const reuseWindow = Duration(hours: 1);
 
+  /// Marks a nonce whose sign-in this app can also receive by polling the API
+  /// (`/v1/auth/handoff/claim`), so the web lets any device approve it. Nonces
+  /// without it come from older builds that only accept the deep link.
+  static const handoffPrefix = 'h1.';
+
+  static bool supportsHandoff(String nonce) => nonce.startsWith(handoffPrefix);
+
   /// Returns the pending nonce if it was issued within [reuseWindow];
   /// otherwise generates a fresh 256-bit nonce and persists it as the sole
   /// pending state. Overlapping calls (a fast double-click) share one result.
@@ -39,12 +46,24 @@ class AuthStateStore {
     }
     final rng = Random.secure();
     final bytes = List<int>.generate(32, (_) => rng.nextInt(256));
-    final nonce = base64Url.encode(bytes).replaceAll('=', '');
+    final nonce = handoffPrefix + base64Url.encode(bytes).replaceAll('=', '');
     await _kv.write(
       _key,
       jsonEncode({'nonce': nonce, 'issued': now.millisecondsSinceEpoch}),
     );
     return nonce;
+  }
+
+  /// The pending nonce and when it was issued, if still inside [reuseWindow].
+  /// Used to resume waiting for a cross-device approval after a relaunch.
+  Future<({String nonce, DateTime issued})?> pending() async {
+    final pending = _decode(await _kv.read(_key));
+    final issued = pending?.issued;
+    final now = _now();
+    if (pending == null || issued == null || issued.isAfter(now)) return null;
+    return now.difference(issued) < reuseWindow
+        ? (nonce: pending.nonce, issued: issued)
+        : null;
   }
 
   /// True iff [state] equals the currently pending nonce (constant-time-ish

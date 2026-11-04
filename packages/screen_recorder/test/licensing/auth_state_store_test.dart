@@ -135,4 +135,15 @@ void main() {
     final without = store.loginUrl(deviceFingerprint: 'fp', state: 'n');
     expect(without.queryParameters.containsKey('device_name'), isFalse);
   });
+
+  test('pending returns the nonce only inside the reuse window', () async {
+    var now = DateTime.utc(2026, 11, 4, 12);
+    final store = AuthStateStore(InMemorySecureKV(), now: () => now);
+    expect(await store.pending(), isNull);
+    final a = await store.begin();
+    expect(a, startsWith(AuthStateStore.handoffPrefix));
+    expect((await store.pending())?.nonce, a);
+    now = now.add(AuthStateStore.reuseWindow);
+    expect(await store.pending(), isNull);
+  });
 }

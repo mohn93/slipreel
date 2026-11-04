@@ -17,6 +17,7 @@ describe('token routes', () => {
   beforeAll(async () => { pool = testPool(); await resetDatabase(pool); await runMigrations(pool); });
   afterAll(async () => { await pool.end(); });
   beforeEach(async () => {
+    await pool.query('DELETE FROM auth_handoffs'); await pool.query('DELETE FROM magic_links');
     await pool.query('DELETE FROM devices'); await pool.query('DELETE FROM sessions');
     await pool.query('DELETE FROM entitlements'); await pool.query('DELETE FROM users');
     await pool.query('DELETE FROM consumed_checkout_sessions');
@@ -89,5 +90,136 @@ describe('token routes', () => {
       payload: { refresh_token: 'wrong', device_id: mint.device_id } });
     expect(bad.statusCode).toBe(401);
     await app.close();
+  });
+  describe('cross-device handoff', () => {
+    const state = 'h1.' + 'a'.repeat(43);
+    const claim = (app: any, body: Record<string, string>) =>
+      app.inject({ method: 'POST', url: '/v1/auth/handoff/claim', payload: body });
+    // Request + verify a magic link the way the login page does, returning the
+    // session cookie of whoever clicked it.
+    async function approve(app: any, email: string, ctx: Record<string, string>): Promise<string> {
+      const token = (await app.inject({ method: 'POST', url: '/v1/auth/magic-link',
+        payload: { email, ...ctx } })).json().debug_token;
+      const ver = await app.inject({ method: 'POST', url: '/v1/auth/magic-link/verify', payload: { token } });
+      expect(ver.statusCode).toBe(200);
+      const raw = ver.headers['set-cookie'];
+      const cookie = (Array.isArray(raw) ? raw[0] : raw)!.split(';')[0]!;
+      return cookie;
+    }
+    const mint = (app: any, cookie: string, payload: Record<string, string>) =>
+      app.inject({ method: 'POST', url: '/v1/token', headers: { cookie }, payload });
+
+    it('is pending (204) until approved, then returns the credentials once', async () => {
+      const { app, signer } = await makeLicensingApp(pool);
+      expect((await claim(app, { state, fingerprint: 'fp-mac' })).statusCode).toBe(204);
+      const cookie = await approve(app, 'u1@e.com', { device: 'fp-mac', state });
+      const minted = await mint(app, cookie, { fingerprint: 'fp-mac', device_name: 'Mac', state });
+      expect(minted.statusCode).toBe(200);
+      const first = await claim(app, { state, fingerprint: 'fp-mac' });
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toEqual({ ...minted.json(), email: 'u1@e.com' });
+      expect((await signer.verify(first.json().token)).device_id).toBe(minted.json().device_id);
+      expect((await claim(app, { state, fingerprint: 'fp-mac' })).statusCode).toBe(204);
+      await app.close();
+    });
+
+    it('a session cannot plant credentials for a state it never verified', async () => {
+      const { app } = await makeLicensingApp(pool);
+      await pool.query("INSERT INTO users (id, email) VALUES ('u2','attacker@e.com')");
+      const attacker = await approve(app, 'attacker@e.com', {});
+      const res = await mint(app, attacker, { fingerprint: 'fp-mac', state });
+      expect(res.statusCode).toBe(200); // their own browser activation still works
+      expect((await claim(app, { state, fingerprint: 'fp-mac' })).statusCode).toBe(204);
+      await app.close();
+    });
+
+    it('another user cannot fill an intent opened by the link owner', async () => {
+      const { app } = await makeLicensingApp(pool);
+      await approve(app, 'u1@e.com', { device: 'fp-mac', state });
+      await pool.query("INSERT INTO users (id, email) VALUES ('u2','attacker@e.com')");
+      const attacker = await approve(app, 'attacker@e.com', {});
+      await mint(app, attacker, { fingerprint: 'fp-mac', state });
+      expect((await claim(app, { state, fingerprint: 'fp-mac' })).statusCode).toBe(204);
+      await app.close();
+    });
+
+    it('a second approval does not rotate the claimed credentials', async () => {
+      const { app } = await makeLicensingApp(pool);
+      const cookie = await approve(app, 'u1@e.com', { device: 'fp-mac', state });
+      await mint(app, cookie, { fingerprint: 'fp-mac', state });
+      const claimed = (await claim(app, { state, fingerprint: 'fp-mac' })).json();
+      const again = await mint(app, cookie, { fingerprint: 'fp-mac', state });
+      expect(again.statusCode).toBe(409);
+      expect(again.json().error).toBe('already_approved');
+      const refresh = await app.inject({ method: 'POST', url: '/v1/token/refresh',
+        payload: { refresh_token: claimed.refresh_token, device_id: claimed.device_id } });
+      expect(refresh.statusCode).toBe(200);
+      await app.close();
+    });
+
+    it('stores nothing locatable or readable from the state alone', async () => {
+      const { app } = await makeLicensingApp(pool);
+      const cookie = await approve(app, 'u1@e.com', { device: 'fp-mac', state });
+      const minted = (await mint(app, cookie, { fingerprint: 'fp-mac', state })).json();
+      const { createHash } = await import('node:crypto');
+      const { rows } = await pool.query('SELECT id, payload FROM auth_handoffs');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).not.toBe(createHash('sha256').update(state).digest('hex'));
+      expect(rows[0].payload).not.toContain(minted.refresh_token);
+      await app.close();
+    });
+
+    it('rejects a claim with the wrong state or fingerprint', async () => {
+      const { app } = await makeLicensingApp(pool);
+      const cookie = await approve(app, 'u1@e.com', { device: 'fp-mac', state });
+      await mint(app, cookie, { fingerprint: 'fp-mac', state });
+      expect((await claim(app, { state: 'h1.' + 'b'.repeat(43), fingerprint: 'fp-mac' })).statusCode).toBe(204);
+      expect((await claim(app, { state, fingerprint: 'fp-other' })).statusCode).toBe(204);
+      expect((await claim(app, { state, fingerprint: 'fp-mac' })).statusCode).toBe(200);
+      await app.close();
+    });
+
+    it('hands a seat-limit failure to the app as 409', async () => {
+      const { app } = await makeLicensingApp(pool);
+      const cookie = await approve(app, 'u1@e.com', { device: 'fp-3', state });
+      for (const fp of ['fp-1', 'fp-2']) await mint(app, cookie, { fingerprint: fp });
+      const third = await mint(app, cookie, { fingerprint: 'fp-3', state });
+      expect(third.statusCode).toBe(409);
+      const res = await claim(app, { state, fingerprint: 'fp-3' });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('seat_limit');
+      await app.close();
+    });
+
+    it('legacy (non h1.) states never open an intent', async () => {
+      const { app } = await makeLicensingApp(pool);
+      const legacy = 'legacy-nonce-0123456789';
+      const cookie = await approve(app, 'u1@e.com', { device: 'fp-mac', state: legacy });
+      await mint(app, cookie, { fingerprint: 'fp-mac', state: legacy });
+      expect((await pool.query('SELECT 1 FROM auth_handoffs')).rowCount).toBe(0);
+      await app.close();
+    });
+
+    it('expired handoffs are not claimable', async () => {
+      const { app } = await makeLicensingApp(pool);
+      const cookie = await approve(app, 'u1@e.com', { device: 'fp-mac', state });
+      await mint(app, cookie, { fingerprint: 'fp-mac', state });
+      await pool.query("UPDATE auth_handoffs SET expires_at = now() - interval '1 second'");
+      expect((await claim(app, { state, fingerprint: 'fp-mac' })).statusCode).toBe(204);
+      await app.close();
+    });
+
+    it('a failure to park does not fail the browser activation', async () => {
+      const { app } = await makeLicensingApp(pool);
+      const cookie = await approve(app, 'u1@e.com', { device: 'fp-mac', state });
+      await pool.query('ALTER TABLE auth_handoffs ADD CONSTRAINT no_fill CHECK (payload IS NULL)');
+      try {
+        const res = await mint(app, cookie, { fingerprint: 'fp-mac', state });
+        expect(res.statusCode).toBe(200);
+      } finally {
+        await pool.query('ALTER TABLE auth_handoffs DROP CONSTRAINT no_fill');
+      }
+      await app.close();
+    });
   });
 });
