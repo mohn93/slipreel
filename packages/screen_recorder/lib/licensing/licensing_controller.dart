@@ -12,6 +12,7 @@ import 'sign_in_feedback.dart';
 import 'deep_link.dart';
 import 'device_fingerprint.dart';
 import 'entitlement.dart';
+import 'entitlement_claims.dart';
 import 'entitlement_verifier.dart';
 import 'license_store.dart';
 import 'licensing_api.dart';
@@ -31,7 +32,9 @@ class LicensingController extends StateNotifier<EntitlementState> {
     DateTime Function() now = DateTime.now,
     DeviceFingerprint? fingerprint,
     Future<bool> Function(Uri url)? openUrl,
+    Duration? Function(Duration elapsed)? handoffDelay,
   }) : _store = store,
+       _handoffDelay = handoffDelay,
        _verifier = verifier,
        _api = api,
        _authState = authState,
@@ -90,6 +93,24 @@ class LicensingController extends StateNotifier<EntitlementState> {
   final DeviceFingerprint _fingerprint;
   final Future<bool> Function(Uri url) _openUrl;
 
+  /// Delay before the next cross-device approval poll, given time since
+  /// polling began; null stops polling. Null disables polling entirely (tests
+  /// that do not exercise it). Production passes [defaultHandoffDelay].
+  final Duration? Function(Duration elapsed)? _handoffDelay;
+  Timer? _handoffTimer;
+  int _handoffRun = 0;
+  String? _completedNonce;
+  final Set<String> _noncesInFlight = {};
+
+  /// Fast at first (the user is usually approving right away), then backs off,
+  /// and stops once the nonce would no longer be reused.
+  static Duration? defaultHandoffDelay(Duration elapsed) {
+    if (elapsed < const Duration(minutes: 2)) return const Duration(seconds: 2);
+    if (elapsed < const Duration(minutes: 10)) return const Duration(seconds: 5);
+    if (elapsed < AuthStateStore.reuseWindow) return const Duration(seconds: 15);
+    return null;
+  }
+
   static Future<bool> _defaultOpen(Uri url) =>
       launcher.launchUrl(url, mode: launcher.LaunchMode.externalApplication);
 
@@ -105,6 +126,9 @@ class LicensingController extends StateNotifier<EntitlementState> {
     final tokens = await _store.load();
     if (tokens == null) {
       state = const EntitlementSignedOut();
+      // A sign-in started before a relaunch may still be approved elsewhere.
+      final pending = await _authState.pending();
+      if (pending != null) _startHandoffPolling(pending);
       return;
     }
     // Keep signed expired claims for accurate offline-renewal UI. Export gating
@@ -247,6 +271,9 @@ class LicensingController extends StateNotifier<EntitlementState> {
     if (uri == _lastAuthCallback || !_authCallbacksInFlight.add(uri)) return;
     try {
       final nonce = uri.queryParameters['state'] ?? '';
+      // The same sign-in may already have finished by polling (approval in a
+      // Mac browser both deep-links and parks the result for the app).
+      if (nonce.isNotEmpty && nonce == _completedNonce) return;
       if (nonce.isEmpty || !await _authState.matches(nonce)) {
         signInFeedback.show(
           const SignInFeedback(
@@ -260,107 +287,219 @@ class LicensingController extends StateNotifier<EntitlementState> {
       }
       final error = uri.queryParameters['error'];
       if (error != null) {
-        await _authState.clear();
         _lastAuthCallback = uri;
-        signInFeedback.show(
-          error == 'seat_limit'
-              ? const SignInFeedback(
-                  'Device limit reached',
-                  'This account has reached its device limit. Remove a device '
-                      'from your account, then sign in again on this Mac.',
-                )
-              : const SignInFeedback(
-                  'Could not activate this Mac',
-                  'Your browser sign-in succeeded, but this Mac could not be '
-                      'activated. Please try signing in again.',
-                  action: 'signin',
-                ),
-        );
+        await _failBrowserSignIn(error);
         return;
       }
       final link = AuthDeepLink.parse(uri);
-      final claims = link == null
-          ? null
-          : await _verifier.verify(link.token, now: _now());
-      if (link == null || claims == null || claims.deviceId != link.deviceId) {
-        signInFeedback.show(
-          const SignInFeedback(
-            'Could not verify sign-in',
-            'The activation link is invalid or expired. Request a new sign-in '
-                'link from Slipreel.',
-            action: 'signin',
-          ),
-        );
+      if (link == null) {
+        _showInvalidSignIn();
         return;
+      }
+      final done = await _completeBrowserSignIn(
+        nonce: nonce,
+        token: link.token,
+        refreshToken: link.refresh,
+        deviceId: link.deviceId,
+      );
+      if (done) _lastAuthCallback = uri;
+    } catch (_) {
+      // Do not expose/log callback tokens, file paths, or transport errors.
+      _showSignInCouldNotFinish();
+    } finally {
+      _authCallbacksInFlight.remove(uri);
+    }
+  }
+
+  void _showInvalidSignIn() => signInFeedback.show(
+    const SignInFeedback(
+      'Could not verify sign-in',
+      'The activation link is invalid or expired. Request a new sign-in '
+          'link from Slipreel.',
+      action: 'signin',
+    ),
+  );
+
+  void _showSignInCouldNotFinish() => signInFeedback.show(
+    const SignInFeedback(
+      'Sign-in could not finish',
+      'Slipreel could not verify or save your sign-in. Please try again.',
+      action: 'signin',
+    ),
+  );
+
+  void _stopHandoffPolling() {
+    _handoffRun++;
+    _handoffTimer?.cancel();
+    _handoffTimer = null;
+  }
+
+  Future<void> _failBrowserSignIn(String error) async {
+    _stopHandoffPolling();
+    await _authState.clear();
+    signInFeedback.show(
+      error == 'seat_limit'
+          ? const SignInFeedback(
+              'Device limit reached',
+              'This account has reached its device limit. Remove a device '
+                  'from your account, then sign in again on this Mac.',
+            )
+          : const SignInFeedback(
+              'Could not activate this Mac',
+              'Your browser sign-in succeeded, but this Mac could not be '
+                  'activated. Please try signing in again.',
+              action: 'signin',
+            ),
+    );
+  }
+
+  /// Shared by the deep link and cross-device polling. Returns true once the
+  /// sign-in for [nonce] is handled (including by the other path).
+  Future<bool> _completeBrowserSignIn({
+    required String nonce,
+    required String token,
+    required String refreshToken,
+    required String deviceId,
+  }) async {
+    if (nonce == _completedNonce || !_noncesInFlight.add(nonce)) return true;
+    try {
+      final claims = await _verifier.verify(token, now: _now());
+      if (claims == null || claims.deviceId != deviceId) {
+        _showInvalidSignIn();
+        return false;
       }
       final generation = ++_credentialGeneration;
       await _write(() async {
         if (!mounted || generation != _credentialGeneration) return;
         await _store.save(
           LicenseTokens(
-            token: link.token,
-            refreshToken: link.refresh,
-            deviceId: link.deviceId,
+            token: token,
+            refreshToken: refreshToken,
+            deviceId: deviceId,
           ),
         );
         await _authState.clear();
       });
-      if (!mounted || generation != _credentialGeneration) return;
-      _lastAuthCallback = uri;
+      if (!mounted || generation != _credentialGeneration) return false;
+      _completedNonce = nonce;
+      _stopHandoffPolling();
       state = EntitlementLoaded(claims);
-      final reason = paywallReasonFor(
-        state,
-        appReleaseDate: buildReleaseDate,
-        now: _now(),
-      );
-      if (reason == null) {
-        signInFeedback.show(
-          SignInFeedback(
-            'Signed in successfully',
-            claims.plan == 'onetime'
-                ? 'Your one-time license is active on this Mac. Make something worth sharing.'
-                : 'Your subscription is active on this Mac. Make something worth sharing.',
-            exportsUnlocked: true,
-          ),
-        );
-      } else if (reason == PaywallReason.updateCeiling) {
-        signInFeedback.show(
-          const SignInFeedback(
-            'Signed in — update renewal needed',
-            'Your one-time license covers an earlier version of Slipreel. '
-                'Keep exporting with that version, or renew updates to unlock this version.',
-          ),
-        );
-      } else if (reason == PaywallReason.subscriptionLapsed) {
-        signInFeedback.show(
-          const SignInFeedback(
-            'Signed in — subscription inactive',
-            'Your subscription is not active. Manage your subscription to restore unlimited exports.',
-          ),
-        );
-      } else {
-        signInFeedback.show(
-          const SignInFeedback(
-            'Signed in — no active license',
-            'This account has no active subscription or one-time license. '
-                'Any remaining free exports are still available on this Mac. '
-                'Choose a plan to unlock unlimited exports.',
-            action: 'pricing',
-          ),
-        );
-      }
-    } catch (_) {
-      // Do not expose/log callback tokens, file paths, or transport errors.
+      _showSignedIn(claims);
+      return true;
+    } finally {
+      _noncesInFlight.remove(nonce);
+    }
+  }
+
+  void _showSignedIn(EntitlementClaims claims) {
+    final reason = paywallReasonFor(
+      state,
+      appReleaseDate: buildReleaseDate,
+      now: _now(),
+    );
+    if (reason == null) {
       signInFeedback.show(
-        const SignInFeedback(
-          'Sign-in could not finish',
-          'Slipreel could not verify or save your sign-in. Please try again.',
-          action: 'signin',
+        SignInFeedback(
+          'Signed in successfully',
+          claims.plan == 'onetime'
+              ? 'Your one-time license is active on this Mac. Make something worth sharing.'
+              : 'Your subscription is active on this Mac. Make something worth sharing.',
+          exportsUnlocked: true,
         ),
       );
-    } finally {
-      _authCallbacksInFlight.remove(uri);
+    } else if (reason == PaywallReason.updateCeiling) {
+      signInFeedback.show(
+        const SignInFeedback(
+          'Signed in — update renewal needed',
+          'Your one-time license covers an earlier version of Slipreel. '
+              'Keep exporting with that version, or renew updates to unlock this version.',
+        ),
+      );
+    } else if (reason == PaywallReason.subscriptionLapsed) {
+      signInFeedback.show(
+        const SignInFeedback(
+          'Signed in — subscription inactive',
+          'Your subscription is not active. Manage your subscription to restore unlimited exports.',
+        ),
+      );
+    } else {
+      signInFeedback.show(
+        const SignInFeedback(
+          'Signed in — no active license',
+          'This account has no active subscription or one-time license. '
+              'Any remaining free exports are still available on this Mac. '
+              'Choose a plan to unlock unlimited exports.',
+          action: 'pricing',
+        ),
+      );
     }
+  }
+
+  /// Wait for a sign-in approved in a browser on any device (often a phone,
+  /// which cannot open the slipreel:// link). Polls with the pending nonce
+  /// until it is claimed, fails, is finished by a deep link, or times out.
+  void _startHandoffPolling(String nonce) {
+    final delayFor = _handoffDelay;
+    if (delayFor == null || appStore != null) return;
+    if (!AuthStateStore.supportsHandoff(nonce)) return;
+    _stopHandoffPolling();
+    final run = _handoffRun;
+    final clock = Stopwatch()..start();
+    String? fingerprint;
+    late final Future<void> Function() tick;
+
+    void schedule() {
+      if (!mounted || run != _handoffRun) return;
+      final delay = delayFor(clock.elapsed);
+      if (delay == null) return;
+      _handoffTimer = Timer(delay, () => unawaited(tick()));
+    }
+
+    tick = () async {
+      if (!mounted || run != _handoffRun) return;
+      var claimed = false;
+      try {
+        if (!await _authState.matches(nonce)) return; // finished or replaced
+        fingerprint ??= await _fingerprint.compute();
+        final result = await _api.claimHandoff(
+          state: nonce,
+          fingerprint: fingerprint!,
+        );
+        if (!mounted || run != _handoffRun) return;
+        switch (result) {
+          case HandoffCredentials(
+            :final token,
+            :final refreshToken,
+            :final deviceId,
+          ):
+            claimed = true;
+            await _completeBrowserSignIn(
+              nonce: nonce,
+              token: token,
+              refreshToken: refreshToken,
+              deviceId: deviceId,
+            );
+            return;
+          case HandoffFailed(:final error):
+            if (nonce != _completedNonce) await _failBrowserSignIn(error);
+            return;
+          case HandoffPending():
+            break;
+        }
+      } catch (_) {
+        if (!mounted || run != _handoffRun) return;
+        // A claimed result is single use: if saving it failed, say so instead
+        // of waiting for an approval that already happened. Other failures
+        // (fingerprint, storage read) are retried on the next tick.
+        if (claimed) {
+          _stopHandoffPolling();
+          _showSignInCouldNotFinish();
+          return;
+        }
+      }
+      schedule();
+    };
+    schedule();
   }
 
   Future<bool> openAccount() => appStore != null
@@ -382,7 +521,9 @@ class LicensingController extends StateNotifier<EntitlementState> {
       state: nonce,
       deviceName: name,
     );
-    return _openUrl(url);
+    final opened = await _openUrl(url);
+    if (opened) _startHandoffPolling(nonce);
+    return opened;
   }
 
   /// Like [unlockExport] but opens the sign-in page instead of the plans page,
@@ -397,13 +538,16 @@ class LicensingController extends StateNotifier<EntitlementState> {
       state: nonce,
       deviceName: name,
     );
-    return _openUrl(url);
+    final opened = await _openUrl(url);
+    if (opened) _startHandoffPolling(nonce);
+    return opened;
   }
 
   /// Clear local credentials and the pending nonce; revert to signed-out.
   /// (Server-side seat release via DELETE /v1/devices/:id is done from the web
   /// account page; a native call can be added later.)
   Future<void> signOut() async {
+    _stopHandoffPolling();
     ++_credentialGeneration;
     await _write(() async {
       await _store.clear();
@@ -416,6 +560,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
 
   @override
   void dispose() {
+    _stopHandoffPolling();
     appStore?.dispose();
     super.dispose();
   }

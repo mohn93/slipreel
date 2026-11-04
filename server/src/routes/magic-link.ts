@@ -38,7 +38,11 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
         deviceName: parsed.data.device_name ?? null,
         state: parsed.data.state ?? null,
       });
-      const link = `${app.billing.siteUrl}/login?token=${token}`;
+      // Older Mac apps cannot claim a cross-device approval (their state nonce
+      // lacks the `h1.` capability prefix), so their links must be opened on
+      // the Mac itself. `from=mac` lets the login page say so before consuming.
+      const legacyApp = parsed.data.device && parsed.data.state && !parsed.data.state.startsWith('h1.');
+      const link = `${app.billing.siteUrl}/login?token=${token}${legacyApp ? '&from=mac' : ''}`;
       if (app.email) {
         try {
           const result = await app.email.sendMagicLink(parsed.data.email, link);

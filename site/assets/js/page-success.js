@@ -1,6 +1,6 @@
 import { apiBase } from './config.js';
 import { createApi } from './api.js?v=7';
-import { completeCheckout } from './flow.js?v=7';
+import { completeCheckout, isMacBrowser } from './flow.js?v=8';
 import { consumeCredentialParams } from './credential-safety.js';
 
 const meta = document.querySelector('meta[name="slipreel-api-base"]');
@@ -48,6 +48,13 @@ async function run() {
     document.getElementById('signin').href = 'login.html?' + new URLSearchParams({ checkout_session_id: sessionId });
     return;
   }
+  if (r.deeplink && r.handoff && !isMacBrowser()) {
+    title.textContent = 'Purchase confirmed';
+    sub.textContent = 'Go back to Slipreel on your Mac. It activates your license on its own in a few seconds.';
+    panel.className = 'card';
+    panel.innerHTML = '<p class="muted">You can close this page.</p>';
+    return;
+  }
   if (r.deeplink) {
     title.textContent = 'Opening Slipreel…';
     sub.textContent = 'Slipreel will confirm your license and export access.';
@@ -75,8 +82,10 @@ async function run() {
       back.textContent = 'Return to Slipreel';
       back.className = 'btn btn--block';
       back.href = r.errorDeeplink;
-      panel.append(back);
-      location.href = r.errorDeeplink;
+      if (isMacBrowser()) {
+        panel.append(back);
+        location.href = r.errorDeeplink;
+      }
     }
     return;
   }

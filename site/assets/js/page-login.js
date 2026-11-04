@@ -1,6 +1,6 @@
 import { apiBase } from './config.js';
 import { createApi } from './api.js?v=7';
-import { requestMagicLink, completeMagicLink, startCheckout } from './flow.js?v=7';
+import { requestMagicLink, completeMagicLink, startCheckout, isMacBrowser } from './flow.js?v=8';
 import { consumeCredentialParams } from './credential-safety.js';
 
 const meta = document.querySelector('meta[name="slipreel-api-base"]');
@@ -11,6 +11,10 @@ const device = params.get('device');
 const deviceName = params.get('device_name');
 const state = params.get('state');
 const checkoutSessionId = params.get('checkout_session_id');
+// Set by the API on links from older Mac apps, which can only finish sign-in
+// through a slipreel:// link opened on that Mac.
+const needsMac = params.get('from') === 'mac';
+const onMac = isMacBrowser();
 let busy = false;
 
 const title = document.getElementById('title');
@@ -35,6 +39,17 @@ function verifyMode() {
   panel.className = 'card';
   panel.innerHTML = '<button class="btn btn--primary btn--block" id="confirm">Sign in to Slipreel</button>';
   document.getElementById('confirm').addEventListener('click', doVerify);
+}
+
+// An older Slipreel cannot receive a sign-in approved on a phone. Leave the
+// single-use link unused so it still works when opened on the Mac.
+function openOnMacMode() {
+  requestCard.className = 'card hidden';
+  title.textContent = 'Open this link on your Mac';
+  sub.textContent = 'This link signs in Slipreel on the Mac where you started. '
+    + 'Open the same email on that Mac and click the link there. It stays valid for 30 minutes.';
+  panel.className = 'card';
+  panel.innerHTML = '<p class="muted">Tip: update Slipreel (Slipreel menu, Check for Updates) to approve future sign-ins from your phone.</p>';
 }
 
 async function doVerify() {
@@ -63,7 +78,11 @@ async function doVerify() {
     });
     return;
   }
-  if (r.deeplink) {
+  if (r.deeplink && r.handoff && !onMac) {
+    title.textContent = 'Sign-in approved';
+    sub.textContent = 'Go back to Slipreel on your Mac. It finishes signing in on its own in a few seconds.';
+    panel.innerHTML = '<p class="muted">You can close this page.</p>';
+  } else if (r.deeplink) {
     title.textContent = 'Signed in — opening Slipreel…';
     sub.textContent = 'Slipreel will show your license status and whether exports are unlocked.';
     panel.innerHTML = "<p class=\"muted\">If Slipreel didn't open automatically:</p>"
@@ -81,8 +100,10 @@ async function doVerify() {
       back.className = 'btn btn--block';
       back.textContent = 'Return to Slipreel';
       back.href = r.errorDeeplink;
-      panel.append(back);
-      location.href = r.errorDeeplink;
+      if (onMac) {
+        panel.append(back);
+        location.href = r.errorDeeplink;
+      }
     }
   } else if (r.account) {
     title.textContent = "You're signed in";
@@ -121,4 +142,5 @@ function requestModeInit() {
 // Always wire the request button (used both as the entry point and as the
 // fallback after a failed verify), then verify only if a token is present.
 requestModeInit();
-if (token) verifyMode();
+if (token && needsMac && !onMac) openOnMacMode();
+else if (token) verifyMode();

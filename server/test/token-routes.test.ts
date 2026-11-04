@@ -17,6 +17,7 @@ describe('token routes', () => {
   beforeAll(async () => { pool = testPool(); await resetDatabase(pool); await runMigrations(pool); });
   afterAll(async () => { await pool.end(); });
   beforeEach(async () => {
+    await pool.query('DELETE FROM auth_handoffs');
     await pool.query('DELETE FROM devices'); await pool.query('DELETE FROM sessions');
     await pool.query('DELETE FROM entitlements'); await pool.query('DELETE FROM users');
     await pool.query('DELETE FROM consumed_checkout_sessions');
@@ -89,5 +90,78 @@ describe('token routes', () => {
       payload: { refresh_token: 'wrong', device_id: mint.device_id } });
     expect(bad.statusCode).toBe(401);
     await app.close();
+  });
+  describe('cross-device handoff', () => {
+    const state = 'h1.' + 'a'.repeat(43);
+    const claim = (app: any, body: Record<string, string>) =>
+      app.inject({ method: 'POST', url: '/v1/auth/handoff/claim', payload: body });
+
+    it('is pending (204) until a browser approves, then returns the credentials once', async () => {
+      const { app, signer } = await makeLicensingApp(pool, { session: { status: 'complete', customer: 'cus_1' } });
+      expect((await claim(app, { state, fingerprint: 'fp-mac' })).statusCode).toBe(204);
+      const cookie = await login(app, 'cus_1');
+      const minted = await app.inject({ method: 'POST', url: '/v1/token', headers: { cookie },
+        payload: { fingerprint: 'fp-mac', device_name: 'Mac', state } });
+      expect(minted.statusCode).toBe(200);
+      const first = await claim(app, { state, fingerprint: 'fp-mac' });
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toEqual(minted.json());
+      expect((await signer.verify(first.json().token)).device_id).toBe(minted.json().device_id);
+      expect((await claim(app, { state, fingerprint: 'fp-mac' })).statusCode).toBe(204);
+      await app.close();
+    });
+
+    it('stores nothing readable: no plaintext token in the row', async () => {
+      const { app } = await makeLicensingApp(pool, { session: { status: 'complete', customer: 'cus_1' } });
+      const cookie = await login(app, 'cus_1');
+      const minted = (await app.inject({ method: 'POST', url: '/v1/token', headers: { cookie },
+        payload: { fingerprint: 'fp-mac', state } })).json();
+      const { rows } = await pool.query('SELECT id, payload FROM auth_handoffs');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).not.toContain(state);
+      expect(rows[0].payload).not.toContain(minted.refresh_token);
+      await app.close();
+    });
+
+    it('rejects a claim with the wrong state or fingerprint', async () => {
+      const { app } = await makeLicensingApp(pool, { session: { status: 'complete', customer: 'cus_1' } });
+      const cookie = await login(app, 'cus_1');
+      await app.inject({ method: 'POST', url: '/v1/token', headers: { cookie }, payload: { fingerprint: 'fp-mac', state } });
+      expect((await claim(app, { state: 'h1.' + 'b'.repeat(43), fingerprint: 'fp-mac' })).statusCode).toBe(204);
+      expect((await claim(app, { state, fingerprint: 'fp-other' })).statusCode).toBe(204);
+      expect((await claim(app, { state, fingerprint: 'fp-mac' })).statusCode).toBe(200);
+      await app.close();
+    });
+
+    it('hands a seat-limit failure to the app as 409', async () => {
+      const { app } = await makeLicensingApp(pool, { session: { status: 'complete', customer: 'cus_1' } });
+      const cookie = await login(app, 'cus_1');
+      for (const fp of ['fp-1', 'fp-2']) {
+        await app.inject({ method: 'POST', url: '/v1/token', headers: { cookie }, payload: { fingerprint: fp } });
+      }
+      const third = await app.inject({ method: 'POST', url: '/v1/token', headers: { cookie }, payload: { fingerprint: 'fp-3', state } });
+      expect(third.statusCode).toBe(409);
+      const res = await claim(app, { state, fingerprint: 'fp-3' });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('seat_limit');
+      await app.close();
+    });
+
+    it('does not park anything without a state (web-only sign-in)', async () => {
+      const { app } = await makeLicensingApp(pool, { session: { status: 'complete', customer: 'cus_1' } });
+      const cookie = await login(app, 'cus_1');
+      await app.inject({ method: 'POST', url: '/v1/token', headers: { cookie }, payload: { fingerprint: 'fp-mac' } });
+      expect((await pool.query('SELECT 1 FROM auth_handoffs')).rowCount).toBe(0);
+      await app.close();
+    });
+
+    it('expired handoffs are not claimable', async () => {
+      const { app } = await makeLicensingApp(pool, { session: { status: 'complete', customer: 'cus_1' } });
+      const cookie = await login(app, 'cus_1');
+      await app.inject({ method: 'POST', url: '/v1/token', headers: { cookie }, payload: { fingerprint: 'fp-mac', state } });
+      await pool.query("UPDATE auth_handoffs SET expires_at = now() - interval '1 second'");
+      expect((await claim(app, { state, fingerprint: 'fp-mac' })).statusCode).toBe(204);
+      await app.close();
+    });
   });
 });

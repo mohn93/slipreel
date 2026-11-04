@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDeeplink, startCheckout, completeCheckout, completeMagicLink, requestMagicLink } from './flow.js';
+import { isMacBrowser, supportsHandoff, buildDeeplink, startCheckout, completeCheckout, completeMagicLink, requestMagicLink } from './flow.js';
 
 const okToken = { ok: true, status: 200, data: { token: 'jwt', refresh_token: 'rt', device_id: 'dev_1' } };
 
@@ -53,7 +53,7 @@ test('completeCheckout surfaces a seat-limit 409', async () => {
     token: async () => ({ ok: false, status: 409, data: { error: 'seat_limit', devices: [{ id: 'd1' }, { id: 'd2' }] } }),
   });
   const r = await completeCheckout(api, 'cs_1');
-  assert.deepEqual(r, { seatLimit: [{ id: 'd1' }, { id: 'd2' }] });
+  assert.deepEqual(r, { seatLimit: [{ id: 'd1' }, { id: 'd2' }], handoff: false });
 });
 
 test('completeMagicLink mirrors completeCheckout (device -> deeplink)', async () => {
@@ -109,4 +109,42 @@ test('checkout failure after verification retains context for retry without cons
   assert.equal(result.phase, 'checkout');
   assert.equal(result.checkoutContext.device, 'mac');
   assert.equal(result.checkoutContext.state, 'nonce');
+});
+
+test('handoff-capable state is forwarded to /v1/token and flagged', async () => {
+  let body;
+  const api = apiStub({
+    magicLinkVerify: async () => ({ ok: true, status: 200, data: { user: {}, device: 'fp', device_name: 'Mac', state: 'h1.abc' } }),
+    token: async (b) => { body = b; return okToken; },
+  });
+  const r = await completeMagicLink(api, 'mtok');
+  assert.equal(body.state, 'h1.abc');
+  assert.equal(r.handoff, true);
+  assert.ok(r.deeplink.includes('state=h1.abc'));
+});
+
+test('legacy state is not forwarded to /v1/token', async () => {
+  let body;
+  const api = apiStub({
+    magicLinkVerify: async () => ({ ok: true, status: 200, data: { user: {}, device: 'fp', state: 'old' } }),
+    token: async (b) => { body = b; return okToken; },
+  });
+  const r = await completeMagicLink(api, 'mtok');
+  assert.equal('state' in body, false);
+  assert.equal(r.handoff, false);
+});
+
+test('supportsHandoff only accepts the h1. prefix', () => {
+  assert.equal(supportsHandoff('h1.x'), true);
+  assert.equal(supportsHandoff('x'), false);
+  assert.equal(supportsHandoff(null), false);
+});
+
+test('isMacBrowser: desktop Mac yes; iPhone, iPad (Macintosh UA + touch), Windows no', () => {
+  const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/156 Safari/537.36';
+  assert.equal(isMacBrowser({ userAgent: mac, maxTouchPoints: 0 }), true);
+  assert.equal(isMacBrowser({ userAgent: mac, maxTouchPoints: 5 }), false);
+  assert.equal(isMacBrowser({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) CriOS/156', maxTouchPoints: 5 }), false);
+  assert.equal(isMacBrowser({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', maxTouchPoints: 0 }), false);
+  assert.equal(isMacBrowser(undefined), false);
 });
