@@ -99,6 +99,9 @@ class LicensingController extends StateNotifier<EntitlementState> {
   final Duration? Function(Duration elapsed)? _handoffDelay;
   Timer? _handoffTimer;
   int _handoffRun = 0;
+  String? _pollingNonce;
+  // The last sign-in finished (success or failure) by either path, so the
+  // other path's late arrival is ignored instead of reported as invalid.
   String? _completedNonce;
   final Set<String> _noncesInFlight = {};
 
@@ -128,7 +131,9 @@ class LicensingController extends StateNotifier<EntitlementState> {
       state = const EntitlementSignedOut();
       // A sign-in started before a relaunch may still be approved elsewhere.
       final pending = await _authState.pending();
-      if (pending != null) _startHandoffPolling(pending);
+      if (pending != null) {
+        _startHandoffPolling(pending.nonce, issued: pending.issued);
+      }
       return;
     }
     // Keep signed expired claims for accurate offline-renewal UI. Export gating
@@ -273,7 +278,10 @@ class LicensingController extends StateNotifier<EntitlementState> {
       final nonce = uri.queryParameters['state'] ?? '';
       // The same sign-in may already have finished by polling (approval in a
       // Mac browser both deep-links and parks the result for the app).
-      if (nonce.isNotEmpty && nonce == _completedNonce) return;
+      if (nonce.isNotEmpty &&
+          (nonce == _completedNonce || _noncesInFlight.contains(nonce))) {
+        return;
+      }
       if (nonce.isEmpty || !await _authState.matches(nonce)) {
         signInFeedback.show(
           const SignInFeedback(
@@ -288,7 +296,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
       final error = uri.queryParameters['error'];
       if (error != null) {
         _lastAuthCallback = uri;
-        await _failBrowserSignIn(error);
+        await _failBrowserSignIn(error, nonce: nonce);
         return;
       }
       final link = AuthDeepLink.parse(uri);
@@ -330,12 +338,14 @@ class LicensingController extends StateNotifier<EntitlementState> {
 
   void _stopHandoffPolling() {
     _handoffRun++;
+    _pollingNonce = null;
     _handoffTimer?.cancel();
     _handoffTimer = null;
   }
 
-  Future<void> _failBrowserSignIn(String error) async {
+  Future<void> _failBrowserSignIn(String error, {required String nonce}) async {
     _stopHandoffPolling();
+    _completedNonce = nonce;
     await _authState.clear();
     signInFeedback.show(
       error == 'seat_limit'
@@ -360,6 +370,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
     required String token,
     required String refreshToken,
     required String deviceId,
+    String? email,
   }) async {
     if (nonce == _completedNonce || !_noncesInFlight.add(nonce)) return true;
     try {
@@ -378,20 +389,25 @@ class LicensingController extends StateNotifier<EntitlementState> {
             deviceId: deviceId,
           ),
         );
+        // Mark finished before the nonce disappears, so a deep link landing
+        // in between is recognized as this same sign-in.
+        _completedNonce = nonce;
         await _authState.clear();
       });
       if (!mounted || generation != _credentialGeneration) return false;
-      _completedNonce = nonce;
       _stopHandoffPolling();
       state = EntitlementLoaded(claims);
-      _showSignedIn(claims);
+      _showSignedIn(claims, email: email);
       return true;
     } finally {
       _noncesInFlight.remove(nonce);
     }
   }
 
-  void _showSignedIn(EntitlementClaims claims) {
+  void _showSignedIn(EntitlementClaims claims, {String? email}) {
+    // Approval may come from another device; name the account so a sign-in
+    // into the wrong one (mistyped email) is obvious.
+    final who = email == null || email.isEmpty ? '' : 'Signed in as $email. ';
     final reason = paywallReasonFor(
       state,
       appReleaseDate: buildReleaseDate,
@@ -401,32 +417,33 @@ class LicensingController extends StateNotifier<EntitlementState> {
       signInFeedback.show(
         SignInFeedback(
           'Signed in successfully',
-          claims.plan == 'onetime'
-              ? 'Your one-time license is active on this Mac. Make something worth sharing.'
-              : 'Your subscription is active on this Mac. Make something worth sharing.',
+          who +
+              (claims.plan == 'onetime'
+                  ? 'Your one-time license is active on this Mac. Make something worth sharing.'
+                  : 'Your subscription is active on this Mac. Make something worth sharing.'),
           exportsUnlocked: true,
         ),
       );
     } else if (reason == PaywallReason.updateCeiling) {
       signInFeedback.show(
-        const SignInFeedback(
+        SignInFeedback(
           'Signed in — update renewal needed',
-          'Your one-time license covers an earlier version of Slipreel. '
+          '${who}Your one-time license covers an earlier version of Slipreel. '
               'Keep exporting with that version, or renew updates to unlock this version.',
         ),
       );
     } else if (reason == PaywallReason.subscriptionLapsed) {
       signInFeedback.show(
-        const SignInFeedback(
+        SignInFeedback(
           'Signed in — subscription inactive',
-          'Your subscription is not active. Manage your subscription to restore unlimited exports.',
+          '${who}Your subscription is not active. Manage your subscription to restore unlimited exports.',
         ),
       );
     } else {
       signInFeedback.show(
-        const SignInFeedback(
+        SignInFeedback(
           'Signed in — no active license',
-          'This account has no active subscription or one-time license. '
+          '${who}This account has no active subscription or one-time license. '
               'Any remaining free exports are still available on this Mac. '
               'Choose a plan to unlock unlimited exports.',
           action: 'pricing',
@@ -438,20 +455,31 @@ class LicensingController extends StateNotifier<EntitlementState> {
   /// Wait for a sign-in approved in a browser on any device (often a phone,
   /// which cannot open the slipreel:// link). Polls with the pending nonce
   /// until it is claimed, fails, is finished by a deep link, or times out.
-  void _startHandoffPolling(String nonce) {
+  void _startHandoffPolling(String nonce, {DateTime? issued}) {
     final delayFor = _handoffDelay;
     if (delayFor == null || appStore != null) return;
     if (!AuthStateStore.supportsHandoff(nonce)) return;
+    // Clicking Sign in again reuses the nonce: keep the running poll, which
+    // may have a claim in flight whose single-use result must not be dropped.
+    if (_pollingNonce == nonce) return;
     _stopHandoffPolling();
+    _pollingNonce = nonce;
     final run = _handoffRun;
+    // Back off from when sign-in began, not from when this process started.
+    final offset = issued == null
+        ? Duration.zero
+        : _now().difference(issued).abs();
     final clock = Stopwatch()..start();
     String? fingerprint;
     late final Future<void> Function() tick;
 
     void schedule() {
       if (!mounted || run != _handoffRun) return;
-      final delay = delayFor(clock.elapsed);
-      if (delay == null) return;
+      final delay = delayFor(offset + clock.elapsed);
+      if (delay == null) {
+        if (run == _handoffRun) _pollingNonce = null;
+        return;
+      }
       _handoffTimer = Timer(delay, () => unawaited(tick()));
     }
 
@@ -471,6 +499,7 @@ class LicensingController extends StateNotifier<EntitlementState> {
             :final token,
             :final refreshToken,
             :final deviceId,
+            :final email,
           ):
             claimed = true;
             await _completeBrowserSignIn(
@@ -478,10 +507,13 @@ class LicensingController extends StateNotifier<EntitlementState> {
               token: token,
               refreshToken: refreshToken,
               deviceId: deviceId,
+              email: email,
             );
             return;
           case HandoffFailed(:final error):
-            if (nonce != _completedNonce) await _failBrowserSignIn(error);
+            if (nonce != _completedNonce) {
+              await _failBrowserSignIn(error, nonce: nonce);
+            }
             return;
           case HandoffPending():
             break;

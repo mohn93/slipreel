@@ -49,7 +49,10 @@ function openOnMacMode() {
   sub.textContent = 'This link signs in Slipreel on the Mac where you started. '
     + 'Open the same email on that Mac and click the link there. It stays valid for 30 minutes.';
   panel.className = 'card';
-  panel.innerHTML = '<p class="muted">Tip: update Slipreel (Slipreel menu, Check for Updates) to approve future sign-ins from your phone.</p>';
+  panel.innerHTML = '<p class="muted">Tip: update Slipreel (Slipreel menu, Check for Updates) to approve future sign-ins from your phone.</p>'
+    + '<button class="btn btn--block" id="on-mac">I am on that Mac, continue</button>';
+  // Device detection can be wrong (touch displays, remote desktop).
+  document.getElementById('on-mac').addEventListener('click', verifyMode);
 }
 
 async function doVerify() {
@@ -78,7 +81,11 @@ async function doVerify() {
     });
     return;
   }
-  if (r.deeplink && r.handoff && !onMac) {
+  if (r.alreadyApproved) {
+    title.textContent = 'Already signed in';
+    sub.textContent = 'This sign-in was already approved. Go back to Slipreel on your Mac.';
+    panel.innerHTML = '<p class="muted">You can close this page.</p>';
+  } else if (r.deeplink && r.handoff && !onMac) {
     title.textContent = 'Sign-in approved';
     sub.textContent = 'Go back to Slipreel on your Mac. It finishes signing in on its own in a few seconds.';
     panel.innerHTML = '<p class="muted">You can close this page.</p>';

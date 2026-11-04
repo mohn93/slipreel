@@ -44,6 +44,9 @@ async function afterSession(api, ctx) {
     const callbackError = (error) => ctx.state
       ? { errorDeeplink: 'slipreel://auth?' + new URLSearchParams({ error, state: ctx.state }) }
       : {};
+    // This sign-in already finished (another email link was used); the app has
+    // or will receive it, so do not report a seat problem or deep-link again.
+    if (t.status === 409 && t.data?.error === 'already_approved') return { alreadyApproved: true, handoff };
     if (t.status === 409) return {
       seatLimit: t.data?.devices || [], handoff, ...callbackError('seat_limit'),
     };

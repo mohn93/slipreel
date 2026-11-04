@@ -148,3 +148,12 @@ test('isMacBrowser: desktop Mac yes; iPhone, iPad (Macintosh UA + touch), Window
   assert.equal(isMacBrowser({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', maxTouchPoints: 0 }), false);
   assert.equal(isMacBrowser(undefined), false);
 });
+
+test('already_approved is not reported as a seat limit', async () => {
+  const api = apiStub({
+    magicLinkVerify: async () => ({ ok: true, status: 200, data: { user: {}, device: 'fp', state: 'h1.abc' } }),
+    token: async () => ({ ok: false, status: 409, data: { error: 'already_approved' } }),
+  });
+  const r = await completeMagicLink(api, 'mtok');
+  assert.deepEqual(r, { alreadyApproved: true, handoff: true });
+});

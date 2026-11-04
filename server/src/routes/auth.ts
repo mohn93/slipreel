@@ -5,6 +5,7 @@ import { clearSessionCookie, SESSION_COOKIE } from '../auth/cookie.js';
 import { requireSession } from '../auth/require_session.js';
 import { resolveEffectiveEntitlement } from '../billing/effective_entitlement.js';
 import { reconcileCheckout, isSettledCheckout } from '../billing/entitlements.js';
+import { openIntent, supportsHandoff } from '../auth/handoff.js';
 
 const fromCheckout = z.object({ checkout_session_id: z.string().min(1).max(200) });
 
@@ -32,6 +33,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     if (!(await resolveEffectiveEntitlement(app.pool, user.id)).export) return reply.code(409).send({error:'payment_not_entitled'});
     const md = cs.metadata ?? {};
+    if (md.device && supportsHandoff(md.state)) {
+      await openIntent(app.pool, app.handoffSecret, md.state, user.id, md.device);
+    }
     return reply.send({user: {id: user.id, email: user.email}, device: md.device ?? null, device_name: md.device_name ?? null, state: md.state ?? null});
   });
 

@@ -54,14 +54,16 @@ class AuthStateStore {
     return nonce;
   }
 
-  /// The pending nonce if it is still inside [reuseWindow], else null. Used to
-  /// resume waiting for a cross-device approval after a relaunch.
-  Future<String?> pending() async {
+  /// The pending nonce and when it was issued, if still inside [reuseWindow].
+  /// Used to resume waiting for a cross-device approval after a relaunch.
+  Future<({String nonce, DateTime issued})?> pending() async {
     final pending = _decode(await _kv.read(_key));
     final issued = pending?.issued;
     final now = _now();
     if (pending == null || issued == null || issued.isAfter(now)) return null;
-    return now.difference(issued) < reuseWindow ? pending.nonce : null;
+    return now.difference(issued) < reuseWindow
+        ? (nonce: pending.nonce, issued: issued)
+        : null;
   }
 
   /// True iff [state] equals the currently pending nonce (constant-time-ish

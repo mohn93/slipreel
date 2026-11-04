@@ -48,6 +48,13 @@ async function run() {
     document.getElementById('signin').href = 'login.html?' + new URLSearchParams({ checkout_session_id: sessionId });
     return;
   }
+  if (r.alreadyApproved) {
+    title.textContent = 'Purchase confirmed';
+    sub.textContent = 'This Mac was already activated. Go back to Slipreel.';
+    panel.className = 'card';
+    panel.innerHTML = '<p class="muted">You can close this page.</p>';
+    return;
+  }
   if (r.deeplink && r.handoff && !isMacBrowser()) {
     title.textContent = 'Purchase confirmed';
     sub.textContent = 'Go back to Slipreel on your Mac. It activates your license on its own in a few seconds.';

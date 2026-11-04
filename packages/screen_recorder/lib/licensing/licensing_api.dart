@@ -48,10 +48,14 @@ class HandoffCredentials extends HandoffResult {
     required this.token,
     required this.refreshToken,
     required this.deviceId,
+    this.email,
   });
   final String token;
   final String refreshToken;
   final String deviceId;
+
+  /// The account that approved, shown so a wrong-account sign-in is visible.
+  final String? email;
 }
 
 /// The browser approved but activation failed (`seat_limit` or
@@ -145,6 +149,7 @@ class LicensingApi {
           token: body['token'] as String,
           refreshToken: body['refresh_token'] as String,
           deviceId: body['device_id'] as String,
+          email: body['email'] is String ? body['email'] as String : null,
         );
       }
       return const HandoffPending();

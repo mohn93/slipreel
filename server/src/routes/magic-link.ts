@@ -4,6 +4,7 @@ import { newId } from '../ids.js';
 import { createMagicLink, consumeMagicLink } from '../auth/magic_link.js';
 import { createSession } from '../auth/sessions.js';
 import { setSessionCookie } from '../auth/cookie.js';
+import { openIntent, supportsHandoff } from '../auth/handoff.js';
 
 const requestBody = z.object({
   email: z.string().email(),
@@ -41,7 +42,7 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
       // Older Mac apps cannot claim a cross-device approval (their state nonce
       // lacks the `h1.` capability prefix), so their links must be opened on
       // the Mac itself. `from=mac` lets the login page say so before consuming.
-      const legacyApp = parsed.data.device && parsed.data.state && !parsed.data.state.startsWith('h1.');
+      const legacyApp = parsed.data.device && parsed.data.state && !supportsHandoff(parsed.data.state);
       const link = `${app.billing.siteUrl}/login?token=${token}${legacyApp ? '&from=mac' : ''}`;
       if (app.email) {
         try {
@@ -75,6 +76,11 @@ export async function magicLinkRoutes(app: FastifyInstance): Promise<void> {
       [consumed.userId],
     );
     await app.pool.query('UPDATE users SET email_verified = true WHERE id = $1', [consumed.userId]);
+    // This user proved they hold a link the Mac app started: allow /v1/token to
+    // park that Mac's credentials for it to claim (cross-device approval).
+    if (consumed.device && supportsHandoff(consumed.state)) {
+      await openIntent(app.pool, app.handoffSecret, consumed.state, consumed.userId, consumed.device);
+    }
     const { token, expiresAt } = await createSession(app.pool, consumed.userId);
     setSessionCookie(reply, token, expiresAt);
     return reply.send({

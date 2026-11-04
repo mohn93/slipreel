@@ -22,6 +22,7 @@ import { entitlementPubkeyRoutes } from './routes/entitlement-pubkey.js';
 import type { BillingConfig } from './billing/config.js';
 import type { TokenSigner } from './tokens/signer.js';
 import type { EmailSender } from './email/sender.js';
+import { handoffSecretFrom, type HandoffSecret } from './auth/handoff.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -33,6 +34,7 @@ declare module 'fastify' {
     email?: EmailSender;
     appleSignIn?: AppleSignIn;
     appleSubscriptions?: AppleSubscriptions;
+    handoffSecret: HandoffSecret;
   }
 }
 
@@ -47,6 +49,8 @@ export type AppDeps = {
   corsOrigins?: string[];
   appleSignIn?: AppleSignIn;
   appleSubscriptions?: AppleSubscriptions;
+  /** Server secret for cross-device sign-in handoffs (see auth/handoff.ts). */
+  handoffSecret?: HandoffSecret;
 };
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -85,6 +89,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   if (deps.tokenSigner && deps.stripe && deps.billing) {
     if (deps.email) app.decorate('email', deps.email);
     app.decorate('tokenSigner', deps.tokenSigner);
+    app.decorate('handoffSecret', deps.handoffSecret ?? handoffSecretFrom(undefined));
     app.register(cookie);
     if (deps.appleSignIn) app.decorate('appleSignIn', deps.appleSignIn);
     if (deps.appleSubscriptions) app.decorate('appleSubscriptions', deps.appleSubscriptions);

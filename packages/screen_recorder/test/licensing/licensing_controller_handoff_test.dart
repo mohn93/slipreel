@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_recorder/licensing/auth_state_store.dart';
 import 'package:screen_recorder/licensing/device_fingerprint.dart';
@@ -24,17 +26,21 @@ class _FakeFingerprint extends DeviceFingerprint {
   Future<String?> describe() async => 'Test Mac';
 }
 
-/// Answers each claim from [results] in order, then stays pending.
+/// Answers each claim from [results] in order, then stays pending. When
+/// [gate] is set, the next claim waits on it (to hold a request in flight).
 class _ClaimApi extends LicensingApi {
   _ClaimApi(this.results) : super(baseUrl: 'https://x.test');
   final List<HandoffResult> results;
   final claims = <({String state, String fingerprint})>[];
+  Completer<void>? gate;
   @override
   Future<HandoffResult> claimHandoff({
     required String state,
     required String fingerprint,
   }) async {
     claims.add((state: state, fingerprint: fingerprint));
+    final g = gate;
+    if (g != null) await g.future;
     return results.isEmpty ? const HandoffPending() : results.removeAt(0);
   }
 }
@@ -55,6 +61,7 @@ const _creds = HandoffCredentials(
   token: 'jwt.ok',
   refreshToken: 'rt_1',
   deviceId: 'dev_1',
+  email: 'sana@example.com',
 );
 
 Duration? _fast(Duration _) => const Duration(milliseconds: 1);
@@ -115,7 +122,7 @@ void main() {
   test('a deep link for the same sign-in after polling finished is ignored quietly', () async {
     final c = build(_ClaimApi([_creds]));
     await c.openSignIn();
-    final nonce = (await auth.pending())!;
+    final nonce = (await auth.pending())!.nonce;
     await _until(() => c.state is EntitlementLoaded);
     final success = c.signInFeedback.pending;
     expect(success?.exportsUnlocked, isTrue);
@@ -130,7 +137,7 @@ void main() {
     final api = _ClaimApi([]);
     final c = build(api);
     await c.openSignIn();
-    final nonce = (await auth.pending())!;
+    final nonce = (await auth.pending())!.nonce;
     await c.handleDeepLink(Uri.parse(
         'slipreel://auth?token=jwt.ok&refresh=rt_1&device_id=dev_1&state=$nonce'));
     expect(c.state, isA<EntitlementLoaded>());
@@ -190,6 +197,53 @@ void main() {
     await c.openSignIn();
     await _settle();
     expect(api.claims, isEmpty);
+    c.dispose();
+  });
+
+  test('the success message names the account that approved', () async {
+    final c = build(_ClaimApi([_creds]));
+    await c.openSignIn();
+    await _until(() => c.state is EntitlementLoaded);
+    expect(c.signInFeedback.pending?.message, startsWith('Signed in as sana@example.com.'));
+    c.dispose();
+  });
+
+  test('clicking Sign in again keeps an in-flight claim', () async {
+    final api = _ClaimApi([_creds])..gate = Completer<void>();
+    final c = build(api);
+    await c.openSignIn();
+    await _until(() => api.claims.isNotEmpty); // claim now in flight
+    await c.openSignIn(); // same nonce reused
+    api.gate!.complete();
+    await _until(() => c.state is EntitlementLoaded);
+    c.dispose();
+  });
+
+  test('an error deep link after polling reported the failure stays quiet', () async {
+    final c = build(_ClaimApi([const HandoffFailed('seat_limit')]));
+    await c.openSignIn();
+    final nonce = (await auth.pending())!.nonce;
+    await _until(() => c.signInFeedback.pending != null);
+    final shown = c.signInFeedback.pending;
+    await c.handleDeepLink(
+        Uri.parse('slipreel://auth?error=seat_limit&state=$nonce'));
+    expect(c.signInFeedback.pending, same(shown));
+    expect(shown?.title, 'Device limit reached');
+    c.dispose();
+  });
+
+  test('a deep link while the polled sign-in is saving stays quiet', () async {
+    final api = _ClaimApi([_creds])..gate = Completer<void>();
+    final c = build(api);
+    await c.openSignIn();
+    final nonce = (await auth.pending())!.nonce;
+    await _until(() => api.claims.isNotEmpty);
+    api.gate!.complete();
+    await _until(() => c.state is EntitlementLoaded);
+    final shown = c.signInFeedback.pending;
+    await c.handleDeepLink(Uri.parse(
+        'slipreel://auth?token=jwt.ok&refresh=rt_1&device_id=dev_1&state=$nonce'));
+    expect(c.signInFeedback.pending, same(shown));
     c.dispose();
   });
 }

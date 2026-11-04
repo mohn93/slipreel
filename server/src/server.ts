@@ -10,6 +10,7 @@ import { loadConfig } from './config.js';
 import { createPool } from './db.js';
 import { runMigrations } from './migrate.js';
 import { buildApp } from './app.js';
+import { handoffSecretFrom } from './auth/handoff.js';
 import { loadBillingConfig } from './billing/config.js';
 import { createStripeClient } from './billing/stripe.js';
 import { loadTokenConfig } from './tokens/config.js';
@@ -65,6 +66,8 @@ const app = buildApp({
   billing,
   tokenSigner,
   email,
+  // Stable across restarts and instances so a parked handoff stays claimable.
+  handoffSecret: handoffSecretFrom(process.env.HANDOFF_SECRET || process.env.ENTITLEMENT_ED25519_PRIVATE_KEY),
   corsOrigins: config.corsOrigins,
   logger: { level: config.logLevel },
 });

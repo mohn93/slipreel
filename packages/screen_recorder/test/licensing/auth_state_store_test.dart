@@ -142,7 +142,7 @@ void main() {
     expect(await store.pending(), isNull);
     final a = await store.begin();
     expect(a, startsWith(AuthStateStore.handoffPrefix));
-    expect(await store.pending(), a);
+    expect((await store.pending())?.nonce, a);
     now = now.add(AuthStateStore.reuseWindow);
     expect(await store.pending(), isNull);
   });
